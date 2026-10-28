@@ -1,0 +1,41 @@
+# Validierung · MediathekAtlas 0.4.0 Preview
+
+27. Oktober 2026, Linux-Testumgebung.
+
+- 97 automatisierte Tests bestanden. Bestehende Katalog-, Serienpaket-, FFmpeg-, Diagnose-, OMDb- und Runtime-Prüfungen bleiben enthalten.
+- TVDB mit kontrollierten API-Antworten: Login mit/ohne PIN, Bearer-Token und Cache, einmalige Neuanmeldung bei abgelaufenem Token, HTTP 401/429 mit Zugriffspause und erfolgreichem explizitem Wiederholungstest, fehlender Schlüssel, deutsche Episodentitel, Genre-Normalisierung, mehrdeutige bzw. abgeschnittene Episodenlisten, Serienidentität und TVDB-ID im NFO.
+- Zuordnungsfilter berücksichtigt unbekannte Werke; expliziter Filmfilter schließt diese weiterhin aus.
+- Chromium: bisherige Serienpaket-/Editor-/Protokoll-/OMDb-Prüfungen bestanden; fehlender TVDB-Schlüssel wird verständlich angezeigt. Verzögerte Filmantwort nach Wechsel auf Serien überschreibt die Auswahl nicht. Zuordnungsfilter, Zurücksetzen und Genre-Auswahl geprüft. Bei fehlerhaften Status-/Baumantworten bleibt die Mediennavigation bedienbar; Kategorie-Wiederholung lädt Genres nach. Keine JavaScript-Fehler.
+- Screenshot der Genre-Auswahl visuell geprüft. Python-/JavaScript-/Shell-Syntax und Git-Diff geprüft. App-Bundle 0.4.0, Build 13.
+
+Nicht verifiziert: TVDB-Liveabgleich mit echten Zugangsdaten, persönliche OMDb-Zugangsberechtigung und native Ausführung unter macOS/Finder. Kein TVDB-Projektschlüssel wird mitgeliefert. TVDB ist als Serienquelle angebunden; Filme nutzen die bisherigen Quellen.
+
+Zusätzlich: Cache-Invalidierung während des Statuslesens und leerer Cache mit aktuellem Zeitstempel getestet. Chromium erhält gezielt Statusdaten ohne Angebotszahl und ohne Neuordnungszähler; die Anzeige bleibt ohne JavaScript-Abbruch bedienbar.
+
+0.3.4: Zusätzlich Sperre gegen doppelte Instanzen, Freigabe nach Beenden, Ablehnung externer Wiederöffnungs-URLs und eine blockierte Genre-Berechnung geprüft: API-Aufruf bleibt unmittelbar verfügbar, keine zweite Berechnung, Ergebnis wird später ausgeliefert. Separater Test mit echten Serverprozessen: zweiter Start beendet sich ohne zweiten Server; authentifiziertes Shutdown beendet den ersten Prozess; Sperre anschließend wieder verfügbar. Chromium-Regression ohne JavaScript-Fehler bestanden.
+
+Diagnosebasis: MediathekAtlas_Diagnose_2026-10-27T09-57-24-279Z.zip und image(20261027-095739).png. Version 0.3.2, 719.759 Angebote laut Screenshot, fehlgeschlagene Genre-Anzeige, zeitlich überlappende Protokolle dreier App-Kopien. Kein Beleg für einen vollständigen Erfolg auf diesem Originalkatalog; kein nativer macOS-Test.
+
+0.3.5: 89 Tests erneut bestanden. Chromium prüft zusätzlich den Serientitel als Kartenüberschrift innerhalb einer Serie und direkt sichtbare Dateilinks. Keine automatische Netzwerkprüfung der Pixelauflösung hinzugefügt; vorhandene Dateinamenhinweise sind ausdrücklich als solche beschriftet.
+
+0.3.6: 92 Tests bestanden. Zehn aufeinanderfolgende Titel während OMDb-Pause: kein OMDb-Anbieteraufruf oder OMDb-Log je Titel, TMDB arbeitet weiter. Kostenlose Wikidata-Rückfallquelle separat geprüft. Pause auf Datenträger, Wiederherstellung, anderer Schlüssel, Zeitablauf und nächste erfolgreiche Anfrage geprüft. Chromium zeigt den zentralen OMDb-Countdown nach simuliertem Kontingentfehler. Kein Live-Test mit persönlichem OMDb-Kontingent.
+
+0.3.7: 93 Tests bestanden. Erster Kontingentfehler ergibt eine zentrale Pause statt Titelwarnung; Wikidata bleibt erreichbar. Chromium prüft das Ausblenden historischer OMDb-Warnungen während aktiver Pause sowie die Anzeige konkreter Anbieter-Trefferzahlen. Keine JavaScript-Fehler.
+
+0.4.0: 97 Tests bestanden. Zusätzliche Prüfungen für ungegruppte offene Serienfolgen, Ausschluss bestätigter/inaktiver Werke, Statusfilter, gebundene Suchparameter und getrennte Anbieterzähler. Chromium prüft fünf einzeln sichtbare offene Folgen, Seitenauswahl, Sammelpriorisierung, Öffnen des Korrekturdialogs und vier Anbieterzeilen. Bestehende Katalog-/Serienpaket-/OMDb-Pausenprüfungen bestanden; keine JavaScript-Fehler. Zuordnungsansicht visuell bei 1512 × 1100 geprüft. Keine Live-Validierung mit persönlichen API-Zugängen oder nativ unter macOS.
+
+0.4.1: 99 Tests bestanden. Freier Speicher auf dem Ziellaufwerk und fehlende Sprachangaben geprüft. Echter FFmpeg-Downloadtest prüft gemessene 64×64-Auflösung, Dateigröße und Metadaten. Browserprüfung der gemessenen Video-/Audiodetails sowie bisheriger Katalog-, Zuordnungs-, Serienpaket- und Anbieterfunktionen. Keine native macOS-Validierung. Vorabprüfung entfernter Medien und Pause/Fortsetzen bleiben offen.
+
+0.4.2: 102 Tests bestanden. Teilmengen im Serien-Sammeldownload, ungültige/leere Auswahl und veraltete Vorschau geprüft. Echter FFmpeg-Serienexport prüft Episoden-NFO und tvshow.nfo mit korrekter Serien-ID; keine Serien-ID als Episoden-ID. Browserprüfungen: Serien als Startansicht, kompakte Folgenliste, Auswahlzähler, Sammelvorschau, Katalogfilter, Anbieterpause und Downloads bestanden. Folgenansicht bei 1512×1100 visuell geprüft. Keine native macOS- oder Kodi/Jellyfin-Importprüfung; bestehende Exporte bleiben unverändert.
+
+0.4.3: 116 Tests bestanden. IMDb-Fixtures decken GZIP/TSV-Streaming, NULL, deutsche Aliasse, Bewertungen, Serien-/Episoden-ID, Nummerierungskonflikte, lokale Treffer ohne Netzaufruf, OMDb-identische Dublettenschlüssel, Sieben-Tage-Fälligkeit, manuellen Start, beschädigte Header/GZIP, Download-/Importfehler und Abbruch mit Erhalt des Altbestands ab. Browserprüfung: fünf Anbieterzeilen, IMDb-Status und manueller Aktualisierungsendpunkt sowie bestehende Abläufe bestanden. Kein vollständiger Live-Import der großen IMDb-Datensätze, kein nativer macOS-Test. IMDb-Archiv wird beim ersten Start lokal aufgebaut.
+
+0.4.4: 127 Tests bestanden. Sieben Datensatz-Fixtures, internationale Aliasse, Personen/Besetzung/Regie, NFO-Export und Archiv-Schemawechsel geprüft. Anbieterreihenfolge TVDB→TMDB→OMDb nach lokaler Prüfung, Abbruch bei ausreichendem Treffer, Quellen ohne Schlüssel, ergänzte Genres mit Herkunft, Mehrdeutigkeit und Jahr-/Art-/Staffel-/Folgen-/Laufzeitkonflikte geprüft. Browserregression ohne JavaScript-Fehler bestanden. Kein vollständiger Live-Import, keine nativen macOS- oder Kodi/Jellyfin-Tests.
+
+0.4.5: 132 Tests bestanden. Artwork-Abgleich über externe ID, Ablehnung mehrdeutiger Titel/falscher Jahre, unveränderte Werkidentität, Hintergrundergänzung bestätigter Werke, HTML-Abweisung, erlaubte Bildhosts und überschreibungsfreier Bildexport geprüft. Browserregression inklusive neuer Detailansicht bestanden; Detailansicht bei 1512×1100 visuell geprüft. Tests verwenden simulierte Bildanbieter. Kein nativer macOS-Test oder Live-Test mit persönlichen TVDB-/TMDB-Zugängen.
+
+0.4.6: 134 Tests bestanden. Downloadflag blendet ein Werk aus mehreren Genreansichten aus, bleibt bei erneutem Import erhalten und erlaubt Anzeige ohne Datenlöschung. Stabile Laufzeitkopie überlebt Entfernen des ursprünglichen App-Verzeichnisses; benutzerdefinierter Python-Launcher funktioniert weiterhin. Browserregression mit Detail-Dateilinks, Bewertung/Stimmen und alternativen Angeboten bestanden; Detailansicht visuell geprüft. Syntax- und Diffprüfungen bestanden. Native macOS-AppTranslocation sowie Start des Standard-Videoplayers nicht direkt getestet.
+
+
+## 0.4.7
+138 Python-Tests: erfolgreich. Neue Tests prüfen zulässige Bewertungsskalen, Ablehnung abweichender IMDb-ID/Medienart, null OMDb-Aufrufe während Pause, Empfehlungen nach Stimmen und Bewertung sowie Downloadstatus. Bestehende Browser-Suite erfolgreich, keine JS-Fehler. Zusätzliche Browserprüfung: 2048px Hauptbreite, drei Karten füllen die komplette Zeile, 390px ohne horizontalen Überlauf, Rotten-Tomatoes-/Metacritic-Werte mit Quelle in Details. Screenshots intern visuell geprüft. Python-/JS-/Shell-Syntax geprüft. Anbieterantworten in Tests simuliert; kein Live-Test mit persönlichen Zugangsdaten. Native macOS-Ausführung weiterhin nicht testbar.

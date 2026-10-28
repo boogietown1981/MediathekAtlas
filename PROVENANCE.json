@@ -1,0 +1,27 @@
+[
+  {
+    "path": "vendor/archivemedia/catalog_identity.py",
+    "source": "ArchiveMedia_v0.10.12_Source.zip/app/catalog_identity.py",
+    "sha256": "4c6362dd3ef692c9e62b804b4e3a48345d9fd084ac16f6b9e0e94670051cc13a"
+  },
+  {
+    "path": "vendor/archivemedia/external_metadata.py",
+    "source": "ArchiveMedia_v0.10.12_Source.zip/app/external_metadata.py",
+    "sha256": "7410832525946993451f3a1d692ca6fa3d7d7268b1993c2251ef8334825851d9"
+  },
+  {
+    "path": "vendor/archivemedia/linguistics.py",
+    "source": "ArchiveMedia_v0.10.12_Source.zip/app/linguistics.py",
+    "sha256": "471488f9dd0a27ff4357362ba30f0823916e6946130414b1ef415845c0a66268"
+  },
+  {
+    "path": "vendor/archivemedia/media_probe.py",
+    "source": "ArchiveMedia_v0.10.12_Source.zip/app/media_probe.py",
+    "sha256": "cd8c8eb725e3cbf48dcd79ecb1c7f7d65f86072c5fc78164e44d83abe0f29ff0"
+  },
+  {
+    "path": "vendor/archivemedia/package_media.py",
+    "source": "ArchiveMedia_v0.10.12_Source.zip/app/package_media.py",
+    "sha256": "9d4deae3a0507212a42c4d557471210ad6fbe85bf272aa2b61694f309fe6266e"
+  }
+]

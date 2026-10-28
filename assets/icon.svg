@@ -1,0 +1,14 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1024" height="1024" viewBox="0 0 1024 1024">
+<title>MediathekAtlas – Medienbibliothek</title>
+<defs><linearGradient id="base" x1="0" y1="0" x2="0.8" y2="1"><stop stop-color="#263b4b"/><stop offset="1" stop-color="#142631"/></linearGradient><linearGradient id="card" x1="0" y1="0" x2="0.5" y2="1"><stop stop-color="#f6f3e9"/><stop offset="1" stop-color="#d9e3df"/></linearGradient></defs>
+<rect x="62" y="70" width="900" height="900" rx="198" fill="#0b1720" opacity=".18"/>
+<rect x="62" y="54" width="900" height="900" rx="198" fill="url(#base)"/>
+<rect x="64" y="56" width="896" height="896" rx="196" fill="none" stroke="#617582" stroke-opacity=".35" stroke-width="4"/>
+<path d="M282 277a40 40 0 0 1 40-40h380a40 40 0 0 1 40 40v35H282Z" fill="#718b94"/>
+<path d="M249 335a42 42 0 0 1 42-42h442a42 42 0 0 1 42 42v49H249Z" fill="#a8bbb9"/>
+<rect x="207" y="355" width="610" height="404" rx="52" fill="#07191f" opacity=".24"/>
+<rect x="207" y="339" width="610" height="404" rx="52" fill="url(#card)"/>
+<path d="M259 339h41v404h-41a52 52 0 0 1-52-52V391a52 52 0 0 1 52-52Z" fill="#77b9ab"/>
+<path d="M461 436c0-13 14-21 25-14l158 98c13 8 13 26 0 34l-158 98c-11 7-25-1-25-14Z" fill="#244953"/>
+<path d="M348 800h328" fill="none" stroke="#6fa69d" stroke-width="14" stroke-linecap="round"/>
+</svg>
