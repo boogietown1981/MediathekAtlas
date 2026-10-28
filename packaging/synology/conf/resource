@@ -1,0 +1,8 @@
+{
+  "data-share": {
+    "shares": [
+      {"name": "MediathekAtlas", "permission": {"rw": ["mediathekatlas"]}}
+    ]
+  },
+  "port-config": {"protocol-file": "ui/MediathekAtlas.sc"}
+}

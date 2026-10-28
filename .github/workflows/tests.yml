@@ -31,10 +31,64 @@ jobs:
         run: |
           if [ "$RUNNER_OS" = macOS ]; then brew install ffmpeg
           else sudo apt-get update -q && sudo apt-get install -y -q ffmpeg; fi
+      - name: Pillow für Paket-Icons installieren
+        run: python -m pip install --quiet pillow
       - name: Syntaxprüfung
         run: |
           python -m compileall -q *.py tests vendor/archivemedia
           bash -n launcher.sh
+          for f in packaging/nas/*.sh packaging/qnap/shared/*.sh packaging/synology/scripts/*; do sh -n "$f"; done
           node --check web/app.js
+          node --check web/login.js
       - name: Unit-Tests
         run: python -m unittest discover -s tests -v
+
+  nas-packages:
+    name: NAS-Pakete (SPK + QPKG)
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      QDK_VERSION: v2.5.3
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.12'
+      - name: Pillow installieren
+        run: python -m pip install --quiet pillow
+      - name: QNAP QDK installieren (offizielles Build-Werkzeug)
+        run: |
+          git clone --depth 1 --branch "$QDK_VERSION" https://github.com/qnap-dev/QDK.git "$RUNNER_TEMP/QDK"
+          sudo cp -r "$RUNNER_TEMP/QDK/shared" /usr/share/QDK
+          sudo mkdir -p /etc/config
+          sed -e '2d' "$RUNNER_TEMP/QDK/shared/qdk.conf" | sed '2iQDK_PATH_P=/usr/share' | sudo tee /etc/config/qdk.conf >/dev/null
+      - name: Pakete bauen
+        run: python build_nas.py --qbuild /usr/share/QDK/bin/qbuild
+      - name: Pakete prüfen
+        run: |
+          set -e
+          ls -l dist
+          version=$(python -c 'from version import VERSION;print(VERSION)')
+          spk="dist/MediathekAtlas-$version-noarch.spk"
+          tar tf "$spk" | grep -qx INFO
+          tar xOf "$spk" INFO | grep -q "version=\"$version-"
+          qpkg=$(ls dist/MediathekAtlas_*.qpkg | head -n 1)
+          tail -c 100 "$qpkg" | grep -q 'QNAPQPKG'
+          tail -c 100 "$qpkg" | grep -q "MediathekAtlas"
+          # Extract with the header offsets exactly as QTS does and check the payload.
+          mkdir -p qpkg-check && /usr/share/QDK/bin/qbuild --extract "$qpkg" qpkg-check
+          ls -l qpkg-check
+          grep -q 'QPKG_NAME="MediathekAtlas"' qpkg-check/qpkg.cfg
+          tar tzf qpkg-check/data.tar.gz > qpkg-files.txt
+          grep -qx './MediathekAtlas.sh' qpkg-files.txt
+          grep -qx './mediathekatlas/server.py' qpkg-files.txt
+          grep -qx './bin/mediathekatlas-service.sh' qpkg-files.txt
+          (cd dist && sha256sum *.spk *.qpkg > SHA256SUMS)
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediathekAtlas-NAS-Pakete
+          path: |
+            dist/*.spk
+            dist/*.qpkg
+            dist/SHA256SUMS
+          if-no-files-found: error

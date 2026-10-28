@@ -1,0 +1,7 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>MediathekAtlas – Anmeldung</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head><body class="login-page">
+<main class="login"><div class="brand"><img src="/icon.svg" width="34" height="34" alt=""> MediathekAtlas</div><span class="eyebrow">NAS-DIENST · v__VERSION__</span>
+<form id="login" class="panel"><h2 id="login-title">Anmelden</h2>
+<div id="setup" hidden><p class="muted">Der Einrichtungscode steht in der Datei <b>MediathekAtlas-Einrichtungscode.txt</b>. Sie liegt im Download-Ordner von MediathekAtlas (über File Station bzw. die Netzwerkfreigabe erreichbar):</p><ul id="setup-files" class="path"></ul><label>Einrichtungscode<input id="setup_code" autocomplete="one-time-code"></label><label>Neues Passwort (mindestens 8 Zeichen)<input id="new_password" type="password" autocomplete="new-password" minlength="8"></label></div>
+<label id="password-row">Passwort<input id="password" type="password" autocomplete="current-password"></label>
+<button class="primary" id="submit">Anmelden</button><p id="login-error" role="alert"></p></form></main>
+<script src="/login.js"></script></body></html>
