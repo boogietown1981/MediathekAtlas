@@ -67,6 +67,21 @@ class Tests(unittest.TestCase):
             self.assertTrue(dest.exists());self.assertTrue(dest.with_suffix('.nfo').exists());self.assertTrue(dest.with_suffix('.metadata.json').exists())
             tags=downloads.probe(dest)['format']['tags'];self.assertEqual(tags['title'],'Test & Film');self.assertIn('done',states)
             with self.assertRaises(FileExistsError):downloads.run(row,m,Path(root)/'export','hd',lambda *a:None,lambda:False)
+    def test_staged_download_files_are_partial_for_mesh_sync(self):
+        if not downloads.tool('ffmpeg'):self.skipTest('ffmpeg unavailable')
+        with tempfile.TemporaryDirectory() as root:
+            sample=Path(root)/'sample.mp4'
+            subprocess.run([downloads.tool('ffmpeg'),'-v','error','-f','lavfi','-i','color=c=blue:s=64x64:d=1','-c:v','mpeg4',str(sample)],check=True)
+            raw=sample.read_bytes();export=Path(root)/'export';visible=[]
+            class Response(io.BytesIO):headers={'Content-Length':str(len(raw)),'Content-Type':'video/mp4'}
+            def update(state,*a,**k):
+                # MeshSync skips only names ending in .part/.partial/.tmp; nothing else may appear before publication.
+                if state!='done':visible.extend(str(p) for p in export.rglob('*') if p.is_file() and not p.name.endswith('.partial'))
+            m={'title':'Mesh Film','kind':'movie','year':2021,'provider':'manuell'}
+            with patch('core.open_url',return_value=Response(raw)):
+                downloads.run({'_id':'mesh','url_video':'https://example.org/v.mp4'},m,export,'hd',update,lambda:False)
+            self.assertEqual(visible,[])
+            self.assertEqual(sorted(p.name for p in export.rglob('*') if p.is_file()),['Mesh Film (2021).metadata.json','Mesh Film (2021).mkv','Mesh Film (2021).nfo'])
     def test_series_download_writes_show_and_episode_nfo(self):
         from xml.etree import ElementTree as ET
         if not downloads.tool('ffmpeg'):self.skipTest('ffmpeg unavailable')
