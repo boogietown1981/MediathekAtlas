@@ -12,6 +12,14 @@ Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filml
 
 Die App ist eine unsignierte Preview mit lokaler Browseroberfläche. Ein echter macOS-Finderstart ist hier weiterhin nicht validiert. Der Source-Ordner enthält zusätzlich `Start.command` und `Start.bat`. Linux: `python3 server.py`.
 
+## In Arbeit: Verbund mehrerer Systeme
+
+Mehrere MediathekAtlas-Installationen, etwa auf verschiedenen NAS, teilen sich die Metadatenerkennung. Unter Einstellungen → „Verbund mehrerer Systeme“ wird ein gemeinsamer Ordner eingetragen, bevorzugt ein MeshSync-Ordner. Jede Installation bearbeitet einen Teil der 256 Werkbereiche und übernimmt die Ergebnisse der anderen. Dadurch wird kein Titel doppelt bei TMDB, OMDb oder TVDB abgefragt. Manuelle Zuordnungen gelten überall. Jede Installation behält ihre eigene Datenbank und arbeitet ohne Verbindung allein weiter. Format, Regeln und Grenzen: `docs/VERBUND.md`.
+
+Downloads schreiben alle Zwischendateien jetzt mit der Endung `.partial`. Liegt das Downloadziel in einem MeshSync-Ordner, verteilt MeshSync nur fertige Videos und keine halbfertigen Dateien mehr.
+
+Noch offen: Abstimmung der Downloads zwischen den Systemen, Signaturen, ein eigener Verbund-Reiter. Mit echtem MeshSync auf zwei NAS ist der Verbund noch nicht getestet.
+
 ## Neu in 0.4.0: Zuordnungszentrale und Anbieterstatistik
 
 Der neue Reiter „Zuordnung“ zeigt Quelltitel und Katalogtitel nebeneinander, einschließlich Quelle, Jahr, Status und vorhandener Zuordnungsbelege. Offene Serienfolgen bleiben einzeln sichtbar. Filter trennen vorgemerkte Titel, Wiederholungen, Prüffälle, erkannte Werke mit offener Folge sowie automatische/manuelle Zuordnungen. Die Ansicht ist auf 48 Einträge pro Seite begrenzt.

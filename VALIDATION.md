@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## Verbund mehrerer Systeme (Branch, 28. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 11 neue Verbundtests in `tests/test_mesh.py` und ein neuer Downloadtest.
+- Zwei simulierte Instanzen mit getrennten Datenbanken und gemeinsamem Ordner: 60 Titel aufgeteilt, beide Instanzen am Ende identisch zugeordnet; höchstens die beim Zusammentreffen laufenden Titel werden doppelt geprüft (Test lässt maximal 2 zu, in 8 wiederholten Läufen bestanden).
+- Geprüft: Markerprüfung ohne Anlegen fehlender Laufwerke, unveröffentlichte Segmente bleiben unsichtbar, abgerissene Zeile nach Absturz, gefälschte/fremde Zeilen, Gewichtung und Ausfall von Knoten, Übernahme ohne erneute Anbieterabfrage, Vorrang manueller Zuordnungen, Einzelbetrieb bei fehlendem Ordner.
+- Download-Zwischendateien: Test schlägt mit dem alten Stand fehl (`original.bin` sichtbar) und besteht mit dem neuen.
+- Chromium: Verbund-Einstellungen gespeichert, Fehlermeldung bei fehlendem Ordner, Statusanzeige mit eigenem System, keine JavaScript-Fehler.
+- Nicht geprüft: echter MeshSync-Abgleich zwischen zwei NAS, Synology/QNAP-Laufzeit.
+
+
 27. Oktober 2026, Linux-Testumgebung.
 
 - 97 automatisierte Tests bestanden. Bestehende Katalog-, Serienpaket-, FFmpeg-, Diagnose-, OMDb- und Runtime-Prüfungen bleiben enthalten.

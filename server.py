@@ -3,7 +3,7 @@ import json, os, secrets, sqlite3, threading, time, webbrowser, urllib.parse, ha
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, meshjournal
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
 ROOT.mkdir(parents=True,exist_ok=True);os.chmod(ROOT,0o700)
@@ -151,7 +151,7 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
-            return self.send(diagnostics.export({'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
+            return self.send(diagnostics.export({'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/review':
@@ -167,7 +167,7 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata']},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name','')},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     def do_POST(self):
         global _TREE_CACHE,_STATUS_CACHE
@@ -212,7 +212,7 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
                     if not o:raise ValueError('Katalogeintrag nicht gefunden')
-                    catalog.save_metadata(c,o[0],m)
+                    SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
                 _TREE_CACHE=(0,[]);_STATUS_CACHE=(0,{})
                 return self.send({'ok':True})
             if path=='/api/candidates':
@@ -236,10 +236,17 @@ class Handler(BaseHTTPRequestHandler):
                     if d.get('clear_'+k):s[k]=''
                 for k in ('auto_catalog','auto_metadata'):
                     if k in d:s[k]=bool(d[k])
+                if 'mesh_dir' in d:
+                    folder=str(d['mesh_dir'] or '').strip()
+                    # Validates mount and marker; only an explicit request prepares a non-MeshSync folder.
+                    if folder:folder=str(meshjournal.check_folder(folder,create=d.get('mesh_init') is True))
+                    s['mesh_dir']=folder
+                if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
                 with db() as c:
                     c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
                     if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
                         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
+                if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
                 return self.send({'ok':True})
             if path=='/api/download':
                 if d.get('confirmed') is not True:raise ValueError('Metadaten zuerst prüfen und bestätigen')
@@ -249,7 +256,7 @@ class Handler(BaseHTTPRequestHandler):
                 if d.get('quality','best')=='best' and choices:row['_download_url']=choices[0]['url']
                 with db() as c:
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
-                    if o:catalog.save_metadata(c,o[0],m)
+                    if o:SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
                 dest=str(core.target(settings()['download_dir'],m,d['id']))
                 with db() as c:duplicate=c.execute("SELECT 1 FROM jobs WHERE state IN ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1",(dest,)).fetchone()
                 if duplicate:raise ValueError('Dieses Ziel ist bereits in der Warteschlange oder fertig')

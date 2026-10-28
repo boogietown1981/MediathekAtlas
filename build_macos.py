@@ -6,7 +6,7 @@ app=ROOT/'build'/'MediathekAtlas.app'
 if app.exists():shutil.rmtree(app)
 resources=app/'Contents'/'Resources';code=resources/'app';macos=app/'Contents'/'MacOS'
 code.mkdir(parents=True);macos.mkdir(parents=True)
-for name in ('core.py','stable_runtime.py','imdb_archive.py','matching.py','artwork.py','downloads.py','runtime_tools.py','metadata.py','provider_stats.py','tvdb.py','series_download.py','diagnostics.py','diagnostics_cli.py','catalog.py','catalog_service.py','filmlist.py','server.py','instance.py','LICENSE'):
+for name in ('core.py','stable_runtime.py','imdb_archive.py','matching.py','artwork.py','downloads.py','runtime_tools.py','metadata.py','provider_stats.py','tvdb.py','series_download.py','diagnostics.py','diagnostics_cli.py','catalog.py','catalog_service.py','meshjournal.py','filmlist.py','server.py','instance.py','LICENSE'):
     shutil.copy2(ROOT/name,code/name)
 for name in ('web','vendor','assets'):
     shutil.copytree(ROOT/name,code/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
