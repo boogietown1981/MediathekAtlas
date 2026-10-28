@@ -1,0 +1,40 @@
+name: Tests
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    name: Python ${{ matrix.python }} · ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            python: '3.9'
+          - os: ubuntu-latest
+            python: '3.13'
+          - os: macos-latest
+            python: '3.13'
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: ${{ matrix.python }}
+      - name: FFmpeg installieren
+        run: |
+          if [ "$RUNNER_OS" = macOS ]; then brew install ffmpeg
+          else sudo apt-get update -q && sudo apt-get install -y -q ffmpeg; fi
+      - name: Syntaxprüfung
+        run: |
+          python -m compileall -q *.py tests vendor/archivemedia
+          bash -n launcher.sh
+          node --check web/app.js
+      - name: Unit-Tests
+        run: python -m unittest discover -s tests -v
