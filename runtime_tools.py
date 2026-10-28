@@ -9,7 +9,10 @@ def candidates(name, explicit=None, prefixes=None):
     if explicit:out.append(str(Path(explicit).expanduser()))
     override=os.environ.get('MEDIATHEKATLAS_'+name.upper())
     if override:out.append(str(Path(override).expanduser()))
-    prefixes=prefixes if prefixes is not None else ('/opt/homebrew','/usr/local','/opt/local','/home/linuxbrew/.linuxbrew')
+    # Desktop package managers first, then NAS packages: SynoCommunity ffmpeg7/6/5,
+    # Entware (/opt) on Synology and QNAP. The NAS launcher can also set MEDIATHEKATLAS_FFMPEG.
+    prefixes=prefixes if prefixes is not None else ('/opt/homebrew','/usr/local','/opt/local','/home/linuxbrew/.linuxbrew',
+        '/var/packages/ffmpeg7/target','/var/packages/ffmpeg6/target','/var/packages/ffmpeg5/target','/var/packages/ffmpeg/target','/opt')
     for prefix in prefixes:
         for sub in ('opt/ffmpeg-full/bin','opt/ffmpeg/bin','bin'):
             out.append(str(Path(prefix)/sub/name))

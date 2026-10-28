@@ -1,0 +1,10 @@
+#!/bin/sh
+# DSM 7 runs this as the package user "mediathekatlas" (conf/privilege), never as root.
+ATLAS_APP="$SYNOPKG_PKGDEST/mediathekatlas"
+ATLAS_HOME="$SYNOPKG_PKGVAR"
+ATLAS_MANAGED=synology
+ATLAS_PORT=@PORT@
+# DSM links the shared folder from conf/resource (data-share) here.
+ATLAS_DOWNLOADS="${ATLAS_DOWNLOADS:-/var/packages/${SYNOPKG_PKGNAME:-MediathekAtlas}/shares/MediathekAtlas}"
+export ATLAS_APP ATLAS_HOME ATLAS_MANAGED ATLAS_PORT ATLAS_DOWNLOADS
+exec /bin/sh "$SYNOPKG_PKGDEST/bin/mediathekatlas-service.sh" "$1"

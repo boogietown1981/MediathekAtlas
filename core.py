@@ -7,7 +7,8 @@ from external_metadata import title_similarity, omdb_lookup, wikidata_lookup
 from package_media import canonical_target, render_nfo, write_atomic, save_poster
 from media_probe import parse_streams, resolve_ffprobe
 
-UA='MediathekAtlas/0.4.7'
+from version import VERSION
+UA='MediathekAtlas/'+VERSION
 
 def public_url(url):
     p=urllib.parse.urlsplit(url)
