@@ -95,6 +95,8 @@ def build_qdk_project(port=PORT):
     return project
 
 def build_qpkg(project,qbuild,out_dir):
+    # qbuild copies the payload with /usr/bin/rsync and silently ships an icon-only package without it.
+    if not Path('/usr/bin/rsync').exists():raise SystemExit('qbuild braucht /usr/bin/rsync (z. B. apt-get install rsync)')
     subprocess.run([qbuild,'--build-dir',str(project/'build')],cwd=project,check=True)
     built=sorted((project/'build').glob(f'{NAME}_*.qpkg'))
     if not built:raise SystemExit('qbuild hat kein QPKG erzeugt')
