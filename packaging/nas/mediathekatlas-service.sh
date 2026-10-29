@@ -41,6 +41,13 @@ find_python(){
     qnap_root=$(/sbin/getcfg Python3 Install_Path -d "" -f /etc/config/qpkg.conf 2>/dev/null)
     [ -n "$qnap_root" ] && qnap_python="$qnap_root/python3/bin/python3"
   fi
+  # QNAP App Center "Python3" layouts differ between releases; search them all.
+  for candidate in "$qnap_root"/bin/python3* "$qnap_root"/*/bin/python3* "$qnap_root"/opt/*/bin/python3* \
+    /share/CACHEDEV*_DATA/.qpkg/Python3*/python3/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Python3*/bin/python3* \
+    /share/CACHEDEV*_DATA/.qpkg/Python3*/opt/*/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Entware/bin/python3*; do
+    case "$candidate" in *-config|*'*'*) continue;; esac
+    if python_ok "$candidate"; then echo "$candidate"; return 0; fi
+  done
   # Newest first; system Python on DSM 7 (3.8) and old QTS builds fail the version check.
   for candidate in "$ATLAS_PYTHON" \
     /var/packages/python313/target/bin/python3 /var/packages/python312/target/bin/python3 \
@@ -75,11 +82,23 @@ rotate_log(){
   return 0
 }
 
+# Start problems are written next to the downloads too, so they can be read in
+# File Station without SSH; the note disappears after the next successful start.
+NOTE_NAME="MediathekAtlas-Startproblem.txt"
+start_failed(){
+  log "$1"
+  for dir in "$ATLAS_DOWNLOADS" "$ATLAS_HOME/downloads"; do
+    [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null && [ -w "$dir" ] || continue
+    { echo "MediathekAtlas konnte nicht starten ($(date '+%Y-%m-%d %H:%M:%S'))."; echo; echo "$1"; echo; echo "Letzte Zeilen aus $LOG:"; tail -n 40 "$LOG" 2>/dev/null; } > "$dir/$NOTE_NAME" 2>/dev/null && break
+  done
+  return 1
+}
+
 start(){
   if running_pid >/dev/null; then echo "MediathekAtlas läuft bereits."; return 0; fi
   mkdir -p "$ATLAS_HOME" && chmod 700 "$ATLAS_HOME" || { echo "Datenordner $ATLAS_HOME nicht beschreibbar"; return 1; }
   rotate_log
-  PYTHON=$(find_python) || { log "Kein Python ab 3.9 gefunden. Synology: ein Python-Paket ab 3.9 installieren (z. B. „Python 3.9“ oder SynoCommunity „Python 3.11“). QNAP: „Python3“ aus dem App Center oder Entware. Pfad optional als PYTHON=… in $CONF"; return 1; }
+  PYTHON=$(find_python) || { start_failed "Kein Python ab 3.9 gefunden. Synology: ein Python-Paket ab 3.9 installieren (z. B. „Python 3.9“ oder SynoCommunity „Python 3.11“). QNAP: „Python3“ aus dem App Center oder Entware. Pfad optional als PYTHON=… in $CONF"; return 1; }
   if ! mkdir -p "$ATLAS_DOWNLOADS" 2>/dev/null || [ ! -w "$ATLAS_DOWNLOADS" ]; then
     log "Download-Ordner $ATLAS_DOWNLOADS ist nicht beschreibbar. Ersatz: $ATLAS_HOME/downloads"
     ATLAS_DOWNLOADS="$ATLAS_HOME/downloads"; mkdir -p "$ATLAS_DOWNLOADS"
@@ -103,8 +122,9 @@ os.environ["HOME"]=os.environ["MEDIATHEKATLAS_HOME"];os.execv(sys.executable,[sy
   i=0
   while [ $i -lt 3 ]; do
     sleep 1; i=$((i+1))
-    running_pid >/dev/null || { log "MediathekAtlas wurde direkt nach dem Start beendet. Details: $LOG"; rm -f "$PIDFILE"; return 1; }
+    running_pid >/dev/null || { rm -f "$PIDFILE"; start_failed "MediathekAtlas wurde direkt nach dem Start beendet (z. B. Port $ATLAS_PORT belegt oder fehlende Rechte)."; return 1; }
   done
+  rm -f "$ATLAS_DOWNLOADS/$NOTE_NAME" "$ATLAS_HOME/downloads/$NOTE_NAME" 2>/dev/null
   log "MediathekAtlas läuft (PID $(cat "$PIDFILE")), Weboberfläche: http://<NAS>:$ATLAS_PORT/"
 }
 

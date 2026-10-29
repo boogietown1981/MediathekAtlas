@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.12 · Startproblem-Hinweis (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund QNAP 0.5.10: Installation erfolgreich, Port 8730 „Verbindung abgelehnt“, Dienst also nicht gestartet; Ursache noch unbekannt (Protokoll liegt im versteckten `.qpkg`-Ordner).
+- Neuer Test `StartProblemNoteTests`: belegter Port → Start schlägt fehl, Hinweisdatei mit Grund im Download-Ordner; nächster Start erfolgreich und Datei entfernt. Alle Tests bestanden.
+
 ## 0.5.11 · Große Bestände im Verbund (29. Oktober 2026, Linux-Testumgebung)
 
 - Feldbefund (Mac 0.5.9 ↔ Synology 0.5.9 über Tailscale): Bestandsabgleich lief (6.059 geteilt, 82.605 offen, 225 übernommen), danach „Gegenstelle nicht erreichbar (timed out)“, Lebenszeichen der NAS 8 Minuten alt. Vermutete Ursache: unbegrenzte Übernahmerunden (5.000 Ereignisse je Transaktion, Schleife bis leer) auf der NAS. Nicht abschließend bestätigt (Diagnose der NAS ausstehend).

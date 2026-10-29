@@ -180,6 +180,26 @@ class PythonDetectionTests(unittest.TestCase):
             bin_dir=packages/'python311'/'target'/'bin';bin_dir.mkdir(parents=True);(bin_dir/'python3').symlink_to(sys.executable)
             self.assertEqual(subprocess.run(['sh',str(d/'preinst')],capture_output=True).returncode,0)
 
+class StartProblemNoteTests(unittest.TestCase):
+    def test_failed_start_leaves_readable_note_in_download_share(self):
+        import socket as so
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d);home=d/'data';share=d/'Download'/'MediathekAtlas';home.mkdir();share.mkdir(parents=True)
+            blocker=so.socket();blocker.bind(('0.0.0.0',0));blocker.listen(1);port=blocker.getsockname()[1]
+            env={**NasPackageTests.env,'ATLAS_APP':str(ROOT),'ATLAS_HOME':str(home),'ATLAS_PORT':str(port),'ATLAS_DOWNLOADS':str(share),'ATLAS_MANAGED':'qnap','ATLAS_PYTHON':sys.executable}
+            script=str(ROOT/'packaging'/'nas'/'mediathekatlas-service.sh')
+            try:
+                r=subprocess.run(['sh',script,'start'],env=env,capture_output=True,text=True,timeout=60)
+                self.assertNotEqual(r.returncode,0)
+                note=share/'MediathekAtlas-Startproblem.txt';self.assertTrue(note.is_file())
+                self.assertIn('direkt nach dem Start beendet',note.read_text())
+            finally:
+                blocker.close();subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
+            r=subprocess.run(['sh',script,'start'],env=env,capture_output=True,text=True,timeout=60)
+            try:
+                self.assertEqual(r.returncode,0,r.stdout+r.stderr);self.assertFalse(note.exists(),'note removed after a good start')
+            finally:subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
+
 class DesktopModeTests(unittest.TestCase):
     def test_desktop_server_keeps_loopback_host_check_without_login(self):
         with tempfile.TemporaryDirectory() as d:
