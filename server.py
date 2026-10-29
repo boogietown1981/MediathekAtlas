@@ -129,6 +129,22 @@ def refresh_tree():
         with _TREE_LOCK:_TREE_ERROR=core.safe_error(e);_TREE_CACHE=(time.monotonic(),_TREE_CACHE[1])
     finally:
         with _TREE_LOCK:_TREE_BUSY=False
+_RECOGNITION={'at':float('-inf'),'rows':[],'busy':False,'error':''}
+def recognition():
+    # Grouping 700k works by channel takes seconds; compute in the background and reuse for 10 minutes.
+    with _TREE_LOCK:
+        if not _RECOGNITION['busy'] and time.monotonic()-_RECOGNITION['at']>600:
+            _RECOGNITION['busy']=True;threading.Thread(target=refresh_recognition,daemon=True,name='catalog_recognition').start()
+        return {'channels':_RECOGNITION['rows'],'loading':_RECOGNITION['busy'],'error':_RECOGNITION['error']}
+def refresh_recognition():
+    try:
+        with db() as c:rows=catalog.recognition(c)
+        with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),rows=rows,error='')
+    except Exception as e:
+        diagnostics.error('catalog_recognition_failed',e)
+        with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),error=core.safe_error(e))
+    finally:
+        with _TREE_LOCK:_RECOGNITION['busy']=False
 def catalog_status():
     global _STATUS_CACHE
     snapshot=_STATUS_CACHE
@@ -191,6 +207,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(result)
         if path=='/api/catalog-tree':
             return self.send(catalog_tree())
+        if path=='/api/recognition':return self.send(recognition())
         if path=='/api/alternatives':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})

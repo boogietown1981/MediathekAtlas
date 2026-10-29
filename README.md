@@ -1,6 +1,24 @@
-# MediathekAtlas · 0.5.0 Preview
+# MediathekAtlas · 0.5.1 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.1
+
+### Sendungsbeiträge unter ihrer Sendung
+
+Einzelbeiträge wiederkehrender Formate (z. B. „aktuell (16 Uhr)“, Lokalzeit, Tagesschau, Servicemagazine) stehen in keiner Filmdatenbank. Sie werden jetzt als Folgen ihrer Sendung einsortiert und erscheinen unter „Serien“ mit dem Beitragstitel als Folgentitel. Diese Beiträge werden nicht mehr bei TMDB, TVDB, OMDb, IMDb oder den Sendern abgefragt; der Abgleich bleibt für Filme und Serien frei. Erkennung: Thema der Filmliste mit Formatbegriff (Nachrichten, aktuell, Journal, Magazin, Lokalzeit, …) und mindestens zwei Beiträgen, oder kurze Beiträge (unter 10 Minuten) eines Themas mit mindestens drei Beiträgen. Filme, erkannte Serien, Trailer und Sammelrubriken wie „Filme im Ersten“ bleiben unberührt. Die Einordnung läuft im Hintergrund nach jedem Import. Wer einen Beitrag trotzdem abgleichen möchte, wählt ihn in der Zuordnungszentrale aus und startet „Auswahl erneut abgleichen“; er wird danach nicht wieder als Beitrag eingeordnet. Filter: „Zuordnung › Sendungsbeiträge“.
+
+### Erkennungsquote je Sender
+
+Die Zuordnungszentrale zeigt unter „Erkennungsquote je Sender“ für jeden Sender: Werke, vollständig zugeordnet, Werk erkannt, Sendungsbeiträge, zu prüfen, offen und die Quote erkannter Werke ohne Sendungsbeiträge. Die Auswertung wird im Hintergrund berechnet und höchstens alle 10 Minuten erneuert. Die Statuszeile im Katalog nennt zusätzlich die Zahl der Sendungsbeiträge.
+
+### Schnellerer Abgleich
+
+Nach jedem Werk wartete der Abgleich fest 2 Sekunden; das begrenzte ihn auf etwa 28.000 Werke am Tag. Die Pause gilt jetzt nur noch, wenn nichts fällig ist. Die Anbieter drosseln sich weiterhin selbst (Zwischenspeicher, Pausen, HTTP 429).
+
+### Ruhigere Kartenansicht
+
+Werkkarten haben eine feste Breite und werden bei wenigen Treffern nicht mehr über die ganze Seite gestreckt. Titel belegen immer drei Zeilen (längere werden gekürzt, voller Titel als Tooltip), Statuszeilen eine Zeile; die Schaltflächen stehen in jeder Reihe auf gleicher Höhe.
 
 ## Neu in 0.5.0
 
@@ -20,7 +38,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.0-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.0.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.1-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.1.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

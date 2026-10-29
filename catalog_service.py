@@ -14,7 +14,7 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
         for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
@@ -43,7 +43,8 @@ class Service:
             catalog.ingest(c,batch,started);count+=len(batch)
             if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
             # Only a completed parse may retire older offers.
-            c.execute('UPDATE offers SET active=0 WHERE seen<?',(started,));catalog.set_state(c,'last_complete',time.time())
+            c.execute('UPDATE offers SET active=0 WHERE seen<?',(started,));catalog.set_state(c,'last_complete',time.time());catalog.restart_formats(c)
+        self.format_wake.set()
         self.status(phase='complete',processed=count);return count
     def sync_loop(self):
         retry_after=0
@@ -156,6 +157,18 @@ class Service:
             if self.stop.wait(.05):return
         self.reclassification={'phase':'complete','processed':processed}
         diagnostics.event('catalog_reclassification_complete',processed=processed)
+        self.format_loop()
+    def format_loop(self):
+        # Contributions of news and magazine formats go under their format instead of into the provider queue.
+        assigned=0
+        while not self.stop.is_set():
+            with self.db() as c:n,a=catalog.assign_formats(c)
+            assigned+=a
+            if n:
+                if self.stop.wait(.05):return
+                continue
+            if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
+            self.format_wake.wait(3600);self.format_wake.clear()
     def metadata_loop(self):
         while not self.stop.is_set():
             # A fixed 2 s pause after every work capped the queue at ~28.000 works per day (diagnosis 0.4.7).
