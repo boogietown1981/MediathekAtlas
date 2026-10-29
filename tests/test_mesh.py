@@ -138,4 +138,75 @@ class MeshServiceTests(unittest.TestCase):
         with patch('core.candidates',side_effect=candidate):self.assertTrue(self.a.service.metadata_once())
         self.assertFalse((self.shared/'unmounted').exists())
 
+class MeshDownloadTests(unittest.TestCase):
+    """Phase 2: one instance downloads, MeshSync distributes, the others only record it."""
+    def setUp(self):
+        self.tmp=tempfile.TemporaryDirectory();base=Path(self.tmp.name).resolve()
+        self.shared=base/'sync';self.shared.mkdir();(self.shared/'.meshsync-folder').write_text('t1')
+        self.media={}
+        for name in ('a','b'):
+            (base/name).mkdir();media=base/('media-'+name);media.mkdir();(media/'.meshsync-folder').write_text('t2');self.media[name]=media/'Filme'
+        self.a=Node(base/'a',self.shared,download_dir=str(self.media['a']),mesh_name='NAS A')
+        self.b=Node(base/'b',self.shared,download_dir=str(self.media['b']),mesh_name='NAS B')
+        for n in (self.a,self.b):n.ingest([row(1)])
+        self.meta={'kind':'movie','title':'Spielfilm Nummer 1','year':2020,'provider':'TMDB','reference_id':'77'}
+        with self.a.db() as c:oid=c.execute('SELECT id FROM offers').fetchone()[0]
+        self.job={'metadata':self.meta,'source':{'_id':oid}}
+        for _ in range(2):
+            for n in (self.a,self.b):n.service.mesh_beat=0;n.sync()
+    def tearDown(self):self.tmp.cleanup()
+    def blocked(self,node):
+        with node.db() as c:return node.service.mesh_download_block(c,self.meta)
+    def label(self,node):
+        with node.db() as c:return catalog.mesh_download(c,self.meta)
+    def finish(self,node,name,data=b'video-bytes'):
+        path=self.media[name]/'Spielfilm Nummer 1 (2020)'/'Spielfilm Nummer 1 (2020).mkv';path.parent.mkdir(parents=True,exist_ok=True);path.write_bytes(data)
+        node.service.mesh_done({**self.job,'path':str(path),'state':'done'});return path
+    def test_claim_blocks_other_instance_until_released(self):
+        self.a.service.mesh_claim(self.job);self.a.sync();self.b.sync()
+        self.assertIn('NAS A',self.blocked(self.b));self.assertEqual(self.label(self.b)['state'],'loading')
+        self.assertIsNone(self.blocked(self.a))
+        self.a.service.mesh_release(self.job);self.b.sync()
+        self.assertIsNone(self.blocked(self.b));self.assertIsNone(self.label(self.b))
+    def test_expired_claim_of_crashed_instance_does_not_block(self):
+        with patch('catalog_service.time.time',return_value=time.time()-meshjournal.CLAIM_SECONDS-5):self.a.service.mesh_claim(self.job)
+        self.a.sync();self.b.sync()
+        self.assertIsNone(self.blocked(self.b))
+    def test_shared_download_is_recorded_then_found_locally(self):
+        self.a.service.mesh_claim(self.job);src=self.finish(self.a,'a');self.b.sync()
+        with self.b.db() as c:
+            done=c.execute('SELECT path,size FROM mesh_downloads').fetchone()
+            self.assertEqual(done['path'],'Filme/Spielfilm Nummer 1 (2020)/Spielfilm Nummer 1 (2020).mkv');self.assertEqual(done['size'],11)
+            self.assertTrue(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(catalog.download_identity(self.meta),)).fetchone())
+        self.assertIn('MeshSync überträgt',self.blocked(self.b));self.assertEqual(self.label(self.b)['state'],'transfer')
+        # MeshSync delivers an incomplete file first: not yet counted as present.
+        dest=self.media['b']/src.relative_to(self.media['a']);dest.parent.mkdir(parents=True);dest.write_bytes(b'video')
+        self.b.sync();self.assertEqual(self.label(self.b)['state'],'transfer')
+        dest.write_bytes(b'video-bytes');self.b.sync()
+        self.assertEqual(self.label(self.b)['state'],'local');self.assertIn('hier vorhanden',self.blocked(self.b))
+        with self.b.db() as c:self.assertEqual(c.execute('SELECT path FROM downloaded_items WHERE identity=?',(catalog.download_identity(self.meta),)).fetchone()[0],str(dest))
+    def test_unrecognized_title_found_through_sender_work_ids(self):
+        # B never identified the work, so its own metadata yields another download identity.
+        self.a.service.mesh_claim(self.job);self.a.sync();self.b.sync()
+        with self.b.db() as c:
+            w=c.execute('SELECT * FROM works').fetchone();own=json.loads(w['meta'])
+            self.assertNotEqual(catalog.download_identity(own),catalog.download_identity(self.meta))
+            self.assertEqual(catalog.item(c,w)['mesh_download']['state'],'loading')
+            self.assertIn('NAS A',self.b.service.mesh_download_block(c,own,w['id']))
+    def test_unshared_download_counts_but_does_not_block(self):
+        (self.media['a'].parent/'.meshsync-folder').unlink();self.finish(self.a,'a');self.b.sync()
+        self.assertEqual(self.label(self.b)['state'],'remote');self.assertIsNone(self.blocked(self.b))
+    def test_done_is_not_undone_by_later_claim_or_foreign_release(self):
+        self.finish(self.a,'a');self.b.service.mesh_release(self.job);self.b.service.mesh_claim(self.job)
+        self.a.sync();self.b.sync()
+        for n in (self.a,self.b):
+            with n.db() as c:self.assertEqual(c.execute('SELECT state,name FROM mesh_downloads').fetchone()[:],('done','NAS A'))
+    def test_download_events_validated(self):
+        self.assertFalse(meshjournal.valid_download('download.done',{'key':'k','path':'../etc/passwd','size':1}))
+        self.assertFalse(meshjournal.valid_download('download.done',{'key':'k','path':'/abs','size':1}))
+        self.assertFalse(meshjournal.valid_download('download.claim',{'key':'k','until':True}))
+        self.assertTrue(meshjournal.valid_download('download.done',{'key':'k','path':'Filme/A.mkv','size':1,'sha256':'0'*64}))
+        self.assertEqual(meshjournal.sync_root(self.media['a']/'x'/'y'),self.media['a'].parent)
+        self.assertIsNone(meshjournal.sync_root(Path(self.tmp.name)))
+
 if __name__=='__main__':unittest.main()

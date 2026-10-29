@@ -1,6 +1,14 @@
-# MediathekAtlas · 0.5.1 Preview
+# MediathekAtlas · 0.5.2 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.2: Downloads im Verbund abgestimmt
+
+Mit eingerichtetem Verbund lädt jedes NAS einen Titel nur noch einmal für alle. Startet ein System einen Download, meldet es das den anderen. Dort erscheint am Titel „Wird auf ‚NAS X‘ geladen“, und ein zweiter Download wird abgelehnt. Bereits eingereihte Folgen eines Serienpakets bekommen den Status „Auf anderem System“ und lassen sich später erneut starten.
+
+Liegt der Downloadordner in einem MeshSync-Ordner, verteilt MeshSync das fertige Video an die anderen NAS. Die Karte zeigt „MeshSync überträgt“, bis die Datei vollständig angekommen ist (Größe stimmt), danach „hier vorhanden“. Liegt der Downloadordner nicht in einem MeshSync-Ordner, gilt der Titel trotzdem überall als geladen, blockiert aber keinen eigenen Download. Die Verbundeinstellungen zeigen, ob der Downloadordner geteilt wird.
+
+Ein Anspruch läuft nach zwei Stunden ohne Lebenszeichen ab, ein abgestürztes System blockiert also nichts dauerhaft. Abgebrochene oder fehlgeschlagene Downloads geben den Titel sofort frei. Für fertige Downloads wird zusätzlich eine SHA-256-Prüfsumme veröffentlicht (für HomeTube). Format und Grenzen: `docs/VERBUND.md`.
 
 ## Neu in 0.5.1
 
@@ -38,7 +46,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.1-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.1.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.2-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.2.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

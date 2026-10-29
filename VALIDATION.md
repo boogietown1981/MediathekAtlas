@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.2 · Downloads im Verbund (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 6 neue Downloadtests in `tests/test_mesh.py`: Anspruch blockiert das andere System bis zur Freigabe, abgelaufener Anspruch blockiert nicht, geteilter Download wird erst bei vollständiger Datei als vorhanden gezählt, ungeteilter Download zählt ohne zu blockieren, `done` bleibt gegen späteren Anspruch und fremde Freigabe bestehen, Pfade mit `..` oder absolut werden abgelehnt.
+- Durchgang mit zwei echten Serverprozessen (getrennte Datenordner, gemeinsamer Verbundordner, je ein Medienordner mit MeshSync-Marker): System A lädt per FFmpeg und meldet `download.done` mit Pfad, Größe und SHA-256; System B lehnt den gleichen Download ab („MeshSync überträgt“), nach Kopie der Datei zeigt B „hier vorhanden“.
+- Nicht geprüft: echter MeshSync-Abgleich zwischen zwei NAS.
+
+
 ## Verbund mehrerer Systeme (Branch, 28. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 11 neue Verbundtests in `tests/test_mesh.py` und ein neuer Downloadtest.

@@ -75,14 +75,24 @@ def worker():
         with db() as c:
             r=c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
             if not r:continue
-            j=json.loads(r[0]);c.execute("UPDATE jobs SET state='downloading' WHERE id=?",(j['id'],))
+            j=json.loads(r[0])
+            o=c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
+            blocked=SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
+            if blocked:
+                # Queued before the other instance's claim arrived (e.g. series packages).
+                j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
+            c.execute("UPDATE jobs SET state='downloading' WHERE id=?",(j['id'],))
         def cancelled():
             with db() as c:x=c.execute('SELECT state FROM jobs WHERE id=?',(j['id'],)).fetchone()
             return not x or x[0]=='cancelled'
+        claimed=[0.0]
         def update(state,received=0,total=0,**kw):
             if cancelled():return
             j.update(state=state,received=received,total=total,**kw);put_job(j)
+            if state!='done' and time.time()-claimed[0]>meshjournal.CLAIM_RENEW:
+                claimed[0]=time.time();SERVICE.mesh_claim(j)
         try:
+            claimed[0]=time.time();SERVICE.mesh_claim(j)
             if not all(j['metadata'].get(k) for k in ('poster','fanart')):
                 pictures,errors=artwork.lookup(j['metadata'],settings())
                 for field in ('poster','fanart','artwork_provider'):
@@ -92,6 +102,10 @@ def worker():
         except Exception as e:
             diagnostics.error('download_failed',e,job_id=j['id'])
             if not cancelled():j.update(state='error',error=core.safe_error(e));put_job(j)
+        if j.get('state')=='done':
+            try:SERVICE.mesh_done(j)
+            except OSError as e:diagnostics.error('mesh_done_failed',e,job_id=j['id'])
+        elif claimed[0]:SERVICE.mesh_release(j)
 
 SERVICE=catalog_service.Service(db,settings,STOP,ROOT)
 def imdb_updated():
@@ -311,7 +325,10 @@ class Handler(BaseHTTPRequestHandler):
                 choices=catalog.links(row)
                 if d.get('quality','best')=='best' and choices:row['_download_url']=choices[0]['url']
                 with db() as c:
+                    # Another instance of the Verbund loads or already shared this title: no second download.
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
+                    blocked=SERVICE.mesh_download_block(c,m,o and o[0])
+                    if blocked:raise ValueError(blocked)
                     if o:SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
                 dest=str(core.target(settings()['download_dir'],m,d['id']))
                 with db() as c:duplicate=c.execute("SELECT 1 FROM jobs WHERE state IN ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1",(dest,)).fetchone()
@@ -340,7 +357,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'ok':True})
             if path=='/api/retry':
                 with db() as c:
-                    r=c.execute("SELECT payload FROM jobs WHERE id=? AND state IN ('error','cancelled','interrupted')",(d['id'],)).fetchone()
+                    r=c.execute("SELECT payload FROM jobs WHERE id=? AND state IN ('error','cancelled','interrupted','remote')",(d['id'],)).fetchone()
                 if not r:raise ValueError('Auftrag ist nicht wiederholbar')
                 j=json.loads(r[0]);j.update(id=secrets.token_hex(8),state='queued',received=0,total=0,error='');put_job(j);return self.send({'ok':True})
             self.send({'error':'Nicht gefunden'},404)

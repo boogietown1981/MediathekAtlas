@@ -17,6 +17,8 @@ CREATE INDEX IF NOT EXISTS work_show ON works(show_key);
 CREATE TABLE IF NOT EXISTS work_genres(work_id TEXT,genre TEXT,PRIMARY KEY(work_id,genre));
 CREATE INDEX IF NOT EXISTS genre_index ON work_genres(genre,work_id);
 CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE IF NOT EXISTS mesh_downloads(key TEXT PRIMARY KEY,node TEXT,name TEXT,state TEXT,until REAL,path TEXT,size INTEGER,hlc INTEGER,local TEXT,works TEXT);
+CREATE TABLE IF NOT EXISTS mesh_download_works(work_id TEXT PRIMARY KEY,key TEXT);
 CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,providers INTEGER,hlc INTEGER,node TEXT,payload TEXT);
 '''
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
@@ -117,11 +119,24 @@ def mark_downloaded(c,job):
     if found:identities.add(found[0])
     for identity in identities:c.execute('INSERT OR REPLACE INTO downloaded_items VALUES(?,?,?)',(identity,job.get('path') or job.get('target'),time.time()))
 
+def mesh_download_row(c,meta,work_id=None):
+    """Latest Verbund download record for a title: by download identity, else by the sender's work IDs."""
+    r=c.execute('SELECT * FROM mesh_downloads WHERE key=?',(download_identity(meta),)).fetchone()
+    if not r and work_id:r=c.execute('SELECT d.* FROM mesh_download_works w JOIN mesh_downloads d ON d.key=w.key WHERE w.work_id=?',(work_id,)).fetchone()
+    return r
+
+def mesh_download(c,meta,work_id=None):
+    """Download state of this title on another instance of the Verbund, or None."""
+    r=mesh_download_row(c,meta,work_id)
+    r=r and (r['node'],r['name'],r['state'],r['until'],r['path'],r['local'])
+    if not r or r[0]==get_state(c,'mesh_node_id') or r[2]=='release' or (r[2]=='claim' and r[3]<time.time()):return None
+    return {'name':r[1],'state':'loading' if r[2]=='claim' else 'local' if r[5] else 'transfer' if r[4] else 'remote'}
+
 def item(c,w):
     r=c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC LIMIT 1',(w['id'],)).fetchone()
     if not r:return None
     row=json.loads(r['payload']);count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
-    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
+    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
 def alternatives(c,wid):
     w=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()

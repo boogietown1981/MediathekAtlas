@@ -48,6 +48,16 @@ Segmente werden nach 2 MiB oder 5 Minuten per Umbenennung veröffentlicht. Leser
 | `match.result` | `matched`, `identified`, `review` | automatisches Ergebnis; `review` enthält höchstens 10 Vorschläge |
 | `match.manual` | `manual` | vom Nutzer bestätigte Zuordnung |
 
+### Downloads (seit 0.5.2)
+
+| `type` | Felder in `data` | Bedeutung |
+| --- | --- | --- |
+| `download.claim` | `key`, `works`, `title`, `until` | Download läuft, gilt bis `until` (2 h, alle 30 min verlängert) |
+| `download.release` | `key`, `works`, `title` | abgebrochen oder fehlgeschlagen, Titel wieder frei |
+| `download.done` | `key`, `works`, `title`, `path`, `size`, `sha256` | fertig; `path` relativ zum MeshSync-Ordner des Downloadziels, `null` wenn das Ziel nicht geteilt ist |
+
+`key` ist `catalog.download_identity()` (bei eindeutiger Zuordnung die kanonische ID), `works` die lokalen Werk-IDs. Ein `done` bleibt maßgeblich; ein späterer `claim` oder ein `release` eines anderen Knotens ändert es nicht. Empfänger werten `path` nur innerhalb ihres eigenen MeshSync-Ordners aus und lehnen absolute Pfade und `..` ab.
+
 `work` ist die aus der Filmliste abgeleitete Werk-ID (`catalog.identity`), auf allen Systemen gleich. `dest` ist die ID nach der Zusammenführung, bei eindeutiger Zuordnung die kanonische ID aus Anbieter und Referenz. `hlc` ist eine hybride logische Uhr in Millisekunden.
 
 Ergebnisse mit Anbieterfehlern oder Pausen werden nicht verteilt. API-Schlüssel, lokale Pfade und Diagnosedaten stehen nie in Ereignissen.
@@ -61,7 +71,9 @@ Ergebnisse mit Anbieterfehlern oder Pausen werden nicht verteilt. API-Schlüssel
 
 ## Grenzen dieser Version
 
-- Noch nicht enthalten: Download-Abstimmung (`download.claim`/`download.done`), Signaturen je Ereignis, Verdichtung alter Segmente, eigener Verbund-Reiter.
+- Noch nicht enthalten: Signaturen je Ereignis, Verdichtung alter Segmente, eigener Verbund-Reiter, bevorzugtes Download-NAS.
+- Klicken zwei Personen innerhalb weniger Minuten auf zwei NAS denselben Titel an, bevor die Meldung übertragen ist, laden beide. Das Ergebnis bleibt korrekt, kostet aber einen Download.
+- Die anderen Systeme prüfen nur die Dateigröße, nicht die Prüfsumme, damit schwache NAS nicht jedes Video neu einlesen müssen.
 - MeshSync-Ordner sind keine Zugriffskontrolle: Alle Geräte im selben Mesh erhalten den Ordner.
 - Wird ein Datenordner samt Datenbank auf ein zweites System kopiert, haben beide dieselbe Knoten-ID. Vor dem Kopieren den Verbund ausschalten oder auf dem Ziel die Datenbank neu anlegen.
 - Getestet mit simulierten Instanzen in getrennten Datenordnern und gemeinsamem Ordner, nicht mit echtem MeshSync auf zwei NAS.

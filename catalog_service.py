@@ -1,6 +1,7 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
-import json,time,threading
+import hashlib,json,time,threading
 import platform
+from pathlib import Path
 import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal
 
 def retry_delay(attempts,result):
@@ -14,7 +15,7 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
         for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
@@ -220,12 +221,14 @@ class Service:
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
+            self.mesh_names={n:str(i.get('name') or n[:8])[:80] for n,i in nodes.items()}
             self.mesh_import(journal)
+            self.mesh_check_local()
             journal.flush()
             with self.mesh_lock:
                 self.mesh_filter=None if len(parts)==meshjournal.PARTS else parts
                 current=time.time() if now is None else now
-                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'imported':self.mesh_imported,'invalid':self.mesh_invalid,
+                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,
                     'nodes':[{'node':n,'name':str(i.get('name') or n[:8])[:80],'self':n==journal.node,'active':n in members,'recognizing':i.get('recognizing') is True,'rate':i.get('rate'),'version':str(i.get('version',''))[:20],'age':max(0,int(current-float(i.get('time') or 0)))} for n,i in sorted(nodes.items())]}
         except (meshjournal.MeshError,OSError) as e:
             # Standalone fallback: a missing mount never blocks local recognition.
@@ -245,6 +248,7 @@ class Service:
         old=c.execute('SELECT rank,providers,hlc,node FROM mesh_results WHERE work_id=?',(wid,)).fetchone()
         return old is None or key>tuple(old),old is not None
     def mesh_apply(self,c,event):
+        if event['type'] in meshjournal.DOWNLOAD_TYPES:return self.mesh_download_apply(c,event)
         d=event['data'];rank=meshjournal.RANK[d['outcome']]
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
@@ -298,3 +302,90 @@ class Service:
         return event
     def mesh_manual(self,c,wid,dest,meta):
         return self.mesh_publish(c,'match.manual',wid,dest,'manual',meta,[])
+
+    # Downloads: one instance loads a title, MeshSync distributes the file, the others only record it.
+    def mesh_download_key(self,job):
+        works={catalog.download_identity(job['metadata'])}
+        found=None
+        with self.db() as c:
+            found=c.execute('SELECT work_id FROM offers WHERE id=?',(job.get('source',{}).get('_id'),)).fetchone()
+        if found:works.add(found[0])
+        return catalog.download_identity(job['metadata']),sorted(works)
+    def mesh_download_block(self,c,meta,work_id=None):
+        """Message if another instance is loading or has shared this title, else None."""
+        with self.mesh_lock:journal=self.mesh
+        if journal is None:return None
+        r=catalog.mesh_download_row(c,meta,work_id)
+        if not r or r['node']==journal.node:return None
+        if r['state']=='claim' and r['until']>time.time():return 'Wird bereits auf „%s“ geladen.'%r['name']
+        if r['state']=='done' and r['path']:
+            return 'Bereits auf „%s“ geladen'%r['name']+(' und hier vorhanden.' if r['local'] else '; MeshSync überträgt die Datei.')
+        return None
+    def mesh_download_publish(self,kind,job,**extra):
+        with self.mesh_lock:journal=self.mesh
+        if journal is None:return None
+        key,works=self.mesh_download_key(job)
+        data={'key':key,'works':works,'title':str(job['metadata'].get('episode_title') or job['metadata'].get('title') or '')[:300],**extra}
+        try:event=journal.append(kind,data)
+        except (OSError,ValueError) as e:
+            diagnostics.error('mesh_publish_failed',e,download=key);return None
+        with self.db() as c:self.mesh_download_store(c,event,journal.name,local=extra.get('local'))
+        if kind!='download.claim':
+            try:journal.flush(force=True)  # finished or released downloads matter to the others right away
+            except OSError:pass
+        return event
+    def mesh_claim(self,job):
+        return self.mesh_download_publish('download.claim',job,until=int(time.time())+meshjournal.CLAIM_SECONDS)
+    def mesh_release(self,job):
+        return self.mesh_download_publish('download.release',job)
+    def mesh_done(self,job):
+        with self.mesh_lock:journal=self.mesh
+        if journal is None:return None
+        path=Path(job.get('path') or job.get('target') or '')
+        root=meshjournal.sync_root(path.parent) if path.is_file() else None
+        rel=None
+        if root:
+            try:rel=meshjournal.safe_relative(path.resolve().relative_to(root).as_posix())
+            except ValueError:rel=None
+        digest=hashlib.sha256()
+        with path.open('rb') as f:
+            for chunk in iter(lambda:f.read(1024*1024),b''):digest.update(chunk)
+        return self.mesh_download_publish('download.done',job,path=rel,size=path.stat().st_size,sha256=digest.hexdigest(),local=str(path))
+    def mesh_download_store(self,c,event,name,local=None):
+        d=event['data'];kind=event['type'].split('.',1)[1]
+        old=c.execute('SELECT * FROM mesh_downloads WHERE key=?',(d['key'],)).fetchone()
+        if old:
+            # A finished download stays authoritative; only a newer completion replaces it.
+            if old['state']=='done' and kind!='done':return False
+            if kind=='release' and old['node']!=event['node']:return False
+            if old['hlc']>=event['hlc'] and not (kind=='done' and old['state']!='done'):return False
+        c.execute('INSERT OR REPLACE INTO mesh_downloads VALUES(?,?,?,?,?,?,?,?,?,?)',(d['key'],event['node'],name,kind,d.get('until',0),d.get('path'),d.get('size'),event['hlc'],local,json.dumps(d.get('works',[]))))
+        for work in d.get('works',[]):c.execute('INSERT OR REPLACE INTO mesh_download_works VALUES(?,?)',(work,d['key']))
+        if kind=='done':
+            for identity in {d['key'],*d.get('works',[])}:
+                c.execute('INSERT OR IGNORE INTO downloaded_items VALUES(?,?,?)',(identity,local or '',time.time()))
+        return True
+    def mesh_download_apply(self,c,event):
+        name=self.mesh_names.get(event['node'],event['node'][:8])
+        if not self.mesh_download_store(c,event,name):return False
+        if event['type']=='download.done':self.mesh_check_local(event['data']['key'],c)
+        return True
+    def mesh_check_local(self,key=None,c=None):
+        """Mark shared downloads as present once MeshSync has delivered the complete file here."""
+        root=meshjournal.sync_root(self.settings().get('download_dir') or '')
+        if root is None:return 0
+        def run(c):
+            found=0
+            rows=c.execute("SELECT * FROM mesh_downloads WHERE state='done' AND path IS NOT NULL AND local IS NULL"+(' AND key=?' if key else ' LIMIT 200'),(key,) if key else ()).fetchall()
+            for r in rows:
+                target=root/r['path']
+                try:ok=target.is_file() and not target.is_symlink() and target.stat().st_size==r['size']
+                except OSError:ok=False
+                if not ok:continue
+                c.execute('UPDATE mesh_downloads SET local=? WHERE key=?',(str(target),r['key']))
+                for identity in {r['key'],*json.loads(r['works'] or '[]')}:
+                    c.execute('INSERT OR REPLACE INTO downloaded_items VALUES(?,?,?)',(identity,str(target),time.time()))
+                found+=1
+            return found
+        if c is not None:return run(c)
+        with self.db() as c:return run(c)
