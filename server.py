@@ -1,12 +1,20 @@
 import subprocess,sys
-import json, os, secrets, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal
+from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
 ROOT.mkdir(parents=True,exist_ok=True);os.chmod(ROOT,0o700)
+# NAS packages listen on the LAN with a fixed port; that always requires a login.
+LISTEN=os.environ.get('MEDIATHEKATLAS_LISTEN','127.0.0.1')
+PORT=int(os.environ.get('MEDIATHEKATLAS_PORT','0') or 0)
+NETWORK=LISTEN not in ('127.0.0.1','localhost','::1') or os.environ.get('MEDIATHEKATLAS_LOGIN')=='1'
+MANAGED=os.environ.get('MEDIATHEKATLAS_MANAGED','')
+DEFAULT_DOWNLOAD_DIR=os.environ.get('MEDIATHEKATLAS_DOWNLOAD_DIR') or str(Path.home()/'Movies'/'MediathekAtlas')
+SESSION_COOKIE='mediathekatlas_session'
 INSTANCE=None
 if __name__=='__main__':
     from instance import Instance
@@ -18,7 +26,8 @@ if __name__=='__main__':
         raise SystemExit(0)
 diagnostics.setup(ROOT)
 metadata.configure_provider_state(ROOT/'provider-pauses.json')
-diagnostics.event('application_start',version='0.4.7')
+diagnostics.event('application_start',version=VERSION,network=NETWORK,managed=MANAGED or None)
+ACCESS=access.Access(ROOT,[DEFAULT_DOWNLOAD_DIR]) if NETWORK else None
 TOKEN=secrets.token_urlsafe(32);STOP=threading.Event()
 diagnostics.register_secrets(TOKEN)
 
@@ -42,7 +51,7 @@ def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'))
-    return {'download_dir':str(Path.home()/'Movies'/'MediathekAtlas'),'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
     with db() as c:
@@ -94,28 +103,48 @@ IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
 imdb_archive.ACTIVE=IMDB
 _STATUS_CACHE=(0,{})
 _TREE_CACHE=(float('-inf'),[])
+_TREE_TTL=60
 _TREE_LOCK=threading.Lock()
 _TREE_BUSY=False
 _TREE_ERROR=''
 def catalog_tree():
     global _TREE_BUSY
     with _TREE_LOCK:
-        if not _TREE_BUSY and time.monotonic()-_TREE_CACHE[0]>60:
+        if not _TREE_BUSY and time.monotonic()-_TREE_CACHE[0]>_TREE_TTL:
             _TREE_BUSY=True
             threading.Thread(target=refresh_tree,daemon=True,name='catalog_categories').start()
         return {'tree':_TREE_CACHE[1],'loading':_TREE_BUSY,'error':_TREE_ERROR}
 def refresh_tree():
-    global _TREE_CACHE,_TREE_BUSY,_TREE_ERROR
+    global _TREE_CACHE,_TREE_BUSY,_TREE_ERROR,_TREE_TTL
     started=time.monotonic()
     try:
         with db() as c:rows=catalog.tree(c)
-        with _TREE_LOCK:_TREE_CACHE=(time.monotonic(),rows);_TREE_ERROR=''
-        diagnostics.event('catalog_tree_complete',seconds=round(time.monotonic()-started,2),categories=len(rows))
+        seconds=time.monotonic()-started
+        # The UI polls every 30 s; a 4 s aggregation every minute kept a core busy. Slow catalogues refresh
+        # less often, user edits still invalidate the cache immediately.
+        with _TREE_LOCK:_TREE_CACHE=(time.monotonic(),rows);_TREE_ERROR='';_TREE_TTL=max(60,min(900,seconds*60))
+        diagnostics.event('catalog_tree_complete',seconds=round(seconds,2),categories=len(rows),next_seconds=round(_TREE_TTL))
     except Exception as e:
         diagnostics.error('catalog_tree_failed',e)
         with _TREE_LOCK:_TREE_ERROR=core.safe_error(e);_TREE_CACHE=(time.monotonic(),_TREE_CACHE[1])
     finally:
         with _TREE_LOCK:_TREE_BUSY=False
+_RECOGNITION={'at':float('-inf'),'rows':[],'busy':False,'error':''}
+def recognition():
+    # Grouping 700k works by channel takes seconds; compute in the background and reuse for 10 minutes.
+    with _TREE_LOCK:
+        if not _RECOGNITION['busy'] and time.monotonic()-_RECOGNITION['at']>600:
+            _RECOGNITION['busy']=True;threading.Thread(target=refresh_recognition,daemon=True,name='catalog_recognition').start()
+        return {'channels':_RECOGNITION['rows'],'loading':_RECOGNITION['busy'],'error':_RECOGNITION['error']}
+def refresh_recognition():
+    try:
+        with db() as c:rows=catalog.recognition(c)
+        with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),rows=rows,error='')
+    except Exception as e:
+        diagnostics.error('catalog_recognition_failed',e)
+        with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),error=core.safe_error(e))
+    finally:
+        with _TREE_LOCK:_RECOGNITION['busy']=False
 def catalog_status():
     global _STATUS_CACHE
     snapshot=_STATUS_CACHE
@@ -128,10 +157,18 @@ def catalog_status():
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
-    def send(self,data,status=200,ctype='application/json'):
+    def send(self,data,status=200,ctype='application/json',cookies=()):
         body=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode()
-        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.end_headers();self.wfile.write(body)
-    def valid_host(self):return self.headers.get('Host')==f'127.0.0.1:{self.server.server_port}'
+        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.send_header('Referrer-Policy','no-referrer')
+        for header in cookies:self.send_header('Set-Cookie',header)
+        self.end_headers();self.wfile.write(body)
+    # Desktop mode trusts only its loopback Host (DNS-rebinding guard). Network mode
+    # accepts any NAS name or address but requires a session cookie instead.
+    def valid_host(self):return NETWORK or self.headers.get('Host')==f'127.0.0.1:{self.server.server_port}'
+    def session(self):return access.cookie_token(self.headers.get('Cookie'),SESSION_COOKIE)
+    def authorized(self):return not NETWORK or ACCESS.valid(self.session())
+    def session_cookie(self,token,seconds=access.SESSION_SECONDS):
+        return f'{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={seconds}'
     def do_GET(self):
         try:self.get()
         except (BrokenPipeError,ConnectionResetError):pass
@@ -142,16 +179,23 @@ class Handler(BaseHTTPRequestHandler):
     def get(self):
         if not self.valid_host():return self.send({'error':'Ungültiger Host'},403)
         path=urllib.parse.urlsplit(self.path).path
-        if path=='/':
-            body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN)
-            return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path=='/icon.svg':return self.send((Path(__file__).parent/'assets'/'icon.svg').read_bytes(),ctype='image/svg+xml')
-        if path in ('/app.js','/style.css'):
+        if path in ('/style.css','/login.js'):
             return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript' if path.endswith('js') else 'text/css')
+        if path=='/api/login-state':
+            if not NETWORK:return self.send({'required':False})
+            return self.send({'required':True,'configured':ACCESS.configured(),'setup_files':ACCESS.ensure_setup_code() if not ACCESS.configured() else []})
+        if not self.authorized():
+            if path=='/':return self.send((Path(__file__).parent/'web'/'login.html').read_text().replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
+            return self.send({'error':'Anmeldung erforderlich','login':True},401)
+        if path=='/':
+            body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
+            return self.send(body.encode(),ctype='text/html; charset=utf-8')
+        if path=='/app.js':return self.send((Path(__file__).parent/'web'/'app.js').read_bytes(),ctype='text/javascript')
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
-            return self.send(diagnostics.export({'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
+            return self.send(diagnostics.export({'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/review':
@@ -163,19 +207,30 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(result)
         if path=='/api/catalog-tree':
             return self.send(catalog_tree())
+        if path=='/api/recognition':return self.send(recognition())
         if path=='/api/alternatives':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata']},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name','')},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     def do_POST(self):
         global _TREE_CACHE,_STATUS_CACHE
-        if not self.valid_host() or self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
+        if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
+        if NETWORK and self.path=='/api/login':return self.login()
+        if not self.authorized():return self.send({'error':'Anmeldung erforderlich','login':True},401)
+        if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
         try:
             length=int(self.headers.get('Content-Length','0'))
             if not 0<length<=100000:raise ValueError('Ungültige Anfragegröße')
             d=json.loads(self.rfile.read(length));path=self.path
+            if NETWORK and path=='/api/logout':
+                ACCESS.logout(self.session());return self.send({'ok':True},cookies=[self.session_cookie('',0)])
+            if NETWORK and path=='/api/password':
+                token=ACCESS.change_password(str(d.get('current','')),str(d.get('new','')))
+                diagnostics.event('access_password_changed')
+                return self.send({'ok':True},cookies=[self.session_cookie(token)])
+            if path=='/api/shutdown' and MANAGED:raise ValueError('Der Dienst wird vom NAS verwaltet. Bitte im Paket-Zentrum bzw. App Center stoppen.')
             if path=='/api/shutdown':
                 self.send({'ok':True});STOP.set()
                 threading.Thread(target=self.server.shutdown,daemon=True).start()
@@ -187,6 +242,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/search':
                 found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
                 with db() as c:catalog.ingest(c,found['results'])
+                with _TREE_LOCK:_TREE_CACHE=(float('-inf'),_TREE_CACHE[1])
                 return self.send({'imported':len(found['results'])})
             if path=='/api/sync':
                 SERVICE.restart.set();SERVICE.wake.set();diagnostics.event('sync_requested');return self.send({'ok':True})
@@ -212,7 +268,7 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
                     if not o:raise ValueError('Katalogeintrag nicht gefunden')
-                    catalog.save_metadata(c,o[0],m)
+                    SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
                 _TREE_CACHE=(float('-inf'),[]);_STATUS_CACHE=(0,{})
                 return self.send({'ok':True})
             if path=='/api/candidates':
@@ -236,10 +292,17 @@ class Handler(BaseHTTPRequestHandler):
                     if d.get('clear_'+k):s[k]=''
                 for k in ('auto_catalog','auto_metadata'):
                     if k in d:s[k]=bool(d[k])
+                if 'mesh_dir' in d:
+                    folder=str(d['mesh_dir'] or '').strip()
+                    # Validates mount and marker; only an explicit request prepares a non-MeshSync folder.
+                    if folder:folder=str(meshjournal.check_folder(folder,create=d.get('mesh_init') is True))
+                    s['mesh_dir']=folder
+                if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
                 with db() as c:
                     c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
                     if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
                         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
+                if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
                 return self.send({'ok':True})
             if path=='/api/download':
                 if d.get('confirmed') is not True:raise ValueError('Metadaten zuerst prüfen und bestätigen')
@@ -249,7 +312,7 @@ class Handler(BaseHTTPRequestHandler):
                 if d.get('quality','best')=='best' and choices:row['_download_url']=choices[0]['url']
                 with db() as c:
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
-                    if o:catalog.save_metadata(c,o[0],m)
+                    if o:SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
                 dest=str(core.target(settings()['download_dir'],m,d['id']))
                 with db() as c:duplicate=c.execute("SELECT 1 FROM jobs WHERE state IN ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1",(dest,)).fetchone()
                 if duplicate:raise ValueError('Dieses Ziel ist bereits in der Warteschlange oder fertig')
@@ -262,6 +325,7 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     for wid in ids[:48]:c.execute('INSERT OR IGNORE INTO artwork_checks SELECT id,? FROM works WHERE id=?',(-time.time(),wid))
                 return self.send({'ok':True})
+            if path=='/api/open-download' and NETWORK:raise ValueError('Die Datei liegt auf dem NAS. Bitte über File Station bzw. die Netzwerkfreigabe öffnen.')
             if path=='/api/open-download':
                 with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(d['id'],)).fetchone()
                 if not row:raise ValueError('Nur abgeschlossene Downloads können geöffnet werden')
@@ -284,15 +348,40 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.error('http_post_failed',e,endpoint=urllib.parse.urlsplit(self.path).path)
             self.send({'error':core.safe_error(e)},400)
 
+    def login(self):
+        client=self.client_address[0]
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if not 0<length<=10000:raise ValueError('Ungültige Anfragegröße')
+            d=json.loads(self.rfile.read(length))
+            token=ACCESS.login(client,str(d.get('password','')),str(d.get('setup_code','')),str(d.get('new_password','')))
+        except PermissionError as e:
+            diagnostics.event('access_login_blocked');return self.send({'error':str(e)},429)
+        except (ValueError,TypeError,AttributeError) as e:
+            diagnostics.event('access_login_failed');return self.send({'error':str(e) if isinstance(e,ValueError) else 'Ungültige Anfrage'},403)
+        diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
+
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer resolves socket.getfqdn() here; reverse DNS can stall startup for ~30 s on macOS.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name,self.server_port=self.server_address[:2]
+
 if __name__=='__main__':
-    server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    server=Server((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         SERVICE.start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
-    INSTANCE.publish(url,'0.4.7')
+    if NETWORK:
+        print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)
+        if not ACCESS.configured():print('Einrichtungscode liegt in: '+', '.join(ACCESS.ensure_setup_code()),flush=True)
+    INSTANCE.publish(url,VERSION)
     if '--no-browser' not in __import__('sys').argv:webbrowser.open(url)
+    def terminate(*_):raise KeyboardInterrupt
+    # NAS service scripts stop with SIGTERM; close the server and lock cleanly.
+    signal.signal(signal.SIGTERM,terminate)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:STOP.set();server.server_close();INSTANCE.close()

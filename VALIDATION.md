@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## Verbund mehrerer Systeme (Branch, 28. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 11 neue Verbundtests in `tests/test_mesh.py` und ein neuer Downloadtest.
+- Zwei simulierte Instanzen mit getrennten Datenbanken und gemeinsamem Ordner: 60 Titel aufgeteilt, beide Instanzen am Ende identisch zugeordnet; höchstens die beim Zusammentreffen laufenden Titel werden doppelt geprüft (Test lässt maximal 2 zu, in 8 wiederholten Läufen bestanden).
+- Geprüft: Markerprüfung ohne Anlegen fehlender Laufwerke, unveröffentlichte Segmente bleiben unsichtbar, abgerissene Zeile nach Absturz, gefälschte/fremde Zeilen, Gewichtung und Ausfall von Knoten, Übernahme ohne erneute Anbieterabfrage, Vorrang manueller Zuordnungen, Einzelbetrieb bei fehlendem Ordner.
+- Download-Zwischendateien: Test schlägt mit dem alten Stand fehl (`original.bin` sichtbar) und besteht mit dem neuen.
+- Chromium: Verbund-Einstellungen gespeichert, Fehlermeldung bei fehlendem Ordner, Statusanzeige mit eigenem System, keine JavaScript-Fehler.
+- Nicht geprüft: echter MeshSync-Abgleich zwischen zwei NAS, Synology/QNAP-Laufzeit.
+
+
 27. Oktober 2026, Linux-Testumgebung.
 
 - 97 automatisierte Tests bestanden. Bestehende Katalog-, Serienpaket-, FFmpeg-, Diagnose-, OMDb- und Runtime-Prüfungen bleiben enthalten.
@@ -39,3 +49,19 @@ Diagnosebasis: MediathekAtlas_Diagnose_2026-10-27T09-57-24-279Z.zip und image(20
 
 ## 0.4.7
 138 Python-Tests: erfolgreich. Neue Tests prüfen zulässige Bewertungsskalen, Ablehnung abweichender IMDb-ID/Medienart, null OMDb-Aufrufe während Pause, Empfehlungen nach Stimmen und Bewertung sowie Downloadstatus. Bestehende Browser-Suite erfolgreich, keine JS-Fehler. Zusätzliche Browserprüfung: 2048px Hauptbreite, drei Karten füllen die komplette Zeile, 390px ohne horizontalen Überlauf, Rotten-Tomatoes-/Metacritic-Werte mit Quelle in Details. Screenshots intern visuell geprüft. Python-/JS-/Shell-Syntax geprüft. Anbieterantworten in Tests simuliert; kein Live-Test mit persönlichen Zugangsdaten. Native macOS-Ausführung weiterhin nicht testbar.
+
+0.4.8 (28.10.2026, Linux-Testumgebung): 149 Tests bestanden (Python 3.13). Neu: Passwort-Hash, Sitzungen, Fehlversuchssperre, Einrichtungscode und Übernahme des Assistentenpassworts. SPK wird gebaut, entpackt und mit den echten DSM-Skripten (postinst, start-stop-status start/status/stop) gestartet: Anmeldung, beliebiger Host-Header nur mit Sitzung, Ablehnung von „App beenden“, Downloadpfad aus der Paketkonfiguration, Status 3 nach Stopp. QNAP-Dienstskript mit Ersteinrichtung über die Code-Datei und Rechteabgabe an einen unprivilegierten Benutzer (UID geprüft). Desktop-Modus behält Host-Prüfung ohne Anmeldung. Chromium: Anmelde- und Ersteinrichtungsseite, NAS-Zugangsbereich, ausgeblendetes „App beenden“ visuell geprüft. Das QPKG wird ausschließlich in der GitHub-Action mit dem offiziellen QDK gebaut und dort strukturell geprüft. Nicht verifiziert: Installation auf echter Synology/QNAP-Hardware.
+
+Diagnose 0.4.7 vom 29.10.2026 (macOS arm64, Python 3.13, 2 h 47 min Protokoll, keine ERROR-Ereignisse): 148 Tests bestanden (Linux, Python 3.13), davon 9 neu. Geprüft: Rückstellung unaufgelöster Werke bei pausiertem OMDb mit wachsendem Abstand (1 h bis 24 h) statt stündlich, echte Anbieterfehler weiterhin stündlich; ein Protokollereignis je Anbieterprüfung mit Dauer (auch Wikidata); OMDb-Zugriffsfehler als WARNING; unveränderte Serienfolgen werden bei der Serienübernahme nicht neu geschrieben; ein Artwork-Abgleich gilt für alle Folgen derselben Serie, Fehler werden nicht übertragen; Genre-Baum wird bei langsamer Berechnung seltener neu ermittelt, Suche und Bearbeitung verwerfen den Cache sofort. Lokaler Serverstart mit authentifiziertem Genre-Baum-Abruf geprüft. Nicht verifiziert: Verhalten mit dem Originalkatalog (720.844 Angebote) und echten API-Schlüsseln, native Ausführung unter macOS.
+
+## 0.5.0
+
+29.10.2026, Linux-Testumgebung (Python 3.13): 186 Tests bestanden, 1 übersprungen. Enthält die Stände von 0.4.8 (NAS-Pakete, Anmeldung), Verbund mehrerer Systeme und die Diagnose-Fixes. Neu: 16 Tests für ARD-/ZDF-Senderdaten (Adresserkennung, Auswertung der Antworten, Sendereihe gegen Sammelrubrik, bestätigte Folgennummern, Zwischenspeicher, ZDF-Token als geschütztes Geheimnis, Pause bei HTTP 429, Rückstellung statt Warnung bei Ausfall, Überspringen der Filmdatenbanken für bekannte Sendereihen, erlaubte Bildadressen). Die Testdaten sind aus den Feldpfaden von yt-dlp (ard.py, zdf.py) nachgebildet, nicht live aufgezeichnet. SPK 0.5.0 gebaut und Paketinhalt geprüft (broadcaster.py, meshjournal.py, access.py, version.py enthalten); macOS-App gebaut. QPKG wird nur in CI mit dem QNAP QDK gebaut.
+
+Nicht verifiziert: Live-Abfragen der ARD- und ZDF-Schnittstellen (aus der Testumgebung gesperrt), Verhalten mit dem Originalkatalog, native Ausführung unter macOS, Installation auf echter NAS-Hardware, Verbund mit echtem MeshSync.
+
+## 0.5.1
+
+29.10.2026, Linux-Testumgebung (Python 3.13): siehe Abschnitt unten für die Testzahl. Neu: 7 Tests für Sendungsbeiträge (Formatbegriffe nur im Thema, kurze Beiträge häufiger Themen, Filme/Serien/Trailer/Sammelrubriken ausgenommen, Einordnung unter eine gemeinsame Sendung, Abgleich-Warteschlange überspringt Beiträge, ausdrückliche Anforderung wird einmal abgeglichen und nicht erneut eingeordnet, Erkennungsquote je Sender, Neustart der Einordnung nach Import). Lasttest mit 60.000 synthetischen Werken: Einordnung 5,1 s für den vollständigen Durchlauf (im Hintergrund, in Blöcken zu 500), Erkennungsquote 0,3 s. Kartenansicht im Headless-Chromium bei 1600 px und 390 px Breite geprüft (feste Kartenbreite 240 px, gleiche Kartenhöhe je Reihe, einspaltig auf dem Telefon).
+
+Nicht verifiziert: Einordnung und Laufzeit mit dem Originalkatalog (rund 720.000 Werke), native Ausführung unter macOS, Installation auf echter NAS-Hardware.

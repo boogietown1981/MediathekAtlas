@@ -1,0 +1,16 @@
+{
+  ".url": {
+    "de.mediathekatlas": {
+      "type": "url",
+      "title": "MediathekAtlas",
+      "desc": "Mediatheken-Katalog und Downloads",
+      "icon": "images/MediathekAtlas_{0}.png",
+      "protocol": "http",
+      "port": "@PORT@",
+      "url": "/",
+      "allUsers": true,
+      "grantPrivilege": "all",
+      "advanceGrantPrivilege": true
+    }
+  }
+}

@@ -2,7 +2,8 @@
 import json,time,urllib.parse,os
 from pathlib import Path
 import core,diagnostics,metadata
-HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com'}
+import broadcaster
+HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com'}|broadcaster.IMAGE_HOSTS
 def valid(url):
     p=urllib.parse.urlsplit(str(url or ''))
     return p.scheme=='https' and p.hostname in HOSTS and not p.username and p.port in (None,443)
@@ -81,6 +82,27 @@ def save_image(url,stem):
         return True
     except (OSError,ValueError,TimeoutError):return False
 
+def apply(m,found):
+    for field in ('poster','fanart'):
+        if found.get(field) and not m.get(field):m[field]=found[field]
+    if m.get('rating') is None and found.get('rating') is not None:
+        for field in ('rating','votes','rating_source'):m[field]=found.get(field)
+    for field in ('networks','studios','ratings','imdb_id','discovery_enriched'):
+        if found.get(field):m[field]=found[field]
+    m['artwork_provider']=found.get('artwork_provider',m.get('artwork_provider',''))
+
+def share_series(c,row,m,found):
+    """Apply one series lookup to all episodes of the same series instead of repeating it per episode."""
+    if m.get('kind')!='series' or not row['show_key'] or not m.get('reference_id'):return 0
+    count=0;until=time.time()+86400
+    for peer in c.execute("SELECT id,meta FROM works WHERE show_key=? AND id!=? AND state IN ('manual','matched','identified')",(row['show_key'],row['id'])).fetchall():
+        own=json.loads(peer['meta'])
+        if own.get('kind')!='series' or own.get('provider')!=m.get('provider') or own.get('reference_id')!=m.get('reference_id'):continue
+        before=json.dumps(own,sort_keys=True);apply(own,found)
+        if json.dumps(own,sort_keys=True)!=before:c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(own),peer['id']))
+        c.execute('INSERT OR REPLACE INTO artwork_checks VALUES(?,?)',(peer['id'],until));count+=1
+    return count
+
 def run_once(service):
     config=service.settings()
     if not config.get('auto_metadata',True) or not (config.get('tvdb') or config.get('tmdb') or config.get('omdb')):return False
@@ -98,17 +120,14 @@ def run_once(service):
         if not errors and found:found['discovery_enriched']=True
         if not errors:
             with service.db() as c:c.execute('INSERT OR REPLACE INTO artwork_cache VALUES(?,?,?)',(key,json.dumps(found),time.time()))
+    shared=0
     with service.db() as c:
         current=c.execute('SELECT meta FROM works WHERE id=?',(row['id'],)).fetchone()
         if current and current[0]==original:
-            for field in ('poster','fanart'):
-                if found.get(field) and not m.get(field):m[field]=found[field]
-            if m.get('rating') is None and found.get('rating') is not None:
-                for field in ('rating','votes','rating_source'):m[field]=found.get(field)
-            for field in ('networks','studios','ratings','imdb_id','discovery_enriched'):
-                if found.get(field):m[field]=found[field]
-            m['artwork_provider']=found.get('artwork_provider',m.get('artwork_provider',''))
+            apply(m,found)
             c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
-    service.artwork_checked+=1
-    diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors)
+            if not errors:shared=share_series(c,row,m,found)
+    service.artwork_checked+=1+shared
+    # Cache hits repeat a known result; logging each of them crowded real events out of the rotating log.
+    if not cache or errors:diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors,shared=shared)
     return True

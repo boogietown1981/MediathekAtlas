@@ -1,5 +1,5 @@
 """Local work/episode catalogue, alternative offers and conservative matching."""
-import hashlib,json,re,time,unicodedata
+import hashlib,json,re,sqlite3,time,unicodedata
 import core
 SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
@@ -17,6 +17,7 @@ CREATE INDEX IF NOT EXISTS work_show ON works(show_key);
 CREATE TABLE IF NOT EXISTS work_genres(work_id TEXT,genre TEXT,PRIMARY KEY(work_id,genre));
 CREATE INDEX IF NOT EXISTS genre_index ON work_genres(genre,work_id);
 CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,providers INTEGER,hlc INTEGER,node TEXT,payload TEXT);
 '''
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
 SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K)[)\]]\s*')
@@ -143,6 +144,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     if state=='recognized':clauses.append("w.state IN ('matched','manual','identified')")
     elif state=='pending':clauses.append("w.state IN ('pending','retry')")
     elif state=='review':clauses.append("w.state='review'")
+    elif state=='format':clauses.append("w.state='format'")
     if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
     if genre:
         if genre=='Unbekannt':clauses.append('NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)')
@@ -176,6 +178,7 @@ def stats(c):
        'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
        'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
        'review':c.execute("SELECT COUNT(*) FROM works WHERE state='review'").fetchone()[0],
+       'formats':c.execute("SELECT COUNT(*) FROM works WHERE state='format'").fetchone()[0],
        'sync':get_state(c,'sync',{'phase':'waiting'}),'last_complete':get_state(c,'last_complete',0)}
 
 def canonical(m):
@@ -223,7 +226,10 @@ def propagate_series(c,old_show,m):
     # Transfer work metadata, never a sibling's episode number or episode plot.
     common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source') if k in m}
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
-        own=json.loads(row['meta']);own.update(common)
+        own=json.loads(row['meta'])
+        # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
+        if row['state']=='identified' and all(own.get(k)==v for k,v in common.items()):continue
+        own.update(common)
         save_metadata(c,row['id'],own,'identified')
 
 def prioritize(c,ids=None,show=''):
@@ -232,9 +238,69 @@ def prioritize(c,ids=None,show=''):
     for wid in (ids or [])[:1000]:
         row=c.execute('SELECT state FROM works WHERE id=?',(wid,)).fetchone()
         if not row or row[0] in ('manual','matched'):continue
+        if row[0]=='format':
+            # An explicit request scans a format contribution once and keeps it out of the format pass.
+            m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0]);m['scan_requested']=True
+            c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE id=?",(wid,))
         c.execute('INSERT OR IGNORE INTO metadata_priority VALUES(?,?)',(wid,time.time()));count+=1
     return count
+
+# Recurring broadcast formats (news, regional and service magazines). Their single contributions are
+# not in any film database; they are grouped under their format and not queried (diagnosis 0.4.7).
+FORMAT_WORDS=re.compile(r'(?i)\b(?:nachrichten|tagesschau|tagesthemen|aktuell|journal|heute|wetter|sportschau|sportstudio|magazin|lokalzeit|abendschau|landesschau|hessenschau|regional|drehscheibe|morgenmagazin|mittagsmagazin|pressekonferenz|gottesdienst|podcast|kompakt|update|live)\b')
+FORMAT_GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','dokumentation','dokumentationen','doku','dokus','reportage','sonstiges','sonstige','unterhaltung','filme im ersten'}
+TRAILER=re.compile(r'(?i)^\s*(?:trailer|teaser|vorschau)\b')
+
+def format_contribution(m,source,topic_works):
+    """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
+    topic=cleaned(source.get('topic'));title=cleaned(source.get('title'))
+    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or key(topic)==key(title):return False
+    if TRAILER.search(title):return False
+    if FORMAT_WORDS.search(topic):return topic_works>=2
+    return int(source.get('duration') or 0)<600 and topic_works>=3
+
+def assign_formats(c,limit=500):
+    """Group news and magazine contributions under their format and take them out of the provider scan."""
+    import broadcaster
+    cursor=get_state(c,'format_cursor',0)
+    if cursor=='complete':return 0,0
+    rows=c.execute("SELECT rowid AS rid,* FROM works WHERE rowid>? ORDER BY rowid LIMIT ?",(cursor,limit)).fetchall()
+    counts={};assigned=0
+    for row in rows:
+        cursor=row['rid']
+        if row['kind'] not in ('unknown','other') or row['state'] not in ('pending','retry'):continue
+        best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(row['id'],)).fetchone()
+        if not best:continue
+        source=json.loads(best[0]);m=json.loads(row['meta']);topic=row['topic'] or source.get('topic') or ''
+        if topic not in counts:counts[topic]=c.execute('SELECT COUNT(*) FROM works WHERE topic=?',(topic,)).fetchone()[0]
+        if not format_contribution(m,source,counts[topic]):continue
+        fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
+        m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
+        m.update(kind='series',title=fmt,episode_title=cleaned(source.get('title')),year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
+                 state='format',genres=hints or m.get('genres',[]),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
+                 reason='Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
+        c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+        for g in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+        assigned+=1
+    set_state(c,'format_cursor',cursor if rows else 'complete')
+    return len(rows),assigned
+
+def restart_formats(c):set_state(c,'format_cursor',0)
+
+def recognition(c):
+    """Recognition per channel and state; formats are counted separately from open works."""
+    try:
+        rows=c.execute("SELECT COALESCE(json_extract(o.payload,'$.channel'),'') channel,w.state,COUNT(DISTINCT w.id) n FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.kind!='other' GROUP BY channel,w.state").fetchall()
+    except sqlite3.OperationalError:
+        rows=c.execute("SELECT '' channel,w.state,COUNT(*) n FROM works w WHERE w.kind!='other' GROUP BY w.state").fetchall()
+    out={}
+    for r in rows:
+        d=out.setdefault(r['channel'] or 'Unbekannt',{'channel':r['channel'] or 'Unbekannt','works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0})
+        state=r['state'];d['works']+=r['n']
+        key_={'matched':'matched','manual':'matched','identified':'identified','format':'format','review':'review'}.get(state,'open');d[key_]+=r['n']
+    return sorted(out.values(),key=lambda d:-d['works'])
 
 def reclassify_batch(c,limit=500):
     cursor=get_state(c,'reclassify_cursor_v030',0)
@@ -263,7 +329,7 @@ def review_listing(c,query='',state='open',offset=0):
     """Flat work/episode list: do not hide unresolved episodes behind a series parent."""
     clauses=['EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)'];args=[]
     if state=='open':clauses.append("w.state IN ('pending','retry','review','identified')")
-    elif state in ('pending','retry','review','identified','manual','matched'):clauses.append('w.state=?');args.append(state)
+    elif state in ('pending','retry','review','identified','manual','matched','format'):clauses.append('w.state=?');args.append(state)
     if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
     where=' AND '.join(clauses);offset=max(0,int(offset))
     total=c.execute('SELECT COUNT(*) FROM works w WHERE '+where,args).fetchone()[0]

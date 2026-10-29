@@ -1,0 +1,5 @@
+{
+  "defaults": {"run-as": "package"},
+  "username": "mediathekatlas",
+  "groupname": "mediathekatlas"
+}

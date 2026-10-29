@@ -11,4 +11,4 @@ def observe(provider,status,count=0):
         else:
             r['last_success']=time.time();r['candidates']+=count;r['with_hits']+=int(count>0)
 def snapshot():
-    with _LOCK:return {'since':_STARTED,'rows':[dict(_ROWS.get(p,{'provider':p,'checks':0,'with_hits':0,'candidates':0,'errors':0,'paused_skips':0,'last_success':None})) for p in ('TMDB','TVDB','OMDb','Wikidata','IMDb Offline')]}
+    with _LOCK:return {'since':_STARTED,'rows':[dict(_ROWS.get(p,{'provider':p,'checks':0,'with_hits':0,'candidates':0,'errors':0,'paused_skips':0,'last_success':None})) for p in ('TMDB','TVDB','OMDb','Wikidata','IMDb Offline','ARD Mediathek','ZDF Mediathek')]}

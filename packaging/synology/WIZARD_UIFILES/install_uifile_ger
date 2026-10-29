@@ -1,0 +1,12 @@
+[{
+  "step_title": "MediathekAtlas einrichten",
+  "items": [{
+    "type": "password",
+    "desc": "MediathekAtlas ist danach im Heimnetz unter http://&lt;NAS&gt;:@PORT@/ erreichbar. Lege das Passwort für die Weboberfläche fest (mindestens 8 Zeichen); es lässt sich später unter Einstellungen ändern.<br><br>Downloads landen im freigegebenen Ordner <b>MediathekAtlas</b> (wird bei Bedarf angelegt, erreichbar über File Station, SMB und Medienserver). Katalog und Einstellungen bleiben im Paketdatenordner. Für Downloads wird FFmpeg benötigt, z. B. das Paket „ffmpeg7“ von SynoCommunity.",
+    "subitems": [{
+      "key": "wizard_password",
+      "desc": "Passwort",
+      "validator": {"allowBlank": false, "minLength": 8}
+    }]
+  }]
+}]

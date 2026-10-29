@@ -23,7 +23,8 @@ def remux(source,dest,meta):
     if meta['kind']=='series':tags.update(show=meta['title'],season_number=str(meta['season']),episode_id=str(meta['episode']))
     args=[ffmpeg,'-nostdin','-v','error','-n','-i',str(source),'-map','0:v','-map','0:a?','-map','0:s?','-c','copy','-map_metadata','0']
     for k,v in tags.items():args+=['-metadata',k+'='+v]
-    args += [str(dest)]
+    # Explicit container: staged outputs end in .partial so sync tools skip them.
+    args += ['-f','matroska',str(dest)]
     r=subprocess.run(args,capture_output=True,timeout=7200)
     if r.returncode:raise ValueError('MKV-Erstellung fehlgeschlagen: '+r.stderr.decode(errors='replace')[-250:])
     original=probe(source);final=probe(dest)
@@ -52,11 +53,12 @@ def run(row,meta,root,quality,update,cancelled):
     dest=core.target(root,meta,row['_id'])
     dest.parent.mkdir(parents=True,exist_ok=True)
     if any(p.exists() for p in (dest,dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
-    lock=dest.with_suffix('.lock')
+    # Every staged name ends in .partial: MeshSync and similar tools skip these until publication.
+    lock=dest.with_suffix('.lock.partial')
     fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)
     try:
-        with tempfile.TemporaryDirectory(prefix='.mediathekatlas-',dir=dest.parent) as work:
-            src=Path(work)/'original.bin';out=Path(work)/'tagged.mkv'
+        with tempfile.TemporaryDirectory(prefix='.mediathekatlas-',suffix='.partial',dir=dest.parent) as work:
+            src=Path(work)/'original.bin.partial';out=Path(work)/'tagged.mkv.partial'
             with core.open_url(url) as response,src.open('wb') as f:
                 ctype=response.headers.get('Content-Type','').lower()
                 if any(x in ctype for x in ('text/html','mpegurl','dash+xml')):raise ValueError('Server liefert keine direkte Videodatei')
@@ -81,8 +83,8 @@ def run(row,meta,root,quality,update,cancelled):
             if cancelled():raise ValueError('Download abgebrochen')
             streams=core.parse_streams(details);duration=float(details.get('format',{}).get('duration') or 0)
             # Stage all mandatory sidecars before publishing any file.
-            nfo=Path(work)/'video.nfo';nfo.write_bytes(core.nfo(meta,streams,duration))
-            metadata=Path(work)/'video.json';metadata.write_text(json.dumps({'schema':'MediathekAtlas/1','metadata':meta,'source':row,'streams':streams,'duration':duration,'download_url':url},ensure_ascii=False,indent=2))
+            nfo=Path(work)/'video.nfo.partial';nfo.write_bytes(core.nfo(meta,streams,duration))
+            metadata=Path(work)/'video.json.partial';metadata.write_text(json.dumps({'schema':'MediathekAtlas/1','metadata':meta,'source':row,'streams':streams,'duration':duration,'download_url':url},ensure_ascii=False,indent=2))
             published=[]
             try:
                 for a,b in [(nfo,dest.with_suffix('.nfo')),(metadata,dest.with_suffix('.metadata.json')),(out,dest)]:

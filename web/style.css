@@ -37,3 +37,15 @@ main,.cataloglayout,.catalogcontent,.card,.cardbody{min-width:0}
 .pick-badge{color:#ffdfa0;background:#3a3020;border:1px solid #66502d;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.5}
 .rating-chips{display:flex;flex-wrap:wrap;gap:8px}.rating-chip{padding:8px 10px;background:#202d3a;border-radius:6px;font-size:12px;line-height:1.5}
 @media(max-width:650px){.sectionhead{flex-wrap:wrap}.sectionhead>div{display:flex;flex-wrap:wrap}#search{min-width:0}.catalogcontent .grid:not(.episode-list){grid-template-columns:1fr}}
+
+.login-page{display:block}.login{margin:8vh auto;max-width:460px;padding:0 16px;width:100%}.login .panel{margin-top:24px}.login .eyebrow{display:block;margin-top:12px}.login ul.path{padding-left:28px}#login-error{color:#ffcf8a}#login .primary{margin-top:10px}
+
+[hidden]{display:none!important}#logout{display:block;margin-top:8px}
+tr.total td{font-weight:600}
+/* 0.5.1: cards keep a fixed column width and aligned rows; few results no longer stretch across the page. */
+.catalogcontent .grid:not(.episode-list){grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),240px));justify-content:start;align-items:stretch}
+.grid:not(.episode-list) .cardbody h3{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:3;line-clamp:3;overflow:hidden;font-size:17px;line-height:1.25;height:3.75em}
+.grid:not(.episode-list) .cardbody>.badge,.grid:not(.episode-list) .cardbody>.eyebrow,.grid:not(.episode-list) .alternatives>summary,.grid:not(.episode-list) .file-details>summary{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.grid:not(.episode-list) .cardbody>.file-details,.grid:not(.episode-list) .cardbody>button:first-of-type{margin-top:auto}
+.grid:not(.episode-list) .cardbody>.file-details~button{margin-top:0}
+@media(max-width:650px){.catalogcontent .grid:not(.episode-list){grid-template-columns:1fr}}

@@ -86,7 +86,7 @@ def _omdb(params,key,force=False):
     except OMDbError as e:
         with _LOCK:_OMDB_PAUSED[credential]=(time.time()+3600,e.reason,e.status)
         save_provider_state()
-        diagnostics.event('provider_access_error',provider='OMDb',reason=e.reason,http_status=e.status)
+        diagnostics.event('provider_access_error','WARNING',provider='OMDb',reason=e.reason,http_status=e.status)
         raise
     with _LOCK:
         _OMDB_PAUSED.pop(credential,None)
@@ -258,7 +258,26 @@ def candidates(row,meta,settings):
     out=[];warnings=[];deferred=[];checks=[]
     def checked(value):
         checks.append(value);provider_stats.observe(value['provider'],value['status'],value['count'])
+    import broadcaster
+    def from_broadcaster():
+        ref=broadcaster.reference(row)
+        if not ref:return None
+        start=time.monotonic()
+        try:
+            c=broadcaster.candidate(row,meta,broadcaster.lookup(row))
+            if c:c['plausibility_issues']=matching.issues(meta,c);out.append(c)
+            checked({'provider':ref[0],'status':'checked','count':int(bool(c))})
+            diagnostics.event('provider_complete',provider=ref[0],title=row.get('title',''),candidates=int(bool(c)),seconds=round(time.monotonic()-start,2))
+        except broadcaster.Unavailable:
+            if ref[0] not in deferred:deferred.append(ref[0])
+            checked({'provider':ref[0],'status':'paused','count':0})
+        except Exception as e:
+            checked({'provider':ref[0],'status':'error','count':0});warnings.append(ref[0]+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=ref[0],title=row.get('title',''))
+        return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
     import imdb_archive,matching
+    # A work already identified as a broadcaster's own Sendereihe is unknown to the film databases;
+    # asking them again for every episode only cost requests and quota.
+    if meta.get('provider') in broadcaster.PROVIDERS and broadcaster.reference(row):return from_broadcaster()
     if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
         try:
             local=imdb_archive.ACTIVE.candidates(row,meta)
@@ -279,12 +298,13 @@ def candidates(row,meta,settings):
             if field=='omdb' and omdb_status(settings[field])['paused']:
                 if 'OMDb' not in deferred:deferred.append('OMDb')
                 checked({'provider':provider,'status':'paused','count':0});break
-            start=time.monotonic();diagnostics.event('provider_start',provider=provider,title=title,kind=k)
+            # One event per finished check; a separate start event doubled the log and shortened its history.
+            start=time.monotonic()
             try:
                 hits=fn(row,meta,(settings[field],settings.get('tvdb_pin','')) if field=='tvdb' else settings[field],k,title);out.extend(hits)
                 for c in hits:c['plausibility_issues']=matching.issues(meta,c)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
-                diagnostics.event('provider_complete',provider=provider,title=title,candidates=len(hits),seconds=round(time.monotonic()-start,2))
+                diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
             except Exception as e:
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
                     if provider not in deferred:deferred.append(provider)
@@ -293,14 +313,16 @@ def candidates(row,meta,settings):
                 warnings.append(provider+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=provider,title=title)
         if matching.sufficient(meta,out):
             return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
+    # Own productions: the offer's own Mediathek page, then the free Wikidata fallback.
+    if not out:from_broadcaster()
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:
-            diagnostics.event('provider_start',provider='Wikidata',title=title,kind=k)
+            start=time.monotonic()
             try:
                 d=wikidata(title,k,meta.get('year') if k=='movie' else None)
                 if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
-                diagnostics.event('provider_complete',provider='Wikidata',title=title,candidates=int(bool(d)))
+                diagnostics.event('provider_complete',provider='Wikidata',title=title,kind=k,candidates=int(bool(d)),seconds=round(time.monotonic()-start,2))
             except Exception as e:checked({'provider':'Wikidata','status':'error','count':0});warnings.append('Wikidata: '+core.safe_error(e));diagnostics.error('provider_failed',e,provider='Wikidata',title=title)
     return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}

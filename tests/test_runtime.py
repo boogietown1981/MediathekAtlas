@@ -23,6 +23,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertIn(str(path),c)
     def test_broken_binary_falls_back(self):
         with tempfile.TemporaryDirectory() as root:
+            root=os.path.realpath(root)  # macOS: /var is a symlink to /private/var
             bad=self.fake(Path(root)/'bad','dyld: missing dylib',1)
             good=self.fake(Path(root)/'good')
             with patch('runtime_tools.candidates',return_value=[str(bad),str(good)]):r=runtime_tools.status('ffmpeg')
@@ -56,7 +57,7 @@ class RuntimeTests(unittest.TestCase):
     def test_bundle_icon_and_version(self):
         bundle=ROOT/'build'/'MediathekAtlas.app'/'Contents'
         if not bundle.exists():self.skipTest('Build first')
-        p=plistlib.loads((bundle/'Info.plist').read_bytes());self.assertEqual(p['CFBundleShortVersionString'],'0.4.7')
+        p=plistlib.loads((bundle/'Info.plist').read_bytes());from version import VERSION;self.assertEqual(p['CFBundleShortVersionString'],VERSION)
         data=(bundle/'Resources'/p['CFBundleIconFile']).read_bytes()
         self.assertEqual(data[:4],b'icns');self.assertEqual(struct.unpack('>I',data[4:8])[0],len(data))
         tags=[];pos=8
