@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.13 · QNAP ohne nohup (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund aus `MediathekAtlas-Startproblem.txt` (QTS 5.2.11, TS-932X, ARM Cortex-A57, Python 3.11.4 unter `/opt/QPython311`): `nohup: command not found`.
+- Neuer Test `MinimalShellTests`: Dienst startet mit einem PATH ohne `nohup` und antwortet; schlägt mit dem alten Skript fehl. Alle Tests bestanden.
+
 ## 0.5.12 · Startproblem-Hinweis (29. Oktober 2026, Linux-Testumgebung)
 
 - Feldbefund QNAP 0.5.10: Installation erfolgreich, Port 8730 „Verbindung abgelehnt“, Dienst also nicht gestartet; Ursache noch unbekannt (Protokoll liegt im versteckten `.qpkg`-Ordner).

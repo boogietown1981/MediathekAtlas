@@ -44,7 +44,8 @@ find_python(){
   # QNAP App Center "Python3" layouts differ between releases; search them all.
   for candidate in "$qnap_root"/bin/python3* "$qnap_root"/*/bin/python3* "$qnap_root"/opt/*/bin/python3* \
     /share/CACHEDEV*_DATA/.qpkg/Python3*/python3/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Python3*/bin/python3* \
-    /share/CACHEDEV*_DATA/.qpkg/Python3*/opt/*/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Entware/bin/python3*; do
+    /share/CACHEDEV*_DATA/.qpkg/Python3*/opt/*/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Entware/bin/python3* \
+    /opt/QPython3*/bin/python3* /share/CACHEDEV*_DATA/.qpkg/QPython3*/bin/python3*; do
     case "$candidate" in *-config|*'*'*) continue;; esac
     if python_ok "$candidate"; then echo "$candidate"; return 0; fi
   done
@@ -109,14 +110,16 @@ start(){
   [ -n "$ATLAS_FFPROBE" ] && export MEDIATHEKATLAS_FFPROBE="$ATLAS_FFPROBE"
   log "Start $("$PYTHON" -c 'import sys;print(sys.version.split()[0])') ($PYTHON), Port $ATLAS_PORT, Downloads $ATLAS_DOWNLOADS"
   cd "$ATLAS_APP" || return 1
-  if [ "$(id -u)" = 0 ] && [ -n "$ATLAS_RUN_AS" ] && [ "$ATLAS_RUN_AS" != root ]; then
-    # Drop root before any application code runs (initgroups keeps share groups).
-    nohup "$PYTHON" -c 'import os,pwd,sys
-u=pwd.getpwnam(sys.argv[1]);os.initgroups(u.pw_name,u.pw_gid);os.setgid(u.pw_gid);os.setuid(u.pw_uid)
-os.environ["HOME"]=os.environ["MEDIATHEKATLAS_HOME"];os.execv(sys.executable,[sys.executable,"server.py","--no-browser"])' "$ATLAS_RUN_AS" >> "$LOG" 2>&1 &
-  else
-    HOME="$ATLAS_HOME" nohup "$PYTHON" server.py --no-browser >> "$LOG" 2>&1 &
-  fi
+  # No nohup: QTS does not ship it. Python itself ignores SIGHUP (inherited across exec),
+  # optionally drops root first (initgroups keeps share groups), then runs the server.
+  run_as=""
+  [ "$(id -u)" = 0 ] && [ -n "$ATLAS_RUN_AS" ] && [ "$ATLAS_RUN_AS" != root ] && run_as="$ATLAS_RUN_AS"
+  HOME="$ATLAS_HOME" "$PYTHON" -c 'import os,signal,sys
+signal.signal(signal.SIGHUP,signal.SIG_IGN)
+if sys.argv[1]:
+    import pwd
+    u=pwd.getpwnam(sys.argv[1]);os.initgroups(u.pw_name,u.pw_gid);os.setgid(u.pw_gid);os.setuid(u.pw_uid)
+os.environ["HOME"]=os.environ["MEDIATHEKATLAS_HOME"];os.execv(sys.executable,[sys.executable,"server.py","--no-browser"])' "$run_as" < /dev/null >> "$LOG" 2>&1 &
   echo $! > "$PIDFILE"
   # Python itself is checked above; report early crashes (port in use, permissions).
   i=0

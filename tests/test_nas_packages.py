@@ -200,6 +200,25 @@ class StartProblemNoteTests(unittest.TestCase):
                 self.assertEqual(r.returncode,0,r.stdout+r.stderr);self.assertFalse(note.exists(),'note removed after a good start')
             finally:subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
 
+class MinimalShellTests(unittest.TestCase):
+    def test_service_starts_without_nohup(self):
+        # QTS (BusyBox) has no nohup; the service must not depend on it.
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d);tools=d/'bin';tools.mkdir();home=d/'data';share=d/'share'
+            for name in ('sh','sed','tail','cat','mkdir','chmod','date','id','wc','tr','grep','sleep','rm','mv','printf','dirname','env'):
+                found=shutil.which(name)
+                if found:(tools/name).symlink_to(found)
+            self.assertFalse((tools/'nohup').exists())
+            port=free_port()
+            env={**NasPackageTests.env,'PATH':str(tools),'ATLAS_APP':str(ROOT),'ATLAS_HOME':str(home),'ATLAS_PORT':str(port),'ATLAS_DOWNLOADS':str(share),'ATLAS_MANAGED':'qnap','ATLAS_PYTHON':sys.executable}
+            script=str(ROOT/'packaging'/'nas'/'mediathekatlas-service.sh')
+            try:
+                r=subprocess.run([str(tools/'sh'),script,'start'],env=env,capture_output=True,text=True,timeout=60)
+                self.assertEqual(r.returncode,0,r.stdout+r.stderr+(home/'service.log').read_text())
+                self.assertEqual(json.loads(wait_http(port)[1])['required'],True)
+                self.assertNotIn('not found',(home/'service.log').read_text())
+            finally:subprocess.run([str(tools/'sh'),script,'stop'],env=env,capture_output=True,timeout=60)
+
 class DesktopModeTests(unittest.TestCase):
     def test_desktop_server_keeps_loopback_host_check_without_login(self):
         with tempfile.TemporaryDirectory() as d:
