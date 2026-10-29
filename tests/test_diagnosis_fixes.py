@@ -87,6 +87,18 @@ class SeriesTests(unittest.TestCase):
    with patch('artwork.lookup',return_value=({},['TVDB: Zeitüberschreitung'])):self.assertTrue(artwork.run_once(service))
    with db() as c:self.assertEqual(c.execute('SELECT COUNT(*) FROM artwork_checks').fetchone()[0],1)
 
+class QueueTests(unittest.TestCase):
+ def test_queue_pauses_only_when_idle(self):
+  stop=threading.Event();service=catalog_service.Service(None,dict,stop,Path('.'));waits=[];results=iter([True,True,False])
+  def once():
+   try:return next(results)
+   except StopIteration:stop.set();return False
+  class Wake:
+   def wait(self,seconds):waits.append(seconds)
+   def clear(self):pass
+  service.metadata_once=once;service.metadata_wake=Wake();service.metadata_loop()
+  self.assertEqual(waits[:3],[catalog_service.METADATA_PAUSE,catalog_service.METADATA_PAUSE,2]);self.assertLess(catalog_service.METADATA_PAUSE,.5)
+
 class TreeTtlTests(unittest.TestCase):
  def test_slow_tree_refreshes_less_often(self):
   clock=types.SimpleNamespace(now=100.0);clock.monotonic=lambda:clock.now

@@ -11,6 +11,8 @@ def retry_delay(attempts,result):
     if result.get('deferred_providers'):return min(86400,3600*2**min(max(attempts-1,0),5))
     return 86400
 
+METADATA_PAUSE=.1
+
 class Service:
     def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
@@ -156,8 +158,10 @@ class Service:
         diagnostics.event('catalog_reclassification_complete',processed=processed)
     def metadata_loop(self):
         while not self.stop.is_set():
-            self.metadata_once()
-            self.metadata_wake.wait(2);self.metadata_wake.clear()
+            # A fixed 2 s pause after every work capped the queue at ~28.000 works per day (diagnosis 0.4.7).
+            # Providers throttle themselves (caches, pauses, HTTP 429 handling); wait only when idle.
+            busy=self.metadata_once()
+            self.metadata_wake.wait(METADATA_PAUSE if busy else 2);self.metadata_wake.clear()
 
     def artwork_loop(self):
         import artwork
