@@ -23,6 +23,7 @@ class RuntimeTests(unittest.TestCase):
             self.assertIn(str(path),c)
     def test_broken_binary_falls_back(self):
         with tempfile.TemporaryDirectory() as root:
+            root=os.path.realpath(root)  # macOS: /var is a symlink to /private/var
             bad=self.fake(Path(root)/'bad','dyld: missing dylib',1)
             good=self.fake(Path(root)/'good')
             with patch('runtime_tools.candidates',return_value=[str(bad),str(good)]):r=runtime_tools.status('ffmpeg')
