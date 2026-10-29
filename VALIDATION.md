@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.8 · Katalogkarten mit mehreren Fassungen (29. Oktober 2026, Linux-Testumgebung)
+
+- Ursache: In 0.5.3 landete die Zeile für den Aufklappzustand der Download-Karten in der Katalogkarte („Weitere Fassungen“), dort gibt es kein `j`. Die vorherigen Browserprüfungen liefen mit leerem Katalog bzw. ohne Mehrfachangebote.
+- Chromium mit echtem Server und Katalog (ein Film in drei Fassungen, ein Film in einer): 4 Karten mit „Weitere Fassungen“, Serienansicht leer, keine JavaScript-Fehler. Alle automatisierten Tests bestanden.
+
 ## 0.5.7 · Fehlermeldungen Direktverbindung (29. Oktober 2026, Linux-Testumgebung)
 
 - Ursache des Feldfehlers: `PeerError` ist ein `ValueError` und wurde beim Lesen des Index als „kein MediathekAtlas“ umetikettiert; jeder Netzwerk- oder Serverfehler sah deshalb gleich aus.

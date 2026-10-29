@@ -1,6 +1,10 @@
-# MediathekAtlas · 0.5.7 Preview
+# MediathekAtlas · 0.5.8 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.8: Katalog-Fehler „j is not defined“ behoben
+
+Seit 0.5.3 brach die Kartenansicht ab, sobald ein Titel mehrere Fassungen hatte („Katalog konnte nicht geladen werden: j is not defined“). Ursache war ein falsch platzierter Code-Teil der neuen Download-Karten in der Katalogkarte.
 
 ## Neu in 0.5.7: Klare Fehlermeldungen der Direktverbindung
 
@@ -69,7 +73,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.7-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.7.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.8-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.8.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 
