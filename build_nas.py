@@ -65,7 +65,7 @@ def build_spk(out_dir,port=PORT):
     info={'package':NAME,'version':f'{VERSION}-{SPK_BUILD}','os_min_ver':'7.0-40000','displayname':NAME,
           'description':'Catalogue of the German public broadcasters\' media libraries with metadata matching and organised downloads to the NAS.',
           'description_ger':'Katalog der öffentlich-rechtlichen Mediatheken mit Metadatenabgleich und geordneten Downloads auf das NAS.',
-          'maintainer':NAME,'arch':'noarch','install_dep_packages':'Python3.9','dsmuidir':'ui','dsmappname':'de.mediathekatlas',
+          'maintainer':NAME,'arch':'noarch','dsmuidir':'ui','dsmappname':'de.mediathekatlas',
           'adminprotocol':'http','adminport':str(port),'adminurl':'/','ctl_stop':'yes','thirdparty':'yes',
           'checksum':hashlib.md5(package).hexdigest()}
     out_dir.mkdir(parents=True,exist_ok=True)

@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.4 · Python-Erkennung Synology (29. Oktober 2026, Linux-Testumgebung)
+
+- SPK-INFO ohne `install_dep_packages`; `preinst` bricht ohne Python ≥ 3.9 mit Hinweis ab und akzeptiert ein Python aus einem beliebigen Paketordner (Test mit nachgebautem `python311`). Dienstskript sucht zusätzlich alle `/var/packages/*/target/...`-Pythons.
+- Nicht geprüft: Installation im echten DSM-Paket-Zentrum.
+
 ## 0.5.3 · Genres, Download-Karten, Dateizugriff (29. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), neu `tests/test_v053.py`: Schreibvarianten aus dem Bildschirmfoto (Dokumentarfilm, Filmdrama, Filmkomödie, Kriminalfilm, Mysteryfilm, Liebesfilm, Biography, Familie) ergeben je ein Genre; einmalige Umstellung gespeicherter Genres, Werk-Metadaten und Serienvorlagen.

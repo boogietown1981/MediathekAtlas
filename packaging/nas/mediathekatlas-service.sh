@@ -49,6 +49,12 @@ find_python(){
     "$qnap_python" /opt/bin/python3 /usr/local/bin/python3 /usr/bin/python3 "$(command -v python3 2>/dev/null)"; do
     if python_ok "$candidate"; then echo "$candidate"; return 0; fi
   done
+  # Any other Python package (official Synology, SynoCommunity, QNAP), whatever its name.
+  for candidate in /var/packages/*/target/bin/python3* /var/packages/*/target/usr/bin/python3* \
+    /var/packages/*/target/usr/local/bin/python3*; do
+    case "$candidate" in *-config) continue;; esac
+    if python_ok "$candidate"; then echo "$candidate"; return 0; fi
+  done
   return 1
 }
 
@@ -73,7 +79,7 @@ start(){
   if running_pid >/dev/null; then echo "MediathekAtlas läuft bereits."; return 0; fi
   mkdir -p "$ATLAS_HOME" && chmod 700 "$ATLAS_HOME" || { echo "Datenordner $ATLAS_HOME nicht beschreibbar"; return 1; }
   rotate_log
-  PYTHON=$(find_python) || { log "Kein Python ab 3.9 gefunden. Synology: Paket „Python 3.9“ installieren. QNAP: „Python3“ aus dem App Center oder Entware. Pfad optional als PYTHON=… in $CONF"; return 1; }
+  PYTHON=$(find_python) || { log "Kein Python ab 3.9 gefunden. Synology: ein Python-Paket ab 3.9 installieren (z. B. „Python 3.9“ oder SynoCommunity „Python 3.11“). QNAP: „Python3“ aus dem App Center oder Entware. Pfad optional als PYTHON=… in $CONF"; return 1; }
   if ! mkdir -p "$ATLAS_DOWNLOADS" 2>/dev/null || [ ! -w "$ATLAS_DOWNLOADS" ]; then
     log "Download-Ordner $ATLAS_DOWNLOADS ist nicht beschreibbar. Ersatz: $ATLAS_HOME/downloads"
     ATLAS_DOWNLOADS="$ATLAS_HOME/downloads"; mkdir -p "$ATLAS_DOWNLOADS"

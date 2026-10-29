@@ -102,7 +102,7 @@ class NasPackageTests(unittest.TestCase):
                     if name.startswith(('conf/','WIZARD_UIFILES/')):json.loads(tar.extractfile(name).read())
                 extract(tar,d/'pkg')
             self.assertEqual(info['checksum'],hashlib.md5(package).hexdigest());self.assertEqual(info['arch'],'noarch')
-            self.assertEqual(info['version'],build_nas.VERSION+'-'+build_nas.SPK_BUILD);self.assertEqual(info['install_dep_packages'],'Python3.9')
+            self.assertEqual(info['version'],build_nas.VERSION+'-'+build_nas.SPK_BUILD);self.assertNotIn('install_dep_packages',info)
             privilege=json.loads((d/'pkg'/'conf'/'privilege').read_text());self.assertEqual(privilege['defaults']['run-as'],'package')
             share=json.loads((d/'pkg'/'conf'/'resource').read_text())['data-share']['shares'][0]
             self.assertIn(privilege['username'],share['permission']['rw'])
@@ -155,6 +155,18 @@ class NasPackageTests(unittest.TestCase):
             finally:
                 subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
             self.assertEqual(subprocess.run(['sh',script,'status'],env=env,capture_output=True).returncode,3)
+
+class PythonDetectionTests(unittest.TestCase):
+    def test_preinst_accepts_any_python_package_and_explains_missing_one(self):
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d);packages=d/'var'/'packages'
+            script=(ROOT/'packaging'/'synology'/'scripts'/'preinst').read_text().replace('/var/packages',str(packages)).replace('/usr/local/bin/python3 /usr/bin/python3','/fehlt/1 /fehlt/2')
+            (d/'preinst').write_text(script);log=d/'log'
+            r=subprocess.run(['sh',str(d/'preinst')],env={**os.environ,'SYNOPKG_TEMP_LOGFILE':str(log)},capture_output=True)
+            self.assertEqual(r.returncode,1);self.assertIn('Python ab Version 3.9',log.read_text())
+            # e.g. SynoCommunity python311 instead of the official Python3.9 package
+            bin_dir=packages/'python311'/'target'/'bin';bin_dir.mkdir(parents=True);(bin_dir/'python3').symlink_to(sys.executable)
+            self.assertEqual(subprocess.run(['sh',str(d/'preinst')],capture_output=True).returncode,0)
 
 class DesktopModeTests(unittest.TestCase):
     def test_desktop_server_keeps_loopback_host_check_without_login(self):
