@@ -1,5 +1,5 @@
 import subprocess,sys
-import json, os, secrets, signal, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork
@@ -344,8 +344,14 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.event('access_login_failed');return self.send({'error':str(e) if isinstance(e,ValueError) else 'Ungültige Anfrage'},403)
         diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
 
+class Server(ThreadingHTTPServer):
+    def server_bind(self):
+        # HTTPServer resolves socket.getfqdn() here; reverse DNS can stall startup for ~30 s on macOS.
+        socketserver.TCPServer.server_bind(self)
+        self.server_name,self.server_port=self.server_address[:2]
+
 if __name__=='__main__':
-    server=ThreadingHTTPServer((LISTEN,PORT),Handler)
+    server=Server((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         SERVICE.start()
