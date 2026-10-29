@@ -1,12 +1,20 @@
 import subprocess,sys
-import json, os, secrets, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, secrets, signal, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access
+from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
 ROOT.mkdir(parents=True,exist_ok=True);os.chmod(ROOT,0o700)
+# NAS packages listen on the LAN with a fixed port; that always requires a login.
+LISTEN=os.environ.get('MEDIATHEKATLAS_LISTEN','127.0.0.1')
+PORT=int(os.environ.get('MEDIATHEKATLAS_PORT','0') or 0)
+NETWORK=LISTEN not in ('127.0.0.1','localhost','::1') or os.environ.get('MEDIATHEKATLAS_LOGIN')=='1'
+MANAGED=os.environ.get('MEDIATHEKATLAS_MANAGED','')
+DEFAULT_DOWNLOAD_DIR=os.environ.get('MEDIATHEKATLAS_DOWNLOAD_DIR') or str(Path.home()/'Movies'/'MediathekAtlas')
+SESSION_COOKIE='mediathekatlas_session'
 INSTANCE=None
 if __name__=='__main__':
     from instance import Instance
@@ -18,7 +26,8 @@ if __name__=='__main__':
         raise SystemExit(0)
 diagnostics.setup(ROOT)
 metadata.configure_provider_state(ROOT/'provider-pauses.json')
-diagnostics.event('application_start',version='0.4.7')
+diagnostics.event('application_start',version=VERSION,network=NETWORK,managed=MANAGED or None)
+ACCESS=access.Access(ROOT,[DEFAULT_DOWNLOAD_DIR]) if NETWORK else None
 TOKEN=secrets.token_urlsafe(32);STOP=threading.Event()
 diagnostics.register_secrets(TOKEN)
 
@@ -42,7 +51,7 @@ def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'))
-    return {'download_dir':str(Path.home()/'Movies'/'MediathekAtlas'),'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
     with db() as c:
@@ -132,10 +141,18 @@ def catalog_status():
 
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
-    def send(self,data,status=200,ctype='application/json'):
+    def send(self,data,status=200,ctype='application/json',cookies=()):
         body=data if isinstance(data,bytes) else json.dumps(data,ensure_ascii=False).encode()
-        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.end_headers();self.wfile.write(body)
-    def valid_host(self):return self.headers.get('Host')==f'127.0.0.1:{self.server.server_port}'
+        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(len(body)));self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('X-Frame-Options','DENY');self.send_header('Referrer-Policy','no-referrer')
+        for header in cookies:self.send_header('Set-Cookie',header)
+        self.end_headers();self.wfile.write(body)
+    # Desktop mode trusts only its loopback Host (DNS-rebinding guard). Network mode
+    # accepts any NAS name or address but requires a session cookie instead.
+    def valid_host(self):return NETWORK or self.headers.get('Host')==f'127.0.0.1:{self.server.server_port}'
+    def session(self):return access.cookie_token(self.headers.get('Cookie'),SESSION_COOKIE)
+    def authorized(self):return not NETWORK or ACCESS.valid(self.session())
+    def session_cookie(self,token,seconds=access.SESSION_SECONDS):
+        return f'{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={seconds}'
     def do_GET(self):
         try:self.get()
         except (BrokenPipeError,ConnectionResetError):pass
@@ -146,12 +163,19 @@ class Handler(BaseHTTPRequestHandler):
     def get(self):
         if not self.valid_host():return self.send({'error':'Ungültiger Host'},403)
         path=urllib.parse.urlsplit(self.path).path
-        if path=='/':
-            body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN)
-            return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path=='/icon.svg':return self.send((Path(__file__).parent/'assets'/'icon.svg').read_bytes(),ctype='image/svg+xml')
-        if path in ('/app.js','/style.css'):
+        if path in ('/style.css','/login.js'):
             return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript' if path.endswith('js') else 'text/css')
+        if path=='/api/login-state':
+            if not NETWORK:return self.send({'required':False})
+            return self.send({'required':True,'configured':ACCESS.configured(),'setup_files':ACCESS.ensure_setup_code() if not ACCESS.configured() else []})
+        if not self.authorized():
+            if path=='/':return self.send((Path(__file__).parent/'web'/'login.html').read_text().replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
+            return self.send({'error':'Anmeldung erforderlich','login':True},401)
+        if path=='/':
+            body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
+            return self.send(body.encode(),ctype='text/html; charset=utf-8')
+        if path=='/app.js':return self.send((Path(__file__).parent/'web'/'app.js').read_bytes(),ctype='text/javascript')
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
@@ -171,15 +195,25 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata']},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata']},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION}})
         self.send({'error':'Nicht gefunden'},404)
     def do_POST(self):
         global _TREE_CACHE,_STATUS_CACHE
-        if not self.valid_host() or self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
+        if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
+        if NETWORK and self.path=='/api/login':return self.login()
+        if not self.authorized():return self.send({'error':'Anmeldung erforderlich','login':True},401)
+        if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
         try:
             length=int(self.headers.get('Content-Length','0'))
             if not 0<length<=100000:raise ValueError('Ungültige Anfragegröße')
             d=json.loads(self.rfile.read(length));path=self.path
+            if NETWORK and path=='/api/logout':
+                ACCESS.logout(self.session());return self.send({'ok':True},cookies=[self.session_cookie('',0)])
+            if NETWORK and path=='/api/password':
+                token=ACCESS.change_password(str(d.get('current','')),str(d.get('new','')))
+                diagnostics.event('access_password_changed')
+                return self.send({'ok':True},cookies=[self.session_cookie(token)])
+            if path=='/api/shutdown' and MANAGED:raise ValueError('Der Dienst wird vom NAS verwaltet. Bitte im Paket-Zentrum bzw. App Center stoppen.')
             if path=='/api/shutdown':
                 self.send({'ok':True});STOP.set()
                 threading.Thread(target=self.server.shutdown,daemon=True).start()
@@ -267,6 +301,7 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:
                     for wid in ids[:48]:c.execute('INSERT OR IGNORE INTO artwork_checks SELECT id,? FROM works WHERE id=?',(-time.time(),wid))
                 return self.send({'ok':True})
+            if path=='/api/open-download' and NETWORK:raise ValueError('Die Datei liegt auf dem NAS. Bitte über File Station bzw. die Netzwerkfreigabe öffnen.')
             if path=='/api/open-download':
                 with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(d['id'],)).fetchone()
                 if not row:raise ValueError('Nur abgeschlossene Downloads können geöffnet werden')
@@ -289,15 +324,34 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.error('http_post_failed',e,endpoint=urllib.parse.urlsplit(self.path).path)
             self.send({'error':core.safe_error(e)},400)
 
+    def login(self):
+        client=self.client_address[0]
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if not 0<length<=10000:raise ValueError('Ungültige Anfragegröße')
+            d=json.loads(self.rfile.read(length))
+            token=ACCESS.login(client,str(d.get('password','')),str(d.get('setup_code','')),str(d.get('new_password','')))
+        except PermissionError as e:
+            diagnostics.event('access_login_blocked');return self.send({'error':str(e)},429)
+        except (ValueError,TypeError,AttributeError) as e:
+            diagnostics.event('access_login_failed');return self.send({'error':str(e) if isinstance(e,ValueError) else 'Ungültige Anfrage'},403)
+        diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
+
 if __name__=='__main__':
-    server=ThreadingHTTPServer(('127.0.0.1',0),Handler)
+    server=ThreadingHTTPServer((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         SERVICE.start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
-    INSTANCE.publish(url,'0.4.7')
+    if NETWORK:
+        print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)
+        if not ACCESS.configured():print('Einrichtungscode liegt in: '+', '.join(ACCESS.ensure_setup_code()),flush=True)
+    INSTANCE.publish(url,VERSION)
     if '--no-browser' not in __import__('sys').argv:webbrowser.open(url)
+    def terminate(*_):raise KeyboardInterrupt
+    # NAS service scripts stop with SIGTERM; close the server and lock cleanly.
+    signal.signal(signal.SIGTERM,terminate)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:STOP.set();server.server_close();INSTANCE.close()

@@ -1,0 +1,12 @@
+[{
+  "step_title": "Set up MediathekAtlas",
+  "items": [{
+    "type": "password",
+    "desc": "MediathekAtlas will be available in your home network at http://&lt;NAS&gt;:@PORT@/. Choose the password for the web interface (at least 8 characters); it can be changed later in the settings.<br><br>Downloads are stored in the shared folder <b>MediathekAtlas</b> (created if needed). Catalogue and settings stay in the package data folder. Downloads require FFmpeg, e.g. the ffmpeg7 package from SynoCommunity.",
+    "subitems": [{
+      "key": "wizard_password",
+      "desc": "Password",
+      "validator": {"allowBlank": false, "minLength": 8}
+    }]
+  }]
+}]

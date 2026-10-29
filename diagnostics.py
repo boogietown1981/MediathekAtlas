@@ -1,4 +1,5 @@
 """Bounded local event log; exports exclude settings, database and media URLs."""
+from version import VERSION
 import io,json,logging,logging.handlers,platform,re,threading,time,traceback,zipfile
 from pathlib import Path
 _lock=threading.RLock();_root=None;_secrets=set()
@@ -37,7 +38,7 @@ def tail():
 def export(snapshot):
     out=io.BytesIO()
     with _lock,zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
-        z.writestr('status.json',json.dumps(clean({'version':'0.4.7','system':platform.system(),'machine':platform.machine(),'python':platform.python_version(),**snapshot}),ensure_ascii=False,indent=2))
+        z.writestr('status.json',json.dumps(clean({'version':VERSION,'system':platform.system(),'machine':platform.machine(),'python':platform.python_version(),**snapshot}),ensure_ascii=False,indent=2))
         if _root:
             for p in sorted(_root.glob('diagnostic.jsonl*')):z.writestr(p.name,p.read_bytes())
             startup=_root/'startup.log'

@@ -1,0 +1,7 @@
+#!/bin/sh
+# The wizard password is handed over once; the server stores only a PBKDF2 hash
+# and deletes this file on its first start.
+if [ -n "$wizard_password" ] && [ ! -f "$SYNOPKG_PKGVAR/access.json" ]; then
+  ( umask 077; printf '%s' "$wizard_password" > "$SYNOPKG_PKGVAR/initial-password" )
+fi
+exit 0

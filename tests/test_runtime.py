@@ -57,7 +57,7 @@ class RuntimeTests(unittest.TestCase):
     def test_bundle_icon_and_version(self):
         bundle=ROOT/'build'/'MediathekAtlas.app'/'Contents'
         if not bundle.exists():self.skipTest('Build first')
-        p=plistlib.loads((bundle/'Info.plist').read_bytes());self.assertEqual(p['CFBundleShortVersionString'],'0.4.7')
+        p=plistlib.loads((bundle/'Info.plist').read_bytes());from version import VERSION;self.assertEqual(p['CFBundleShortVersionString'],VERSION)
         data=(bundle/'Resources'/p['CFBundleIconFile']).read_bytes()
         self.assertEqual(data[:4],b'icns');self.assertEqual(struct.unpack('>I',data[4:8])[0],len(data))
         tags=[];pos=8
