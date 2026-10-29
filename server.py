@@ -94,23 +94,27 @@ IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
 imdb_archive.ACTIVE=IMDB
 _STATUS_CACHE=(0,{})
 _TREE_CACHE=(float('-inf'),[])
+_TREE_TTL=60
 _TREE_LOCK=threading.Lock()
 _TREE_BUSY=False
 _TREE_ERROR=''
 def catalog_tree():
     global _TREE_BUSY
     with _TREE_LOCK:
-        if not _TREE_BUSY and time.monotonic()-_TREE_CACHE[0]>60:
+        if not _TREE_BUSY and time.monotonic()-_TREE_CACHE[0]>_TREE_TTL:
             _TREE_BUSY=True
             threading.Thread(target=refresh_tree,daemon=True,name='catalog_categories').start()
         return {'tree':_TREE_CACHE[1],'loading':_TREE_BUSY,'error':_TREE_ERROR}
 def refresh_tree():
-    global _TREE_CACHE,_TREE_BUSY,_TREE_ERROR
+    global _TREE_CACHE,_TREE_BUSY,_TREE_ERROR,_TREE_TTL
     started=time.monotonic()
     try:
         with db() as c:rows=catalog.tree(c)
-        with _TREE_LOCK:_TREE_CACHE=(time.monotonic(),rows);_TREE_ERROR=''
-        diagnostics.event('catalog_tree_complete',seconds=round(time.monotonic()-started,2),categories=len(rows))
+        seconds=time.monotonic()-started
+        # The UI polls every 30 s; a 4 s aggregation every minute kept a core busy. Slow catalogues refresh
+        # less often, user edits still invalidate the cache immediately.
+        with _TREE_LOCK:_TREE_CACHE=(time.monotonic(),rows);_TREE_ERROR='';_TREE_TTL=max(60,min(900,seconds*60))
+        diagnostics.event('catalog_tree_complete',seconds=round(seconds,2),categories=len(rows),next_seconds=round(_TREE_TTL))
     except Exception as e:
         diagnostics.error('catalog_tree_failed',e)
         with _TREE_LOCK:_TREE_ERROR=core.safe_error(e);_TREE_CACHE=(time.monotonic(),_TREE_CACHE[1])
@@ -187,6 +191,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/search':
                 found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
                 with db() as c:catalog.ingest(c,found['results'])
+                with _TREE_LOCK:_TREE_CACHE=(float('-inf'),_TREE_CACHE[1])
                 return self.send({'imported':len(found['results'])})
             if path=='/api/sync':
                 SERVICE.restart.set();SERVICE.wake.set();diagnostics.event('sync_requested');return self.send({'ok':True})

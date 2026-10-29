@@ -86,7 +86,7 @@ def _omdb(params,key,force=False):
     except OMDbError as e:
         with _LOCK:_OMDB_PAUSED[credential]=(time.time()+3600,e.reason,e.status)
         save_provider_state()
-        diagnostics.event('provider_access_error',provider='OMDb',reason=e.reason,http_status=e.status)
+        diagnostics.event('provider_access_error','WARNING',provider='OMDb',reason=e.reason,http_status=e.status)
         raise
     with _LOCK:
         _OMDB_PAUSED.pop(credential,None)
@@ -279,12 +279,13 @@ def candidates(row,meta,settings):
             if field=='omdb' and omdb_status(settings[field])['paused']:
                 if 'OMDb' not in deferred:deferred.append('OMDb')
                 checked({'provider':provider,'status':'paused','count':0});break
-            start=time.monotonic();diagnostics.event('provider_start',provider=provider,title=title,kind=k)
+            # One event per finished check; a separate start event doubled the log and shortened its history.
+            start=time.monotonic()
             try:
                 hits=fn(row,meta,(settings[field],settings.get('tvdb_pin','')) if field=='tvdb' else settings[field],k,title);out.extend(hits)
                 for c in hits:c['plausibility_issues']=matching.issues(meta,c)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
-                diagnostics.event('provider_complete',provider=provider,title=title,candidates=len(hits),seconds=round(time.monotonic()-start,2))
+                diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
             except Exception as e:
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
                     if provider not in deferred:deferred.append(provider)
@@ -296,11 +297,11 @@ def candidates(row,meta,settings):
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:
-            diagnostics.event('provider_start',provider='Wikidata',title=title,kind=k)
+            start=time.monotonic()
             try:
                 d=wikidata(title,k,meta.get('year') if k=='movie' else None)
                 if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
-                diagnostics.event('provider_complete',provider='Wikidata',title=title,candidates=int(bool(d)))
+                diagnostics.event('provider_complete',provider='Wikidata',title=title,kind=k,candidates=int(bool(d)),seconds=round(time.monotonic()-start,2))
             except Exception as e:checked({'provider':'Wikidata','status':'error','count':0});warnings.append('Wikidata: '+core.safe_error(e));diagnostics.error('provider_failed',e,provider='Wikidata',title=title)
     return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}

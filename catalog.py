@@ -223,7 +223,10 @@ def propagate_series(c,old_show,m):
     # Transfer work metadata, never a sibling's episode number or episode plot.
     common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source') if k in m}
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
-        own=json.loads(row['meta']);own.update(common)
+        own=json.loads(row['meta'])
+        # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
+        if row['state']=='identified' and all(own.get(k)==v for k,v in common.items()):continue
+        own.update(common)
         save_metadata(c,row['id'],own,'identified')
 
 def prioritize(c,ids=None,show=''):

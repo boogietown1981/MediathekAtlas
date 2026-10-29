@@ -2,6 +2,14 @@
 import json,time,threading
 import core,catalog,filmlist,diagnostics,metadata
 
+def retry_delay(attempts,result):
+    """Seconds until an unresolved work is checked again."""
+    if result['warnings']:return 3600
+    # Only a paused provider (OMDb quota) is missing: back off per work instead of re-querying every
+    # unresolved work hourly, which used up the quota again right after each pause ended.
+    if result.get('deferred_providers'):return min(86400,3600*2**min(max(attempts-1,0),5))
+    return 86400
+
 class Service:
     def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event()
     def start(self):
@@ -108,7 +116,7 @@ class Service:
                     m['suggestions']=result['candidates'];m['metadata_warnings']=result['warnings']
                     # Keep recognized show metadata if only its episode remains unresolved.
                     if row['state']=='identified':outcome='identified'
-                    c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+(3600 if result['warnings'] or result.get('deferred_providers') else 86400),wid))
+                    c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
             self.checked+=1;self.metadata_state(phase='result',title=recognized['title'] if recognized else m['title'],outcome=outcome,provider_checks=result.get('provider_checks',[]),from_cache=bool(cached),candidates=len(result['candidates']),warnings=result['warnings'],seconds=round(time.monotonic()-started,2),providers=providers)
         except Exception as e:
             diagnostics.error('metadata_failed',e,work_id=wid)
