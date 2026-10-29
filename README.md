@@ -1,6 +1,10 @@
-# MediathekAtlas · 0.5.4 Preview
+# MediathekAtlas · 0.5.5 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.5: Direktverbindung zwischen Systemen (z. B. über Tailscale)
+
+Mac und NAS teilen sich die Erkennung jetzt auch ohne gemeinsamen Sync-Ordner. Auf dem NAS unter Einstellungen → Verbund „Dieses System freigeben“ wählen, den angezeigten Verbindungscode am Mac einfügen, fertig. Der Mac verbindet sich selbst mit dem NAS und gleicht alle 30 Sekunden ab, er muss also nicht erreichbar sein. Geschützt durch einen gemeinsamen 256-Bit-Schlüssel; über Tailscale zusätzlich verschlüsselt. Videos werden dabei nicht kopiert, dafür gibt es „Herunterladen“. Details: `docs/VERBUND.md`.
 
 ## Neu in 0.5.4: Synology ohne feste Python-3.9-Abhängigkeit
 
@@ -56,7 +60,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.4-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.4.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.5-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.5.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

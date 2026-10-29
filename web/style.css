@@ -70,3 +70,7 @@ tr.total td{font-weight:600}
 .button-link.primary{background:#67e1bc;color:#0c2822;border:0;font-weight:650}
 #jobs .empty{grid-column:1/-1}
 @media(max-width:650px){#jobs.job-grid{grid-template-columns:1fr}}
+/* 0.5.5: Direktverbindung im Verbund */
+.mesh-direct{margin-top:18px;padding-top:14px;border-top:1px solid #26303c}.mesh-direct h4{margin:0 0 6px}
+.mesh-direct-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.mesh-direct-row button,#mesh-copy,#mesh-connect{margin-left:0}
+#mesh-code{font-family:ui-monospace,Menlo,monospace;font-size:12px}

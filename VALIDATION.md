@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.5 · Direktverbindung (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden, neu `tests/test_meshpeer.py`: Verbindungscode, Schreibregeln (eigenes Verzeichnis gesperrt, Segmente unveränderlich, ältere `node.json` ignoriert, Pfadangriffe abgelehnt), Abgleich gegen einen echten Server im NAS-Modus in beide Richtungen, zweiter Abgleich ohne Übertragung, falscher Schlüssel abgelehnt.
+- Chromium mit zwei echten Serverprozessen (NAS-Modus mit Anmeldung und Desktop-Modus): auf dem NAS freigegeben, Code am „Mac“ eingefügt, beide sehen sich, Bereiche 128/128 verteilt, keine JavaScript-Fehler.
+- Nicht geprüft: echte Verbindung Mac ↔ Synology über Tailscale.
+
 ## 0.5.4 · Python-Erkennung Synology (29. Oktober 2026, Linux-Testumgebung)
 
 - SPK-INFO ohne `install_dep_packages`; `preinst` bricht ohne Python ≥ 3.9 mit Hinweis ab und akzeptiert ein Python aus einem beliebigen Paketordner (Test mit nachgebautem `python311`). Dienstskript sucht zusätzlich alle `/var/packages/*/target/...`-Pythons.

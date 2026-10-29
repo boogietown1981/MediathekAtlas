@@ -2,7 +2,7 @@
 import hashlib,json,time,threading
 import platform
 from pathlib import Path
-import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal
+import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer
 
 def retry_delay(attempts,result):
     """Seconds until an unresolved work is checked again."""
@@ -15,7 +15,7 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peer={};self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
         for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
@@ -200,11 +200,15 @@ class Service:
         finally:self.mesh_running.release()
     def mesh_round(self,now):
         config=self.settings();folder=str(config.get('mesh_dir') or '').strip()
+        # Direct connection without a synced folder: the journal lives in the app's data folder.
+        direct=not folder and meshpeer.valid_key(config.get('mesh_key'))
+        if direct:folder=str(Path(self.root)/'verbund')
         if not folder:return self.mesh_off()
         try:
             with self.mesh_lock:
                 if self.mesh is None or self.mesh_status.get('folder')!=folder:
-                    root=meshjournal.check_folder(folder)
+                    if direct:Path(folder).mkdir(mode=0o700,exist_ok=True)
+                    root=meshjournal.check_folder(folder,create=direct)
                     with self.db() as c:
                         node=catalog.get_state(c,'mesh_node_id')
                         if not node:node=meshjournal.new_node_id();catalog.set_state(c,'mesh_node_id',node)
@@ -218,22 +222,33 @@ class Service:
             providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k)]
             if time.time()-self.mesh_beat>=meshjournal.HEARTBEAT:
                 journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers});self.mesh_beat=time.time()
+            journal.flush()
+            self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
             self.mesh_names={n:str(i.get('name') or n[:8])[:80] for n,i in nodes.items()}
             self.mesh_import(journal)
             self.mesh_check_local()
-            journal.flush()
             with self.mesh_lock:
                 self.mesh_filter=None if len(parts)==meshjournal.PARTS else parts
                 current=time.time() if now is None else now
-                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,
+                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,'direct':direct,'peer':self.mesh_peer,
                     'nodes':[{'node':n,'name':str(i.get('name') or n[:8])[:80],'self':n==journal.node,'active':n in members,'recognizing':i.get('recognizing') is True,'rate':i.get('rate'),'version':str(i.get('version',''))[:20],'age':max(0,int(current-float(i.get('time') or 0)))} for n,i in sorted(nodes.items())]}
         except (meshjournal.MeshError,OSError) as e:
             # Standalone fallback: a missing mount never blocks local recognition.
             if self.mesh_status.get('error')!=core.safe_error(e):diagnostics.error('mesh_unavailable',e)
             self.mesh_off(folder=folder,error=core.safe_error(e))
+    def mesh_peer_sync(self,config,journal):
+        url=str(config.get('mesh_peer') or '').strip();key=config.get('mesh_key')
+        if not url or not meshpeer.valid_key(key):self.mesh_peer={};return
+        try:
+            result=meshpeer.Peer(url,key).sync(journal.root,journal.node)
+            if self.mesh_peer.get('error'):diagnostics.event('mesh_peer_connected',seconds=result['seconds'])
+            self.mesh_peer={'url':url,**result}
+        except (meshpeer.PeerError,OSError) as e:
+            if self.mesh_peer.get('error')!=core.safe_error(e):diagnostics.error('mesh_peer_failed',e)
+            self.mesh_peer={'url':url,'error':core.safe_error(e),'last':self.mesh_peer.get('time') or self.mesh_peer.get('last'),'peer':self.mesh_peer.get('peer','')}
     def mesh_import(self,journal):
         with self.db() as c:cursors=catalog.get_state(c,'mesh_cursors',{})
         while True:

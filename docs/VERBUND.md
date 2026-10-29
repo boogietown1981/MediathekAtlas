@@ -10,6 +10,15 @@ Mehrere MediathekAtlas-Installationen teilen sich die Metadatenerkennung und tau
 
 Ohne Verbundordner oder bei nicht erreichbarem Ordner erkennt jede Installation wie bisher alle Titel allein.
 
+## Direktverbindung ohne Sync-Ordner (seit 0.5.5)
+
+Sind die Systeme nur über das Netzwerk verbunden (z. B. Mac und Synology über Tailscale), braucht es keinen gemeinsamen Ordner:
+
+1. Auf dem NAS unter **Einstellungen → Verbund → Direktverbindung** „Dieses System freigeben“ wählen. Es erscheint ein Verbindungscode `http://<adresse>:8730#<schlüssel>`. Die Adresse ist die, über die der Browser das NAS gerade erreicht; die Tailscale-Adresse (100.x) wird zusätzlich angezeigt.
+2. Am Mac den Code unter „Verbindungscode der Gegenstelle“ einfügen und „Verbinden“ wählen. Die Verbindung wird sofort geprüft.
+
+Technik (`meshpeer.py`): Ohne eingetragenen Verbundordner liegt das Journal im Datenordner (`verbund/`). Der verbindende Rechner holt alle 30 Sekunden fehlende Segmente und neuere `node.json` der Gegenstelle (`GET /api/peer/index`, `GET /api/peer/file`) und lädt eigene hoch (`PUT /api/peer/file`). Nur der Rechner mit Gegenstelle baut Verbindungen auf; der Mac muss also nicht erreichbar sein. Alle Anfragen tragen den gemeinsamen Verbund-Schlüssel im Header `X-Atlas-Mesh-Key` (256 Bit). Niemand kann in das Knotenverzeichnis des Empfängers schreiben, veröffentlichte Segmente werden nie überschrieben, Pfade sind auf `nodes/<id>/events-NNNNNN.jsonl|node.json` beschränkt. Über Tailscale ist die Übertragung verschlüsselt; im offenen Netz ohne VPN nur im Heimnetz verwenden. Ein Verbundordner und eine Direktverbindung lassen sich kombinieren (das NAS gibt dann das Journal seines MeshSync-Ordners frei). Videodateien werden nicht übertragen; dafür gibt es „Herunterladen“ in der Download-Ansicht.
+
 ## Ordneraufbau
 
 ```
