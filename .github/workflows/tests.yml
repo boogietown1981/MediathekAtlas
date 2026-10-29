@@ -79,7 +79,9 @@ jobs:
           mkdir -p qpkg-check && /usr/share/QDK/bin/qbuild --extract "$qpkg" qpkg-check
           ls -l qpkg-check
           grep -q 'QPKG_NAME="MediathekAtlas"' qpkg-check/qpkg.cfg
-          tar tzf qpkg-check/data.tar.gz > qpkg-files.txt
+          # qbuild --extract cuts by header offsets and keeps the QPKG footer after the gzip stream;
+          # gzip reports it as trailing garbage (exit 2), tar still receives the complete archive.
+          gzip -dc qpkg-check/data.tar.gz 2>/dev/null | tar tf - > qpkg-files.txt
           grep -qx './MediathekAtlas.sh' qpkg-files.txt
           grep -qx './mediathekatlas/server.py' qpkg-files.txt
           grep -qx './bin/mediathekatlas-service.sh' qpkg-files.txt
