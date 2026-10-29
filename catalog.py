@@ -17,6 +17,7 @@ CREATE INDEX IF NOT EXISTS work_show ON works(show_key);
 CREATE TABLE IF NOT EXISTS work_genres(work_id TEXT,genre TEXT,PRIMARY KEY(work_id,genre));
 CREATE INDEX IF NOT EXISTS genre_index ON work_genres(genre,work_id);
 CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,providers INTEGER,hlc INTEGER,node TEXT,payload TEXT);
 '''
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
 SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K)[)\]]\s*')
