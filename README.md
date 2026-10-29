@@ -1,6 +1,11 @@
-# MediathekAtlas · 0.5.5 Preview
+# MediathekAtlas · 0.5.6 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.6: Hinweise und Katalog-Ladefehler
+
+- Bestätigungen wie „Einstellungen gespeichert“ verschwinden nach sieben Sekunden von selbst. Fehlermeldungen bleiben rot sichtbar, bis man sie mit × schließt oder die Ursache behoben ist.
+- Lädt der Katalog einmal nicht (z. B. NAS kurz ausgelastet, Verbindung über Tailscale unterbrochen), versucht die Oberfläche es zweimal automatisch erneut. Erst danach erscheint „Katalog konnte nicht geladen werden“ mit der Ursache; beim nächsten erfolgreichen Laden verschwindet die Meldung.
 
 ## Neu in 0.5.5: Direktverbindung zwischen Systemen (z. B. über Tailscale)
 
@@ -60,7 +65,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.5-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.5.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.6-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.6.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

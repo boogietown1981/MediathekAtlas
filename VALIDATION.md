@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.6 · Hinweise und Katalog-Wiederholung (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden.
+- Chromium mit echtem Server und simulierten Katalogfehlern: zwei Fehler werden still wiederholt und der Katalog erscheint; „Einstellungen gespeichert“ verschwindet nach 7 s; dauerhafter Fehler bleibt mit Ursache und Schließen-Knopf stehen; keine JavaScript-Fehler.
+- Ursache der gemeldeten Ladefehler auf dem NAS noch nicht bestätigt (Fehlertext bzw. Diagnose-ZIP ausstehend).
+
 ## 0.5.5 · Direktverbindung (29. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden, neu `tests/test_meshpeer.py`: Verbindungscode, Schreibregeln (eigenes Verzeichnis gesperrt, Segmente unveränderlich, ältere `node.json` ignoriert, Pfadangriffe abgelehnt), Abgleich gegen einen echten Server im NAS-Modus in beide Richtungen, zweiter Abgleich ohne Übertragung, falscher Schlüssel abgelehnt.
