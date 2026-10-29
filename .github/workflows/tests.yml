@@ -90,6 +90,8 @@ jobs:
           qpkg=$(ls dist/MediathekAtlas_*.qpkg | head -n 1)
           tail -c 100 "$qpkg" | grep -q 'QNAPQPKG'
           tail -c 100 "$qpkg" | grep -q "MediathekAtlas"
+          # QTS rejects packages without the size check written by qpkg_encrypt ("file format error").
+          python -c 'import sys,os,build_nas;p=sys.argv[1];d=open(p,"rb").read();sys.exit(0 if d[-60:-50]==build_nas.qpkg_checksum_field(len(d)) else "QPKG-Prüffeld fehlt")' "$qpkg"
           # Extract with the header offsets exactly as QTS does and check the payload.
           mkdir -p qpkg-check && /usr/share/QDK/bin/qbuild --extract "$qpkg" qpkg-check
           ls -l qpkg-check

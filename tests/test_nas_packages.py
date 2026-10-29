@@ -156,6 +156,18 @@ class NasPackageTests(unittest.TestCase):
                 subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
             self.assertEqual(subprocess.run(['sh',script,'status'],env=env,capture_output=True).returncode,3)
 
+class QpkgChecksumTests(unittest.TestCase):
+    def test_footer_field_matches_qdk_qpkg_encrypt(self):
+        # Reference values from QDK src/qpkg_encrypt.c: size*3589+1e9, first 10 digits.
+        self.assertEqual(build_nas.qpkg_checksum_field(209058),b'1750309162')
+        self.assertEqual(build_nas.qpkg_checksum_field(1),b'1000003589')
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'x.qpkg';p.write_bytes(b'#!/bin/sh\n'+b'x'*500+b' '*50+b'MediathekAtlas'.ljust(20)+b'0.5.10'.ljust(10)+b'QNAPQPKG  ')
+            build_nas.qpkg_checksum(p);data=p.read_bytes()
+            self.assertEqual(data[-60:-50],build_nas.qpkg_checksum_field(len(data)));self.assertTrue(data.endswith(b'QNAPQPKG  '))
+            bad=Path(d)/'y.qpkg';bad.write_bytes(b'kein qpkg'*20)
+            with self.assertRaises(SystemExit):build_nas.qpkg_checksum(bad)
+
 class PythonDetectionTests(unittest.TestCase):
     def test_preinst_accepts_any_python_package_and_explains_missing_one(self):
         with tempfile.TemporaryDirectory() as d:

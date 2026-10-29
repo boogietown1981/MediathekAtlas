@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.10 · QPKG-Prüffeld (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldfehler QTS: „Failed to install MediathekAtlas_0.5.9.qpkg due to a file format error“. Ursache: `qpkg_encrypt` fehlte beim Build (`qbuild: qpkg_encrypt: command not found`), das Größen-Prüffeld 60 Byte vor Dateiende blieb leer. Betraf auch alle CI-Builds.
+- Neue Funktion `build_nas.qpkg_checksum`; Ergebnis byte-gleich mit dem aus QDK `src/qpkg_encrypt.c` kompilierten Werkzeug. Neuer Test `QpkgChecksumTests`, CI prüft das Feld. Paketinhalt (46 Dateien) kontrolliert. Alle Tests bestanden.
+- Nicht geprüft: Installation auf echter QNAP.
+
 ## 0.5.9 · Bestand im Verbund teilen (29. Oktober 2026, Linux-Testumgebung)
 
 - Neuer Test `test_results_from_before_joining_are_shared`: System A erkennt 30 Werke ohne Verbund (eins davon manuell), tritt danach bei; System B übernimmt alle 30 ohne eigene Anbieterabfrage, Zustände identisch, die manuelle Zuordnung bleibt manuell; zweiter Durchlauf teilt nichts doppelt, übernommene Ergebnisse werden nicht zurückgespiegelt. Alle automatisierten Tests bestanden.

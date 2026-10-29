@@ -103,10 +103,22 @@ def build_qpkg(project,qbuild,out_dir):
     out_dir.mkdir(parents=True,exist_ok=True)
     result=[]
     for qpkg in built:
-        dest=out_dir/qpkg.name;shutil.copy2(qpkg,dest);result.append(dest)
-        md5=qpkg.with_suffix('.qpkg.md5')
-        if md5.exists():shutil.copy2(md5,out_dir/md5.name)
+        dest=out_dir/qpkg.name;shutil.copy2(qpkg,dest);qpkg_checksum(dest);result.append(dest)
+        (out_dir/(dest.name+'.md5')).write_text(hashlib.md5(dest.read_bytes()).hexdigest()+'  '+dest.name+'\n')
     return result
+
+def qpkg_checksum_field(size):
+    """Size check QTS expects in the QPKG footer, as QDK's qpkg_encrypt.c computes it."""
+    return str(size*3589+1000000000)[:10].encode()
+
+def qpkg_checksum(path):
+    # qbuild calls the separate C helper qpkg_encrypt and only warns if it is missing;
+    # QTS then rejects the package as "file format error". Write the field ourselves.
+    size=path.stat().st_size
+    with path.open('r+b') as f:
+        f.seek(-100,2);tail=f.read(100)
+        if not tail.rstrip().endswith((b'QNAPQPKG',b'QNAPQFIX')):raise SystemExit(f'{path.name}: kein QPKG-Fußbereich')
+        f.seek(-60,2);f.write(qpkg_checksum_field(size))
 
 def main(argv=None):
     a=argparse.ArgumentParser(description=__doc__.splitlines()[0])
