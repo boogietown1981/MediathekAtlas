@@ -1,6 +1,11 @@
-# MediathekAtlas · 0.5.13 Preview
+# MediathekAtlas · 0.5.14 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.14: Klarere Direktverbindung
+
+- In der Mac-/Desktop-App gibt es „Dieses System freigeben“ nicht mehr: Sie ist nur auf dem eigenen Rechner erreichbar, ihr Code konnte nie funktionieren („Connection refused“). Freigeben lässt sich nur ein NAS; Mac und weitere NAS verbinden sich mit dessen Code. Mehrere Systeme hängen sternförmig am freigegebenen NAS, das die Ergebnisse weiterreicht.
+- „Verbindung abgelehnt“ wird erklärt (kein MediathekAtlas unter der Adresse, Dienst gestartet?, Code der Mac-App).
 
 ## Neu in 0.5.13: Start auf QNAP QTS 5.2
 
@@ -27,7 +32,7 @@ Das QPKG 0.5.9 wurde vom App Center mit „file format error“ abgelehnt: Dem P
 Bisher teilte ein System nur Ergebnisse, die nach dem Einschalten des Verbunds entstanden. Jetzt veröffentlicht jedes System beim ersten Verbinden einmalig auch alle schon vorhandenen Zuordnungen (manuell, zugeordnet, Werk erkannt), in Paketen zu 1000 Werken je 30 Sekunden. Die Verbundanzeige zeigt den Fortschritt („Bisherige Ergebnisse werden geteilt: … übertragen, noch … Werke“). Die anderen Systeme übernehmen sie ohne eigene Anbieterabfrage; eigene manuelle Zuordnungen bleiben unangetastet.
 
 
-Neu als Paket: `MediathekAtlas_0.5.13.qpkg` für QNAP QTS (architekturunabhängig, über App Center → Manuell installieren). Python ab 3.9 („Python3“ aus dem App Center oder Entware) muss installiert sein; der Einrichtungscode für das erste Passwort liegt danach im Download-Ordner.
+Neu als Paket: `MediathekAtlas_0.5.14.qpkg` für QNAP QTS (architekturunabhängig, über App Center → Manuell installieren). Python ab 3.9 („Python3“ aus dem App Center oder Entware) muss installiert sein; der Einrichtungscode für das erste Passwort liegt danach im Download-Ordner.
 ## Neu in 0.5.8: Katalog-Fehler „j is not defined“ behoben
 
 Seit 0.5.3 brach die Kartenansicht ab, sobald ein Titel mehrere Fassungen hatte („Katalog konnte nicht geladen werden: j is not defined“). Ursache war ein falsch platzierter Code-Teil der neuen Download-Karten in der Katalogkarte.
@@ -99,7 +104,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.13-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.13.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.14-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.14.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

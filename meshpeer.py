@@ -109,7 +109,11 @@ class Peer:
             if e.code == 503: raise PeerError(detail or 'Verbund ist auf der Gegenstelle nicht aktiv')
             raise PeerError('Gegenstelle antwortet mit HTTP %d%s' % (e.code, ': ' + detail if detail else ''))
         except (urllib.error.URLError, OSError) as e:
-            raise PeerError('Gegenstelle nicht erreichbar (%s)' % getattr(e, 'reason', e))
+            reason = getattr(e, 'reason', e)
+            if isinstance(reason, ConnectionRefusedError):
+                raise PeerError('Gegenstelle lehnt die Verbindung ab: Unter %s läuft kein MediathekAtlas. Dienst auf dem NAS gestartet? '
+                                'Codes der Mac-App funktionieren nicht, nur Codes eines NAS.' % self.url)
+            raise PeerError('Gegenstelle nicht erreichbar (%s)' % reason)
         if len(data) > limit: raise PeerError('Antwort der Gegenstelle zu groß')
         return data
 

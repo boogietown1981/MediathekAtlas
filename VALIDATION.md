@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.14 · Direktverbindung Desktop (29. Oktober 2026, Linux-Testumgebung)
+
+- Chromium Desktop-Modus: „Dieses System freigeben“ ausgeblendet, Hinweis sichtbar; Verbinden auf geschlossenen Port zeigt die neue Erklärung; keine JavaScript-Fehler. Server lehnt Freigabe im Desktop-Modus ab. Alle Tests bestanden.
+
 ## 0.5.13 · QNAP ohne nohup (29. Oktober 2026, Linux-Testumgebung)
 
 - Feldbefund aus `MediathekAtlas-Startproblem.txt` (QTS 5.2.11, TS-932X, ARM Cortex-A57, Python 3.11.4 unter `/opt/QPython311`): `nohup: command not found`.

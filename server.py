@@ -412,6 +412,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/mesh-direct':
                 s=settings();action=d.get('action')
                 if action=='share':
+                    if not NETWORK:raise ValueError('Die Mac-/Desktop-App ist nur auf diesem Rechner erreichbar und kann nicht freigegeben werden. Bitte auf dem NAS „Dieses System freigeben“ wählen und den Code hier einfügen.')
                     if not meshpeer.valid_key(s.get('mesh_key')):s['mesh_key']=meshpeer.new_key()
                 elif action=='connect':
                     url,key=meshpeer.parse_code(d.get('code'))

@@ -44,7 +44,7 @@ class ErrorMessageTests(unittest.TestCase):
             answers['/api/peer/index']=(200,b'<html>Router</html>')
             with self.assertRaisesRegex(meshpeer.PeerError,'kein MediathekAtlas'):peer.hello()
         finally:srv.shutdown();srv.server_close()
-        with self.assertRaisesRegex(meshpeer.PeerError,'nicht erreichbar'):meshpeer.Peer('http://127.0.0.1:%d'%srv.server_port,meshpeer.new_key()).hello()
+        with self.assertRaisesRegex(meshpeer.PeerError,'läuft kein MediathekAtlas'):meshpeer.Peer('http://127.0.0.1:%d'%srv.server_port,meshpeer.new_key()).hello()
 
 class DirectConnectionTests(unittest.TestCase):
     def test_mac_mirrors_journal_with_nas_over_http(self):
