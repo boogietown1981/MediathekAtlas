@@ -12,7 +12,7 @@ for name in ('core.py','stable_runtime.py','imdb_archive.py','matching.py','artw
 for name in ('web','vendor','assets'):
     shutil.copytree(ROOT/name,code/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
 shutil.copy2(ROOT/'assets'/'MediathekAtlas.icns',resources/'MediathekAtlas.icns')
-plist={'CFBundleName':'MediathekAtlas','CFBundleDisplayName':'MediathekAtlas','CFBundleIdentifier':'de.mediathekatlas.desktop','CFBundleVersion':'24','CFBundleShortVersionString':VERSION,'CFBundleExecutable':'MediathekAtlas','CFBundleIconFile':'MediathekAtlas.icns','CFBundlePackageType':'APPL','LSUIElement':True,'LSMinimumSystemVersion':'11.0'}
+plist={'CFBundleName':'MediathekAtlas','CFBundleDisplayName':'MediathekAtlas','CFBundleIdentifier':'de.mediathekatlas.desktop','CFBundleVersion':'25','CFBundleShortVersionString':VERSION,'CFBundleExecutable':'MediathekAtlas','CFBundleIconFile':'MediathekAtlas.icns','CFBundlePackageType':'APPL','LSUIElement':True,'LSMinimumSystemVersion':'11.0'}
 (app/'Contents'/'Info.plist').write_bytes(plistlib.dumps(plist))
 launcher=macos/'MediathekAtlas';shutil.copy2(ROOT/'launcher.sh',launcher);launcher.chmod(0o755)
 print(app)

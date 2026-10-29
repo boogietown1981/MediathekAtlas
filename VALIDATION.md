@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.3 · Genres, Download-Karten, Dateizugriff (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), neu `tests/test_v053.py`: Schreibvarianten aus dem Bildschirmfoto (Dokumentarfilm, Filmdrama, Filmkomödie, Kriminalfilm, Mysteryfilm, Liebesfilm, Biography, Familie) ergeben je ein Genre; einmalige Umstellung gespeicherter Genres, Werk-Metadaten und Serienvorlagen.
+- Dateizugriff im NAS-Modus mit echtem Serverprozess: ohne Anmeldung 401, falscher Seiten-Token 403, nicht fertiger Download 404, vollständige Datei 200 mit UTF-8-Dateiname, Teilbereiche 206, ungültiger Bereich 416, verschobene Datei 404.
+- Chromium (Desktop-Modus, 1500 px und 390 px): Downloads als Kartenraster, Details klappen auf und bleiben beim Aktualisieren offen, „Herunterladen“ liefert die Datei.
+- Nicht geprüft: Download über den Browser von einer echten Synology/QNAP.
+
 ## 0.5.2 · Downloads im Verbund (29. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 6 neue Downloadtests in `tests/test_mesh.py`: Anspruch blockiert das andere System bis zur Freigabe, abgelaufener Anspruch blockiert nicht, geteilter Download wird erst bei vollständiger Datei als vorhanden gezählt, ungeteilter Download zählt ohne zu blockieren, `done` bleibt gegen späteren Anspruch und fremde Freigabe bestehen, Pfade mit `..` oder absolut werden abgelehnt.

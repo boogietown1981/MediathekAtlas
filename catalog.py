@@ -95,6 +95,7 @@ def ingest(c,rows,seen=None):
         if template:
             m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
             for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
+            m['genres']=normalized_genres(m.get('genres'))
         wid=identity(row,m)
         old=c.execute('SELECT work_id FROM offers WHERE id=?',(oid,)).fetchone()
         if old:wid=old[0]
@@ -220,8 +221,7 @@ def save_metadata(c,wid,m,state='manual'):
     if old and old['state']=='manual' and state!='manual':m=json.loads(old['meta']);state='manual'
     c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,meta=excluded.meta,state=excluded.state,updated=excluded.updated',(dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time()))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
-    from metadata import genres
-    m['genres']=genres(m.get('genres',[]))
+    m['genres']=normalized_genres(m.get('genres'))
     c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),dest))
     for genre in m.get('genres',[]):c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(dest,genre))
     if dest!=wid:
@@ -293,7 +293,7 @@ def assign_formats(c,limit=500):
         fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
         m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
         m.update(kind='series',title=fmt,episode_title=cleaned(source.get('title')),year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
-                 state='format',genres=hints or m.get('genres',[]),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
+                 state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
                  reason='Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
         c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
         c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
@@ -333,12 +333,40 @@ def reclassify_batch(c,limit=500):
     set_state(c,'reclassify_cursor_v030',cursor if rows else 'complete')
     return len(rows)
 
+def normalized_genres(values):
+    from metadata import genres
+    return genres(values or [])
+
+def merge_genre_spellings(c):
+    """Fold genres stored under older or provider-specific spellings into one canonical name."""
+    from metadata import genre_names
+    changes={}
+    for (genre,) in c.execute('SELECT DISTINCT genre FROM work_genres').fetchall():
+        names=genre_names(genre)
+        if names!=[genre]:changes[genre]=names
+    touched=set()
+    for genre,names in changes.items():
+        ids=[r[0] for r in c.execute('SELECT work_id FROM work_genres WHERE genre=?',(genre,))]
+        for wid in ids:
+            for name in names:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,name))
+        c.execute('DELETE FROM work_genres WHERE genre=?',(genre,));touched.update(ids)
+    for wid in touched:
+        row=c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        m=json.loads(row[0] or '{}');m['genres']=normalized_genres(m.get('genres'))
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+    for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
+        m=json.loads(meta or '{}');g=normalized_genres(m.get('genres'))
+        if g!=m.get('genres'):m['genres']=g;c.execute('UPDATE series_templates SET meta=? WHERE topic=? AND provider=? AND reference=?',(json.dumps(m),topic,provider,ref))
+    return len(changes)
+
 def initialize(c):
     c.executescript(SCHEMA)
     if 'topic' not in [r[1] for r in c.execute('PRAGMA table_info(works)')]:c.execute("ALTER TABLE works ADD COLUMN topic TEXT DEFAULT ''")
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
     c.execute('CREATE INDEX IF NOT EXISTS work_topic ON works(topic)')
+    if not get_state(c,'genre_spellings_v053',False):merge_genre_spellings(c);set_state(c,'genre_spellings_v053',True)
 
 def review_listing(c,query='',state='open',offset=0):
     """Flat work/episode list: do not hide unresolved episodes behind a series parent."""

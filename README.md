@@ -1,6 +1,12 @@
-# MediathekAtlas · 0.5.2 Preview
+# MediathekAtlas · 0.5.3 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.3: Einheitliche Genres, Downloads als Karten, Dateien vom NAS laden
+
+- **Genres ohne Doppelungen:** Schreibweisen der Anbieter werden zu einem deutschen Genre zusammengeführt, z. B. „Dokumentarfilm“, „Documentary“ → „Dokumentation“, „Kriminalfilm“, „Krimiserie“ → „Krimi“, „Filmdrama“ → „Drama“, „Liebesfilm“ → „Romantik“, „Biography“ → „Biografie“, „Familie“ → „Kinder & Familie“, „Mysteryfilm“ → „Mystery“. Groß-/Kleinschreibung, Bindestriche und „&“/„und“ spielen keine Rolle; „Action & Adventure“ wird zu „Action“ und „Abenteuer“, reine Medienangaben wie „Fernsehserie“ entfallen. Bestehende Kataloge werden beim ersten Start einmalig umgestellt.
+- **Download-Ansicht als Kartenraster** wie die Suche: Cover, Titel, Status und Fortschritt kompakt, Speicherort, Tonspuren und Originalquelle unter „Datei & Speicherort“ einklappbar.
+- **Fertige Downloads über den Browser laden:** Jede fertige Datei hat die Schaltfläche „Herunterladen“. Das funktioniert auch, wenn MediathekAtlas auf dem NAS läuft und der Browser auf einem anderen Gerät; die Anmeldung gilt dafür genauso. Fortsetzen abgebrochener Übertragungen (HTTP-Range) wird unterstützt. MP4/WebM lassen sich auf dem NAS direkt im Browser abspielen. „Filmdatei öffnen“ bleibt in der Desktop-App erhalten.
 
 ## Neu in 0.5.2: Downloads im Verbund abgestimmt
 
@@ -46,7 +52,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.2-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.2.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.3-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.3.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

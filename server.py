@@ -169,6 +169,22 @@ def catalog_status():
     # Return our complete local snapshot, never the newly emptied shared cache.
     return {**snapshot[1],'sync':SERVICE.current or snapshot[1].get('sync',{})}
 
+def downloads_range(header,size):
+    """Single byte range from a Range header: None for the whole file, 'invalid' when unsatisfiable."""
+    if not header:return None
+    unit,_,spec=header.partition('=')
+    if unit.strip().lower()!='bytes' or ',' in spec or '-' not in spec:return None
+    first,_,last=spec.strip().partition('-')
+    try:
+        if not first:
+            n=int(last)
+            if n<=0:return 'invalid'
+            return (max(0,size-n),size-1)
+        start=int(first);end=int(last) if last else size-1
+    except ValueError:return None
+    if start>=size or end<start:return 'invalid'
+    return (start,min(end,size-1))
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
     def send(self,data,status=200,ctype='application/json',cookies=()):
@@ -206,6 +222,7 @@ class Handler(BaseHTTPRequestHandler):
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path=='/app.js':return self.send((Path(__file__).parent/'web'/'app.js').read_bytes(),ctype='text/javascript')
+        if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
@@ -228,6 +245,38 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/state':
             s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name','')},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
+    # Finished downloads are served over HTTP so a browser on another device can fetch them;
+    # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
+    # token in the query because a plain <a download> cannot send headers.
+    def download_file(self,q):
+        if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+        with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(q.get('id',[''])[0],)).fetchone()
+        if not row:return self.send({'error':'Nur abgeschlossene Downloads können geladen werden'},404)
+        job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
+        if not target.is_file():return self.send({'error':'Datei wurde verschoben oder ist nicht verfügbar'},404)
+        size=target.stat().st_size;start,end=0,size-1;status=200
+        span=downloads_range(self.headers.get('Range'),size)
+        if span=='invalid':
+            self.send_response(416);self.send_header('Content-Range',f'bytes */{size}');self.send_header('Content-Length','0');self.end_headers();return
+        if span:start,end=span;status=206
+        ctype={'.mkv':'video/x-matroska','.mp4':'video/mp4','.m4v':'video/mp4','.webm':'video/webm','.mp3':'audio/mpeg','.m4a':'audio/mp4'}.get(target.suffix.lower(),'application/octet-stream')
+        ascii_name=''.join(ch if 32<=ord(ch)<127 and ch not in '"\\' else '_' for ch in target.name)
+        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(end-start+1));self.send_header('Accept-Ranges','bytes')
+        if status==206:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
+        self.send_header('Content-Disposition',f'{"inline" if q.get("inline",["0"])[0]=="1" else "attachment"}; filename="{ascii_name}"; filename*=UTF-8\'\'{urllib.parse.quote(target.name)}')
+        self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers()
+        if self.command=='HEAD':return
+        with target.open('rb') as f:
+            f.seek(start);left=end-start+1
+            while left>0:
+                chunk=f.read(min(1048576,left))
+                if not chunk:break
+                self.wfile.write(chunk);left-=len(chunk)
+    def do_HEAD(self):
+        path=urllib.parse.urlsplit(self.path).path
+        if path!='/api/download-file' or not self.valid_host() or not self.authorized():return self.send({'error':'Nicht gefunden'},404)
+        try:self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+        except (BrokenPipeError,ConnectionResetError):pass
     def do_POST(self):
         global _TREE_CACHE,_STATUS_CACHE
         if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
