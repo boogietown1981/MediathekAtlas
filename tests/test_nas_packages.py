@@ -102,7 +102,7 @@ class NasPackageTests(unittest.TestCase):
                     if name.startswith(('conf/','WIZARD_UIFILES/')):json.loads(tar.extractfile(name).read())
                 extract(tar,d/'pkg')
             self.assertEqual(info['checksum'],hashlib.md5(package).hexdigest());self.assertEqual(info['arch'],'noarch')
-            self.assertEqual(info['version'],build_nas.VERSION+'-'+build_nas.SPK_BUILD);self.assertEqual(info['install_dep_packages'],'Python3.9')
+            self.assertEqual(info['version'],build_nas.VERSION+'-'+build_nas.SPK_BUILD);self.assertNotIn('install_dep_packages',info)
             privilege=json.loads((d/'pkg'/'conf'/'privilege').read_text());self.assertEqual(privilege['defaults']['run-as'],'package')
             share=json.loads((d/'pkg'/'conf'/'resource').read_text())['data-share']['shares'][0]
             self.assertIn(privilege['username'],share['permission']['rw'])
@@ -155,6 +155,69 @@ class NasPackageTests(unittest.TestCase):
             finally:
                 subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
             self.assertEqual(subprocess.run(['sh',script,'status'],env=env,capture_output=True).returncode,3)
+
+class QpkgChecksumTests(unittest.TestCase):
+    def test_footer_field_matches_qdk_qpkg_encrypt(self):
+        # Reference values from QDK src/qpkg_encrypt.c: size*3589+1e9, first 10 digits.
+        self.assertEqual(build_nas.qpkg_checksum_field(209058),b'1750309162')
+        self.assertEqual(build_nas.qpkg_checksum_field(1),b'1000003589')
+        with tempfile.TemporaryDirectory() as d:
+            p=Path(d)/'x.qpkg';p.write_bytes(b'#!/bin/sh\n'+b'x'*500+b' '*50+b'MediathekAtlas'.ljust(20)+b'0.5.10'.ljust(10)+b'QNAPQPKG  ')
+            build_nas.qpkg_checksum(p);data=p.read_bytes()
+            self.assertEqual(data[-60:-50],build_nas.qpkg_checksum_field(len(data)));self.assertTrue(data.endswith(b'QNAPQPKG  '))
+            bad=Path(d)/'y.qpkg';bad.write_bytes(b'kein qpkg'*20)
+            with self.assertRaises(SystemExit):build_nas.qpkg_checksum(bad)
+
+class PythonDetectionTests(unittest.TestCase):
+    def test_preinst_accepts_any_python_package_and_explains_missing_one(self):
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d);packages=d/'var'/'packages'
+            script=(ROOT/'packaging'/'synology'/'scripts'/'preinst').read_text().replace('/var/packages',str(packages)).replace('/usr/local/bin/python3 /usr/bin/python3','/fehlt/1 /fehlt/2')
+            (d/'preinst').write_text(script);log=d/'log'
+            r=subprocess.run(['sh',str(d/'preinst')],env={**os.environ,'SYNOPKG_TEMP_LOGFILE':str(log)},capture_output=True)
+            self.assertEqual(r.returncode,1);self.assertIn('Python ab Version 3.9',log.read_text())
+            # e.g. SynoCommunity python311 instead of the official Python3.9 package
+            bin_dir=packages/'python311'/'target'/'bin';bin_dir.mkdir(parents=True);(bin_dir/'python3').symlink_to(sys.executable)
+            self.assertEqual(subprocess.run(['sh',str(d/'preinst')],capture_output=True).returncode,0)
+
+class StartProblemNoteTests(unittest.TestCase):
+    def test_failed_start_leaves_readable_note_in_download_share(self):
+        import socket as so
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d);home=d/'data';share=d/'Download'/'MediathekAtlas';home.mkdir();share.mkdir(parents=True)
+            blocker=so.socket();blocker.bind(('0.0.0.0',0));blocker.listen(1);port=blocker.getsockname()[1]
+            env={**NasPackageTests.env,'ATLAS_APP':str(ROOT),'ATLAS_HOME':str(home),'ATLAS_PORT':str(port),'ATLAS_DOWNLOADS':str(share),'ATLAS_MANAGED':'qnap','ATLAS_PYTHON':sys.executable}
+            script=str(ROOT/'packaging'/'nas'/'mediathekatlas-service.sh')
+            try:
+                r=subprocess.run(['sh',script,'start'],env=env,capture_output=True,text=True,timeout=60)
+                self.assertNotEqual(r.returncode,0)
+                note=share/'MediathekAtlas-Startproblem.txt';self.assertTrue(note.is_file())
+                self.assertIn('direkt nach dem Start beendet',note.read_text())
+            finally:
+                blocker.close();subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
+            r=subprocess.run(['sh',script,'start'],env=env,capture_output=True,text=True,timeout=60)
+            try:
+                self.assertEqual(r.returncode,0,r.stdout+r.stderr);self.assertFalse(note.exists(),'note removed after a good start')
+            finally:subprocess.run(['sh',script,'stop'],env=env,capture_output=True,timeout=60)
+
+class MinimalShellTests(unittest.TestCase):
+    def test_service_starts_without_nohup(self):
+        # QTS (BusyBox) has no nohup; the service must not depend on it.
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(d);tools=d/'bin';tools.mkdir();home=d/'data';share=d/'share'
+            for name in ('sh','sed','tail','cat','mkdir','chmod','date','id','wc','tr','grep','sleep','rm','mv','printf','dirname','env'):
+                found=shutil.which(name)
+                if found:(tools/name).symlink_to(found)
+            self.assertFalse((tools/'nohup').exists())
+            port=free_port()
+            env={**NasPackageTests.env,'PATH':str(tools),'ATLAS_APP':str(ROOT),'ATLAS_HOME':str(home),'ATLAS_PORT':str(port),'ATLAS_DOWNLOADS':str(share),'ATLAS_MANAGED':'qnap','ATLAS_PYTHON':sys.executable}
+            script=str(ROOT/'packaging'/'nas'/'mediathekatlas-service.sh')
+            try:
+                r=subprocess.run([str(tools/'sh'),script,'start'],env=env,capture_output=True,text=True,timeout=60)
+                self.assertEqual(r.returncode,0,r.stdout+r.stderr+(home/'service.log').read_text())
+                self.assertEqual(json.loads(wait_http(port)[1])['required'],True)
+                self.assertNotIn('not found',(home/'service.log').read_text())
+            finally:subprocess.run([str(tools/'sh'),script,'stop'],env=env,capture_output=True,timeout=60)
 
 class DesktopModeTests(unittest.TestCase):
     def test_desktop_server_keeps_loopback_host_check_without_login(self):

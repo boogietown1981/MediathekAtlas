@@ -20,7 +20,7 @@ QNAP QDK v2.5.3), prüft sie und stellt sie als Artefakt `MediathekAtlas-NAS-Pak
 | Punkt | Umsetzung |
 |---|---|
 | Installation | Paket-Zentrum → Manuelle Installation → `.spk`. Unsigniert: Hinweis „unbekannter Herausgeber“ bestätigen. |
-| Python | Abhängigkeit `Python3.9` wird vom Paket-Zentrum mitinstalliert. Neuere SynoCommunity-Pythons werden bevorzugt, falls vorhanden. |
+| Python | Jedes installierte Python ab 3.9 (Synology „Python 3.9“, SynoCommunity 3.10–3.13 oder ein anderes Python-Paket); das neueste wird genommen. Ohne passendes Python bricht die Installation mit einem Hinweis ab. Seit 0.5.4 keine feste Abhängigkeit auf `Python3.9` mehr. |
 | Rechte | Dienst läuft als Paketbenutzer `mediathekatlas`, nie als root (`conf/privilege`). |
 | Downloads | Freigegebener Ordner **MediathekAtlas** (wird angelegt, Paketbenutzer erhält Schreibrecht). Andere Freigabe: Systemsteuerung → Freigegebener Ordner → Berechtigungen → Systeminterner Benutzer `mediathekatlas` Lesen/Schreiben geben, danach Zielordner in MediathekAtlas → Einstellungen ändern. |
 | Katalog/Einstellungen | `/var/packages/MediathekAtlas/var` (bleibt bei Updates erhalten). |

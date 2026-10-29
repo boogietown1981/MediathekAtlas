@@ -20,8 +20,6 @@ jobs:
             python: '3.9'
           - os: ubuntu-latest
             python: '3.13'
-          - os: macos-latest
-            python: '3.13'
     steps:
       - uses: actions/checkout@v5
       - uses: actions/setup-python@v6
@@ -29,8 +27,7 @@ jobs:
           python-version: ${{ matrix.python }}
       - name: FFmpeg installieren
         run: |
-          if [ "$RUNNER_OS" = macOS ]; then brew install ffmpeg
-          else sudo apt-get update -q && sudo apt-get install -y -q ffmpeg; fi
+          sudo apt-get update -q && sudo apt-get install -y -q ffmpeg rsync
       - name: Pillow für Paket-Icons installieren
         run: python -m pip install --quiet pillow
       - name: Syntaxprüfung
@@ -40,6 +37,24 @@ jobs:
           for f in packaging/nas/*.sh packaging/qnap/shared/*.sh packaging/synology/scripts/*; do sh -n "$f"; done
           node --check web/app.js
           node --check web/login.js
+      - name: Unit-Tests
+        run: python -m unittest discover -s tests -v
+
+  # Separate job: macOS runners are sometimes not assigned for a long time; that must not
+  # hold back the NAS packages, which only need the Linux results.
+  test-macos:
+    name: Python 3.13 · macos-latest
+    runs-on: macos-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: FFmpeg installieren
+        run: brew install ffmpeg
+      - name: Pillow für Paket-Icons installieren
+        run: python -m pip install --quiet pillow
       - name: Unit-Tests
         run: python -m unittest discover -s tests -v
 
@@ -75,6 +90,8 @@ jobs:
           qpkg=$(ls dist/MediathekAtlas_*.qpkg | head -n 1)
           tail -c 100 "$qpkg" | grep -q 'QNAPQPKG'
           tail -c 100 "$qpkg" | grep -q "MediathekAtlas"
+          # QTS rejects packages without the size check written by qpkg_encrypt ("file format error").
+          python -c 'import sys,os,build_nas;p=sys.argv[1];d=open(p,"rb").read();sys.exit(0 if d[-60:-50]==build_nas.qpkg_checksum_field(len(d)) else "QPKG-Prüffeld fehlt")' "$qpkg"
           # Extract with the header offsets exactly as QTS does and check the payload.
           mkdir -p qpkg-check && /usr/share/QDK/bin/qbuild --extract "$qpkg" qpkg-check
           ls -l qpkg-check

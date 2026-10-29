@@ -65,7 +65,7 @@ def build_spk(out_dir,port=PORT):
     info={'package':NAME,'version':f'{VERSION}-{SPK_BUILD}','os_min_ver':'7.0-40000','displayname':NAME,
           'description':'Catalogue of the German public broadcasters\' media libraries with metadata matching and organised downloads to the NAS.',
           'description_ger':'Katalog der öffentlich-rechtlichen Mediatheken mit Metadatenabgleich und geordneten Downloads auf das NAS.',
-          'maintainer':NAME,'arch':'noarch','install_dep_packages':'Python3.9','dsmuidir':'ui','dsmappname':'de.mediathekatlas',
+          'maintainer':NAME,'arch':'noarch','dsmuidir':'ui','dsmappname':'de.mediathekatlas',
           'adminprotocol':'http','adminport':str(port),'adminurl':'/','ctl_stop':'yes','thirdparty':'yes',
           'checksum':hashlib.md5(package).hexdigest()}
     out_dir.mkdir(parents=True,exist_ok=True)
@@ -95,16 +95,30 @@ def build_qdk_project(port=PORT):
     return project
 
 def build_qpkg(project,qbuild,out_dir):
+    # qbuild copies the payload with /usr/bin/rsync and silently ships an icon-only package without it.
+    if not Path('/usr/bin/rsync').exists():raise SystemExit('qbuild braucht /usr/bin/rsync (z. B. apt-get install rsync)')
     subprocess.run([qbuild,'--build-dir',str(project/'build')],cwd=project,check=True)
     built=sorted((project/'build').glob(f'{NAME}_*.qpkg'))
     if not built:raise SystemExit('qbuild hat kein QPKG erzeugt')
     out_dir.mkdir(parents=True,exist_ok=True)
     result=[]
     for qpkg in built:
-        dest=out_dir/qpkg.name;shutil.copy2(qpkg,dest);result.append(dest)
-        md5=qpkg.with_suffix('.qpkg.md5')
-        if md5.exists():shutil.copy2(md5,out_dir/md5.name)
+        dest=out_dir/qpkg.name;shutil.copy2(qpkg,dest);qpkg_checksum(dest);result.append(dest)
+        (out_dir/(dest.name+'.md5')).write_text(hashlib.md5(dest.read_bytes()).hexdigest()+'  '+dest.name+'\n')
     return result
+
+def qpkg_checksum_field(size):
+    """Size check QTS expects in the QPKG footer, as QDK's qpkg_encrypt.c computes it."""
+    return str(size*3589+1000000000)[:10].encode()
+
+def qpkg_checksum(path):
+    # qbuild calls the separate C helper qpkg_encrypt and only warns if it is missing;
+    # QTS then rejects the package as "file format error". Write the field ourselves.
+    size=path.stat().st_size
+    with path.open('r+b') as f:
+        f.seek(-100,2);tail=f.read(100)
+        if not tail.rstrip().endswith((b'QNAPQPKG',b'QNAPQFIX')):raise SystemExit(f'{path.name}: kein QPKG-Fußbereich')
+        f.seek(-60,2);f.write(qpkg_checksum_field(size))
 
 def main(argv=None):
     a=argparse.ArgumentParser(description=__doc__.splitlines()[0])

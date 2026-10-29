@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -50,7 +50,7 @@ with db() as c:
 def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
-    diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'))
+    diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
     return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
@@ -75,14 +75,24 @@ def worker():
         with db() as c:
             r=c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
             if not r:continue
-            j=json.loads(r[0]);c.execute("UPDATE jobs SET state='downloading' WHERE id=?",(j['id'],))
+            j=json.loads(r[0])
+            o=c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
+            blocked=SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
+            if blocked:
+                # Queued before the other instance's claim arrived (e.g. series packages).
+                j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
+            c.execute("UPDATE jobs SET state='downloading' WHERE id=?",(j['id'],))
         def cancelled():
             with db() as c:x=c.execute('SELECT state FROM jobs WHERE id=?',(j['id'],)).fetchone()
             return not x or x[0]=='cancelled'
+        claimed=[0.0]
         def update(state,received=0,total=0,**kw):
             if cancelled():return
             j.update(state=state,received=received,total=total,**kw);put_job(j)
+            if state!='done' and time.time()-claimed[0]>meshjournal.CLAIM_RENEW:
+                claimed[0]=time.time();SERVICE.mesh_claim(j)
         try:
+            claimed[0]=time.time();SERVICE.mesh_claim(j)
             if not all(j['metadata'].get(k) for k in ('poster','fanart')):
                 pictures,errors=artwork.lookup(j['metadata'],settings())
                 for field in ('poster','fanart','artwork_provider'):
@@ -92,6 +102,10 @@ def worker():
         except Exception as e:
             diagnostics.error('download_failed',e,job_id=j['id'])
             if not cancelled():j.update(state='error',error=core.safe_error(e));put_job(j)
+        if j.get('state')=='done':
+            try:SERVICE.mesh_done(j)
+            except OSError as e:diagnostics.error('mesh_done_failed',e,job_id=j['id'])
+        elif claimed[0]:SERVICE.mesh_release(j)
 
 SERVICE=catalog_service.Service(db,settings,STOP,ROOT)
 def imdb_updated():
@@ -155,6 +169,22 @@ def catalog_status():
     # Return our complete local snapshot, never the newly emptied shared cache.
     return {**snapshot[1],'sync':SERVICE.current or snapshot[1].get('sync',{})}
 
+def downloads_range(header,size):
+    """Single byte range from a Range header: None for the whole file, 'invalid' when unsatisfiable."""
+    if not header:return None
+    unit,_,spec=header.partition('=')
+    if unit.strip().lower()!='bytes' or ',' in spec or '-' not in spec:return None
+    first,_,last=spec.strip().partition('-')
+    try:
+        if not first:
+            n=int(last)
+            if n<=0:return 'invalid'
+            return (max(0,size-n),size-1)
+        start=int(first);end=int(last) if last else size-1
+    except ValueError:return None
+    if start>=size or end<start:return 'invalid'
+    return (start,min(end,size-1))
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
     def send(self,data,status=200,ctype='application/json',cookies=()):
@@ -182,6 +212,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/icon.svg':return self.send((Path(__file__).parent/'assets'/'icon.svg').read_bytes(),ctype='image/svg+xml')
         if path in ('/style.css','/login.js'):
             return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript' if path.endswith('js') else 'text/css')
+        if path.startswith('/api/peer/'):return self.peer_get(path)
         if path=='/api/login-state':
             if not NETWORK:return self.send({'required':False})
             return self.send({'required':True,'configured':ACCESS.configured(),'setup_files':ACCESS.ensure_setup_code() if not ACCESS.configured() else []})
@@ -192,6 +223,7 @@ class Handler(BaseHTTPRequestHandler):
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path=='/app.js':return self.send((Path(__file__).parent/'web'/'app.js').read_bytes(),ctype='text/javascript')
+        if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
@@ -212,8 +244,81 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name','')},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
+    # Finished downloads are served over HTTP so a browser on another device can fetch them;
+    # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
+    # token in the query because a plain <a download> cannot send headers.
+    def download_file(self,q):
+        if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+        with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(q.get('id',[''])[0],)).fetchone()
+        if not row:return self.send({'error':'Nur abgeschlossene Downloads können geladen werden'},404)
+        job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
+        if not target.is_file():return self.send({'error':'Datei wurde verschoben oder ist nicht verfügbar'},404)
+        size=target.stat().st_size;start,end=0,size-1;status=200
+        span=downloads_range(self.headers.get('Range'),size)
+        if span=='invalid':
+            self.send_response(416);self.send_header('Content-Range',f'bytes */{size}');self.send_header('Content-Length','0');self.end_headers();return
+        if span:start,end=span;status=206
+        ctype={'.mkv':'video/x-matroska','.mp4':'video/mp4','.m4v':'video/mp4','.webm':'video/webm','.mp3':'audio/mpeg','.m4a':'audio/mp4'}.get(target.suffix.lower(),'application/octet-stream')
+        ascii_name=''.join(ch if 32<=ord(ch)<127 and ch not in '"\\' else '_' for ch in target.name)
+        self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(end-start+1));self.send_header('Accept-Ranges','bytes')
+        if status==206:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
+        self.send_header('Content-Disposition',f'{"inline" if q.get("inline",["0"])[0]=="1" else "attachment"}; filename="{ascii_name}"; filename*=UTF-8\'\'{urllib.parse.quote(target.name)}')
+        self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers()
+        if self.command=='HEAD':return
+        with target.open('rb') as f:
+            f.seek(start);left=end-start+1
+            while left>0:
+                chunk=f.read(min(1048576,left))
+                if not chunk:break
+                self.wfile.write(chunk);left-=len(chunk)
+    def do_HEAD(self):
+        path=urllib.parse.urlsplit(self.path).path
+        if path!='/api/download-file' or not self.valid_host() or not self.authorized():return self.send({'error':'Nicht gefunden'},404)
+        try:self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+        except (BrokenPipeError,ConnectionResetError):pass
+    # Direct Verbund connection (meshpeer): another instance mirrors the journal files.
+    # Authenticated by the shared Verbund key instead of a browser session.
+    def peer_journal(self):
+        key=settings().get('mesh_key')
+        if not meshpeer.valid_key(key) or not secrets.compare_digest(self.headers.get(meshpeer.KEY_HEADER,''),key):
+            self.send({'error':'Verbund-Schlüssel ungültig'},403);return None
+        journal=SERVICE.mesh
+        if journal is None:
+            reason=SERVICE.mesh_status.get('error')
+            self.send({'error':'Verbund auf der Gegenstelle nicht aktiv: '+reason+' (dort unter Verbund den Verbundordner leeren oder korrigieren)' if reason else 'Verbund auf der Gegenstelle startet gerade, bitte kurz warten'},503);return None
+        return journal
+    def peer_get(self,path):
+        journal=self.peer_journal()
+        if journal is None:return
+        if path=='/api/peer/index':
+            return self.send({'format':meshjournal.FORMAT,'node':journal.node,'name':journal.name,'version':VERSION,'files':meshpeer.index(journal.root)})
+        if path=='/api/peer/file':
+            rel=meshpeer.safe_path(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('path',[''])[0])
+            target=Path(journal.root)/rel if rel else None
+            if not target or not target.is_file():return self.send({'error':'Nicht gefunden'},404)
+            return self.send(target.read_bytes(),ctype='application/octet-stream')
+        self.send({'error':'Nicht gefunden'},404)
+    def do_PUT(self):
+        try:
+            path=urllib.parse.urlsplit(self.path).path
+            if path!='/api/peer/file' or not self.valid_host():return self.send({'error':'Nicht gefunden'},404)
+            journal=self.peer_journal()
+            if journal is None:return
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);length=int(self.headers.get('Content-Length','0'))
+            if not 0<length<=meshpeer.MAX_FILE:return self.send({'error':'Ungültige Größe'},413)
+            data=self.rfile.read(length)
+            try:mtime=int(q.get('mtime',['0'])[0]) or None
+            except ValueError:mtime=None
+            stored=meshpeer.store(journal.root,journal.node,q.get('path',[''])[0],data,mtime)
+            return self.send({'ok':True,'stored':bool(stored)})
+        except meshpeer.PeerError as e:return self.send({'error':str(e)},400)
+        except (BrokenPipeError,ConnectionResetError):pass
+        except Exception as e:
+            diagnostics.error('peer_put_failed',e)
+            try:self.send({'error':core.safe_error(e)},500)
+            except (BrokenPipeError,ConnectionResetError):pass
     def do_POST(self):
         global _TREE_CACHE,_STATUS_CACHE
         if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
@@ -304,6 +409,31 @@ class Handler(BaseHTTPRequestHandler):
                         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
                 if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
                 return self.send({'ok':True})
+            if path=='/api/mesh-direct':
+                s=settings();action=d.get('action')
+                if action=='share':
+                    if not NETWORK:raise ValueError('Die Mac-/Desktop-App ist nur auf diesem Rechner erreichbar und kann nicht freigegeben werden. Bitte auf dem NAS „Dieses System freigeben“ wählen und den Code hier einfügen.')
+                    if not meshpeer.valid_key(s.get('mesh_key')):s['mesh_key']=meshpeer.new_key()
+                elif action=='connect':
+                    url,key=meshpeer.parse_code(d.get('code'))
+                    if not key:raise ValueError('Bitte den vollständigen Verbindungscode der Gegenstelle einfügen (Adresse#Schlüssel)')
+                    if key==s.get('mesh_key'):raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
+                    info=meshpeer.Peer(url,key).hello()
+                    if SERVICE.mesh is not None and info.get('node')==SERVICE.mesh.node:raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
+                    peers=[p for p in meshpeer.peer_list(s) if p['url']!=url]+[{'url':url,'key':key}]
+                    s['mesh_peers']=peers;s.pop('mesh_peer',None)
+                elif action=='remove':
+                    url=str(d.get('url') or '').rstrip('/')
+                    s['mesh_peers']=[p for p in meshpeer.peer_list(s) if p['url']!=url];s.pop('mesh_peer',None)
+                elif action=='unshare':s['mesh_peers']=meshpeer.peer_list(s);s.pop('mesh_peer',None);s.pop('mesh_key',None)
+                elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None);s.pop('mesh_peers',None)
+                else:raise ValueError('Unbekannte Aktion')
+                with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+                diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
+                threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
+                out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}
+                if action=='connect':out['peer']=str(info.get('name') or '')[:80]
+                return self.send(out)
             if path=='/api/download':
                 if d.get('confirmed') is not True:raise ValueError('Metadaten zuerst prüfen und bestätigen')
                 m=core.validate_meta(d['metadata']);m['state']='user_confirmed';m['confirmed_at']=time.time()
@@ -311,7 +441,10 @@ class Handler(BaseHTTPRequestHandler):
                 choices=catalog.links(row)
                 if d.get('quality','best')=='best' and choices:row['_download_url']=choices[0]['url']
                 with db() as c:
+                    # Another instance of the Verbund loads or already shared this title: no second download.
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
+                    blocked=SERVICE.mesh_download_block(c,m,o and o[0])
+                    if blocked:raise ValueError(blocked)
                     if o:SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
                 dest=str(core.target(settings()['download_dir'],m,d['id']))
                 with db() as c:duplicate=c.execute("SELECT 1 FROM jobs WHERE state IN ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1",(dest,)).fetchone()
@@ -340,7 +473,7 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'ok':True})
             if path=='/api/retry':
                 with db() as c:
-                    r=c.execute("SELECT payload FROM jobs WHERE id=? AND state IN ('error','cancelled','interrupted')",(d['id'],)).fetchone()
+                    r=c.execute("SELECT payload FROM jobs WHERE id=? AND state IN ('error','cancelled','interrupted','remote')",(d['id'],)).fetchone()
                 if not r:raise ValueError('Auftrag ist nicht wiederholbar')
                 j=json.loads(r[0]);j.update(id=secrets.token_hex(8),state='queued',received=0,total=0,error='');put_job(j);return self.send({'ok':True})
             self.send({'error':'Nicht gefunden'},404)

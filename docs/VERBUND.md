@@ -10,6 +10,15 @@ Mehrere MediathekAtlas-Installationen teilen sich die Metadatenerkennung und tau
 
 Ohne Verbundordner oder bei nicht erreichbarem Ordner erkennt jede Installation wie bisher alle Titel allein.
 
+## Direktverbindung ohne Sync-Ordner (seit 0.5.5)
+
+Sind die Systeme nur über das Netzwerk verbunden (z. B. Mac und Synology über Tailscale), braucht es keinen gemeinsamen Ordner:
+
+1. Auf dem NAS unter **Einstellungen → Verbund → Direktverbindung** „Dieses System freigeben“ wählen. Es erscheint ein Verbindungscode `http://<adresse>:8730#<schlüssel>`. Die Adresse ist die, über die der Browser das NAS gerade erreicht; die Tailscale-Adresse (100.x) wird zusätzlich angezeigt.
+2. Am Mac den Code unter „Verbindungscode der Gegenstelle“ einfügen und „Verbinden“ wählen. Die Verbindung wird sofort geprüft.
+
+Technik (`meshpeer.py`): Ohne eingetragenen Verbundordner liegt das Journal im Datenordner (`verbund/`). Der verbindende Rechner holt alle 30 Sekunden fehlende Segmente und neuere `node.json` der Gegenstelle (`GET /api/peer/index`, `GET /api/peer/file`) und lädt eigene hoch (`PUT /api/peer/file`). Nur der Rechner mit Gegenstelle baut Verbindungen auf; der Mac muss also nicht erreichbar sein. Alle Anfragen tragen den gemeinsamen Verbund-Schlüssel im Header `X-Atlas-Mesh-Key` (256 Bit). Niemand kann in das Knotenverzeichnis des Empfängers schreiben, veröffentlichte Segmente werden nie überschrieben, Pfade sind auf `nodes/<id>/events-NNNNNN.jsonl|node.json` beschränkt. Über Tailscale ist die Übertragung verschlüsselt; im offenen Netz ohne VPN nur im Heimnetz verwenden. Ein Verbundordner und eine Direktverbindung lassen sich kombinieren (das NAS gibt dann das Journal seines MeshSync-Ordners frei). Videodateien werden nicht übertragen; dafür gibt es „Herunterladen“ in der Download-Ansicht.
+
 ## Ordneraufbau
 
 ```
@@ -48,9 +57,23 @@ Segmente werden nach 2 MiB oder 5 Minuten per Umbenennung veröffentlicht. Leser
 | `match.result` | `matched`, `identified`, `review` | automatisches Ergebnis; `review` enthält höchstens 10 Vorschläge |
 | `match.manual` | `manual` | vom Nutzer bestätigte Zuordnung |
 
+### Downloads (seit 0.5.2)
+
+| `type` | Felder in `data` | Bedeutung |
+| --- | --- | --- |
+| `download.claim` | `key`, `works`, `title`, `until` | Download läuft, gilt bis `until` (2 h, alle 30 min verlängert) |
+| `download.release` | `key`, `works`, `title` | abgebrochen oder fehlgeschlagen, Titel wieder frei |
+| `download.done` | `key`, `works`, `title`, `path`, `size`, `sha256` | fertig; `path` relativ zum MeshSync-Ordner des Downloadziels, `null` wenn das Ziel nicht geteilt ist |
+
+`key` ist `catalog.download_identity()` (bei eindeutiger Zuordnung die kanonische ID), `works` die lokalen Werk-IDs. Ein `done` bleibt maßgeblich; ein späterer `claim` oder ein `release` eines anderen Knotens ändert es nicht. Empfänger werten `path` nur innerhalb ihres eigenen MeshSync-Ordners aus und lehnen absolute Pfade und `..` ab.
+
 `work` ist die aus der Filmliste abgeleitete Werk-ID (`catalog.identity`), auf allen Systemen gleich. `dest` ist die ID nach der Zusammenführung, bei eindeutiger Zuordnung die kanonische ID aus Anbieter und Referenz. `hlc` ist eine hybride logische Uhr in Millisekunden.
 
 Ergebnisse mit Anbieterfehlern oder Pausen werden nicht verteilt. API-Schlüssel, lokale Pfade und Diagnosedaten stehen nie in Ereignissen.
+
+## Bestand beim Beitritt (seit 0.5.9)
+
+Beim ersten Verbinden veröffentlicht jedes System einmalig seine schon vorhandenen Zuordnungen (`manual` als `match.manual`, `matched`/`identified` als `match.result`), 1000 Werke je Runde. Als `work` dient jede ursprüngliche Werk-ID der Angebote des zusammengeführten Werks, als `dest` dessen ID. Ergebnisse, die ein System selbst aus dem Verbund übernommen hat, veröffentlicht es nicht erneut. Fortschritt im Zustand `mesh_backfill_<knoten>`.
 
 ## Aufteilung und Konflikte
 
@@ -61,7 +84,9 @@ Ergebnisse mit Anbieterfehlern oder Pausen werden nicht verteilt. API-Schlüssel
 
 ## Grenzen dieser Version
 
-- Noch nicht enthalten: Download-Abstimmung (`download.claim`/`download.done`), Signaturen je Ereignis, Verdichtung alter Segmente, eigener Verbund-Reiter.
+- Noch nicht enthalten: Signaturen je Ereignis, Verdichtung alter Segmente, eigener Verbund-Reiter, bevorzugtes Download-NAS.
+- Klicken zwei Personen innerhalb weniger Minuten auf zwei NAS denselben Titel an, bevor die Meldung übertragen ist, laden beide. Das Ergebnis bleibt korrekt, kostet aber einen Download.
+- Die anderen Systeme prüfen nur die Dateigröße, nicht die Prüfsumme, damit schwache NAS nicht jedes Video neu einlesen müssen.
 - MeshSync-Ordner sind keine Zugriffskontrolle: Alle Geräte im selben Mesh erhalten den Ordner.
 - Wird ein Datenordner samt Datenbank auf ein zweites System kopiert, haben beide dieselbe Knoten-ID. Vor dem Kopieren den Verbund ausschalten oder auf dem Ziel die Datenbank neu anlegen.
 - Getestet mit simulierten Instanzen in getrennten Datenordnern und gemeinsamem Ordner, nicht mit echtem MeshSync auf zwei NAS.

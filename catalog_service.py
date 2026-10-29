@@ -1,7 +1,8 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
-import json,time,threading
+import hashlib,json,time,threading
 import platform
-import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal
+from pathlib import Path
+import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer
 
 def retry_delay(attempts,result):
     """Seconds until an unresolved work is checked again."""
@@ -14,7 +15,7 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_running=threading.Lock();self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
         for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
@@ -186,7 +187,7 @@ class Service:
     def mesh_loop(self):
         while not self.stop.is_set():
             self.mesh_tick()
-            if self.stop.wait(30):break
+            if self.stop.wait(2 if self.mesh_pending or self.mesh_backlog.get('done') is False else 30):break
         with self.mesh_lock:
             if self.mesh:
                 try:self.mesh.flush(force=True)
@@ -199,11 +200,15 @@ class Service:
         finally:self.mesh_running.release()
     def mesh_round(self,now):
         config=self.settings();folder=str(config.get('mesh_dir') or '').strip()
+        # Direct connection without a synced folder: the journal lives in the app's data folder.
+        direct=not folder and (meshpeer.valid_key(config.get('mesh_key')) or bool(meshpeer.peer_list(config)))
+        if direct:folder=str(Path(self.root)/'verbund')
         if not folder:return self.mesh_off()
         try:
             with self.mesh_lock:
                 if self.mesh is None or self.mesh_status.get('folder')!=folder:
-                    root=meshjournal.check_folder(folder)
+                    if direct:Path(folder).mkdir(mode=0o700,exist_ok=True)
+                    root=meshjournal.check_folder(folder,create=direct)
                     with self.db() as c:
                         node=catalog.get_state(c,'mesh_node_id')
                         if not node:node=meshjournal.new_node_id();catalog.set_state(c,'mesh_node_id',node)
@@ -217,34 +222,60 @@ class Service:
             providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k)]
             if time.time()-self.mesh_beat>=meshjournal.HEARTBEAT:
                 journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers});self.mesh_beat=time.time()
+            # Results from before joining the Verbund are shared once, in batches.
+            journal.flush(force=self.mesh_backfill(journal)>0)
+            self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
+            self.mesh_names={n:str(i.get('name') or n[:8])[:80] for n,i in nodes.items()}
             self.mesh_import(journal)
-            journal.flush()
+            self.mesh_check_local()
             with self.mesh_lock:
                 self.mesh_filter=None if len(parts)==meshjournal.PARTS else parts
                 current=time.time() if now is None else now
-                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'imported':self.mesh_imported,'invalid':self.mesh_invalid,
+                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,'direct':direct,'peers':list(self.mesh_peers.values()),'backlog':self.mesh_backlog,'importing':self.mesh_pending,
                     'nodes':[{'node':n,'name':str(i.get('name') or n[:8])[:80],'self':n==journal.node,'active':n in members,'recognizing':i.get('recognizing') is True,'rate':i.get('rate'),'version':str(i.get('version',''))[:20],'age':max(0,int(current-float(i.get('time') or 0)))} for n,i in sorted(nodes.items())]}
         except (meshjournal.MeshError,OSError) as e:
             # Standalone fallback: a missing mount never blocks local recognition.
             if self.mesh_status.get('error')!=core.safe_error(e):diagnostics.error('mesh_unavailable',e)
             self.mesh_off(folder=folder,error=core.safe_error(e))
+    def mesh_peer_sync(self,config,journal):
+        # Every configured connection is mirrored in turn; several connections (also both
+        # directions or a full mesh) are fine because files are only copied when missing.
+        previous=self.mesh_peers;current={}
+        for peer in meshpeer.peer_list(config):
+            url=peer['url'];old=previous.get(url,{})
+            try:
+                result=meshpeer.Peer(url,peer['key']).sync(journal.root,journal.node)
+                if old.get('error'):diagnostics.event('mesh_peer_connected',seconds=result['seconds'])
+                current[url]={'url':url,**result}
+            except (meshpeer.PeerError,OSError) as e:
+                if old.get('error')!=core.safe_error(e):diagnostics.error('mesh_peer_failed',e)
+                current[url]={'url':url,'error':core.safe_error(e),'last':old.get('time') or old.get('last'),'peer':old.get('peer','')}
+            if self.stop.is_set():break
+        self.mesh_peers=current
+    MESH_IMPORT_BATCH=250;MESH_IMPORT_SECONDS=20;MESH_BACKFILL_PAUSE=20
     def mesh_import(self,journal):
+        # Small transactions and a time budget per round: a large backlog from another system
+        # (e.g. tens of thousands of earlier results) must not starve the web UI, the
+        # heartbeat or the direct connection on a weak NAS. The rest follows next round.
         with self.db() as c:cursors=catalog.get_state(c,'mesh_cursors',{})
-        while True:
-            events,cursors,invalid=journal.read(cursors)
+        started=time.monotonic();self.mesh_pending=False
+        while not self.stop.is_set():
+            events,cursors,invalid=journal.read(cursors,limit=self.MESH_IMPORT_BATCH)
             with self.db() as c:
                 for event in events:
                     if self.mesh_apply(c,event):self.mesh_imported+=1
                 catalog.set_state(c,'mesh_cursors',cursors)
             self.mesh_invalid+=invalid
-            if len(events)<meshjournal.READ_LIMIT or self.stop.is_set():break
+            if len(events)<self.MESH_IMPORT_BATCH:break
+            if time.monotonic()-started>=self.MESH_IMPORT_SECONDS:self.mesh_pending=True;break
     def mesh_better(self,c,wid,key):
         old=c.execute('SELECT rank,providers,hlc,node FROM mesh_results WHERE work_id=?',(wid,)).fetchone()
         return old is None or key>tuple(old),old is not None
     def mesh_apply(self,c,event):
+        if event['type'] in meshjournal.DOWNLOAD_TYPES:return self.mesh_download_apply(c,event)
         d=event['data'];rank=meshjournal.RANK[d['outcome']]
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
@@ -281,6 +312,31 @@ class Service:
         stored=c.execute('SELECT payload,node FROM mesh_results WHERE work_id=?',(row['id'],)).fetchone()
         if not stored or stored['node']==self.mesh.node:return False
         return self.mesh_adopt(c,row,json.loads(stored['payload']),True)
+    def mesh_backfill(self,journal,limit=500):
+        state='mesh_backfill_'+journal.node;published=0
+        # Pace with the other side: nothing new while the connection fails, at most one batch per 20 s.
+        if (self.mesh_peers and all(p.get('error') for p in self.mesh_peers.values())) or time.monotonic()-self.mesh_backfill_at<self.MESH_BACKFILL_PAUSE:return 0
+        self.mesh_backfill_at=time.monotonic()
+        with self.db() as c:
+            cursor=catalog.get_state(c,state,0)
+            if cursor=='complete':
+                self.mesh_backlog={'done':True,'shared':self.mesh_backlog.get('shared',0)};return 0
+            rows=c.execute("SELECT rowid AS rid,* FROM works WHERE rowid>? AND state IN ('manual','matched','identified') ORDER BY rowid LIMIT ?",(cursor,limit)).fetchall()
+            for row in rows:
+                cursor=row['rid'];meta=json.loads(row['meta'] or '{}')
+                origin=c.execute('SELECT node FROM mesh_results WHERE work_id=?',(row['id'],)).fetchone()
+                if origin and origin[0]!=journal.node:continue   # came from another system, it shares it itself
+                providers=[meta['provider']] if meta.get('provider') in ('TMDB','TVDB','OMDb') else []
+                kind='match.manual' if row['state']=='manual' else 'match.result'
+                for wid in catalog.origin_ids(c,row['id']):
+                    if self.mesh_publish(c,kind,wid,row['id'],row['state'],meta,providers):published+=1
+            catalog.set_state(c,state,cursor if rows else 'complete')
+            if rows:
+                left=c.execute("SELECT COUNT(*) FROM works WHERE rowid>? AND state IN ('manual','matched','identified')",(cursor,)).fetchone()[0]
+                self.mesh_backlog={'done':False,'shared':self.mesh_backlog.get('shared',0)+published,'left':left}
+            else:self.mesh_backlog={'done':True,'shared':self.mesh_backlog.get('shared',0)}
+        if published:diagnostics.event('mesh_backfill',published=published)
+        return published
     def mesh_publish(self,c,kind,wid,dest,outcome,meta,providers):
         with self.mesh_lock:journal=self.mesh
         if journal is None:return None
@@ -298,3 +354,90 @@ class Service:
         return event
     def mesh_manual(self,c,wid,dest,meta):
         return self.mesh_publish(c,'match.manual',wid,dest,'manual',meta,[])
+
+    # Downloads: one instance loads a title, MeshSync distributes the file, the others only record it.
+    def mesh_download_key(self,job):
+        works={catalog.download_identity(job['metadata'])}
+        found=None
+        with self.db() as c:
+            found=c.execute('SELECT work_id FROM offers WHERE id=?',(job.get('source',{}).get('_id'),)).fetchone()
+        if found:works.add(found[0])
+        return catalog.download_identity(job['metadata']),sorted(works)
+    def mesh_download_block(self,c,meta,work_id=None):
+        """Message if another instance is loading or has shared this title, else None."""
+        with self.mesh_lock:journal=self.mesh
+        if journal is None:return None
+        r=catalog.mesh_download_row(c,meta,work_id)
+        if not r or r['node']==journal.node:return None
+        if r['state']=='claim' and r['until']>time.time():return 'Wird bereits auf „%s“ geladen.'%r['name']
+        if r['state']=='done' and r['path']:
+            return 'Bereits auf „%s“ geladen'%r['name']+(' und hier vorhanden.' if r['local'] else '; MeshSync überträgt die Datei.')
+        return None
+    def mesh_download_publish(self,kind,job,**extra):
+        with self.mesh_lock:journal=self.mesh
+        if journal is None:return None
+        key,works=self.mesh_download_key(job)
+        data={'key':key,'works':works,'title':str(job['metadata'].get('episode_title') or job['metadata'].get('title') or '')[:300],**extra}
+        try:event=journal.append(kind,data)
+        except (OSError,ValueError) as e:
+            diagnostics.error('mesh_publish_failed',e,download=key);return None
+        with self.db() as c:self.mesh_download_store(c,event,journal.name,local=extra.get('local'))
+        if kind!='download.claim':
+            try:journal.flush(force=True)  # finished or released downloads matter to the others right away
+            except OSError:pass
+        return event
+    def mesh_claim(self,job):
+        return self.mesh_download_publish('download.claim',job,until=int(time.time())+meshjournal.CLAIM_SECONDS)
+    def mesh_release(self,job):
+        return self.mesh_download_publish('download.release',job)
+    def mesh_done(self,job):
+        with self.mesh_lock:journal=self.mesh
+        if journal is None:return None
+        path=Path(job.get('path') or job.get('target') or '')
+        root=meshjournal.sync_root(path.parent) if path.is_file() else None
+        rel=None
+        if root:
+            try:rel=meshjournal.safe_relative(path.resolve().relative_to(root).as_posix())
+            except ValueError:rel=None
+        digest=hashlib.sha256()
+        with path.open('rb') as f:
+            for chunk in iter(lambda:f.read(1024*1024),b''):digest.update(chunk)
+        return self.mesh_download_publish('download.done',job,path=rel,size=path.stat().st_size,sha256=digest.hexdigest(),local=str(path))
+    def mesh_download_store(self,c,event,name,local=None):
+        d=event['data'];kind=event['type'].split('.',1)[1]
+        old=c.execute('SELECT * FROM mesh_downloads WHERE key=?',(d['key'],)).fetchone()
+        if old:
+            # A finished download stays authoritative; only a newer completion replaces it.
+            if old['state']=='done' and kind!='done':return False
+            if kind=='release' and old['node']!=event['node']:return False
+            if old['hlc']>=event['hlc'] and not (kind=='done' and old['state']!='done'):return False
+        c.execute('INSERT OR REPLACE INTO mesh_downloads VALUES(?,?,?,?,?,?,?,?,?,?)',(d['key'],event['node'],name,kind,d.get('until',0),d.get('path'),d.get('size'),event['hlc'],local,json.dumps(d.get('works',[]))))
+        for work in d.get('works',[]):c.execute('INSERT OR REPLACE INTO mesh_download_works VALUES(?,?)',(work,d['key']))
+        if kind=='done':
+            for identity in {d['key'],*d.get('works',[])}:
+                c.execute('INSERT OR IGNORE INTO downloaded_items VALUES(?,?,?)',(identity,local or '',time.time()))
+        return True
+    def mesh_download_apply(self,c,event):
+        name=self.mesh_names.get(event['node'],event['node'][:8])
+        if not self.mesh_download_store(c,event,name):return False
+        if event['type']=='download.done':self.mesh_check_local(event['data']['key'],c)
+        return True
+    def mesh_check_local(self,key=None,c=None):
+        """Mark shared downloads as present once MeshSync has delivered the complete file here."""
+        root=meshjournal.sync_root(self.settings().get('download_dir') or '')
+        if root is None:return 0
+        def run(c):
+            found=0
+            rows=c.execute("SELECT * FROM mesh_downloads WHERE state='done' AND path IS NOT NULL AND local IS NULL"+(' AND key=?' if key else ' LIMIT 200'),(key,) if key else ()).fetchall()
+            for r in rows:
+                target=root/r['path']
+                try:ok=target.is_file() and not target.is_symlink() and target.stat().st_size==r['size']
+                except OSError:ok=False
+                if not ok:continue
+                c.execute('UPDATE mesh_downloads SET local=? WHERE key=?',(str(target),r['key']))
+                for identity in {r['key'],*json.loads(r['works'] or '[]')}:
+                    c.execute('INSERT OR REPLACE INTO downloaded_items VALUES(?,?,?)',(identity,str(target),time.time()))
+                found+=1
+            return found
+        if c is not None:return run(c)
+        with self.db() as c:return run(c)

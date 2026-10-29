@@ -1,5 +1,82 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.15 · Mehrere Direktverbindungen (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund: Codes auf allen Systemen eingefügt, jede Eingabe ersetzte Verbindung und eigenen Schlüssel.
+- Neuer Test `SeveralConnectionsTests`: zwei NAS-Server (Synology, QNAP) geben frei und verbinden sich gegenseitig, eigener Code wird abgelehnt, eigener Freigabeschlüssel bleibt gültig, Mac-Journal gleicht mit beiden ab und erreicht beide, Entfernen und Freigabe beenden wirken getrennt; alte Einzelverbindung (0.5.5–0.5.14) wird weiter gelesen.
+- Chromium NAS-Modus mit zwei Servern: eigener Code → Fehlermeldung, fremder Code → Statuszeile „Verbunden mit …“ samt „Entfernen“, Entfernen leert die Liste; keine JavaScript-Fehler. Alle Tests bestanden.
+
+## 0.5.14 · Direktverbindung Desktop (29. Oktober 2026, Linux-Testumgebung)
+
+- Chromium Desktop-Modus: „Dieses System freigeben“ ausgeblendet, Hinweis sichtbar; Verbinden auf geschlossenen Port zeigt die neue Erklärung; keine JavaScript-Fehler. Server lehnt Freigabe im Desktop-Modus ab. Alle Tests bestanden.
+
+## 0.5.13 · QNAP ohne nohup (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund aus `MediathekAtlas-Startproblem.txt` (QTS 5.2.11, TS-932X, ARM Cortex-A57, Python 3.11.4 unter `/opt/QPython311`): `nohup: command not found`.
+- Neuer Test `MinimalShellTests`: Dienst startet mit einem PATH ohne `nohup` und antwortet; schlägt mit dem alten Skript fehl. Alle Tests bestanden.
+
+## 0.5.12 · Startproblem-Hinweis (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund QNAP 0.5.10: Installation erfolgreich, Port 8730 „Verbindung abgelehnt“, Dienst also nicht gestartet; Ursache noch unbekannt (Protokoll liegt im versteckten `.qpkg`-Ordner).
+- Neuer Test `StartProblemNoteTests`: belegter Port → Start schlägt fehl, Hinweisdatei mit Grund im Download-Ordner; nächster Start erfolgreich und Datei entfernt. Alle Tests bestanden.
+
+## 0.5.11 · Große Bestände im Verbund (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund (Mac 0.5.9 ↔ Synology 0.5.9 über Tailscale): Bestandsabgleich lief (6.059 geteilt, 82.605 offen, 225 übernommen), danach „Gegenstelle nicht erreichbar (timed out)“, Lebenszeichen der NAS 8 Minuten alt. Vermutete Ursache: unbegrenzte Übernahmerunden (5.000 Ereignisse je Transaktion, Schleife bis leer) auf der NAS. Nicht abschließend bestätigt (Diagnose der NAS ausstehend).
+- Neuer Test `test_large_backlog_is_imported_in_bounded_rounds`: Übernahme in Teilmengen, Status „importing“, nach mehreren Runden identische Zustände. Alle Tests bestanden.
+
+## 0.5.10 · QPKG-Prüffeld (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldfehler QTS: „Failed to install MediathekAtlas_0.5.9.qpkg due to a file format error“. Ursache: `qpkg_encrypt` fehlte beim Build (`qbuild: qpkg_encrypt: command not found`), das Größen-Prüffeld 60 Byte vor Dateiende blieb leer. Betraf auch alle CI-Builds.
+- Neue Funktion `build_nas.qpkg_checksum`; Ergebnis byte-gleich mit dem aus QDK `src/qpkg_encrypt.c` kompilierten Werkzeug. Neuer Test `QpkgChecksumTests`, CI prüft das Feld. Paketinhalt (46 Dateien) kontrolliert. Alle Tests bestanden.
+- Nicht geprüft: Installation auf echter QNAP.
+
+## 0.5.9 · Bestand im Verbund teilen (29. Oktober 2026, Linux-Testumgebung)
+
+- Neuer Test `test_results_from_before_joining_are_shared`: System A erkennt 30 Werke ohne Verbund (eins davon manuell), tritt danach bei; System B übernimmt alle 30 ohne eigene Anbieterabfrage, Zustände identisch, die manuelle Zuordnung bleibt manuell; zweiter Durchlauf teilt nichts doppelt, übernommene Ergebnisse werden nicht zurückgespiegelt. Alle automatisierten Tests bestanden.
+- Werk-IDs vor der Zusammenführung werden aus den Angeboten neu berechnet (`catalog.origin_ids`, gleiche Logik wie beim Import, jetzt gemeinsame Funktion `origin_meta`).
+
+## 0.5.8 · Katalogkarten mit mehreren Fassungen (29. Oktober 2026, Linux-Testumgebung)
+
+- Ursache: In 0.5.3 landete die Zeile für den Aufklappzustand der Download-Karten in der Katalogkarte („Weitere Fassungen“), dort gibt es kein `j`. Die vorherigen Browserprüfungen liefen mit leerem Katalog bzw. ohne Mehrfachangebote.
+- Chromium mit echtem Server und Katalog (ein Film in drei Fassungen, ein Film in einer): 4 Karten mit „Weitere Fassungen“, Serienansicht leer, keine JavaScript-Fehler. Alle automatisierten Tests bestanden.
+
+## 0.5.7 · Fehlermeldungen Direktverbindung (29. Oktober 2026, Linux-Testumgebung)
+
+- Ursache des Feldfehlers: `PeerError` ist ein `ValueError` und wurde beim Lesen des Index als „kein MediathekAtlas“ umetikettiert; jeder Netzwerk- oder Serverfehler sah deshalb gleich aus.
+- Neuer Test `ErrorMessageTests`: 503 mit Grund, 403, fremde HTML-Antwort und nicht erreichbarer Port liefern je eine eigene Meldung. Alle Tests bestanden.
+
+## 0.5.6 · Hinweise und Katalog-Wiederholung (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden.
+- Chromium mit echtem Server und simulierten Katalogfehlern: zwei Fehler werden still wiederholt und der Katalog erscheint; „Einstellungen gespeichert“ verschwindet nach 7 s; dauerhafter Fehler bleibt mit Ursache und Schließen-Knopf stehen; keine JavaScript-Fehler.
+- Ursache der gemeldeten Ladefehler auf dem NAS noch nicht bestätigt (Fehlertext bzw. Diagnose-ZIP ausstehend).
+
+## 0.5.5 · Direktverbindung (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden, neu `tests/test_meshpeer.py`: Verbindungscode, Schreibregeln (eigenes Verzeichnis gesperrt, Segmente unveränderlich, ältere `node.json` ignoriert, Pfadangriffe abgelehnt), Abgleich gegen einen echten Server im NAS-Modus in beide Richtungen, zweiter Abgleich ohne Übertragung, falscher Schlüssel abgelehnt.
+- Chromium mit zwei echten Serverprozessen (NAS-Modus mit Anmeldung und Desktop-Modus): auf dem NAS freigegeben, Code am „Mac“ eingefügt, beide sehen sich, Bereiche 128/128 verteilt, keine JavaScript-Fehler.
+- Nicht geprüft: echte Verbindung Mac ↔ Synology über Tailscale.
+
+## 0.5.4 · Python-Erkennung Synology (29. Oktober 2026, Linux-Testumgebung)
+
+- SPK-INFO ohne `install_dep_packages`; `preinst` bricht ohne Python ≥ 3.9 mit Hinweis ab und akzeptiert ein Python aus einem beliebigen Paketordner (Test mit nachgebautem `python311`). Dienstskript sucht zusätzlich alle `/var/packages/*/target/...`-Pythons.
+- Nicht geprüft: Installation im echten DSM-Paket-Zentrum.
+
+## 0.5.3 · Genres, Download-Karten, Dateizugriff (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), neu `tests/test_v053.py`: Schreibvarianten aus dem Bildschirmfoto (Dokumentarfilm, Filmdrama, Filmkomödie, Kriminalfilm, Mysteryfilm, Liebesfilm, Biography, Familie) ergeben je ein Genre; einmalige Umstellung gespeicherter Genres, Werk-Metadaten und Serienvorlagen.
+- Dateizugriff im NAS-Modus mit echtem Serverprozess: ohne Anmeldung 401, falscher Seiten-Token 403, nicht fertiger Download 404, vollständige Datei 200 mit UTF-8-Dateiname, Teilbereiche 206, ungültiger Bereich 416, verschobene Datei 404.
+- Chromium (Desktop-Modus, 1500 px und 390 px): Downloads als Kartenraster, Details klappen auf und bleiben beim Aktualisieren offen, „Herunterladen“ liefert die Datei.
+- Nicht geprüft: Download über den Browser von einer echten Synology/QNAP.
+
+## 0.5.2 · Downloads im Verbund (29. Oktober 2026, Linux-Testumgebung)
+
+- Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 6 neue Downloadtests in `tests/test_mesh.py`: Anspruch blockiert das andere System bis zur Freigabe, abgelaufener Anspruch blockiert nicht, geteilter Download wird erst bei vollständiger Datei als vorhanden gezählt, ungeteilter Download zählt ohne zu blockieren, `done` bleibt gegen späteren Anspruch und fremde Freigabe bestehen, Pfade mit `..` oder absolut werden abgelehnt.
+- Durchgang mit zwei echten Serverprozessen (getrennte Datenordner, gemeinsamer Verbundordner, je ein Medienordner mit MeshSync-Marker): System A lädt per FFmpeg und meldet `download.done` mit Pfad, Größe und SHA-256; System B lehnt den gleichen Download ab („MeshSync überträgt“), nach Kopie der Datei zeigt B „hier vorhanden“.
+- Nicht geprüft: echter MeshSync-Abgleich zwischen zwei NAS.
+
+
 ## Verbund mehrerer Systeme (Branch, 28. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 11 neue Verbundtests in `tests/test_mesh.py` und ein neuer Downloadtest.
