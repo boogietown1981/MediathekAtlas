@@ -93,7 +93,7 @@ def imdb_updated():
 IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
 imdb_archive.ACTIVE=IMDB
 _STATUS_CACHE=(0,{})
-_TREE_CACHE=(0,[])
+_TREE_CACHE=(float('-inf'),[])
 _TREE_LOCK=threading.Lock()
 _TREE_BUSY=False
 _TREE_ERROR=''
@@ -213,7 +213,7 @@ class Handler(BaseHTTPRequestHandler):
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
                     if not o:raise ValueError('Katalogeintrag nicht gefunden')
                     SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
-                _TREE_CACHE=(0,[]);_STATUS_CACHE=(0,{})
+                _TREE_CACHE=(float('-inf'),[]);_STATUS_CACHE=(0,{})
                 return self.send({'ok':True})
             if path=='/api/candidates':
                 config=settings()
