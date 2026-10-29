@@ -131,6 +131,23 @@ class MeshServiceTests(unittest.TestCase):
         event={'v':1,'id':'x','node':'b'*32,'seq':1,'hlc':1,'type':'match.result','data':{'work':wid,'outcome':'review','meta':{'title':'x','kind':'movie'},'providers':[]}}
         with self.a.db() as c:self.assertFalse(self.a.service.mesh_apply(c,event))
         with self.a.db() as c:self.assertEqual(c.execute('SELECT state FROM works').fetchone()[0],'pending')
+    def test_results_from_before_joining_are_shared(self):
+        rows=[row(i) for i in range(30)];folder=self.a.config.pop('mesh_dir')
+        self.a.ingest(rows)
+        with patch('core.candidates',side_effect=candidate):
+            while self.a.service.metadata_once():pass
+        with self.a.db() as c:c.execute("UPDATE works SET state='manual' WHERE rowid=(SELECT MIN(rowid) FROM works)")
+        self.a.config['mesh_dir']=folder;self.b.ingest(rows)
+        for _ in range(3):
+            for n in (self.a,self.b):n.service.mesh_beat=0;n.sync()
+        self.assertTrue(self.a.service.mesh_backlog['done']);self.assertEqual(self.a.service.mesh_backlog['shared'],30)
+        with patch('core.candidates',side_effect=AssertionError('already recognized elsewhere')):
+            self.assertFalse(self.b.service.metadata_once())
+        self.assertEqual(self.a.states(),self.b.states())
+        self.assertEqual(sorted(state for state,_ in self.b.states().values()).count('manual'),1)
+        # Once complete, nothing is shared twice; results that came from B are not echoed by A.
+        with self.a.db() as c:self.assertEqual(self.a.service.mesh_backfill(self.a.service.mesh),0)
+        with self.b.db() as c:self.assertEqual(catalog.get_state(c,'mesh_backfill_'+self.b.service.mesh.node),'complete')
     def test_missing_folder_falls_back_to_standalone(self):
         self.a.config['mesh_dir']=str(self.shared/'unmounted');self.a.ingest([row(1)]);self.a.sync()
         self.assertFalse(self.a.service.mesh_status['enabled']);self.assertIn('fehlt',self.a.service.mesh_status['error'])

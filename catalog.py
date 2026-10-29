@@ -69,6 +69,27 @@ def seed(row):
     m.update(genre_source='Senderhinweis' if m['genres'] else 'Unbekannt',title=cleaned(m['title']),episode_title=cleaned(m.get('episode_title','')))
     return m
 
+def origin_meta(c,row):
+    """Seed metadata of an offer as on import (including a unique series template) and the template used."""
+    m=seed(row);template=None
+    if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
+        options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
+        if len(options)==1:template=json.loads(options[0][0])
+    if template:
+        m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
+        for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
+        m['genres']=normalized_genres(m.get('genres'))
+    return m,template
+
+def origin_ids(c,work_id):
+    """Work IDs the offers of a (possibly merged) work had on import; the same on every instance."""
+    out=set()
+    for (payload,) in c.execute('SELECT payload FROM offers WHERE work_id=?',(work_id,)).fetchall():
+        row=json.loads(payload)
+        try:out.add(identity(row,origin_meta(c,row)[0]))
+        except (KeyError,TypeError,ValueError):continue
+    return sorted(out) or [work_id]
+
 def identity(row,m):
     base=m['kind']+'|'+key(m['title'])+'|'+str(m.get('year') or '?')
     if m['kind']=='series':
@@ -88,14 +109,8 @@ def ingest(c,rows,seen=None):
     for raw in rows:
         row=dict(raw)
         if not links(row) or not row.get('title'):continue
-        oid=digest(str(row.get('channel'))+'|'+str(row.get('url_video') or row.get('url_video_hd') or row.get('url_website'))+'|'+row['title']);row['_id']=oid;m=seed(row);template=None
-        if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
-            options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
-            if len(options)==1:template=json.loads(options[0][0])
-        if template:
-            m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
-            for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
-            m['genres']=normalized_genres(m.get('genres'))
+        oid=digest(str(row.get('channel'))+'|'+str(row.get('url_video') or row.get('url_video_hd') or row.get('url_website'))+'|'+row['title']);row['_id']=oid
+        m,template=origin_meta(c,row)
         wid=identity(row,m)
         old=c.execute('SELECT work_id FROM offers WHERE id=?',(oid,)).fetchone()
         if old:wid=old[0]

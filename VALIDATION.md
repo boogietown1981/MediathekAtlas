@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.9 · Bestand im Verbund teilen (29. Oktober 2026, Linux-Testumgebung)
+
+- Neuer Test `test_results_from_before_joining_are_shared`: System A erkennt 30 Werke ohne Verbund (eins davon manuell), tritt danach bei; System B übernimmt alle 30 ohne eigene Anbieterabfrage, Zustände identisch, die manuelle Zuordnung bleibt manuell; zweiter Durchlauf teilt nichts doppelt, übernommene Ergebnisse werden nicht zurückgespiegelt. Alle automatisierten Tests bestanden.
+- Werk-IDs vor der Zusammenführung werden aus den Angeboten neu berechnet (`catalog.origin_ids`, gleiche Logik wie beim Import, jetzt gemeinsame Funktion `origin_meta`).
+
 ## 0.5.8 · Katalogkarten mit mehreren Fassungen (29. Oktober 2026, Linux-Testumgebung)
 
 - Ursache: In 0.5.3 landete die Zeile für den Aufklappzustand der Download-Karten in der Katalogkarte („Weitere Fassungen“), dort gibt es kein `j`. Die vorherigen Browserprüfungen liefen mit leerem Katalog bzw. ohne Mehrfachangebote.

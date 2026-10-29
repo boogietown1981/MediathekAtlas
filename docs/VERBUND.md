@@ -71,6 +71,10 @@ Segmente werden nach 2 MiB oder 5 Minuten per Umbenennung veröffentlicht. Leser
 
 Ergebnisse mit Anbieterfehlern oder Pausen werden nicht verteilt. API-Schlüssel, lokale Pfade und Diagnosedaten stehen nie in Ereignissen.
 
+## Bestand beim Beitritt (seit 0.5.9)
+
+Beim ersten Verbinden veröffentlicht jedes System einmalig seine schon vorhandenen Zuordnungen (`manual` als `match.manual`, `matched`/`identified` als `match.result`), 1000 Werke je Runde. Als `work` dient jede ursprüngliche Werk-ID der Angebote des zusammengeführten Werks, als `dest` dessen ID. Ergebnisse, die ein System selbst aus dem Verbund übernommen hat, veröffentlicht es nicht erneut. Fortschritt im Zustand `mesh_backfill_<knoten>`.
+
 ## Aufteilung und Konflikte
 
 - 256 Bereiche nach den ersten zwei Hex-Zeichen der Werk-ID. Zuteilung wie MeshSync `hubwork.owners()`: jeder aktive Knoten mindestens ein Bereich, Rest nach `rate`.
