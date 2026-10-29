@@ -258,7 +258,26 @@ def candidates(row,meta,settings):
     out=[];warnings=[];deferred=[];checks=[]
     def checked(value):
         checks.append(value);provider_stats.observe(value['provider'],value['status'],value['count'])
+    import broadcaster
+    def from_broadcaster():
+        ref=broadcaster.reference(row)
+        if not ref:return None
+        start=time.monotonic()
+        try:
+            c=broadcaster.candidate(row,meta,broadcaster.lookup(row))
+            if c:c['plausibility_issues']=matching.issues(meta,c);out.append(c)
+            checked({'provider':ref[0],'status':'checked','count':int(bool(c))})
+            diagnostics.event('provider_complete',provider=ref[0],title=row.get('title',''),candidates=int(bool(c)),seconds=round(time.monotonic()-start,2))
+        except broadcaster.Unavailable:
+            if ref[0] not in deferred:deferred.append(ref[0])
+            checked({'provider':ref[0],'status':'paused','count':0})
+        except Exception as e:
+            checked({'provider':ref[0],'status':'error','count':0});warnings.append(ref[0]+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=ref[0],title=row.get('title',''))
+        return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
     import imdb_archive,matching
+    # A work already identified as a broadcaster's own Sendereihe is unknown to the film databases;
+    # asking them again for every episode only cost requests and quota.
+    if meta.get('provider') in broadcaster.PROVIDERS and broadcaster.reference(row):return from_broadcaster()
     if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
         try:
             local=imdb_archive.ACTIVE.candidates(row,meta)
@@ -294,6 +313,8 @@ def candidates(row,meta,settings):
                 warnings.append(provider+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=provider,title=title)
         if matching.sufficient(meta,out):
             return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
+    # Own productions: the offer's own Mediathek page, then the free Wikidata fallback.
+    if not out:from_broadcaster()
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:

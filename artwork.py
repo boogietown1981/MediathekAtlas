@@ -2,7 +2,8 @@
 import json,time,urllib.parse,os
 from pathlib import Path
 import core,diagnostics,metadata
-HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com'}
+import broadcaster
+HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com'}|broadcaster.IMAGE_HOSTS
 def valid(url):
     p=urllib.parse.urlsplit(str(url or ''))
     return p.scheme=='https' and p.hostname in HOSTS and not p.username and p.port in (None,443)

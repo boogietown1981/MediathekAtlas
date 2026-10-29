@@ -1,6 +1,6 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
 import json,time,threading
-import core,catalog,filmlist,diagnostics,metadata
+import core,catalog,filmlist,diagnostics,metadata,broadcaster
 
 def retry_delay(attempts,result):
     """Seconds until an unresolved work is checked again."""
@@ -111,7 +111,8 @@ class Service:
                                 own=json.loads(peer['meta']);own.update(kind='series',episode_title=own['title'])
                                 for key in ('title','year','provider','reference_id','poster','genres','genre_source'):own[key]=recognized.get(key)
                                 catalog.save_metadata(c,peer['id'],own,'identified')
-                    if outcome=='identified':c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+86400,wid))
+                    # Programme data of a Sendereihe rarely changes; daily rechecks of every episode would only load the Mediathek.
+                    if outcome=='identified':c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+(30*86400 if recognized.get('provider') in broadcaster.PROVIDERS else 86400),wid))
                 else:
                     m['suggestions']=result['candidates'];m['metadata_warnings']=result['warnings']
                     # Keep recognized show metadata if only its episode remains unresolved.
