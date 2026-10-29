@@ -43,6 +43,18 @@ def parse_code(text):
     return '%s://%s' % (parts.scheme, parts.netloc), key
 
 
+def peer_list(config):
+    """Configured connections [{'url','key'}]; also reads the single connection of 0.5.5-0.5.14."""
+    out = []; seen = set()
+    raw = config.get('mesh_peers') if isinstance(config.get('mesh_peers'), list) else []
+    legacy = [{'url': config.get('mesh_peer'), 'key': config.get('mesh_key')}] if config.get('mesh_peer') else []
+    for p in raw + legacy:
+        if not isinstance(p, dict): continue
+        url = str(p.get('url') or '').rstrip('/'); key = p.get('key')
+        if url and valid_key(key) and url not in seen: seen.add(url); out.append({'url': url, 'key': key})
+    return out
+
+
 def tailscale_address():
     """This machine's Tailscale IPv4 (100.64.0.0/10) if Tailscale routes its service address; no packet is sent."""
     try:
@@ -128,6 +140,7 @@ class Peer:
     def sync(self, root, own_node):
         """One mirror round in both directions. Returns counts for the status line."""
         started = time.monotonic(); info = self.hello(); remote = info['files']; local = index(root)
+        if info.get('node') == own_node: raise PeerError('Dieser Code gehört zu diesem System selbst')
         got = sent = 0
         for rel, meta in sorted(remote.items()):
             if not safe_path(rel) or rel.split('/')[1] == own_node: continue

@@ -78,3 +78,4 @@ tr.total td{font-weight:600}
 #notice{display:flex;align-items:flex-start;gap:12px}#notice[hidden]{display:none}#notice>span{flex:1}
 #notice.notice-error{background:#3d2525;color:#ffc4b8;border-color:#6a3a36}
 #notice .notice-close{margin:0;padding:0 8px;background:transparent;border:0;color:inherit;font-size:20px;line-height:1;cursor:pointer}
+.peer-row{display:flex;align-items:center;gap:10px;margin:6px 0}.peer-row span{flex:1;overflow-wrap:anywhere}.peer-row button{margin:0;padding:6px 10px}

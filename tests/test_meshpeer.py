@@ -85,4 +85,51 @@ class DirectConnectionTests(unittest.TestCase):
                 with self.assertRaises(meshpeer.PeerError):meshpeer.Peer(url,meshpeer.new_key()).sync(mac.root,mac.node)
             finally:p.terminate();p.wait(10)
 
+class SeveralConnectionsTests(unittest.TestCase):
+    """Synology, QNAP and Mac: every system may hold several connections at once."""
+    def start_nas(self,d,name):
+        home=d/name;home.mkdir();(home/'initial-password').write_text('nas-passwort\n');port=nas.free_port()
+        env={**nas.NasPackageTests.env,'MEDIATHEKATLAS_HOME':str(home),'MEDIATHEKATLAS_LISTEN':'127.0.0.1','MEDIATHEKATLAS_LOGIN':'1','MEDIATHEKATLAS_PORT':str(port),'MEDIATHEKATLAS_DOWNLOAD_DIR':str(d/(name+'-share'))}
+        p=subprocess.Popen([sys.executable,'server.py','--no-browser'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);self.addCleanup(lambda:(p.terminate(),p.wait(10)))
+        nas.wait_http(port);cookie=nas.call(port,'POST','/api/login',{'password':'nas-passwort'})[2].split(';')[0]
+        token=re.search(r'name="atlas-token" content="([^"]+)"',nas.call(port,'GET','/',headers={'Cookie':cookie})[1]).group(1)
+        h={'Cookie':cookie,'X-Atlas-Token':token}
+        api=lambda body:nas.call(port,'POST','/api/mesh-direct',body,h)
+        status,body,_=api({'action':'share'});self.assertEqual(status,200,body)
+        url='http://127.0.0.1:%d'%port;code=url+'#'+json.loads(body)['key']
+        deadline=time.monotonic()+15
+        while True:
+            try:meshpeer.Peer(url,json.loads(body)['key']).hello();break
+            except meshpeer.PeerError:
+                if time.monotonic()>deadline:raise
+                time.sleep(.3)
+        state=lambda:json.loads(nas.call(port,'GET','/api/state',headers=h)[1])['settings']
+        return url,code,api,state,home
+    def test_codes_are_added_not_replaced(self):
+        with tempfile.TemporaryDirectory() as d:
+            d=Path(os.path.realpath(d))
+            syn_url,syn_code,syn_api,syn_state,syn_home=self.start_nas(d,'synology')
+            q_url,q_code,q_api,q_state,q_home=self.start_nas(d,'qnap')
+            status,body,_=syn_api({'action':'connect','code':syn_code})
+            self.assertNotEqual(status,200);self.assertIn('dieses Systems selbst',body)
+            status,body,_=syn_api({'action':'connect','code':q_code});self.assertEqual(status,200,body)
+            status,body,_=q_api({'action':'connect','code':syn_code});self.assertEqual(status,200,body)
+            # Connecting must not touch the system's own share key (the 0.5.14 bug).
+            self.assertEqual(syn_state()['mesh_peers'],[q_url]);self.assertTrue(syn_state()['mesh_shared'])
+            self.assertTrue(meshpeer.Peer(syn_url,syn_code.split('#')[1]).hello())
+            # The Mac holds both connections and relays between them.
+            (d/'mac').mkdir();mac=meshjournal.Journal(meshjournal.check_folder(d/'mac',create=True),B,'Mac')
+            mac.append('match.manual',{'work':'w1','dest':'w1','outcome':'manual','meta':{'title':'Persona'},'providers':[]});mac.flush(force=True)
+            peers=meshpeer.peer_list({'mesh_peers':[{'url':syn_url,'key':syn_code.split('#')[1]},{'url':q_url,'key':q_code.split('#')[1]},{'url':q_url+'/','key':q_code.split('#')[1]}]})
+            self.assertEqual([p['url'] for p in peers],[syn_url,q_url])
+            for p in peers:meshpeer.Peer(p['url'],p['key']).sync(mac.root,mac.node)
+            for home in (syn_home,q_home):self.assertTrue((home/'verbund'/'nodes'/B/'events-000001.jsonl').is_file())
+            status,body,_=syn_api({'action':'remove','url':q_url});self.assertEqual(status,200,body)
+            self.assertEqual(syn_state()['mesh_peers'],[]);self.assertTrue(syn_state()['mesh_shared'])
+            status,body,_=syn_api({'action':'unshare'});self.assertFalse(syn_state()['mesh_shared'])
+    def test_old_single_connection_is_still_read(self):
+        key=meshpeer.new_key()
+        self.assertEqual(meshpeer.peer_list({'mesh_peer':'http://nas:8730/','mesh_key':key}),[{'url':'http://nas:8730','key':key}])
+        self.assertEqual(meshpeer.peer_list({'mesh_peers':'kaputt','mesh_peer':''}),[])
+
 if __name__=='__main__':unittest.main()

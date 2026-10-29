@@ -1,6 +1,13 @@
-# MediathekAtlas · 0.5.14 Preview
+# MediathekAtlas · 0.5.15 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.15: Mehrere Direktverbindungen je System
+
+- Jedes System kann beliebig viele Verbindungscodes aufnehmen („Verbindung hinzufügen“). Bisher hat jeder neue Code die vorherige Verbindung und den eigenen Freigabeschlüssel überschrieben.
+- Freigabe und Verbindungen sind getrennt: „Freigabe beenden“ betrifft nur den eigenen Code, jede Verbindung hat ihren eigenen „Entfernen“-Knopf und eine eigene Statuszeile.
+- Der eigene Code wird beim Hinzufügen erkannt und abgelehnt.
+- Empfehlung: Synology und QNAP freigeben, auf jedem System die Codes der jeweils anderen NAS hinzufügen. Systeme reichen Ergebnisse weiter, ein Stern um ein NAS reicht ebenfalls.
 
 ## Neu in 0.5.14: Klarere Direktverbindung
 

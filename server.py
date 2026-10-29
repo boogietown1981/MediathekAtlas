@@ -50,7 +50,7 @@ with db() as c:
 def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
-    diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'))
+    diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
     return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
@@ -244,7 +244,7 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peer':s.get('mesh_peer',''),'mesh_direct':meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     # Finished downloads are served over HTTP so a browser on another device can fetch them;
     # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
@@ -417,12 +417,19 @@ class Handler(BaseHTTPRequestHandler):
                 elif action=='connect':
                     url,key=meshpeer.parse_code(d.get('code'))
                     if not key:raise ValueError('Bitte den vollständigen Verbindungscode der Gegenstelle einfügen (Adresse#Schlüssel)')
+                    if key==s.get('mesh_key'):raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
                     info=meshpeer.Peer(url,key).hello()
-                    s.update(mesh_peer=url,mesh_key=key)
-                elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None)
+                    if SERVICE.mesh is not None and info.get('node')==SERVICE.mesh.node:raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
+                    peers=[p for p in meshpeer.peer_list(s) if p['url']!=url]+[{'url':url,'key':key}]
+                    s['mesh_peers']=peers;s.pop('mesh_peer',None)
+                elif action=='remove':
+                    url=str(d.get('url') or '').rstrip('/')
+                    s['mesh_peers']=[p for p in meshpeer.peer_list(s) if p['url']!=url];s.pop('mesh_peer',None)
+                elif action=='unshare':s['mesh_peers']=meshpeer.peer_list(s);s.pop('mesh_peer',None);s.pop('mesh_key',None)
+                elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None);s.pop('mesh_peers',None)
                 else:raise ValueError('Unbekannte Aktion')
                 with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-                diagnostics.register_secrets(s.get('mesh_key'))
+                diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
                 threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
                 out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}
                 if action=='connect':out['peer']=str(info.get('name') or '')[:80]

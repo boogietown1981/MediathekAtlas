@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.15 · Mehrere Direktverbindungen (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund: Codes auf allen Systemen eingefügt, jede Eingabe ersetzte Verbindung und eigenen Schlüssel.
+- Neuer Test `SeveralConnectionsTests`: zwei NAS-Server (Synology, QNAP) geben frei und verbinden sich gegenseitig, eigener Code wird abgelehnt, eigener Freigabeschlüssel bleibt gültig, Mac-Journal gleicht mit beiden ab und erreicht beide, Entfernen und Freigabe beenden wirken getrennt; alte Einzelverbindung (0.5.5–0.5.14) wird weiter gelesen.
+- Chromium NAS-Modus mit zwei Servern: eigener Code → Fehlermeldung, fremder Code → Statuszeile „Verbunden mit …“ samt „Entfernen“, Entfernen leert die Liste; keine JavaScript-Fehler. Alle Tests bestanden.
+
 ## 0.5.14 · Direktverbindung Desktop (29. Oktober 2026, Linux-Testumgebung)
 
 - Chromium Desktop-Modus: „Dieses System freigeben“ ausgeblendet, Hinweis sichtbar; Verbinden auf geschlossenen Port zeigt die neue Erklärung; keine JavaScript-Fehler. Server lehnt Freigabe im Desktop-Modus ab. Alle Tests bestanden.
