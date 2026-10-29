@@ -1,4 +1,4 @@
-import unittest,sys,tempfile,subprocess,json,io
+import os,unittest,sys,tempfile,subprocess,json,io
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
@@ -19,6 +19,7 @@ class Tests(unittest.TestCase):
     def test_safe_path(self):
         m={'kind':'movie','title':'../../A <Film>','year':2020}
         with tempfile.TemporaryDirectory() as root:
+            root=os.path.realpath(root)  # macOS: /var is a symlink to /private/var
             p=core.target(root,m,'abc');self.assertTrue(p.is_relative_to(root));self.assertEqual(p.suffix,'.mkv')
     def test_wrong_kind(self):
         with self.assertRaises(ValueError):core.target('/tmp',{'kind':'unknown','title':'News'},'x')
