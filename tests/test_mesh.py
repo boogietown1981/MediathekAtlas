@@ -138,6 +138,7 @@ class MeshServiceTests(unittest.TestCase):
             while self.a.service.metadata_once():pass
         with self.a.db() as c:c.execute("UPDATE works SET state='manual' WHERE rowid=(SELECT MIN(rowid) FROM works)")
         self.a.config['mesh_dir']=folder;self.b.ingest(rows)
+        for n in (self.a,self.b):n.service.MESH_BACKFILL_PAUSE=0
         for _ in range(3):
             for n in (self.a,self.b):n.service.mesh_beat=0;n.sync()
         self.assertTrue(self.a.service.mesh_backlog['done']);self.assertEqual(self.a.service.mesh_backlog['shared'],30)
@@ -148,6 +149,20 @@ class MeshServiceTests(unittest.TestCase):
         # Once complete, nothing is shared twice; results that came from B are not echoed by A.
         with self.a.db() as c:self.assertEqual(self.a.service.mesh_backfill(self.a.service.mesh),0)
         with self.b.db() as c:self.assertEqual(catalog.get_state(c,'mesh_backfill_'+self.b.service.mesh.node),'complete')
+    def test_large_backlog_is_imported_in_bounded_rounds(self):
+        rows=[row(i) for i in range(40)];self.a.ingest(rows);self.b.ingest(rows);self.join()
+        with patch('core.candidates',side_effect=candidate):
+            while self.a.service.metadata_once():pass
+        self.a.sync()
+        self.b.service.MESH_IMPORT_BATCH=5;self.b.service.MESH_IMPORT_SECONDS=0
+        self.b.sync()
+        self.assertTrue(self.b.service.mesh_pending);self.assertTrue(self.b.service.mesh_status['importing'])
+        first=self.b.service.mesh_imported;self.assertLess(first,40)
+        for _ in range(20):
+            if not self.b.service.mesh_pending:break
+            self.b.sync()
+        self.assertFalse(self.b.service.mesh_pending)
+        self.assertEqual(self.a.states(),self.b.states())
     def test_missing_folder_falls_back_to_standalone(self):
         self.a.config['mesh_dir']=str(self.shared/'unmounted');self.a.ingest([row(1)]);self.a.sync()
         self.assertFalse(self.a.service.mesh_status['enabled']);self.assertIn('fehlt',self.a.service.mesh_status['error'])

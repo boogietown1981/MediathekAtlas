@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.11 · Große Bestände im Verbund (29. Oktober 2026, Linux-Testumgebung)
+
+- Feldbefund (Mac 0.5.9 ↔ Synology 0.5.9 über Tailscale): Bestandsabgleich lief (6.059 geteilt, 82.605 offen, 225 übernommen), danach „Gegenstelle nicht erreichbar (timed out)“, Lebenszeichen der NAS 8 Minuten alt. Vermutete Ursache: unbegrenzte Übernahmerunden (5.000 Ereignisse je Transaktion, Schleife bis leer) auf der NAS. Nicht abschließend bestätigt (Diagnose der NAS ausstehend).
+- Neuer Test `test_large_backlog_is_imported_in_bounded_rounds`: Übernahme in Teilmengen, Status „importing“, nach mehreren Runden identische Zustände. Alle Tests bestanden.
+
 ## 0.5.10 · QPKG-Prüffeld (29. Oktober 2026, Linux-Testumgebung)
 
 - Feldfehler QTS: „Failed to install MediathekAtlas_0.5.9.qpkg due to a file format error“. Ursache: `qpkg_encrypt` fehlte beim Build (`qbuild: qpkg_encrypt: command not found`), das Größen-Prüffeld 60 Byte vor Dateiende blieb leer. Betraf auch alle CI-Builds.

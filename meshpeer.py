@@ -13,7 +13,7 @@ import meshjournal
 KEY_HEADER = 'X-Atlas-Mesh-Key'
 MAX_FILE = meshjournal.SEGMENT_BYTES + 2 * meshjournal.MAX_LINE
 MAX_INDEX = 8 * 1024 * 1024
-TIMEOUT = 30
+TIMEOUT = 60
 _PATH = re.compile(r'^nodes/([0-9a-f]{32})/(events-\d{6}\.jsonl|node\.json)$')
 _KEY = re.compile(r'^[A-Za-z0-9_-]{32,64}$')
 

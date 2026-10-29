@@ -15,7 +15,7 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peer={};self.mesh_backlog={};self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peer={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
         for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
@@ -187,7 +187,7 @@ class Service:
     def mesh_loop(self):
         while not self.stop.is_set():
             self.mesh_tick()
-            if self.stop.wait(30):break
+            if self.stop.wait(2 if self.mesh_pending or self.mesh_backlog.get('done') is False else 30):break
         with self.mesh_lock:
             if self.mesh:
                 try:self.mesh.flush(force=True)
@@ -234,7 +234,7 @@ class Service:
             with self.mesh_lock:
                 self.mesh_filter=None if len(parts)==meshjournal.PARTS else parts
                 current=time.time() if now is None else now
-                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,'direct':direct,'peer':self.mesh_peer,'backlog':self.mesh_backlog,
+                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,'direct':direct,'peer':self.mesh_peer,'backlog':self.mesh_backlog,'importing':self.mesh_pending,
                     'nodes':[{'node':n,'name':str(i.get('name') or n[:8])[:80],'self':n==journal.node,'active':n in members,'recognizing':i.get('recognizing') is True,'rate':i.get('rate'),'version':str(i.get('version',''))[:20],'age':max(0,int(current-float(i.get('time') or 0)))} for n,i in sorted(nodes.items())]}
         except (meshjournal.MeshError,OSError) as e:
             # Standalone fallback: a missing mount never blocks local recognition.
@@ -250,16 +250,22 @@ class Service:
         except (meshpeer.PeerError,OSError) as e:
             if self.mesh_peer.get('error')!=core.safe_error(e):diagnostics.error('mesh_peer_failed',e)
             self.mesh_peer={'url':url,'error':core.safe_error(e),'last':self.mesh_peer.get('time') or self.mesh_peer.get('last'),'peer':self.mesh_peer.get('peer','')}
+    MESH_IMPORT_BATCH=250;MESH_IMPORT_SECONDS=20;MESH_BACKFILL_PAUSE=20
     def mesh_import(self,journal):
+        # Small transactions and a time budget per round: a large backlog from another system
+        # (e.g. tens of thousands of earlier results) must not starve the web UI, the
+        # heartbeat or the direct connection on a weak NAS. The rest follows next round.
         with self.db() as c:cursors=catalog.get_state(c,'mesh_cursors',{})
-        while True:
-            events,cursors,invalid=journal.read(cursors)
+        started=time.monotonic();self.mesh_pending=False
+        while not self.stop.is_set():
+            events,cursors,invalid=journal.read(cursors,limit=self.MESH_IMPORT_BATCH)
             with self.db() as c:
                 for event in events:
                     if self.mesh_apply(c,event):self.mesh_imported+=1
                 catalog.set_state(c,'mesh_cursors',cursors)
             self.mesh_invalid+=invalid
-            if len(events)<meshjournal.READ_LIMIT or self.stop.is_set():break
+            if len(events)<self.MESH_IMPORT_BATCH:break
+            if time.monotonic()-started>=self.MESH_IMPORT_SECONDS:self.mesh_pending=True;break
     def mesh_better(self,c,wid,key):
         old=c.execute('SELECT rank,providers,hlc,node FROM mesh_results WHERE work_id=?',(wid,)).fetchone()
         return old is None or key>tuple(old),old is not None
@@ -301,8 +307,11 @@ class Service:
         stored=c.execute('SELECT payload,node FROM mesh_results WHERE work_id=?',(row['id'],)).fetchone()
         if not stored or stored['node']==self.mesh.node:return False
         return self.mesh_adopt(c,row,json.loads(stored['payload']),True)
-    def mesh_backfill(self,journal,limit=1000):
+    def mesh_backfill(self,journal,limit=500):
         state='mesh_backfill_'+journal.node;published=0
+        # Pace with the other side: nothing new while the connection fails, at most one batch per 20 s.
+        if self.mesh_peer.get('error') or time.monotonic()-self.mesh_backfill_at<self.MESH_BACKFILL_PAUSE:return 0
+        self.mesh_backfill_at=time.monotonic()
         with self.db() as c:
             cursor=catalog.get_state(c,state,0)
             if cursor=='complete':
