@@ -13,7 +13,7 @@ import meshjournal
 KEY_HEADER = 'X-Atlas-Mesh-Key'
 MAX_FILE = meshjournal.SEGMENT_BYTES + 2 * meshjournal.MAX_LINE
 MAX_INDEX = 8 * 1024 * 1024
-TIMEOUT = 20
+TIMEOUT = 30
 _PATH = re.compile(r'^nodes/([0-9a-f]{32})/(events-\d{6}\.jsonl|node\.json)$')
 _KEY = re.compile(r'^[A-Za-z0-9_-]{32,64}$')
 
@@ -102,17 +102,21 @@ class Peer:
             with self.opener.open(req, timeout=TIMEOUT) as r:
                 data = r.read(limit + 1)
         except urllib.error.HTTPError as e:
-            if e.code in (401, 403): raise PeerError('Gegenstelle lehnt den Verbund-Schlüssel ab')
-            if e.code == 404: raise PeerError('Gegenstelle kennt die Direktverbindung nicht (Version ab 0.5.5 nötig)')
-            raise PeerError('Gegenstelle antwortet mit HTTP %d' % e.code)
+            try: detail = str(json.loads(e.read(65536)).get('error') or '')[:300]
+            except (ValueError, AttributeError, OSError): detail = ''
+            if e.code == 403: raise PeerError('Gegenstelle lehnt den Verbund-Schlüssel ab. Verbindungscode dort neu anzeigen und hier erneut einfügen.')
+            if e.code == 401: raise PeerError('Gegenstelle kennt die Direktverbindung nicht. Bitte dort MediathekAtlas ab 0.5.5 installieren.')
+            if e.code == 503: raise PeerError(detail or 'Verbund ist auf der Gegenstelle nicht aktiv')
+            raise PeerError('Gegenstelle antwortet mit HTTP %d%s' % (e.code, ': ' + detail if detail else ''))
         except (urllib.error.URLError, OSError) as e:
             raise PeerError('Gegenstelle nicht erreichbar (%s)' % getattr(e, 'reason', e))
         if len(data) > limit: raise PeerError('Antwort der Gegenstelle zu groß')
         return data
 
     def hello(self):
-        try: info = json.loads(self._call('GET', '/api/peer/index', limit=MAX_INDEX))
-        except ValueError: raise PeerError('Gegenstelle ist kein MediathekAtlas')
+        raw = self._call('GET', '/api/peer/index', limit=MAX_INDEX)
+        try: info = json.loads(raw)
+        except ValueError: raise PeerError('Gegenstelle ist kein MediathekAtlas (unerwartete Antwort)')
         if not isinstance(info, dict) or info.get('format') != meshjournal.FORMAT or not isinstance(info.get('files'), dict):
             raise PeerError('Gegenstelle nutzt ein anderes Verbundformat')
         return info

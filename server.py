@@ -285,7 +285,9 @@ class Handler(BaseHTTPRequestHandler):
         if not meshpeer.valid_key(key) or not secrets.compare_digest(self.headers.get(meshpeer.KEY_HEADER,''),key):
             self.send({'error':'Verbund-Schlüssel ungültig'},403);return None
         journal=SERVICE.mesh
-        if journal is None:self.send({'error':'Verbund ist auf diesem System noch nicht bereit'},503);return None
+        if journal is None:
+            reason=SERVICE.mesh_status.get('error')
+            self.send({'error':'Verbund auf der Gegenstelle nicht aktiv: '+reason+' (dort unter Verbund den Verbundordner leeren oder korrigieren)' if reason else 'Verbund auf der Gegenstelle startet gerade, bitte kurz warten'},503);return None
         return journal
     def peer_get(self,path):
         journal=self.peer_journal()

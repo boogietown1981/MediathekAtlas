@@ -27,6 +27,25 @@ class StoreTests(unittest.TestCase):
                 with self.assertRaises(meshpeer.PeerError):meshpeer.store(d,A,bad,b'',1)
             self.assertEqual(sorted(meshpeer.index(d)),['nodes/%s/events-000001.jsonl'%B,'nodes/%s/node.json'%B])
 
+class ErrorMessageTests(unittest.TestCase):
+    def test_real_cause_is_reported(self):
+        import http.server,threading
+        answers={'/api/peer/index':(503,b'{"error":"Verbund auf der Gegenstelle nicht aktiv: Ordner fehlt"}')}
+        class H(http.server.BaseHTTPRequestHandler):
+            def log_message(self,*a):pass
+            def do_GET(self):
+                code,body=answers[self.path];self.send_response(code);self.send_header('Content-Length',str(len(body)));self.end_headers();self.wfile.write(body)
+        srv=http.server.ThreadingHTTPServer(('127.0.0.1',0),H);threading.Thread(target=srv.serve_forever,daemon=True).start()
+        try:
+            peer=meshpeer.Peer('http://127.0.0.1:%d'%srv.server_port,meshpeer.new_key())
+            with self.assertRaisesRegex(meshpeer.PeerError,'Ordner fehlt'):peer.hello()
+            answers['/api/peer/index']=(403,b'{}')
+            with self.assertRaisesRegex(meshpeer.PeerError,'Schlüssel'):peer.hello()
+            answers['/api/peer/index']=(200,b'<html>Router</html>')
+            with self.assertRaisesRegex(meshpeer.PeerError,'kein MediathekAtlas'):peer.hello()
+        finally:srv.shutdown();srv.server_close()
+        with self.assertRaisesRegex(meshpeer.PeerError,'nicht erreichbar'):meshpeer.Peer('http://127.0.0.1:%d'%srv.server_port,meshpeer.new_key()).hello()
+
 class DirectConnectionTests(unittest.TestCase):
     def test_mac_mirrors_journal_with_nas_over_http(self):
         with tempfile.TemporaryDirectory() as d:

@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.7 · Fehlermeldungen Direktverbindung (29. Oktober 2026, Linux-Testumgebung)
+
+- Ursache des Feldfehlers: `PeerError` ist ein `ValueError` und wurde beim Lesen des Index als „kein MediathekAtlas“ umetikettiert; jeder Netzwerk- oder Serverfehler sah deshalb gleich aus.
+- Neuer Test `ErrorMessageTests`: 503 mit Grund, 403, fremde HTML-Antwort und nicht erreichbarer Port liefern je eine eigene Meldung. Alle Tests bestanden.
+
 ## 0.5.6 · Hinweise und Katalog-Wiederholung (29. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden.
