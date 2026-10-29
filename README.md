@@ -1,12 +1,37 @@
-# MediathekAtlas · 0.4.8 Preview
+# MediathekAtlas · 0.5.0 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
 
-## Neu in 0.4.8: Pakete für Synology und QNAP
+## Neu in 0.5.0
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.4.8-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.4.8.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+### Senderdaten für Eigenproduktionen von ARD und ZDF
+
+Magazine, Nachrichten, Talkformate und Dokumentationen der Sender stehen meist weder bei TMDB noch bei TVDB oder IMDb. Findet keine Filmdatenbank einen Treffer, liest MediathekAtlas jetzt die Mediathek-Seite des jeweiligen Angebots (ARD Mediathek, ZDF Mediathek): Sendereihe, Beschreibung, Bild und, wo vorhanden, Staffel und Folge. Stimmt die Sendereihe mit dem Thema der Filmliste überein, wird das Werk als Serie dieser Reihe erkannt; nummerierte Folgen gelten als bestätigt. Sammelrubriken wie „Filme im MDR“ werden nicht als Reihe behandelt. Genres wie „Magazin“, „Nachrichten“ oder „Dokumentation“ werden aus Reihentitel und Beschreibung abgeleitet und als „Sender (abgeleitet)“ gekennzeichnet.
+
+Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut und werden nur alle 30 Tage aufgefrischt. Abfragen an die Sender sind gedrosselt (höchstens zwei pro Sekunde), werden 24 Stunden zwischengespeichert und bei Fehlern 15 Minuten pausiert. Es ist kein Schlüssel nötig. Die Schnittstellen sind nicht offiziell dokumentiert und können sich ändern; ein Ausfall betrifft nur diese Zusatzdaten. 3sat, arte und KiKA sind noch nicht angebunden.
+
+### Weniger Last im Dauerbetrieb (Auswertung der Diagnose 0.4.7)
+
+- Ist OMDb wegen des Tageskontingents pausiert, werden unaufgelöste Werke nicht mehr stündlich neu geprüft, sondern mit wachsendem Abstand (1 h bis 24 h). Vorher war das Kontingent nach jeder Pause sofort wieder aufgebraucht.
+- Cover und Fanart werden einmal je Serie statt für jede Folge abgeglichen.
+- Die Genre-Übersicht wird bei großen Katalogen seltener neu berechnet.
+- Das Diagnoseprotokoll ist kompakter und reicht dadurch etwa doppelt so weit zurück.
+
+### Pakete für Synology und QNAP
+
+
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.0-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.0.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
+
+### Verbund mehrerer Systeme (Vorschau)
+
+
+Mehrere MediathekAtlas-Installationen, etwa auf verschiedenen NAS, teilen sich die Metadatenerkennung. Unter Einstellungen → „Verbund mehrerer Systeme“ wird ein gemeinsamer Ordner eingetragen, bevorzugt ein MeshSync-Ordner. Jede Installation bearbeitet einen Teil der 256 Werkbereiche und übernimmt die Ergebnisse der anderen. Dadurch wird kein Titel doppelt bei TMDB, OMDb oder TVDB abgefragt. Manuelle Zuordnungen gelten überall. Jede Installation behält ihre eigene Datenbank und arbeitet ohne Verbindung allein weiter. Format, Regeln und Grenzen: `docs/VERBUND.md`.
+
+Downloads schreiben alle Zwischendateien jetzt mit der Endung `.partial`. Liegt das Downloadziel in einem MeshSync-Ordner, verteilt MeshSync nur fertige Videos und keine halbfertigen Dateien mehr.
+
+Noch offen: Abstimmung der Downloads zwischen den Systemen, Signaturen, ein eigener Verbund-Reiter. Mit echtem MeshSync auf zwei NAS ist der Verbund noch nicht getestet.
 
 ## Start und Aktualisierung
 
@@ -17,14 +42,6 @@ Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center
 5. Film auswählen oder Serie zu ihren Folgen öffnen. Die bevorzugte Fassung prüfen und herunterladen. Andere Sender/Fassungen sind ausklappbar.
 
 Die App ist eine unsignierte Preview mit lokaler Browseroberfläche. Ein echter macOS-Finderstart ist hier weiterhin nicht validiert. Der Source-Ordner enthält zusätzlich `Start.command` und `Start.bat`. Linux: `python3 server.py`.
-
-## In Arbeit: Verbund mehrerer Systeme
-
-Mehrere MediathekAtlas-Installationen, etwa auf verschiedenen NAS, teilen sich die Metadatenerkennung. Unter Einstellungen → „Verbund mehrerer Systeme“ wird ein gemeinsamer Ordner eingetragen, bevorzugt ein MeshSync-Ordner. Jede Installation bearbeitet einen Teil der 256 Werkbereiche und übernimmt die Ergebnisse der anderen. Dadurch wird kein Titel doppelt bei TMDB, OMDb oder TVDB abgefragt. Manuelle Zuordnungen gelten überall. Jede Installation behält ihre eigene Datenbank und arbeitet ohne Verbindung allein weiter. Format, Regeln und Grenzen: `docs/VERBUND.md`.
-
-Downloads schreiben alle Zwischendateien jetzt mit der Endung `.partial`. Liegt das Downloadziel in einem MeshSync-Ordner, verteilt MeshSync nur fertige Videos und keine halbfertigen Dateien mehr.
-
-Noch offen: Abstimmung der Downloads zwischen den Systemen, Signaturen, ein eigener Verbund-Reiter. Mit echtem MeshSync auf zwei NAS ist der Verbund noch nicht getestet.
 
 ## Neu in 0.4.0: Zuordnungszentrale und Anbieterstatistik
 
