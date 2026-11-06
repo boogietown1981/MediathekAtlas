@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.18 · Wiedergabe im Browser (6. November 2026, Linux-Testumgebung)
+
+- Neuer Test `test_streaming`: Quellenwahl (lokaler Download vor Online-Stream, MP4 vor HLS, höchstens 1080p, DASH und Nicht-HTTP-Adressen abgelehnt, unfertige Jobs abgelehnt, Suchergebnisse aus `records`), Abspielart je Video-/Audiocodec, ffmpeg-Aufruf (Suchen vor `-i`, Reconnect, ADTS→ASC). Endpunkt-Test mit echtem Server und ffmpeg: H.264/MP2-MKV wird ab Sekunde 2 als fragmentiertes MP4 mit H.264/AAC geliefert, falsches Token → 403.
+- Manuell mit lokalem HLS-Server (ffmpeg 6.1): Stream ab 8 s liefert 12 s Restlaufzeit. Ohne `aac_adtstoasc` brach ffmpeg 6.1 nach 0,3 s ab, ohne Ausgabe-Start 0 lief die Uhr eine HLS-Segmentlänge vor; beides behoben.
+- Chromium (Playwright): Katalog „▶ Serie abspielen“ startet S01E01 mit „Nächste Folge ▸ S01E02“; Download-Karte spielt die MKV-Datei; mit abgeschaltetem nativem HLS läuft der umgewandelte Stream, Springen auf 0:12 zeigt im Bild Sekunde 14 bei Anzeige 0:14, am Ende startet automatisch S01E02. Danach keine ffmpeg-Prozesse übrig, keine JavaScript-Fehler.
+- Nicht getestet: Safari/iOS, Firefox, echte Sender-CDNs (Geosperren), Wiedergabe auf NAS-Hardware.
+
 ## 0.5.17 · Titelseiten für Serien und Filme (6. November 2026, Linux-Testumgebung)
 
 - Feldbefund: Beim Öffnen einer Serie fehlten Titelbild und Beschreibung; es erschien nur das Folgenraster. Ursache: Die Serienbeschreibung wurde beim Folgenabgleich durch die Folgenhandlung ersetzt, und „Serie öffnen“ filterte lediglich den Katalog.
@@ -87,7 +94,6 @@
 - Durchgang mit zwei echten Serverprozessen (getrennte Datenordner, gemeinsamer Verbundordner, je ein Medienordner mit MeshSync-Marker): System A lädt per FFmpeg und meldet `download.done` mit Pfad, Größe und SHA-256; System B lehnt den gleichen Download ab („MeshSync überträgt“), nach Kopie der Datei zeigt B „hier vorhanden“.
 - Nicht geprüft: echter MeshSync-Abgleich zwischen zwei NAS.
 
-
 ## Verbund mehrerer Systeme (Branch, 28. Oktober 2026, Linux-Testumgebung)
 
 - Alle automatisierten Tests bestanden (`python3 -m unittest discover -s tests`), darunter 11 neue Verbundtests in `tests/test_mesh.py` und ein neuer Downloadtest.
@@ -96,7 +102,6 @@
 - Download-Zwischendateien: Test schlägt mit dem alten Stand fehl (`original.bin` sichtbar) und besteht mit dem neuen.
 - Chromium: Verbund-Einstellungen gespeichert, Fehlermeldung bei fehlendem Ordner, Statusanzeige mit eigenem System, keine JavaScript-Fehler.
 - Nicht geprüft: echter MeshSync-Abgleich zwischen zwei NAS, Synology/QNAP-Laufzeit.
-
 
 27. Oktober 2026, Linux-Testumgebung.
 
@@ -133,7 +138,6 @@ Diagnosebasis: MediathekAtlas_Diagnose_2026-10-27T09-57-24-279Z.zip und image(20
 0.4.5: 132 Tests bestanden. Artwork-Abgleich über externe ID, Ablehnung mehrdeutiger Titel/falscher Jahre, unveränderte Werkidentität, Hintergrundergänzung bestätigter Werke, HTML-Abweisung, erlaubte Bildhosts und überschreibungsfreier Bildexport geprüft. Browserregression inklusive neuer Detailansicht bestanden; Detailansicht bei 1512×1100 visuell geprüft. Tests verwenden simulierte Bildanbieter. Kein nativer macOS-Test oder Live-Test mit persönlichen TVDB-/TMDB-Zugängen.
 
 0.4.6: 134 Tests bestanden. Downloadflag blendet ein Werk aus mehreren Genreansichten aus, bleibt bei erneutem Import erhalten und erlaubt Anzeige ohne Datenlöschung. Stabile Laufzeitkopie überlebt Entfernen des ursprünglichen App-Verzeichnisses; benutzerdefinierter Python-Launcher funktioniert weiterhin. Browserregression mit Detail-Dateilinks, Bewertung/Stimmen und alternativen Angeboten bestanden; Detailansicht visuell geprüft. Syntax- und Diffprüfungen bestanden. Native macOS-AppTranslocation sowie Start des Standard-Videoplayers nicht direkt getestet.
-
 
 ## 0.4.7
 138 Python-Tests: erfolgreich. Neue Tests prüfen zulässige Bewertungsskalen, Ablehnung abweichender IMDb-ID/Medienart, null OMDb-Aufrufe während Pause, Empfehlungen nach Stimmen und Bewertung sowie Downloadstatus. Bestehende Browser-Suite erfolgreich, keine JS-Fehler. Zusätzliche Browserprüfung: 2048px Hauptbreite, drei Karten füllen die komplette Zeile, 390px ohne horizontalen Überlauf, Rotten-Tomatoes-/Metacritic-Werte mit Quelle in Details. Screenshots intern visuell geprüft. Python-/JS-/Shell-Syntax geprüft. Anbieterantworten in Tests simuliert; kein Live-Test mit persönlichen Zugangsdaten. Native macOS-Ausführung weiterhin nicht testbar.

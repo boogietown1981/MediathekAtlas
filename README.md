@@ -1,6 +1,14 @@
-# MediathekAtlas · 0.5.17 Preview
+# MediathekAtlas · 0.5.18 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.18: Filme und Serien direkt abspielen
+
+- „▶ Abspielen“ auf jeder Katalogkarte, auf den neuen Titelseiten (Film, Serie, jede Folge), in der Detailansicht und bei fertigen Downloads. Bei Serien heißt der Knopf „▶ Serie abspielen“ und startet die nächste ungesehene bzw. angefangene Folge; „Nächste Folge“ und automatisches Weiterspielen am Folgenende.
+- Quelle: Ist der Titel schon heruntergeladen, läuft die lokale Datei (auch vom NAS auf jedem Gerät im Heimnetz), sonst der Online-Stream des Senders.
+- Direkte MP4-Dateien der Sender spielt der Browser selbst, ohne Last auf NAS oder Mac. HLS-Streams (Safari, neuere Chrome-Versionen) ebenfalls direkt, sonst und für MKV-Downloads wandelt ffmpeg ohne Neukodierung des Bildes in einen MP4-Stream um (Ton nur bei Bedarf nach AAC). Das läuft auch auf älteren NAS.
+- Eigene Zeitleiste mit Springen, ±10/30 Sekunden, Tastatur (Leertaste, Pfeile, f), Vollbild. Die Position wird je Titel auf dem Gerät gemerkt und beim nächsten Öffnen fortgesetzt („Von vorn“ startet neu).
+- Sicherheit: Abgespielt wird nur, was in der eigenen Datenbank steht (Angebot oder Download), keine frei übergebenen Adressen oder Pfade. Höchstens drei gleichzeitige Umwandlungen; Spulen ersetzt den laufenden Stream.
 
 ## Neu in 0.5.17: Titelseiten für Serien und Filme
 
@@ -55,7 +63,6 @@ Das QPKG 0.5.9 wurde vom App Center mit „file format error“ abgelehnt: Dem P
 ## Neu in 0.5.9: Bisherige Erkennungen werden im Verbund geteilt
 
 Bisher teilte ein System nur Ergebnisse, die nach dem Einschalten des Verbunds entstanden. Jetzt veröffentlicht jedes System beim ersten Verbinden einmalig auch alle schon vorhandenen Zuordnungen (manuell, zugeordnet, Werk erkannt), in Paketen zu 1000 Werken je 30 Sekunden. Die Verbundanzeige zeigt den Fortschritt („Bisherige Ergebnisse werden geteilt: … übertragen, noch … Werke“). Die anderen Systeme übernehmen sie ohne eigene Anbieterabfrage; eigene manuelle Zuordnungen bleiben unangetastet.
-
 
 Neu als Paket: `MediathekAtlas_0.5.14.qpkg` für QNAP QTS (architekturunabhängig, über App Center → Manuell installieren). Python ab 3.9 („Python3“ aus dem App Center oder Entware) muss installiert sein; der Einrichtungscode für das erste Passwort liegt danach im Download-Ordner.
 ## Neu in 0.5.8: Katalog-Fehler „j is not defined“ behoben
@@ -128,13 +135,11 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 
 ### Pakete für Synology und QNAP
 
-
 MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.14-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.14.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 
 ### Verbund mehrerer Systeme (Vorschau)
-
 
 Mehrere MediathekAtlas-Installationen, etwa auf verschiedenen NAS, teilen sich die Metadatenerkennung. Unter Einstellungen → „Verbund mehrerer Systeme“ wird ein gemeinsamer Ordner eingetragen, bevorzugt ein MeshSync-Ordner. Jede Installation bearbeitet einen Teil der 256 Werkbereiche und übernimmt die Ergebnisse der anderen. Dadurch wird kein Titel doppelt bei TMDB, OMDb oder TVDB abgefragt. Manuelle Zuordnungen gelten überall. Jede Installation behält ihre eigene Datenbank und arbeitet ohne Verbindung allein weiter. Format, Regeln und Grenzen: `docs/VERBUND.md`.
 
@@ -368,7 +373,6 @@ Downloadkarten zeigen Cover, Jahr, Genre, Episodendaten, Anbieter und den Origin
 Der macOS-Launcher kopiert Programmressourcen vor dem Start in ein inhaltsversioniertes, dauerhaftes Laufzeitverzeichnis unter Application Support/MediathekAtlas/runtime. So bleibt die Weboberfläche verfügbar, wenn macOS ein AppTranslocation-Verzeichnis entfernt oder die ursprüngliche App ersetzt wird. Katalog und IMDb-Archiv werden nicht kopiert oder zurückgesetzt. Beim Umstieg von einer bereits defekten laufenden Altversion diese vollständig beenden; falls ihre Oberfläche nicht mehr funktioniert, einmal den Mac neu starten und anschließend die neue App aus Programme öffnen. Alte Browser-Tabs schließen, da sich die lokale Portnummer ändern kann.
 
 Validiert mit automatisierten Tests einschließlich entfernter ursprünglicher App-Ressourcen. Native macOS-AppTranslocation und Start des macOS-Videoplayers sind in dieser Umgebung nicht direkt testbar.
-
 
 ## Neu in 0.4.7: Flexible Kategorien und Empfehlungen
 
