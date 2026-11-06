@@ -223,6 +223,7 @@ class Handler(BaseHTTPRequestHandler):
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path=='/app.js':return self.send((Path(__file__).parent/'web'/'app.js').read_bytes(),ctype='text/javascript')
+        if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
@@ -243,6 +244,11 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/catalog-tree':
             return self.send(catalog_tree())
         if path=='/api/recognition':return self.send(recognition())
+        if path=='/api/show':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:
+                with db() as c:return self.send(catalog.show_detail(c,q.get('show',[''])[0][:200],archive=q.get('archive',['0'])[0]=='1'))
+            except ValueError as e:return self.send({'error':str(e)},404)
         if path=='/api/alternatives':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})

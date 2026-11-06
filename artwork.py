@@ -25,13 +25,14 @@ def lookup(m,s):
             if sid:
                 d=get('series/'+str(sid)+'/extended')
                 if valid(d.get('image')):found['poster']=d['image']
+                if d.get('overview'):found['show_description']=str(d['overview'])
                 types=get('artwork/types');types={t['id']:str(t.get('name','')).lower() for t in types}
                 for a in d.get('artworks') or []:
                     name=types.get(a.get('type'),'');url=a.get('image')
                     if valid(url) and ('background' in name or 'fanart' in name):found.setdefault('fanart',url)
                 if found:found['artwork_provider']='TVDB'
         except Exception as e:errors.append(core.safe_error(e))
-    if s.get('tmdb') and (not m.get('discovery_enriched') or m.get('rating') is None or not all(m.get(k) or found.get(k) for k in ('poster','fanart'))):
+    if s.get('tmdb') and (not m.get('discovery_enriched') or m.get('rating') is None or not all(m.get(k) or found.get(k) for k in ('poster','fanart')) or (m['kind']=='series' and not m.get('show_description'))):
         try:
             kind='tv' if m['kind']=='series' else 'movie';sid=m.get('reference_id') if m.get('provider')=='TMDB' else None
             if not sid and m.get('reference_id') and m.get('provider') in ('OMDb','IMDb Offline','TVDB'):
@@ -49,6 +50,7 @@ def lookup(m,s):
                 imdb_id=imdb_id or d.get('imdb_id')
                 if not imdb_id and s.get('omdb') and not metadata.omdb_status(s['omdb'])['paused']:
                     imdb_id=core.tmdb(kind+'/'+str(sid)+'/external_ids',s['tmdb']).get('imdb_id')
+                if kind=='tv' and d.get('overview'):found['show_description']=str(d['overview'])  # German (de-DE) beats TVDB default language
                 if d.get('vote_average') is not None:found.update(rating=d['vote_average'],votes=d.get('vote_count'),rating_source='TMDB')
                 for field,key,size in [('poster','poster_path','w500'),('fanart','backdrop_path','w1280')]:
                     if not found.get(field) and str(d.get(key) or '').startswith('/'):
@@ -89,6 +91,7 @@ def apply(m,found):
         for field in ('rating','votes','rating_source'):m[field]=found.get(field)
     for field in ('networks','studios','ratings','imdb_id','discovery_enriched'):
         if found.get(field):m[field]=found[field]
+    if found.get('show_description') and not m.get('show_description'):m['show_description']=found['show_description']
     m['artwork_provider']=found.get('artwork_provider',m.get('artwork_provider',''))
 
 def share_series(c,row,m,found):
@@ -111,8 +114,8 @@ def run_once(service):
         if not row:return False
         original=row['meta'];m=json.loads(original)
         c.execute('INSERT OR REPLACE INTO artwork_checks VALUES(?,?)',(row['id'],time.time()+86400))
-    if m.get('discovery_enriched') and m.get('poster') and m.get('fanart') and m.get('rating') is not None and (not config.get('omdb') or m.get('ratings')):return True
-    key=core.hashlib.sha256(json.dumps([m.get('provider'),m.get('reference_id'),m['kind'],m['title'],m.get('year'),bool(config.get('tmdb')),bool(config.get('tvdb')),bool(config.get('omdb')),'v047'],sort_keys=True).encode()).hexdigest()
+    if m.get('discovery_enriched') and m.get('poster') and m.get('fanart') and m.get('rating') is not None and (not config.get('omdb') or m.get('ratings')) and (m['kind']!='series' or m.get('show_description')):return True
+    key=core.hashlib.sha256(json.dumps([m.get('provider'),m.get('reference_id'),m['kind'],m['title'],m.get('year'),bool(config.get('tmdb')),bool(config.get('tvdb')),bool(config.get('omdb')),'v0516'],sort_keys=True).encode()).hexdigest()
     with service.db() as c:cache=c.execute('SELECT payload FROM artwork_cache WHERE id=? AND checked>?',(key,time.time()-86400)).fetchone()
     if cache:found,errors=json.loads(cache[0]),[]
     else:

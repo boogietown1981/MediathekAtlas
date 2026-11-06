@@ -162,6 +162,47 @@ def alternatives(c,wid):
         row=json.loads(r['payload']);out.append({'id':r['id'],'work_id':wid,'source':row,'metadata':json.loads(w['meta']),'special':r['special'],'available':bool(r['active']),'links':links(row)})
     return out
 
+SHOW_FIELDS=('title','year','kind','provider','reference_id','imdb_id','poster','fanart','genres','genre_source','rating','votes','rating_source','ratings','networks','studios','show_credits','artwork_provider','show_description')
+STATE_ORDER={'manual':0,'matched':1,'identified':2,'review':3,'retry':4,'pending':5,'format':6}
+
+def show_detail(c,show,archive=False,limit=1000):
+    """Series page: show-level metadata assembled from its episodes plus all episodes by season.
+
+    Episode descriptions are never used as series description; only a provider series overview
+    (show_description) or, for broadcaster series, the Sendereihe text (series_description).
+    """
+    if not show:raise ValueError('Serie fehlt')
+    where='w.show_key=?'+('' if archive else ' AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)')
+    rows=c.execute('SELECT w.* FROM works w WHERE '+where,(show,)).fetchall()
+    if not rows:raise ValueError('Serie nicht gefunden')
+    metas=[(r,json.loads(r['meta'])) for r in rows]
+    ranked=sorted(metas,key=lambda x:(STATE_ORDER.get(x[0]['state'],9),not x[1].get('poster'),not x[1].get('fanart')))
+    summary={'show_key':show}
+    for field in SHOW_FIELDS:
+        for _,m in ranked:
+            v=m.get(field)
+            if v not in (None,'',[],{}):summary[field]=v;break
+    if not summary.get('show_description'):
+        # Broadcaster series carry the Sendereihe text on each episode; the most frequent one wins.
+        from collections import Counter
+        texts=Counter((m.get('series_description') or '').strip() for _,m in metas);texts.pop('',None)
+        if texts:summary['show_description']=texts.most_common(1)[0][0]
+    def order(x):
+        m=x[1];return (m.get('season') if m.get('season') is not None else 99999,m.get('episode') if m.get('episode') is not None else 99999,m.get('episode_title',''))
+    episodes=[];seasons={};channels=set()
+    for w,m in sorted(metas,key=order)[:limit]:
+        entry=item(c,w)
+        if not entry:continue
+        entry.update(episodes=1,series_parent=False);episodes.append(entry)
+        season=m.get('season') if isinstance(m.get('season'),int) else None
+        seasons.setdefault(season,0);seasons[season]+=1
+    for (payload,) in c.execute('SELECT o.payload FROM offers o JOIN works w ON w.id=o.work_id WHERE '+where+('' if archive else ' AND o.active=1'),(show,)):
+        channel=json.loads(payload).get('channel')
+        if channel:channels.add(channel)
+    summary.update(state=ranked[0][0]['state'],episode_count=len(rows),downloaded=sum(1 for e in episodes if e['downloaded']),available=sum(1 for e in episodes if e['available']),
+                   channels=sorted(channels),seasons=[{'season':k,'episodes':v} for k,v in sorted(seasons.items(),key=lambda kv:(kv[0] is None,kv[0] or 0))],truncated=len(rows)>limit)
+    return {'show':summary,'episodes':episodes,'work_ids':[w['id'] for w,_ in ranked[:48]]}
+
 def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection=''):
     clauses=[];args=[]
     if downloaded=='hide':clauses.append('NOT EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
@@ -230,7 +271,7 @@ def save_metadata(c,wid,m,state='manual'):
     if any(previous.get(k)!=m.get(k) for k in ('title','kind','year','reference_id','provider')):
         c.execute('DELETE FROM artwork_checks WHERE work_id=?',(wid,))
         m.pop('fanart',None);m.pop('artwork_provider',None)
-        for field in ('networks','studios','ratings','imdb_id','discovery_enriched'):
+        for field in ('networks','studios','ratings','imdb_id','discovery_enriched','show_description'):
             if m.get(field)==previous.get(field):m.pop(field,None)
     dest=canonical(m) or wid;old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
     if old and old['state']=='manual' and state!='manual':m=json.loads(old['meta']);state='manual'
@@ -254,7 +295,7 @@ def work_choice(meta,rows):
 
 def propagate_series(c,old_show,m):
     # Transfer work metadata, never a sibling's episode number or episode plot.
-    common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source') if k in m}
+    common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description') if k in m}
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
         own=json.loads(row['meta'])
         # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
