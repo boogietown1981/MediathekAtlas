@@ -1,3 +1,4 @@
+// playMedia(item[,list]) comes from web/player.js; list = following episodes for "Nächste Folge".
 // Title pages for series and films, laid out like a media server: backdrop, poster, overview,
 // facts, cast, then seasons with episodes (series) or versions (films). Uses helpers of app.js.
 'use strict';
@@ -8,7 +9,7 @@ function epCode(m){return Number.isInteger(m.season)&&Number.isInteger(m.episode
 function minutes(sec){return sec?Math.round(sec/60)+' Min.':'';}
 function seasonLabel(s){return s===null||s===undefined?'Ohne Staffelangabe':s===0?'Specials':'Staffel '+s;}
 function stateLabel(state){return ({identified:'◐ Werk erkannt · Folge offen',matched:'✓ Zugeordnet',manual:'✓ Manuell geprüft',review:'◌ Zuordnung prüfen',pending:'◌ Vorgemerkt',retry:'◌ Wird wiederholt',format:'◇ Sendungsbeitrag'})[state]||'◌ Offen';}
-function playButton(item,label,primary){const b=el('button','▶ '+(label||'Abspielen'),(primary?'primary ':'')+'play-button');b.title='Im Browser abspielen';b.onclick=e=>{e.stopPropagation();playMedia(item);};return b;}
+function playButton(item,label,primary,list){const b=el('button','▶ '+(label||'Abspielen'),(primary?'primary ':'')+'play-button');b.title='Im Browser abspielen';b.onclick=e=>{e.stopPropagation();list?playMedia(item,list):playMedia(item);};return b;}
 function artImage(url,alt,cls){if(!safeArt(url))return null;const img=el('img',undefined,cls);img.src=url;img.alt=alt||'';img.loading='lazy';img.decoding='async';img.onerror=()=>img.remove();return img;}
 
 function showTitleView(){titleScroll=window.scrollY;$('discover').hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
@@ -55,7 +56,7 @@ function nextEpisode(eps){return eps.find(e=>e.available&&!e.downloaded)||eps.fi
 function renderShow(){
  const {data:d}=titleState,s=d.show,host=$('title-view'),credits=s.show_credits||{};
  const eps=d.episodes,next=nextEpisode(eps),actions=[];
- if(next&&canPlay())actions.push(playButton(next,(epCode(next.metadata)?epCode(next.metadata)+' ':'')+'abspielen',true));
+ if(next&&canPlay())actions.push(playButton(next,(epCode(next.metadata)?epCode(next.metadata)+' ':'')+'abspielen',true,eps.filter(e=>e.available)));
  const dl=el('button','↓ Folgen auswählen & herunterladen',canPlay()?'':'primary');dl.onclick=()=>openSeries(s.show_key);actions.push(dl);
  const sync=el('button','↻ Metadaten abgleichen');sync.title='Diese Serie bevorzugt mit TMDB, TVDB, IMDb und den Mediatheken abgleichen';sync.onclick=e=>busy(e.target,async()=>{await api('metadata-priority',{show:s.show_key});if(d.work_ids.length)await api('artwork-priority',{ids:d.work_ids.slice(0,3)});notice('Abgleich vorgemerkt. Die Seite zeigt neue Daten beim nächsten Öffnen.');});actions.push(sync);
  const years=s.year?String(s.year):'';const nSeasons=s.seasons.filter(x=>x.season!==null).length;
@@ -77,7 +78,7 @@ function renderShow(){
 function episodeRow(e,s){
  const m=e.metadata,r=e.source,row=el('article',undefined,'tv-episode');row.dataset.work=e.work_id;
  const thumb=el('div',undefined,'tv-thumb'),img=artImage(m.still||s.fanart||m.poster||s.poster,'');if(img)thumb.append(img);thumb.append(el('span',epCode(m)||'Folge','tv-code'));
- if(canPlay()&&e.available)thumb.append(playButton(e,'',false));row.append(thumb);
+ if(canPlay()&&e.available)thumb.append(playButton(e,'',false,titleState.data.episodes.filter(x=>x.available)));row.append(thumb);
  const body=el('div',undefined,'tv-epbody'),title=m.episode_title||r.title;
  body.append(el('h3',(Number.isInteger(m.episode)?m.episode+'. ':'')+title));
  const meta=[minutes(r.duration),r.channel,e.best?.quality?e.best.quality+(e.best.height_hint?' '+e.best.height_hint+'p':''):'',e.special||'',r.timestamp?new Date(r.timestamp*1000).toLocaleDateString('de-DE'):''].filter(Boolean).join(' · ');
