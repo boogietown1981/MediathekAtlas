@@ -49,3 +49,33 @@ tr.total td{font-weight:600}
 .grid:not(.episode-list) .cardbody>.file-details,.grid:not(.episode-list) .cardbody>button:first-of-type{margin-top:auto}
 .grid:not(.episode-list) .cardbody>.file-details~button{margin-top:0}
 @media(max-width:650px){.catalogcontent .grid:not(.episode-list){grid-template-columns:1fr}}
+/* 0.5.3: Downloads als Kartenraster wie die Suche */
+#jobs.job-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,210px),240px));justify-content:start;align-items:stretch;gap:17px;margin-top:12px}
+#jobs .job{padding:0;margin:0;background:#131d2a;border:1px solid #2b3948;border-radius:13px}
+#jobs .job .art{height:220px!important;background:linear-gradient(145deg,#233e4b,#182330);align-items:end;position:relative}
+#jobs .job .art img{position:absolute;inset:0;width:100%;height:100%;object-fit:contain}
+#jobs .job .art strong,#jobs .job .art span{position:relative;z-index:1;font-size:10px;background:#0c111ad0;padding:3px 7px;border-radius:6px}
+#jobs .job .cardbody{padding:14px 16px;gap:8px;min-height:0}
+#jobs .job .cardbody h3{margin:0;font-size:16px;line-height:1.25;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden}
+#jobs .job .eyebrow{display:block;margin:0;font-size:10px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#jobs .job .badge{margin:0}
+#jobs .job-done .badge{color:#8ae2c7}#jobs .job-error .badge{color:#ff9d8a}
+#jobs .job small{color:#a3b8ca;overflow-wrap:anywhere}
+#jobs .job .file-details{font-size:12px;color:#a3b8ca}#jobs .job .file-details p{margin:6px 0}
+#jobs .job .job-path{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#jobs .job .file-details a{color:#8ae2c7;display:inline-block;margin-top:4px}
+#jobs .job button,#jobs .job .button-link{margin:0;width:100%}
+#jobs .job .cardbody>.file-details{margin-top:auto}
+.button-link{display:inline-block;text-align:center;text-decoration:none;font:inherit;border:1px solid #344150;border-radius:8px;background:#1c2837;color:#e3edf8;padding:11px 15px;box-sizing:border-box}
+.button-link.primary{background:#67e1bc;color:#0c2822;border:0;font-weight:650}
+#jobs .empty{grid-column:1/-1}
+@media(max-width:650px){#jobs.job-grid{grid-template-columns:1fr}}
+/* 0.5.5: Direktverbindung im Verbund */
+.mesh-direct{margin-top:18px;padding-top:14px;border-top:1px solid #26303c}.mesh-direct h4{margin:0 0 6px}
+.mesh-direct-row{display:flex;flex-wrap:wrap;gap:8px;margin:8px 0}.mesh-direct-row button,#mesh-copy,#mesh-connect{margin-left:0}
+#mesh-code{font-family:ui-monospace,Menlo,monospace;font-size:12px}
+/* 0.5.6: Hinweise schließen sich selbst, Fehler bleiben mit Schließen-Knopf */
+#notice{display:flex;align-items:flex-start;gap:12px}#notice[hidden]{display:none}#notice>span{flex:1}
+#notice.notice-error{background:#3d2525;color:#ffc4b8;border-color:#6a3a36}
+#notice .notice-close{margin:0;padding:0 8px;background:transparent;border:0;color:inherit;font-size:20px;line-height:1;cursor:pointer}
+.peer-row{display:flex;align-items:center;gap:10px;margin:6px 0}.peer-row span{flex:1;overflow-wrap:anywhere}.peer-row button{margin:0;padding:6px 10px}

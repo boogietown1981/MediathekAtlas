@@ -20,7 +20,11 @@ SEGMENT_AGE = 300           # bounded file count for MeshSync: at most 288 segme
 MAX_LINE = 256 * 1024
 READ_LIMIT = 5000           # events per import round, keeps weak NAS responsive
 HEARTBEAT = 300
-TYPES = ('match.result', 'match.manual')
+TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release')
+DOWNLOAD_TYPES = TYPES[2:]
+CLAIM_SECONDS = 7200          # a claim expires unless renewed, so a crashed node never blocks a title for long
+CLAIM_RENEW = 1800
+_HEX64 = re.compile(r'^[0-9a-f]{64}$')
 RANK = {'manual': 4, 'matched': 3, 'identified': 2, 'review': 1}
 _NODE = re.compile(r'^[0-9a-f]{32}$')
 _SEGMENT = re.compile(r'^events-(\d{6})\.jsonl$')
@@ -114,11 +118,45 @@ def clean_meta(meta):
     return dict(meta)
 
 
+def safe_relative(text):
+    """Relative POSIX path inside a sync folder, or None."""
+    if not isinstance(text, str) or not 0 < len(text) <= 1024 or '\\' in text or text.startswith('/'): return None
+    parts = text.split('/')
+    if any(p in ('', '.', '..') or any(ord(ch) < 32 for ch in p) for p in parts): return None
+    return text
+
+
+def valid_download(kind, d):
+    if not isinstance(d.get('key'), str) or not 0 < len(d['key']) <= 64: return False
+    works = d.get('works', [])
+    if not isinstance(works, list) or len(works) > 8 or not all(isinstance(w, str) and 0 < len(w) <= 64 for w in works): return False
+    if not isinstance(d.get('title', ''), str) or len(d.get('title', '')) > 300: return False
+    if kind == 'download.claim': return isinstance(d.get('until'), int) and not isinstance(d['until'], bool)
+    if kind == 'download.done':
+        if d.get('path') is not None and safe_relative(d['path']) is None: return False
+        if d.get('sha256') is not None and not (isinstance(d['sha256'], str) and _HEX64.match(d['sha256'])): return False
+        return isinstance(d.get('size'), int) and not isinstance(d['size'], bool) and d['size'] >= 0
+    return True
+
+
+def sync_root(path):
+    """Nearest enclosing MeshSync folder (directory with a marker), or None."""
+    try: p = Path(path).expanduser().resolve()
+    except (OSError, RuntimeError): return None
+    for d in (p, *p.parents):
+        marker = d / MESHSYNC_MARKER
+        try:
+            if marker.is_file() and not marker.is_symlink(): return d
+        except OSError: return None
+    return None
+
+
 def valid_event(event, node):
     if not isinstance(event, dict) or event.get('v') != 1 or event.get('node') != node: return False
     if event.get('type') not in TYPES or not isinstance(event.get('data'), dict): return False
     if not isinstance(event.get('seq'), int) or not isinstance(event.get('hlc'), int): return False
     d = event['data']
+    if event['type'] in DOWNLOAD_TYPES: return valid_download(event['type'], d)
     if not isinstance(d.get('work'), str) or not 0 < len(d['work']) <= 64: return False
     if d.get('outcome') not in RANK or clean_meta(d.get('meta')) is None: return False
     if d.get('dest') is not None and (not isinstance(d['dest'], str) or len(d['dest']) > 64): return False

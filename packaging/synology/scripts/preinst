@@ -1,2 +1,15 @@
 #!/bin/sh
-exit 0
+# No fixed package dependency: any installed Python >= 3.9 works (Python3.9, SynoCommunity
+# python310..313, ...). Stop the installation with a readable hint if none is present.
+ok(){ [ -n "$1" ] && [ -x "$1" ] && "$1" -c 'import sys,sqlite3,ssl,json;sys.exit(0 if sys.version_info>=(3,9) else 1)' >/dev/null 2>&1; }
+conf_python=""
+[ -f "$SYNOPKG_PKGVAR/mediathekatlas.conf" ] && conf_python=$(sed -n 's/^PYTHON=//p' "$SYNOPKG_PKGVAR/mediathekatlas.conf" | tr -d '"' | tail -n 1)
+for candidate in "$conf_python" /var/packages/*/target/bin/python3* /var/packages/*/target/usr/bin/python3* \
+  /var/packages/*/target/usr/local/bin/python3* /usr/local/bin/python3 /usr/bin/python3; do
+  case "$candidate" in *-config) continue;; esac
+  ok "$candidate" && exit 0
+done
+msg="MediathekAtlas braucht Python ab Version 3.9. Bitte zuerst im Paket-Zentrum ein Python-Paket installieren (z. B. „Python 3.9“ oder „Python 3.11“ von SynoCommunity)."
+[ -n "$SYNOPKG_TEMP_LOGFILE" ] && echo "$msg" > "$SYNOPKG_TEMP_LOGFILE"
+echo "$msg" >&2
+exit 1

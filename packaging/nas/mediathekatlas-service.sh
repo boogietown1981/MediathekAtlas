@@ -41,12 +41,26 @@ find_python(){
     qnap_root=$(/sbin/getcfg Python3 Install_Path -d "" -f /etc/config/qpkg.conf 2>/dev/null)
     [ -n "$qnap_root" ] && qnap_python="$qnap_root/python3/bin/python3"
   fi
+  # QNAP App Center "Python3" layouts differ between releases; search them all.
+  for candidate in "$qnap_root"/bin/python3* "$qnap_root"/*/bin/python3* "$qnap_root"/opt/*/bin/python3* \
+    /share/CACHEDEV*_DATA/.qpkg/Python3*/python3/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Python3*/bin/python3* \
+    /share/CACHEDEV*_DATA/.qpkg/Python3*/opt/*/bin/python3* /share/CACHEDEV*_DATA/.qpkg/Entware/bin/python3* \
+    /opt/QPython3*/bin/python3* /share/CACHEDEV*_DATA/.qpkg/QPython3*/bin/python3*; do
+    case "$candidate" in *-config|*'*'*) continue;; esac
+    if python_ok "$candidate"; then echo "$candidate"; return 0; fi
+  done
   # Newest first; system Python on DSM 7 (3.8) and old QTS builds fail the version check.
   for candidate in "$ATLAS_PYTHON" \
     /var/packages/python313/target/bin/python3 /var/packages/python312/target/bin/python3 \
     /var/packages/python311/target/bin/python3 /var/packages/python310/target/bin/python3 \
     /var/packages/Python3.9/target/usr/bin/python3.9 /var/packages/Python3.9/target/usr/bin/python3 \
     "$qnap_python" /opt/bin/python3 /usr/local/bin/python3 /usr/bin/python3 "$(command -v python3 2>/dev/null)"; do
+    if python_ok "$candidate"; then echo "$candidate"; return 0; fi
+  done
+  # Any other Python package (official Synology, SynoCommunity, QNAP), whatever its name.
+  for candidate in /var/packages/*/target/bin/python3* /var/packages/*/target/usr/bin/python3* \
+    /var/packages/*/target/usr/local/bin/python3*; do
+    case "$candidate" in *-config) continue;; esac
     if python_ok "$candidate"; then echo "$candidate"; return 0; fi
   done
   return 1
@@ -69,11 +83,23 @@ rotate_log(){
   return 0
 }
 
+# Start problems are written next to the downloads too, so they can be read in
+# File Station without SSH; the note disappears after the next successful start.
+NOTE_NAME="MediathekAtlas-Startproblem.txt"
+start_failed(){
+  log "$1"
+  for dir in "$ATLAS_DOWNLOADS" "$ATLAS_HOME/downloads"; do
+    [ -n "$dir" ] && mkdir -p "$dir" 2>/dev/null && [ -w "$dir" ] || continue
+    { echo "MediathekAtlas konnte nicht starten ($(date '+%Y-%m-%d %H:%M:%S'))."; echo; echo "$1"; echo; echo "Letzte Zeilen aus $LOG:"; tail -n 40 "$LOG" 2>/dev/null; } > "$dir/$NOTE_NAME" 2>/dev/null && break
+  done
+  return 1
+}
+
 start(){
   if running_pid >/dev/null; then echo "MediathekAtlas läuft bereits."; return 0; fi
   mkdir -p "$ATLAS_HOME" && chmod 700 "$ATLAS_HOME" || { echo "Datenordner $ATLAS_HOME nicht beschreibbar"; return 1; }
   rotate_log
-  PYTHON=$(find_python) || { log "Kein Python ab 3.9 gefunden. Synology: Paket „Python 3.9“ installieren. QNAP: „Python3“ aus dem App Center oder Entware. Pfad optional als PYTHON=… in $CONF"; return 1; }
+  PYTHON=$(find_python) || { start_failed "Kein Python ab 3.9 gefunden. Synology: ein Python-Paket ab 3.9 installieren (z. B. „Python 3.9“ oder SynoCommunity „Python 3.11“). QNAP: „Python3“ aus dem App Center oder Entware. Pfad optional als PYTHON=… in $CONF"; return 1; }
   if ! mkdir -p "$ATLAS_DOWNLOADS" 2>/dev/null || [ ! -w "$ATLAS_DOWNLOADS" ]; then
     log "Download-Ordner $ATLAS_DOWNLOADS ist nicht beschreibbar. Ersatz: $ATLAS_HOME/downloads"
     ATLAS_DOWNLOADS="$ATLAS_HOME/downloads"; mkdir -p "$ATLAS_DOWNLOADS"
@@ -84,21 +110,24 @@ start(){
   [ -n "$ATLAS_FFPROBE" ] && export MEDIATHEKATLAS_FFPROBE="$ATLAS_FFPROBE"
   log "Start $("$PYTHON" -c 'import sys;print(sys.version.split()[0])') ($PYTHON), Port $ATLAS_PORT, Downloads $ATLAS_DOWNLOADS"
   cd "$ATLAS_APP" || return 1
-  if [ "$(id -u)" = 0 ] && [ -n "$ATLAS_RUN_AS" ] && [ "$ATLAS_RUN_AS" != root ]; then
-    # Drop root before any application code runs (initgroups keeps share groups).
-    nohup "$PYTHON" -c 'import os,pwd,sys
-u=pwd.getpwnam(sys.argv[1]);os.initgroups(u.pw_name,u.pw_gid);os.setgid(u.pw_gid);os.setuid(u.pw_uid)
-os.environ["HOME"]=os.environ["MEDIATHEKATLAS_HOME"];os.execv(sys.executable,[sys.executable,"server.py","--no-browser"])' "$ATLAS_RUN_AS" >> "$LOG" 2>&1 &
-  else
-    HOME="$ATLAS_HOME" nohup "$PYTHON" server.py --no-browser >> "$LOG" 2>&1 &
-  fi
+  # No nohup: QTS does not ship it. Python itself ignores SIGHUP (inherited across exec),
+  # optionally drops root first (initgroups keeps share groups), then runs the server.
+  run_as=""
+  [ "$(id -u)" = 0 ] && [ -n "$ATLAS_RUN_AS" ] && [ "$ATLAS_RUN_AS" != root ] && run_as="$ATLAS_RUN_AS"
+  HOME="$ATLAS_HOME" "$PYTHON" -c 'import os,signal,sys
+signal.signal(signal.SIGHUP,signal.SIG_IGN)
+if sys.argv[1]:
+    import pwd
+    u=pwd.getpwnam(sys.argv[1]);os.initgroups(u.pw_name,u.pw_gid);os.setgid(u.pw_gid);os.setuid(u.pw_uid)
+os.environ["HOME"]=os.environ["MEDIATHEKATLAS_HOME"];os.execv(sys.executable,[sys.executable,"server.py","--no-browser"])' "$run_as" < /dev/null >> "$LOG" 2>&1 &
   echo $! > "$PIDFILE"
   # Python itself is checked above; report early crashes (port in use, permissions).
   i=0
   while [ $i -lt 3 ]; do
     sleep 1; i=$((i+1))
-    running_pid >/dev/null || { log "MediathekAtlas wurde direkt nach dem Start beendet. Details: $LOG"; rm -f "$PIDFILE"; return 1; }
+    running_pid >/dev/null || { rm -f "$PIDFILE"; start_failed "MediathekAtlas wurde direkt nach dem Start beendet (z. B. Port $ATLAS_PORT belegt oder fehlende Rechte)."; return 1; }
   done
+  rm -f "$ATLAS_DOWNLOADS/$NOTE_NAME" "$ATLAS_HOME/downloads/$NOTE_NAME" 2>/dev/null
   log "MediathekAtlas läuft (PID $(cat "$PIDFILE")), Weboberfläche: http://<NAS>:$ATLAS_PORT/"
 }
 

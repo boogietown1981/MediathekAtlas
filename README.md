@@ -1,6 +1,79 @@
-# MediathekAtlas · 0.5.1 Preview
+# MediathekAtlas · 0.5.15 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.15: Mehrere Direktverbindungen je System
+
+- Jedes System kann beliebig viele Verbindungscodes aufnehmen („Verbindung hinzufügen“). Bisher hat jeder neue Code die vorherige Verbindung und den eigenen Freigabeschlüssel überschrieben.
+- Freigabe und Verbindungen sind getrennt: „Freigabe beenden“ betrifft nur den eigenen Code, jede Verbindung hat ihren eigenen „Entfernen“-Knopf und eine eigene Statuszeile.
+- Der eigene Code wird beim Hinzufügen erkannt und abgelehnt.
+- Empfehlung: Synology und QNAP freigeben, auf jedem System die Codes der jeweils anderen NAS hinzufügen. Systeme reichen Ergebnisse weiter, ein Stern um ein NAS reicht ebenfalls.
+
+## Neu in 0.5.14: Klarere Direktverbindung
+
+- In der Mac-/Desktop-App gibt es „Dieses System freigeben“ nicht mehr: Sie ist nur auf dem eigenen Rechner erreichbar, ihr Code konnte nie funktionieren („Connection refused“). Freigeben lässt sich nur ein NAS; Mac und weitere NAS verbinden sich mit dessen Code. Mehrere Systeme hängen sternförmig am freigegebenen NAS, das die Ergebnisse weiterreicht.
+- „Verbindung abgelehnt“ wird erklärt (kein MediathekAtlas unter der Adresse, Dienst gestartet?, Code der Mac-App).
+
+## Neu in 0.5.13: Start auf QNAP QTS 5.2
+
+Auf QNAP (QTS 5.2, TS-932X) beendete sich der Dienst sofort: QTS hat den Befehl `nohup` nicht. Der Start kommt jetzt ohne ihn aus; Python ignoriert das Auflegesignal selbst. QPython-Pakete (`/opt/QPython3*`) werden gezielt gesucht.
+
+## Neu in 0.5.12: Startprobleme auf dem NAS ohne SSH sichtbar
+
+Startet der Dienst auf Synology oder QNAP nicht (kein passendes Python, Port belegt, fehlende Rechte), liegt jetzt `MediathekAtlas-Startproblem.txt` mit Grund und den letzten Protokollzeilen im Download-Ordner (z. B. `Download/MediathekAtlas`), lesbar in File Station. Nach dem nächsten erfolgreichen Start verschwindet die Datei. Auf QNAP wird Python zusätzlich in allen bekannten Ordnern des App-Center-Pakets „Python3“ und von Entware gesucht. Enthält außerdem die Verbund-Verbesserungen aus 0.5.11.
+
+## Neu in 0.5.11: Große Bestände im Verbund ohne Aussetzer
+
+Bei sehr großen Beständen (getestet wurde im Feld mit rund 88.000 erkannten Werken) konnte die Übernahme auf dem NAS so lange am Stück laufen, dass Lebenszeichen und Direktverbindung ins Stocken kamen („Gegenstelle nicht erreichbar (timed out)“). Jetzt:
+
+- Fremde Ergebnisse werden in kleinen Paketen (250) mit höchstens 20 Sekunden je Runde übernommen; danach kommen Lebenszeichen und Abgleich wieder dran. Die Statuszeile zeigt „Übernahme läuft, weitere Ergebnisse folgen“.
+- Der eigene Bestand wird gebremst geteilt (500 Werke alle 20 Sekunden) und pausiert, solange die Gegenstelle nicht erreichbar ist.
+- Zeitlimit je Anfrage der Direktverbindung 60 Sekunden.
+
+## Neu in 0.5.10: QNAP-Paket installierbar
+
+Das QPKG 0.5.9 wurde vom App Center mit „file format error“ abgelehnt: Dem Paket fehlte das Prüffeld im Fußbereich, das QNAPs Hilfsprogramm `qpkg_encrypt` schreibt; der Build hatte dessen Fehlen nur als Warnung gemeldet. `build_nas.py` schreibt das Feld jetzt selbst (byte-gleich mit dem QNAP-Werkzeug geprüft), die CI kontrolliert es. Sonst keine Programmänderung gegenüber 0.5.9.
+
+## Neu in 0.5.9: Bisherige Erkennungen werden im Verbund geteilt
+
+Bisher teilte ein System nur Ergebnisse, die nach dem Einschalten des Verbunds entstanden. Jetzt veröffentlicht jedes System beim ersten Verbinden einmalig auch alle schon vorhandenen Zuordnungen (manuell, zugeordnet, Werk erkannt), in Paketen zu 1000 Werken je 30 Sekunden. Die Verbundanzeige zeigt den Fortschritt („Bisherige Ergebnisse werden geteilt: … übertragen, noch … Werke“). Die anderen Systeme übernehmen sie ohne eigene Anbieterabfrage; eigene manuelle Zuordnungen bleiben unangetastet.
+
+
+Neu als Paket: `MediathekAtlas_0.5.14.qpkg` für QNAP QTS (architekturunabhängig, über App Center → Manuell installieren). Python ab 3.9 („Python3“ aus dem App Center oder Entware) muss installiert sein; der Einrichtungscode für das erste Passwort liegt danach im Download-Ordner.
+## Neu in 0.5.8: Katalog-Fehler „j is not defined“ behoben
+
+Seit 0.5.3 brach die Kartenansicht ab, sobald ein Titel mehrere Fassungen hatte („Katalog konnte nicht geladen werden: j is not defined“). Ursache war ein falsch platzierter Code-Teil der neuen Download-Karten in der Katalogkarte.
+
+## Neu in 0.5.7: Klare Fehlermeldungen der Direktverbindung
+
+Die Statuszeile der Direktverbindung nennt jetzt die tatsächliche Ursache (Gegenstelle nicht erreichbar, Schlüssel abgelehnt, Verbund dort nicht aktiv samt Grund, zu alte Version) statt pauschal „Gegenstelle ist kein MediathekAtlas“. Zeitlimit je Anfrage 30 s für ausgelastete NAS.
+
+## Neu in 0.5.6: Hinweise und Katalog-Ladefehler
+
+- Bestätigungen wie „Einstellungen gespeichert“ verschwinden nach sieben Sekunden von selbst. Fehlermeldungen bleiben rot sichtbar, bis man sie mit × schließt oder die Ursache behoben ist.
+- Lädt der Katalog einmal nicht (z. B. NAS kurz ausgelastet, Verbindung über Tailscale unterbrochen), versucht die Oberfläche es zweimal automatisch erneut. Erst danach erscheint „Katalog konnte nicht geladen werden“ mit der Ursache; beim nächsten erfolgreichen Laden verschwindet die Meldung.
+
+## Neu in 0.5.5: Direktverbindung zwischen Systemen (z. B. über Tailscale)
+
+Mac und NAS teilen sich die Erkennung jetzt auch ohne gemeinsamen Sync-Ordner. Auf dem NAS unter Einstellungen → Verbund „Dieses System freigeben“ wählen, den angezeigten Verbindungscode am Mac einfügen, fertig. Der Mac verbindet sich selbst mit dem NAS und gleicht alle 30 Sekunden ab, er muss also nicht erreichbar sein. Geschützt durch einen gemeinsamen 256-Bit-Schlüssel; über Tailscale zusätzlich verschlüsselt. Videos werden dabei nicht kopiert, dafür gibt es „Herunterladen“. Details: `docs/VERBUND.md`.
+
+## Neu in 0.5.4: Synology ohne feste Python-3.9-Abhängigkeit
+
+Das Synology-Paket verlangt nicht mehr das Paket „Python 3.9“. Jedes installierte Python ab 3.9 wird gefunden, auch SynoCommunity 3.10 bis 3.13 oder andere Python-Pakete; das neueste wird verwendet. Fehlt ein passendes Python, bricht die Installation mit einem verständlichen Hinweis ab.
+
+## Neu in 0.5.3: Einheitliche Genres, Downloads als Karten, Dateien vom NAS laden
+
+- **Genres ohne Doppelungen:** Schreibweisen der Anbieter werden zu einem deutschen Genre zusammengeführt, z. B. „Dokumentarfilm“, „Documentary“ → „Dokumentation“, „Kriminalfilm“, „Krimiserie“ → „Krimi“, „Filmdrama“ → „Drama“, „Liebesfilm“ → „Romantik“, „Biography“ → „Biografie“, „Familie“ → „Kinder & Familie“, „Mysteryfilm“ → „Mystery“. Groß-/Kleinschreibung, Bindestriche und „&“/„und“ spielen keine Rolle; „Action & Adventure“ wird zu „Action“ und „Abenteuer“, reine Medienangaben wie „Fernsehserie“ entfallen. Bestehende Kataloge werden beim ersten Start einmalig umgestellt.
+- **Download-Ansicht als Kartenraster** wie die Suche: Cover, Titel, Status und Fortschritt kompakt, Speicherort, Tonspuren und Originalquelle unter „Datei & Speicherort“ einklappbar.
+- **Fertige Downloads über den Browser laden:** Jede fertige Datei hat die Schaltfläche „Herunterladen“. Das funktioniert auch, wenn MediathekAtlas auf dem NAS läuft und der Browser auf einem anderen Gerät; die Anmeldung gilt dafür genauso. Fortsetzen abgebrochener Übertragungen (HTTP-Range) wird unterstützt. MP4/WebM lassen sich auf dem NAS direkt im Browser abspielen. „Filmdatei öffnen“ bleibt in der Desktop-App erhalten.
+
+## Neu in 0.5.2: Downloads im Verbund abgestimmt
+
+Mit eingerichtetem Verbund lädt jedes NAS einen Titel nur noch einmal für alle. Startet ein System einen Download, meldet es das den anderen. Dort erscheint am Titel „Wird auf ‚NAS X‘ geladen“, und ein zweiter Download wird abgelehnt. Bereits eingereihte Folgen eines Serienpakets bekommen den Status „Auf anderem System“ und lassen sich später erneut starten.
+
+Liegt der Downloadordner in einem MeshSync-Ordner, verteilt MeshSync das fertige Video an die anderen NAS. Die Karte zeigt „MeshSync überträgt“, bis die Datei vollständig angekommen ist (Größe stimmt), danach „hier vorhanden“. Liegt der Downloadordner nicht in einem MeshSync-Ordner, gilt der Titel trotzdem überall als geladen, blockiert aber keinen eigenen Download. Die Verbundeinstellungen zeigen, ob der Downloadordner geteilt wird.
+
+Ein Anspruch läuft nach zwei Stunden ohne Lebenszeichen ab, ein abgestürztes System blockiert also nichts dauerhaft. Abgebrochene oder fehlgeschlagene Downloads geben den Titel sofort frei. Für fertige Downloads wird zusätzlich eine SHA-256-Prüfsumme veröffentlicht (für HomeTube). Format und Grenzen: `docs/VERBUND.md`.
 
 ## Neu in 0.5.1
 
@@ -38,7 +111,7 @@ Bereits als Sendereihe erkannte Folgen fragen die Filmdatenbanken nicht erneut u
 ### Pakete für Synology und QNAP
 
 
-MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.1-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.1.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
+MediathekAtlas lässt sich als Dienst auf einem NAS betreiben: `MediathekAtlas-0.5.14-noarch.spk` für Synology DSM 7 und `MediathekAtlas_0.5.14.qpkg` für QNAP QTS, jeweils architekturunabhängig (x86_64, ARM64, ARMv7). Downloads landen direkt in einer NAS-Freigabe; Katalog und Einstellungen bleiben im lokalen Paketdatenordner. Die Weboberfläche ist im Heimnetz unter Port 8730 erreichbar und durch ein Passwort geschützt (Synology: Installationsassistent, QNAP: Einrichtungscode im Download-Ordner). Der Dienst läuft ohne Root-Rechte. Details, Pfade und Grenzen: `packaging/README.md`.
 
 Nicht auf echter NAS-Hardware getestet: Installation im Paket-Zentrum/App Center, Freigabeanlage durch DSM, Rechte unter QTS-ACLs. Die Startskripte, die Anmeldung und die Rechteabgabe sind automatisiert in einer Linux-Umgebung geprüft.
 

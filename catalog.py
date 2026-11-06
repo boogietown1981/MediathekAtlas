@@ -17,6 +17,8 @@ CREATE INDEX IF NOT EXISTS work_show ON works(show_key);
 CREATE TABLE IF NOT EXISTS work_genres(work_id TEXT,genre TEXT,PRIMARY KEY(work_id,genre));
 CREATE INDEX IF NOT EXISTS genre_index ON work_genres(genre,work_id);
 CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
+CREATE TABLE IF NOT EXISTS mesh_downloads(key TEXT PRIMARY KEY,node TEXT,name TEXT,state TEXT,until REAL,path TEXT,size INTEGER,hlc INTEGER,local TEXT,works TEXT);
+CREATE TABLE IF NOT EXISTS mesh_download_works(work_id TEXT PRIMARY KEY,key TEXT);
 CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,providers INTEGER,hlc INTEGER,node TEXT,payload TEXT);
 '''
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
@@ -67,6 +69,27 @@ def seed(row):
     m.update(genre_source='Senderhinweis' if m['genres'] else 'Unbekannt',title=cleaned(m['title']),episode_title=cleaned(m.get('episode_title','')))
     return m
 
+def origin_meta(c,row):
+    """Seed metadata of an offer as on import (including a unique series template) and the template used."""
+    m=seed(row);template=None
+    if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
+        options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
+        if len(options)==1:template=json.loads(options[0][0])
+    if template:
+        m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
+        for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
+        m['genres']=normalized_genres(m.get('genres'))
+    return m,template
+
+def origin_ids(c,work_id):
+    """Work IDs the offers of a (possibly merged) work had on import; the same on every instance."""
+    out=set()
+    for (payload,) in c.execute('SELECT payload FROM offers WHERE work_id=?',(work_id,)).fetchall():
+        row=json.loads(payload)
+        try:out.add(identity(row,origin_meta(c,row)[0]))
+        except (KeyError,TypeError,ValueError):continue
+    return sorted(out) or [work_id]
+
 def identity(row,m):
     base=m['kind']+'|'+key(m['title'])+'|'+str(m.get('year') or '?')
     if m['kind']=='series':
@@ -86,13 +109,8 @@ def ingest(c,rows,seen=None):
     for raw in rows:
         row=dict(raw)
         if not links(row) or not row.get('title'):continue
-        oid=digest(str(row.get('channel'))+'|'+str(row.get('url_video') or row.get('url_video_hd') or row.get('url_website'))+'|'+row['title']);row['_id']=oid;m=seed(row);template=None
-        if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
-            options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
-            if len(options)==1:template=json.loads(options[0][0])
-        if template:
-            m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
-            for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
+        oid=digest(str(row.get('channel'))+'|'+str(row.get('url_video') or row.get('url_video_hd') or row.get('url_website'))+'|'+row['title']);row['_id']=oid
+        m,template=origin_meta(c,row)
         wid=identity(row,m)
         old=c.execute('SELECT work_id FROM offers WHERE id=?',(oid,)).fetchone()
         if old:wid=old[0]
@@ -117,11 +135,24 @@ def mark_downloaded(c,job):
     if found:identities.add(found[0])
     for identity in identities:c.execute('INSERT OR REPLACE INTO downloaded_items VALUES(?,?,?)',(identity,job.get('path') or job.get('target'),time.time()))
 
+def mesh_download_row(c,meta,work_id=None):
+    """Latest Verbund download record for a title: by download identity, else by the sender's work IDs."""
+    r=c.execute('SELECT * FROM mesh_downloads WHERE key=?',(download_identity(meta),)).fetchone()
+    if not r and work_id:r=c.execute('SELECT d.* FROM mesh_download_works w JOIN mesh_downloads d ON d.key=w.key WHERE w.work_id=?',(work_id,)).fetchone()
+    return r
+
+def mesh_download(c,meta,work_id=None):
+    """Download state of this title on another instance of the Verbund, or None."""
+    r=mesh_download_row(c,meta,work_id)
+    r=r and (r['node'],r['name'],r['state'],r['until'],r['path'],r['local'])
+    if not r or r[0]==get_state(c,'mesh_node_id') or r[2]=='release' or (r[2]=='claim' and r[3]<time.time()):return None
+    return {'name':r[1],'state':'loading' if r[2]=='claim' else 'local' if r[5] else 'transfer' if r[4] else 'remote'}
+
 def item(c,w):
     r=c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC LIMIT 1',(w['id'],)).fetchone()
     if not r:return None
     row=json.loads(r['payload']);count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
-    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
+    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
 def alternatives(c,wid):
     w=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
@@ -205,8 +236,7 @@ def save_metadata(c,wid,m,state='manual'):
     if old and old['state']=='manual' and state!='manual':m=json.loads(old['meta']);state='manual'
     c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,meta=excluded.meta,state=excluded.state,updated=excluded.updated',(dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time()))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
-    from metadata import genres
-    m['genres']=genres(m.get('genres',[]))
+    m['genres']=normalized_genres(m.get('genres'))
     c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),dest))
     for genre in m.get('genres',[]):c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(dest,genre))
     if dest!=wid:
@@ -278,7 +308,7 @@ def assign_formats(c,limit=500):
         fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
         m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
         m.update(kind='series',title=fmt,episode_title=cleaned(source.get('title')),year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
-                 state='format',genres=hints or m.get('genres',[]),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
+                 state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
                  reason='Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
         c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
         c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
@@ -318,12 +348,40 @@ def reclassify_batch(c,limit=500):
     set_state(c,'reclassify_cursor_v030',cursor if rows else 'complete')
     return len(rows)
 
+def normalized_genres(values):
+    from metadata import genres
+    return genres(values or [])
+
+def merge_genre_spellings(c):
+    """Fold genres stored under older or provider-specific spellings into one canonical name."""
+    from metadata import genre_names
+    changes={}
+    for (genre,) in c.execute('SELECT DISTINCT genre FROM work_genres').fetchall():
+        names=genre_names(genre)
+        if names!=[genre]:changes[genre]=names
+    touched=set()
+    for genre,names in changes.items():
+        ids=[r[0] for r in c.execute('SELECT work_id FROM work_genres WHERE genre=?',(genre,))]
+        for wid in ids:
+            for name in names:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,name))
+        c.execute('DELETE FROM work_genres WHERE genre=?',(genre,));touched.update(ids)
+    for wid in touched:
+        row=c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        m=json.loads(row[0] or '{}');m['genres']=normalized_genres(m.get('genres'))
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+    for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
+        m=json.loads(meta or '{}');g=normalized_genres(m.get('genres'))
+        if g!=m.get('genres'):m['genres']=g;c.execute('UPDATE series_templates SET meta=? WHERE topic=? AND provider=? AND reference=?',(json.dumps(m),topic,provider,ref))
+    return len(changes)
+
 def initialize(c):
     c.executescript(SCHEMA)
     if 'topic' not in [r[1] for r in c.execute('PRAGMA table_info(works)')]:c.execute("ALTER TABLE works ADD COLUMN topic TEXT DEFAULT ''")
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
     c.execute('CREATE INDEX IF NOT EXISTS work_topic ON works(topic)')
+    if not get_state(c,'genre_spellings_v053',False):merge_genre_spellings(c);set_state(c,'genre_spellings_v053',True)
 
 def review_listing(c,query='',state='open',offset=0):
     """Flat work/episode list: do not hide unresolved episodes behind a series parent."""

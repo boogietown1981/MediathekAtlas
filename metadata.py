@@ -2,8 +2,32 @@
 import re,time,threading,hashlib,json
 import core,diagnostics,provider_stats
 _CACHE={};_WD_CACHE={};_LOCK=threading.Lock()
-GENRES={'Comedy':'Komödie','Crime':'Krimi','Documentary':'Dokumentation','Dokumentarfilm':'Dokumentation','Family':'Kinder & Familie','Familienserie':'Kinder & Familie','Familienfilm':'Kinder & Familie','Kids':'Kinder & Familie','Kinder':'Kinder & Familie','Zeichentrickserie':'Animation','animated television series':'Animation','Familie':'Kinder & Familie','Children':'Kinder & Familie','Romance':'Romantik','Liebesfilm':'Romantik','Sci-Fi':'Science-Fiction','Science Fiction':'Science-Fiction','Animation':'Animation','Adventure':'Abenteuer','Action':'Action','History':'Historie','War':'Kriegsfilm','TV Movie':'TV-Film','Music':'Musik','Mystery':'Mystery','Horror':'Horror','Fantasy':'Fantasy','Drama':'Drama','Thriller':'Thriller'}
-def genres(values):return sorted(set(GENRES.get(str(g).strip(),str(g).strip()) for g in values if str(g).strip() not in ('','N/A')))
+GENRES={'Comedy':'Komödie','Crime':'Krimi','Documentary':'Dokumentation','Dokumentarfilm':'Dokumentation','Family':'Kinder & Familie','Familienserie':'Kinder & Familie','Familienfilm':'Kinder & Familie','Kids':'Kinder & Familie','Kinder':'Kinder & Familie','Zeichentrickserie':'Animation','animated television series':'Animation','Familie':'Kinder & Familie','Children':'Kinder & Familie','Romance':'Romantik','Liebesfilm':'Romantik','Sci-Fi':'Science-Fiction','Science Fiction':'Science-Fiction','Animation':'Animation','Adventure':'Abenteuer','Action':'Action','History':'Historie','War':'Kriegsfilm','TV Movie':'TV-Film','Music':'Musik','Mystery':'Mystery','Horror':'Horror','Fantasy':'Fantasy','Drama':'Drama','Thriller':'Thriller',
+        'Biography':'Biografie','Biographie':'Biografie','Biopic':'Biografie','Historisch':'Historie','Historien':'Historie','Geschichte':'Historie','Krieg':'Kriegsfilm','Kriminal':'Krimi','Kriminalität':'Krimi','Dokumentar':'Dokumentation','Doku':'Dokumentation','Liebe':'Romantik','Romanze':'Romantik','Romantisch':'Romantik','Komödien':'Komödie','Comedy Serie':'Komödie','Sitcom':'Komödie','Zeichentrick':'Animation','Anime':'Animation','Animiert':'Animation','Trickfilm':'Animation','Fernsehfilm':'TV-Film','Fernseh':'TV-Film','TV':'TV-Film','Musikfilm':'Musik','Musical':'Musical','Musicalfilm':'Musical','Sport':'Sport','Sports':'Sport','Western':'Western','Abenteuer':'Abenteuer','Mysteryfilm':'Mystery','Suspense':'Thriller','Psychothriller':'Thriller','Kinderfilm':'Kinder & Familie','Kinderserie':'Kinder & Familie','Jugend':'Kinder & Familie','Talk':'Talk','Talk Show':'Talk','Talkshow':'Talk','News':'Nachrichten','Reality':'Reality-TV','Reality TV':'Reality-TV','Game Show':'Spielshow','Gameshow':'Spielshow','Quiz':'Spielshow','Quizshow':'Spielshow','Soap':'Seifenoper','Short':'Kurzfilm','Kurz':'Kurzfilm','Film Noir':'Film noir','Politics':'Politik','Martial Arts':'Martial Arts','Science':'Wissenschaft','Wissen':'Wissenschaft','Satire':'Satire','Kabarett':'Kabarett','Erotik':'Erotik','Erotic':'Erotik','Mini Series':'Miniserie','Miniseries':'Miniserie','Travel':'Reise','Food':'Kochen','Cooking':'Kochen'}
+# Words that only name the medium; a genre made of nothing else carries no information.
+GENRE_NOISE={'film','spielfilm','serie','fernsehserie','tv serie','tv series','series','movie','fernsehsendung','sendung','webserie','tv show'}
+GENRE_AFFIX=re.compile(r'^(?:film|fernseh|tv)\s*|\s*(?:film|filme|serie|fernsehserie|tv serie|series|movie|reihe|sendung|show)$')
+def genre_key(value):
+    """Spelling-insensitive key: case, hyphens, '&'/'und'/'and' and spacing do not matter."""
+    text=str(value).casefold().replace('ß','ss').replace('&',' ')
+    return ' '.join(w for w in re.split(r'[^\w]+',text) if w and w not in ('und','and'))
+_GENRE_KEYS={genre_key(k):v for k,v in GENRES.items()}
+_GENRE_KEYS.update({genre_key(v):v for v in GENRES.values()})
+def genre_names(value):
+    """Canonical German genre names for one provider label (empty when it names no genre)."""
+    raw=str(value).strip()
+    if raw in ('','N/A'):return []
+    k=genre_key(raw)
+    if not k or k in GENRE_NOISE:return []
+    for probe in (k,k.replace(' ',''),GENRE_AFFIX.sub('',k).strip(),GENRE_AFFIX.sub('',k.replace(' ','')).strip()):
+        if probe in _GENRE_KEYS:return [_GENRE_KEYS[probe]]
+        if probe.endswith('s') and probe[:-1] in _GENRE_KEYS:return [_GENRE_KEYS[probe[:-1]]]
+    parts=[p for p in re.split(r'\s*(?:&|/|,|\+|\bund\b|\band\b)\s*',raw) if p.strip()]
+    if len(parts)>1:
+        names=[_GENRE_KEYS.get(genre_key(p)) for p in parts]
+        if all(names):return names
+    return [raw[:1].upper()+raw[1:]]
+def genres(values):return sorted({name for g in values for name in genre_names(g)})
 def norm(s):
     return re.sub(r'[^\w]+',' ',str(s).casefold().replace('&',' und ')).strip()
 def episode_title(title,show):
