@@ -1,5 +1,13 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.19 · Offline-Suche und früher Abschluss sicherer Zuordnungen (7. November 2026)
+
+- `tests/test_v0519.py`: Hohe Konfidenz trotz fehlender Genres nur bei bestätigter IMDb-Laufzeit bzw. IMDb-Episode; negative Fälle und Konflikte bleiben unbestätigt.
+- IMDb-Verbindungen bleiben pro Worker schreibgeschützt und werden nach atomarem Austausch automatisch geschlossen und neu geöffnet. Zwischengespeicherte SQL-Zeilen dürfen keine Laufzeit-/Episodenentscheidungen anderer Werke übernehmen.
+- Test für frühzeitigen Abbruch eines Downloads bei zu wenig freiem Speicher. Vorhandene Teildateien und das bisherige Archiv sollen unangetastet bleiben.
+- Gesamttest, Paketbuild und Tests auf realer Hardware: noch durch CI bzw. Installation zu prüfen.
+
+
 ## 0.5.18 · Wiedergabe im Browser (6. November 2026, Linux-Testumgebung)
 
 - Neuer Test `test_streaming`: Quellenwahl (lokaler Download vor Online-Stream, MP4 vor HLS, höchstens 1080p, DASH und Nicht-HTTP-Adressen abgelehnt, unfertige Jobs abgelehnt, Suchergebnisse aus `records`), Abspielart je Video-/Audiocodec, ffmpeg-Aufruf (Suchen vor `-i`, Reconnect, ADTS→ASC). Endpunkt-Test mit echtem Server und ffmpeg: H.264/MP2-MKV wird ab Sekunde 2 als fragmentiertes MP4 mit H.264/AAC geliefert, falsches Token → 403.
