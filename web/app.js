@@ -32,6 +32,7 @@ body.append(el('p',meshDownloadLabel(item.mesh_download)+(item.downloaded&&!item
 if(item.series_parent){const b=el('button','Serie öffnen · '+item.episodes+' Folgen');b.onclick=()=>openShow(item.show_key);const bulk=el('button','Serie gesammelt laden');bulk.onclick=()=>openSeries(item.show_key);body.append(b,bulk);}
 else{const files=el('details',undefined,'file-details');files.append(el('summary','Dateien & Qualität'),sourceLinks(item.links));body.append(files);body.append(el('p',(item.available?'Bevorzugt: ':'Archiviert: ')+(item.special||'Reguläre Fassung')+' · '+r.channel+' · '+(item.best?.quality||'?')+' (Senderangabe)','qualityline'));const b=el('button',item.available?'Beste Fassung prüfen & laden':'Metadaten ansehen');b.onclick=()=>edit(item);body.append(b);
 const details=el('details',undefined,'alternatives');details.append(el('summary','Weitere Fassungen ('+item.offer_count+')'));details.ontoggle=async()=>{if(!details.open||details.dataset.loaded)return;try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));for(const a of d.items){const box=el('div',undefined,'alternative');box.append(el('strong',a.source.channel+' · '+(a.special||'Regulär')+(a.available?'':' · nicht mehr gelistet')));for(const l of a.links){const line=el('p',linkQuality(l)+' · '+(l.supported?'Direktdatei':'Stream, derzeit kein Download'));if(/^https?:\/\//.test(l.url)){const link=el('a','Quelllink');link.href=l.url;link.target='_blank';link.rel='noopener noreferrer';line.append(' · ',link);}box.append(line);}const choose=el('button','Diese Fassung prüfen');choose.onclick=()=>edit(a);box.append(choose);details.append(box);}details.dataset.loaded='1';}catch(e){notice(e.message,'error');}};body.append(details);}
+if(playable(item)){const play=el('button',item.series_parent?'▶ Serie abspielen':'▶ Abspielen','play-button');play.title=item.downloaded?'Lokale Datei abspielen':'Online-Stream des Senders abspielen';play.onclick=()=>playMedia(item,filters.show?items:null);body.append(play);}
 const detail=el('button',item.series_parent?'Serienseite':'Details & Bilder','detail-link');detail.onclick=()=>openTitle(item);body.append(detail);art.classList.add('clickable');art.title='Titelseite öffnen';art.onclick=()=>openTitle(item);heading.classList.add('clickable');heading.onclick=()=>openTitle(item);card.append(art,body);host.append(card);}}
 async function loadCatalog(){
  const snapshot={...filters},pageOffset=offset;
@@ -155,6 +156,7 @@ function renderDetailExtras(item){
  if(!item.series_parent){add('Laufzeit des Angebots',r.duration?Math.round(r.duration/60)+' Minuten':null);add('Sender',r.channel);add('Fassung',item.special||'Regulär');add('Verfügbarkeit',item.available?'Aktuell gelistet':'Nicht mehr gelistet');if(m.kind==='series'){add('Staffel / Folge',Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'Noch nicht bestätigt');add('Episodentitel',m.episode_title);}}
  add('Drehbuch',(credits.writers||[]).join(', '));
  $('detail-credits').textContent=[credits.directors?.length?'Regie: '+credits.directors.join(', '):'',credits.cast?.length?'Besetzung: '+credits.cast.map(x=>x.name+(x.role?' ('+x.role+')':'')).join(', '):''].filter(Boolean).join(' · ');
+ renderPlaySlot(item);
  const host=$('detail-downloads');host.replaceChildren();
  if(item.series_parent){const b=el('button','Folgen auswählen & herunterladen');b.onclick=()=>{$('media-detail').close();openSeries(item.show_key);};host.append(b);return;}
  host.append(el('h3','Downloadlinks & Qualität'),sourceLinks(item.links),el('p','Quelllinks öffnen die Originaldatei. Für saubere Dateinamen, NFO und eingebettete Metadaten den Download über die App starten.','muted'));
@@ -162,6 +164,8 @@ function renderDetailExtras(item){
  alternatives.ontoggle=async()=>{if(!alternatives.open||alternatives.dataset.loading||alternatives.dataset.loaded)return;alternatives.dataset.loading='1';try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));for(const a of d.items){const box=el('div',undefined,'alternative');box.append(el('strong',(a.source.channel||'Quelle')+' · '+(a.special||'Regulär')+(a.available?'':' · nicht mehr gelistet')),sourceLinks(a.links));const b=el('button','Diese Fassung prüfen & laden');b.onclick=()=>{$('media-detail').close();edit(a);};box.append(b);alternatives.append(box);}alternatives.dataset.loaded='1';}catch(e){alternatives.append(el('p',e.message,'muted'));}finally{delete alternatives.dataset.loading;}};
 }
 
+// Play button above the download actions of the detail view (film, episode or whole series).
+function renderPlaySlot(item){const slot=$('detail-play');slot.replaceChildren();if(!playable(item))return;const b=el('button',item.series_parent?'▶ Serie abspielen':'▶ Abspielen','play-button');b.onclick=()=>{$('media-detail').close();playMedia(item);};slot.append(b);}
 let completedRevision='';
 const openJobDetails=new Set();
 function fileUrl(j,inline){return '/api/download-file?'+new URLSearchParams({id:j.id,token,inline:inline?'1':'0'});}
@@ -182,7 +186,7 @@ const url=j.source?._download_url||j.source?.url_video_hd||j.source?.url_video;i
 body.append(details);
 if(j.state==='done'){const save=el('a','Herunterladen','button-link primary');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Datei über den Browser auf dieses Gerät laden';body.append(save);
  if(!server.network){const b=el('button','Filmdatei öffnen');b.onclick=()=>busy(b,async()=>{await api('open-download',{id:j.id});});body.append(b);}
- else if(/\.(mp4|m4v|webm)$/i.test(j.path||'')){const play=el('a','Im Browser abspielen','button-link');play.href=fileUrl(j,true);play.target='_blank';play.rel='noopener noreferrer';body.append(play);}}
+ const play=el('button','▶ Abspielen','play-button');play.title='Im Browser abspielen';play.onclick=()=>playJob(j);body.insertBefore(play,save);}
 const action=['error','cancelled','interrupted','remote'].includes(j.state)?'retry':['queued','downloading','tagging'].includes(j.state)?'cancel':null;if(action){const b=el('button',action==='retry'?'Erneut versuchen':'Abbrechen');b.onclick=()=>busy(b,async()=>{await api(action,{id:j.id});await refresh();});body.append(b);}
 card.append(art,body);return card;}
 

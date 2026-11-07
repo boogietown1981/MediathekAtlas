@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -222,10 +222,23 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path=='/app.js':return self.send((Path(__file__).parent/'web'/'app.js').read_bytes(),ctype='text/javascript')
+        if path in ('/app.js','/player.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+        if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
+        if path=='/api/play':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job')}
+            try:
+                with db() as c:source=streaming.resolve(c,**ref)
+                info=streaming.plan(source)
+            except ValueError as e:return self.send({'error':str(e)},404)
+            base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
+            if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
+            else:info['src']=info.pop('url') if info['mode']=='direct' else base
+            info['remux']=base;info['ffmpeg']=bool(downloads.tool('ffmpeg'))
+            diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False))
+            return self.send(info)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
@@ -264,6 +277,8 @@ class Handler(BaseHTTPRequestHandler):
         if not row:return self.send({'error':'Nur abgeschlossene Downloads können geladen werden'},404)
         job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
         if not target.is_file():return self.send({'error':'Datei wurde verschoben oder ist nicht verfügbar'},404)
+        self.send_file(target,q.get('inline',['0'])[0]=='1')
+    def send_file(self,target,inline):
         size=target.stat().st_size;start,end=0,size-1;status=200
         span=downloads_range(self.headers.get('Range'),size)
         if span=='invalid':
@@ -273,7 +288,7 @@ class Handler(BaseHTTPRequestHandler):
         ascii_name=''.join(ch if 32<=ord(ch)<127 and ch not in '"\\' else '_' for ch in target.name)
         self.send_response(status);self.send_header('Content-Type',ctype);self.send_header('Content-Length',str(end-start+1));self.send_header('Accept-Ranges','bytes')
         if status==206:self.send_header('Content-Range',f'bytes {start}-{end}/{size}')
-        self.send_header('Content-Disposition',f'{"inline" if q.get("inline",["0"])[0]=="1" else "attachment"}; filename="{ascii_name}"; filename*=UTF-8\'\'{urllib.parse.quote(target.name)}')
+        self.send_header('Content-Disposition',f'{"inline" if inline else "attachment"}; filename="{ascii_name}"; filename*=UTF-8\'\'{urllib.parse.quote(target.name)}')
         self.send_header('Cache-Control','no-store');self.send_header('X-Content-Type-Options','nosniff');self.send_header('Referrer-Policy','no-referrer');self.end_headers()
         if self.command=='HEAD':return
         with target.open('rb') as f:
@@ -282,6 +297,42 @@ class Handler(BaseHTTPRequestHandler):
                 chunk=f.read(min(1048576,left))
                 if not chunk:break
                 self.wfile.write(chunk);left-=len(chunk)
+    # Playback for the in-app player. Like download-file, the page token travels in the query
+    # because a <video> element cannot send headers. Sources come from the database only.
+    def stream(self,q):
+        if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+        try:
+            with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0])
+        except ValueError as e:return self.send({'error':str(e)},404)
+        if q.get('raw',['0'])[0]=='1':
+            if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
+            return self.send_file(Path(source['path']).resolve(),True)
+        if self.command=='HEAD':return self.send(b'',ctype='video/mp4')
+        try:start=max(0.0,float(q.get('t',['0'])[0] or 0))
+        except ValueError:start=0.0
+        try:
+            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source)),q.get('session',[''])[0][:64])
+        except RuntimeError as e:return self.send({'error':str(e)},429)
+        except (ValueError,OSError) as e:return self.send({'error':core.safe_error(e)},503)
+        sent=0
+        try:
+            first=proc.stdout.read1(65536) if hasattr(proc.stdout,'read1') else proc.stdout.read(65536)
+            if not first:
+                code,err=streaming.finish(proc)
+                diagnostics.event('playback_failed',level='ERROR',origin=source['kind'],code=code,detail=err)
+                return self.send({'error':'Wiedergabe konnte nicht gestartet werden. Details im Live-Protokoll.'},502)
+            self.send_response(200);self.send_header('Content-Type','video/mp4');self.send_header('Cache-Control','no-store')
+            self.send_header('X-Content-Type-Options','nosniff');self.send_header('Connection','close');self.end_headers()
+            chunk=first
+            while chunk:
+                self.wfile.write(chunk);sent+=len(chunk)
+                chunk=proc.stdout.read1(65536) if hasattr(proc.stdout,'read1') else proc.stdout.read(65536)
+        except (BrokenPipeError,ConnectionResetError):pass
+        finally:
+            if proc.poll() is None:streaming.finish(proc)
+            else:
+                code,err=streaming.finish(proc)
+                if code:diagnostics.event('playback_interrupted',level='WARNING',origin=source['kind'],code=code,sent=sent,detail=err)
     def do_HEAD(self):
         path=urllib.parse.urlsplit(self.path).path
         if path!='/api/download-file' or not self.valid_host() or not self.authorized():return self.send({'error':'Nicht gefunden'},404)
