@@ -3,6 +3,7 @@
 ## 0.5.19 · Offline-Suche und früher Abschluss sicherer Zuordnungen (7. November 2026)
 
 - `tests/test_v0519.py`: Hohe Konfidenz trotz fehlender Genres nur bei bestätigter IMDb-Laufzeit bzw. IMDb-Episode; negative Fälle und Konflikte bleiben unbestätigt.
+- Staffel-/Folgenummer als Episodenbeleg: nur vollständig gescannte Anbieterlisten, eindeutige Staffel+Folge, keine automatische Bestätigung bei doppelten oder unvollständigen Ergebnissen. IMDb Offline kann eine eindeutig nummerierte Episode auch ohne passenden Episodentitel nachweisen.
 - Der Diagnoseexport zeigt SQLite-Verbindungsöffnungen sowie Query-/Credits-Cache-Hits und -Misses, damit sich die Optimierung im Feld messen lässt.
 - IMDb-Verbindungen bleiben pro Worker schreibgeschützt und werden nach atomarem Austausch automatisch geschlossen und neu geöffnet. Zwischengespeicherte SQL-Zeilen dürfen keine Laufzeit-/Episodenentscheidungen anderer Werke übernehmen.
 - Test für frühzeitigen Abbruch eines Downloads bei zu wenig freiem Speicher. Vorhandene Teildateien und das bisherige Archiv sollen unangetastet bleiben.
