@@ -7,6 +7,7 @@
 - Wenn IMDb Offline einen Film durch Laufzeit oder eine Episode durch exakte Episodenprüfung sicher bestätigt hat, werden unnötige Online-Anfragen übersprungen, selbst wenn das Archiv noch keine Genres liefert. Fehlende Zusatzdaten bleiben für die spätere Anreicherung offen.
 - IMDb-Download: Die verfügbare Speichermenge wird vor der Übertragung anhand der gemeldeten Restgröße geprüft. Ein Speichermangel wird früh erkannt; das bisherige Archiv bleibt nutzbar.
 - Regressionstests prüfen die Wiederverwendung der SQLite-Verbindung, das sichere Umschalten auf neue Datenbank-Snapshots sowie die Grenzen der automatischen Erkennung.
+- Download-Warteschlange: Noch nicht gestartete Aufträge bleiben nach einem Neustart als `queued` erhalten und werden vom Worker automatisch übernommen. Nur tatsächlich laufende Aufträge werden zunächst als `interrupted` markiert (sichere Wiederaufnahme folgt gesondert).
 
 
 
