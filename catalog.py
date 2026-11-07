@@ -348,8 +348,26 @@ def save_metadata(c,wid,m,state='manual'):
         m.pop('fanart',None);m.pop('artwork_provider',None)
         for field in ('networks','studios','ratings','imdb_id','discovery_enriched','show_description'):
             if m.get(field)==previous.get(field):m.pop(field,None)
-    dest=canonical(m) or wid;old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
-    if old and old['state']=='manual' and state!='manual':m=json.loads(old['meta']);state='manual'
+    original_dest=canonical(m) or wid
+    alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(original_dest,)).fetchone()
+    dest=alias[0] if alias else original_dest
+    old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
+    if old and old['state']=='manual' and state!='manual':
+        m=json.loads(old['meta']);state='manual'
+    elif old and old['state']=='matched' and state=='identified':
+        # Never downgrade an already confirmed film to a weaker work-only result.
+        m=json.loads(old['meta']);state='matched'
+    elif old and m.get('kind')=='movie' and state in ('matched','manual','identified'):
+        previous_dest=json.loads(old['meta'])
+        identity_agrees=(previous_dest.get('kind')=='movie' and (
+            (previous_dest.get('provider')==m.get('provider') and
+             previous_dest.get('reference_id') and previous_dest.get('reference_id')==m.get('reference_id'))
+            or bool(alias and original_dest!=dest)))
+        if identity_agrees and state!='manual':
+            incoming=normalized_genres(m.get('genres') or [])
+            combined=normalized_genres(incoming+list(previous_dest.get('genres') or []))
+            m['genres']=combined
+            if len(combined)>len(incoming):m['genre_source']='Mehrere bestätigte Quellen'
     c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,meta=excluded.meta,state=excluded.state,updated=excluded.updated',(dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time()))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
     m['genres']=normalized_genres(m.get('genres'))
@@ -357,7 +375,10 @@ def save_metadata(c,wid,m,state='manual'):
     for genre in m.get('genres',[]):c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(dest,genre))
     if dest!=wid:
         c.execute('INSERT OR IGNORE INTO downloaded_items SELECT ?,path,finished FROM downloaded_items WHERE identity=?',(dest,wid))
-        c.execute('UPDATE offers SET work_id=? WHERE work_id=?',(dest,wid));c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,));c.execute('DELETE FROM works WHERE id=?',(wid,))
+        c.execute('UPDATE offers SET work_id=? WHERE work_id=?',(dest,wid))
+        c.execute('INSERT OR REPLACE INTO work_aliases VALUES(?,?)',(wid,dest))
+        c.execute('UPDATE work_aliases SET new_id=? WHERE new_id=?',(dest,wid))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,));c.execute('DELETE FROM works WHERE id=?',(wid,))
     if m.get('kind')=='movie' and state in ('matched','manual','identified'):
         return reconcile_movie_duplicates(c,dest)
     return dest
@@ -426,6 +447,7 @@ def _merge_confirmed_movie(c,a,b):
     c.execute('INSERT OR IGNORE INTO format_dirty SELECT ? FROM format_dirty WHERE work_id=?',(target,old))
     c.execute('INSERT OR REPLACE INTO work_aliases VALUES(?,?)',(old,target))
     c.execute('UPDATE work_aliases SET new_id=? WHERE new_id=?',(target,old))
+    set_state(c,'movie_dedup_total_v0521',get_state(c,'movie_dedup_total_v0521',0)+1)
     for table,field in (('work_genres','work_id'),('artwork_checks','work_id'),
                         ('metadata_priority','work_id'),('format_dirty','work_id')):
         c.execute('DELETE FROM '+table+' WHERE '+field+'=?',(old,))
@@ -461,19 +483,13 @@ def deduplicate_movie_batch(c,limit=200):
     rows=c.execute("""SELECT rowid,id FROM works WHERE rowid>? AND kind='movie'
           AND year IS NOT NULL AND state IN ('matched','manual','identified')
           ORDER BY rowid LIMIT ?""",(cursor,limit)).fetchall()
-    merged=0
+    before=get_state(c,'movie_dedup_total_v0521',0)
     for row in rows:
         cursor=row['rowid']
         if not c.execute('SELECT 1 FROM works WHERE id=?',(row['id'],)).fetchone():continue
-        before=c.execute('SELECT COUNT(*) FROM works WHERE id=?',(row['id'],)).fetchone()[0]
-        # A different canonical ID may survive; count by total alias entries.
-        n=c.execute('SELECT COUNT(*) FROM work_aliases').fetchone()[0]
         reconcile_movie_duplicates(c,row['id'])
-        merged+=c.execute('SELECT COUNT(*) FROM work_aliases').fetchone()[0]-n
     set_state(c,state,cursor if rows else 'complete')
-    if merged:
-        set_state(c,'movie_dedup_total_v0521',get_state(c,'movie_dedup_total_v0521',0)+merged)
-    return len(rows),merged
+    return len(rows),get_state(c,'movie_dedup_total_v0521',0)-before
 
 def auto_choice(meta,rows):
     import matching
