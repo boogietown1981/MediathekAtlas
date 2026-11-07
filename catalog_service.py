@@ -124,6 +124,38 @@ class Service:
             wid=row['id'];original=row['meta'];m=json.loads(original);entry=catalog.item(c,row)
             # A result from another instance arrived before this work was imported here.
             if self.mesh_adopt_stored(c,row):return True
+            # A uniquely identified series is already stored locally. Reuse its
+            # identity for the next unnumbered episode, and ask IMDb Offline only
+            # for explicit episode evidence. Manually prioritized works still
+            # run the normal full provider chain.
+            priority=c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(wid,)).fetchone()
+            numbered=isinstance(m.get('season'),int) and isinstance(m.get('episode'),int)
+            if entry and not priority and not numbered and row['state'] in ('pending','retry','review','identified'):
+                known=catalog.series_template_candidate(c,row,entry['source'])
+                if known:
+                    import imdb_archive
+                    verified=None
+                    if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
+                        try:
+                            local=imdb_archive.ACTIVE.candidates(entry['source'],known)
+                            verified=catalog.auto_choice(known,local)
+                        except Exception as e:diagnostics.error('series_template_imdb_failed',e,work_id=wid)
+                    if verified:
+                        verified.update(state='auto_matched',reason='Serienvorlage und IMDb-Episode eindeutig bestätigt')
+                        dest=catalog.save_metadata(c,wid,verified,'matched')
+                        outcome='matched'
+                    elif row['state']=='identified' and m.get('provider')==known.get('provider') and m.get('reference_id')==known.get('reference_id'):
+                        dest=wid;outcome='identified'
+                    else:
+                        dest=catalog.save_metadata(c,wid,known,'identified') or wid
+                        outcome='identified'
+                    if outcome=='identified':
+                        c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+30*86400,dest))
+                    self.checked+=1
+                    self.metadata_state(phase='result',title=known['title'],outcome=outcome,
+                                        provider_checks=[],from_cache=True,series_template=True,
+                                        candidates=1 if verified else 0,warnings=[],seconds=0)
+                    return True
             c.execute('UPDATE works SET next_try=?,attempts=attempts+1 WHERE id=?',(time.time()+3600,wid));c.execute('DELETE FROM metadata_priority WHERE work_id=?',(wid,))
         if not entry:return False
         providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k) and (k!='omdb' or not metadata.omdb_status(config[k])['paused'])] or ['Wikidata (ohne API-Schlüssel)']
