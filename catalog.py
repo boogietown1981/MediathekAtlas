@@ -182,8 +182,8 @@ def ingest_incremental(c,rows,seen,changes):
 def finish_snapshot(c,seen,changes):
     """Deactivate missing IDs only after the complete list was parsed successfully."""
     changes=dict(changes)
-    changes['removed']=c.execute('SELECT COUNT(*) FROM offers o WHERE o.active=1 AND NOT EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=o.id)').fetchone()[0]
-    c.execute('UPDATE offers SET active=0 WHERE active=1 AND NOT EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=offers.id)')
+    retired=c.execute('UPDATE offers SET active=0 WHERE active=1 AND NOT EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=offers.id)')
+    changes['removed']=retired.rowcount
     c.execute('UPDATE offers SET active=1,seen=? WHERE active=0 AND EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=offers.id)',(seen,))
     c.execute('DELETE FROM scan_seen')
     set_state(c,'last_import_diff',changes)
