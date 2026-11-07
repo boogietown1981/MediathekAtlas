@@ -17,7 +17,7 @@ METADATA_PAUSE=.1
 class Service:
     def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
     def start(self):
-        for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
+        for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
         while not self.stop.is_set():
             try:
@@ -25,6 +25,19 @@ class Service:
                 return
             except Exception as e:diagnostics.error('background_worker_failed',e,worker=fn.__name__)
             if self.stop.wait(5):return
+    def movie_dedup_loop(self):
+        """Reconcile historical confirmed movie duplicates in small persisted batches."""
+        scanned=0;merged=0
+        while not self.stop.is_set():
+            with self.db() as c:
+                n,changed=catalog.deduplicate_movie_batch(c,limit=120)
+            scanned+=n;merged+=changed
+            if changed:diagnostics.event('movie_duplicates_merged',merged=changed,session_merged=merged,scanned=scanned)
+            if n==0:
+                diagnostics.event('movie_dedup_complete',scanned=scanned,merged=merged)
+                return
+            if self.stop.wait(.35):return
+
     def status(self,**state):
         changed=state.get('phase')!=self.current.get('phase')
         self.current={**state,'updated_at':time.time()}
