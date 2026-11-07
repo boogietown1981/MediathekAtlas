@@ -66,6 +66,7 @@ class Archive:
     def __init__(self,root,stop,on_update=lambda:None):
         self.root=Path(root)/'imdb';self.root.mkdir(parents=True,exist_ok=True)
         self.path=self.root/'imdb_archive.db';self.stop=stop;self.on_update=on_update
+        self._reader_local=threading.local()  # one read-only connection and bounded caches per worker
         self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0
         if self.path.exists():
             try:
@@ -98,6 +99,9 @@ class Archive:
             resumed=have and getattr(response,'status',200)==206
             if not resumed:have=0
             length=int(response.headers.get('Content-Length') or 0);total=have+length if length else 0
+            # Reject a transfer before writing when it would consume the remaining disk reserve.
+            if length and shutil.disk_usage(self.root).free<length+512*1024**2:
+                raise OSError('IMDb: zu wenig freier Speicher für restlichen Download und 512 MiB Reserve; bisheriges Archiv bleibt nutzbar')
             with part.open('ab' if resumed else 'wb') as f:
                 received=have;last=0
                 while True:
@@ -138,35 +142,63 @@ class Archive:
             staging.with_name(staging.name+'-journal').unlink(missing_ok=True)
             if done:
                 for p in files.values():p.unlink(missing_ok=True);p.with_name(p.name+'.part').unlink(missing_ok=True)
+    def _reader(self):
+        """Reuse a read-only SQLite handle per worker; reopen after atomic snapshot replacement."""
+        st=self.path.stat()
+        identity=(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns)
+        opened=getattr(self._reader_local,'opened',None)
+        if opened and opened[0]==identity:return opened[1]
+        if opened:opened[1].close()
+        c=sqlite3.connect(self.path.as_uri()+'?mode=ro',uri=True)
+        c.row_factory=sqlite3.Row
+        self._reader_local.opened=(identity,c)
+        self._reader_local.queries={}
+        self._reader_local.credits={}
+        return c
+    def _lookup(self,sql,params,key):
+        """Cache raw exact-match rows, never episode-specific final decisions."""
+        cache=self._reader_local.queries
+        if key in cache:return cache[key]
+        hits=self._reader_local.opened[1].execute(sql,params).fetchall()
+        if len(cache)>=1024:cache.clear()
+        cache[key]=hits
+        return hits
+    def _credits(self,c,tconst):
+        """Reuse series credits without sharing mutable lists across candidates."""
+        from copy import deepcopy
+        cache=self._reader_local.credits
+        if tconst not in cache:
+            if len(cache)>=256:cache.clear()
+            cache[tconst]=credits(c,tconst)
+        return deepcopy(cache[tconst])
     def candidates(self,row,meta):
         if not self.updated:return []
-        c=sqlite3.connect(self.path.as_uri()+'?mode=ro',uri=True);c.row_factory=sqlite3.Row
-        try:
-            title=meta.get('title') or row.get('topic') or row.get('title');types=('tvSeries','tvMiniSeries') if meta.get('kind')=='series' else ('movie','tvMovie') if meta.get('kind')=='movie' else ('tvSeries','tvMiniSeries','movie','tvMovie')
-            hits=c.execute('SELECT DISTINCT b.*,r.averageRating,r.numVotes FROM names n JOIN title_basics b ON b.tconst=n.tconst LEFT JOIN title_ratings r ON r.tconst=b.tconst WHERE n.name=? AND b.titleType IN ('+','.join('?' for _ in types)+') LIMIT 21',(norm(title),*types)).fetchall()
-            if len(hits)>20:return []
-            out=[]
-            for h in hits:
-                kind='series' if h['titleType'] in ('tvSeries','tvMiniSeries') else 'movie'
-                m={**meta,'title':title,'kind':kind,'year':h['startYear'],'provider':'IMDb Offline','reference_id':h['tconst'],'genres':(h['genres'] or '').split(',') if h['genres'] else [],'genre_source':'IMDb Offline','similarity':1.0,'confidence':'high','year_mismatch':bool(meta.get('year') and h['startYear'] and meta['year']!=h['startYear']),'episode_verified':False,'runtime_agrees':False,'runtime_mismatch':False,'rating':h['averageRating'],'votes':h['numVotes'],'reason':'Exakter Titel im lokalen IMDb-Archiv','season':None,'episode':None,'poster':'','episode_reference_id':None}
-                if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
-                    delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
-                if kind=='series':
-                    epname=norm(meta.get('episode_title') or row.get('title'))
-                    eps=c.execute('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2',(h['tconst'],epname)).fetchall()
-                    if len(eps)==1:
-                        e=eps[0];season=e['seasonNumber'];episode=e['episodeNumber']
-                        if e['runtimeMinutes'] and row.get('duration'):
-                            m['runtime_mismatch']=abs(e['runtimeMinutes']*60-row['duration'])>max(300,e['runtimeMinutes']*6)
-                            m['runtime_agrees']=not m['runtime_mismatch']
-                        if season is not None and episode and (meta.get('season') in (None,season)) and (meta.get('episode') in (None,episode)):
-                            m.update(season=season,episode=episode,episode_verified=True,episode_title=meta.get('episode_title') or row['title'],episode_reference_id=e['tconst'],reason='Serien- und Episodentitel im IMDb-Archiv eindeutig zugeordnet')
-                if self.version>=2:
-                    m['show_credits']=credits(c,h['tconst']) if kind=='series' else {}
-                    m.update(credits(c,m.get('episode_reference_id') or h['tconst']) if kind=='movie' or m.get('episode_verified') else {})
-                out.append(m)
-            return out
-        finally:c.close()
+        c=self._reader()
+        title=meta.get('title') or row.get('topic') or row.get('title');types=('tvSeries','tvMiniSeries') if meta.get('kind')=='series' else ('movie','tvMovie') if meta.get('kind')=='movie' else ('tvSeries','tvMiniSeries','movie','tvMovie')
+        hits=self._lookup('SELECT DISTINCT b.*,r.averageRating,r.numVotes FROM names n JOIN title_basics b ON b.tconst=n.tconst LEFT JOIN title_ratings r ON r.tconst=b.tconst WHERE n.name=? AND b.titleType IN ('+','.join('?' for _ in types)+') LIMIT 21', (norm(title),*types),('title',norm(title),types))
+        if len(hits)>20:return []
+        out=[]
+        for h in hits:
+            kind='series' if h['titleType'] in ('tvSeries','tvMiniSeries') else 'movie'
+            m={**meta,'title':title,'kind':kind,'year':h['startYear'],'provider':'IMDb Offline','reference_id':h['tconst'],'genres':(h['genres'] or '').split(',') if h['genres'] else [],'genre_source':'IMDb Offline','similarity':1.0,'confidence':'high','year_mismatch':bool(meta.get('year') and h['startYear'] and meta['year']!=h['startYear']),'episode_verified':False,'runtime_agrees':False,'runtime_mismatch':False,'rating':h['averageRating'],'votes':h['numVotes'],'reason':'Exakter Titel im lokalen IMDb-Archiv','season':None,'episode':None,'poster':'','episode_reference_id':None}
+            if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
+                delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
+            if kind=='series':
+                epname=norm(meta.get('episode_title') or row.get('title'))
+                eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (h['tconst'],epname),('episode',h['tconst'],epname))
+                if len(eps)==1:
+                    e=eps[0];season=e['seasonNumber'];episode=e['episodeNumber']
+                    if e['runtimeMinutes'] and row.get('duration'):
+                        m['runtime_mismatch']=abs(e['runtimeMinutes']*60-row['duration'])>max(300,e['runtimeMinutes']*6)
+                        m['runtime_agrees']=not m['runtime_mismatch']
+                    if season is not None and episode and (meta.get('season') in (None,season)) and (meta.get('episode') in (None,episode)):
+                        m.update(season=season,episode=episode,episode_verified=True,episode_title=meta.get('episode_title') or row['title'],episode_reference_id=e['tconst'],reason='Serien- und Episodentitel im IMDb-Archiv eindeutig zugeordnet')
+            if self.version>=2:
+                m['show_credits']=self._credits(c,h['tconst']) if kind=='series' else {}
+                m.update(self._credits(c,m.get('episode_reference_id') or h['tconst']) if kind=='movie' or m.get('episode_verified') else {})
+            out.append(m)
+        return out
+
 
 def credits(c,tconst):
     result={'cast':[],'directors':[],'writers':[]}
