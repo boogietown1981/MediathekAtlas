@@ -138,8 +138,15 @@ def resolve_episode(meta,candidate,episodes):
         if meta.get('season') is not None and int(ep.get('season_number',-1))!=meta['season']:continue
         if meta.get('episode') is not None and int(ep.get('episode_number',-1))!=meta['episode']:continue
         matches.append(ep)
+    # Broadcaster labels often contain only "S02E03" or "Staffel 2 Folge 3".
+    # Numeric evidence is safe only with an explicit season+episode and a complete
+    # provider listing. Never infer episode numbers from list position or dates.
+    if not matches and candidate.get('episode_scan_complete') is True and (
+        isinstance(meta.get('season'),int) and isinstance(meta.get('episode'),int)
+        and meta['season']>=0 and meta['episode']>0):
+        matches=[ep for ep in episodes if ep.get('season_number')==meta['season'] and ep.get('episode_number')==meta['episode']]
     unique={(e.get('season_number'),e.get('episode_number')):e for e in matches}
-    if len(unique)==1:
+    if len(matches)==1 and len(unique)==1:
         ep=next(iter(unique.values()));candidate.update(season=ep['season_number'],episode=ep['episode_number'],episode_title=ep['name'],episode_verified=True,description=ep.get('overview') or candidate['description'])
         runtime=ep.get('runtime');duration=meta.get('_source_duration')
         if isinstance(runtime,(int,float)) and runtime>0 and duration:
