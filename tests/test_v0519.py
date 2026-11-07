@@ -83,4 +83,19 @@ CREATE TABLE title_episode(tconst TEXT,parentTconst TEXT,seasonNumber INTEGER,ep
         self.assertEqual(partial.read_bytes(),b'old partial')
         self.assertFalse((self.a.root/'basics.tsv.gz').exists())
 
+class QueueRecoveryTests(unittest.TestCase):
+    def test_queued_jobs_survive_restart(self):
+        import catalog
+        with sqlite3.connect(':memory:') as c:
+            c.execute('CREATE TABLE jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT)')
+            states=['queued','downloading','tagging','done','error','cancelled','remote']
+            c.executemany('INSERT INTO jobs VALUES(?,?,?)',[(x,'{}',x) for x in states])
+            catalog.recover_download_queue(c)
+            after=dict(c.execute('SELECT id,state FROM jobs'))
+        self.assertEqual(after['queued'],'queued')
+        self.assertEqual(after['downloading'],'interrupted')
+        self.assertEqual(after['tagging'],'interrupted')
+        for state in ('done','error','cancelled','remote'):
+            self.assertEqual(after[state],state)
+
 if __name__=='__main__':unittest.main()
