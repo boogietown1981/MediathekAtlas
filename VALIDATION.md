@@ -5,6 +5,7 @@
 - `tests/test_v0519.py`: Hohe Konfidenz trotz fehlender Genres nur bei bestätigter IMDb-Laufzeit bzw. IMDb-Episode; negative Fälle und Konflikte bleiben unbestätigt.
 - IMDb-Verbindungen bleiben pro Worker schreibgeschützt und werden nach atomarem Austausch automatisch geschlossen und neu geöffnet. Zwischengespeicherte SQL-Zeilen dürfen keine Laufzeit-/Episodenentscheidungen anderer Werke übernehmen.
 - Test für frühzeitigen Abbruch eines Downloads bei zu wenig freiem Speicher. Vorhandene Teildateien und das bisherige Archiv sollen unangetastet bleiben.
+- Warteschlangenregression: Vor dem Neustart `queued` bleibt `queued`, in Arbeit befindliche `downloading`/`tagging` werden `interrupted`; terminale Zustände bleiben bestehen.
 - Gesamttest, Paketbuild und Tests auf realer Hardware: noch durch CI bzw. Installation zu prüfen.
 
 
