@@ -119,7 +119,7 @@ def expiry_iso(value):
 
 def explicit_expiry(*sources):
     """Read only explicit availability keys from the broadcaster's programme object."""
-    keys=('availableUntil','availableTo','availabilityEnd','availabilityUntil','expirationDate','expiresAt','endDate')
+    keys=('availableUntil','availableTo','availabilityEnd','availabilityUntil','expirationDate')
     for source in sources:
         if not isinstance(source,dict):continue
         for key in keys:
