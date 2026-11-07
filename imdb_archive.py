@@ -67,13 +67,17 @@ class Archive:
         self.root=Path(root)/'imdb';self.root.mkdir(parents=True,exist_ok=True)
         self.path=self.root/'imdb_archive.db';self.stop=stop;self.on_update=on_update
         self._reader_local=threading.local()  # one read-only connection and bounded caches per worker
+        self._metrics_lock=threading.Lock();self._metrics={'reader_opens':0,'query_hits':0,'query_misses':0,'credits_hits':0,'credits_misses':0}
         self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0
         if self.path.exists():
             try:
                 with sqlite3.connect(self.path) as c:self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0];self.state={'phase':'ready'};self.version=c.execute('PRAGMA user_version').fetchone()[0]
             except sqlite3.Error:self.state={'phase':'error','error':'Vorhandenes IMDb-Archiv nicht lesbar'}
+    def _count(self,kind):
+        with self._metrics_lock:self._metrics[kind]+=1
     def status(self):
-        with self.lock:return {**self.state,'updated':self.updated,'next_update':max(self.updated+WEEK if self.version==VERSION else 0,self.retry_at) if self.updated or self.retry_at else None,'ready':bool(self.updated),'path':str(self.path)}
+        with self._metrics_lock:performance=dict(self._metrics)
+        with self.lock:return {**self.state,'updated':self.updated,'next_update':max(self.updated+WEEK if self.version==VERSION else 0,self.retry_at) if self.updated or self.retry_at else None,'ready':bool(self.updated),'path':str(self.path),'performance':performance}
     def progress(self,**kw):
         with self.lock:self.state.update(kw)
     def request(self):
@@ -152,13 +156,16 @@ class Archive:
         c=sqlite3.connect(self.path.as_uri()+'?mode=ro',uri=True)
         c.row_factory=sqlite3.Row
         self._reader_local.opened=(identity,c)
+        self._count('reader_opens')
         self._reader_local.queries={}
         self._reader_local.credits={}
         return c
     def _lookup(self,sql,params,key):
         """Cache raw exact-match rows, never episode-specific final decisions."""
         cache=self._reader_local.queries
-        if key in cache:return cache[key]
+        if key in cache:
+            self._count('query_hits');return cache[key]
+        self._count('query_misses')
         hits=self._reader_local.opened[1].execute(sql,params).fetchall()
         if len(cache)>=1024:cache.clear()
         cache[key]=hits
@@ -168,8 +175,10 @@ class Archive:
         from copy import deepcopy
         cache=self._reader_local.credits
         if tconst not in cache:
+            self._count('credits_misses')
             if len(cache)>=256:cache.clear()
             cache[tconst]=credits(c,tconst)
+        else:self._count('credits_hits')
         return deepcopy(cache[tconst])
     def candidates(self,row,meta):
         if not self.updated:return []
