@@ -22,7 +22,7 @@ CREATE TABLE IF NOT EXISTS mesh_download_works(work_id TEXT PRIMARY KEY,key TEXT
 CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,providers INTEGER,hlc INTEGER,node TEXT,payload TEXT);
 '''
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
-SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K)[)\]]\s*')
+SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K|untertitel(?:n)?|UT|OmU|OV|Originalversion(?:\s+mit\s+Untertitel(?:n)?)?|Originalfassung(?:\s+mit\s+Untertitel(?:n)?)?|Original\s+mit\s+Untertitel(?:n)?|VOST(?:F)?|VO-?ST)[)\]]\s*')
 EP=re.compile(r'(?i)\bS(\d{1,2})[\s/._-]*E(\d{1,4})\b|\b(\d{1,2})x(\d{1,4})\b|\bStaffel\s*(\d+)\D{1,20}Folge\s*(\d+)\b')
 GENRES={'Krimi':r'\b(?:krimi|kriminalfilm|krimiserie|tatort|polizeiruf)\b','Komödie':r'\b(?:komödie|comedy|sitcom)\b','Drama':r'\b(?:drama|melodram)\b','Thriller':r'\bthriller\b','Science-Fiction':r'\b(?:science.fiction|sci.fi)\b','Fantasy':r'\bfantasy\b','Animation':r'\b(?:animation|zeichentrick|anime)\b','Dokumentation':r'\b(?:dokumentation|dokumentarfilm|dokumentarserie|doku)\b','Kinder & Familie':r'\b(?:kinderfilm|kinderserie|familienfilm)\b','Romantik':r'\b(?:liebesfilm|romantik|romantische komödie)\b'}
 
@@ -285,25 +285,48 @@ TRAILER=re.compile(r'(?i)^\s*(?:trailer|teaser|vorschau)\b')
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
     topic=cleaned(source.get('topic'));title=cleaned(source.get('title'))
-    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or key(topic)==key(title):return False
+    import metadata
+    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or key(topic)==key(title) or metadata.RUBRIC.match(topic):return False
     if TRAILER.search(title):return False
     if FORMAT_WORDS.search(topic):return topic_works>=2
     return int(source.get('duration') or 0)<600 and topic_works>=3
 
+def broadcaster_format(m,source,topic_works):
+    """True for an episode of a news or magazine Sendung that only the broadcaster's Mediathek identified.
+
+    Diagnosis 0.5.15: 3,215 editions of "Schleswig-Holstein Magazin" were each queried at the ARD
+    Mediathek again and took two thirds of the recognition queue without improving any result."""
+    import broadcaster
+    if m.get('kind')!='series' or m.get('provider') not in broadcaster.PROVIDERS or m.get('scan_requested'):return False
+    topic=cleaned(source.get('topic'))
+    if not topic or key(topic) in FORMAT_GENERIC or key(topic)!=key(m.get('title')):return False
+    return bool(FORMAT_WORDS.search(topic)) and topic_works>=2
+
+# Raise when the format rules change: existing catalogues then get one more format pass.
+FORMAT_REV=2
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
+    if get_state(c,'format_rev',0)<FORMAT_REV:set_state(c,'format_cursor',0);set_state(c,'format_rev',FORMAT_REV)
     cursor=get_state(c,'format_cursor',0)
     if cursor=='complete':return 0,0
     rows=c.execute("SELECT rowid AS rid,* FROM works WHERE rowid>? ORDER BY rowid LIMIT ?",(cursor,limit)).fetchall()
     counts={};assigned=0
     for row in rows:
         cursor=row['rid']
-        if row['kind'] not in ('unknown','other') or row['state'] not in ('pending','retry'):continue
+        open_work=row['kind'] in ('unknown','other') and row['state'] in ('pending','retry')
+        if not open_work and not (row['kind']=='series' and row['state']=='identified'):continue
         best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(row['id'],)).fetchone()
         if not best:continue
         source=json.loads(best[0]);m=json.loads(row['meta']);topic=row['topic'] or source.get('topic') or ''
         if topic not in counts:counts[topic]=c.execute('SELECT COUNT(*) FROM works WHERE topic=?',(topic,)).fetchone()[0]
+        if not open_work:
+            if not broadcaster_format(m,source,counts[topic]):continue
+            # Keep the broadcaster's programme data (picture, description, genres); only stop the rechecks.
+            m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
+            m.update(state='format',reason='Ausgabe der Sendung „'+m['title']+'“ ('+m['provider']+'); wird nicht einzeln abgeglichen.')
+            c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+            assigned+=1;continue
         if not format_contribution(m,source,counts[topic]):continue
         fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
         m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}

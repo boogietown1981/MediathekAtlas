@@ -255,7 +255,12 @@ def wikidata(title,kind,year):
     ck=(title,kind,year)
     with _LOCK:cached=_WD_CACHE.get(ck)
     if cached and time.monotonic()-cached[0]<21600:return cached[1]
-    d=core.wikidata_lookup(title,kind,year)
+    try:d=core.wikidata_lookup(title,kind,year)
+    except ValueError as e:
+        # Very general titles ("Tiere") match so many items that the answer exceeds the size limit.
+        # That is a definite "not identifiable", not a provider error that should be retried hourly.
+        if 'zu groß' not in str(e):raise
+        diagnostics.event('wikidata_too_many_hits',title=title,kind=kind);d=None
     if d:
         from external_metadata import fetch_json
         try:
@@ -272,12 +277,25 @@ def wikidata(title,kind,year):
     return d
 
 GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten'}
+# arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
+# Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
+RUBRIC=re.compile(r'(?i)^\s*(?:politics and society|culture|history|discovery|sciences?|cinema|series and fiction|news|politik und gesellschaft|kultur|geschichte|entdeckung der welt|wissenschaft|kino|fernsehfilme und serien|aktuelles und gesellschaft|info und gesellschaft)\s+-\s+\S')
+def generic_topic(topic):return not topic or norm(topic) in GENERIC or bool(RUBRIC.match(topic))
+def query_title(title):
+    """Title without language-version or accessibility suffixes such as "(Originalversion mit Untertitel)"."""
+    import catalog
+    return catalog.cleaned(title) or str(title or '')
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings')};kind=meta['kind'];topic=row.get('topic','');queries=[]
+    meta['title']=query_title(meta['title'])
     if kind=='series':queries=[('series',meta['title'])]
     elif kind=='movie':queries=[('movie',meta['title'])]
     else:
-        if topic and norm(topic) not in GENERIC and norm(topic)!=norm(row['title']):queries.append(('series',topic))
+        if not generic_topic(topic) and norm(topic)!=norm(row['title']):queries.append(('series',topic))
+        elif ' - ' in meta['title']:
+            # "Mapping the World - Cyprus: A Divided Island": without a usable topic the series is the prefix.
+            prefix=meta['title'].split(' - ',1)[0].strip()
+            if 3<=len(prefix)<=60 and not generic_topic(prefix):queries.append(('series',prefix))
         queries.append(('movie',meta['title']))
     out=[];warnings=[];deferred=[];checks=[]
     def checked(value):
@@ -299,6 +317,10 @@ def candidates(row,meta,settings):
             checked({'provider':ref[0],'status':'error','count':0});warnings.append(ref[0]+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=ref[0],title=row.get('title',''))
         return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
     import imdb_archive,matching
+    # OMDb serves IMDb data. Once the offline IMDb snapshot answered, an exhausted OMDb quota is no
+    # reason to keep the work in the retry queue (diagnosis 0.5.15: 82 % of open works were retried
+    # only because of the OMDb pause and queried TMDB, TVDB and Wikidata again every few hours).
+    def imdb_checked():return any(x['provider']=='IMDb Offline' and x['status']=='checked' for x in checks)
     # A work already identified as a broadcaster's own Sendereihe is unknown to the film databases;
     # asking them again for every episode only cost requests and quota.
     if meta.get('provider') in broadcaster.PROVIDERS and broadcaster.reference(row):return from_broadcaster()
@@ -320,7 +342,7 @@ def candidates(row,meta,settings):
         for k,title in queries:
             if field=='tvdb' and k!='series':continue
             if field=='omdb' and omdb_status(settings[field])['paused']:
-                if 'OMDb' not in deferred:deferred.append('OMDb')
+                if 'OMDb' not in deferred and not imdb_checked():deferred.append('OMDb')
                 checked({'provider':provider,'status':'paused','count':0});break
             # One event per finished check; a separate start event doubled the log and shortened its history.
             start=time.monotonic()
@@ -331,7 +353,7 @@ def candidates(row,meta,settings):
                 diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
             except Exception as e:
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
-                    if provider not in deferred:deferred.append(provider)
+                    if provider not in deferred and not imdb_checked():deferred.append(provider)
                     checked({'provider':provider,'status':'paused','count':0});break
                 checked({'provider':provider,'status':'error','count':0})
                 warnings.append(provider+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=provider,title=title)

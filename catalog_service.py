@@ -139,8 +139,9 @@ class Service:
                 now=c.execute('SELECT meta,state FROM works WHERE id=?',(wid,)).fetchone()
                 if not now or now['meta']!=original or now['state']=='manual':return True
                 outcome,dest=self.store_outcome(c,row,entry,m,recognized,chosen,result,outcome)
-                # Provider errors stay local and are retried; only final results are shared.
-                if outcome!='retry':self.mesh_publish(c,'match.result',wid,dest,outcome,recognized or m,providers)
+                # Provider errors stay local and are retried; only final results are shared. A recheck that
+                # could not reach its provider (paused Mediathek) changed nothing and is not shared either.
+                if outcome!='retry' and (recognized or not (result['warnings'] or result.get('deferred_providers'))):self.mesh_publish(c,'match.result',wid,dest,outcome,recognized or m,providers)
             self.checked+=1;self.metadata_state(phase='result',title=recognized['title'] if recognized else m['title'],outcome=outcome,provider_checks=result.get('provider_checks',[]),from_cache=bool(cached),candidates=len(result['candidates']),warnings=result['warnings'],seconds=round(time.monotonic()-started,2),providers=providers)
         except Exception as e:
             diagnostics.error('metadata_failed',e,work_id=wid)

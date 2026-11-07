@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.16 · Diagnose vom 6. November (6. November 2026, Linux-Testumgebung)
+
+- Feldbefund (Mac, 0.5.15, 06:07–08:20 UTC): 4.844 Prüfungen, davon 3.215 Ausgaben „Schleswig-Holstein Magazin“ (je eine ARD-Abfrage, Ergebnis unverändert). Von den übrigen 1.629 Prüfungen 82 % „Wiederholung“ (OMDb pausiert), 18 % „zu prüfen“, 0,4 % erkannt. Wikidata 5× „Antwort zu groß“, IMDb-Aktualisierung 2× abgebrochen (unter 512 MiB frei, Zeitüberschreitung bei 334/521 MB). Direktverbindung: einzige Gegenstelle lehnt ab, beide NAS seit rund 7 Tagen ohne Lebenszeichen.
+- Neue Tests `test_v0516.py`: Magazin-Ausgaben mit Mediathek-Daten → Sendungsbeitrag, Serie ohne Formatwort bleibt erkannt, Nachsortierung läuft genau einmal; Titelzusätze entfernt; arte-Rubrik nicht als Serie, Reihentitel abgefragt; OMDb-Pause ohne Wiederholung nach IMDb-Offline-Prüfung; zu große Wikidata-Antwort ist kein Fehler; IMDb-Download setzt per Range fort, Rückzug 1 h → 2 h.
+
 ## 0.5.15 · Mehrere Direktverbindungen (29. Oktober 2026, Linux-Testumgebung)
 
 - Feldbefund: Codes auf allen Systemen eingefügt, jede Eingabe ersetzte Verbindung und eigenen Schlüssel.

@@ -1,6 +1,16 @@
-# MediathekAtlas · 0.5.15 Preview
+# MediathekAtlas · 0.5.16 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.16: Erkennung entlastet (Diagnose vom 6. November)
+
+- Ausgaben von Nachrichten- und Magazinsendungen, die nur die ARD- bzw. ZDF-Mediathek erkannt hat (z. B. 3.215 Ausgaben „Schleswig-Holstein Magazin“), werden unter ihrer Sendung geführt und nicht mehr einzeln abgefragt. Bild, Beschreibung und Genres der Mediathek bleiben erhalten. Bestehende Kataloge werden beim Start einmal nachsortiert.
+- Ist das OMDb-Tageskontingent aufgebraucht, bleibt ein Werk nicht mehr nur deswegen in der Wiederholung, wenn das Offline-IMDb-Archiv es bereits geprüft hat (OMDb liefert dieselben IMDb-Daten).
+- Titelzusätze wie „(Originalversion mit Untertitel)“, „(mit Untertitel)“ oder „(OmU)“ werden vor dem Abgleich entfernt. arte-Rubriken („Politics and society - Insights“, „Culture - Pop culture“) gelten nicht mehr als Sendungsname; stattdessen wird der Reihentitel vor „ - “ gesucht.
+- Wikidata: Sehr allgemeine Titel mit zu großer Antwort zählen als „nicht gefunden“ statt als Fehler mit stündlicher Wiederholung.
+- IMDb-Archiv: Ein abgebrochener Download wird fortgesetzt statt neu begonnen, fertige Dateien bleiben bis zu zwei Tage erhalten, Wiederholungen warten 1, 2, 4 … bis 24 Stunden. Fehlt Speicher, sagt die Meldung, dass das bisherige Archiv nutzbar bleibt.
+- Eine Neuprüfung, deren Mediathek gerade pausiert war, wird nicht mehr als Ergebnis an den Verbund verteilt.
+- Die Diagnose-ZIP enthält jetzt Katalogzahlen und die Erkennungsquote je Sender.
 
 ## Neu in 0.5.15: Mehrere Direktverbindungen je System
 

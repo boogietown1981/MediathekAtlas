@@ -45,7 +45,7 @@ def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
                     if count%5000==0:
                         flush(c,kind,rows,names);progress(phase='importing',dataset=kind,rows=count)
                         if cancelled():raise InterruptedError('IMDb-Import beendet')
-                        if shutil.disk_usage(Path(path).parent).free<512*1024**2:raise OSError('IMDb: weniger als 512 MiB freier Speicher')
+                        if shutil.disk_usage(Path(path).parent).free<512*1024**2:raise OSError('IMDb: weniger als 512 MiB freier Speicher; bitte Speicher freigeben, das bisherige Archiv bleibt nutzbar')
                 flush(c,kind,rows,names)
             if not count:raise ValueError('IMDb: leerer Datensatz '+kind)
             counts[kind]=count
@@ -66,7 +66,7 @@ class Archive:
     def __init__(self,root,stop,on_update=lambda:None):
         self.root=Path(root)/'imdb';self.root.mkdir(parents=True,exist_ok=True)
         self.path=self.root/'imdb_archive.db';self.stop=stop;self.on_update=on_update
-        self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0
+        self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0
         if self.path.exists():
             try:
                 with sqlite3.connect(self.path) as c:self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0];self.state={'phase':'ready'};self.version=c.execute('PRAGMA user_version').fetchone()[0]
@@ -86,40 +86,58 @@ class Archive:
             requested=self.wake.is_set();self.wake.clear()
             if requested or self.due():self.update()
             self.wake.wait(30)
+    def fetch(self,kind,path):
+        """Download one dataset; resume an interrupted transfer and reuse a fresh complete file.
+
+        Diagnosis 0.5.15: a read timeout after 334 of 521 MB discarded every file of the round,
+        and the next hourly attempt started all seven downloads again."""
+        if path.exists() and time.time()-path.stat().st_mtime<2*86400:return
+        part=path.with_name(path.name+'.part');have=part.stat().st_size if part.exists() else 0
+        self.progress(phase='downloading',dataset=kind,received=have,total=0,error='',rows=0)
+        with core.open_url(BASE+FILES[kind],**({'headers':{'Range':'bytes=%d-'%have}} if have else {})) as response:
+            resumed=have and getattr(response,'status',200)==206
+            if not resumed:have=0
+            length=int(response.headers.get('Content-Length') or 0);total=have+length if length else 0
+            with part.open('ab' if resumed else 'wb') as f:
+                received=have;last=0
+                while True:
+                    if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
+                    block=response.read(1024*1024)
+                    if not block:break
+                    if shutil.disk_usage(self.root).free<len(block)+512*1024**2:raise OSError('IMDb: zu wenig freier Speicher (mindestens 512 MiB frei lassen); das bisherige Archiv bleibt nutzbar')
+                    f.write(block);received+=len(block)
+                    if time.monotonic()-last>.5:self.progress(received=received,total=total);last=time.monotonic()
+        if total and received!=total:raise ValueError('IMDb-Download unvollständig')
+        os.replace(part,path)
     def update(self):
-        staging=self.root/'building.db';files={}
+        staging=self.root/'building.db';files={};done=False
         try:
             staging.unlink(missing_ok=True)
             staging.with_name(staging.name+'-journal').unlink(missing_ok=True)
             for kind in HEADERS:
                 if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
                 path=self.root/(kind+'.tsv.gz');files[kind]=path
-                self.progress(phase='downloading',dataset=kind,received=0,total=0,error='',rows=0)
-                with core.open_url(BASE+FILES[kind]) as response,path.open('wb') as f:
-                    total=int(response.headers.get('Content-Length') or 0);received=0;last=0
-                    while True:
-                        if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
-                        block=response.read(1024*1024)
-                        if not block:break
-                        if shutil.disk_usage(self.root).free<len(block)+512*1024**2:raise OSError('IMDb: zu wenig freier Speicher')
-                        f.write(block);received+=len(block)
-                        if time.monotonic()-last>.5:self.progress(received=received,total=total);last=time.monotonic()
-                    if total and received!=total:raise ValueError('IMDb-Download unvollständig')
+                self.fetch(kind,path)
             counts=build(staging,files,self.progress,self.stop.is_set)
             if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
             with staging.open('rb') as f:os.fsync(f.fileno())
             os.replace(staging,self.path)
             with sqlite3.connect(self.path) as c:self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0]
-            self.version=VERSION;self.retry_at=0;self.progress(phase='ready',counts=counts,error='')
+            self.version=VERSION;self.retry_at=0;self.failures=0;done=True;self.progress(phase='ready',counts=counts,error='')
             diagnostics.event('imdb_archive_updated',counts=counts)
             self.on_update()
         except Exception as e:
-            self.retry_at=time.time()+3600;self.progress(phase='error',error=core.safe_error(e))
-            diagnostics.error('imdb_archive_failed',e)
+            # Back off 1 h, 2 h, 4 h … up to a day instead of downloading 1 GB again every hour.
+            self.failures+=1
+            self.retry_at=time.time()+min(86400,3600*2**(self.failures-1));self.progress(phase='error',error=core.safe_error(e),retry_at=self.retry_at)
+            diagnostics.error('imdb_archive_failed',e,attempt=self.failures)
+            # Without free space, keeping the downloads would only make it worse.
+            if isinstance(e,OSError) and 'Speicher' in str(e):done=True
         finally:
             staging.unlink(missing_ok=True)
             staging.with_name(staging.name+'-journal').unlink(missing_ok=True)
-            for p in files.values():p.unlink(missing_ok=True)
+            if done:
+                for p in files.values():p.unlink(missing_ok=True);p.with_name(p.name+'.part').unlink(missing_ok=True)
     def candidates(self,row,meta):
         if not self.updated:return []
         c=sqlite3.connect(self.path.as_uri()+'?mode=ro',uri=True);c.row_factory=sqlite3.Row
