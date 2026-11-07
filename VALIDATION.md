@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.21 · Sicheres Zusammenführen doppelter Filme (7. November 2026)
+
+- `tests/test_v0521.py`: „Der Rausch“ wird bei unabhängigen verifizierten Quellen, identischem Jahr und passender Laufzeit zu einem Film mit beiden Genres. Sämtliche Senderangebote bleiben erhalten.
+- Negativfälle: verschiedene Produktionsjahre, unterschiedliche IDs vom selben Anbieter, unvereinbare Laufzeiten oder nur vorläufig erkannte Titel werden nicht automatisch zusammengeführt.
+- Manuell gepflegte Genres und gespeicherte Downloadverweise bleiben erhalten; beide manuell gepflegten Datensätze werden nicht ohne ausdrückliche Auswahl verschmolzen.
+- Legacy-Dubletten werden transaktionsweise und mit persistiertem Cursor geprüft; der Nachlauf ist idempotent.
+- GitHub CI führt Linux/macOS-Regressionen und NAS-Paketvalidierung aus. Performance auf dem vollständigen Nutzerkatalog muss im nächsten Diagnoseexport verglichen werden.
+
+
+
 ## 0.5.20 · Inkrementelles Archiv, Serienvorlage, Verfügbarkeit (7. November 2026)
 
 - `tests/test_v0520.py`: Unveränderte Angebote werden nicht neu geschrieben; Neu-/Änderungs-/Reaktivierungs-/Entfallzähler sind korrekt; alte Angebote bleiben nach unvollständigem Import aktiv.
