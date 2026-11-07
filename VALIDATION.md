@@ -3,6 +3,7 @@
 ## 0.5.19 · Offline-Suche und früher Abschluss sicherer Zuordnungen (7. November 2026)
 
 - `tests/test_v0519.py`: Hohe Konfidenz trotz fehlender Genres nur bei bestätigter IMDb-Laufzeit bzw. IMDb-Episode; negative Fälle und Konflikte bleiben unbestätigt.
+- Der Diagnoseexport zeigt SQLite-Verbindungsöffnungen sowie Query-/Credits-Cache-Hits und -Misses, damit sich die Optimierung im Feld messen lässt.
 - IMDb-Verbindungen bleiben pro Worker schreibgeschützt und werden nach atomarem Austausch automatisch geschlossen und neu geöffnet. Zwischengespeicherte SQL-Zeilen dürfen keine Laufzeit-/Episodenentscheidungen anderer Werke übernehmen.
 - Test für frühzeitigen Abbruch eines Downloads bei zu wenig freiem Speicher. Vorhandene Teildateien und das bisherige Archiv sollen unangetastet bleiben.
 - Warteschlangenregression: Vor dem Neustart `queued` bleibt `queued`, in Arbeit befindliche `downloading`/`tagging` werden `interrupted`; terminale Zustände bleiben bestehen.
