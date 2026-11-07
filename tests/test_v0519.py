@@ -52,6 +52,9 @@ CREATE TABLE title_episode(tconst TEXT,parentTconst TEXT,seasonNumber INTEGER,ep
         second=self.a.candidates({'title':'Example','duration':7200},base)
         self.assertIs(connection,self.a._reader())
         self.assertEqual(len(self.a._reader_local.queries),1)
+        metrics=self.a.status()['performance']
+        self.assertEqual(metrics['reader_opens'],1)
+        self.assertEqual((metrics['query_hits'],metrics['query_misses']),(1,1))
         self.assertTrue(first[0]['runtime_agrees'])
         self.assertTrue(second[0]['runtime_mismatch'])
     def test_atomic_replacement_invalidates_connection_and_query_cache(self):
