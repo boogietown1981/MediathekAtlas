@@ -3,6 +3,7 @@
 ## Neu in 0.5.19: Offline-Erkennung beschleunigt
 
 - IMDb: Datenbankverbindung je Hintergrund-Worker wiederverwenden, statt für jede Werkprüfung eine neue Verbindung zu öffnen. Nach atomarer Aktualisierung des IMDb-Archivs wird die Verbindung automatisch neu geöffnet.
+- IMDb: Der Diagnoseexport enthält ab jetzt unter `imdb.performance` Zähler für geöffnete Datenbankverbindungen und Cache-Treffer/-Fehlversuche.
 - IMDb: Exakte Titel-, Episoden- und Besetzungsabfragen werden begrenzt zwischengespeichert. Werkabhängige Entscheidungen (etwa Laufzeit, Jahr oder Staffel/Folge) werden **immer pro Werk neu** berechnet. Dadurch entstehen keine übernommenen Fremdzuordnungen.
 - Wenn IMDb Offline einen Film durch Laufzeit oder eine Episode durch exakte Episodenprüfung sicher bestätigt hat, werden unnötige Online-Anfragen übersprungen, selbst wenn das Archiv noch keine Genres liefert. Fehlende Zusatzdaten bleiben für die spätere Anreicherung offen.
 - IMDb-Download: Die verfügbare Speichermenge wird vor der Übertragung anhand der gemeldeten Restgröße geprüft. Ein Speichermangel wird früh erkannt; das bisherige Archiv bleibt nutzbar.
