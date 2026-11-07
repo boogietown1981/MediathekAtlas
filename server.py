@@ -265,6 +265,32 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/alternatives':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
+        if path=='/api/availability':
+            import broadcaster
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            oid=q.get('id',[''])[0][:128]
+            if not oid:return self.send({'error':'Angebot fehlt'},400)
+            with db() as c:
+                raw=c.execute('SELECT payload FROM offers WHERE id=?',(oid,)).fetchone()
+                cached=c.execute('SELECT available_until,source,checked FROM offer_availability WHERE offer_id=?',(oid,)).fetchone()
+            if not raw:return self.send({'error':'Angebot nicht gefunden'},404)
+            row=json.loads(raw[0]);now=time.time()
+            if row.get('available_until'):
+                return self.send({'available_until':row['available_until'],'source':row.get('availability_source','Filmliste'),'known':True,'checked_at':now})
+            if cached and now-cached[2]<(86400 if cached[0] else 21600):
+                return self.send({'available_until':cached[0] or None,'source':cached[1] or None,'known':bool(cached[0]),'checked_at':cached[2]})
+            info=None;error=''
+            try:
+                info=broadcaster.lookup(row)
+            except Exception as e:
+                error=core.safe_error(e)
+            until=info.get('available_until') if info else None
+            # Failed requests are not negative evidence and must not overwrite a known expiry.
+            if not error:
+                with db() as c:c.execute('INSERT OR REPLACE INTO offer_availability VALUES(?,?,?,?)',(oid,until or None,(info or {}).get('provider',''),now))
+            diagnostics.event('offer_availability_checked',provider=(info or {}).get('provider',''),known=bool(until),error=bool(error))
+            return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
+                              'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
         if path=='/api/state':
             s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
