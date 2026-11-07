@@ -5,6 +5,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 import imdb_archive as imdb
 import matching
+import metadata
 
 class MatchingTests(unittest.TestCase):
     def test_verified_movie_without_genres_skips_online_fallback(self):
@@ -85,6 +86,43 @@ CREATE TABLE title_episode(tconst TEXT,parentTconst TEXT,seasonNumber INTEGER,ep
             with self.assertRaisesRegex(OSError,'Speicher'):self.a.fetch('basics',self.a.root/'basics.tsv.gz')
         self.assertEqual(partial.read_bytes(),b'old partial')
         self.assertFalse((self.a.root/'basics.tsv.gz').exists())
+
+class EpisodeNumberTests(unittest.TestCase):
+    def test_explicit_season_episode_matches_complete_official_list(self):
+        meta={'title':'Example','kind':'series','season':2,'episode':3,
+              'episode_title':'S02E03','_source_duration':2700}
+        official=[{'name':'The Pilot','season_number':2,'episode_number':3,'runtime':45}]
+        c={'title':'Example','description':'','episode_verified':False,'episode_scan_complete':True}
+        self.assertTrue(metadata.resolve_episode(meta,c,official)['episode_verified'])
+        self.assertEqual((c['season'],c['episode']),(2,3))
+        self.assertTrue(c['runtime_agrees'])
+    def test_incomplete_or_ambiguous_numbering_never_verifies(self):
+        meta={'title':'Example','kind':'series','season':2,'episode':3,'episode_title':'S02E03'}
+        ep={'name':'The Pilot','season_number':2,'episode_number':3}
+        for entries,complete in [([ep],False),([ep,dict(ep)],True),([],True)]:
+            with self.subTest(n=len(entries),complete=complete):
+                candidate={'title':'Example','description':'','episode_verified':False,'episode_scan_complete':complete}
+                self.assertFalse(metadata.resolve_episode(meta,candidate,entries)['episode_verified'])
+    def test_imdb_offline_number_fallback_requires_unique_match(self):
+        with tempfile.TemporaryDirectory() as root:
+            a=imdb.Archive(Path(root),threading.Event())
+            with sqlite3.connect(a.path) as c:
+                c.executescript("""CREATE TABLE names(name TEXT,tconst TEXT);
+CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,startYear INTEGER,runtimeMinutes INTEGER,genres TEXT);
+CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER);
+CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER);
+""")
+                c.execute("INSERT INTO names VALUES('example','ttshow')")
+                c.execute("INSERT INTO title_basics VALUES('ttshow','tvSeries','Example',2020,45,'Drama')")
+                c.execute("INSERT INTO title_basics VALUES('tt45','tvEpisode','The Pilot',2020,45,'Drama')")
+                c.execute("INSERT INTO title_episode VALUES('tt45','ttshow',2,3)")
+            a.updated=1;a.version=0
+            meta={'kind':'series','title':'Example','season':2,'episode':3,'episode_title':'S02E03'}
+            hit=a.candidates({'title':'S02E03','duration':2700},meta)[0]
+            self.assertTrue(hit['episode_verified'])
+            self.assertEqual((hit['episode_reference_id'],hit['episode_title']),('tt45','The Pilot'))
+            assert matching.choose(meta,[hit]) is not None
+            a._reader().close()
 
 class QueueRecoveryTests(unittest.TestCase):
     def test_queued_jobs_survive_restart(self):
