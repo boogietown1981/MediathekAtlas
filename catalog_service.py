@@ -50,7 +50,7 @@ class Service:
             changes=catalog.finish_snapshot(c,started,changes)
             catalog.set_state(c,'last_complete',time.time())
         self.format_wake.set()
-        diagnostics.event('catalog_snapshot_diff',**changes,processed=count)
+        diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
         self.status(phase='complete',processed=count,changes=changes);return count
     def sync_loop(self):
         retry_after=0
