@@ -3,7 +3,7 @@ import hashlib,json,re,sqlite3,time,unicodedata
 import core
 SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
-CREATE TABLE IF NOT EXISTS scan_seen(id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS scan_seen(id TEXT PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS format_dirty(work_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS offer_availability(offer_id TEXT PRIMARY KEY,available_until TEXT,source TEXT,checked REAL);
 CREATE TABLE IF NOT EXISTS artwork_checks(work_id TEXT PRIMARY KEY,next_try REAL);
