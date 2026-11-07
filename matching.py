@@ -41,5 +41,13 @@ def choose(meta,rows,work_only=False):
     return chosen
 
 def sufficient(meta,rows):
+    """Stop expensive fallback requests after a safely verified local result.
+
+    Genre enrichment can run later; never skip corroboration for a title-only match.
+    """
     c=choose(meta,rows)
-    return bool(c and c.get('year') and c.get('genres'))
+    if not c or not c.get('year'):return False
+    if c.get('genres'):return True
+    return bool(c.get('provider')=='IMDb Offline' and (
+        c.get('kind')=='movie' and c.get('runtime_agrees') or
+        c.get('kind')=='series' and c.get('episode_verified')))
