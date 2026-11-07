@@ -65,6 +65,7 @@ class IncrementalTests(unittest.TestCase):
                 self.assertFalse(catalog.get_state(c,'last_complete',False))
     def test_new_entries_tracked_for_incremental_format_pass(self):
         catalog.set_state(self.c,'format_cursor','complete')
+        catalog.set_state(self.c,'format_rev',catalog.FORMAT_REV)
         catalog.begin_snapshot(self.c)
         changes={'added':0,'changed':0,'unchanged':0,'reactivated':0}
         catalog.ingest_incremental(self.c,[offer('Second',url='https://example.org/2.mp4')],20,changes)
