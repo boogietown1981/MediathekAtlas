@@ -107,6 +107,7 @@ def parse_ard(page):
     show_image=(show.get('image') or {}).get('src') if isinstance(show.get('image'),dict) else ''
     duration=meta.get('durationSeconds')
     return {'provider':'ARD Mediathek','title':title,'series':series,'series_id':_text(show.get('id')),
+            'series_description':_text(show.get('synopsis') or show.get('longSynopsis')) if series else '',
             'description':_text(meta.get('synopsis') or player.get('synopsis')),'season':season,'episode':episode,
             'image':_image(images[0].get('url') if images and isinstance(images[0],dict) else ''),'series_image':_image(show_image),
             'duration':duration if isinstance(duration,int) and duration>0 else None,'channel':_text(meta.get('clipSourceName')),
@@ -174,7 +175,7 @@ def candidate(row,meta,info):
     hints=genres(series,topic,info.get('description','')[:300])
     base={**meta,'provider':info['provider'],'description':info.get('description') or meta.get('description',''),'genres':hints,'genre_source':'Sender (abgeleitet)' if hints else meta.get('genre_source','Unbekannt'),
           'poster':info.get('series_image') or info.get('image') or meta.get('poster',''),'year_mismatch':False,'evidence_type':'broadcaster_page','confidence':'high',
-          'broadcast':info.get('broadcast',''),'channel_source':info.get('channel','')}
+          'broadcast':info.get('broadcast',''),'channel_source':info.get('channel',''),'series_description':info.get('series_description','')}
     duration=info.get('duration');own=row.get('duration')
     runtime_agrees=bool(duration and own and abs(duration-own)<=max(120,own*.05))
     if own_series:

@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.17 · Titelseiten für Serien und Filme (6. November 2026, Linux-Testumgebung)
+
+- Feldbefund: Beim Öffnen einer Serie fehlten Titelbild und Beschreibung; es erschien nur das Folgenraster. Ursache: Die Serienbeschreibung wurde beim Folgenabgleich durch die Folgenhandlung ersetzt, und „Serie öffnen“ filterte lediglich den Katalog.
+- Neue Tests `tests/test_title_view.py`: Staffeln und Reihenfolge, Seriendaten aus der besten Folge statt Folgenhandlung, Sendereihen-Text als Rückfall, unbekannte und archivierte Serien, Weitergabe der Serienbeschreibung, Bildabgleich überschreibt vorhandene Beschreibung nicht. Gesamtlauf bestanden.
+- Chromium mit befülltem Testkatalog (Serie mit 2 Staffeln/12 Folgen, Folge mit 3 Fassungen inkl. Audiodeskription; Film mit 4 Fassungen; Serie ohne Metadaten), 1440 px und 420 px Breite, jeweils ohne und mit simuliertem Player (`playMedia`): Staffel-Reiter, Fassungsauswahl, Abspielaufrufe mit der gewählten Fassung, Zurück per Knopf und Browser. Keine JavaScript-Fehler. Bilder im Test lokal ersetzt, kein Abruf echter TMDB-Bilder.
+
 ## 0.5.16 · Diagnose vom 6. November (6. November 2026, Linux-Testumgebung)
 
 - Feldbefund (Mac, 0.5.15, 06:07–08:20 UTC): 4.844 Prüfungen, davon 3.215 Ausgaben „Schleswig-Holstein Magazin“ (je eine ARD-Abfrage, Ergebnis unverändert). Von den übrigen 1.629 Prüfungen 82 % „Wiederholung“ (OMDb pausiert), 18 % „zu prüfen“, 0,4 % erkannt. Wikidata 5× „Antwort zu groß“, IMDb-Aktualisierung 2× abgebrochen (unter 512 MiB frei, Zeitüberschreitung bei 334/521 MB). Direktverbindung: einzige Gegenstelle lehnt ab, beide NAS seit rund 7 Tagen ohne Lebenszeichen.

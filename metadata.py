@@ -162,6 +162,8 @@ def tmdb_candidates(row,meta,key,kind,title):
            'year_mismatch':bool(kind=='movie' and meta.get('year') and year!=meta['year']),'runtime_mismatch':mismatch,'runtime_agrees':bool(runtime and row.get('duration') and not mismatch),
            'episode_verified':False,'reason':'Titel, Medienart und zusätzliche Quellenbelege werden verglichen.'}
         if kind=='series':
+            # Series overview kept apart: resolve_episode replaces description with the episode plot.
+            c['show_description']=d.get('overview') or ''
             c['episode_title']=meta.get('episode_title') or row['title'];epmeta={**meta,'_source_title':row['title'],'_source_duration':row.get('duration')};episodes=[]
             seasons=d.get('seasons',[])
             if meta.get('season') is not None:seasons=[{'season_number':meta['season']}]
@@ -232,6 +234,7 @@ def tvdb_candidates(row,meta,credential,kind,title):
         date=str(d.get('firstAired') or hit.get('year') or '');year=int(date[:4]) if date[:4].isdigit() else None
         c={**meta,'title':name,'kind':'series','year':year,'provider':'TVDB','reference_id':sid,
            'description':(hit.get('overviews') or {}).get('deu') or d.get('overview') or meta.get('description',''),
+           'show_description':(hit.get('overviews') or {}).get('deu') or d.get('overview') or '',
            'poster':d.get('image') or hit.get('image_url') or '',
            'genres':genres(g['name'] for g in (d.get('genres') or []) if g.get('name')),'genre_source':'TVDB',
            'similarity':score,'year_mismatch':False,'runtime_mismatch':False,'runtime_agrees':False,

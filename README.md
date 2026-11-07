@@ -1,6 +1,14 @@
-# MediathekAtlas · 0.5.16 Preview
+# MediathekAtlas · 0.5.17 Preview
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
+
+## Neu in 0.5.17: Titelseiten für Serien und Filme
+
+- „Serie öffnen“ zeigt jetzt eine eigene Serienseite statt nur eines Folgenrasters: Hintergrundbild, Poster, Serienbeschreibung, Jahr, Bewertung, Staffelzahl, Genres, Sender, Netzwerk, Studios, Regie, Drehbuch und Besetzung, darunter Staffel-Reiter und die Folgenliste mit Laufzeit, Qualität, Status, Folgenbeschreibung und weiteren Fassungen.
+- Filme öffnen eine gleich aufgebaute Filmseite mit Fassungsauswahl (Sender, Audiodeskription, Gebärdensprache, Qualität) und allen Fassungen samt Dateien.
+- Die Serienbeschreibung wird getrennt von der Folgenbeschreibung gespeichert (TMDB, TVDB, ARD-Sendereihe). Bisher hat die Folgenhandlung sie überschrieben. Bestehende Serien erhalten sie beim nächsten Bildabgleich nach; das Öffnen einer Serienseite stößt ihn bevorzugt an.
+- Zurück über den Knopf, die Browser-Zurück-Taste oder Esc; die Katalogposition bleibt erhalten.
+- Platz für den Abspielknopf ist vorgesehen. Er erscheint, sobald der Browser-Player verfügbar ist.
 
 ## Neu in 0.5.16: Erkennung entlastet (Diagnose vom 6. November)
 
