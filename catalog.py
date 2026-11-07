@@ -84,6 +84,32 @@ def origin_meta(c,row):
         m['genres']=normalized_genres(m.get('genres'))
     return m,template
 
+def series_template_candidate(c,row,source):
+    """Get a uniquely verified series identity already learned from another episode.
+
+    Never transfer another episode's season/number, verification flag or description.
+    """
+    topic=source.get('topic') or ''
+    if row['kind'] not in ('unknown','series') or not topic:return None
+    if not 300<=int(source.get('duration') or 0)<=3900:return None
+    if key(topic)==key(source.get('title')):return None
+    templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
+    if len(templates)!=1:return None
+    known=json.loads(templates[0][0])
+    if known.get('kind')!='series' or key(known.get('title'))!=key(topic):return None
+    if not known.get('reference_id') or not known.get('provider'):return None
+    own=json.loads(row['meta'])
+    if own.get('year') and known.get('year') and own['year']!=known['year']:return None
+    for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description'):
+        if k in known:own[k]=known[k]
+    own['kind']='series'
+    own['episode_title']=own.get('episode_title') or source.get('title') or ''
+    # Only one known series identity is shared; episode evidence remains offer-specific.
+    own['episode_verified']=False
+    own.pop('episode_reference_id',None)
+    own['reason']='Serienidentität aus bereits bestätigter Folge übernommen; Episode noch zu prüfen'
+    return own
+
 def origin_ids(c,work_id):
     """Work IDs the offers of a (possibly merged) work had on import; the same on every instance."""
     out=set()
