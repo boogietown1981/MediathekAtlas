@@ -1,4 +1,16 @@
-# MediathekAtlas · 0.5.19 Preview
+# MediathekAtlas · 0.5.20 Preview
+
+## Neu in 0.5.20: Inkrementeller Filmlistenabgleich, Serienwissen, Verfügbarkeit
+
+- Die offizielle vollständige Filmliste wird weiterhin komplett geladen und kontrolliert, aber identische Angebote aktualisieren nicht mehr ihre Metadaten, Werkgruppen oder Nutzereinstellungen. Stattdessen notiert eine separate Tabelle nur ihre Identität.
+- Erst nach **vollständigem** Import werden verschwundene Angebote als inaktiv markiert; abgebrochene Importe entfernen keine bisher aktiven Angebote.
+- Diagnose und Status enthalten eine Änderungsstatistik mit neu, verändert, unverändert, reaktiviert und aus der Filmliste entfernt. Ein entfallener Eintrag wird archiviert, nicht gelöscht.
+- Nur neue oder geänderte Werke landen in der Format-Nachprüfung. Eine bereits abgeschlossene Klassifikation wird nicht bei jedem Import über Hunderttausende Werke zurückgesetzt.
+- Für bestehende, noch unbestätigte Serienfolgen werden eindeutig gelernte Serienidentitäten lokal wiederverwendet. Wenn IMDb Offline die genaue Episode bestätigen kann, wird sie zugeordnet; sonst bleibt die Episode ausdrücklich offen und nur das Werk wird erkannt. Manuell priorisierte Werke behalten die vollständige Provider-Suche.
+- Beim Öffnen des Download-Dialogs wird, soweit möglich, bei ARD/ZDF nach einem ausdrücklich ausgewiesenen Ablaufdatum gefragt. Die Antwort wird angebotsbezogen zwischengespeichert. Bekannte Daten erscheinen in Detailansicht und vor dem Download, baldige oder abgelaufene Termine als Hinweis.
+- Die Standard-MediathekView-Filmliste enthält normalerweise **kein** allgemeines Ablaufdatum. Wenn ein Sender keine explizite Information liefert, wird „Ablaufdatum nicht angegeben“ gezeigt. Das Sendedatum oder die Ablaufzeit eines API-Tokens wird nie als Verfügbarkeitsende verwendet.
+
+
 
 ## Neu in 0.5.19: Offline-Erkennung beschleunigt
 
