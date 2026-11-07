@@ -100,8 +100,17 @@ def adapt(pairs_):
         if stamp>time.time()+3600:continue
         try:size=int(float(d.get('Größe [MB]') or 0)*1000000)
         except (TypeError,ValueError):size=0
-        yield {'channel':channel,'topic':topic,'title':d.get('Titel',''),'description':d.get('Beschreibung',''),'timestamp':stamp,'duration':seconds,'size':size,
+        offer={'channel':channel,'topic':topic,'title':d.get('Titel',''),'description':d.get('Beschreibung',''),'timestamp':stamp,'duration':seconds,'size':size,
             'url_video':base,'url_video_hd':expand(d.get('Url HD',''),base),'url_video_low':expand(d.get('Url Klein',''),base),'url_subtitle':d.get('Url Untertitel',''),'url_website':d.get('Website',''),'geo':d.get('Geo',''),'catalog_source':'MediathekView-Filmliste'}
+        # The standard public film list does not include expiry. Honour optional
+        # explicit columns if a compatible feed ever provides them; do not infer.
+        for label in ('Verfügbar bis','Verfuegbar bis','Ablaufdatum','availableUntil'):
+            if label in d:
+                import broadcaster
+                until=broadcaster.expiry_iso(d[label])
+                if until:offer.update(available_until=until,availability_source='Filmliste')
+                break
+        yield offer
 
 class XZReader(io.RawIOBase):
     def __init__(self,raw):self.raw=raw;self.dec=lzma.LZMADecompressor(memlimit=128*1024*1024)

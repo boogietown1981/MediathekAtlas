@@ -32,21 +32,26 @@ class Service:
             diagnostics.event('catalog_progress',**self.current);self.last_log=time.monotonic()
         with self.db() as c:catalog.set_state(c,'sync',self.current)
     def import_snapshot(self,path,started,cancelled):
-        count=0;batch=[]
+        """Stream a full official snapshot, but only reprocess changed/new rows."""
+        import_started=time.monotonic()
+        count=0;batch=[];changes={'added':0,'changed':0,'unchanged':0,'reactivated':0}
+        with self.db() as c:catalog.begin_snapshot(c)
         for row in filmlist.read_rows(path):
             batch.append(row)
             if len(batch)>=500:
                 if cancelled():raise InterruptedError('Import pausiert')
-                with self.db() as c:catalog.ingest(c,batch,started)
-                count+=len(batch);batch=[];self.status(phase='importing',processed=count)
+                with self.db() as c:catalog.ingest_incremental(c,batch,started,changes)
+                count+=len(batch);batch=[]
+                self.status(phase='importing',processed=count)
         if cancelled():raise InterruptedError('Import pausiert')
         with self.db() as c:
-            catalog.ingest(c,batch,started);count+=len(batch)
+            catalog.ingest_incremental(c,batch,started,changes);count+=len(batch)
             if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
-            # Only a completed parse may retire older offers.
-            c.execute('UPDATE offers SET active=0 WHERE seen<?',(started,));catalog.set_state(c,'last_complete',time.time());catalog.restart_formats(c)
+            changes=catalog.finish_snapshot(c,started,changes)
+            catalog.set_state(c,'last_complete',time.time())
         self.format_wake.set()
-        self.status(phase='complete',processed=count);return count
+        diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
+        self.status(phase='complete',processed=count,changes=changes);return count
     def sync_loop(self):
         retry_after=0
         while not self.stop.wait(2):
@@ -120,6 +125,38 @@ class Service:
             wid=row['id'];original=row['meta'];m=json.loads(original);entry=catalog.item(c,row)
             # A result from another instance arrived before this work was imported here.
             if self.mesh_adopt_stored(c,row):return True
+            # A uniquely identified series is already stored locally. Reuse its
+            # identity for the next unnumbered episode, and ask IMDb Offline only
+            # for explicit episode evidence. Manually prioritized works still
+            # run the normal full provider chain.
+            priority=c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(wid,)).fetchone()
+            numbered=isinstance(m.get('season'),int) and isinstance(m.get('episode'),int)
+            if entry and not priority and not numbered and row['state'] in ('pending','retry','review','identified'):
+                known=catalog.series_template_candidate(c,row,entry['source'])
+                if known:
+                    import imdb_archive
+                    verified=None
+                    if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
+                        try:
+                            local=imdb_archive.ACTIVE.candidates(entry['source'],known)
+                            verified=catalog.auto_choice(known,local)
+                        except Exception as e:diagnostics.error('series_template_imdb_failed',e,work_id=wid)
+                    if verified:
+                        verified.update(state='auto_matched',reason='Serienvorlage und IMDb-Episode eindeutig bestätigt')
+                        dest=catalog.save_metadata(c,wid,verified,'matched')
+                        outcome='matched'
+                    elif row['state']=='identified' and m.get('provider')==known.get('provider') and m.get('reference_id')==known.get('reference_id'):
+                        dest=wid;outcome='identified'
+                    else:
+                        dest=catalog.save_metadata(c,wid,known,'identified') or wid
+                        outcome='identified'
+                    if outcome=='identified':
+                        c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+30*86400,dest))
+                    self.checked+=1
+                    self.metadata_state(phase='result',title=known['title'],outcome=outcome,
+                                        provider_checks=[],from_cache=True,series_template=True,
+                                        candidates=1 if verified else 0,warnings=[],seconds=0)
+                    return True
             c.execute('UPDATE works SET next_try=?,attempts=attempts+1 WHERE id=?',(time.time()+3600,wid));c.execute('DELETE FROM metadata_priority WHERE work_id=?',(wid,))
         if not entry:return False
         providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k) and (k!='omdb' or not metadata.omdb_status(config[k])['paused'])] or ['Wikidata (ohne API-Schlüssel)']
