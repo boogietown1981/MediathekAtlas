@@ -321,6 +321,7 @@ def stats(c):
     counts={r[0]:r[1] for r in c.execute('SELECT kind,COUNT(*) FROM works GROUP BY kind')}
     return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
        'last_import_diff':get_state(c,'last_import_diff',{}),
+       'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
        'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
        'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
        'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
