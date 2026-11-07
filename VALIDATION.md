@@ -1,5 +1,16 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.20 · Inkrementelles Archiv, Serienvorlage, Verfügbarkeit (7. November 2026)
+
+- `tests/test_v0520.py`: Unveränderte Angebote werden nicht neu geschrieben; Neu-/Änderungs-/Reaktivierungs-/Entfallzähler sind korrekt; alte Angebote bleiben nach unvollständigem Import aktiv.
+- Klassifizierung wird nur für neue/geänderte Werke wieder geöffnet; eine abgeschlossene vollständige Erstklassifizierung bleibt abgeschlossen.
+- Serienidentität wird nur von einer eindeutigen und zum Sendungsthema passenden Vorlage übernommen; Staffel-/Folgenachweise werden nicht von einer anderen Episode kopiert.
+- ARD-/ZDF-Daten werden ausschließlich bei ausdrücklichen Ablaufdatumsfeldern verwendet; Sendedatum und API-Token-Lebenszeit dürfen nicht als Ablaufdatum erscheinen.
+- Verfügbarkeit ist angebotsbezogen und wird im Download-Dialog erst bei Bedarf abgefragt; bei unbekanntem Ablaufdatum klare Kennzeichnung.
+- CI: Python 3.9/3.13 Linux, macOS 3.13 und SPK/QPKG-Build; echte Performance-Benchmarks folgen.
+
+
+
 ## 0.5.19 · Offline-Suche und früher Abschluss sicherer Zuordnungen (7. November 2026)
 
 - `tests/test_v0519.py`: Hohe Konfidenz trotz fehlender Genres nur bei bestätigter IMDb-Laufzeit bzw. IMDb-Episode; negative Fälle und Konflikte bleiben unbestätigt.
