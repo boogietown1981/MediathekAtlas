@@ -189,8 +189,14 @@ def finish_snapshot(c,seen,changes):
     set_state(c,'last_import_diff',changes)
     return changes
 
+def offer_expiry(c,oid):
+    r=c.execute('SELECT available_until,source,checked FROM offer_availability WHERE offer_id=?',(oid,)).fetchone()
+    return {'available_until':r[0],'availability_source':r[1],'availability_checked_at':r[2]} if r and r[0] else {}
+
 def source(c,oid):
-    r=c.execute('SELECT payload FROM offers WHERE id=?',(oid,)).fetchone();return json.loads(r[0]) if r else None
+    r=c.execute('SELECT payload FROM offers WHERE id=?',(oid,)).fetchone()
+    if not r:return None
+    row=json.loads(r[0]);row.update(offer_expiry(c,oid));return row
 
 def download_identity(m):
     return canonical(m) or digest(json.dumps([m.get('kind'),key(m.get('title','')),m.get('year'),m.get('season'),m.get('episode')]))
@@ -218,7 +224,7 @@ def mesh_download(c,meta,work_id=None):
 def item(c,w):
     r=c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC LIMIT 1',(w['id'],)).fetchone()
     if not r:return None
-    row=json.loads(r['payload']);count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
+    row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
     return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
 def alternatives(c,wid):
@@ -226,7 +232,7 @@ def alternatives(c,wid):
     if not w:raise ValueError('Werk nicht gefunden')
     out=[]
     for r in c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC',(wid,)):
-        row=json.loads(r['payload']);out.append({'id':r['id'],'work_id':wid,'source':row,'metadata':json.loads(w['meta']),'special':r['special'],'available':bool(r['active']),'links':links(row)})
+        row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));out.append({'id':r['id'],'work_id':wid,'source':row,'metadata':json.loads(w['meta']),'special':r['special'],'available':bool(r['active']),'links':links(row)})
     return out
 
 SHOW_FIELDS=('title','year','kind','provider','reference_id','imdb_id','poster','fanart','genres','genre_source','rating','votes','rating_source','ratings','networks','studios','show_credits','artwork_provider','show_description')
