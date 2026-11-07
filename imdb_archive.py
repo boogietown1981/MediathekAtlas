@@ -195,13 +195,20 @@ class Archive:
             if kind=='series':
                 epname=norm(meta.get('episode_title') or row.get('title'))
                 eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (h['tconst'],epname),('episode',h['tconst'],epname))
+                number_fallback=False
+                # SxxExx from the offer can identify the canonical episode even if
+                # the broadcaster does not provide its official episode title.
+                if len(eps)!=1 and isinstance(meta.get('season'),int) and isinstance(meta.get('episode'),int) and meta['season']>=0 and meta['episode']>0:
+                    eps=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND e.seasonNumber=? AND e.episodeNumber=? LIMIT 2',
+                                     (h['tconst'],meta['season'],meta['episode']),('episode_numbers',h['tconst'],meta['season'],meta['episode']))
+                    number_fallback=len(eps)==1
                 if len(eps)==1:
                     e=eps[0];season=e['seasonNumber'];episode=e['episodeNumber']
                     if e['runtimeMinutes'] and row.get('duration'):
                         m['runtime_mismatch']=abs(e['runtimeMinutes']*60-row['duration'])>max(300,e['runtimeMinutes']*6)
                         m['runtime_agrees']=not m['runtime_mismatch']
                     if season is not None and episode and (meta.get('season') in (None,season)) and (meta.get('episode') in (None,episode)):
-                        m.update(season=season,episode=episode,episode_verified=True,episode_title=meta.get('episode_title') or row['title'],episode_reference_id=e['tconst'],reason='Serien- und Episodentitel im IMDb-Archiv eindeutig zugeordnet')
+                        m.update(season=season,episode=episode,episode_verified=True,episode_title=(e['primaryTitle'] if number_fallback else meta.get('episode_title') or row['title']),episode_reference_id=e['tconst'],reason='IMDb-Episode anhand eindeutiger Staffel-/Folgenummer bestätigt' if number_fallback else 'Serien- und Episodentitel im IMDb-Archiv eindeutig zugeordnet')
             if self.version>=2:
                 m['show_credits']=self._credits(c,h['tconst']) if kind=='series' else {}
                 m.update(self._credits(c,m.get('episode_reference_id') or h['tconst']) if kind=='movie' or m.get('episode_verified') else {})
