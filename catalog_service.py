@@ -33,6 +33,7 @@ class Service:
         with self.db() as c:catalog.set_state(c,'sync',self.current)
     def import_snapshot(self,path,started,cancelled):
         """Stream a full official snapshot, but only reprocess changed/new rows."""
+        import_started=time.monotonic()
         count=0;batch=[];changes={'added':0,'changed':0,'unchanged':0,'reactivated':0}
         with self.db() as c:catalog.begin_snapshot(c)
         for row in filmlist.read_rows(path):
