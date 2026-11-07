@@ -32,21 +32,25 @@ class Service:
             diagnostics.event('catalog_progress',**self.current);self.last_log=time.monotonic()
         with self.db() as c:catalog.set_state(c,'sync',self.current)
     def import_snapshot(self,path,started,cancelled):
-        count=0;batch=[]
+        """Stream a full official snapshot, but only reprocess changed/new rows."""
+        count=0;batch=[];changes={'added':0,'changed':0,'unchanged':0,'reactivated':0}
+        with self.db() as c:catalog.begin_snapshot(c)
         for row in filmlist.read_rows(path):
             batch.append(row)
             if len(batch)>=500:
                 if cancelled():raise InterruptedError('Import pausiert')
-                with self.db() as c:catalog.ingest(c,batch,started)
-                count+=len(batch);batch=[];self.status(phase='importing',processed=count)
+                with self.db() as c:catalog.ingest_incremental(c,batch,started,changes)
+                count+=len(batch);batch=[]
+                self.status(phase='importing',processed=count)
         if cancelled():raise InterruptedError('Import pausiert')
         with self.db() as c:
-            catalog.ingest(c,batch,started);count+=len(batch)
+            catalog.ingest_incremental(c,batch,started,changes);count+=len(batch)
             if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
-            # Only a completed parse may retire older offers.
-            c.execute('UPDATE offers SET active=0 WHERE seen<?',(started,));catalog.set_state(c,'last_complete',time.time());catalog.restart_formats(c)
+            changes=catalog.finish_snapshot(c,started,changes)
+            catalog.set_state(c,'last_complete',time.time())
         self.format_wake.set()
-        self.status(phase='complete',processed=count);return count
+        diagnostics.event('catalog_snapshot_diff',**changes,processed=count)
+        self.status(phase='complete',processed=count,changes=changes);return count
     def sync_loop(self):
         retry_after=0
         while not self.stop.wait(2):
