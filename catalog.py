@@ -3,6 +3,9 @@ import hashlib,json,re,sqlite3,time,unicodedata
 import core
 SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
+CREATE TABLE IF NOT EXISTS scan_seen(id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS format_dirty(work_id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS offer_availability(offer_id TEXT PRIMARY KEY,available_until TEXT,source TEXT,checked REAL);
 CREATE TABLE IF NOT EXISTS artwork_checks(work_id TEXT PRIMARY KEY,next_try REAL);
 CREATE TABLE IF NOT EXISTS artwork_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL);
 CREATE TABLE IF NOT EXISTS works(id TEXT PRIMARY KEY,title TEXT,kind TEXT,year INTEGER,show_key TEXT,meta TEXT,state TEXT DEFAULT 'pending',next_try REAL DEFAULT 0,attempts INTEGER DEFAULT 0,updated REAL,topic TEXT DEFAULT '');
@@ -121,6 +124,44 @@ def ingest(c,rows,seen=None):
             for genre in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,genre))
         c.execute('INSERT INTO offers VALUES(?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,special=excluded.special,rank=excluded.rank,seen=excluded.seen,active=1',(oid,wid,json.dumps(row),special(row),ranking(row),seen));ids.append(oid)
     return ids
+
+def begin_snapshot(c):
+    """Collect feed IDs separately: an interrupted import must never retire existing offers."""
+    c.execute('DELETE FROM scan_seen')
+
+def ingest_incremental(c,rows,seen,changes):
+    """Only changed/new offers need full seed, classification and payload writes.
+
+    Stable IDs use channel, primary media URL and title exactly as in ingest().
+    Identical offers are recorded in scan_seen without rewriting works or offers.
+    """
+    dirty=get_state(c,'format_cursor')=='complete'
+    for row in rows:
+        if not links(row) or not row.get('title'):continue
+        oid=digest(str(row.get('channel'))+'|'+str(row.get('url_video') or row.get('url_video_hd') or row.get('url_website'))+'|'+row['title'])
+        payload=json.dumps({**row,'_id':oid})
+        old=c.execute('SELECT payload,active FROM offers WHERE id=?',(oid,)).fetchone()
+        c.execute('INSERT OR IGNORE INTO scan_seen VALUES(?)',(oid,))
+        if old and old['payload']==payload:
+            category='unchanged' if old['active'] else 'reactivated'
+            changes[category]=changes.get(category,0)+1
+            continue
+        if old:category='changed' if old['active'] else 'reactivated'
+        else:category='added'
+        changes[category]=changes.get(category,0)+1
+        ingest(c,[row],seen)
+        if dirty:
+            c.execute('INSERT OR IGNORE INTO format_dirty SELECT work_id FROM offers WHERE id=?',(oid,))
+
+def finish_snapshot(c,seen,changes):
+    """Deactivate missing IDs only after the complete list was parsed successfully."""
+    changes=dict(changes)
+    changes['removed']=c.execute('SELECT COUNT(*) FROM offers o WHERE o.active=1 AND NOT EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=o.id)').fetchone()[0]
+    c.execute('UPDATE offers SET active=0 WHERE active=1 AND NOT EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=offers.id)')
+    c.execute('UPDATE offers SET active=1,seen=? WHERE active=0 AND EXISTS(SELECT 1 FROM scan_seen s WHERE s.id=offers.id)',(seen,))
+    c.execute('DELETE FROM scan_seen')
+    set_state(c,'last_import_diff',changes)
+    return changes
 
 def source(c,oid):
     r=c.execute('SELECT payload FROM offers WHERE id=?',(oid,)).fetchone();return json.loads(r[0]) if r else None
@@ -246,6 +287,7 @@ def tree(c):
 def stats(c):
     counts={r[0]:r[1] for r in c.execute('SELECT kind,COUNT(*) FROM works GROUP BY kind')}
     return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
+       'last_import_diff':get_state(c,'last_import_diff',{}),
        'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
        'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
        'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
@@ -350,11 +392,19 @@ def assign_formats(c,limit=500):
     import broadcaster
     if get_state(c,'format_rev',0)<FORMAT_REV:set_state(c,'format_cursor',0);set_state(c,'format_rev',FORMAT_REV)
     cursor=get_state(c,'format_cursor',0)
-    if cursor=='complete':return 0,0
-    rows=c.execute("SELECT rowid AS rid,* FROM works WHERE rowid>? ORDER BY rowid LIMIT ?",(cursor,limit)).fetchall()
+    dirty_mode=cursor=='complete'
+    if dirty_mode:
+        rows=c.execute('SELECT w.rowid AS rid,w.* FROM format_dirty f JOIN works w ON w.id=f.work_id ORDER BY w.rowid LIMIT ?',(limit,)).fetchall()
+        if not rows:
+            # Also discard stale dirty references after merged/deleted works.
+            c.execute('DELETE FROM format_dirty WHERE NOT EXISTS(SELECT 1 FROM works w WHERE w.id=format_dirty.work_id)')
+            return 0,0
+    else:
+        rows=c.execute("SELECT rowid AS rid,* FROM works WHERE rowid>? ORDER BY rowid LIMIT ?",(cursor,limit)).fetchall()
     counts={};assigned=0
     for row in rows:
         cursor=row['rid']
+        if dirty_mode:c.execute('DELETE FROM format_dirty WHERE work_id=?',(row['id'],))
         open_work=row['kind'] in ('unknown','other') and row['state'] in ('pending','retry')
         if not open_work and not (row['kind']=='series' and row['state']=='identified'):continue
         best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(row['id'],)).fetchone()
@@ -378,7 +428,7 @@ def assign_formats(c,limit=500):
         c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
         for g in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
         assigned+=1
-    set_state(c,'format_cursor',cursor if rows else 'complete')
+    if not dirty_mode:set_state(c,'format_cursor',cursor if rows else 'complete')
     return len(rows),assigned
 
 def restart_formats(c):set_state(c,'format_cursor',0)
