@@ -5,7 +5,7 @@ The film list links every offer to its Mediathek page. The JSON behind that page
 magazines, news and documentaries. Endpoints follow the public web/app clients (reference: yt-dlp
 ard.py/zdf.py, MediathekView MServer); they are undocumented and may change, so every field is optional.
 """
-import json,re,threading,time,urllib.parse
+import datetime,json,re,threading,time,urllib.parse
 import core,diagnostics
 PROVIDERS=('ARD Mediathek','ZDF Mediathek')
 IMAGE_HOSTS={'api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'}
@@ -93,6 +93,44 @@ def _episode_numbers(title):
     m=re.search(r'\((?:Folge |Teil )?(\d+)(?:/\d+)?\)|\bFolge (\d+)(?:/\d+)?(?::| -|) ',title)
     return (None,int(m[1] or m[2])) if m else (None,None)
 
+def expiry_iso(value):
+    """Accept an explicit content expiry timestamp, never a broadcast or token expiry."""
+    if isinstance(value,dict):
+        for key in ('dateTime','datetime','endDate','date','end','value'):
+            if key in value:return expiry_iso(value[key])
+        return ''
+    if isinstance(value,(int,float)) and not isinstance(value,bool):
+        if not 946684800<=value<=4102444800:return ''
+        return datetime.datetime.fromtimestamp(value,datetime.timezone.utc).isoformat().replace('+00:00','Z')
+    if not isinstance(value,str):return ''
+    value=value.strip()
+    if re.fullmatch(r'\d{2}\.\d{2}\.\d{4}',value):
+        try:return datetime.datetime.strptime(value,'%d.%m.%Y').date().isoformat()
+        except ValueError:return ''
+    if re.fullmatch(r'\d{4}-\d\d-\d\d',value):
+        try:return datetime.date.fromisoformat(value).isoformat()
+        except ValueError:return ''
+    try:
+        dt=datetime.datetime.fromisoformat(value.replace('Z','+00:00'))
+        if dt.tzinfo is None:return ''  # unknown time zone: never invent a deadline
+        if not 2000<=dt.year<=2100:return ''
+        return dt.isoformat().replace('+00:00','Z')
+    except ValueError:return ''
+
+def explicit_expiry(*sources):
+    """Read only explicit availability keys from the broadcaster's programme object."""
+    keys=('availableUntil','availableTo','availabilityEnd','availabilityUntil','expirationDate','expiresAt','endDate')
+    for source in sources:
+        if not isinstance(source,dict):continue
+        for key in keys:
+            if key in source:
+                value=expiry_iso(source[key])
+                if value:return value
+        if isinstance(source.get('availability'),dict):
+            value=explicit_expiry(source['availability'])
+            if value:return value
+    return ''
+
 def parse_ard(page):
     """Normalise an ARD page-gateway item (embedded=false, mcV6=true)."""
     widgets=page.get('widgets') if isinstance(page,dict) else None
@@ -111,7 +149,8 @@ def parse_ard(page):
             'description':_text(meta.get('synopsis') or player.get('synopsis')),'season':season,'episode':episode,
             'image':_image(images[0].get('url') if images and isinstance(images[0],dict) else ''),'series_image':_image(show_image),
             'duration':duration if isinstance(duration,int) and duration>0 else None,'channel':_text(meta.get('clipSourceName')),
-            'broadcast':_text(meta.get('broadcastedOnDateTime') or player.get('broadcastedOn'))}
+            'broadcast':_text(meta.get('broadcastedOnDateTime') or player.get('broadcastedOn')),
+            'available_until':explicit_expiry(meta,media,player)}
 
 def parse_zdf(data):
     """Normalise a ZDF GraphQL videoByCanonical node."""
@@ -127,7 +166,8 @@ def parse_zdf(data):
     return {'provider':'ZDF Mediathek','title':_text(video.get('title')),'series':_text(collection.get('title')),'series_id':_text(collection.get('canonical')),
             'description':_text(video.get('leadParagraph') or (video.get('teaser') or {}).get('description')),
             'season':number(info.get('seasonNumber')),'episode':number(info.get('episodeNumber')) or None,'image':image,'series_image':'',
-            'duration':duration if duration and duration>0 else None,'channel':'ZDF','broadcast':_text(video.get('editorialDate'))}
+            'duration':duration if duration and duration>0 else None,'channel':'ZDF','broadcast':_text(video.get('editorialDate')),
+            'available_until':explicit_expiry(video)}
 
 def _zdf_token():
     with _LOCK:token=dict(_TOKEN)
