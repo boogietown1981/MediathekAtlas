@@ -90,6 +90,28 @@ class SeriesIdentityTests(unittest.TestCase):
             self.assertIsNone(known.get('episode'))
             self.assertFalse(known['episode_verified'])
             self.assertNotIn('episode_reference_id',known)
+    def test_service_reuses_existing_series_template_without_provider_requests(self):
+        import imdb_archive,core
+        with tempfile.TemporaryDirectory() as root:
+            db=database(root)
+            with db() as c:
+                catalog.initialize(c)
+                catalog.ingest(c,[offer('New and unnumbered episode')])
+                template={'kind':'series','title':'Example Series','provider':'TVDB','reference_id':'998',
+                          'year':2020,'genres':['Drama']}
+                c.execute('INSERT INTO series_templates VALUES(?,?,?,?)',(catalog.key('Example Series'),'TVDB','998',json.dumps(template)))
+            service=catalog_service.Service(db,lambda:{'auto_metadata':True},threading.Event(),Path(root))
+            with patch.object(imdb_archive,'ACTIVE',None),patch('core.candidates',side_effect=AssertionError('Unnecessary provider calls')):
+                self.assertTrue(service.metadata_once())
+            with db() as c:
+                r=c.execute('SELECT state,meta,next_try FROM works').fetchone()
+                self.assertEqual(r['state'],'identified')
+                m=json.loads(r['meta'])
+                self.assertEqual((m['title'],m['provider'],m['episode_title']),('Example Series','TVDB','New and unnumbered episode'))
+                self.assertFalse(m['episode_verified'])
+                self.assertGreater(r['next_try'],time.time()+20*86400)
+            self.assertTrue(service.metadata_status.get('series_template'))
+
     def test_ambiguous_or_mismatched_template_is_not_applied(self):
         with sqlite3.connect(':memory:') as c:
             c.row_factory=sqlite3.Row;c.executescript(catalog.SCHEMA)
