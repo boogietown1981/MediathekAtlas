@@ -113,7 +113,7 @@ class Service:
             +[('',(),'DESC')])
         def choose(fresh,kind):
             for where,params,direction in scopes:
-                states=('pending',) if fresh else ('retry','pending','identified')
+                states=('pending','retry','identified') if fresh else ('retry','pending','identified')
                 for state in states:
                     predicate=' AND w.attempts=0' if fresh else ' AND w.attempts>0'
                     row=c.execute("""SELECT w.* FROM works w WHERE w.kind=? AND w.state=?
@@ -179,12 +179,6 @@ class Service:
             recognized.update(state='auto_matched' if chosen else 'work_identified',reason='Werk und Episode abgeglichen' if chosen else 'Werk erkannt; Dateizuordnung noch zu prüfen')
             dest=catalog.save_metadata(c,wid,recognized,outcome) or wid
             if recognized['kind']=='series':
-                if (self.settings().get('complete_series',True) and
-                    recognized.get('reference_id') and
-                    metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])):
-                    show=catalog.showkey(recognized)
-                    if catalog.focus_series(c,show):
-                        diagnostics.event('series_completion_queued',show_key=show,limit=24)
                 if metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']):
                     c.execute('INSERT OR REPLACE INTO series_templates VALUES(?,?,?,?)',(catalog.key(entry['source']['topic']),recognized['provider'],recognized['reference_id'],json.dumps(recognized)))
                 if row['show_key']:catalog.propagate_series(c,row['show_key'],recognized)
@@ -194,6 +188,13 @@ class Service:
                         own=json.loads(peer['meta']);own.update(kind='series',episode_title=own['title'])
                         for key in ('title','year','provider','reference_id','poster','genres','genre_source'):own[key]=recognized.get(key)
                         catalog.save_metadata(c,peer['id'],own,'identified')
+            # Boost siblings only once their work identities have been propagated.
+            if (recognized['kind']=='series' and self.settings().get('complete_series',True) and
+                recognized.get('reference_id') and
+                metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])):
+                show=catalog.showkey(recognized)
+                if catalog.focus_series(c,show):
+                    diagnostics.event('series_completion_queued',show_key=show,limit=24)
             # Programme data of a Sendereihe rarely changes; daily rechecks of every episode would only load the Mediathek.
             if outcome=='identified':c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+(30*86400 if recognized.get('provider') in broadcaster.PROVIDERS else 86400),dest))
         else:
