@@ -1,6 +1,10 @@
 # Änderungsverlauf – MediathekAtlas
 
 ## 0.5.23 Preview – 8. November 2026
+- Build 47: IMDb Offline im Katalog-/Metadaten-Dashboard mit letztem erfolgreichem Archivaufbau, nächstem Versuch und letztem Fehler. Aufklappbare Übersicht über alle sieben IMDb-Dateien inklusive Datensatzumfang und Übernahmezeitpunkt.
+- Nach erfolgreichem IMDb-Aufbau werden die Einzelzahlen und Dateizeitpunkte in der Snapshot-Datenbank persistiert, auch über Anwendungsneustarts hinweg.
+- Vorhandene ältere IMDb-Archive bleiben ohne vollständigen Reimport verwendbar; damals nicht gespeicherte Datensatzdetails werden nicht geschätzt.
+- Neue Regressionstests für erfolgreiche/fehlgeschlagene Updates und Kompatibilität alter IMDb-Snapshots.
 - Build 46: Kompakte Statuskarten ohne Mindesthöhe, acht Kennzahlen in einer Reihe bei breiten Inhaltsflächen; Anbieter als horizontale Statusfelder und dichtere Importleiste. Tablet-/Fensterbreiten wechseln automatisch auf vier bzw. zwei Spalten.
 - Katalog-/Metadatenstatus als responsive Kennzahl-Karten und kompakte Anbieterfelder, statt langer Statuszeilen.
 - Download-Dateiprüfung: „Datei am ursprünglichen Pfad nicht gefunden“ ist ein wiederherstellbarer Verfügbarkeitszustand, **kein** Downloadfehler.
