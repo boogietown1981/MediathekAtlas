@@ -83,7 +83,7 @@ function episodeRow(e,s){
  body.append(el('h3',(Number.isInteger(m.episode)?m.episode+'. ':'')+title));
  const meta=[minutes(r.duration),r.channel,e.best?.quality?e.best.quality+(e.best.height_hint?' '+e.best.height_hint+'p':''):'',e.special||'',r.timestamp?new Date(r.timestamp*1000).toLocaleDateString('de-DE'):''].filter(Boolean).join(' · ');
  body.append(el('p',meta,'tv-epmeta'));
- const status=el('p',meshDownloadLabel(e.mesh_download)+(e.downloaded&&!e.mesh_download?'✓ Heruntergeladen · ':'')+stateLabel(e.state)+(e.available?'':' · nicht mehr gelistet'),'badge');body.append(status);
+ const status=el('p',meshDownloadLabel(e.mesh_download)+(e.downloaded&&!e.mesh_download?(e.file_state==='missing'?'⚠ Lokale Datei verschoben · ':'✓ Heruntergeladen · '):'')+stateLabel(e.state)+(e.available?'':' · nicht mehr gelistet'),'badge');body.append(status);
  const desc=m.description||r.description||'';if(desc&&desc!==s.show_description)body.append(el('p',desc,'tv-epdesc'));
  const actions=el('div',undefined,'tv-epactions'),load=el('button',e.available?'↓ Prüfen & laden':'Metadaten ansehen');load.onclick=()=>edit(e);actions.append(load);
  if((e.offer_count||1)>1)actions.append(versionsDetails(e));
