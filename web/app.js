@@ -146,7 +146,31 @@ $('pause-log').onclick=()=>{logPaused=!logPaused;$('pause-log').textContent=logP
 $('export-log').onclick=e=>busy(e.target,async()=>{const r=await request('diagnostics');if(!r.ok)throw Error('Diagnoseexport fehlgeschlagen');const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='MediathekAtlas_Diagnose_'+new Date().toISOString().replace(/[:.]/g,'-')+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);});
 renderTree([]);loadCatalog();loadTree();refresh().catch(connectionError);setInterval(()=>{refresh().catch(connectionError);refreshLog();},2500);
 
-function renderMetadata(m={},settings={},pauses={}){const labels={checking:'Prüft gerade',result:'Letztes Ergebnis',waiting:'Wartet auf fällige Einträge',paused:'Pausiert',error:'Abgleichfehler'};const outcomes={matched:'vollständig zugeordnet',identified:'Werk erkannt; Dateizuordnung offen',review:'Zuordnung prüfen',retry:'Wiederholung vorgemerkt'};$('metadata-status').textContent=(labels[m.phase]||'Wird gestartet')+(m.title?' · '+m.title:'')+(m.outcome?' · '+outcomes[m.outcome]:'')+' · '+(m.checked_session||0)+' Abgleiche seit Start'+(visibleWarnings(m.warnings).length?' · '+visibleWarnings(m.warnings).join(' '):'')+(m.error?' · '+m.error:'');$('provider-status').textContent='TMDB: '+(settings.tmdb_set?'eingerichtet':'kein Schlüssel')+' · OMDb: '+(pauses.omdb?.paused?'pausiert · noch '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min. · nächster Versuch '+new Date(pauses.omdb.retry_at*1000).toLocaleTimeString('de-DE'):(settings.omdb_set?'eingerichtet':'kein Schlüssel'))+' · TVDB: '+(settings.tvdb_set?'eingerichtet':'kein Schlüssel')+' · Wikidata: kostenlose Rückfallquelle'+(settings.auto_metadata?'':' · Automatischer Abgleich ist ausgeschaltet');const checked=(m.provider_checks||[]).filter(x=>x.status!=='not_configured'&&x.status!=='paused').map(x=>x.provider+': '+(x.status==='error'?'Abfragefehler':x.count+' Treffer'));if(checked.length)$('provider-status').textContent+=' | Letzter Abgleich'+(m.from_cache?' (Cache)':'')+': '+checked.join(' · ');}
+function renderMetadata(m={},settings={},pauses={}){
+ const labels={checking:'Prüft gerade',result:'Letztes Ergebnis',waiting:'Wartet auf fällige Einträge',paused:'Pausiert',error:'Abgleichfehler'};
+ const outcomes={matched:'Vollständig zugeordnet',identified:'Werk erkannt – Folge offen',review:'Zuordnung prüfen',retry:'Wiederholung vorgesehen'};
+ const current=$('metadata-status');
+ current.replaceChildren();
+ const name=el('strong',(labels[m.phase]||'Wird gestartet')+(m.title?' · '+m.title:''),'atlas-current-title');
+ const summary=el('small',(m.outcome?outcomes[m.outcome]+' · ':'')+countLabel(m.checked_session||0)+' Abgleiche seit Start');
+ current.append(name,summary);
+ const warnings=visibleWarnings(m.warnings);
+ if(warnings.length||m.error)current.append(el('small',warnings.join(' ')+' '+(m.error||''),'atlas-current-warning'));
+ const host=$('provider-status');host.replaceChildren();host.className='atlas-provider-grid';
+ const providers=[
+  ['TMDB',settings.tmdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tmdb_set],
+  ['TVDB',settings.tvdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tvdb_set],
+  ['OMDb',pauses.omdb?.paused?'Pausiert · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
+  ['Wikidata','Kostenlose Rückfallquelle',true]
+ ];
+ for(const [label,status,good] of providers){
+   const cell=el('span',undefined,'atlas-provider'+(good?' enabled':''));
+   cell.append(el('strong',label),el('small',status));host.append(cell);
+ }
+ const checked=(m.provider_checks||[]).filter(x=>x.status!=='not_configured'&&x.status!=='paused').map(x=>x.provider+': '+(x.status==='error'?'Fehler':x.status==='negative_cache'?'Nichttreffer-Cache':x.count+' Treffer'));
+ if(checked.length)host.append(el('small','Letzte Abfragen'+(m.from_cache?' · Cache':'')+': '+checked.join(' · '),'atlas-provider-last'));
+ if(!settings.auto_metadata)host.append(el('small','Automatischer Abgleich ausgeschaltet','atlas-provider-last'));
+}
 $('collection-filter').onchange=()=>{filters.kind=$('collection-filter').value==='cinema'?'movie':$('collection-filter').value==='series'?'series':filters.kind;filters.show='';filters.genre='';offset=0;loadCatalog().catch(e=>notice(e.message,'error'));};
 $('download-filter').onchange=$('state-filter').onchange=$('sort-filter').onchange=()=>{offset=0;loadCatalog().catch(e=>notice(e.message,'error'));};
 $('priority-metadata').onclick=e=>busy(e.target,async()=>{const d=await api('metadata-priority',{ids:items.map(x=>x.work_id),show:filters.show});notice(d.queued+' Einträge priorisiert.'+(d.enabled?'':' Bitte automatischen Metadatenabgleich in Einstellungen einschalten.'));});
