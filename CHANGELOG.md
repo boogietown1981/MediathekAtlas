@@ -1,5 +1,16 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.22 Preview – 8. November 2026
+- Nutzerauswahl: ausgewogene Film-/Serienprüfung, Filme zuerst oder Serien zuerst; manuelle Prioritäten bleiben vorrangig.
+- Serienvervollständigung: begrenzter Fokus auf bis zu 24 weitere fällige Folgen, ohne unbegrenzte Massenanfragen.
+- Ungenutzte automatische Serienpriorisierung beim Öffnen der Serienseite entfernt.
+- Erstprüfungen vor regulären Wiederholungen, persistente Versuchszähler auch bei Zusammenführungen, echte Erstprüfungsrate und Restlaufzeit in der Statusanzeige.
+- Dauerhafter, anbieterspezifischer Nichttreffer-Cache (nur erfolgreiche leere Antworten, niemals Anbieterstörungen); manuelle Suchvorgänge umgehen den Cache.
+- Identische Senderangebote werden nur bei exakter technischer Medienidentität gemeinsam angezeigt. Unterschiedliche Medien und Audiodeskription bleiben getrennt.
+- Neu: automatisierte Tests der Scheduler-Modi, Caches, Medienidentität und Netto-Statistik.
+
+
+
 ## 0.5.21 Preview – 7. November 2026
 - Konservative Filmdubletten-Erkennung über eindeutige Anbieterkennung oder bestätigten Titel, Produktionsjahr und vergleichbare Laufzeit.
 - Beim Zusammenführen bleiben verfügbare Genres aus geprüften Quellen, Senderangebote, Downloadbelege und manuelle Änderungen erhalten.
