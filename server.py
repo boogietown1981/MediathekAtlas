@@ -471,7 +471,8 @@ class Handler(BaseHTTPRequestHandler):
                 config=settings()
                 cachekey=hashlib.sha256(json.dumps(['v045',config.get('imdb_generation'),d['id'],d['metadata'],config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True).encode()).hexdigest()
                 with db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(cachekey,time.time()-86400)).fetchone()
-                if cached:return self.send(json.loads(cached[0]))
+                # A user-triggered search must bypass old provider results and negative caches.
+                # The automatic worker still uses the separate 24h metadata cache.
                 result=core.candidates(record(d['id']),d['metadata'],{**config,'_force_provider_refresh':True})
                 if not result['warnings'] and not result.get('deferred_providers'):
                     with db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(cachekey,json.dumps(result),time.time()))
