@@ -109,7 +109,7 @@ function versionRow(a,onPick){
 
 async function openMovie(item){
  const seq=++titleSequence;showTitleView();pushTitle();titleState={kind:'movie',item,selected:item,versions:null};renderMovie();
- if((item.offer_count||1)>1){try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));if(seq!==titleSequence||!titleState)return;titleState.versions=d.items;titleState.selected=d.items.find(a=>a.id===item.id)||d.items[0]||item;renderMovie();}catch(e){notice(e.message,'error');}}
+ if((item.offer_count||1)>1){try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));if(seq!==titleSequence||!titleState)return;titleState.versions=d.items;titleState.selected=d.items.find(a=>a.offer_ids?.includes(item.id))||d.items[0]||item;renderMovie();}catch(e){notice(e.message,'error');}}
  const m=item.metadata;if(!m.fanart||!m.poster)api('artwork-priority',{ids:[item.work_id]}).catch(()=>{});
 }
 function renderMovie(){
