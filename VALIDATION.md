@@ -1,5 +1,16 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.22 · Intelligenter Scheduler, Serienfokus und sichere Angebotsgruppen (8. November 2026)
+
+- `tests/test_v0522.py` verifiziert Filme-zuerst/Serien-zuerst, Vorrang manueller Prüfaufträge, Erstprüfungen vor Wiederholungen, begrenzten Serienfokus und Netto-Erstprüfungsrate.
+- Verifizierte Nichttreffer bleiben über einen Neustart erhalten. Ein anderer API-Schlüssel, ein anderes Produktionsjahr und ein manueller Refresh dürfen einen Nichttreffer nicht blind wiederverwenden. Fehler/Timeouts werden nicht negativ zwischengespeichert.
+- Zwei Angebote mit exakt denselben Medien-URLs und Fassungsdaten erscheinen gemeinsam, ohne Angebote aus der Datenbank zu entfernen. Unterschiede bei Audiodeskription und signierten URL-Parametern verhindern Gruppierung.
+- Die Serien-Detailansicht löst keine Massen-Neuabfrage beim Öffnen aus. Der Benutzerknopf bleibt erhalten.
+- Ältere Tests zu Nichttreffern/Retry-Zeiten aktualisiert. Kompatibilitätsprüfungen für Python 3.9/3.13 und NAS-/macOS-Build via CI.
+- Die tatsächliche Durchsatzsteigerung und Prognosegenauigkeit müssen mit einem vergleichbaren Nutzerdiagnoseexport geprüft werden.
+
+
+
 ## 0.5.21 · Sicheres Zusammenführen doppelter Filme (7. November 2026)
 
 - `tests/test_v0521.py`: „Der Rausch“ wird bei unabhängigen verifizierten Quellen, identischem Jahr und passender Laufzeit zu einem Film mit beiden Genres. Sämtliche Senderangebote bleiben erhalten.
