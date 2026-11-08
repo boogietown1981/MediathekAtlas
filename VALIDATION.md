@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.23 · Status-Dashboard und resiliente lokale Downloadverwaltung (8. November 2026)
+
+- `tests/test_v0523.py`: Datei umbenannt/verschoben, Ordner vorübergehend getrennt, Dateipfad wieder verknüpfen und Downloadhistorie beibehalten.
+- Sicherheitsprüfungen: kein Datei-Zugriff außerhalb explizit erlaubter Bibliotheksordner; Symlink-Ausbruch verweigert; unerwartete Dateigröße blockiert; mehrdeutige Suchtreffer werden nicht automatisch verknüpft.
+- Serverseitiger Dateistatus wird separat von dem dauerhaft gespeicherten Downloadauftrag geführt; fehlende Datei löscht keine Werkzuordnung.
+- Statische JS-Syntaxprüfung und responsive HTML/CSS-Einbindung; alle Plattformtests und macOS/SPK/QPKG-Paketinhalt über GitHub CI.
+- Feldtest: Benutzer verschiebt einen fertigen Film in einen anderen Bibliotheksordner und verknüpft ihn über die Downloads-Karte erneut. Der Status darf zu keinem Zeitpunkt den Katalog- oder Downloadbereich blockieren.
+
+
+
 ## 0.5.22 · Intelligenter Scheduler, Serienfokus und sichere Angebotsgruppen (8. November 2026)
 
 - `tests/test_v0522.py` verifiziert Filme-zuerst/Serien-zuerst, Vorrang manueller Prüfaufträge, Erstprüfungen vor Wiederholungen, begrenzten Serienfokus und Netto-Erstprüfungsrate.
