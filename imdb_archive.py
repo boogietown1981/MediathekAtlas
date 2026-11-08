@@ -14,7 +14,44 @@ HEADERS={
  'people':['nconst','primaryName','birthYear','deathYear','primaryProfession','knownForTitles']}
 FILES={k:('name.basics' if k=='people' else 'title.'+k)+'.tsv.gz' for k in HEADERS}
 VERSION=2
+DATASET_LABELS={
+ 'basics':'Titel, Laufzeit und Genres',
+ 'ratings':'Bewertungen und Stimmen',
+ 'episode':'Serienepisoden und Staffelnummern',
+ 'akas':'Internationale Alternativtitel',
+ 'crew':'Regie und Drehbuch',
+ 'principals':'Hauptbesetzung und Mitwirkende',
+ 'people':'Personennamen und Berufe'
+}
+DATASET_TABLES={
+ 'basics':'title_basics','ratings':'title_ratings','episode':'title_episode',
+ 'akas':'title_akas','crew':'title_crew','principals':'title_principals','people':'name_basics'
+}
 ACTIVE=None
+
+def read_snapshot_details(c):
+    """Persistent source manifest; old archives stay readable with unknown row counts."""
+    names={r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    has_details=any(r[1]=='details' for r in c.execute("PRAGMA table_info(snapshot)"))
+    saved={}
+    if has_details:
+        row=c.execute('SELECT details FROM snapshot LIMIT 1').fetchone()
+        try:saved=json.loads(row[0]) if row and row[0] else {}
+        except (ValueError,TypeError):saved={}
+    datasets=saved.get('datasets') if isinstance(saved,dict) else None
+    if not isinstance(datasets,dict):datasets={}
+    out=[]
+    for name,label in DATASET_LABELS.items():
+        values=datasets.get(name) or {}
+        if not isinstance(values,dict):values={}
+        rows=values.get('rows')
+        fetched=values.get('retrieved_at')
+        out.append({'key':name,'label':label,'file':FILES[name],
+                    'available':DATASET_TABLES[name] in names,
+                    'rows':rows if isinstance(rows,int) and rows>=0 else None,
+                    'retrieved_at':fetched if isinstance(fetched,(float,int)) and fetched>0 else None})
+    return out
+
 
 def norm(s):
     return ' '.join(re.sub(r'[^\w]+',' ',unicodedata.normalize('NFKC',s or '').casefold().replace('&',' und ')).split())
@@ -23,7 +60,7 @@ def number(s):return None if s in (None,'\\N','') else int(s)
 def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
     c=sqlite3.connect(path)
     try:
-        c.executescript('PRAGMA journal_mode=DELETE; PRAGMA temp_store=FILE; PRAGMA cache_size=-32768; CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,originalTitle TEXT,isAdult INTEGER,startYear INTEGER,endYear INTEGER,runtimeMinutes INTEGER,genres TEXT); CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER); CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER); CREATE TABLE names(name TEXT,tconst TEXT,title TEXT,localized INTEGER); CREATE TABLE title_akas(titleId TEXT,ordering INTEGER,title TEXT,region TEXT,language TEXT,types TEXT,attributes TEXT,isOriginalTitle INTEGER); CREATE TABLE title_crew(tconst TEXT PRIMARY KEY,directors TEXT,writers TEXT); CREATE TABLE title_principals(tconst TEXT,ordering INTEGER,nconst TEXT,category TEXT,job TEXT,characters TEXT); CREATE TABLE name_basics(nconst TEXT PRIMARY KEY,primaryName TEXT,birthYear INTEGER,deathYear INTEGER,primaryProfession TEXT,knownForTitles TEXT); CREATE TABLE snapshot(updated REAL); PRAGMA user_version=2;')
+        c.executescript('PRAGMA journal_mode=DELETE; PRAGMA temp_store=FILE; PRAGMA cache_size=-32768; CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,originalTitle TEXT,isAdult INTEGER,startYear INTEGER,endYear INTEGER,runtimeMinutes INTEGER,genres TEXT); CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER); CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER); CREATE TABLE names(name TEXT,tconst TEXT,title TEXT,localized INTEGER); CREATE TABLE title_akas(titleId TEXT,ordering INTEGER,title TEXT,region TEXT,language TEXT,types TEXT,attributes TEXT,isOriginalTitle INTEGER); CREATE TABLE title_crew(tconst TEXT PRIMARY KEY,directors TEXT,writers TEXT); CREATE TABLE title_principals(tconst TEXT,ordering INTEGER,nconst TEXT,category TEXT,job TEXT,characters TEXT); CREATE TABLE name_basics(nconst TEXT PRIMARY KEY,primaryName TEXT,birthYear INTEGER,deathYear INTEGER,primaryProfession TEXT,knownForTitles TEXT); CREATE TABLE snapshot(updated REAL,details TEXT); PRAGMA user_version=2;')
         counts={}
         for kind in HEADERS:
             rows=[];names=[];count=0
@@ -53,7 +90,9 @@ def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
         c.set_progress_handler(lambda:int(cancelled()),10000)
         c.executescript('CREATE INDEX principals_title ON title_principals(tconst,ordering); CREATE INDEX name_lookup ON names(name); CREATE INDEX episode_parent ON title_episode(parentTconst,seasonNumber,episodeNumber);')
         if c.execute('PRAGMA quick_check').fetchone()[0]!='ok':raise ValueError('IMDb-Datenbankprüfung fehlgeschlagen')
-        c.execute('INSERT INTO snapshot VALUES(?)',(time.time(),));c.commit()
+        details={'datasets':{kind:{'rows':count,'retrieved_at':files[kind].stat().st_mtime}
+                            for kind,count in counts.items()},'metadata_version':1}
+        c.execute('INSERT INTO snapshot VALUES(?,?)',(time.time(),json.dumps(details,separators=(',',':'))));c.commit()
         return counts
     finally:c.close()
 
@@ -68,16 +107,29 @@ class Archive:
         self.path=self.root/'imdb_archive.db';self.stop=stop;self.on_update=on_update
         self._reader_local=threading.local()  # one read-only connection and bounded caches per worker
         self._metrics_lock=threading.Lock();self._metrics={'reader_opens':0,'query_hits':0,'query_misses':0,'credits_hits':0,'credits_misses':0}
-        self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0
+        self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0;self.dataset_details=[]
         if self.path.exists():
             try:
-                with sqlite3.connect(self.path) as c:self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0];self.state={'phase':'ready'};self.version=c.execute('PRAGMA user_version').fetchone()[0]
+                with sqlite3.connect(self.path) as c:
+                    self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0]
+                    self.dataset_details=read_snapshot_details(c)
+                    self.state={'phase':'ready'}
+                    self.version=c.execute('PRAGMA user_version').fetchone()[0]
             except sqlite3.Error:self.state={'phase':'error','error':'Vorhandenes IMDb-Archiv nicht lesbar'}
     def _count(self,kind):
         with self._metrics_lock:self._metrics[kind]+=1
     def status(self):
         with self._metrics_lock:performance=dict(self._metrics)
-        with self.lock:return {**self.state,'updated':self.updated,'next_update':max(self.updated+WEEK if self.version==VERSION else 0,self.retry_at) if self.updated or self.retry_at else None,'ready':bool(self.updated),'path':str(self.path),'performance':performance}
+        with self.lock:
+            state={**self.state}
+            updated=self.updated;version=self.version;retry_at=self.retry_at
+            datasets=[dict(entry) for entry in self.dataset_details]
+        try:size=self.path.stat().st_size if updated else 0
+        except OSError:size=0
+        return {**state,'updated':updated,
+                'next_update':max(updated+WEEK if version==VERSION else 0,retry_at) if updated or retry_at else None,
+                'ready':bool(updated),'path':str(self.path),'performance':performance,
+                'datasets':datasets,'archive_bytes':size,'archive_version':version}
     def progress(self,**kw):
         with self.lock:self.state.update(kw)
     def request(self):
@@ -130,8 +182,14 @@ class Archive:
             if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
             with staging.open('rb') as f:os.fsync(f.fileno())
             os.replace(staging,self.path)
-            with sqlite3.connect(self.path) as c:self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0]
-            self.version=VERSION;self.retry_at=0;self.failures=0;done=True;self.progress(phase='ready',counts=counts,error='')
+            with sqlite3.connect(self.path) as c:
+                updated=c.execute('SELECT updated FROM snapshot').fetchone()[0]
+                details=read_snapshot_details(c)
+            with self.lock:
+                self.updated=updated
+                self.dataset_details=details
+                self.version=VERSION;self.retry_at=0;self.failures=0
+            done=True;self.progress(phase='ready',counts=counts,error='')
             diagnostics.event('imdb_archive_updated',counts=counts)
             self.on_update()
         except Exception as e:
