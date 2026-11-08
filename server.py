@@ -2,7 +2,7 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork
+import metadata,provider_stats,imdb_archive,artwork,negative_cache
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming
 from version import VERSION
 from contextlib import contextmanager
@@ -26,6 +26,7 @@ if __name__=='__main__':
         raise SystemExit(0)
 diagnostics.setup(ROOT)
 metadata.configure_provider_state(ROOT/'provider-pauses.json')
+negative_cache.configure(ROOT/'provider-negative.sqlite')
 diagnostics.event('application_start',version=VERSION,network=NETWORK,managed=MANAGED or None)
 ACCESS=access.Access(ROOT,[DEFAULT_DOWNLOAD_DIR]) if NETWORK else None
 TOKEN=secrets.token_urlsafe(32);STOP=threading.Event()
@@ -51,7 +52,7 @@ def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
-    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
     with db() as c:
@@ -167,7 +168,11 @@ def catalog_status():
         _STATUS_CACHE=snapshot
     # A concurrent metadata save can invalidate the shared cache at any point.
     # Return our complete local snapshot, never the newly emptied shared cache.
-    return {**snapshot[1],'sync':SERVICE.current or snapshot[1].get('sync',{})}
+    scan=SERVICE.scan_progress()
+    left=snapshot[1].get('first_pass_remaining',0)
+    rpm=scan['first_pass_per_minute']
+    return {**snapshot[1],**scan,'first_pass_eta_hours':round(left/rpm/60,1) if rpm>0 else None,
+            'sync':SERVICE.current or snapshot[1].get('sync',{})}
 
 def downloads_range(header,size):
     """Single byte range from a Range header: None for the whole file, 'invalid' when unsatisfiable."""
@@ -292,7 +297,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
                               'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     # Finished downloads are served over HTTP so a browser on another device can fetch them;
     # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
@@ -467,7 +472,7 @@ class Handler(BaseHTTPRequestHandler):
                 cachekey=hashlib.sha256(json.dumps(['v045',config.get('imdb_generation'),d['id'],d['metadata'],config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True).encode()).hexdigest()
                 with db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(cachekey,time.time()-86400)).fetchone()
                 if cached:return self.send(json.loads(cached[0]))
-                result=core.candidates(record(d['id']),d['metadata'],config)
+                result=core.candidates(record(d['id']),d['metadata'],{**config,'_force_provider_refresh':True})
                 if not result['warnings'] and not result.get('deferred_providers'):
                     with db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(cachekey,json.dumps(result),time.time()))
                 return self.send(result)
@@ -481,8 +486,12 @@ class Handler(BaseHTTPRequestHandler):
                 for k in ('tmdb','omdb','tvdb','tvdb_pin'):
                     if k in d and d[k].strip():s[k]=d[k].strip()
                     if d.get('clear_'+k):s[k]=''
-                for k in ('auto_catalog','auto_metadata'):
+                for k in ('auto_catalog','auto_metadata','complete_series'):
                     if k in d:s[k]=bool(d[k])
+                if 'scan_priority' in d:
+                    if d['scan_priority'] not in ('balanced','movies_first','series_first'):
+                        raise ValueError('Unbekannte Scan-Priorität')
+                    s['scan_priority']=d['scan_priority']
                 if 'mesh_dir' in d:
                     folder=str(d['mesh_dir'] or '').strip()
                     # Validates mount and marker; only an explicit request prepares a non-MeshSync folder.
