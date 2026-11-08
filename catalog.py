@@ -209,7 +209,18 @@ def mark_downloaded(c,job):
     source_id=job.get('source',{}).get('_id')
     found=c.execute('SELECT work_id FROM offers WHERE id=?',(source_id,)).fetchone()
     if found:identities.add(found[0])
-    for identity in identities:c.execute('INSERT OR REPLACE INTO downloaded_items VALUES(?,?,?)',(identity,job.get('path') or job.get('target'),time.time()))
+    path=job.get('path') or job.get('target') or ''
+    # A stale completed job may be replayed at startup after the user has moved
+    # and re-linked the movie. Never replace an existing usable link with an
+    # older path that cannot be found. Preserve unavailable references as well
+    # until a verified replacement exists.
+    from pathlib import Path
+    try:valid=bool(path and Path(path).is_file())
+    except OSError:valid=False
+    for identity in identities:
+        previous=c.execute('SELECT path FROM downloaded_items WHERE identity=?',(identity,)).fetchone()
+        if previous and previous[0] and previous[0]!=path and not valid:continue
+        c.execute('INSERT OR REPLACE INTO downloaded_items VALUES(?,?,?)',(identity,path,time.time()))
 
 def mesh_download_row(c,meta,work_id=None):
     """Latest Verbund download record for a title: by download identity, else by the sender's work IDs."""
