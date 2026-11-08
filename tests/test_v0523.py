@@ -52,6 +52,19 @@ class MovedMediaTests(unittest.TestCase):
         after=catalog.item(self.c,self.c.execute('SELECT * FROM works').fetchone())
         self.assertEqual((after['downloaded'],after['file_state']),(True,'available'))
         self.assertEqual(self.c.execute('SELECT COUNT(*) FROM offers').fetchone()[0],1)
+    def test_restart_replay_does_not_undo_relinked_location(self):
+        self.old.rename(self.new)
+        allowed=local_library.roots({'download_dir':str(self.old.parent),'library_dirs':[str(self.new.parent)]})
+        local_library.relink(self.c,'a1',str(self.new),allowed)
+        # A stale completed job from an older run points at the missing original.
+        catalog.mark_downloaded(self.c,self.job)
+        linked=self.c.execute('SELECT path FROM downloaded_items WHERE identity=?',(self.wid,)).fetchone()[0]
+        self.assertEqual(linked,str(self.new.resolve()))
+        # A disconnected disk must not be treated as deletion either.
+        self.new.unlink()
+        catalog.mark_downloaded(self.c,self.job)
+        self.assertEqual(self.c.execute('SELECT path FROM downloaded_items WHERE identity=?',(self.wid,)).fetchone()[0],linked)
+
     def test_offline_volume_preserves_download_history(self):
         self.old.unlink()
         local_library.invalidate(self.old)
