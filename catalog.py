@@ -352,7 +352,7 @@ def save_metadata(c,wid,m,state='manual'):
     original_dest=canonical(m) or wid
     alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(original_dest,)).fetchone()
     dest=alias[0] if alias else original_dest
-    old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
+    old=c.execute('SELECT state,meta,attempts,next_try FROM works WHERE id=?',(dest,)).fetchone()
     if old and old['state']=='manual' and state!='manual':
         m=json.loads(old['meta']);state='manual'
     elif old and old['state']=='matched' and state=='identified':
@@ -369,7 +369,16 @@ def save_metadata(c,wid,m,state='manual'):
             combined=normalized_genres(incoming+list(previous_dest.get('genres') or []))
             m['genres']=combined
             if len(combined)>len(incoming):m['genre_source']='Mehrere bestätigte Quellen'
-    c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,meta=excluded.meta,state=excluded.state,updated=excluded.updated',(dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time()))
+    # Retain attempt history when a provisional work moves to a canonical ID.
+    # Otherwise every merge silently turns a repeat into an apparent first pass.
+    seen_attempts=max(int(row['attempts'] or 0),int(old['attempts'] or 0) if old else 0)
+    due=max(float(row['next_try'] or 0),float(old['next_try'] or 0) if old else 0)
+    c.execute("""INSERT INTO works(id,title,kind,year,show_key,meta,state,updated,attempts,next_try)
+        VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+        title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,
+        meta=excluded.meta,state=excluded.state,updated=excluded.updated,
+        attempts=MAX(works.attempts,excluded.attempts)""",
+        (dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time(),seen_attempts,due))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
     m['genres']=normalized_genres(m.get('genres'))
     c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),dest))
