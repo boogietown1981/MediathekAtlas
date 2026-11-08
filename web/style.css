@@ -179,3 +179,15 @@ dialog.player::backdrop{background:#000c}
 .job-file-missing input{margin:0;font-size:12px;padding:10px}
 .job-file-missing button{width:auto!important;margin:0!important}
 .job-file-missing .job-file-actions{display:flex;gap:8px;flex-wrap:wrap}
+
+/* Compact provider checks inside the right-hand dashboard pane. */
+.atlas-provider-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+.atlas-provider{display:flex;flex-direction:column;gap:5px;border:1px solid #2a3947;border-radius:8px;padding:9px 10px;background:#121e2a;min-width:0}
+.atlas-provider strong{font-size:11px;color:#dce9ec}
+.atlas-provider.enabled strong{color:#81dfc5}
+.atlas-provider small{font-size:10px;line-height:1.45}
+.atlas-provider-last{grid-column:1/-1;line-height:1.5;color:#9eb8c8}
+.atlas-current-title{font-size:13px;color:#d1edf0;display:block;line-height:1.55;overflow-wrap:anywhere}
+#metadata-status>small{display:block;margin-top:5px}
+.atlas-current-warning{color:#f2c491}
+@media(max-width:600px){.atlas-provider-grid{grid-template-columns:1fr 1fr}}
