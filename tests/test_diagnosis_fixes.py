@@ -29,7 +29,7 @@ class RetryTests(unittest.TestCase):
   deferred={'warnings':[],'deferred_providers':['OMDb']}
   self.assertEqual([catalog_service.retry_delay(n,deferred) for n in range(1,8)],[3600,7200,14400,28800,57600,86400,86400])
  def test_real_errors_still_retry_hourly(self):
-  self.assertEqual(catalog_service.retry_delay(9,{'warnings':['TMDB: Zeitüberschreitung'],'deferred_providers':['OMDb']}),21600)
+  self.assertEqual(catalog_service.retry_delay(9,{'warnings':['TMDB: Zeitüberschreitung'],'deferred_providers':['OMDb']}),14400)
   self.assertEqual(catalog_service.retry_delay(1,{'warnings':[],'deferred_providers':[]}),3*86400)
  def test_unresolved_work_scheduled_with_backoff(self):
   with tempfile.TemporaryDirectory() as root:
