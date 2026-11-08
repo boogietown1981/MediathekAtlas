@@ -44,7 +44,7 @@ function creditInfo(credits){return [['Regie',(credits.directors||[]).join(', ')
 
 async function openShow(show,focusWork){
  if(!show)return;const seq=++titleSequence;showTitleView();pushTitle();const host=$('title-view');host.replaceChildren(el('p','Serie wird geladen …','muted tv-loading'));
- api('metadata-priority',{show}).catch(()=>{});
+ // Opening a series page never queues hundreds of automatic rechecks.
  let d;try{d=await api('show?'+new URLSearchParams({show,archive:filters.archive?'1':'0'}));}catch(e){if(seq===titleSequence){host.replaceChildren(el('p','Serie konnte nicht geladen werden: '+e.message,'empty'));const b=el('button','← Zurück zum Katalog');b.onclick=()=>closeTitleView();host.append(b);}return;}
  if(seq!==titleSequence)return;
  const s=d.show;if((!s.show_description||!s.fanart)&&d.work_ids.length)api('artwork-priority',{ids:d.work_ids.slice(0,3)}).catch(()=>{});
