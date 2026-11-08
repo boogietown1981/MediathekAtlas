@@ -1,5 +1,15 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.23 Preview – 8. November 2026
+- Katalog-/Metadatenstatus als responsive Kennzahl-Karten und kompakte Anbieterfelder, statt langer Statuszeilen.
+- Download-Dateiprüfung: „Datei am ursprünglichen Pfad nicht gefunden“ ist ein wiederherstellbarer Verfügbarkeitszustand, **kein** Downloadfehler.
+- Benutzerinitiierte Suche nach verschobenen Videos in freigegebenen Ordnern und sichere Neuverknüpfung mit Dateigrößenprüfung.
+- Downloadhistorie, Metadaten, Angebote und Auftragsstatus bleiben auch bei nicht verbundenen oder verschobenen Datenträgern erhalten.
+- Zusätzliche Bibliotheksordner in den Einstellungen. Die automatische Suche ist begrenzt, überprüft keine beliebigen Verzeichnisse und folgt keinen Verzeichnis-Symlinks.
+- Regressionstests für verlorene Speicherorte, wiederhergestellte Dateiverknüpfungen und Schutz vor falschen Verknüpfungen.
+
+
+
 ## 0.5.22 Preview – 8. November 2026
 - Nutzerauswahl: ausgewogene Film-/Serienprüfung, Filme zuerst oder Serien zuerst; manuelle Prioritäten bleiben vorrangig.
 - Serienvervollständigung: begrenzter Fokus auf bis zu 24 weitere fällige Folgen, ohne unbegrenzte Massenanfragen.
