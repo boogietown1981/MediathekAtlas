@@ -168,9 +168,9 @@ def catalog_status():
         _STATUS_CACHE=snapshot
     # A concurrent metadata save can invalidate the shared cache at any point.
     # Return our complete local snapshot, never the newly emptied shared cache.
-    scan=SERVICE.scan_progress()
+    scan=SERVICE.scan_progress() if hasattr(SERVICE,'scan_progress') else {}
     left=snapshot[1].get('first_pass_remaining',0)
-    rpm=scan['first_pass_per_minute']
+    rpm=scan.get('first_pass_per_minute',0)
     return {**snapshot[1],**scan,'first_pass_eta_hours':round(left/rpm/60,1) if rpm>0 else None,
             'sync':SERVICE.current or snapshot[1].get('sync',{})}
 
