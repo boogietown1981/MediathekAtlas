@@ -2,6 +2,8 @@
 
 ## 0.5.23 · Status-Dashboard und resiliente lokale Downloadverwaltung (8. November 2026)
 
+- Build 46: Responsives CSS mit Container-Queries, acht Kennzahlen-Spalten bei Inhaltsbreiten ab 1320px, vier im mittleren und zwei im schmalen Fenster; keine festen Mindesthöhen. Anbieter-Status passt sich an den Platz an.
+
 - `tests/test_v0523.py`: Datei umbenannt/verschoben, Ordner vorübergehend getrennt, Dateipfad wieder verknüpfen und Downloadhistorie beibehalten.
 - Sicherheitsprüfungen: kein Datei-Zugriff außerhalb explizit erlaubter Bibliotheksordner; Symlink-Ausbruch verweigert; unerwartete Dateigröße blockiert; mehrdeutige Suchtreffer werden nicht automatisch verknüpft.
 - Serverseitiger Dateistatus wird separat von dem dauerhaft gespeicherten Downloadauftrag geführt; fehlende Datei löscht keine Werkzuordnung.
