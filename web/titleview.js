@@ -98,7 +98,7 @@ function versionsDetails(item,onPick){
 }
 function versionLabel(a){const best=(a.links||[])[0];return [(a.source.channel||'Quelle'),a.special||'Regulär',best?best.quality+(best.height_hint?' '+best.height_hint+'p':''):'',a.available?'':'nicht mehr gelistet'].filter(Boolean).join(' · ');}
 function versionRow(a,onPick){
- const box=el('div',undefined,'alternative tv-version');box.append(el('strong',versionLabel(a)));
+ const box=el('div',undefined,'alternative tv-version');box.append(el('strong',versionLabel(a)+(a.same_media_count>1?' · '+a.same_media_count+' identische Katalogeinträge gebündelt':'')));
  if(a.source.duration)box.append(el('small',minutes(a.source.duration)));
  const actions=el('div',undefined,'tv-epactions');
  if(canPlay()&&a.available)actions.append(playButton(a,'Abspielen',false));
