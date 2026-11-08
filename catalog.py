@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS offers(id TEXT PRIMARY KEY,work_id TEXT,payload TEXT,
 CREATE INDEX IF NOT EXISTS offer_work ON offers(work_id,active,rank DESC);
 CREATE TABLE IF NOT EXISTS series_templates(topic TEXT,provider TEXT,reference TEXT,meta TEXT,PRIMARY KEY(topic,provider,reference));
 CREATE TABLE IF NOT EXISTS metadata_priority(work_id TEXT PRIMARY KEY,requested REAL);
+CREATE TABLE IF NOT EXISTS series_focus(show_key TEXT PRIMARY KEY,until REAL,remaining INTEGER,updated REAL);
+CREATE INDEX IF NOT EXISTS work_first_pass ON works(attempts,state,kind,next_try);
 CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
 CREATE INDEX IF NOT EXISTS work_retry ON works(state,next_try);
@@ -322,6 +324,10 @@ def stats(c):
     return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
        'last_import_diff':get_state(c,'last_import_diff',{}),
        'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
+       'first_pass_remaining':c.execute("""SELECT COUNT(*) FROM works w
+            WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
+            AND w.state IN ('pending','retry','identified')
+            AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0],
        'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
        'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
        'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
@@ -518,6 +524,29 @@ def propagate_series(c,old_show,m):
         if row['state']=='identified' and all(own.get(k)==v for k,v in common.items()):continue
         own.update(common)
         save_metadata(c,row['id'],own,'identified')
+
+def focus_series(c,show_key,limit=24,cooldown=1800):
+    """Boost a *bounded* number of sibling episodes after verified show recognition.
+
+    It does not reset next_try, override user-prioritised work, or force an
+    unbounded recheck of an entire long-running show.
+    """
+    if not show_key:return False
+    now=time.time()
+    old=c.execute('SELECT until FROM series_focus WHERE show_key=?',(show_key,)).fetchone()
+    if old and old[0]>now:return False
+    eligible=c.execute("""SELECT 1 FROM works w WHERE w.show_key=?
+        AND w.kind='series' AND w.state IN ('pending','retry','identified')
+        AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+        LIMIT 1""",(show_key,)).fetchone()
+    if not eligible:return False
+    c.execute('INSERT OR REPLACE INTO series_focus VALUES(?,?,?,?)',
+              (show_key,now+cooldown,int(limit),now))
+    return True
+
+def focus_take(c,show_key):
+    if not show_key:return
+    c.execute('UPDATE series_focus SET remaining=MAX(0,remaining-1) WHERE show_key=?',(show_key,))
 
 def prioritize(c,ids=None,show=''):
     count=0
