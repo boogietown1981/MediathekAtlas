@@ -146,3 +146,36 @@ dialog.player::backdrop{background:#000c}
 #player-seek{flex:1;accent-color:#67e1bc;margin:0}
 #player-time{font-variant-numeric:tabular-nums;font-size:13px;color:#c6d4e2;white-space:nowrap}
 @media(max-width:650px){#player-back,#player-fwd{display:none}.player-head h2{font-size:15px}}
+
+/* 0.5.23: responsive dashboard cards, no overflowing single-line status strings */
+.background-status{padding:14px 0 18px}
+.background-status>summary{font-size:13px;font-weight:650;padding:6px 0 12px}
+.atlas-status-toolbar{display:flex;align-items:center;justify-content:space-between;gap:16px;margin:4px 0 14px}
+.atlas-status-toolbar>div{display:flex;flex-direction:column;gap:5px;min-width:0}
+.atlas-status-toolbar strong{font-size:13px;color:#b2e0ce}
+.atlas-status-toolbar small{line-height:1.5}
+.atlas-status-toolbar button{flex:0 0 auto}
+.atlas-status-grid{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:11px}
+.atlas-metric{display:flex;flex-direction:column;min-width:0;gap:7px;background:#131e2c;border:1px solid #2a3f4d;border-radius:12px;padding:14px 16px;min-height:115px}
+.atlas-metric-label{font-size:11px;color:#a4bbc8;font-weight:600;line-height:1.35}
+.atlas-metric-value{font-size:clamp(21px,2.2vw,31px);color:#edf7fa;letter-spacing:-.5px;font-variant-numeric:tabular-nums;line-height:1.1}
+.atlas-metric-foot{font-size:10px;color:#87a9b6;line-height:1.4}
+.atlas-metric[data-metric="matched"] .atlas-metric-value,.atlas-metric[data-metric="first_pass_per_minute"] .atlas-metric-value{color:#7ce5c5}
+.atlas-import-summary{display:flex;flex-wrap:wrap;align-items:center;gap:7px;margin:13px 0}
+.atlas-import-caption{font-size:11px;color:#afbfce;font-weight:650;margin-right:5px}
+.atlas-import-chip{display:inline-flex;padding:6px 9px;border:1px solid #314150;border-radius:7px;background:#14212b;color:#a5c1ca;font-size:11px;white-space:nowrap}
+.atlas-status-bottom{display:grid;grid-template-columns:1fr 1fr;gap:11px;margin-top:12px}
+.atlas-status-panel{background:#10242c;border:1px solid #2c4750;border-radius:12px;padding:16px;min-width:0}
+.atlas-status-panel h3{font-size:13px;margin:0 0 8px;color:#d9ebf1}
+.atlas-status-panel p{font-size:12px;line-height:1.65;overflow-wrap:anywhere;margin:6px 0;color:#b0c8d3}
+.atlas-status-heading{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap}
+.atlas-status-heading button{font-size:11px;padding:8px 10px}
+#catalog-status{padding:0}
+@media(max-width:1200px){.atlas-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:920px){.atlas-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}.atlas-status-bottom{grid-template-columns:1fr}}
+@media(max-width:550px){.atlas-status-toolbar{align-items:stretch;flex-direction:column}.atlas-status-grid{grid-template-columns:1fr 1fr;gap:8px}.atlas-metric{padding:12px;min-height:98px}.atlas-metric-value{font-size:23px}.atlas-status-panel{padding:12px}}
+.job-file-missing{background:#352b21;border:1px solid #6c5940;border-radius:9px;padding:11px;display:grid;gap:9px;color:#ffddaa;font-size:12px}
+.job-file-missing p{margin:0!important;color:inherit!important}
+.job-file-missing input{margin:0;font-size:12px;padding:10px}
+.job-file-missing button{width:auto!important;margin:0!important}
+.job-file-missing .job-file-actions{display:flex;gap:8px;flex-wrap:wrap}
