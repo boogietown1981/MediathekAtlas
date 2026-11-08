@@ -2,6 +2,8 @@
 
 ## Neu in 0.5.23: Status-Dashboard und verschobene Downloads
 
+**Build 46 – Layoutverdichtung:** Auf breiten Bildschirmen erscheinen alle acht Statuswerte in einer Zeile; kleinere Fenster verwenden vier bzw. zwei Spalten. Karten, Anbieterstatus und Importdetails beanspruchen weniger Höhe, bleiben aber vollständig lesbar.
+
 - Der Bereich „Katalog & Metadatenabgleich“ zeigt acht responsive Kennzahlen-Karten nebeneinander statt einer unübersichtlichen Statuszeile: aktiver Angebotsbestand, bestätigte Werke, erkannte Werke, vorgemerkte/ungeklärte Werke, Sendungsbeiträge, offene Erstprüfungen und echte Erstprüfungen pro Minute.
 - Die letzte Filmlistenänderung erhält eigenständige, gut lesbare Markierungen für neue, geänderte, reaktivierte, weggefallene und unveränderte Angebote. Fortschritt und Fehler werden separat dargestellt.
 - TMDB, TVDB, OMDb und Wikidata werden in eigenen Statusfeldern gezeigt. Der laufende Werkabgleich bleibt unabhängig davon sichtbar.
