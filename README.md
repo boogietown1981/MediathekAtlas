@@ -2,6 +2,8 @@
 
 ## Neu in 0.5.23: Status-Dashboard und verschobene Downloads
 
+**Build 47 – IMDb-Archiv transparent:** Im aufklappbaren Bereich „Katalog & Metadatenabgleich“ zeigt der Providerstreifen nun auch IMDb Offline und den letzten erfolgreichen Archivaufbau. Über „IMDb-Archiv“ sind alle sieben importierten Datensätze (Titel, Bewertungen, Episoden, Alternativtitel, Regie/Drehbuch, Mitwirkende, Personen), ihre Dateinamen, Zeilenzahlen und Übernahmezeitpunkte einsehbar. Dieselben Details stehen unter Einstellungen → IMDb-Offline-Archiv. Zeitstempel sind lokale Dateiabhol- bzw. Importzeitpunkte – keine Garantie für den Veröffentlichungszeitpunkt bei IMDb. Diese Detaildaten werden im SQLite-Snapshot dauerhaft gespeichert; ältere bereits erstellte Archive zeigen korrekterweise „nicht gespeichert“, bis der nächste erfolgreiche Import die Zahlen erfasst. Ein abgebrochener Update-Versuch darf den Datenstand des nutzbaren Archivs nicht verändern.
+
 **Build 46 – Layoutverdichtung:** Auf breiten Bildschirmen erscheinen alle acht Statuswerte in einer Zeile; kleinere Fenster verwenden vier bzw. zwei Spalten. Karten, Anbieterstatus und Importdetails beanspruchen weniger Höhe, bleiben aber vollständig lesbar.
 
 - Der Bereich „Katalog & Metadatenabgleich“ zeigt acht responsive Kennzahlen-Karten nebeneinander statt einer unübersichtlichen Statuszeile: aktiver Angebotsbestand, bestätigte Werke, erkannte Werke, vorgemerkte/ungeklärte Werke, Sendungsbeiträge, offene Erstprüfungen und echte Erstprüfungen pro Minute.
