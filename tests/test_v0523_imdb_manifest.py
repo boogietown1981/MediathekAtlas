@@ -71,7 +71,7 @@ class ImdbDatasetManifestTests(unittest.TestCase):
     def test_unbuilt_archive_advertises_expected_datasets_without_fake_counts(self):
         status=self.archive.status()
         self.assertFalse(status['ready'])
-        self.assertIsNone(status['updated'] if status['updated'] is None else None)
+        self.assertEqual(status['updated'],0)
         self.assertEqual(len(status['datasets']),7)
         self.assertTrue(all(not x['available'] and x['rows'] is None for x in status['datasets']))
 
