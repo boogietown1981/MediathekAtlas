@@ -164,7 +164,8 @@ function renderMetadata(m={},settings={},pauses={}){
   ['TMDB',settings.tmdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tmdb_set],
   ['TVDB',settings.tvdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tvdb_set],
   ['OMDb',pauses.omdb?.paused?'Pausiert · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
-  ['Wikidata','Kostenlose Rückfallquelle',true]
+  ['Wikidata','Kostenlose Rückfallquelle',true],
+  ['IMDb Offline',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
  ];
  for(const [label,status,good] of providers){
    const cell=el('span',undefined,'atlas-provider'+(good?' enabled':''));
@@ -221,7 +222,59 @@ function updateSeriesSelection(){const boxes=[...document.querySelectorAll('#ser
 $('series-all').onchange=()=>{document.querySelectorAll('#series-plan input').forEach(x=>x.checked=$('series-all').checked);updateSeriesSelection();};
 
 let imdbReady=false;
-function renderImdb(s={}){imdbReady=!!s.ready;const phase={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',ready:'Archiv bereit',error:'Aktualisierung fehlgeschlagen'}[s.phase]||'Nicht gestartet';$('imdb-status').textContent=phase+(s.dataset?' · '+s.dataset:'')+(s.phase==='downloading'?' · '+((s.received||0)/1048576).toFixed(1)+' MiB'+(s.total?' / '+(s.total/1048576).toFixed(1)+' MiB':''):'')+(s.phase==='importing'?' · '+countLabel(s.rows)+' Zeilen':'')+(s.updated?' · Datenstand: '+new Date(s.updated*1000).toLocaleString('de-DE'):'')+(s.next_update?' · Nächster Versuch: '+new Date(s.next_update*1000).toLocaleString('de-DE'):'')+(s.error?' · '+s.error:'');$('imdb-update').disabled=['downloading','importing','indexing'].includes(s.phase);}
+function imdbDate(seconds){return seconds&&Number.isFinite(Number(seconds))?new Date(Number(seconds)*1000).toLocaleString('de-DE'):'nicht gespeichert';}
+function renderImdb(s={}){
+ imdbReady=!!s.ready;
+ const phases={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',
+   importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',ready:'Archiv bereit',
+   error:'Aktualisierung fehlgeschlagen'};
+ const phase=phases[s.phase]||'Nicht gestartet',last=imdbDate(s.updated),next=imdbDate(s.next_update);
+ const busy=['downloading','importing','indexing'].includes(s.phase);
+ const size=s.archive_bytes>0?(s.archive_bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:2})+' GiB':'–';
+ const status=phase+(s.dataset?' · '+s.dataset:'')+
+  (s.phase==='downloading'?' · '+((s.received||0)/1048576).toFixed(1)+' MiB'+(s.total?' / '+(s.total/1048576).toFixed(1)+' MiB':''):'')+
+  (s.phase==='importing'?' · '+countLabel(s.rows||0)+' Zeilen':'')+
+  (s.updated?' · Letzter erfolgreicher Archivaufbau: '+last:' · Noch kein fertiges Archiv')+
+  (s.next_update?' · Nächster Versuch: '+next:'')+
+  (s.error?' · '+s.error:'');
+ $('imdb-status').textContent=status;
+ $('imdb-update').disabled=busy;
+ const quick=$('imdb-dashboard-summary');
+ if(quick)quick.textContent=s.updated?'Stand: '+last+(s.phase==='error'?' · Update fehlgeschlagen':''):'Noch kein fertiges Archiv';
+ const info=$('imdb-dashboard-info');
+ if(info){
+   const paragraphs=[
+     'Status: '+phase,
+     s.updated?'Zuletzt erfolgreich erstellt: '+last:'Noch kein erfolgreicher Import',
+     s.next_update?'Nächste Prüfung: '+next:'',
+     s.archive_bytes?'Archivdatei: '+size:'',
+     s.error?'Letzter Fehler: '+s.error:''
+   ].filter(Boolean);
+   info.replaceChildren(...paragraphs.map(line=>el('div',line,'atlas-imdb-info-line')));
+ }
+ const settings=$('imdb-settings-summary');
+ if(settings)settings.textContent=(s.ready?'7 IMDb-Datenarten · zuletzt aufgebaut '+last+' · '+size:'Noch kein vollständiges IMDb-Archiv')+
+    (s.next_update?' · nächster Versuch '+next:'')+
+    (s.phase==='error'?' · letzter Aktualisierungsversuch fehlgeschlagen':'');
+ const entries=Array.isArray(s.datasets)?s.datasets:[];
+ const signature=JSON.stringify(entries);
+ for(const id of ['imdb-dataset-grid','imdb-settings-datasets']){
+   const host=$(id);
+   if(!host||host.dataset.signature===signature)continue;
+   host.dataset.signature=signature;
+   host.replaceChildren();
+   if(!entries.length){host.append(el('small','Datensatzliste wird geladen …'));continue;}
+   for(const dataset of entries){
+     const row=el('div',undefined,'atlas-imdb-dataset'),
+           label=el('strong',dataset.label||dataset.key||'Datensatz'),
+           file=el('small',dataset.file||dataset.key,'atlas-imdb-file'),
+           number=dataset.available?(dataset.rows!=null?countLabel(dataset.rows)+' Einträge':'Im Archiv vorhanden · Umfang nicht protokolliert'):'Noch nicht importiert',
+           updated=dataset.retrieved_at?'Datei übernommen: '+imdbDate(dataset.retrieved_at):'Einzelzeitpunkt nicht gespeichert';
+     row.append(label,file,el('small',number,'atlas-imdb-count'),el('small',updated,'atlas-imdb-stamp'));
+     host.append(row);
+   }
+ }
+}
 $('imdb-update').onclick=e=>busy(e.target,async()=>{const d=await api('imdb-update',{});notice(d.queued?'IMDb-Aktualisierung angefordert.':'IMDb-Aktualisierung läuft bereits.');await refresh();});
 
 function safeArt(url){try{const u=new URL(url);return u.protocol==='https:'&&['image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'].includes(u.hostname);}catch{return false;}}
