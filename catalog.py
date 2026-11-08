@@ -230,12 +230,37 @@ def item(c,w):
     row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
     return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
+def media_equivalence_key(row,special_kind='',active=True):
+    """Exact playable media identity; do not strip signed URL query strings.
+
+    Different accessibility editions, subtitles, timing, channel, or any
+    playable rendition are never collapsed just because both say 'ARD HD'.
+    """
+    media=tuple((field,str(row.get(field) or '')) for field in
+                ('url_video','url_video_hd','url_video_low','url_subtitle'))
+    if not any(value for field,value in media if field!='url_subtitle'):return None
+    return (row.get('channel',''),special_kind,active,int(row.get('duration') or 0),
+            media)
+
 def alternatives(c,wid):
     w=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
     if not w:raise ValueError('Werk nicht gefunden')
-    out=[]
+    out=[];by_media={}
+    meta=json.loads(w['meta'])
     for r in c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC',(wid,)):
-        row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));out.append({'id':r['id'],'work_id':wid,'source':row,'metadata':json.loads(w['meta']),'special':r['special'],'available':bool(r['active']),'links':links(row)})
+        row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']))
+        active=bool(r['active'])
+        key_=media_equivalence_key(row,r['special'],active)
+        if key_ is not None and key_ in by_media:
+            entry=out[by_media[key_]]
+            entry['same_media_count']+=1
+            entry['offer_ids'].append(r['id'])
+            continue
+        entry={'id':r['id'],'work_id':wid,'source':row,'metadata':meta,
+               'special':r['special'],'available':active,'links':links(row),
+               'same_media_count':1,'offer_ids':[r['id']]}
+        if key_ is not None:by_media[key_]=len(out)
+        out.append(entry)
     return out
 
 SHOW_FIELDS=('title','year','kind','provider','reference_id','imdb_id','poster','fanart','genres','genre_source','rating','votes','rating_source','ratings','networks','studios','show_credits','artwork_provider','show_description')
