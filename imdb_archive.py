@@ -107,7 +107,10 @@ class Archive:
         self.path=self.root/'imdb_archive.db';self.stop=stop;self.on_update=on_update
         self._reader_local=threading.local()  # one read-only connection and bounded caches per worker
         self._metrics_lock=threading.Lock();self._metrics={'reader_opens':0,'query_hits':0,'query_misses':0,'credits_hits':0,'credits_misses':0}
-        self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0;self.dataset_details=[]
+        self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0
+        self.dataset_details=[{'key':name,'label':label,'file':FILES[name],
+                               'available':False,'rows':None,'retrieved_at':None}
+                              for name,label in DATASET_LABELS.items()]
         if self.path.exists():
             try:
                 with sqlite3.connect(self.path) as c:
