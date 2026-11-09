@@ -54,11 +54,15 @@ class AssignTests(unittest.TestCase):
             catalog.assign_formats(c);c.execute("UPDATE works SET state='identified' WHERE kind='movie'")
             rows=catalog.recognition(c)
         self.assertEqual(rows,[{'channel':'ZDF','works':3,'matched':0,'identified':1,'format':2,'open':0,'review':0}])
-    def test_import_restarts_format_pass(self):
+    def test_import_only_classifies_changed_works(self):
         service=catalog_service.Service(self.db,dict,threading.Event(),Path(self.tmp.name))
         with self.db() as c:catalog.assign_formats(c);catalog.assign_formats(c)
         rows=[offer('Neue Ausgabe','aktuell (16 Uhr)',n=9)]
         with unittest.mock.patch('filmlist.read_rows',return_value=rows):service.import_snapshot('x',0,lambda:False)
-        with self.db() as c:self.assertEqual(catalog.get_state(c,'format_cursor'),0)
+        with self.db() as c:
+            self.assertEqual(catalog.get_state(c,'format_cursor'),'complete')
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM format_dirty').fetchone()[0],1)
+            self.assertEqual(catalog.assign_formats(c)[0],1)
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM format_dirty').fetchone()[0],0)
         self.assertTrue(service.format_wake.is_set())
 if __name__=='__main__':unittest.main()
