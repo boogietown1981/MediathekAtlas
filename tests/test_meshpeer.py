@@ -1,3 +1,4 @@
+import contextlib
 import json,os,re,subprocess,sys,tempfile,time,unittest
 from pathlib import Path
 ROOT=Path(__file__).resolve().parents[1]
@@ -98,7 +99,12 @@ class SeveralConnectionsTests(unittest.TestCase):
     def start_nas(self,d,name):
         home=d/name;home.mkdir();(home/'initial-password').write_text('nas-passwort\n');port=nas.free_port()
         env={**nas.NasPackageTests.env,'MEDIATHEKATLAS_HOME':str(home),'MEDIATHEKATLAS_LISTEN':'127.0.0.1','MEDIATHEKATLAS_LOGIN':'1','MEDIATHEKATLAS_PORT':str(port),'MEDIATHEKATLAS_DOWNLOAD_DIR':str(d/(name+'-share'))}
-        p=subprocess.Popen([sys.executable,'server.py','--no-browser'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL);self.addCleanup(lambda:(p.terminate(),p.wait(10)))
+        p=subprocess.Popen([sys.executable,'server.py','--no-browser'],cwd=ROOT,env=env,stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
+        cleanup=getattr(self,'_peer_cleanup',None)
+        if cleanup is not None:
+            # Stop each NAS before ExitStack removes the shared temporary folder.
+            cleanup.callback(lambda p=p:(p.terminate(),p.wait(10)))
+        else:self.addCleanup(lambda p=p:(p.terminate(),p.wait(10)))
         nas.wait_http(port);cookie=nas.call(port,'POST','/api/login',{'password':'nas-passwort'})[2].split(';')[0]
         token=re.search(r'name="atlas-token" content="([^"]+)"',nas.call(port,'GET','/',headers={'Cookie':cookie})[1]).group(1)
         h={'Cookie':cookie,'X-Atlas-Token':token}
@@ -114,8 +120,9 @@ class SeveralConnectionsTests(unittest.TestCase):
         state=lambda:json.loads(nas.call(port,'GET','/api/state',headers=h)[1])['settings']
         return url,code,api,state,home
     def test_codes_are_added_not_replaced(self):
-        with tempfile.TemporaryDirectory() as d:
-            d=Path(os.path.realpath(d))
+        with contextlib.ExitStack() as cleanup:
+            self._peer_cleanup=cleanup
+            d=Path(os.path.realpath(cleanup.enter_context(tempfile.TemporaryDirectory())))
             syn_url,syn_code,syn_api,syn_state,syn_home=self.start_nas(d,'synology')
             q_url,q_code,q_api,q_state,q_home=self.start_nas(d,'qnap')
             status,body,_=syn_api({'action':'connect','code':syn_code})
