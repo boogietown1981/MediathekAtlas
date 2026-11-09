@@ -43,6 +43,36 @@ class ArchiveTests(unittest.TestCase):
   with patch('core.open_url',side_effect=open_url):self.a.update()
   self.assertEqual(self.a.status()['phase'],'ready');self.assertEqual(events,['done']);self.assertAlmostEqual(self.a.status()['next_update']-self.a.updated,imdb.WEEK)
   self.assertFalse(list(self.a.root.glob('*.gz')))
+ def test_partial_imdb_download_retries_and_resumes_without_discarding_bytes(self):
+  data=self.files['basics'].read_bytes()
+  dest=self.a.root/'basics.tsv.gz';part=dest.with_name(dest.name+'.part')
+  split=max(6,len(data)//3)
+  part.write_bytes(data[:split])
+  requests=[]
+  class Response(io.BytesIO):
+   def __init__(self,data,status):
+    super().__init__(data);self.status=status;self.headers={'Content-Length':str(len(data))}
+  def get(url,headers=None):
+   requests.append(headers or {})
+   if len(requests)==1:raise TimeoutError('temporary network read timeout')
+   self.assertEqual(headers['Range'],'bytes=%d-'%split)
+   return Response(data[split:],206)
+  with patch('core.open_url',side_effect=get):
+   with patch.object(self.a.stop,'wait',return_value=False):
+    self.a.fetch('basics',dest)
+  self.assertEqual(dest.read_bytes(),data)
+  self.assertFalse(part.exists())
+  self.assertEqual(len(requests),2)
+  self.assertEqual(self.a.status()['staged_downloads'][0]['downloaded_bytes'],len(data))
+ def test_imdb_completed_files_survive_failed_network_refresh_and_restart(self):
+  src=self.files['ratings'].read_bytes()
+  dest=self.a.root/'ratings.tsv.gz'
+  dest.write_bytes(src)
+  with patch('core.open_url',side_effect=AssertionError('cached files must not redownload')):
+   self.a.fetch('ratings',dest)
+  self.assertEqual(dest.read_bytes(),src)
+  new=imdb.Archive(self.root,threading.Event())
+  assert any(x['key']=='ratings' and x['downloaded_bytes']==len(src) for x in new.status()['staged_downloads'])
  def test_local_verified_match_skips_network(self):
   self.build()
   with patch.object(imdb,'ACTIVE',self.a),patch('metadata.tmdb_candidates',side_effect=AssertionError('network')):
