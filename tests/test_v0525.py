@@ -91,6 +91,43 @@ class SubscriptionsTests(unittest.TestCase):
         sub=self.subscribe()
         subscriptions.run_due(self.c,self.root,force_id=sub)
         self.assertEqual(subscriptions.run_due(self.c,self.root,force_id=sub)[0]['queued'],0)
+    def test_ambiguous_same_title_movies_require_year(self):
+        original=self.add_work()
+        row=self.c.execute('SELECT * FROM works WHERE id=?',(original,)).fetchone()
+        different=json.loads(row['meta']);different['year']=2024
+        self.c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?)',
+                       ('another_confirmed_movie','Der Film','movie',2024,'',json.dumps(different),'matched',time.time()))
+        self.c.execute('INSERT INTO offers(id,work_id,payload,special,rank,seen,active) VALUES(?,?,?,?,?,?,1)',
+                       ('another_offer','another_confirmed_movie',json.dumps(src('Der Film',tag='second')),'',1,time.time()))
+        sub=self.subscribe()
+        check=subscriptions.run_due(self.c,self.root,force_id=sub)[0]
+        self.assertEqual(check['queued'],0)
+        self.assertIn('Erscheinungsjahr',check['error'])
+        other=self.subscribe(year=2022)
+        self.assertEqual(subscriptions.run_due(self.c,self.root,force_id=other)[0]['queued'],1)
+    def test_future_only_survives_canonical_work_identity_change(self):
+        original=self.add_work('Folge 1','Beispielserie','old',kind='series',season=1,episode=1,verified=True)
+        sub=self.subscribe(title='Beispielserie',kind='series',include_existing=False)
+        self.c.execute("UPDATE works SET id=? WHERE id=?",('new_canonical_id',original))
+        self.c.execute("UPDATE offers SET work_id=? WHERE work_id=?",('new_canonical_id',original))
+        self.c.execute('INSERT INTO work_aliases VALUES(?,?)',(original,'new_canonical_id'))
+        self.assertEqual(subscriptions.run_due(self.c,self.root,force_id=sub)[0]['queued'],0)
+    def test_cached_expiry_is_respected(self):
+        self.add_work()
+        oid=self.c.execute('SELECT id FROM offers').fetchone()[0]
+        self.c.execute('INSERT INTO offer_availability VALUES(?,?,?,?)',
+                       (oid,'2020-01-01','sender-test',time.time()))
+        sub=self.subscribe()
+        self.assertEqual(subscriptions.run_due(self.c,self.root,force_id=sub)[0]['queued'],0)
+    def test_failure_is_isolated_to_subscription_and_preserves_state(self):
+        from unittest.mock import patch
+        sub=self.subscribe()
+        with patch('subscriptions.enqueue_due',side_effect=OSError('transient unavailable volume')):
+            result=subscriptions.run_due(self.c,self.root,force_id=sub)
+        self.assertEqual(result[0]['queued'],0)
+        self.assertTrue(result[0]['error'])
+        self.assertNotIn('unavailable volume',result[0]['error'])
+        self.assertGreater(subscriptions.get_all(self.c)[0]['next_check'],time.time())
     def test_weekly_schedule_is_in_future(self):
         now=time.time()
         sub=self.subscribe(mode='weekly',weekday=0,hour=19)
