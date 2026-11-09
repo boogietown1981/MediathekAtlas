@@ -381,7 +381,8 @@ def stats(c):
         'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
         'last_import_diff':get_state(c,'last_import_diff',{}),
         'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
-        'film_hints':c.execute("SELECT COUNT(*) FROM film_hints").fetchone()[0],
+        'film_hints':c.execute("""SELECT COUNT(*) FROM film_hints h JOIN works w ON w.id=h.work_id
+            WHERE w.kind='unknown' AND w.state IN ('pending','retry','identified')""").fetchone()[0],
         'first_pass_remaining':first,
         'identified':states.get('identified',0),
         'matched':states.get('matched',0)+states.get('manual',0),
@@ -452,6 +453,8 @@ def save_metadata(c,wid,m,state='manual'):
         c.execute('INSERT OR REPLACE INTO work_aliases VALUES(?,?)',(wid,dest))
         c.execute('UPDATE work_aliases SET new_id=? WHERE new_id=?',(dest,wid))
         c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,));c.execute('DELETE FROM works WHERE id=?',(wid,))
+    if m.get('kind')!='unknown':
+        c.execute('DELETE FROM film_hints WHERE work_id IN (?,?)',(wid,dest))
     if m.get('kind')=='movie' and state in ('matched','manual','identified'):
         return reconcile_movie_duplicates(c,dest)
     return dest
@@ -697,6 +700,7 @@ def mark_news_format(c,row,source):
     c.execute("""UPDATE works SET title=?,kind='series',show_key=?,meta=?,state='format',
         next_try=0 WHERE id=?""",(topic,showkey(m),json.dumps(m),row['id']))
     c.execute('DELETE FROM metadata_priority WHERE work_id=?',(row['id'],))
+    c.execute('DELETE FROM film_hints WHERE work_id=?',(row['id'],))
     c.execute('DELETE FROM series_focus WHERE show_key=?',(row['show_key'],))
     return True
 
