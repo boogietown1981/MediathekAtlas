@@ -161,8 +161,9 @@ def enqueue_due(c,sub,root,now=None,limit=10):
         # Prefer a confirmed direct file from an active, unexpired offer.
         selected=None
         for offer in c.execute("""SELECT * FROM offers WHERE work_id=? AND active=1
-            ORDER BY rank DESC,seen DESC LIMIT 20""",(row['id'],)).fetchall():
+            ORDER BY (special='') DESC,rank DESC,seen DESC LIMIT 20""",(row['id'],)).fetchall():
             source=json.loads(offer['payload'])
+            source.update(catalog.offer_expiry(c,offer['id']))
             if expired(source,now):continue
             links=[x for x in catalog.links(source) if x.get('supported') and x.get('url')]
             if links:
@@ -195,9 +196,20 @@ def run_due(c,root,now=None,force_id=None):
     rows=[dict(r) for r in c.execute('SELECT * FROM subscriptions WHERE enabled=1 AND id=?',(force_id,))] if force_id else due(c,now)
     result=[]
     for sub in rows:
-        total=enqueue_due(c,sub,root,now)
         nxt=next_weekly(now,sub['weekday'],sub['hour']) if sub['mode']=='weekly' else now+15*60
+        try:
+            c.execute('SAVEPOINT subscription_scan')
+            total=enqueue_due(c,sub,root,now)
+            c.execute('RELEASE subscription_scan')
+            error=''
+        except Exception:
+            # One malformed offer must not block all other subscriptions or
+            # leave half a batch queued. Back off and keep the plan active.
+            c.execute('ROLLBACK TO subscription_scan')
+            c.execute('RELEASE subscription_scan')
+            total=0;error='Prüfung fehlgeschlagen; erneuter Versuch beim nächsten Termin'
         c.execute('UPDATE subscriptions SET last_check=?,next_check=?,queued_count=queued_count+?,last_error=? WHERE id=?',
-                  (now,nxt,total,'',sub['id']))
-        result.append({'id':sub['id'],'title':sub['title'],'queued':total,'next_check':nxt})
+                  (now,nxt,total,error,sub['id']))
+        result.append({'id':sub['id'],'title':sub['title'],'queued':total,'next_check':nxt,
+                       'error':error or None})
     return result
