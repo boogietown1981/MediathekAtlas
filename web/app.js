@@ -264,12 +264,45 @@ setInterval(()=>{if(!appStopped&&!$('discover').hidden)loadTree().catch(()=>{});
 
 $('mesh-config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{mesh_dir:$('mesh_dir').value.trim(),mesh_name:$('mesh_name').value.trim(),mesh_init:$('mesh_init').checked});$('mesh_init').checked=false;notice($('mesh_dir').value.trim()?'Verbund gespeichert. Der Ordner wird geprüft.':'Verbund ausgeschaltet.');await refresh();});};
 let meshServer={};
-function showMeshCode(d){const origin=location.protocol==='http:'||location.protocol==='https:'?location.origin:'';const local=/^https?:\/\/(127\.0\.0\.1|localhost)(:|$)/.test(origin);const ts=d.tailscale?'http://'+d.tailscale+':'+d.port:'';const base=(!local&&origin)||ts||origin;$('mesh-code').value=base+'#'+d.key;$('mesh-code-box').hidden=false;$('mesh-code-hint').textContent=(ts&&base!==ts?'Über Tailscale alternativ: '+ts+'#… · ':'')+(d.network?'Diesen Code am anderen System unter „Verbindungscode eines anderen Systems hinzufügen“ einfügen.':'Hinweis: Die Desktop-App ist nur auf diesem Rechner erreichbar. Gib besser den Code des NAS hier ein.');}
+let meshShareKey='',meshServicePort=0,meshTailscale='';
+function meshAddress(){
+ const text=$('mesh-address').value.trim();
+ let u;
+ try{u=new URL(text);}catch{throw Error('Bitte eine gültige NAS-Dienstadresse angeben (z. B. http://192.168.1.10:8730).');}
+ if(!['http:','https:'].includes(u.protocol)||!u.hostname||u.username||u.password||u.search||u.hash||u.pathname!=='/')
+    throw Error('Nur eine HTTP(S)-Basisadresse ohne Pfad, Login-Daten oder Schlüssel eingeben.');
+ return u.origin;
+}
+function updateMeshCode(){
+ if(!meshShareKey)return;
+ try{
+   const address=meshAddress();
+   $('mesh-code').value=address+'#'+meshShareKey;
+   $('mesh-code-hint').textContent='Diesen vollständigen Code im anderen MediathekAtlas einfügen.'+
+     (meshTailscale?' Tailscale-Alternative: http://'+meshTailscale+':'+meshServicePort+' (bei Bedarf oben eintragen).':'');
+ }catch(e){$('mesh-code').value='';$('mesh-code-hint').textContent=e.message;}
+}
+function showMeshCode(d){
+ meshShareKey=d.key||'';meshServicePort=d.port;meshTailscale=d.tailscale||'';
+ // Never use location.origin: when opened through DSM/QTS (5001/8080)
+ // that port is often NOT the MediathekAtlas HTTP endpoint.
+ if(!$('mesh-address').value.trim()){
+   const host=location.hostname.includes(':')?'['+location.hostname+']':location.hostname;
+   $('mesh-address').value='http://'+host+':'+d.port;
+ }
+ $('mesh-code-box').hidden=false;updateMeshCode();
+}
+$('mesh-address').oninput=updateMeshCode;
 $('mesh-share').onclick=e=>busy(e.target,async()=>{const d=await api('mesh-direct',{action:'share'});showMeshCode(d);await refresh();});
+$('mesh-rotate').onclick=e=>busy(e.target,async()=>{
+ if(!confirm('Wirklich einen neuen Verbundschlüssel erzeugen? Alle bisher verbundenen Mac-/NAS-Geräte müssen anschließend den neuen Verbindungscode erhalten. Die Verbunddaten bleiben erhalten.'))return;
+ const d=await api('mesh-direct',{action:'rotate',confirmed:true});
+ showMeshCode(d);notice('Neuer Verbundschlüssel erstellt. Bitte den neuen Code auf allen anderen Geräten erneut einfügen.');await refresh();
+});
 $('mesh-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('mesh-code').value);notice('Verbindungscode kopiert.');}catch{$('mesh-code').select();notice('Bitte mit Cmd/Strg+C kopieren.');}};
 $('mesh-connect').onclick=e=>busy(e.target,async()=>{const d=await api('mesh-direct',{action:'connect',code:$('mesh-peer-code').value.trim()});$('mesh-peer-code').value='';notice('Verbunden mit „'+(d.peer||'Gegenstelle')+'“. Der Abgleich läuft alle 30 Sekunden. Weitere Systeme lassen sich genauso hinzufügen.');await refresh();});
 $('mesh-off').onclick=e=>busy(e.target,async()=>{await api('mesh-direct',{action:'unshare'});$('mesh-code-box').hidden=true;notice('Freigabe beendet. Andere Systeme können sich nicht mehr mit diesem System verbinden.');await refresh();});
-function renderPeer(m={},settings={}){$('mesh-off').hidden=!settings.mesh_shared;$('mesh-share').textContent=settings.mesh_shared?'Verbindungscode anzeigen':'Dieses System freigeben';const host=$('peer-status');host.replaceChildren();
+function renderPeer(m={},settings={}){$('mesh-off').hidden=!settings.mesh_shared;$('mesh-rotate').hidden=!settings.mesh_shared||!meshServer.network;$('mesh-share').textContent=settings.mesh_shared?'Verbindungscode anzeigen':'Dieses System freigeben';const host=$('peer-status');host.replaceChildren();
 const states={};for(const p of m.peers||[])states[p.url]=p;
 if(settings.mesh_shared)host.append(el('p','● Freigegeben: Andere Systeme können sich mit dem Verbindungscode dieses Systems verbinden.'));
 for(const url of settings.mesh_peers||[]){const p=states[url]||{};const row=el('div',undefined,'peer-row');const when=t=>new Date(t*1000).toLocaleTimeString('de-DE');
