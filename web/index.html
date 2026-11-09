@@ -21,7 +21,7 @@
     <h3>Neues Abo</h3>
     <div class="atlas-subscription-fields">
       <label>Titel (exakte Serien- oder Filmbezeichnung)<input id="subscription-title" maxlength="140" minlength="2" placeholder="z. B. Beispielserie oder Filmtitel" required></label>
-      <label>Art<select id="subscription-kind"><option value="series">Serie</option><option value="movie">Film</option></select></label>
+      <label>Art<select id="subscription-kind"><option value="series">Serie</option><option value="movie">Film</option></select></label><label>Erscheinungsjahr (bei gleichnamigen Filmen)<input type="number" id="subscription-year" min="1880" max="2100" placeholder="Optional"></label>
       <label>Prüfung<select id="subscription-mode"><option value="availability">Sobald im Katalog verfügbar (alle 15 Minuten)</option><option value="weekly">Einmal wöchentlich</option></select></label>
       <label class="subscription-weekday" hidden>Wochentag<select id="subscription-weekday"><option value="0">Montag</option><option value="1">Dienstag</option><option value="2">Mittwoch</option><option value="3">Donnerstag</option><option value="4">Freitag</option><option value="5">Samstag</option><option value="6">Sonntag</option></select></label>
       <label class="subscription-hour" hidden>Stunde (Gerätezeit)<select id="subscription-hour"><option value="0">00 Uhr</option><option value="6">06 Uhr</option><option value="12">12 Uhr</option><option value="18">18 Uhr</option><option value="19" selected>19 Uhr</option><option value="20">20 Uhr</option><option value="21">21 Uhr</option><option value="22">22 Uhr</option></select></label>
