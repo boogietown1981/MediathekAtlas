@@ -6,6 +6,8 @@ CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,
 CREATE TABLE IF NOT EXISTS scan_seen(id TEXT PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS format_dirty(work_id TEXT PRIMARY KEY);
 CREATE TABLE IF NOT EXISTS film_hints(work_id TEXT PRIMARY KEY,score INTEGER NOT NULL,reason TEXT);
+CREATE TABLE IF NOT EXISTS metadata_leases(work_id TEXT PRIMARY KEY,owner TEXT NOT NULL,expires REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS metadata_leases_expiry ON metadata_leases(expires);
 CREATE INDEX IF NOT EXISTS film_hint_score ON film_hints(score,work_id);
 CREATE TABLE IF NOT EXISTS work_aliases(old_id TEXT PRIMARY KEY,new_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS offer_availability(offer_id TEXT PRIMARY KEY,available_until TEXT,source TEXT,checked REAL);
