@@ -45,7 +45,7 @@ with db() as c:
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
     for completed in c.execute("SELECT payload FROM jobs WHERE state='done'").fetchall():catalog.mark_downloaded(c,json.loads(completed[0]))
-    c.execute("UPDATE jobs SET state='interrupted' WHERE state IN ('queued','downloading','tagging')")
+    catalog.recover_download_queue(c)
 
 def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()

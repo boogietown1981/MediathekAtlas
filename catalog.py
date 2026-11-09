@@ -439,6 +439,10 @@ def merge_genre_spellings(c):
         if g!=m.get('genres'):m['genres']=g;c.execute('UPDATE series_templates SET meta=? WHERE topic=? AND provider=? AND reference=?',(json.dumps(m),topic,provider,ref))
     return len(changes)
 
+def recover_download_queue(c):
+    """Keep untouched queued jobs runnable after a crash; never replay an in-flight job blindly."""
+    c.execute("UPDATE jobs SET state='interrupted' WHERE state IN ('downloading','tagging')")
+    
 def initialize(c):
     c.executescript(SCHEMA)
     if 'topic' not in [r[1] for r in c.execute('PRAGMA table_info(works)')]:c.execute("ALTER TABLE works ADD COLUMN topic TEXT DEFAULT ''")

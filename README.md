@@ -1,4 +1,17 @@
-# MediathekAtlas · 0.5.18 Preview
+# MediathekAtlas · 0.5.19 Preview
+
+## Neu in 0.5.19: Offline-Erkennung beschleunigt
+
+- IMDb: Datenbankverbindung je Hintergrund-Worker wiederverwenden, statt für jede Werkprüfung eine neue Verbindung zu öffnen. Nach atomarer Aktualisierung des IMDb-Archivs wird die Verbindung automatisch neu geöffnet.
+- IMDb: Der Diagnoseexport enthält ab jetzt unter `imdb.performance` Zähler für geöffnete Datenbankverbindungen und Cache-Treffer/-Fehlversuche.
+- IMDb: Exakte Titel-, Episoden- und Besetzungsabfragen werden begrenzt zwischengespeichert. Werkabhängige Entscheidungen (etwa Laufzeit, Jahr oder Staffel/Folge) werden **immer pro Werk neu** berechnet. Dadurch entstehen keine übernommenen Fremdzuordnungen.
+- Wenn IMDb Offline einen Film durch Laufzeit oder eine Episode durch exakte Episodenprüfung sicher bestätigt hat, werden unnötige Online-Anfragen übersprungen, selbst wenn das Archiv noch keine Genres liefert.
+- Staffel-/Folgenummern aus dem Senderangebot können gegen IMDb Offline oder eine **vollständig gelesene** Anbieter-Episodenliste geprüft werden, auch wenn der Episodentitel anders lautet. Nur eindeutige Ergebnisse werden automatisch bestätigt; bei unvollständigen oder widersprüchlichen Daten bleibt die Zuordnung offen. Fehlende Zusatzdaten bleiben für die spätere Anreicherung offen.
+- IMDb-Download: Die verfügbare Speichermenge wird vor der Übertragung anhand der gemeldeten Restgröße geprüft. Ein Speichermangel wird früh erkannt; das bisherige Archiv bleibt nutzbar.
+- Regressionstests prüfen die Wiederverwendung der SQLite-Verbindung, das sichere Umschalten auf neue Datenbank-Snapshots sowie die Grenzen der automatischen Erkennung.
+- Download-Warteschlange: Noch nicht gestartete Aufträge bleiben nach einem Neustart als `queued` erhalten und werden vom Worker automatisch übernommen. Nur tatsächlich laufende Aufträge werden zunächst als `interrupted` markiert (sichere Wiederaufnahme folgt gesondert).
+
+
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
 
