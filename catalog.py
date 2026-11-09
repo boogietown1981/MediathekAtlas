@@ -364,20 +364,33 @@ def tree(c):
     return [dict(r) for r in c.execute("SELECT w.kind,COALESCE(g.genre,'Unbekannt') genre,COUNT(DISTINCT CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END) n FROM works w LEFT JOIN work_genres g ON g.work_id=w.id WHERE EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) GROUP BY w.kind,g.genre")]
 
 def stats(c):
-    counts={r[0]:r[1] for r in c.execute('SELECT kind,COUNT(*) FROM works GROUP BY kind')}
-    return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
-       'last_import_diff':get_state(c,'last_import_diff',{}),
-       'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
-       'first_pass_remaining':c.execute("""SELECT COUNT(*) FROM works w
-            WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
-            AND w.state IN ('pending','retry','identified')
-            AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0],
-       'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
-       'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
-       'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
-       'review':c.execute("SELECT COUNT(*) FROM works WHERE state='review'").fetchone()[0],
-       'formats':c.execute("SELECT COUNT(*) FROM works WHERE state='format'").fetchone()[0],
-       'sync':get_state(c,'sync',{'phase':'waiting'}),'last_complete':get_state(c,'last_complete',0)}
+    """One indexed classification pass, instead of separate full-work scans for each tile."""
+    grouped=c.execute('SELECT kind,state,COUNT(*) n FROM works GROUP BY kind,state').fetchall()
+    kinds={};states={}
+    pending=0
+    for kind,state,n in grouped:
+        kinds[kind]=kinds.get(kind,0)+n
+        states[state]=states.get(state,0)+n
+        if kind!='other' and state in ('pending','retry'):pending+=n
+    first=c.execute("""SELECT COUNT(*) FROM works w
+        WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
+          AND w.state IN ('pending','retry','identified')
+          AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0]
+    return {
+        'types':kinds,'works':sum(kinds.values()),
+        'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
+        'last_import_diff':get_state(c,'last_import_diff',{}),
+        'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
+        'film_hints':c.execute("SELECT COUNT(*) FROM film_hints").fetchone()[0],
+        'first_pass_remaining':first,
+        'identified':states.get('identified',0),
+        'matched':states.get('matched',0)+states.get('manual',0),
+        'pending':pending,
+        'review':states.get('review',0),
+        'formats':states.get('format',0),
+        'sync':get_state(c,'sync',{'phase':'waiting'}),
+        'last_complete':get_state(c,'last_complete',0)
+    }
 
 def canonical(m):
     if m.get('state')=='work_identified':return None
