@@ -71,6 +71,7 @@ $('subscription-form').onsubmit=e=>{
  busy(e.submitter,async()=>{
    await api('subscription-add',{
      title:$('subscription-title').value.trim(),kind:$('subscription-kind').value,
+     year:$('subscription-year').value||null,
      show_key:$('subscription-show-key').value,mode:$('subscription-mode').value,
      weekday:Number($('subscription-weekday').value),hour:Number($('subscription-hour').value),
      include_existing:$('subscription-existing').checked,
