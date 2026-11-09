@@ -135,6 +135,15 @@ class SubscriptionsTests(unittest.TestCase):
         self.assertGreater(row['next_check'],now)
         self.assertLessEqual(row['next_check']-now,8*86400)
         self.assertEqual(subscriptions.due(self.c,now),[])
+    def test_weekly_followup_checks_for_late_releases_for_two_days(self):
+        import datetime
+        monday=datetime.datetime(2026,11,9,19,0).timestamp()
+        # At the slot and one day later, continue checking every 15 minutes.
+        self.assertEqual(subscriptions.weekly_followup(monday,0,19),monday+900)
+        self.assertEqual(subscriptions.weekly_followup(monday+86400,0,19),monday+86400+900)
+        # After 48 hours stop until the following scheduled weekly slot.
+        later=monday+49*3600
+        self.assertGreater(subscriptions.weekly_followup(later,0,19),later+4*86400)
     def test_pause_resume_delete_keep_existing_jobs(self):
         self.add_work()
         sub=self.subscribe()
