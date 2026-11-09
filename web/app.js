@@ -264,12 +264,45 @@ setInterval(()=>{if(!appStopped&&!$('discover').hidden)loadTree().catch(()=>{});
 
 $('mesh-config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{mesh_dir:$('mesh_dir').value.trim(),mesh_name:$('mesh_name').value.trim(),mesh_init:$('mesh_init').checked});$('mesh_init').checked=false;notice($('mesh_dir').value.trim()?'Verbund gespeichert. Der Ordner wird geprüft.':'Verbund ausgeschaltet.');await refresh();});};
 let meshServer={};
-function showMeshCode(d){const origin=location.protocol==='http:'||location.protocol==='https:'?location.origin:'';const local=/^https?:\/\/(127\.0\.0\.1|localhost)(:|$)/.test(origin);const ts=d.tailscale?'http://'+d.tailscale+':'+d.port:'';const base=(!local&&origin)||ts||origin;$('mesh-code').value=base+'#'+d.key;$('mesh-code-box').hidden=false;$('mesh-code-hint').textContent=(ts&&base!==ts?'Über Tailscale alternativ: '+ts+'#… · ':'')+(d.network?'Diesen Code am anderen System unter „Verbindungscode eines anderen Systems hinzufügen“ einfügen.':'Hinweis: Die Desktop-App ist nur auf diesem Rechner erreichbar. Gib besser den Code des NAS hier ein.');}
+let meshShareKey='',meshServicePort=0,meshTailscale='';
+function meshAddress(){
+ const text=$('mesh-address').value.trim();
+ let u;
+ try{u=new URL(text);}catch{throw Error('Bitte eine gültige NAS-Dienstadresse angeben (z. B. http://192.168.1.10:8730).');}
+ if(!['http:','https:'].includes(u.protocol)||!u.hostname||u.username||u.password||u.search||u.hash||u.pathname!=='/')
+    throw Error('Nur eine HTTP(S)-Basisadresse ohne Pfad, Login-Daten oder Schlüssel eingeben.');
+ return u.origin;
+}
+function updateMeshCode(){
+ if(!meshShareKey)return;
+ try{
+   const address=meshAddress();
+   $('mesh-code').value=address+'#'+meshShareKey;
+   $('mesh-code-hint').textContent='Diesen vollständigen Code im anderen MediathekAtlas einfügen.'+
+     (meshTailscale?' Tailscale-Alternative: http://'+meshTailscale+':'+meshServicePort+' (bei Bedarf oben eintragen).':'');
+ }catch(e){$('mesh-code').value='';$('mesh-code-hint').textContent=e.message;}
+}
+function showMeshCode(d){
+ meshShareKey=d.key||'';meshServicePort=d.port;meshTailscale=d.tailscale||'';
+ // Never use location.origin: when opened through DSM/QTS (5001/8080)
+ // that port is often NOT the MediathekAtlas HTTP endpoint.
+ if(!$('mesh-address').value.trim()){
+   const host=location.hostname.includes(':')?'['+location.hostname+']':location.hostname;
+   $('mesh-address').value='http://'+host+':'+d.port;
+ }
+ $('mesh-code-box').hidden=false;updateMeshCode();
+}
+$('mesh-address').oninput=updateMeshCode;
 $('mesh-share').onclick=e=>busy(e.target,async()=>{const d=await api('mesh-direct',{action:'share'});showMeshCode(d);await refresh();});
+$('mesh-rotate').onclick=e=>busy(e.target,async()=>{
+ if(!confirm('Wirklich einen neuen Verbundschlüssel erzeugen? Alle bisher verbundenen Mac-/NAS-Geräte müssen anschließend den neuen Verbindungscode erhalten. Die Verbunddaten bleiben erhalten.'))return;
+ const d=await api('mesh-direct',{action:'rotate',confirmed:true});
+ showMeshCode(d);notice('Neuer Verbundschlüssel erstellt. Bitte den neuen Code auf allen anderen Geräten erneut einfügen.');await refresh();
+});
 $('mesh-copy').onclick=async()=>{try{await navigator.clipboard.writeText($('mesh-code').value);notice('Verbindungscode kopiert.');}catch{$('mesh-code').select();notice('Bitte mit Cmd/Strg+C kopieren.');}};
 $('mesh-connect').onclick=e=>busy(e.target,async()=>{const d=await api('mesh-direct',{action:'connect',code:$('mesh-peer-code').value.trim()});$('mesh-peer-code').value='';notice('Verbunden mit „'+(d.peer||'Gegenstelle')+'“. Der Abgleich läuft alle 30 Sekunden. Weitere Systeme lassen sich genauso hinzufügen.');await refresh();});
 $('mesh-off').onclick=e=>busy(e.target,async()=>{await api('mesh-direct',{action:'unshare'});$('mesh-code-box').hidden=true;notice('Freigabe beendet. Andere Systeme können sich nicht mehr mit diesem System verbinden.');await refresh();});
-function renderPeer(m={},settings={}){$('mesh-off').hidden=!settings.mesh_shared;$('mesh-share').textContent=settings.mesh_shared?'Verbindungscode anzeigen':'Dieses System freigeben';const host=$('peer-status');host.replaceChildren();
+function renderPeer(m={},settings={}){$('mesh-off').hidden=!settings.mesh_shared;$('mesh-rotate').hidden=!settings.mesh_shared||!meshServer.network;$('mesh-share').textContent=settings.mesh_shared?'Verbindungscode anzeigen':'Dieses System freigeben';const host=$('peer-status');host.replaceChildren();
 const states={};for(const p of m.peers||[])states[p.url]=p;
 if(settings.mesh_shared)host.append(el('p','● Freigegeben: Andere Systeme können sich mit dem Verbindungscode dieses Systems verbinden.'));
 for(const url of settings.mesh_peers||[]){const p=states[url]||{};const row=el('div',undefined,'peer-row');const when=t=>new Date(t*1000).toLocaleTimeString('de-DE');
@@ -303,17 +336,21 @@ function imdbDate(seconds){return seconds&&Number.isFinite(Number(seconds))?new 
 function renderImdb(s={}){
  imdbReady=!!s.ready;
  const phases={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',
-   importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',ready:'Archiv bereit',
+   importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',retrying:'Wiederhole unterbrochenen Download',ready:'Archiv bereit',
    error:'Aktualisierung fehlgeschlagen'};
  const phase=phases[s.phase]||'Nicht gestartet',last=imdbDate(s.updated),next=imdbDate(s.next_update);
- const busy=['downloading','importing','indexing'].includes(s.phase);
+ const busy=['downloading','retrying','importing','indexing'].includes(s.phase);
  const size=s.archive_bytes>0?(s.archive_bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:2})+' GiB':'–';
+ const staged=Array.isArray(s.staged_downloads)?s.staged_downloads:[];
+ const cachedBytes=staged.reduce((n,x)=>n+(x.downloaded_bytes||0)+(x.partial_bytes||0),0);
+ const cachedCount=staged.filter(x=>x.downloaded_bytes>0).length;
+ const cachedInfo=cachedBytes?' · Zwischendaten '+(cachedBytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB ('+cachedCount+'/7 Dateien vollständig)':'';
  const status=phase+(s.dataset?' · '+s.dataset:'')+
-  (s.phase==='downloading'?' · '+((s.received||0)/1048576).toFixed(1)+' MiB'+(s.total?' / '+(s.total/1048576).toFixed(1)+' MiB':''):'')+
+  (['downloading','retrying'].includes(s.phase)?' · '+((s.received||0)/1048576).toFixed(1)+' MiB'+(s.total?' / '+(s.total/1048576).toFixed(1)+' MiB':''):'')+
   (s.phase==='importing'?' · '+countLabel(s.rows||0)+' Zeilen':'')+
   (s.updated?' · Letzter erfolgreicher Archivaufbau: '+last:' · Noch kein fertiges Archiv')+
   (s.next_update?' · Nächster Versuch: '+next:'')+
-  (s.error?' · '+s.error:'');
+  (s.error?' · '+s.error:'')+cachedInfo;
  $('imdb-status').textContent=status;
  $('imdb-update').disabled=busy;
  const quick=$('imdb-dashboard-summary');
@@ -325,6 +362,7 @@ function renderImdb(s={}){
      s.updated?'Zuletzt erfolgreich erstellt: '+last:'Noch kein erfolgreicher Import',
      s.next_update?'Nächste Prüfung: '+next:'',
      s.archive_bytes?'Archivdatei: '+size:'',
+     cachedInfo?'Gespeicherte Download-Zwischenstände: '+cachedInfo.replace(/^ · /,''):'',
      s.error?'Letzter Fehler: '+s.error:''
    ].filter(Boolean);
    info.replaceChildren(...paragraphs.map(line=>el('div',line,'atlas-imdb-info-line')));
@@ -334,7 +372,7 @@ function renderImdb(s={}){
     (s.next_update?' · nächster Versuch '+next:'')+
     (s.phase==='error'?' · letzter Aktualisierungsversuch fehlgeschlagen':'');
  const entries=Array.isArray(s.datasets)?s.datasets:[];
- const signature=JSON.stringify(entries);
+ const signature=JSON.stringify([entries,staged]);
  for(const id of ['imdb-dataset-grid','imdb-settings-datasets']){
    const host=$(id);
    if(!host||host.dataset.signature===signature)continue;
@@ -342,12 +380,16 @@ function renderImdb(s={}){
    host.replaceChildren();
    if(!entries.length){host.append(el('small','Datensatzliste wird geladen …'));continue;}
    for(const dataset of entries){
-     const row=el('div',undefined,'atlas-imdb-dataset'),
+     const pending=staged.find(x=>x.key===dataset.key)||{},
+           row=el('div',undefined,'atlas-imdb-dataset'),
            label=el('strong',dataset.label||dataset.key||'Datensatz'),
            file=el('small',dataset.file||dataset.key,'atlas-imdb-file'),
            number=dataset.available?(dataset.rows!=null?countLabel(dataset.rows)+' Einträge':'Im Archiv vorhanden · Umfang nicht protokolliert'):'Noch nicht importiert',
-           updated=dataset.retrieved_at?'Datei übernommen: '+imdbDate(dataset.retrieved_at):'Einzelzeitpunkt nicht gespeichert';
+           updated=dataset.retrieved_at?'Datei übernommen: '+imdbDate(dataset.retrieved_at):'Einzelzeitpunkt nicht gespeichert',
+           downloading=(pending.downloaded_bytes?'Datei gespeichert: '+(pending.downloaded_bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB':'')+
+             (pending.partial_bytes?' · Teil-Download: '+(pending.partial_bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB':'');
      row.append(label,file,el('small',number,'atlas-imdb-count'),el('small',updated,'atlas-imdb-stamp'));
+     if(downloading)row.append(el('small',downloading,'atlas-imdb-count'));
      host.append(row);
    }
  }

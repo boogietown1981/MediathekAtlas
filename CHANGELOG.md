@@ -1,5 +1,14 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.25.1 – 10. November 2026
+
+- Alle sieben PRs #9–#15 für 0.5.19–0.5.25 in korrekter Reihenfolge nach main zusammengeführt; vollständige Historie erhalten.
+- Verbund: korrigierte Verbindungscodes für NAS-Dienstport/Tailscale, editierbare erreichbare Adresse und bestätigte Schlüsselrotation. Bestehende ausgehende Partnerverbindungen und Journalstände bleiben erhalten.
+- IMDb-Offline: kurze Wiederholungen bei vorübergehenden Netzfehlern und fortsetzbare Teil-Downloads; erfolgreich heruntergeladene Zwischenstände bleiben beim gescheiterten Erstimport bis sieben Tage nutzbar. Diagnosestatus zeigt Dateigrößen.
+- Regressionstests: alter Verbundschlüssel wird nach Rotation abgelehnt, neuer funktioniert, andere Verbindungen bleiben bestehen; HTTP-Range nach Timeout setzt IMDb-Download fort.
+
+
+
 ## 0.5.25 Preview – 9. November 2026
 - Konfigurierbarer Pool mit 1, 2 oder 4 parallelen Erkennungsworkern und SQLite-Leases pro Werk. Ausgelaufene Claims lassen sich nach Neustart wieder übernehmen; doppelte parallele Bearbeitung wird verhindert.
 - Gemeinsame Limitierung externer Metadatenprüfketten auf zwei gleichzeitig, damit mehr Worker nicht alle API-Quoten überlasten.

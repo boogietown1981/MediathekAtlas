@@ -1,4 +1,14 @@
-# MediathekAtlas · 0.5.25 Preview
+# MediathekAtlas · 0.5.25.1
+
+## 0.5.25.1 – Verbund wiederherstellen und IMDb-Offline-Download absichern
+
+- **Verbund:** Unter Einstellungen → Verbund kann ein NAS seinen bestehenden Verbindungscode anzeigen oder ausdrücklich einen neuen Schlüssel erzeugen. Die Schlüsselrotation benötigt eine eigene Bestätigung und macht bisherige eingehende Codes ungültig. Ausgehende Gegenstellen, Journal und Katalog bleiben dabei erhalten.
+- **Code-Adresse:** Der Code nutzt den tatsächlichen MediathekAtlas-HTTP-Dienstport statt eventuell den DSM-/QNAP-Webinterface-Proxyport. Die NAS-Adresse lässt sich für Tailscale (100.x.x.x), LAN oder eigene Reverse-Proxy-Adressen anpassen; die Vorschau aktualisiert sich automatisch.
+- **IMDb:** Ein kurzfristiger Netzwerkausfall beim ersten Download startet nicht den ganzen umfangreichen Import von vorn. Bereits vollständig heruntergeladene Datensätze bleiben bis zum erfolgreichen Erstimport zwischengespeichert (bis sieben Tage), begonnene Dateien werden mit HTTP Range fortgesetzt, sofern der Server dies unterstützt.
+- **Diagnose:** Die IMDb-Statusabfrage enthält jetzt die vollständigen und teilweise heruntergeladenen Datei-Mengen. Es werden bis zu drei kurze Wiederholungsversuche pro betroffenem Datensatz unternommen; danach greift der bestehende gestaffelte Rückzug.
+- **Geltungsbereich:** Die offiziellen IMDb-Datensätze dienen ausschließlich der zulässigen persönlichen, nichtkommerziellen Nutzung. Keine Umgehung von Authentifizierung, DRM oder Lizenzbedingungen.
+
+
 
 ## 0.5.25 · Parallele Metadatenerkennung und automatische Download-Abos
 

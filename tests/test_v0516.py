@@ -98,12 +98,19 @@ class ImdbResumeTests(unittest.TestCase):
                 return Broken(data,200,len(data))
             return Response(data,200,len(data))
         with patch('core.open_url',side_effect=open_url),patch('imdb_archive.build',side_effect=ValueError('stop after download')):
-            self.a.update()
+            # A transient read timeout is retried immediately and the 500-byte
+            # partial transfer is resumed in the same update, not next hour.
+            with patch.object(self.a.stop,'wait',return_value=False):
+                self.a.update()
             self.assertEqual(self.a.failures,1);self.assertGreater(self.a.retry_at,time.time()+3000)
-            self.assertTrue((self.a.root/'akas.tsv.gz.part').exists());self.assertTrue((self.a.root/'basics.tsv.gz').exists())
+            self.assertFalse((self.a.root/'akas.tsv.gz.part').exists())
+            self.assertTrue((self.a.root/'basics.tsv.gz').exists())
+            self.assertEqual((self.a.root/'akas.tsv.gz').read_bytes(),self.data['akas'])
+            self.assertEqual(calls.count(('akas','bytes=500-')),1)
+            # When import (not download) fails, all seven completed datasets
+            # must survive for the next attempt without another network call.
             calls.clear();self.a.update()
-        self.assertEqual(calls,[('akas','bytes=500-')]+[(k,None) for k in list(imdb.HEADERS)[list(imdb.HEADERS).index('akas')+1:]])
-        self.assertEqual((self.a.root/'akas.tsv.gz').read_bytes(),self.data['akas'])
+        self.assertEqual(calls,[])
         self.assertEqual(self.a.failures,2);self.assertGreater(self.a.retry_at,time.time()+7000)
 
 if __name__=='__main__':unittest.main()
