@@ -5,6 +5,7 @@ SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
 CREATE TABLE IF NOT EXISTS scan_seen(id TEXT PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS format_dirty(work_id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS work_aliases(old_id TEXT PRIMARY KEY,new_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS offer_availability(offer_id TEXT PRIMARY KEY,available_until TEXT,source TEXT,checked REAL);
 CREATE TABLE IF NOT EXISTS artwork_checks(work_id TEXT PRIMARY KEY,next_try REAL);
 CREATE TABLE IF NOT EXISTS artwork_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL);
@@ -320,6 +321,7 @@ def stats(c):
     counts={r[0]:r[1] for r in c.execute('SELECT kind,COUNT(*) FROM works GROUP BY kind')}
     return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
        'last_import_diff':get_state(c,'last_import_diff',{}),
+       'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
        'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
        'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
        'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
@@ -347,8 +349,26 @@ def save_metadata(c,wid,m,state='manual'):
         m.pop('fanart',None);m.pop('artwork_provider',None)
         for field in ('networks','studios','ratings','imdb_id','discovery_enriched','show_description'):
             if m.get(field)==previous.get(field):m.pop(field,None)
-    dest=canonical(m) or wid;old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
-    if old and old['state']=='manual' and state!='manual':m=json.loads(old['meta']);state='manual'
+    original_dest=canonical(m) or wid
+    alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(original_dest,)).fetchone()
+    dest=alias[0] if alias else original_dest
+    old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
+    if old and old['state']=='manual' and state!='manual':
+        m=json.loads(old['meta']);state='manual'
+    elif old and old['state']=='matched' and state=='identified':
+        # Never downgrade an already confirmed film to a weaker work-only result.
+        m=json.loads(old['meta']);state='matched'
+    elif old and m.get('kind')=='movie' and state in ('matched','manual','identified'):
+        previous_dest=json.loads(old['meta'])
+        identity_agrees=(previous_dest.get('kind')=='movie' and (
+            (previous_dest.get('provider')==m.get('provider') and
+             previous_dest.get('reference_id') and previous_dest.get('reference_id')==m.get('reference_id'))
+            or bool(alias and original_dest!=dest)))
+        if identity_agrees and state!='manual':
+            incoming=normalized_genres(m.get('genres') or [])
+            combined=normalized_genres(incoming+list(previous_dest.get('genres') or []))
+            m['genres']=combined
+            if len(combined)>len(incoming):m['genre_source']='Mehrere bestätigte Quellen'
     c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,meta=excluded.meta,state=excluded.state,updated=excluded.updated',(dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time()))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
     m['genres']=normalized_genres(m.get('genres'))
@@ -356,8 +376,121 @@ def save_metadata(c,wid,m,state='manual'):
     for genre in m.get('genres',[]):c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(dest,genre))
     if dest!=wid:
         c.execute('INSERT OR IGNORE INTO downloaded_items SELECT ?,path,finished FROM downloaded_items WHERE identity=?',(dest,wid))
-        c.execute('UPDATE offers SET work_id=? WHERE work_id=?',(dest,wid));c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,));c.execute('DELETE FROM works WHERE id=?',(wid,))
+        c.execute('UPDATE offers SET work_id=? WHERE work_id=?',(dest,wid))
+        c.execute('INSERT OR REPLACE INTO work_aliases VALUES(?,?)',(wid,dest))
+        c.execute('UPDATE work_aliases SET new_id=? WHERE new_id=?',(dest,wid))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,));c.execute('DELETE FROM works WHERE id=?',(wid,))
+    if m.get('kind')=='movie' and state in ('matched','manual','identified'):
+        return reconcile_movie_duplicates(c,dest)
     return dest
+
+def _movie_evidence(c,w):
+    """Return per-work evidence, not merely a matching genre or a title string."""
+    if not w or w['kind']!='movie' or w['state'] not in ('matched','manual','identified') or not w['year']:
+        return None
+    m=json.loads(w['meta'] or '{}')
+    if m.get('kind')!='movie' or m.get('year')!=w['year']:return None
+    durations=[int(r[0]) for r in c.execute(
+        "SELECT json_extract(payload,'$.duration') FROM offers WHERE work_id=? AND active=1",
+        (w['id'],)) if isinstance(r[0],(float,int)) and r[0]>600]
+    imdb=str(m.get('imdb_id') or (m.get('reference_id') if m.get('provider') in ('IMDb Offline','OMDb') else '') or '').strip()
+    return {'row':w,'meta':m,'title_key':key(w['title']),'durations':durations,'imdb_id':imdb,
+            'ref':str(m.get('reference_id') or ''),'provider':str(m.get('provider') or '')}
+
+def _same_confirmed_movie(a,b):
+    """Two entries may merge only with shared film evidence; genres never prove identity."""
+    if not a or not b or a['title_key']!=b['title_key'] or a['row']['year']!=b['row']['year']:
+        return False
+    if a['row']['state']=='manual' and b['row']['state']=='manual':
+        # Two separately edited records are kept until the user explicitly resolves them.
+        return False
+    if a['provider']==b['provider'] and a['ref'] and b['ref'] and a['ref']!=b['ref']:
+        return False
+    if a['imdb_id'] and b['imdb_id'] and a['imdb_id']!=b['imdb_id']:
+        return False
+    if a['imdb_id'] and a['imdb_id']==b['imdb_id']:return True
+    if a['provider']==b['provider'] and a['ref'] and a['ref']==b['ref']:return True
+    # Different verified providers: identical film title, release year and close
+    # broadcaster runtimes give independent evidence. Without runtimes, no merge.
+    if a['row']['state'] not in ('matched','manual') or b['row']['state'] not in ('matched','manual'):
+        return False
+    if not a['ref'] or not b['ref'] or not a['durations'] or not b['durations']:
+        return False
+    return any(abs(x-y)<=min(300,max(x,y)*.05) for x in a['durations'] for y in b['durations'])
+
+def _merge_confirmed_movie(c,a,b):
+    """Preserve offers, downloads, manual changes, metadata and genre evidence."""
+    def score(v):
+        m=v['meta'];w=v['row']
+        return (w['state']=='manual',w['id']==canonical(m),w['state']=='matched',
+                bool(m.get('poster')),len(m.get('genres') or []))
+    keep,other=sorted((a,b),key=score,reverse=True)
+    target=keep['row']['id'];old=other['row']['id']
+    preferred=dict(keep['meta']);extra=other['meta']
+    # Manual genre edits are authoritative. Otherwise a verified provider's
+    # smaller genre list must not erase previously verified genres.
+    if keep['row']['state']!='manual':
+        previous=normalized_genres(preferred.get('genres') or [])
+        combined=normalized_genres(previous+list(extra.get('genres') or []))
+        preferred['genres']=combined
+        if combined!=previous:preferred['genre_source']='Mehrere bestätigte Quellen'
+    for field in ('poster','fanart','description','show_description','rating','rating_source',
+                  'votes','imdb_id','networks','studios','show_credits','ratings'):
+        if preferred.get(field) in (None,'',[],{}):
+            if extra.get(field) not in (None,'',[],{}):preferred[field]=extra[field]
+    c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',(json.dumps(preferred),time.time(),target))
+    c.execute('DELETE FROM work_genres WHERE work_id=?',(target,))
+    for genre in normalized_genres(preferred.get('genres') or []):
+        c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(target,genre))
+    c.execute('UPDATE offers SET work_id=? WHERE work_id=?',(target,old))
+    c.execute('INSERT OR IGNORE INTO downloaded_items SELECT ?,path,finished FROM downloaded_items WHERE identity=?',(target,old))
+    c.execute('INSERT OR IGNORE INTO artwork_checks SELECT ?,next_try FROM artwork_checks WHERE work_id=?',(target,old))
+    c.execute('INSERT OR IGNORE INTO format_dirty SELECT ? FROM format_dirty WHERE work_id=?',(target,old))
+    c.execute('INSERT OR REPLACE INTO work_aliases VALUES(?,?)',(old,target))
+    c.execute('UPDATE work_aliases SET new_id=? WHERE new_id=?',(target,old))
+    set_state(c,'movie_dedup_total_v0521',get_state(c,'movie_dedup_total_v0521',0)+1)
+    for table,field in (('work_genres','work_id'),('artwork_checks','work_id'),
+                        ('metadata_priority','work_id'),('format_dirty','work_id')):
+        c.execute('DELETE FROM '+table+' WHERE '+field+'=?',(old,))
+    c.execute('DELETE FROM works WHERE id=?',(old,))
+    return target
+
+def reconcile_movie_duplicates(c,wid,max_candidates=40):
+    """Merge conservative, independently verified duplicates of one movie.
+
+    Ambiguous films (missing year/runtime, different years, mismatched provider
+    references) remain separate. Small indexed candidate lookup, no full scan.
+    """
+    w=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
+    a=_movie_evidence(c,w)
+    if not a:return wid
+    rows=c.execute("""SELECT * FROM works
+        WHERE kind='movie' AND year=? AND title=? COLLATE NOCASE
+          AND state IN ('matched','manual','identified') AND id<>?
+        LIMIT ?""",(w['year'],w['title'],wid,max_candidates+1)).fetchall()
+    if len(rows)>max_candidates:return wid  # too ambiguous, leave intact
+    for other in rows:
+        b=_movie_evidence(c,other)
+        if _same_confirmed_movie(a,b):
+            wid=_merge_confirmed_movie(c,a,b)
+            w=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
+            a=_movie_evidence(c,w)
+    return wid
+
+def deduplicate_movie_batch(c,limit=200):
+    """Incremental one-time upgrade of older catalogues, bounded per transaction."""
+    state='movie_dedup_cursor_v0521';cursor=get_state(c,state,0)
+    if cursor=='complete':return 0,0
+    rows=c.execute("""SELECT rowid,id FROM works WHERE rowid>? AND kind='movie'
+          AND year IS NOT NULL AND state IN ('matched','manual','identified')
+          ORDER BY rowid LIMIT ?""",(cursor,limit)).fetchall()
+    before=get_state(c,'movie_dedup_total_v0521',0)
+    for row in rows:
+        cursor=row['rowid']
+        if not c.execute('SELECT 1 FROM works WHERE id=?',(row['id'],)).fetchone():continue
+        reconcile_movie_duplicates(c,row['id'])
+    set_state(c,state,cursor if rows else 'complete')
+    return len(rows),get_state(c,'movie_dedup_total_v0521',0)-before
 
 def auto_choice(meta,rows):
     import matching

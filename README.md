@@ -1,4 +1,15 @@
-# MediathekAtlas · 0.5.20 Preview
+# MediathekAtlas · 0.5.21 Preview
+
+## Neu in 0.5.21: Doppelte Filme zuverlässig zusammenführen
+
+- Ein Filmtitel kann aufgrund verschiedener Quellen zunächst mehrfach erkannt worden sein (z. B. „Der Rausch“ als „Komödie, Drama“ und „Drama“). Die Genre-Liste selbst ist keine Identität und erzeugt keine neue Werk-ID.
+- Automatisches Zusammenführen erfolgt nur mit hinreichenden Belegen: exakt normierter Titel, gleiches bestätigtes Produktionsjahr, entweder übereinstimmende IMDb-/Anbieteridentität oder zwei unabhängig bestätigte Anbieter mit nahezu gleicher Laufzeit.
+- Widersprüche bei Produktionsjahr, Anbieter-ID oder Laufzeit sowie zwei separat manuell gepflegte Werke verhindern automatisches Zusammenführen. Ähnliche Titel allein reichen nie aus.
+- Beim Zusammenführen automatisch bestätigter Filme bleiben die vollständigen Genres aus beiden geprüften Zuordnungen, alternative Senderangebote, Download-Historie und manuell gepflegte Metadaten erhalten.
+- Bereits vorhandene Dubletten werden nebenbei in kleinen, fortsetzbaren SQLite-Teilstapeln geprüft, statt beim Programmstart den gesamten Katalog zu blockieren.
+- Das Diagnoseprotokoll meldet die Anzahl sicher zusammengeführter Filme, ohne unbestätigte Treffer zu verändern.
+
+
 
 ## Neu in 0.5.20: Inkrementeller Filmlistenabgleich, Serienwissen, Verfügbarkeit
 
