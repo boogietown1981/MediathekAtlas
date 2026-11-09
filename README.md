@@ -1,4 +1,17 @@
-# MediathekAtlas · 0.5.23 Preview
+# MediathekAtlas · 0.5.24 Preview
+
+## Neu in 0.5.24: Nachrichtensendungen, Filmhinweise und effiziente Statistiken
+
+- Bekannte, eindeutig benannte Nachrichten- und Magazinformate (beispielsweise „heute journal“, „heute in Europa“ oder „hallo deutschland“) werden vor unnötigen Film-/Serien-API-Anfragen als Sendungsbeiträge einsortiert. Die Zuordnung lässt sich bewusst über einen manuellen Prüfauftrag übergehen; bestätigte und manuell zugeordnete Werke sowie extern verifizierte Episoden bleiben geschützt.
+- Bereits als Serie erkannte, aber nicht vollständig belegte tägliche Nachrichten-Ausgaben werden beim Formatabgleich ebenfalls berücksichtigt. Sendungsdaten und bisherige Anbieterkennungen bleiben erhalten; eine unbewiesene Staffel-/Folgenverifikation wird nicht übernommen.
+- Bei „Filme zuerst“ werden bislang unbekannte Werke mit **ausdrücklichen Filmrubriken** oder klaren Filmhinweisen im Sendertext vor generischen Serien geprüft. Diese Hinweise bestimmen ausschließlich die Warteschlangenreihenfolge – sie bestätigen keine Filmidentität.
+- Ein separater, kleiner Hintergrundlauf berechnet Filmhinweise für den bestehenden Katalog einmalig und resumierbar, ohne zusätzliche externe API-Anfragen. Neue Werke werden beim Import entsprechend vorgemerkt.
+- Katalogstatus: Werktypen und Erkennungszustände werden in einer gruppierten SQL-Abfrage gezählt; die bisher vielen gleichartigen Tabellenzählungen werden eingespart.
+- Neue Diagnosedaten: wie viele Nachrichteneinträge ohne externe Film-API abgefangen wurden. Diese zählen ausdrücklich **nicht** als erledigte Metadatenprüfungen oder als Erhöhung des Erstprüfungsdurchsatzes.
+- Serienvervollständigung, verfügbare Downloads, die IMDb-Offline-Archivdetails und die kompakte UI aus 0.5.23 bleiben erhalten.
+- Separate Performance-Arbeit (atomare parallele Erkennungsworker) folgt erst nach Vergleich der geänderten Katalogarbeit und SQLite-Latenzen.
+
+
 
 ## Neu in 0.5.23: Status-Dashboard und verschobene Downloads
 
