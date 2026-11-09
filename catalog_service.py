@@ -88,8 +88,14 @@ class Service:
         while not self.stop.wait(2):
             config=self.settings();requested=self.wake.is_set()
             if not config.get('auto_catalog',True) and not requested:continue
-            with self.db() as c:last=catalog.get_state(c,'last_complete',0)
-            if not requested and (time.time()-last<12*3600 or time.time()<retry_after):continue
+            with self.db() as c:
+                last=catalog.get_state(c,'last_complete',0)
+                try:has_subscriptions=bool(c.execute('SELECT 1 FROM subscriptions WHERE enabled=1 LIMIT 1').fetchone())
+                except Exception:has_subscriptions=False
+            # Active subscriptions need fresh offers; hourly-ish feed import is
+            # still bounded, cancellable and uses the incremental diff.
+            interval=2*3600 if has_subscriptions else 12*3600
+            if not requested and (time.time()-last<interval or time.time()<retry_after):continue
             self.wake.clear();self.restart.clear();started=time.time()
             def cancelled():return self.stop.is_set() or self.restart.is_set() or (not requested and not self.settings().get('auto_catalog',True))
             try:
