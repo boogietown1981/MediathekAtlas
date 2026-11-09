@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.25 – Worker-Pool und geplante Download-Abos (9. November 2026)
+
+- `tests/test_v0525.py`: eindeutige SQLite-Auftragsreservierung, parallele Claims, Laufzeitende und Wiederaufnahme nach Absturz, Nutzerzustimmung, nur bestätigte Serienepisoden, Film-Abo bei Verfügbarkeit, wöchentlicher Check einschließlich 48-Stunden-Nachprüffenster, abgelaufene Angebote, Mehrfachdownloads und Persistenz über Neustarts.
+- Der Worker-Pool zeigt die tatsächliche Parallelität; externe Anbieterabfragen dürfen gleichzeitig höchstens zweimal laufen.
+- Ein Abo aktualisiert keine Quellen außerhalb des offiziellen Katalogimports und kann keine HLS/DASH- oder DRM-Streams herunterladen. Nur reguläre, rechtmäßig zugängliche Direktdateien.
+- Alle Downloadjobs nutzen die bestehende Warteschlange; Benutzeraktionen (Pause/Fortsetzen/Löschen) wirken ausschließlich auf den Aboplan, nicht auf bereits erstellte Jobs.
+- Vor stabiler Freigabe den Netto-Durchsatz und die 429-/SQLite-Fehlerraten mit dem vorherigen Diagnoseexport messen.
+
+
+
 ## 0.5.24 – Nachrichtenformat-Schnellpfad und Filmpriorität (9. November 2026)
 
 - `tests/test_v0524.py` deckt eindeutige Nachrichtenformate, frühzeitige API-Umgehung, Film-/Serien-Titelkonflikte, ausdrücklich angeforderte Werkprüfungen, manuelle und verifizierte Episoden, bestehende Serie-mit-Nachrichtenbeiträgen, Filmhinweise und wiederaufnehmbaren Index-Backfill ab.

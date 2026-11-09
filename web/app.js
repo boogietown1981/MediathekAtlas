@@ -10,7 +10,81 @@ function notice(s,kind='info',source=''){clearTimeout(noticeTimer);const box=$('
 async function request(path,data){const control=new AbortController(),timer=setTimeout(()=>control.abort(),60000);try{return await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Atlas-Token':token},body:data?JSON.stringify(data):undefined,signal:control.signal});}catch(e){throw Error(e.name==='AbortError'?'Der lokale Dienst antwortet seit 60 Sekunden nicht. Erneuter Versuch folgt.':'Verbindung zum lokalen Dienst unterbrochen. Falls sie nicht zurückkehrt: MediathekAtlas erneut öffnen.');}finally{clearTimeout(timer);}}
 async function api(path,data){const r=await request(path,data);const d=await r.json();if(r.status===401&&d.login){location.reload();throw Error('Anmeldung abgelaufen. Bitte erneut anmelden.');}if(!r.ok)throw Error(d.error||'Anfrage fehlgeschlagen');return d;}
 async function busy(button,fn){const old=button.textContent;button.disabled=true;button.textContent='Bitte warten …';try{await fn();}catch(e){notice(e.message,'error');if($('editor').open)$('lookup-status').textContent=e.message;}finally{button.disabled=false;button.textContent=old;}}
-for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','review','queue','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}};
+for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','review','queue','subscriptions','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}if(b.dataset.view==='subscriptions')loadSubscriptions();};
+function openSubscriptionView(){
+ const tab=document.querySelector('[data-view="subscriptions"]');
+ if(tab)tab.click();
+}
+function updateSubscriptionSchedule(){
+ const weekly=$('subscription-mode').value==='weekly';
+ for(const el of document.querySelectorAll('.subscription-weekday,.subscription-hour'))el.hidden=!weekly;
+}
+$('subscription-mode').onchange=updateSubscriptionSchedule;
+$('subscription-kind').onchange=()=>{
+ $('subscription-show-key').value='';
+ if($('subscription-kind').value!=='movie')$('subscription-year').value='';
+ $('subscription-existing').checked=$('subscription-kind').value==='movie';
+};
+updateSubscriptionSchedule();
+function subscriptionDate(ts){
+ return ts?new Date(ts*1000).toLocaleString('de-DE'):'–';
+}
+async function loadSubscriptions(){
+ if(appStopped||$('subscriptions').hidden)return;
+ try{
+   const response=await api('subscriptions'),host=$('subscription-list');
+   host.replaceChildren();
+   if(!response.items.length){host.append(el('p','Noch keine Abos. Titel oben eingeben und automatischen Download ausdrücklich bestätigen.','empty'));return;}
+   for(const sub of response.items){
+     const card=el('article',undefined,'atlas-subscription'),
+           title=el('h3',sub.title+' · '+(sub.kind==='series'?'Serie':'Film')),
+           status=el('p',sub.enabled?'● Aktiv':'○ Pausiert','atlas-subscription-state'),
+           when=el('small',(sub.mode==='weekly'?'Wöchentliche Prüfung':'Bei Verfügbarkeit')+
+             ' · nächster Check: '+subscriptionDate(sub.next_check)),
+           details=el('small','Bereits automatisch eingereiht: '+countLabel(sub.queued_count||0)+
+             (sub.last_check?' · zuletzt geprüft: '+subscriptionDate(sub.last_check):'')),
+           actions=el('div',undefined,'atlas-subscription-buttons');
+     for(const [label,action] of [[sub.enabled?'Pausieren':'Fortsetzen',sub.enabled?'pause':'resume'],['Löschen','delete']]){
+       const button=el('button',label);
+       button.onclick=e=>busy(e.target,async()=>{
+         if(action==='delete'&&!confirm('Abo „'+sub.title+'“ entfernen? Bereits angelegte Downloadaufträge bleiben erhalten.'))return;
+         await api('subscription-action',{id:sub.id,action});await loadSubscriptions();
+       });
+       actions.append(button);
+     }
+     if(sub.enabled){
+       const run=el('button','Jetzt prüfen');run.onclick=e=>busy(e.target,async()=>{
+         const r=await api('subscription-check',{id:sub.id});
+         notice((r.items||[]).reduce((n,x)=>n+x.queued,0)+' geprüfte Direktdownloads neu eingereiht.');
+         await loadSubscriptions();await refresh();
+       });actions.prepend(run);
+     }
+     card.append(title,status,when,details);
+     if(sub.last_error)card.append(el('small','Letzter Fehler: '+sub.last_error,'atlas-subscription-error'));
+     card.append(actions);host.append(card);
+   }
+ }catch(e){notice('Abos konnten nicht geladen werden: '+e.message,'error');}
+}
+$('subscription-refresh').onclick=()=>loadSubscriptions();
+$('subscription-form').onsubmit=e=>{
+ e.preventDefault();
+ busy(e.submitter,async()=>{
+   await api('subscription-add',{
+     title:$('subscription-title').value.trim(),kind:$('subscription-kind').value,
+     year:$('subscription-year').value||null,
+     show_key:$('subscription-show-key').value,mode:$('subscription-mode').value,
+     weekday:Number($('subscription-weekday').value),hour:Number($('subscription-hour').value),
+     include_existing:$('subscription-existing').checked,
+     confirmed:$('subscription-consent').checked
+   });
+   $('subscription-consent').checked=false;
+   $('subscription-show-key').value='';
+   notice('Download-Abo angelegt. Nur bestätigte, verfügbare Direktdateien werden eingereiht.');
+   await loadSubscriptions();
+ });
+};
+setInterval(()=>{if(!$('subscriptions').hidden)loadSubscriptions();},30000);
+
 let catalogRetry=0;let filters={kind:'series',genre:'',show:'',archive:false},catalogRevision='',catalogBusy=false,lastMetadataChecks=-1,catalogSequence=0,catalogKey='';
 const kindLabels={movie:'Filme',series:'Serien',unknown:'Noch zuordnen',other:'Weitere Sendungen'};
 function selectFilter(change){$('collection-filter').value='';filters={kind:'',genre:'',show:'',archive:false,...change};offset=0;loadCatalog().catch(e=>notice(e.message,'error'));}
@@ -117,6 +191,9 @@ function catalogProgress(c){
  }else importBox.replaceChildren();
  const rev=[c.offers,c.matched,c.identified,c.review,c.works,c.formats].join(':');
  if(rev!==catalogRevision&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
+ const workers=$('metadata-workers-status');
+ if(workers)workers.textContent='Parallele Erkennung: '+countLabel(c.recognition_workers_active||0)+
+   ' von '+countLabel(c.recognition_workers_configured||2)+' Workern aktiv. Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt.';
 }
 const fields=['title','kind','year','season','episode','episode_title','description'];
 function fill(){$('genres').value=(meta.genres||[]).join(', ');for(const f of fields)$(f).value=meta[f]??'';$('confirmed').checked=false;$('preview').textContent='Bitte Zielnamen prüfen.';}
@@ -135,13 +212,13 @@ $('lookup').onclick=e=>busy(e.target,async()=>{$('lookup-status').textContent='A
 $('save-metadata').onclick=e=>busy(e.target,async()=>{await api('save-metadata',{id:active.id,metadata:readMeta()});$('lookup-status').textContent='Metadaten dauerhaft im Katalog gespeichert.';await loadCatalog();await loadTree();if(!$('review').hidden)await loadReview();});
 $('preview-button').onclick=e=>busy(e.target,async()=>{$('preview').textContent=(await api('preview',{id:active.id,metadata:readMeta()})).path;});
 $('metadata').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('download',{id:active.id,metadata:readMeta(),quality:$('quality').value,confirmed:$('confirmed').checked});$('editor').close();notice('Download hinzugefügt. Fortschritt unter Downloads.');await refresh();});};
-$('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked,library_dirs:$('library_dirs').value});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value='';notice('Einstellungen gespeichert.');await refresh();});};
+$('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked,metadata_workers:Number($('metadata_workers').value),library_dirs:$('library_dirs').value});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value='';notice('Einstellungen gespeichert.');await refresh();});};
 $('clear-keys').onclick=e=>busy(e.target,async()=>{await api('settings',{clear_tmdb:true,clear_omdb:true,clear_tvdb:true,clear_tvdb_pin:true});await refresh();});
 const labels={queued:'Wartet',downloading:'Wird heruntergeladen',tagging:'Spuren prüfen & Metadaten einbetten',done:'Fertig',error:'Fehler',cancelled:'Abgebrochen',interrupted:'Durch Neustart unterbrochen',remote:'Auf anderem System'};
 function renderRuntime(r){const host=$('runtime-details');host.replaceChildren();for(const k of ['python','ffmpeg','ffprobe']){const t=r[k],box=el('div',undefined,'runtime-item');box.append(el('strong',k+' · '+(t.ok?'Bereit':t.error)),el('p',t.path||'Kein verwendbarer Pfad'),el('small',t.version||''));if(t.failed_candidates?.length)box.append(el('p','Nicht startbar: '+t.failed_candidates.map(x=>x.path).join(', ')));host.append(box);}}
 $('recheck-tools').onclick=e=>busy(e.target,async()=>renderRuntime(await api('tools')));
 let refreshing=false,appStopped=false;
-async function refresh(){if(refreshing||appStopped)return;refreshing=true;try{const d=await api('state');const finished=d.jobs.filter(j=>j.state==='done').map(j=>j.id).join(':');if(finished!==completedRevision){completedRevision=finished;catalogRevision='';}latestSettings=d.settings;renderServer(d.server||{});if(lastArtwork!==(d.artwork_checked||0)){lastArtwork=d.artwork_checked||0;catalogRevision='';}renderImdb(d.imdb);providerPauses=d.provider_pauses||{};renderMetadata(d.metadata,d.settings,providerPauses);if((d.metadata?.checked_session||0)!==lastMetadataChecks){lastMetadataChecks=d.metadata?.checked_session||0;catalogRevision='';}if(d.reclassification?.phase==='running')$('metadata-status').append(el('small','Neuklassifizierung läuft · '+countLabel(d.reclassification.processed)+' Werke verarbeitet. Die Restlaufzeit kann vorübergehend schwanken.','atlas-current-warning'));$('connection-status').hidden=true;catalogProgress(d.catalog);if(!$('config').contains(document.activeElement)){$('auto_catalog').checked=d.settings.auto_catalog;$('auto_metadata').checked=d.settings.auto_metadata;$('scan_priority').value=d.settings.scan_priority||'balanced';$('complete_series').checked=d.settings.complete_series!==false;}renderRuntime(d.runtime);renderMesh(d.mesh,d.settings);$('tools').textContent=d.tools.ffmpeg&&d.tools.ffprobe?'● FFmpeg & ffprobe bereit':'○ Werkzeugprüfung: Einstellungen öffnen';$('jobcount').textContent=d.jobs.filter(j=>['queued','downloading','tagging'].includes(j.state)).length;if(document.activeElement!==$('download_dir'))$('download_dir').value=d.settings.download_dir;if(document.activeElement!==$('library_dirs'))$('library_dirs').value=(d.settings.library_dirs||[]).join('\n');$('key-state').textContent='TMDB: '+(d.settings.tmdb_set?'hinterlegt':'nicht eingerichtet')+' · OMDb: '+(d.settings.omdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB: '+(d.settings.tvdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB-PIN: '+(d.settings.tvdb_pin_set?'hinterlegt':'nicht hinterlegt');const host=$('jobs');host.className='grid job-grid';if(document.activeElement?.closest('.job-file-missing'))return;host.replaceChildren();if(!d.jobs.length)host.append(el('div','Noch keine Downloads. Wähle einen Suchtreffer und prüfe seine Metadaten.','empty'));for(const j of d.jobs)host.append(jobCard(j,d.server||{}));}finally{refreshing=false;}}
+async function refresh(){if(refreshing||appStopped)return;refreshing=true;try{const d=await api('state');const finished=d.jobs.filter(j=>j.state==='done').map(j=>j.id).join(':');if(finished!==completedRevision){completedRevision=finished;catalogRevision='';}latestSettings=d.settings;renderServer(d.server||{});if(lastArtwork!==(d.artwork_checked||0)){lastArtwork=d.artwork_checked||0;catalogRevision='';}renderImdb(d.imdb);providerPauses=d.provider_pauses||{};renderMetadata(d.metadata,d.settings,providerPauses);if((d.metadata?.checked_session||0)!==lastMetadataChecks){lastMetadataChecks=d.metadata?.checked_session||0;catalogRevision='';}if(d.reclassification?.phase==='running')$('metadata-status').append(el('small','Neuklassifizierung läuft · '+countLabel(d.reclassification.processed)+' Werke verarbeitet. Die Restlaufzeit kann vorübergehend schwanken.','atlas-current-warning'));$('connection-status').hidden=true;catalogProgress(d.catalog);if(!$('config').contains(document.activeElement)){$('auto_catalog').checked=d.settings.auto_catalog;$('auto_metadata').checked=d.settings.auto_metadata;$('scan_priority').value=d.settings.scan_priority||'balanced';$('complete_series').checked=d.settings.complete_series!==false;$('metadata_workers').value=String(d.settings.metadata_workers||2);}renderRuntime(d.runtime);renderMesh(d.mesh,d.settings);$('tools').textContent=d.tools.ffmpeg&&d.tools.ffprobe?'● FFmpeg & ffprobe bereit':'○ Werkzeugprüfung: Einstellungen öffnen';$('jobcount').textContent=d.jobs.filter(j=>['queued','downloading','tagging'].includes(j.state)).length;if(document.activeElement!==$('download_dir'))$('download_dir').value=d.settings.download_dir;if(document.activeElement!==$('library_dirs'))$('library_dirs').value=(d.settings.library_dirs||[]).join('\n');$('key-state').textContent='TMDB: '+(d.settings.tmdb_set?'hinterlegt':'nicht eingerichtet')+' · OMDb: '+(d.settings.omdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB: '+(d.settings.tvdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB-PIN: '+(d.settings.tvdb_pin_set?'hinterlegt':'nicht hinterlegt');const host=$('jobs');host.className='grid job-grid';if(document.activeElement?.closest('.job-file-missing'))return;host.replaceChildren();if(!d.jobs.length)host.append(el('div','Noch keine Downloads. Wähle einen Suchtreffer und prüfe seine Metadaten.','empty'));for(const j of d.jobs)host.append(jobCard(j,d.server||{}));}finally{refreshing=false;}}
 function connectionError(e){$('connection-status').textContent=e.message+' Letzter Versuch: '+new Date().toLocaleTimeString('de-DE');$('connection-status').hidden=false;}
 let logPaused=false,logBusy=false;
 async function refreshLog(){if(appStopped||logBusy||logPaused||$('logs').hidden)return;logBusy=true;try{const d=await api('logs');const box=$('live-log'),atEnd=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.textContent=d.text?d.text.split('\n').map(line=>{try{const r=JSON.parse(line),{time,level,event,traceback,...details}=r;return time+'  '+level+'  '+event+'\n'+JSON.stringify(details,null,2)+(traceback?'\n'+traceback:'');}catch{return line;}}).join('\n\n'):'Noch keine Ereignisse.';if(atEnd)box.scrollTop=box.scrollHeight;$('log-status').textContent='Aktualisiert: '+new Date().toLocaleTimeString('de-DE')+' · letzte 400 Zeilen · Zeitstempel im Log: UTC';}catch(e){$('log-status').textContent=e.message;}finally{logBusy=false;}}
@@ -278,7 +355,18 @@ function renderImdb(s={}){
 $('imdb-update').onclick=e=>busy(e.target,async()=>{const d=await api('imdb-update',{});notice(d.queued?'IMDb-Aktualisierung angefordert.':'IMDb-Aktualisierung läuft bereits.');await refresh();});
 
 function safeArt(url){try{const u=new URL(url);return u.protocol==='https:'&&['image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'].includes(u.hostname);}catch{return false;}}
-function openDetail(item){const m=item.metadata;$('detail-title').textContent=m.title||item.source.title;$('detail-type').textContent=m.kind==='series'?'Serie':'Film';$('detail-facts').textContent=[m.year,(m.genres||[]).join(' · '),'',item.series_parent?item.episodes+' angebotene Folgen':''].filter(Boolean).join(' · ');$('detail-plot').textContent=m.description||item.source.description||'Noch keine Beschreibung vorhanden.';const credits=m.show_credits||m;$('detail-credits').textContent=[credits.directors?.length?'Regie: '+credits.directors.join(', '):'',credits.cast?.length?'Besetzung: '+credits.cast.slice(0,8).map(x=>x.name).join(', '):''].filter(Boolean).join(' · ');$('detail-art-status').textContent=(m.artwork_provider?'Bilder: '+m.artwork_provider:(!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Für zusätzliche Bilder einen TMDB- oder TVDB-Zugang in Einstellungen hinterlegen.':latestSettings.auto_metadata===false?'Automatische Bildergänzung ist mit dem Metadatenabgleich pausiert.':'Bilder werden bei eindeutiger Zuordnung ergänzt.'))+(!m.poster||!m.fanart?' · Noch nicht alle Bildtypen vorhanden.':'');for(const [id,url] of [['detail-cover',m.poster],['detail-backdrop',m.fanart]]){const box=$(id);box.replaceChildren();if(safeArt(url)){const img=el('img');img.src=url;img.alt=id==='detail-cover'?'Cover: '+m.title:'';img.onerror=()=>{img.remove();$('detail-art-status').textContent='Bild derzeit nicht abrufbar. Metadaten bleiben verfügbar.';};box.append(img);}else if(id==='detail-cover')box.append(el('span','Cover folgt'));}const action=$('detail-action');action.textContent=item.series_parent?'Folgen ansehen':'Metadaten prüfen & herunterladen';action.onclick=()=>{$('media-detail').close();if(item.series_parent)selectFilter({kind:'series',show:item.show_key});else edit(item);};renderDetailExtras(item);$('media-detail').showModal();}
+function openDetail(item){const m=item.metadata;$('detail-title').textContent=m.title||item.source.title;$('detail-type').textContent=m.kind==='series'?'Serie':'Film';$('detail-facts').textContent=[m.year,(m.genres||[]).join(' · '),'',item.series_parent?item.episodes+' angebotene Folgen':''].filter(Boolean).join(' · ');$('detail-plot').textContent=m.description||item.source.description||'Noch keine Beschreibung vorhanden.';const credits=m.show_credits||m;$('detail-credits').textContent=[credits.directors?.length?'Regie: '+credits.directors.join(', '):'',credits.cast?.length?'Besetzung: '+credits.cast.slice(0,8).map(x=>x.name).join(', '):''].filter(Boolean).join(' · ');$('detail-art-status').textContent=(m.artwork_provider?'Bilder: '+m.artwork_provider:(!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Für zusätzliche Bilder einen TMDB- oder TVDB-Zugang in Einstellungen hinterlegen.':latestSettings.auto_metadata===false?'Automatische Bildergänzung ist mit dem Metadatenabgleich pausiert.':'Bilder werden bei eindeutiger Zuordnung ergänzt.'))+(!m.poster||!m.fanart?' · Noch nicht alle Bildtypen vorhanden.':'');for(const [id,url] of [['detail-cover',m.poster],['detail-backdrop',m.fanart]]){const box=$(id);box.replaceChildren();if(safeArt(url)){const img=el('img');img.src=url;img.alt=id==='detail-cover'?'Cover: '+m.title:'';img.onerror=()=>{img.remove();$('detail-art-status').textContent='Bild derzeit nicht abrufbar. Metadaten bleiben verfügbar.';};box.append(img);}else if(id==='detail-cover')box.append(el('span','Cover folgt'));}const subscribe=$('detail-subscribe');
+ subscribe.onclick=()=>{
+   $('media-detail').close();
+   $('subscription-title').value=m.title||item.source.title||'';
+   $('subscription-kind').value=m.kind==='movie'?'movie':'series';
+   $('subscription-year').value=m.kind==='movie'?(m.year||''):'';
+   $('subscription-show-key').value=m.kind==='series'?item.show_key||'':'';
+   $('subscription-existing').checked=m.kind==='movie';
+   $('subscription-consent').checked=false;
+   openSubscriptionView();
+ };
+ const action=$('detail-action');action.textContent=item.series_parent?'Folgen ansehen':'Metadaten prüfen & herunterladen';action.onclick=()=>{$('media-detail').close();if(item.series_parent)selectFilter({kind:'series',show:item.show_key});else edit(item);};renderDetailExtras(item);$('media-detail').showModal();}
 $('detail-close').onclick=()=>$('media-detail').close();
 
 function renderDetailExtras(item){

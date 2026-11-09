@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -42,6 +42,7 @@ with db() as c:
     c.execute('PRAGMA journal_mode=WAL')
     c.executescript('CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT);CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS metadata_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL);')
     catalog.initialize(c)
+    subscriptions.initialize(c)
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
@@ -52,7 +53,7 @@ def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
-    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
     with db() as c:
@@ -258,6 +259,8 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
+        if path=='/api/subscriptions':
+            with db() as c:return self.send({'items':subscriptions.get_all(c),'device_time':time.time()})
         if path=='/api/review':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
@@ -303,7 +306,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
                               'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     # Finished downloads are served over HTTP so a browser on another device can fetch them;
     # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
@@ -464,6 +467,29 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:result=local_library.relink(c,job_id,d.get('path') or '',approved)
                 diagnostics.event('library_relinked',job_id=job_id,automatic=False)
                 return self.send(result)
+            if path=='/api/subscription-add':
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    sub_id=subscriptions.add(c,d)
+                SERVICE.subscription_wake.set()
+                diagnostics.event('subscription_created',id=sub_id,kind=d.get('kind'),
+                                  mode=d.get('mode','availability'))
+                return self.send({'ok':True,'id':sub_id})
+            if path=='/api/subscription-action':
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    subscriptions.change(c,str(d.get('id') or ''),str(d.get('action') or ''))
+                SERVICE.subscription_wake.set()
+                diagnostics.event('subscription_modified',action=d.get('action'))
+                return self.send({'ok':True})
+            if path=='/api/subscription-check':
+                with db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    results=subscriptions.run_due(c,settings()['download_dir'],
+                                                  force_id=str(d.get('id') or '') or None)
+                diagnostics.event('subscription_checked',subscriptions=len(results),
+                                  queued=sum(x['queued'] for x in results))
+                return self.send({'ok':True,'items':results})
             if path=='/api/metadata-priority':
                 ids=d.get('ids',[])
                 if not isinstance(ids,list) or len(ids)>1000:raise ValueError('Ungültige Auswahl')
@@ -511,6 +537,11 @@ class Handler(BaseHTTPRequestHandler):
                     if d.get('clear_'+k):s[k]=''
                 for k in ('auto_catalog','auto_metadata','complete_series'):
                     if k in d:s[k]=bool(d[k])
+                if 'metadata_workers' in d:
+                    try:n=int(d['metadata_workers'])
+                    except (ValueError,TypeError):raise ValueError('Ungültige Workerzahl') from None
+                    if n not in (1,2,4):raise ValueError('Erlaubt sind 1, 2 oder 4 Worker')
+                    s['metadata_workers']=n
                 if 'library_dirs' in d:
                     paths=d['library_dirs']
                     if isinstance(paths,str):paths=paths.splitlines()

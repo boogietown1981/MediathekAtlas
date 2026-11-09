@@ -1,5 +1,15 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.25 Preview – 9. November 2026
+- Konfigurierbarer Pool mit 1, 2 oder 4 parallelen Erkennungsworkern und SQLite-Leases pro Werk. Ausgelaufene Claims lassen sich nach Neustart wieder übernehmen; doppelte parallele Bearbeitung wird verhindert.
+- Gemeinsame Limitierung externer Metadatenprüfketten auf zwei gleichzeitig, damit mehr Worker nicht alle API-Quoten überlasten.
+- Neues Download-Abo-System für Filme und Serien mit „sobald verfügbar“ oder wöchentlichen Prüfungen mit einem 48-Stunden-Nachprüffenster. Aktive Abos beschleunigen den inkrementellen Filmlistenabgleich auf maximal etwa zwei Stunden. Abo-Persistenz, Pause/Fortsetzen/Löschen, manuelle Prüfung und automatische Aufnahme in die bestehende Downloadwarteschlange.
+- Serienepisoden erfordern eindeutige, überprüfte Staffel-/Folgeninformationen; unsichere Kandidaten und nicht direkt unterstützte Links werden ausgelassen.
+- Schutz vor doppelten Downloads durch Abonnement-Schlüssel, gespeicherte Downloadhistorie, vorhandene Zielpfade und laufende/abgeschlossene Aufträge.
+- Neue Regressionstests für sichere Abos und parallele Auftragsreservierung.
+
+
+
 ## 0.5.24 Preview – 9. November 2026
 
 - Diagnose 09.11.: Sehr hoher Aufwand für wiederkehrende Nachrichtensendungen („heute journal“, „heute in Europa“, „hallo deutschland“). Explizit bekannte Nachrichtenformate werden vor der externen Metadatenerkennung sicher als Sendungsbeiträge gruppiert.
