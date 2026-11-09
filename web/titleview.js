@@ -44,7 +44,7 @@ function creditInfo(credits){return [['Regie',(credits.directors||[]).join(', ')
 
 async function openShow(show,focusWork){
  if(!show)return;const seq=++titleSequence;showTitleView();pushTitle();const host=$('title-view');host.replaceChildren(el('p','Serie wird geladen …','muted tv-loading'));
- api('metadata-priority',{show}).catch(()=>{});
+ // Opening a series page never queues hundreds of automatic rechecks.
  let d;try{d=await api('show?'+new URLSearchParams({show,archive:filters.archive?'1':'0'}));}catch(e){if(seq===titleSequence){host.replaceChildren(el('p','Serie konnte nicht geladen werden: '+e.message,'empty'));const b=el('button','← Zurück zum Katalog');b.onclick=()=>closeTitleView();host.append(b);}return;}
  if(seq!==titleSequence)return;
  const s=d.show;if((!s.show_description||!s.fanart)&&d.work_ids.length)api('artwork-priority',{ids:d.work_ids.slice(0,3)}).catch(()=>{});
@@ -98,7 +98,7 @@ function versionsDetails(item,onPick){
 }
 function versionLabel(a){const best=(a.links||[])[0];return [(a.source.channel||'Quelle'),a.special||'Regulär',best?best.quality+(best.height_hint?' '+best.height_hint+'p':''):'',a.available?'':'nicht mehr gelistet'].filter(Boolean).join(' · ');}
 function versionRow(a,onPick){
- const box=el('div',undefined,'alternative tv-version');box.append(el('strong',versionLabel(a)));
+ const box=el('div',undefined,'alternative tv-version');box.append(el('strong',versionLabel(a)+(a.same_media_count>1?' · '+a.same_media_count+' identische Katalogeinträge gebündelt':'')));
  if(a.source.duration)box.append(el('small',minutes(a.source.duration)));
  const actions=el('div',undefined,'tv-epactions');
  if(canPlay()&&a.available)actions.append(playButton(a,'Abspielen',false));
@@ -109,7 +109,7 @@ function versionRow(a,onPick){
 
 async function openMovie(item){
  const seq=++titleSequence;showTitleView();pushTitle();titleState={kind:'movie',item,selected:item,versions:null};renderMovie();
- if((item.offer_count||1)>1){try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));if(seq!==titleSequence||!titleState)return;titleState.versions=d.items;titleState.selected=d.items.find(a=>a.id===item.id)||d.items[0]||item;renderMovie();}catch(e){notice(e.message,'error');}}
+ if((item.offer_count||1)>1){try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));if(seq!==titleSequence||!titleState)return;titleState.versions=d.items;titleState.selected=d.items.find(a=>a.offer_ids?.includes(item.id))||d.items[0]||item;renderMovie();}catch(e){notice(e.message,'error');}}
  const m=item.metadata;if(!m.fanart||!m.poster)api('artwork-priority',{ids:[item.work_id]}).catch(()=>{});
 }
 function renderMovie(){

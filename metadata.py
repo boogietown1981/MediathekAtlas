@@ -1,6 +1,6 @@
 """Provider metadata and evidence-based episode reconciliation."""
 import re,time,threading,hashlib,json
-import core,diagnostics,provider_stats
+import core,diagnostics,provider_stats,negative_cache
 _CACHE={};_WD_CACHE={};_LOCK=threading.Lock()
 GENRES={'Comedy':'Komödie','Crime':'Krimi','Documentary':'Dokumentation','Dokumentarfilm':'Dokumentation','Family':'Kinder & Familie','Familienserie':'Kinder & Familie','Familienfilm':'Kinder & Familie','Kids':'Kinder & Familie','Kinder':'Kinder & Familie','Zeichentrickserie':'Animation','animated television series':'Animation','Familie':'Kinder & Familie','Children':'Kinder & Familie','Romance':'Romantik','Liebesfilm':'Romantik','Sci-Fi':'Science-Fiction','Science Fiction':'Science-Fiction','Animation':'Animation','Adventure':'Abenteuer','Action':'Action','History':'Historie','War':'Kriegsfilm','TV Movie':'TV-Film','Music':'Musik','Mystery':'Mystery','Horror':'Horror','Fantasy':'Fantasy','Drama':'Drama','Thriller':'Thriller',
         'Biography':'Biografie','Biographie':'Biografie','Biopic':'Biografie','Historisch':'Historie','Historien':'Historie','Geschichte':'Historie','Krieg':'Kriegsfilm','Kriminal':'Krimi','Kriminalität':'Krimi','Dokumentar':'Dokumentation','Doku':'Dokumentation','Liebe':'Romantik','Romanze':'Romantik','Romantisch':'Romantik','Komödien':'Komödie','Comedy Serie':'Komödie','Sitcom':'Komödie','Zeichentrick':'Animation','Anime':'Animation','Animiert':'Animation','Trickfilm':'Animation','Fernsehfilm':'TV-Film','Fernseh':'TV-Film','TV':'TV-Film','Musikfilm':'Musik','Musical':'Musical','Musicalfilm':'Musical','Sport':'Sport','Sports':'Sport','Western':'Western','Abenteuer':'Abenteuer','Mysteryfilm':'Mystery','Suspense':'Thriller','Psychothriller':'Thriller','Kinderfilm':'Kinder & Familie','Kinderserie':'Kinder & Familie','Jugend':'Kinder & Familie','Talk':'Talk','Talk Show':'Talk','Talkshow':'Talk','News':'Nachrichten','Reality':'Reality-TV','Reality TV':'Reality-TV','Game Show':'Spielshow','Gameshow':'Spielshow','Quiz':'Spielshow','Quizshow':'Spielshow','Soap':'Seifenoper','Short':'Kurzfilm','Kurz':'Kurzfilm','Film Noir':'Film noir','Politics':'Politik','Martial Arts':'Martial Arts','Science':'Wissenschaft','Wissen':'Wissenschaft','Satire':'Satire','Kabarett':'Kabarett','Erotik':'Erotik','Erotic':'Erotik','Mini Series':'Miniserie','Miniseries':'Miniserie','Travel':'Reise','Food':'Kochen','Cooking':'Kochen'}
@@ -354,11 +354,21 @@ def candidates(row,meta,settings):
             if field=='omdb' and omdb_status(settings[field])['paused']:
                 if 'OMDb' not in deferred and not imdb_checked():deferred.append('OMDb')
                 checked({'provider':provider,'status':'paused','count':0});break
+            # Reuse a confirmed no-result for the same provider query. Errors,
+            # expired tokens and rate limits are never negative evidence.
+            credential=settings.get(field,'')
+            if field=='tvdb':credential=str(credential)+':'+str(settings.get('tvdb_pin',''))
+            year=meta.get('year') if k=='movie' else None
+            if negative_cache.contains(provider,k,title,year,credential,
+                                      force=settings.get('_force_provider_refresh',False)):
+                checked({'provider':provider,'status':'negative_cache','count':0})
+                continue
             # One event per finished check; a separate start event doubled the log and shortened its history.
             start=time.monotonic()
             try:
                 hits=fn(row,meta,(settings[field],settings.get('tvdb_pin','')) if field=='tvdb' else settings[field],k,title);out.extend(hits)
                 for c in hits:c['plausibility_issues']=matching.issues(meta,c)
+                if not hits:negative_cache.remember(provider,k,title,year,credential)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
                 diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
             except Exception as e:
@@ -374,9 +384,15 @@ def candidates(row,meta,settings):
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:
+            year=meta.get('year') if k=='movie' else None
+            if negative_cache.contains('Wikidata',k,title,year,
+                                      force=settings.get('_force_provider_refresh',False)):
+                checked({'provider':'Wikidata','status':'negative_cache','count':0})
+                continue
             start=time.monotonic()
             try:
-                d=wikidata(title,k,meta.get('year') if k=='movie' else None)
+                d=wikidata(title,k,year)
+                if not d:negative_cache.remember('Wikidata',k,title,year)
                 if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
                 diagnostics.event('provider_complete',provider='Wikidata',title=title,kind=k,candidates=int(bool(d)),seconds=round(time.monotonic()-start,2))

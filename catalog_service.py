@@ -1,21 +1,24 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
 import hashlib,json,time,threading
+from collections import deque
 import platform
 from pathlib import Path
 import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer
 
 def retry_delay(attempts,result):
-    """Seconds until an unresolved work is checked again."""
-    if result['warnings']:return 3600
+    """Back off stable non-matches; retry genuine network failures sooner."""
+    if result['warnings']:return min(6*3600,900*2**min(max(attempts-1,0),4))
     # Only a paused provider (OMDb quota) is missing: back off per work instead of re-querying every
     # unresolved work hourly, which used up the quota again right after each pause ended.
     if result.get('deferred_providers'):return min(86400,3600*2**min(max(attempts-1,0),5))
-    return 86400
+    # A stable not-found verdict does not need daily full-provider queries.
+    # Rechecks remain possible (new evidence/API updates) and manual priority bypasses the delay.
+    return min(30*86400,3*86400*2**min(max(attempts-1,0),4))
 
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.recent_first=deque();self.started_at=time.monotonic()
     def start(self):
         for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
@@ -85,21 +88,89 @@ class Service:
         self.metadata_status={**state,'checked_session':self.checked,'updated_at':time.time()}
         diagnostics.event('metadata_status',**self.metadata_status)
     def pick(self,c):
-        row=c.execute("SELECT w.* FROM metadata_priority p JOIN works w ON w.id=p.work_id WHERE w.state NOT IN ('manual','matched') AND w.next_try<=? ORDER BY p.requested LIMIT 1",(time.time(),)).fetchone()
+        """User priority, bounded show completion, new work, then due retries.
+
+        The selector never resets cooldowns just to finish a show. In movie-first
+        mode, film first passes always win over automatic series focus.
+        """
+        now=time.time()
+        row=c.execute("""SELECT w.* FROM metadata_priority p JOIN works w ON w.id=p.work_id
+            WHERE w.state NOT IN ('manual','matched') AND w.next_try<=?
+            ORDER BY p.requested LIMIT 1""",(now,)).fetchone()
         if row:return row
-        parts=self.mesh_filter
-        # With a mesh: own partitions first; when idle, help from the tail of the other partitions.
-        scopes=[('',(),'ASC')] if parts is None else [(' AND substr(id,1,2) IN (%s)'%','.join('?'*len(parts)),tuple('%02x'%p for p in sorted(parts)),'ASC')]*bool(parts)+[('',(),'DESC')]
-        for where,params,direction in scopes:
-            kinds=['movie','series','unknown'];start=self.turn%3
-            for kind in kinds[start:]+kinds[:start]:
-                for state in (('identified','pending','retry') if kind=='series' else ('pending','identified','retry')):
-                    row=c.execute("SELECT * FROM works WHERE kind=? AND state=? AND next_try<=?"+where+" AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=works.id AND active=1) ORDER BY next_try "+direction+" LIMIT 1",(kind,state,time.time())+params).fetchone()
-                    if row:break
-                if row:break
-            if row:break
+        config=self.settings()
+        mode=config.get('scan_priority','balanced')
+        if mode not in ('balanced','movies_first','series_first'):mode='balanced'
+        kinds={'movies_first':['movie','series','unknown'],
+               'series_first':['series','movie','unknown']}.get(mode,['movie','series','unknown'])
+        if mode=='balanced':
+            start=self.turn%3;kinds=kinds[start:]+kinds[:start]
         self.turn+=1
-        return row
+        parts=self.mesh_filter
+        scopes=[('',(),'ASC')] if parts is None else (
+            ([(' AND substr(w.id,1,2) IN (%s)'%','.join('?'*len(parts)),
+               tuple('%02x'%p for p in sorted(parts)),'ASC')] if parts else [])
+            +[('',(),'DESC')])
+        def choose(fresh,kind):
+            for where,params,direction in scopes:
+                states=('pending','retry','identified') if fresh else ('retry','pending','identified')
+                for state in states:
+                    predicate=' AND w.attempts=0' if fresh else ' AND w.attempts>0'
+                    row=c.execute("""SELECT w.* FROM works w WHERE w.kind=? AND w.state=?
+                        AND w.next_try<=?"""+predicate+where+"""
+                        AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+                        ORDER BY w.next_try """+direction+""" LIMIT 1""",(kind,state,now)+params).fetchone()
+                    if row:return row
+            return None
+        def focused():
+            if not config.get('complete_series',True):return None
+            for where,params,_ in scopes:
+                row=c.execute("""SELECT w.* FROM series_focus f JOIN works w ON w.show_key=f.show_key
+                    WHERE f.until>? AND f.remaining>0 AND w.kind='series'
+                      AND w.state IN ('pending','retry','identified') AND w.next_try<=?
+                      AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+                    """+where+""" ORDER BY f.updated DESC,w.attempts ASC,w.next_try ASC LIMIT 1""",
+                    (now,now)+params).fetchone()
+                if row:return row
+            return None
+        if mode=='movies_first':
+            row=choose(True,'movie')
+            if row:return row
+        elif mode=='series_first':
+            row=focused()
+            if row:return row
+            row=choose(True,'series')
+            if row:return row
+        else:
+            row=focused()
+            if row:return row
+        for kind in kinds:
+            row=choose(True,kind)
+            if row:return row
+        if mode=='movies_first':
+            row=focused()
+            if row:return row
+        for kind in kinds:
+            row=choose(False,kind)
+            if row:return row
+        return None
+    def scan_rate(self):
+        now=time.monotonic()
+        while self.recent_first and now-self.recent_first[0]>600:self.recent_first.popleft()
+        duration=min(600,now-self.started_at)
+        # At least one minute of measurements for a useful ETA.
+        if duration<60 or len(self.recent_first)<20:return 0.0
+        return len(self.recent_first)*60/max(60,duration)
+    def record_check(self,was_first,from_template=False):
+        self.checked+=1
+        if was_first:
+            self.first_pass_checks+=1;self.recent_first.append(time.monotonic())
+        else:self.repeat_checks+=1
+        if from_template:self.template_hits+=1
+    def scan_progress(self):
+        rate=self.scan_rate()
+        return {'first_pass_session':self.first_pass_checks,'repeat_session':self.repeat_checks,
+                'series_template_session':self.template_hits,'first_pass_per_minute':round(rate,2)}
     def store_outcome(self,c,row,entry,m,recognized,chosen,result,outcome):
         """Persist one recognition result; shared by local checks and mesh results."""
         wid=row['id'];dest=wid
@@ -117,6 +188,13 @@ class Service:
                         own=json.loads(peer['meta']);own.update(kind='series',episode_title=own['title'])
                         for key in ('title','year','provider','reference_id','poster','genres','genre_source'):own[key]=recognized.get(key)
                         catalog.save_metadata(c,peer['id'],own,'identified')
+            # Boost siblings only once their work identities have been propagated.
+            if (recognized['kind']=='series' and self.settings().get('complete_series',True) and
+                recognized.get('reference_id') and
+                metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])):
+                show=catalog.showkey(recognized)
+                if catalog.focus_series(c,show):
+                    diagnostics.event('series_completion_queued',show_key=show,limit=24)
             # Programme data of a Sendereihe rarely changes; daily rechecks of every episode would only load the Mediathek.
             if outcome=='identified':c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+(30*86400 if recognized.get('provider') in broadcaster.PROVIDERS else 86400),dest))
         else:
@@ -136,6 +214,7 @@ class Service:
                 if self.metadata_status.get('phase')!='waiting':self.metadata_state(phase='waiting')
                 return False
             wid=row['id'];original=row['meta'];m=json.loads(original);entry=catalog.item(c,row)
+            catalog.focus_take(c,row['show_key'])
             # A result from another instance arrived before this work was imported here.
             if self.mesh_adopt_stored(c,row):return True
             # A uniquely identified series is already stored locally. Reuse its
@@ -165,7 +244,8 @@ class Service:
                         outcome='identified'
                     if outcome=='identified':
                         c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+30*86400,dest))
-                    self.checked+=1
+                    c.execute('UPDATE works SET attempts=MAX(attempts,1) WHERE id=?',(dest,))
+                    self.record_check(row['attempts']==0,from_template=True)
                     self.metadata_state(phase='result',title=known['title'],outcome=outcome,
                                         provider_checks=[],from_cache=True,series_template=True,
                                         candidates=1 if verified else 0,warnings=[],seconds=0)
@@ -178,9 +258,9 @@ class Service:
         try:
             ck=catalog.digest(json.dumps(['v044',config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
             with self.db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(ck,time.time()-86400)).fetchone()
-            if cached:result=json.loads(cached[0])
+            if cached and not priority:result=json.loads(cached[0])
             else:
-                result=core.candidates(entry['source'],m,config)
+                result=core.candidates(entry['source'],m,{**config,'_force_provider_refresh':bool(priority)})
                 if not result['warnings'] and not result.get('deferred_providers'):
                     with self.db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(ck,json.dumps(result),time.time()))
             chosen=catalog.auto_choice(m,result['candidates']);recognized=chosen or catalog.work_choice(m,result['candidates'])
@@ -192,7 +272,7 @@ class Service:
                 # Provider errors stay local and are retried; only final results are shared. A recheck that
                 # could not reach its provider (paused Mediathek) changed nothing and is not shared either.
                 if outcome!='retry' and (recognized or not (result['warnings'] or result.get('deferred_providers'))):self.mesh_publish(c,'match.result',wid,dest,outcome,recognized or m,providers)
-            self.checked+=1;self.metadata_state(phase='result',title=recognized['title'] if recognized else m['title'],outcome=outcome,provider_checks=result.get('provider_checks',[]),from_cache=bool(cached),candidates=len(result['candidates']),warnings=result['warnings'],seconds=round(time.monotonic()-started,2),providers=providers)
+            self.record_check(row['attempts']==0);self.metadata_state(phase='result',title=recognized['title'] if recognized else m['title'],outcome=outcome,provider_checks=result.get('provider_checks',[]),from_cache=bool(cached),candidates=len(result['candidates']),warnings=result['warnings'],seconds=round(time.monotonic()-started,2),providers=providers)
         except Exception as e:
             diagnostics.error('metadata_failed',e,work_id=wid)
             with self.db() as c:

@@ -14,6 +14,8 @@ CREATE TABLE IF NOT EXISTS offers(id TEXT PRIMARY KEY,work_id TEXT,payload TEXT,
 CREATE INDEX IF NOT EXISTS offer_work ON offers(work_id,active,rank DESC);
 CREATE TABLE IF NOT EXISTS series_templates(topic TEXT,provider TEXT,reference TEXT,meta TEXT,PRIMARY KEY(topic,provider,reference));
 CREATE TABLE IF NOT EXISTS metadata_priority(work_id TEXT PRIMARY KEY,requested REAL);
+CREATE TABLE IF NOT EXISTS series_focus(show_key TEXT PRIMARY KEY,until REAL,remaining INTEGER,updated REAL);
+CREATE INDEX IF NOT EXISTS work_first_pass ON works(attempts,state,kind,next_try);
 CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
 CREATE INDEX IF NOT EXISTS work_retry ON works(state,next_try);
@@ -228,12 +230,37 @@ def item(c,w):
     row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
     return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(c.execute('SELECT 1 FROM downloaded_items WHERE identity=?',(w['id'],)).fetchone()),'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
+def media_equivalence_key(row,special_kind='',active=True):
+    """Exact playable media identity; do not strip signed URL query strings.
+
+    Different accessibility editions, subtitles, timing, channel, or any
+    playable rendition are never collapsed just because both say 'ARD HD'.
+    """
+    media=tuple((field,str(row.get(field) or '')) for field in
+                ('url_video','url_video_hd','url_video_low','url_subtitle'))
+    if not any(value for field,value in media if field!='url_subtitle'):return None
+    return (row.get('channel',''),special_kind,active,int(row.get('duration') or 0),
+            media)
+
 def alternatives(c,wid):
     w=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
     if not w:raise ValueError('Werk nicht gefunden')
-    out=[]
+    out=[];by_media={}
+    meta=json.loads(w['meta'])
     for r in c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC',(wid,)):
-        row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));out.append({'id':r['id'],'work_id':wid,'source':row,'metadata':json.loads(w['meta']),'special':r['special'],'available':bool(r['active']),'links':links(row)})
+        row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']))
+        active=bool(r['active'])
+        key_=media_equivalence_key(row,r['special'],active)
+        if key_ is not None and key_ in by_media:
+            entry=out[by_media[key_]]
+            entry['same_media_count']+=1
+            entry['offer_ids'].append(r['id'])
+            continue
+        entry={'id':r['id'],'work_id':wid,'source':row,'metadata':meta,
+               'special':r['special'],'available':active,'links':links(row),
+               'same_media_count':1,'offer_ids':[r['id']]}
+        if key_ is not None:by_media[key_]=len(out)
+        out.append(entry)
     return out
 
 SHOW_FIELDS=('title','year','kind','provider','reference_id','imdb_id','poster','fanart','genres','genre_source','rating','votes','rating_source','ratings','networks','studios','show_credits','artwork_provider','show_description')
@@ -322,6 +349,10 @@ def stats(c):
     return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
        'last_import_diff':get_state(c,'last_import_diff',{}),
        'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
+       'first_pass_remaining':c.execute("""SELECT COUNT(*) FROM works w
+            WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
+            AND w.state IN ('pending','retry','identified')
+            AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0],
        'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
        'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
        'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
@@ -352,7 +383,7 @@ def save_metadata(c,wid,m,state='manual'):
     original_dest=canonical(m) or wid
     alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(original_dest,)).fetchone()
     dest=alias[0] if alias else original_dest
-    old=c.execute('SELECT state,meta FROM works WHERE id=?',(dest,)).fetchone()
+    old=c.execute('SELECT state,meta,attempts,next_try FROM works WHERE id=?',(dest,)).fetchone()
     if old and old['state']=='manual' and state!='manual':
         m=json.loads(old['meta']);state='manual'
     elif old and old['state']=='matched' and state=='identified':
@@ -369,7 +400,16 @@ def save_metadata(c,wid,m,state='manual'):
             combined=normalized_genres(incoming+list(previous_dest.get('genres') or []))
             m['genres']=combined
             if len(combined)>len(incoming):m['genre_source']='Mehrere bestätigte Quellen'
-    c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,updated) VALUES(?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,meta=excluded.meta,state=excluded.state,updated=excluded.updated',(dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time()))
+    # Retain attempt history when a provisional work moves to a canonical ID.
+    # Otherwise every merge silently turns a repeat into an apparent first pass.
+    seen_attempts=max(int(row['attempts'] or 0),int(old['attempts'] or 0) if old else 0)
+    due=max(float(row['next_try'] or 0),float(old['next_try'] or 0) if old else 0)
+    c.execute("""INSERT INTO works(id,title,kind,year,show_key,meta,state,updated,attempts,next_try)
+        VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+        title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,
+        meta=excluded.meta,state=excluded.state,updated=excluded.updated,
+        attempts=MAX(works.attempts,excluded.attempts)""",
+        (dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time(),seen_attempts,due))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
     m['genres']=normalized_genres(m.get('genres'))
     c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),dest))
@@ -509,6 +549,29 @@ def propagate_series(c,old_show,m):
         if row['state']=='identified' and all(own.get(k)==v for k,v in common.items()):continue
         own.update(common)
         save_metadata(c,row['id'],own,'identified')
+
+def focus_series(c,show_key,limit=24,cooldown=1800):
+    """Boost a *bounded* number of sibling episodes after verified show recognition.
+
+    It does not reset next_try, override user-prioritised work, or force an
+    unbounded recheck of an entire long-running show.
+    """
+    if not show_key:return False
+    now=time.time()
+    old=c.execute('SELECT until FROM series_focus WHERE show_key=?',(show_key,)).fetchone()
+    if old and old[0]>now:return False
+    eligible=c.execute("""SELECT 1 FROM works w WHERE w.show_key=?
+        AND w.kind='series' AND w.state IN ('pending','retry','identified')
+        AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+        LIMIT 1""",(show_key,)).fetchone()
+    if not eligible:return False
+    c.execute('INSERT OR REPLACE INTO series_focus VALUES(?,?,?,?)',
+              (show_key,now+cooldown,int(limit),now))
+    return True
+
+def focus_take(c,show_key):
+    if not show_key:return
+    c.execute('UPDATE series_focus SET remaining=MAX(0,remaining-1) WHERE show_key=?',(show_key,))
 
 def prioritize(c,ids=None,show=''):
     count=0

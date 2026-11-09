@@ -1,4 +1,17 @@
-# MediathekAtlas · 0.5.21 Preview
+# MediathekAtlas · 0.5.22 Preview
+
+## Neu in 0.5.22: Intelligente Warteschlange, Serienvervollständigung, Angebotsprüfung
+
+- Die Erkennung kann in den Einstellungen zwischen **Ausgewogen**, **Filme zuerst** und **Serien zuerst** umgestellt werden. Manuelle Prüfungen behalten Vorrang; die Auswahl betrifft ausdrücklich nicht Downloadaufträge.
+- Neue, noch nicht geprüfte Werke gehen automatisch vor fälligen Wiederholungen. Bereits gespeicherte Prüfversuche bleiben auch bei späterer Werk-Zusammenführung erhalten.
+- Nach eindeutiger Serienerkennung können **bis zu 24** weitere fällige Folgen derselben Serie bevorzugt werden. Der Fokus ist zeitlich und mengenmäßig begrenzt, um Endlosschleifen und die erneute Überprüfung langer Nachrichtenformate zu verhindern.
+- Das Öffnen der Serien-Detailseite löst keinen automatischen Massenabgleich mehr aus. Der manuelle Knopf „Metadaten abgleichen“ bleibt erhalten.
+- **Dauerhafter anbieterbezogener Nichttreffer-Cache:** Erfolgreiche Anfragen ohne Treffer werden befristet gespeichert, um wiederholte API-Last zu verhindern. Netzwerkfehler und gesperrte Anbieter werden niemals als Nichttreffer vermerkt. Ausdrückliche manuelle Suche erzwingt eine neue Anfrage.
+- Echte Erstprüfungen und Wiederholungen werden getrennt gezählt. Die Statusleiste zeigt die verbleibenden Erstprüfungen sowie eine Prognose auf Basis der beobachteten Netto-Erstprüfungen pro Minute.
+- Zwei Senderangebote werden nur dann in der **Ansicht** zusammengefasst, wenn die tatsächlichen Video-/Untertitel-URLs, Sender, Laufzeit und Fassungsart exakt übereinstimmen. Unterliegende Datensätze und alle unterschiedlichen oder barrierefreien Fassungen bleiben erhalten.
+- Geänderte Retry-Strategie: kurz gestörte Anbieter nach gestaffeltem Backoff erneut prüfen; bestätigte Nichttreffer frühestens nach mehreren Tagen wieder aufgreifen.
+
+
 
 ## Neu in 0.5.21: Doppelte Filme zuverlässig zusammenführen
 
