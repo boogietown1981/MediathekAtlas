@@ -5,6 +5,8 @@ SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
 CREATE TABLE IF NOT EXISTS scan_seen(id TEXT PRIMARY KEY) WITHOUT ROWID;
 CREATE TABLE IF NOT EXISTS format_dirty(work_id TEXT PRIMARY KEY);
+CREATE TABLE IF NOT EXISTS film_hints(work_id TEXT PRIMARY KEY,score INTEGER NOT NULL,reason TEXT);
+CREATE INDEX IF NOT EXISTS film_hint_score ON film_hints(score,work_id);
 CREATE TABLE IF NOT EXISTS work_aliases(old_id TEXT PRIMARY KEY,new_id TEXT NOT NULL);
 CREATE TABLE IF NOT EXISTS offer_availability(offer_id TEXT PRIMARY KEY,available_until TEXT,source TEXT,checked REAL);
 CREATE TABLE IF NOT EXISTS artwork_checks(work_id TEXT PRIMARY KEY,next_try REAL);
@@ -147,6 +149,7 @@ def ingest(c,rows,seen=None):
         old=c.execute('SELECT work_id FROM offers WHERE id=?',(oid,)).fetchone()
         if old:wid=old[0]
         cur=c.execute('INSERT OR IGNORE INTO works(id,title,kind,year,show_key,meta,updated) VALUES(?,?,?,?,?,?,?)',(wid,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),seen))
+        if cur.rowcount:update_film_hint(c,wid,m,row)
         c.execute('UPDATE works SET topic=? WHERE id=?',(row.get('topic',''),wid))
         if cur.rowcount:
             if template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
@@ -361,20 +364,34 @@ def tree(c):
     return [dict(r) for r in c.execute("SELECT w.kind,COALESCE(g.genre,'Unbekannt') genre,COUNT(DISTINCT CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END) n FROM works w LEFT JOIN work_genres g ON g.work_id=w.id WHERE EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) GROUP BY w.kind,g.genre")]
 
 def stats(c):
-    counts={r[0]:r[1] for r in c.execute('SELECT kind,COUNT(*) FROM works GROUP BY kind')}
-    return {'types':counts,'works':sum(counts.values()),'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
-       'last_import_diff':get_state(c,'last_import_diff',{}),
-       'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
-       'first_pass_remaining':c.execute("""SELECT COUNT(*) FROM works w
-            WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
-            AND w.state IN ('pending','retry','identified')
-            AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0],
-       'identified':c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0],
-       'matched':c.execute("SELECT COUNT(*) FROM works WHERE state IN ('matched','manual')").fetchone()[0],
-       'pending':c.execute("SELECT COUNT(*) FROM works WHERE kind!='other' AND state IN ('pending','retry')").fetchone()[0],
-       'review':c.execute("SELECT COUNT(*) FROM works WHERE state='review'").fetchone()[0],
-       'formats':c.execute("SELECT COUNT(*) FROM works WHERE state='format'").fetchone()[0],
-       'sync':get_state(c,'sync',{'phase':'waiting'}),'last_complete':get_state(c,'last_complete',0)}
+    """One indexed classification pass, instead of separate full-work scans for each tile."""
+    grouped=c.execute('SELECT kind,state,COUNT(*) n FROM works GROUP BY kind,state').fetchall()
+    kinds={};states={}
+    pending=0
+    for kind,state,n in grouped:
+        kinds[kind]=kinds.get(kind,0)+n
+        states[state]=states.get(state,0)+n
+        if kind!='other' and state in ('pending','retry'):pending+=n
+    first=c.execute("""SELECT COUNT(*) FROM works w
+        WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
+          AND w.state IN ('pending','retry','identified')
+          AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0]
+    return {
+        'types':kinds,'works':sum(kinds.values()),
+        'offers':c.execute('SELECT COUNT(*) FROM offers WHERE active=1').fetchone()[0],
+        'last_import_diff':get_state(c,'last_import_diff',{}),
+        'movie_duplicates_merged':get_state(c,'movie_dedup_total_v0521',0),
+        'film_hints':c.execute("""SELECT COUNT(*) FROM film_hints h JOIN works w ON w.id=h.work_id
+            WHERE w.kind='unknown' AND w.state IN ('pending','retry','identified')""").fetchone()[0],
+        'first_pass_remaining':first,
+        'identified':states.get('identified',0),
+        'matched':states.get('matched',0)+states.get('manual',0),
+        'pending':pending,
+        'review':states.get('review',0),
+        'formats':states.get('format',0),
+        'sync':get_state(c,'sync',{'phase':'waiting'}),
+        'last_complete':get_state(c,'last_complete',0)
+    }
 
 def canonical(m):
     if m.get('state')=='work_identified':return None
@@ -436,6 +453,8 @@ def save_metadata(c,wid,m,state='manual'):
         c.execute('INSERT OR REPLACE INTO work_aliases VALUES(?,?)',(wid,dest))
         c.execute('UPDATE work_aliases SET new_id=? WHERE new_id=?',(dest,wid))
         c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,));c.execute('DELETE FROM works WHERE id=?',(wid,))
+    if m.get('kind')!='unknown':
+        c.execute('DELETE FROM film_hints WHERE work_id IN (?,?)',(wid,dest))
     if m.get('kind')=='movie' and state in ('matched','manual','identified'):
         return reconcile_movie_duplicates(c,dest)
     return dest
@@ -595,9 +614,11 @@ def prioritize(c,ids=None,show=''):
     for wid in (ids or [])[:1000]:
         row=c.execute('SELECT state FROM works WHERE id=?',(wid,)).fetchone()
         if not row or row[0] in ('manual','matched'):continue
-        if row[0]=='format':
-            # An explicit request scans a format contribution once and keeps it out of the format pass.
-            m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0]);m['scan_requested']=True
+        # An explicit request must never be reclassified by the automatic
+        # format scanner while a user is waiting for this particular work.
+        m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0])
+        if not m.get('scan_requested'):
+            m['scan_requested']=True
             c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE id=?",(wid,))
         c.execute('INSERT OR IGNORE INTO metadata_priority VALUES(?,?)',(wid,time.time()));count+=1
@@ -629,8 +650,99 @@ def broadcaster_format(m,source,topic_works):
     if not topic or key(topic) in FORMAT_GENERIC or key(topic)!=key(m.get('title')):return False
     return bool(FORMAT_WORDS.search(topic)) and topic_works>=2
 
+# Exact, established news programmes. An approximate title match or a word such
+# as "heute" alone is NOT enough to classify a film or a scripted series.
+# Keep this list short; each addition needs a positive and negative regression.
+NEWS_TOPICS={
+    'heute journal','heute in deutschland','heute in europa','hallo deutschland',
+    'tagesschau','tagesthemen','heute','zdf heute','zdfheute',
+    'nachtmagazin','morgenmagazin','ard morgenmagazin','zdf morgenmagazin',
+    'mittagsmagazin','ard mittagsmagazin','zdf mittagsmagazin'
+}
+FILM_RUBRICS={
+    'spielfilm','spielfilme','fernsehfilm','fernsehfilme','kino','großes kino',
+    'filme','filme im ersten','film im ersten','filme im mdr','kino kino'
+}
+FILM_PHRASE=re.compile(
+    r'(?i)\b(?:spielfilm|fernsehfilm|kinofilm|filmkomödie|kinodrama|'
+    r'filmklassiker|kinoklassiker|dokumentarfilm|literaturverfilmung)\b')
+
+def is_news_contribution(row,source=None):
+    """Only explicitly known news programmes; preserve manually verified episodes.
+
+    Run before contacting external APIs and as a format-migration fallback. A
+    generic 'heute' inside a film title or synopsis never qualifies.
+    """
+    if not row or row['state'] in ('manual','matched','format') or row['kind'] not in ('unknown','other','series'):
+        return False
+    meta=json.loads(row['meta'] or '{}')
+    if meta.get('scan_requested') or meta.get('episode_verified'):return False
+    if source is None:return False
+    topic=key(cleaned(source.get('topic')))
+    if topic not in NEWS_TOPICS:return False
+    duration=int(source.get('duration') or 0)
+    return duration==0 or 60<=duration<=7200
+
+def mark_news_format(c,row,source):
+    """Skip pointless movie-API lookups for a specific news programme edition.
+
+    No metadata is discarded: keep the original text, ratings and credits, but
+    do not imply that its episode has an external episode ID.
+    """
+    if not is_news_contribution(row,source):return False
+    if c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(row['id'],)).fetchone():return False
+    m=json.loads(row['meta'] or '{}')
+    topic=cleaned(source.get('topic'))
+    m['kind']='series';m['title']=topic;m['episode_title']=m.get('episode_title') or cleaned(source.get('title')) or topic
+    m['state']='format';m['format_grouping']='news'
+    m['reason']='Regelmäßige Nachrichtensendung: kein erneuter Film-/Serienanbieterabgleich erforderlich'
+    m.pop('suggestions',None);m.pop('metadata_warnings',None)
+    if not m.get('provider'):m['provider']='Sendung'
+    m['episode_verified']=False
+    m.pop('episode_reference_id',None)
+    c.execute("""UPDATE works SET title=?,kind='series',show_key=?,meta=?,state='format',
+        next_try=0 WHERE id=?""",(topic,showkey(m),json.dumps(m),row['id']))
+    c.execute('DELETE FROM metadata_priority WHERE work_id=?',(row['id'],))
+    c.execute('DELETE FROM film_hints WHERE work_id=?',(row['id'],))
+    c.execute('DELETE FROM series_focus WHERE show_key=?',(row['show_key'],))
+    return True
+
+def film_likelihood(source):
+    """Priority hint only, never a proof of film identity or an auto-match."""
+    if not source:return 0,''
+    topic=key(source.get('topic'))
+    if topic in NEWS_TOPICS or FORMAT_WORDS.search(topic):return 0,''
+    duration=int(source.get('duration') or 0)
+    if not 2400<=duration<=15000:return 0,''
+    if topic in FILM_RUBRICS:return 3,'Explizite Filmrubrik'
+    if topic in FORMAT_GENERIC:return 0,''
+    desc=core.clean(source.get('description',''))[:260]
+    if FILM_PHRASE.search(desc):return 2,'Ausdrücklicher Filmhinweis im Sendertext'
+    return 0,''
+
+def update_film_hint(c,wid,meta,source):
+    if meta.get('kind')!='unknown':return
+    score,reason=film_likelihood(source)
+    if score>=2:
+        c.execute('INSERT OR REPLACE INTO film_hints VALUES(?,?,?)',(wid,score,reason))
+    else:c.execute('DELETE FROM film_hints WHERE work_id=?',(wid,))
+
+def backfill_film_hints(c,limit=400):
+    """Resume-friendly, bounded upgrade of existing unknown work hints."""
+    cursor=get_state(c,'film_hint_cursor_v0524',0)
+    if cursor=='complete':return 0
+    rows=c.execute("""SELECT rowid AS rid,id,meta FROM works
+        WHERE rowid>? AND kind='unknown' ORDER BY rowid LIMIT ?""",(cursor,limit)).fetchall()
+    for row in rows:
+        cursor=row['rid']
+        offer=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+        if offer:
+            update_film_hint(c,row['id'],json.loads(row['meta']),json.loads(offer[0]))
+    set_state(c,'film_hint_cursor_v0524',cursor if rows else 'complete')
+    return len(rows)
+
 # Raise when the format rules change: existing catalogues then get one more format pass.
-FORMAT_REV=2
+FORMAT_REV=3
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
@@ -653,7 +765,11 @@ def assign_formats(c,limit=500):
         if not open_work and not (row['kind']=='series' and row['state']=='identified'):continue
         best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(row['id'],)).fetchone()
         if not best:continue
-        source=json.loads(best[0]);m=json.loads(row['meta']);topic=row['topic'] or source.get('topic') or ''
+        source=json.loads(best[0])
+        if mark_news_format(c,row,source):
+            assigned+=1
+            continue
+        m=json.loads(row['meta']);topic=row['topic'] or source.get('topic') or ''
         if topic not in counts:counts[topic]=c.execute('SELECT COUNT(*) FROM works WHERE topic=?',(topic,)).fetchone()[0]
         if not open_work:
             if not broadcaster_format(m,source,counts[topic]):continue

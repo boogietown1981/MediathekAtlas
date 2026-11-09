@@ -1,5 +1,17 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.24 Preview – 9. November 2026
+
+- Diagnose 09.11.: Sehr hoher Aufwand für wiederkehrende Nachrichtensendungen („heute journal“, „heute in Europa“, „hallo deutschland“). Explizit bekannte Nachrichtenformate werden vor der externen Metadatenerkennung sicher als Sendungsbeiträge gruppiert.
+- Schutz vor Fehlklassifizierung: keine generische Schlüsselworterkennung aus beliebigen Titeln, keine automatische Änderung bestätigter Filme, manueller Zuordnungen oder verifizierter Episoden. Manueller Abgleich hat Vorrang.
+- Persistierter Filmhinweis-Index für unbekannte Werke mit eindeutigen Senderinformationen. „Filme zuerst“ prüft diese vor anderen noch unbekannten Inhalten; kein ungeprüftes Auto-Matching.
+- Resumierbare Hintergrund-Nachprüfung bestehender Filmhinweise und Ergänzung beim späteren Import.
+- Gebündelte Statuszählung nach Werkart und Erkennungszustand statt mehrfacher vollständiger SQLite-Scans.
+- Eigener Diagnosezähler für ohne externe API gruppierte Nachrichtenbeiträge; keine Verfälschung der Netto-Erstprüfungsquote.
+- Regressionstests für bekannte News-Formate, Filmhinweise, negative Titelbeispiele, manuelle Prioritäten und Zustandszahlen.
+
+
+
 ## 0.5.23 Preview – 8. November 2026
 - Build 47: IMDb Offline im Katalog-/Metadaten-Dashboard mit letztem erfolgreichem Archivaufbau, nächstem Versuch und letztem Fehler. Aufklappbare Übersicht über alle sieben IMDb-Dateien inklusive Datensatzumfang und Übernahmezeitpunkt.
 - Nach erfolgreichem IMDb-Aufbau werden die Einzelzahlen und Dateizeitpunkte in der Snapshot-Datenbank persistiert, auch über Anwendungsneustarts hinweg.
