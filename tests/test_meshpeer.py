@@ -132,6 +132,22 @@ class SeveralConnectionsTests(unittest.TestCase):
             self.assertEqual([p['url'] for p in peers],[syn_url,q_url])
             for p in peers:meshpeer.Peer(p['url'],p['key']).sync(mac.root,mac.node)
             for home in (syn_home,q_home):self.assertTrue((home/'verbund'/'nodes'/B/'events-000001.jsonl').is_file())
+            # A lost key is regenerated only after explicit confirmation.
+            status,body,_=syn_api({'action':'rotate'})
+            self.assertNotEqual(status,200)
+            self.assertTrue(meshpeer.Peer(syn_url,syn_code.split('#')[1]).hello())
+            status,body,_=syn_api({'action':'rotate','confirmed':True})
+            self.assertEqual(status,200,body)
+            rotated=json.loads(body)['key']
+            self.assertNotEqual(rotated,syn_code.split('#')[1])
+            self.assertTrue(meshpeer.valid_key(rotated))
+            with self.assertRaisesRegex(meshpeer.PeerError,'Schlüssel'):
+                meshpeer.Peer(syn_url,syn_code.split('#')[1]).hello()
+            self.assertTrue(meshpeer.Peer(syn_url,rotated).hello())
+            self.assertEqual(syn_state()['mesh_peers'],[q_url],
+                             'Rotating incoming access must not clear outgoing NAS connections')
+            status,body,_=q_api({'action':'connect','code':syn_url+'#'+rotated})
+            self.assertEqual(status,200,body)
             status,body,_=syn_api({'action':'remove','url':q_url});self.assertEqual(status,200,body)
             self.assertEqual(syn_state()['mesh_peers'],[]);self.assertTrue(syn_state()['mesh_shared'])
             status,body,_=syn_api({'action':'unshare'});self.assertFalse(syn_state()['mesh_shared'])
