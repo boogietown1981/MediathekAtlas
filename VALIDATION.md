@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.24 – Nachrichtenformat-Schnellpfad und Filmpriorität (9. November 2026)
+
+- `tests/test_v0524.py` deckt eindeutige Nachrichtenformate, frühzeitige API-Umgehung, Film-/Serien-Titelkonflikte, ausdrücklich angeforderte Werkprüfungen, manuelle und verifizierte Episoden, bestehende Serie-mit-Nachrichtenbeiträgen, Filmhinweise und wiederaufnehmbaren Index-Backfill ab.
+- Der Status „Sendungsbeitrag“ zählt nicht als abgeschlossene Metadatenanfrage oder als Erstprüfungsdurchsatz.
+- Der Filmhinweis-Index dient ausschließlich der Sortierung, nicht der automatischen Bestätigung. Varianten ohne eindeutige Filmbelege bleiben unverändert.
+- Katalogzählungen nach gruppiertem SQL werden gegen kleine deterministische Datensätze geprüft; für ~700.000 Angebote muss der nächste reale Diagnoseexport einen Vorher-/Nachher-Vergleich liefern.
+- Regressionen: Python 3.9, 3.13, 3.14 und macOS; SPK/QPKG-Builds und Payload-Integrität über CI. Keine GitHub-Zusammenführung nach `main` ohne Freigabe.
+
+
+
 ## 0.5.23 · Status-Dashboard und resiliente lokale Downloadverwaltung (8. November 2026)
 
 - Build 47: `tests/test_v0523_imdb_manifest.py` prüft persistierte Zeilenzahlen und Übernahmezeitpunkte aller sieben IMDb-Datensätze, Neustart, fehlgeschlagenes Update ohne Datenverlust und alte Snapshot-Datenbanken ohne erweitertes Metadatenfeld.
