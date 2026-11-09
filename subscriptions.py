@@ -48,6 +48,21 @@ def next_weekly(now, weekday, hour):
     if due.timestamp()<=now:due+=datetime.timedelta(days=7)
     return due.timestamp()
 
+def weekly_followup(now,weekday,hour):
+    """Keep checking within 48 hours of the scheduled weekly start.
+
+    A release published shortly after a weekly slot must not be missed until
+    the next week. The remembered media identity still prevents duplicates.
+    """
+    dt=datetime.datetime.fromtimestamp(now)
+    days=(dt.weekday()-weekday)%7
+    anchor=(dt-datetime.timedelta(days=days)).replace(
+        hour=hour,minute=0,second=0,microsecond=0)
+    if anchor.timestamp()>now:anchor-=datetime.timedelta(days=7)
+    if 0<=now-anchor.timestamp()<48*3600:
+        return now+15*60
+    return next_weekly(now,weekday,hour)
+
 def get_all(c):
     return [dict(r) for r in c.execute(
         "SELECT * FROM subscriptions ORDER BY enabled DESC,created DESC LIMIT 100").fetchall()]
@@ -214,7 +229,7 @@ def run_due(c,root,now=None,force_id=None):
     rows=[dict(r) for r in c.execute('SELECT * FROM subscriptions WHERE enabled=1 AND id=?',(force_id,))] if force_id else due(c,now)
     result=[]
     for sub in rows:
-        nxt=next_weekly(now,sub['weekday'],sub['hour']) if sub['mode']=='weekly' else now+15*60
+        nxt=weekly_followup(now,sub['weekday'],sub['hour']) if sub['mode']=='weekly' else now+15*60
         try:
             c.execute('SAVEPOINT subscription_scan')
             total=enqueue_due(c,sub,root,now)
