@@ -358,6 +358,7 @@ function openDetail(item){const m=item.metadata;$('detail-title').textContent=m.
    $('media-detail').close();
    $('subscription-title').value=m.title||item.source.title||'';
    $('subscription-kind').value=m.kind==='movie'?'movie':'series';
+   $('subscription-year').value=m.kind==='movie'?(m.year||''):'';
    $('subscription-show-key').value=m.kind==='series'?item.show_key||'':'';
    $('subscription-existing').checked=m.kind==='movie';
    $('subscription-consent').checked=false;
