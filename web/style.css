@@ -211,3 +211,21 @@ dialog.player::backdrop{background:#000c}
 .atlas-imdb-source-note{margin:8px 0 0!important;font-size:10px!important;line-height:1.45!important}
 .atlas-imdb-settings-summary{font-size:12px;margin:8px 0;color:#aec7d0}
 #imdb-settings-datasets{grid-template-columns:repeat(auto-fill,minmax(195px,1fr));margin:12px 0}
+
+/* 0.5.25: compact, responsive subscription overview */
+.atlas-subscription-fields{display:grid;grid-template-columns:minmax(0,2fr) repeat(2,minmax(0,1fr));gap:10px;align-items:end}
+.atlas-subscription-fields label{min-width:0}
+.atlas-subscription-form{padding:16px 18px}
+.atlas-subscription-form>.check{display:flex;align-items:center;gap:8px;margin-top:10px}
+.atlas-subscription-list{display:grid;grid-template-columns:repeat(auto-fill,minmax(270px,1fr));gap:10px;margin-top:12px}
+.atlas-subscription{background:#13202d;border:1px solid #344958;border-radius:10px;padding:13px;display:flex;flex-direction:column;gap:7px;min-width:0}
+.atlas-subscription h3{font-size:14px;line-height:1.35;margin:0;overflow-wrap:anywhere}
+.atlas-subscription p,.atlas-subscription small{margin:0;font-size:11px;line-height:1.45;color:#aac0cf;overflow-wrap:anywhere}
+.atlas-subscription .atlas-subscription-state{color:#86e2bb;font-weight:600}
+.atlas-subscription .atlas-subscription-error{color:#f1c399}
+.atlas-subscription-buttons{display:flex;gap:6px;flex-wrap:wrap;margin-top:auto;padding-top:7px}
+.atlas-subscription-buttons button{font-size:11px;padding:7px 10px;margin:0}
+#metadata-workers-status{display:block;font-size:11px;color:#a5c0c9;margin-top:5px}
+#detail-subscribe{margin:8px 0 0;display:block}
+@media(max-width:920px){.atlas-subscription-fields{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){.atlas-subscription-fields{grid-template-columns:1fr}}
