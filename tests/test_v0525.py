@@ -174,6 +174,25 @@ class WorkerLeasesTests(unittest.TestCase):
         self.assertIsNone(self.svc.lease_work())
         with self.connect() as c:c.execute('DELETE FROM metadata_leases WHERE work_id=?',(one[0],))
         self.assertEqual(self.svc.lease_work()[0],one[0])
+    def test_concurrent_claims_do_not_duplicate_a_work(self):
+        # Four threads race against the same SQLite database.
+        with self.connect() as c:
+            catalog.ingest(c,[src('Film Drei',tag='three'),src('Film Vier',tag='four')])
+        barrier=threading.Barrier(4)
+        results=[];errors=[]
+        def run():
+            try:
+                barrier.wait(timeout=5)
+                results.append(self.svc.lease_work())
+            except Exception as exc:errors.append(exc)
+        threads=[threading.Thread(target=run) for _ in range(4)]
+        for thread in threads:thread.start()
+        for thread in threads:thread.join(timeout=10)
+        self.assertFalse(errors)
+        self.assertEqual(len(results),4)
+        self.assertEqual(len({row[0] for row in results if row}),4)
+        with self.connect() as c:
+            self.assertEqual(c.execute('SELECT COUNT(*) FROM metadata_leases').fetchone()[0],4)
     def test_stale_lease_recovers_after_crash(self):
         first=self.svc.lease_work()
         with self.connect() as c:c.execute('UPDATE metadata_leases SET expires=? WHERE work_id=?',(time.time()-1,first[0]))
