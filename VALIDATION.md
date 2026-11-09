@@ -1,5 +1,21 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.23 · Status-Dashboard und resiliente lokale Downloadverwaltung (8. November 2026)
+
+- Build 47: `tests/test_v0523_imdb_manifest.py` prüft persistierte Zeilenzahlen und Übernahmezeitpunkte aller sieben IMDb-Datensätze, Neustart, fehlgeschlagenes Update ohne Datenverlust und alte Snapshot-Datenbanken ohne erweitertes Metadatenfeld.
+- IMDb-Status unterscheidet den letzten erfolgreichen Archivaufbau vom letzten Updateversuch und zeigt keine erfundenen historischen Einzelzeitstempel.
+- Die Datenübersicht bleibt in der Katalogansicht zunächst eingeklappt, damit das verdichtete Dashboard nicht unnötig Höhe belegt.
+
+- Build 46: Responsives CSS mit Container-Queries, acht Kennzahlen-Spalten bei Inhaltsbreiten ab 1320px, vier im mittleren und zwei im schmalen Fenster; keine festen Mindesthöhen. Anbieter-Status passt sich an den Platz an.
+
+- `tests/test_v0523.py`: Datei umbenannt/verschoben, Ordner vorübergehend getrennt, Dateipfad wieder verknüpfen und Downloadhistorie beibehalten.
+- Sicherheitsprüfungen: kein Datei-Zugriff außerhalb explizit erlaubter Bibliotheksordner; Symlink-Ausbruch verweigert; unerwartete Dateigröße blockiert; mehrdeutige Suchtreffer werden nicht automatisch verknüpft.
+- Serverseitiger Dateistatus wird separat von dem dauerhaft gespeicherten Downloadauftrag geführt; fehlende Datei löscht keine Werkzuordnung.
+- Statische JS-Syntaxprüfung und responsive HTML/CSS-Einbindung; alle Plattformtests und macOS/SPK/QPKG-Paketinhalt über GitHub CI.
+- Feldtest: Benutzer verschiebt einen fertigen Film in einen anderen Bibliotheksordner und verknüpft ihn über die Downloads-Karte erneut. Der Status darf zu keinem Zeitpunkt den Katalog- oder Downloadbereich blockieren.
+
+
+
 ## 0.5.22 · Intelligenter Scheduler, Serienfokus und sichere Angebotsgruppen (8. November 2026)
 
 - `tests/test_v0522.py` verifiziert Filme-zuerst/Serien-zuerst, Vorrang manueller Prüfaufträge, Erstprüfungen vor Wiederholungen, begrenzten Serienfokus und Netto-Erstprüfungsrate.

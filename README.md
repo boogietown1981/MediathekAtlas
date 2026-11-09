@@ -1,4 +1,21 @@
-# MediathekAtlas · 0.5.22 Preview
+# MediathekAtlas · 0.5.23 Preview
+
+## Neu in 0.5.23: Status-Dashboard und verschobene Downloads
+
+**Build 47 – IMDb-Archiv transparent:** Im aufklappbaren Bereich „Katalog & Metadatenabgleich“ zeigt der Providerstreifen nun auch IMDb Offline und den letzten erfolgreichen Archivaufbau. Über „IMDb-Archiv“ sind alle sieben importierten Datensätze (Titel, Bewertungen, Episoden, Alternativtitel, Regie/Drehbuch, Mitwirkende, Personen), ihre Dateinamen, Zeilenzahlen und Übernahmezeitpunkte einsehbar. Dieselben Details stehen unter Einstellungen → IMDb-Offline-Archiv. Zeitstempel sind lokale Dateiabhol- bzw. Importzeitpunkte – keine Garantie für den Veröffentlichungszeitpunkt bei IMDb. Diese Detaildaten werden im SQLite-Snapshot dauerhaft gespeichert; ältere bereits erstellte Archive zeigen korrekterweise „nicht gespeichert“, bis der nächste erfolgreiche Import die Zahlen erfasst. Ein abgebrochener Update-Versuch darf den Datenstand des nutzbaren Archivs nicht verändern.
+
+**Build 46 – Layoutverdichtung:** Auf breiten Bildschirmen erscheinen alle acht Statuswerte in einer Zeile; kleinere Fenster verwenden vier bzw. zwei Spalten. Karten, Anbieterstatus und Importdetails beanspruchen weniger Höhe, bleiben aber vollständig lesbar.
+
+- Der Bereich „Katalog & Metadatenabgleich“ zeigt acht responsive Kennzahlen-Karten nebeneinander statt einer unübersichtlichen Statuszeile: aktiver Angebotsbestand, bestätigte Werke, erkannte Werke, vorgemerkte/ungeklärte Werke, Sendungsbeiträge, offene Erstprüfungen und echte Erstprüfungen pro Minute.
+- Die letzte Filmlistenänderung erhält eigenständige, gut lesbare Markierungen für neue, geänderte, reaktivierte, weggefallene und unveränderte Angebote. Fortschritt und Fehler werden separat dargestellt.
+- TMDB, TVDB, OMDb und Wikidata werden in eigenen Statusfeldern gezeigt. Der laufende Werkabgleich bleibt unabhängig davon sichtbar.
+- Heruntergeladene Filme/Folgen bleiben in der Historie, auch wenn der Dateipfad veraltet ist oder ein Laufwerk derzeit fehlt. Die Oberfläche zeigt dann „Datei verschoben / derzeit nicht erreichbar“ statt ungültiger Wiedergabe- und Herunterladen-Schaltflächen.
+- Unter „Downloads“ kann man eine fehlende Datei innerhalb freigegebener Bibliotheksordner suchen oder einen neuen absoluten Dateipfad manuell verknüpfen. Für verschobene Dateien außerhalb des ursprünglichen Downloadordners können unter „Einstellungen“ weitere Bibliotheksordner angegeben werden.
+- Die Wiederverknüpfung ändert ausschließlich die Referenzen in der Datenbank. Der Originaldatei wird **nichts** angetan; vor dem Verknüpfen werden zugelassener Speicherort, unterstützter Medientyp und, soweit bekannt, Dateigröße geprüft. Mehrdeutige Ergebnisse werden nicht automatisch ausgewählt.
+- Neue lokale Dateistatus-Prüfungen werden für 15 Sekunden zwischengespeichert, damit das regelmäßige UI-Polling nicht ständig alle Speicherorte neu abfragt. Die Suche ist auf 25.000 Dateien bzw. drei Sekunden je Benutzeraktion begrenzt.
+- Die laufende Erstprüfung aus 0.5.22 bleibt im Hintergrund unverändert aktiv. Parallele Metadaten-Worker und ein Ablaufdatum-Radar gehören ausdrücklich zu einem separaten Folgeschritt.
+
+
 
 ## Neu in 0.5.22: Intelligente Warteschlange, Serienvervollständigung, Angebotsprüfung
 

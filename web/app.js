@@ -39,11 +39,11 @@ const body=el('div',undefined,'cardbody'),displayTitle=m.title||r.title,heading=
 if(m.kind==='series'&&m.networks?.length)body.append(el('small',m.networks.join(' · ')));const pick=pickLabel(m,item.state);if(pick){const badge=el('div',pick,'pick-badge');badge.title=pickReason(m);body.append(badge);}if(m.rating!=null&&Number.isFinite(Number(m.rating)))body.append(el('small','★ '+m.rating+' / 10 · '+ratingSource(m)));
 body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading,el('p',((item.series_parent?m.show_description:'')||m.description||r.description||'').slice(0,110),'synopsis'));
 if(m.kind==='series'&&!item.series_parent){const number=Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+' · ':'';body.append(el('p',number+(m.episode_title||r.title),'episode-heading'));}
-body.append(el('p',meshDownloadLabel(item.mesh_download)+(item.downloaded&&!item.mesh_download?'✓ Heruntergeladen · ':'')+({identified:'◐ Werk erkannt · Datei noch prüfen',matched:'✓ Metadaten zugeordnet',manual:'✓ Manuell geprüft',review:'◌ Zuordnung prüfen',pending:'◌ Metadaten vorgemerkt',retry:'◌ Abgleich wird wiederholt',format:'◇ Beitrag einer Sendung · nicht abgeglichen'}[item.state]||'◌ Metadaten prüfen')+(m.year?' · '+m.year:''),'badge'));
+body.append(el('p',meshDownloadLabel(item.mesh_download)+(item.downloaded&&!item.mesh_download?(item.file_state==='missing'?'⚠ Datei am bisherigen Pfad nicht gefunden · ':'✓ Heruntergeladen · '):'')+({identified:'◐ Werk erkannt · Datei noch prüfen',matched:'✓ Metadaten zugeordnet',manual:'✓ Manuell geprüft',review:'◌ Zuordnung prüfen',pending:'◌ Metadaten vorgemerkt',retry:'◌ Abgleich wird wiederholt',format:'◇ Beitrag einer Sendung · nicht abgeglichen'}[item.state]||'◌ Metadaten prüfen')+(m.year?' · '+m.year:''),'badge'));
 if(item.series_parent){const b=el('button','Serie öffnen · '+item.episodes+' Folgen');b.onclick=()=>openShow(item.show_key);const bulk=el('button','Serie gesammelt laden');bulk.onclick=()=>openSeries(item.show_key);body.append(b,bulk);}
 else{const files=el('details',undefined,'file-details');files.append(el('summary','Dateien & Qualität'),sourceLinks(item.links));body.append(files);body.append(el('p',(item.available?'Bevorzugt: ':'Archiviert: ')+(item.special||'Reguläre Fassung')+' · '+r.channel+' · '+(item.best?.quality||'?')+' (Senderangabe)','qualityline'));if(r.available_until)body.append(el('p',availabilityLabel(r),'availability-line'));const b=el('button',item.available?'Beste Fassung prüfen & laden':'Metadaten ansehen');b.onclick=()=>edit(item);body.append(b);
 const details=el('details',undefined,'alternatives');details.append(el('summary','Weitere Fassungen ('+item.offer_count+')'));details.ontoggle=async()=>{if(!details.open||details.dataset.loaded)return;try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));for(const a of d.items){const box=el('div',undefined,'alternative');box.append(el('strong',a.source.channel+' · '+(a.special||'Regulär')+(a.available?'':' · nicht mehr gelistet')+(a.same_media_count>1?' · '+a.same_media_count+' identische Einträge gebündelt':'')));if(a.source.available_until)box.append(el('small',availabilityLabel(a.source)));for(const l of a.links){const line=el('p',linkQuality(l)+' · '+(l.supported?'Direktdatei':'Stream, derzeit kein Download'));if(/^https?:\/\//.test(l.url)){const link=el('a','Quelllink');link.href=l.url;link.target='_blank';link.rel='noopener noreferrer';line.append(' · ',link);}box.append(line);}const choose=el('button','Diese Fassung prüfen');choose.onclick=()=>edit(a);box.append(choose);details.append(box);}details.dataset.loaded='1';}catch(e){notice(e.message,'error');}};body.append(details);}
-if(playable(item)){const play=el('button',item.series_parent?'▶ Serie abspielen':'▶ Abspielen','play-button');play.title=item.downloaded?'Lokale Datei abspielen':'Online-Stream des Senders abspielen';play.onclick=()=>playMedia(item,filters.show?items:null);body.append(play);}
+if(playable(item)){const play=el('button',item.series_parent?'▶ Serie abspielen':'▶ Abspielen','play-button');play.title=item.downloaded&&item.file_state!=='missing'?'Lokale Datei abspielen':'Online-Stream des Senders abspielen';play.onclick=()=>playMedia(item,filters.show?items:null);body.append(play);}
 const detail=el('button',item.series_parent?'Serienseite':'Details & Bilder','detail-link');detail.onclick=()=>openTitle(item);body.append(detail);art.classList.add('clickable');art.title='Titelseite öffnen';art.onclick=()=>openTitle(item);heading.classList.add('clickable');heading.onclick=()=>openTitle(item);card.append(art,body);host.append(card);}}
 async function loadCatalog(){
  const snapshot={...filters},pageOffset=offset;
@@ -77,7 +77,47 @@ $('more').onclick=e=>{offset+=48;busy(e.target,loadCatalog);};$('back').onclick=
 $('catalog').onclick=resetFilters;
 $('remote-search').onclick=e=>busy(e.target,async()=>{const d=await api('search',{query:$('query').value});notice(d.imported+' Online-Angebote in den Katalog übernommen.');offset=0;await loadCatalog();await loadTree();});
 $('sync-now').onclick=e=>busy(e.target,async()=>{await api('sync',{});notice('Aktualisierung angefordert. Fortschritt erscheint über dem Katalog.');});
-function catalogProgress(c){if(!c)return;const sync=c.sync||{},phase={waiting:'Wartet auf Import',downloading:'Filmliste wird geladen',importing:'Angebote werden einsortiert',complete:'Katalog aktuell',paused:'Import pausiert',error:'Import unterbrochen – automatischer Versuch in spätestens 5 Minuten',retrying:'Download unterbrochen – erneuter Versuch'}[sync.phase]||sync.phase;const progress=sync.phase==='downloading'?' · '+((sync.received||0)/1048576).toFixed(1)+' / '+((sync.total||0)/1048576).toFixed(1)+' MiB':sync.processed?' · '+countLabel(sync.processed)+' Einträge verarbeitet':'';$('catalog-status').textContent=phase+progress+' | '+countLabel(c.offers)+' Angebote · '+countLabel(c.matched)+' vollständig zugeordnet · '+countLabel(c.identified||0)+' Werke erkannt · '+countLabel(c.pending)+' vorgemerkt · '+countLabel(c.review)+' zu prüfen'+(c.formats?' · '+countLabel(c.formats)+' Sendungsbeiträge':'')+(c.last_import_diff&&Object.keys(c.last_import_diff).length?' | Letzter Abgleich: +'+countLabel(c.last_import_diff.added||0)+' neu · '+countLabel(c.last_import_diff.changed||0)+' geändert · '+countLabel(c.last_import_diff.reactivated||0)+' wieder da · −'+countLabel(c.last_import_diff.removed||0)+' entfallen':'')+(typeof c.first_pass_remaining==='number'?' | Erstprüfung: '+countLabel(c.first_pass_remaining)+' offen'+(c.first_pass_per_minute>0?' · '+c.first_pass_per_minute.toLocaleString('de-DE',{maximumFractionDigits:1})+'/Min. · ca. '+(c.first_pass_eta_hours<24?c.first_pass_eta_hours.toLocaleString('de-DE',{maximumFractionDigits:1})+' Std.':(c.first_pass_eta_hours/24).toLocaleString('de-DE',{maximumFractionDigits:1})+' Tage')+' verbleibend':' · Messung läuft'):'')+(sync.error?' | '+sync.error:'')+(sync.updated_at&&Date.now()/1000-sync.updated_at>50&&['downloading','importing'].includes(sync.phase)?' | Seit über 50 Sekunden kein Fortschritt. Live-Protokoll öffnen oder Filmliste aktualisieren.':'');const rev=[c.offers,c.matched,c.identified,c.review,c.works,c.formats].join(':');if(rev!==catalogRevision&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;loadCatalog().catch(()=>{});loadTree().catch(()=>{});}}
+const atlasStatusFields=[
+ ['offers','Angebote','Aktive Senderangebote'],
+ ['matched','Vollständig zugeordnet','Film oder Episode bestätigt'],
+ ['identified','Werke erkannt','Folge ggf. noch offen'],
+ ['pending','Vorgemerkt','Prüfung oder Wiederholung'],
+ ['review','Zu prüfen','Weitere Belege erforderlich'],
+ ['formats','Sendungsbeiträge','Kein Filmabgleich nötig'],
+ ['first_pass_remaining','Erstprüfung offen','Noch nie geprüft'],
+ ['first_pass_per_minute','Erstprüfungen / Min.','Tatsächlicher Nettofortschritt']
+];
+function catalogProgress(c){
+ if(!c)return;
+ const sync=c.sync||{},phase={waiting:'Wartet auf Import',downloading:'Filmliste wird geladen',importing:'Angebote werden einsortiert',complete:'Katalog aktuell',paused:'Import pausiert',error:'Import unterbrochen',retrying:'Download wird erneut versucht'}[sync.phase]||sync.phase||'Katalog aktuell';
+ $('catalog-phase').textContent=phase;
+ $('catalog-progress-text').textContent=(sync.phase==='downloading'?'Geladen: '+((sync.received||0)/1048576).toFixed(1)+' / '+((sync.total||0)/1048576).toFixed(1)+' MiB':sync.processed?'Letzter Import: '+countLabel(sync.processed)+' Einträge':'')+(sync.error?' · '+sync.error:'')+(sync.updated_at&&Date.now()/1000-sync.updated_at>50&&['downloading','importing'].includes(sync.phase)?' · Seit über 50 Sekunden kein Fortschritt':'');
+ const board=$('catalog-status');
+ if(!board.dataset.ready){
+   for(const [key,label,description] of atlasStatusFields){
+     const card=el('div',undefined,'atlas-metric'),cap=el('span',label,'atlas-metric-label'),value=el('strong','–','atlas-metric-value'),foot=el('small',description,'atlas-metric-foot');
+     card.dataset.metric=key;value.dataset.value=key;foot.dataset.foot=key;card.append(cap,value,foot);board.append(card);
+   }
+   board.dataset.ready='1';
+ }
+ for(const [key] of atlasStatusFields){
+   const value=board.querySelector('[data-value="'+key+'"]');
+   if(value)value.textContent=key==='first_pass_per_minute'?(Number(c[key])>0?Number(c[key]).toLocaleString('de-DE',{maximumFractionDigits:1}):'–'):countLabel(c[key]||0);
+ }
+ const eta=board.querySelector('[data-foot="first_pass_remaining"]');
+ if(eta){
+   eta.textContent=c.first_pass_eta_hours!=null?'Ca. '+(c.first_pass_eta_hours<24?c.first_pass_eta_hours.toLocaleString('de-DE',{maximumFractionDigits:1})+' Std.':(c.first_pass_eta_hours/24).toLocaleString('de-DE',{maximumFractionDigits:1})+' Tage'):'Messung läuft';
+   eta.title='Schätzung aus dem Netto-Durchsatz der Erstprüfungen. Neue oder intern umklassifizierte Werke können den Restbestand verändern.';
+ }
+ const importBox=$('catalog-import-summary'),diff=c.last_import_diff||{};
+ if(Object.keys(diff).length){
+   const values=[['Neu',diff.added,'added'],['Geändert',diff.changed,'changed'],['Wieder verfügbar',diff.reactivated,'reactivated'],['Entfallen',diff.removed,'removed'],['Unverändert',diff.unchanged,'unchanged']];
+   if(!importBox.dataset.ready){importBox.append(el('span','Letzter Abgleich','atlas-import-caption'));for(const [label,,key] of values){const tag=el('span',undefined,'atlas-import-chip');tag.dataset.importKey=key;importBox.append(tag);}importBox.dataset.ready='1';}
+   for(const [label,count,key] of values){const tag=importBox.querySelector('[data-import-key="'+key+'"]');if(tag)tag.textContent=label+' · '+countLabel(count||0);}
+ }else importBox.replaceChildren();
+ const rev=[c.offers,c.matched,c.identified,c.review,c.works,c.formats].join(':');
+ if(rev!==catalogRevision&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
+}
 const fields=['title','kind','year','season','episode','episode_title','description'];
 function fill(){$('genres').value=(meta.genres||[]).join(', ');for(const f of fields)$(f).value=meta[f]??'';$('confirmed').checked=false;$('preview').textContent='Bitte Zielnamen prüfen.';}
 function readMeta(){const out={...meta};for(const f of fields)out[f]=$(f).value;for(const f of ['year','season','episode'])out[f]=out[f]===''?null:Number(out[f]);out.genres=$('genres').value.split(',').map(x=>x.trim()).filter(Boolean);return out;}
@@ -95,13 +135,13 @@ $('lookup').onclick=e=>busy(e.target,async()=>{$('lookup-status').textContent='A
 $('save-metadata').onclick=e=>busy(e.target,async()=>{await api('save-metadata',{id:active.id,metadata:readMeta()});$('lookup-status').textContent='Metadaten dauerhaft im Katalog gespeichert.';await loadCatalog();await loadTree();if(!$('review').hidden)await loadReview();});
 $('preview-button').onclick=e=>busy(e.target,async()=>{$('preview').textContent=(await api('preview',{id:active.id,metadata:readMeta()})).path;});
 $('metadata').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('download',{id:active.id,metadata:readMeta(),quality:$('quality').value,confirmed:$('confirmed').checked});$('editor').close();notice('Download hinzugefügt. Fortschritt unter Downloads.');await refresh();});};
-$('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value='';notice('Einstellungen gespeichert.');await refresh();});};
+$('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked,library_dirs:$('library_dirs').value});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value='';notice('Einstellungen gespeichert.');await refresh();});};
 $('clear-keys').onclick=e=>busy(e.target,async()=>{await api('settings',{clear_tmdb:true,clear_omdb:true,clear_tvdb:true,clear_tvdb_pin:true});await refresh();});
 const labels={queued:'Wartet',downloading:'Wird heruntergeladen',tagging:'Spuren prüfen & Metadaten einbetten',done:'Fertig',error:'Fehler',cancelled:'Abgebrochen',interrupted:'Durch Neustart unterbrochen',remote:'Auf anderem System'};
 function renderRuntime(r){const host=$('runtime-details');host.replaceChildren();for(const k of ['python','ffmpeg','ffprobe']){const t=r[k],box=el('div',undefined,'runtime-item');box.append(el('strong',k+' · '+(t.ok?'Bereit':t.error)),el('p',t.path||'Kein verwendbarer Pfad'),el('small',t.version||''));if(t.failed_candidates?.length)box.append(el('p','Nicht startbar: '+t.failed_candidates.map(x=>x.path).join(', ')));host.append(box);}}
 $('recheck-tools').onclick=e=>busy(e.target,async()=>renderRuntime(await api('tools')));
 let refreshing=false,appStopped=false;
-async function refresh(){if(refreshing||appStopped)return;refreshing=true;try{const d=await api('state');const finished=d.jobs.filter(j=>j.state==='done').map(j=>j.id).join(':');if(finished!==completedRevision){completedRevision=finished;catalogRevision='';}latestSettings=d.settings;renderServer(d.server||{});if(lastArtwork!==(d.artwork_checked||0)){lastArtwork=d.artwork_checked||0;catalogRevision='';}renderImdb(d.imdb);providerPauses=d.provider_pauses||{};renderMetadata(d.metadata,d.settings,providerPauses);if((d.metadata?.checked_session||0)!==lastMetadataChecks){lastMetadataChecks=d.metadata?.checked_session||0;catalogRevision='';}if(d.reclassification?.phase==='running')$('metadata-status').textContent+=' · Bestehenden Katalog neu einordnen: '+countLabel(d.reclassification.processed);$('connection-status').hidden=true;catalogProgress(d.catalog);if(!$('config').contains(document.activeElement)){$('auto_catalog').checked=d.settings.auto_catalog;$('auto_metadata').checked=d.settings.auto_metadata;$('scan_priority').value=d.settings.scan_priority||'balanced';$('complete_series').checked=d.settings.complete_series!==false;}renderRuntime(d.runtime);renderMesh(d.mesh,d.settings);$('tools').textContent=d.tools.ffmpeg&&d.tools.ffprobe?'● FFmpeg & ffprobe bereit':'○ Werkzeugprüfung: Einstellungen öffnen';$('jobcount').textContent=d.jobs.filter(j=>['queued','downloading','tagging'].includes(j.state)).length;if(document.activeElement!==$('download_dir'))$('download_dir').value=d.settings.download_dir;$('key-state').textContent='TMDB: '+(d.settings.tmdb_set?'hinterlegt':'nicht eingerichtet')+' · OMDb: '+(d.settings.omdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB: '+(d.settings.tvdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB-PIN: '+(d.settings.tvdb_pin_set?'hinterlegt':'nicht hinterlegt');const host=$('jobs');host.className='grid job-grid';host.replaceChildren();if(!d.jobs.length)host.append(el('div','Noch keine Downloads. Wähle einen Suchtreffer und prüfe seine Metadaten.','empty'));for(const j of d.jobs)host.append(jobCard(j,d.server||{}));}finally{refreshing=false;}}
+async function refresh(){if(refreshing||appStopped)return;refreshing=true;try{const d=await api('state');const finished=d.jobs.filter(j=>j.state==='done').map(j=>j.id).join(':');if(finished!==completedRevision){completedRevision=finished;catalogRevision='';}latestSettings=d.settings;renderServer(d.server||{});if(lastArtwork!==(d.artwork_checked||0)){lastArtwork=d.artwork_checked||0;catalogRevision='';}renderImdb(d.imdb);providerPauses=d.provider_pauses||{};renderMetadata(d.metadata,d.settings,providerPauses);if((d.metadata?.checked_session||0)!==lastMetadataChecks){lastMetadataChecks=d.metadata?.checked_session||0;catalogRevision='';}if(d.reclassification?.phase==='running')$('metadata-status').append(el('small','Neuklassifizierung läuft · '+countLabel(d.reclassification.processed)+' Werke verarbeitet. Die Restlaufzeit kann vorübergehend schwanken.','atlas-current-warning'));$('connection-status').hidden=true;catalogProgress(d.catalog);if(!$('config').contains(document.activeElement)){$('auto_catalog').checked=d.settings.auto_catalog;$('auto_metadata').checked=d.settings.auto_metadata;$('scan_priority').value=d.settings.scan_priority||'balanced';$('complete_series').checked=d.settings.complete_series!==false;}renderRuntime(d.runtime);renderMesh(d.mesh,d.settings);$('tools').textContent=d.tools.ffmpeg&&d.tools.ffprobe?'● FFmpeg & ffprobe bereit':'○ Werkzeugprüfung: Einstellungen öffnen';$('jobcount').textContent=d.jobs.filter(j=>['queued','downloading','tagging'].includes(j.state)).length;if(document.activeElement!==$('download_dir'))$('download_dir').value=d.settings.download_dir;if(document.activeElement!==$('library_dirs'))$('library_dirs').value=(d.settings.library_dirs||[]).join('\n');$('key-state').textContent='TMDB: '+(d.settings.tmdb_set?'hinterlegt':'nicht eingerichtet')+' · OMDb: '+(d.settings.omdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB: '+(d.settings.tvdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB-PIN: '+(d.settings.tvdb_pin_set?'hinterlegt':'nicht hinterlegt');const host=$('jobs');host.className='grid job-grid';if(document.activeElement?.closest('.job-file-missing'))return;host.replaceChildren();if(!d.jobs.length)host.append(el('div','Noch keine Downloads. Wähle einen Suchtreffer und prüfe seine Metadaten.','empty'));for(const j of d.jobs)host.append(jobCard(j,d.server||{}));}finally{refreshing=false;}}
 function connectionError(e){$('connection-status').textContent=e.message+' Letzter Versuch: '+new Date().toLocaleTimeString('de-DE');$('connection-status').hidden=false;}
 let logPaused=false,logBusy=false;
 async function refreshLog(){if(appStopped||logBusy||logPaused||$('logs').hidden)return;logBusy=true;try{const d=await api('logs');const box=$('live-log'),atEnd=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.textContent=d.text?d.text.split('\n').map(line=>{try{const r=JSON.parse(line),{time,level,event,traceback,...details}=r;return time+'  '+level+'  '+event+'\n'+JSON.stringify(details,null,2)+(traceback?'\n'+traceback:'');}catch{return line;}}).join('\n\n'):'Noch keine Ereignisse.';if(atEnd)box.scrollTop=box.scrollHeight;$('log-status').textContent='Aktualisiert: '+new Date().toLocaleTimeString('de-DE')+' · letzte 400 Zeilen · Zeitstempel im Log: UTC';}catch(e){$('log-status').textContent=e.message;}finally{logBusy=false;}}
@@ -109,7 +149,32 @@ $('pause-log').onclick=()=>{logPaused=!logPaused;$('pause-log').textContent=logP
 $('export-log').onclick=e=>busy(e.target,async()=>{const r=await request('diagnostics');if(!r.ok)throw Error('Diagnoseexport fehlgeschlagen');const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='MediathekAtlas_Diagnose_'+new Date().toISOString().replace(/[:.]/g,'-')+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);});
 renderTree([]);loadCatalog();loadTree();refresh().catch(connectionError);setInterval(()=>{refresh().catch(connectionError);refreshLog();},2500);
 
-function renderMetadata(m={},settings={},pauses={}){const labels={checking:'Prüft gerade',result:'Letztes Ergebnis',waiting:'Wartet auf fällige Einträge',paused:'Pausiert',error:'Abgleichfehler'};const outcomes={matched:'vollständig zugeordnet',identified:'Werk erkannt; Dateizuordnung offen',review:'Zuordnung prüfen',retry:'Wiederholung vorgemerkt'};$('metadata-status').textContent=(labels[m.phase]||'Wird gestartet')+(m.title?' · '+m.title:'')+(m.outcome?' · '+outcomes[m.outcome]:'')+' · '+(m.checked_session||0)+' Abgleiche seit Start'+(visibleWarnings(m.warnings).length?' · '+visibleWarnings(m.warnings).join(' '):'')+(m.error?' · '+m.error:'');$('provider-status').textContent='TMDB: '+(settings.tmdb_set?'eingerichtet':'kein Schlüssel')+' · OMDb: '+(pauses.omdb?.paused?'pausiert · noch '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min. · nächster Versuch '+new Date(pauses.omdb.retry_at*1000).toLocaleTimeString('de-DE'):(settings.omdb_set?'eingerichtet':'kein Schlüssel'))+' · TVDB: '+(settings.tvdb_set?'eingerichtet':'kein Schlüssel')+' · Wikidata: kostenlose Rückfallquelle'+(settings.auto_metadata?'':' · Automatischer Abgleich ist ausgeschaltet');const checked=(m.provider_checks||[]).filter(x=>x.status!=='not_configured'&&x.status!=='paused').map(x=>x.provider+': '+(x.status==='error'?'Abfragefehler':x.count+' Treffer'));if(checked.length)$('provider-status').textContent+=' | Letzter Abgleich'+(m.from_cache?' (Cache)':'')+': '+checked.join(' · ');}
+function renderMetadata(m={},settings={},pauses={}){
+ const labels={checking:'Prüft gerade',result:'Letztes Ergebnis',waiting:'Wartet auf fällige Einträge',paused:'Pausiert',error:'Abgleichfehler'};
+ const outcomes={matched:'Vollständig zugeordnet',identified:'Werk erkannt – Folge offen',review:'Zuordnung prüfen',retry:'Wiederholung vorgesehen'};
+ const current=$('metadata-status');
+ current.replaceChildren();
+ const name=el('strong',(labels[m.phase]||'Wird gestartet')+(m.title?' · '+m.title:''),'atlas-current-title');
+ const summary=el('small',(m.outcome?outcomes[m.outcome]+' · ':'')+countLabel(m.checked_session||0)+' Abgleiche seit Start');
+ current.append(name,summary);
+ const warnings=visibleWarnings(m.warnings);
+ if(warnings.length||m.error)current.append(el('small',warnings.join(' ')+' '+(m.error||''),'atlas-current-warning'));
+ const host=$('provider-status');host.replaceChildren();host.className='atlas-provider-grid';
+ const providers=[
+  ['TMDB',settings.tmdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tmdb_set],
+  ['TVDB',settings.tvdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tvdb_set],
+  ['OMDb',pauses.omdb?.paused?'Pausiert · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
+  ['Wikidata','Kostenlose Rückfallquelle',true],
+  ['IMDb Offline',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
+ ];
+ for(const [label,status,good] of providers){
+   const cell=el('span',undefined,'atlas-provider'+(good?' enabled':''));
+   cell.append(el('strong',label),el('small',status));host.append(cell);
+ }
+ const checked=(m.provider_checks||[]).filter(x=>x.status!=='not_configured'&&x.status!=='paused').map(x=>x.provider+': '+(x.status==='error'?'Fehler':x.status==='negative_cache'?'Nichttreffer-Cache':x.count+' Treffer'));
+ if(checked.length)host.append(el('small','Letzte Abfragen'+(m.from_cache?' · Cache':'')+': '+checked.join(' · '),'atlas-provider-last'));
+ if(!settings.auto_metadata)host.append(el('small','Automatischer Abgleich ausgeschaltet','atlas-provider-last'));
+}
 $('collection-filter').onchange=()=>{filters.kind=$('collection-filter').value==='cinema'?'movie':$('collection-filter').value==='series'?'series':filters.kind;filters.show='';filters.genre='';offset=0;loadCatalog().catch(e=>notice(e.message,'error'));};
 $('download-filter').onchange=$('state-filter').onchange=$('sort-filter').onchange=()=>{offset=0;loadCatalog().catch(e=>notice(e.message,'error'));};
 $('priority-metadata').onclick=e=>busy(e.target,async()=>{const d=await api('metadata-priority',{ids:items.map(x=>x.work_id),show:filters.show});notice(d.queued+' Einträge priorisiert.'+(d.enabled?'':' Bitte automatischen Metadatenabgleich in Einstellungen einschalten.'));});
@@ -157,7 +222,59 @@ function updateSeriesSelection(){const boxes=[...document.querySelectorAll('#ser
 $('series-all').onchange=()=>{document.querySelectorAll('#series-plan input').forEach(x=>x.checked=$('series-all').checked);updateSeriesSelection();};
 
 let imdbReady=false;
-function renderImdb(s={}){imdbReady=!!s.ready;const phase={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',ready:'Archiv bereit',error:'Aktualisierung fehlgeschlagen'}[s.phase]||'Nicht gestartet';$('imdb-status').textContent=phase+(s.dataset?' · '+s.dataset:'')+(s.phase==='downloading'?' · '+((s.received||0)/1048576).toFixed(1)+' MiB'+(s.total?' / '+(s.total/1048576).toFixed(1)+' MiB':''):'')+(s.phase==='importing'?' · '+countLabel(s.rows)+' Zeilen':'')+(s.updated?' · Datenstand: '+new Date(s.updated*1000).toLocaleString('de-DE'):'')+(s.next_update?' · Nächster Versuch: '+new Date(s.next_update*1000).toLocaleString('de-DE'):'')+(s.error?' · '+s.error:'');$('imdb-update').disabled=['downloading','importing','indexing'].includes(s.phase);}
+function imdbDate(seconds){return seconds&&Number.isFinite(Number(seconds))?new Date(Number(seconds)*1000).toLocaleString('de-DE'):'nicht gespeichert';}
+function renderImdb(s={}){
+ imdbReady=!!s.ready;
+ const phases={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',
+   importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',ready:'Archiv bereit',
+   error:'Aktualisierung fehlgeschlagen'};
+ const phase=phases[s.phase]||'Nicht gestartet',last=imdbDate(s.updated),next=imdbDate(s.next_update);
+ const busy=['downloading','importing','indexing'].includes(s.phase);
+ const size=s.archive_bytes>0?(s.archive_bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:2})+' GiB':'–';
+ const status=phase+(s.dataset?' · '+s.dataset:'')+
+  (s.phase==='downloading'?' · '+((s.received||0)/1048576).toFixed(1)+' MiB'+(s.total?' / '+(s.total/1048576).toFixed(1)+' MiB':''):'')+
+  (s.phase==='importing'?' · '+countLabel(s.rows||0)+' Zeilen':'')+
+  (s.updated?' · Letzter erfolgreicher Archivaufbau: '+last:' · Noch kein fertiges Archiv')+
+  (s.next_update?' · Nächster Versuch: '+next:'')+
+  (s.error?' · '+s.error:'');
+ $('imdb-status').textContent=status;
+ $('imdb-update').disabled=busy;
+ const quick=$('imdb-dashboard-summary');
+ if(quick)quick.textContent=s.updated?'Stand: '+last+(s.phase==='error'?' · Update fehlgeschlagen':''):'Noch kein fertiges Archiv';
+ const info=$('imdb-dashboard-info');
+ if(info){
+   const paragraphs=[
+     'Status: '+phase,
+     s.updated?'Zuletzt erfolgreich erstellt: '+last:'Noch kein erfolgreicher Import',
+     s.next_update?'Nächste Prüfung: '+next:'',
+     s.archive_bytes?'Archivdatei: '+size:'',
+     s.error?'Letzter Fehler: '+s.error:''
+   ].filter(Boolean);
+   info.replaceChildren(...paragraphs.map(line=>el('div',line,'atlas-imdb-info-line')));
+ }
+ const settings=$('imdb-settings-summary');
+ if(settings)settings.textContent=(s.ready?'7 IMDb-Datenarten · zuletzt aufgebaut '+last+' · '+size:'Noch kein vollständiges IMDb-Archiv')+
+    (s.next_update?' · nächster Versuch '+next:'')+
+    (s.phase==='error'?' · letzter Aktualisierungsversuch fehlgeschlagen':'');
+ const entries=Array.isArray(s.datasets)?s.datasets:[];
+ const signature=JSON.stringify(entries);
+ for(const id of ['imdb-dataset-grid','imdb-settings-datasets']){
+   const host=$(id);
+   if(!host||host.dataset.signature===signature)continue;
+   host.dataset.signature=signature;
+   host.replaceChildren();
+   if(!entries.length){host.append(el('small','Datensatzliste wird geladen …'));continue;}
+   for(const dataset of entries){
+     const row=el('div',undefined,'atlas-imdb-dataset'),
+           label=el('strong',dataset.label||dataset.key||'Datensatz'),
+           file=el('small',dataset.file||dataset.key,'atlas-imdb-file'),
+           number=dataset.available?(dataset.rows!=null?countLabel(dataset.rows)+' Einträge':'Im Archiv vorhanden · Umfang nicht protokolliert'):'Noch nicht importiert',
+           updated=dataset.retrieved_at?'Datei übernommen: '+imdbDate(dataset.retrieved_at):'Einzelzeitpunkt nicht gespeichert';
+     row.append(label,file,el('small',number,'atlas-imdb-count'),el('small',updated,'atlas-imdb-stamp'));
+     host.append(row);
+   }
+ }
+}
 $('imdb-update').onclick=e=>busy(e.target,async()=>{const d=await api('imdb-update',{});notice(d.queued?'IMDb-Aktualisierung angefordert.':'IMDb-Aktualisierung läuft bereits.');await refresh();});
 
 function safeArt(url){try{const u=new URL(url);return u.protocol==='https:'&&['image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'].includes(u.hostname);}catch{return false;}}
@@ -193,7 +310,7 @@ art.append(el('strong',m.kind==='series'?'SERIE':m.kind==='movie'?'FILM':'DOWNLO
 const body=el('div',undefined,'cardbody'),episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
 const heading=el('h3',(m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;
 body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading);if(episode)body.append(el('p',episode,'episode-heading'));
-body.append(el('p',(j.state==='done'?'✓ ':j.state==='error'?'⚠ ':'◌ ')+(labels[j.state]||j.state)+(m.provider?' · '+m.provider:''),'badge'));
+body.append(el('p',(j.state==='done'?(j.file_state==='missing'?'⚠ ':'✓ '):j.state==='error'?'⚠ ':'◌ ')+(j.state==='done'&&j.file_state==='missing'?'Datei verschoben / derzeit nicht erreichbar':(labels[j.state]||j.state))+(m.provider?' · '+m.provider:''),'badge'));
 if(j.state==='downloading'){const p=el('progress');p.max=j.total||1;if(j.total)p.value=j.received||0;body.append(p,el('small',((j.received||0)/1048576).toFixed(1)+' MiB'+(j.total?' / '+(j.total/1048576).toFixed(1)+' MiB':'')+' · '+(Number(j.speed)>0?(j.speed/1048576).toFixed(1)+' MiB/s':'Geschwindigkeit wird ermittelt')+(Number.isFinite(j.eta)?' · ca. '+Math.ceil(j.eta/60)+' Min.':'')));}
 if(j.error||j.note)body.append(el('small',j.error||j.note,'job-note'));
 const details=el('details',undefined,'file-details');details.open=openJobDetails.has(j.id);details.ontoggle=()=>details.open?openJobDetails.add(j.id):openJobDetails.delete(j.id);details.append(el('summary',j.state==='done'&&j.size_bytes?'Datei & Qualität · '+(j.size_bytes/1048576).toFixed(0)+' MiB':'Datei & Speicherort'));
@@ -201,7 +318,26 @@ if(j.state==='done'&&j.measured){for(const track of j.measured)details.append(el
 const where=el('p',j.path||j.target||'','job-path');where.title=where.textContent;details.append(where);if(server.network&&j.state==='done')details.append(el('small','Liegt auf dem NAS. Über „Herunterladen“ im Browser laden oder per File Station bzw. Netzwerkfreigabe öffnen.'));
 const url=j.source?._download_url||j.source?.url_video_hd||j.source?.url_video;if(url&&/^https?:\/\//.test(url)){const a=el('a','Originalquelle öffnen');a.href=url;a.target='_blank';a.rel='noopener noreferrer';details.append(a);}
 body.append(details);
-if(j.state==='done'){const save=el('a','Herunterladen','button-link primary');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Datei über den Browser auf dieses Gerät laden';body.append(save);
+if(j.state==='done'&&j.file_state==='missing'){
+ const missing=el('div',undefined,'job-file-missing');
+ missing.append(el('p','Datei am gespeicherten Pfad nicht gefunden. Die Downloadhistorie bleibt erhalten; eventuell ist ein Laufwerk gerade nicht verbunden.'));
+ const input=el('input');input.type='text';input.placeholder='Neuer vollständiger Dateipfad';input.autocomplete='off';input.setAttribute('aria-label','Neuer Dateipfad für '+(m.title||j.id));
+ const actions=el('div',undefined,'job-file-actions');
+ const search=el('button','In Bibliothek suchen');
+ search.onclick=e=>busy(e.target,async()=>{
+    const r=await api('library-locate',{id:j.id});
+    if(r.ok){notice('Datei gefunden und wieder verknüpft.');document.activeElement?.blur();await refresh();return;}
+    if(r.matches?.length===1){input.value=r.matches[0];notice('Eine mögliche Datei gefunden. Bitte den Pfad bestätigen.');}
+    else if(r.matches?.length>1){input.value=r.matches[0];notice(r.matches.length+' mögliche Dateien gefunden. Ersten Pfad eingesetzt – vor dem Verknüpfen prüfen.');}
+    else notice('In den freigegebenen Bibliotheksordnern keine passende Datei gefunden.'+(r.incomplete?' Die Suche wurde zeitlich begrenzt.':'')+' Prüfe die Ordner in den Einstellungen.');
+ });
+ const bind=el('button','Pfad verknüpfen');bind.onclick=e=>busy(e.target,async()=>{
+    await api('library-relink',{id:j.id,path:input.value.trim()});
+    notice('Neue Datei erfolgreich verknüpft. Metadaten und Downloadhistorie bleiben erhalten.');document.activeElement?.blur();await refresh();
+ });
+ actions.append(search,bind);missing.append(input,actions);body.append(missing);
+}
+if(j.state==='done'&&j.file_state!=='missing'){const save=el('a','Herunterladen','button-link primary');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Datei über den Browser auf dieses Gerät laden';body.append(save);
  if(!server.network){const b=el('button','Filmdatei öffnen');b.onclick=()=>busy(b,async()=>{await api('open-download',{id:j.id});});body.append(b);}
  const play=el('button','▶ Abspielen','play-button');play.title='Im Browser abspielen';play.onclick=()=>playJob(j);body.insertBefore(play,save);}
 const action=['error','cancelled','interrupted','remote'].includes(j.state)?'retry':['queued','downloading','tagging'].includes(j.state)?'cancel':null;if(action){const b=el('button',action==='retry'?'Erneut versuchen':'Abbrechen');b.onclick=()=>busy(b,async()=>{await api(action,{id:j.id});await refresh();});body.append(b);}

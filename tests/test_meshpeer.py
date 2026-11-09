@@ -61,14 +61,22 @@ class DirectConnectionTests(unittest.TestCase):
                 status,body,_=nas.call(port,'POST','/api/mesh-direct',{'action':'share'},{'Cookie':cookie,'X-Atlas-Token':token})
                 self.assertEqual(status,200,body);share=json.loads(body);key=share['key'];self.assertTrue(share['network'])
                 peer=meshpeer.Peer(url,key)
-                deadline=time.monotonic()+15
+                deadline=time.monotonic()+20
                 while True:
-                    try:info=peer.hello();break
+                    try:
+                        info=peer.hello()
+                        nas_node=info['node']
+                        # Share API starts the journal publisher asynchronously. HTTP
+                        # readiness alone does not guarantee the first heartbeat file
+                        # is visible, especially on a busy macOS CI runner.
+                        ready=(f'nodes/{nas_node}/node.json' in info['files'] and
+                               (home/'verbund'/'nodes'/nas_node/'node.json').is_file())
+                        if ready:break
                     except meshpeer.PeerError:
-                        if time.monotonic()>deadline:raise
-                        time.sleep(.3)
-                nas_node=info['node'];self.assertTrue(any(f.endswith('node.json') for f in info['files']))
-                self.assertTrue((home/'verbund'/'nodes'/nas_node/'node.json').is_file())
+                        pass
+                    if time.monotonic()>deadline:self.fail('NAS-Journal nicht innerhalb von 20 Sekunden bereit')
+                    time.sleep(.3)
+                self.assertTrue(ready)
                 # The Mac side: its own journal in a local folder, one published segment.
                 (d/'mac').mkdir();mac=meshjournal.Journal(meshjournal.check_folder(d/'mac',create=True),B,'Mac Einsbach')
                 mac.append('match.manual',{'work':'w1','dest':'w1','outcome':'manual','meta':{'title':'Persona'},'providers':[]});mac.flush(force=True)
