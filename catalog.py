@@ -664,8 +664,8 @@ FILM_RUBRICS={
     'filme','filme im ersten','film im ersten','filme im mdr','kino kino'
 }
 FILM_PHRASE=re.compile(
-    r'(?i)\\b(?:spielfilm|fernsehfilm|kinofilm|filmkomödie|kinodrama|'
-    r'filmklassiker|kinoklassiker|dokumentarfilm|literaturverfilmung)\\b')
+    r'(?i)\b(?:spielfilm|fernsehfilm|kinofilm|filmkomödie|kinodrama|'
+    r'filmklassiker|kinoklassiker|dokumentarfilm|literaturverfilmung)\b')
 
 def is_news_contribution(row,source=None):
     """Only explicitly known news programmes; preserve manually verified episodes.
