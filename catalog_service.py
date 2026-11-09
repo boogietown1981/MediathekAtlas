@@ -399,7 +399,10 @@ class Service:
             if index>=requested or not self.settings().get('auto_metadata',True):
                 self.stop.wait(2);continue
             busy=self.metadata_once()
-            self.stop.wait(METADATA_PAUSE if busy else 2)
+            # Preserve the existing wake/idle contract for UI priorities and
+            # immediate interruption, also with more than one worker.
+            self.metadata_wake.wait(METADATA_PAUSE if busy else 2)
+            self.metadata_wake.clear()
 
     def artwork_loop(self):
         import artwork
