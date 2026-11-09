@@ -1,5 +1,5 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
-import hashlib,json,time,threading,secrets
+import hashlib,json,time,threading,secrets,sqlite3
 from collections import deque
 import platform
 from pathlib import Path
@@ -91,7 +91,7 @@ class Service:
             with self.db() as c:
                 last=catalog.get_state(c,'last_complete',0)
                 try:has_subscriptions=bool(c.execute('SELECT 1 FROM subscriptions WHERE enabled=1 LIMIT 1').fetchone())
-                except Exception:has_subscriptions=False
+                except sqlite3.OperationalError:has_subscriptions=False
             # Active subscriptions need fresh offers; hourly-ish feed import is
             # still bounded, cancellable and uses the incremental diff.
             interval=2*3600 if has_subscriptions else 12*3600
