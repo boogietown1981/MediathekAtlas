@@ -18,7 +18,7 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.subscription_wake=threading.Event()
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.subscription_wake=threading.Event();self.lease_gc_at=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -120,12 +120,21 @@ class Service:
     def lease_work(self):
         now=time.time()
         with self.db() as c:
-            c.execute('DELETE FROM metadata_leases WHERE expires<=?',(now,))
+            # Serialize the short pick+claim operation, not the network request.
+            # Unlike an INSERT OR IGNORE, UPSERT may safely reclaim an expired
+            # lease even if housekeeping has not removed it yet.
+            c.execute('BEGIN IMMEDIATE')
+            if now>=self.lease_gc_at:
+                c.execute('DELETE FROM metadata_leases WHERE expires<=?',(now,))
+                self.lease_gc_at=now+60
             row=self.pick(c)
             if row is None:return None
             owner=secrets.token_hex(12)
-            added=c.execute('INSERT OR IGNORE INTO metadata_leases VALUES(?,?,?)',
-                            (row['id'],owner,now+1800)).rowcount
+            added=c.execute("""INSERT INTO metadata_leases(work_id,owner,expires)
+                VALUES(?,?,?) ON CONFLICT(work_id) DO UPDATE SET
+                  owner=excluded.owner,expires=excluded.expires
+                WHERE metadata_leases.expires<=?""",
+                (row['id'],owner,now+1800,now)).rowcount
             return (row['id'],owner) if added else None
 
     def metadata_once(self):
@@ -143,10 +152,12 @@ class Service:
         try:
             return self._metadata_once_claimed(wid)
         finally:
-            with self.db() as c:
-                c.execute('DELETE FROM metadata_leases WHERE work_id=? AND owner=?',(wid,owner))
-            with self.worker_lock:
-                self.active_checks=max(0,self.active_checks-1);self.active_work.pop(thread,None)
+            try:
+                with self.db() as c:
+                    c.execute('DELETE FROM metadata_leases WHERE work_id=? AND owner=?',(wid,owner))
+            finally:
+                with self.worker_lock:
+                    self.active_checks=max(0,self.active_checks-1);self.active_work.pop(thread,None)
 
     def pick(self,c):
         """User priority, bounded show completion, new work, then due retries.
@@ -244,13 +255,15 @@ class Service:
         if from_template:self.template_hits+=1
     def scan_progress(self):
         rate=self.scan_rate()
+        with self.worker_lock:
+            active=self.active_checks;running=dict(self.active_work)
         return {'first_pass_session':self.first_pass_checks,'repeat_session':self.repeat_checks,
                 'series_template_session':self.template_hits,
                 'news_format_shortcuts_session':self.news_shortcuts,
                 'first_pass_per_minute':round(rate,2),
-                'recognition_workers_active':self.active_checks,
+                'recognition_workers_active':active,
                 'recognition_workers_configured':max(1,min(4,int(self.settings().get('metadata_workers',2)))),
-                'recognition_worker_ids':dict(self.active_work)}
+                'recognition_worker_ids':running}
     def store_outcome(self,c,row,entry,m,recognized,chosen,result,outcome):
         """Persist one recognition result; shared by local checks and mesh results."""
         wid=row['id'];dest=wid
