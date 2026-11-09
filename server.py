@@ -575,6 +575,15 @@ class Handler(BaseHTTPRequestHandler):
                 if action=='share':
                     if not NETWORK:raise ValueError('Die Mac-/Desktop-App ist nur auf diesem Rechner erreichbar und kann nicht freigegeben werden. Bitte auf dem NAS „Dieses System freigeben“ wählen und den Code hier einfügen.')
                     if not meshpeer.valid_key(s.get('mesh_key')):s['mesh_key']=meshpeer.new_key()
+                elif action=='rotate':
+                    if not NETWORK:
+                        raise ValueError('Ein neuer Verbund-Schlüssel kann nur auf einem erreichbaren NAS-Dienst erzeugt werden.')
+                    if d.get('confirmed') is not True:
+                        raise ValueError('Schlüsselwechsel bestätigen: Alle bisher verbundenen Clients benötigen danach den neuen Verbindungscode.')
+                    # Rotation changes inbound access only; outbound peer codes
+                    # and the existing journal/counters must remain untouched.
+                    s['mesh_key']=meshpeer.new_key()
+                    diagnostics.event('mesh_key_rotated',outgoing_peers=len(meshpeer.peer_list(s)))
                 elif action=='connect':
                     url,key=meshpeer.parse_code(d.get('code'))
                     if not key:raise ValueError('Bitte den vollständigen Verbindungscode der Gegenstelle einfügen (Adresse#Schlüssel)')
