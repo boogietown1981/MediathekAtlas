@@ -13,6 +13,10 @@ from pathlib import Path
 import catalog
 import core
 
+class AmbiguousTitle(ValueError):
+    """A subscription must not pick between two different confirmed productions."""
+
+
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS subscriptions(
  id TEXT PRIMARY KEY,kind TEXT NOT NULL,title TEXT NOT NULL,show_key TEXT,
@@ -137,12 +141,20 @@ def candidates(c,sub):
         rows=c.execute("""SELECT * FROM works WHERE kind=? AND state IN ('matched','manual')
             AND title=? COLLATE NOCASE ORDER BY updated DESC LIMIT 500""",
             (sub['kind'],sub['title'])).fetchall()
+    verified=[]
     for row in rows:
         meta=json.loads(row['meta'])
         if catalog.key(meta.get('title'))!=catalog.key(sub['title']):continue
         if sub['year'] and meta.get('year')!=sub['year']:continue
         if meta.get('kind')!=sub['kind']:continue
-        yield row,meta
+        verified.append((row,meta))
+    if sub['kind']=='movie' and not sub['year']:
+        years={m.get('year') for _,m in verified}
+        if len(years)>1:raise AmbiguousTitle('Gleichnamige Filme: bitte Erscheinungsjahr im Abo angeben')
+    if sub['kind']=='series' and not sub['show_key']:
+        shows={row['show_key'] for row,_ in verified}
+        if len(shows)>1:raise AmbiguousTitle('Mehrere Serien mit diesem Titel: Abo aus dem richtigen Katalogeintrag erstellen')
+    yield from verified
 
 def enqueue_due(c,sub,root,now=None,limit=10):
     """Caller runs in one immediate SQLite transaction. No download starts here."""
@@ -153,6 +165,12 @@ def enqueue_due(c,sub,root,now=None,limit=10):
         seen=c.execute('SELECT 1 FROM subscription_seen WHERE subscription_id=? AND work_id=?',
                       (sub['id'],row['id'])).fetchone()
         if seen:continue
+        # The catalogue can change a provisional work ID when metadata is
+        # confirmed. Keep future-only subscriptions tied to the original offer.
+        if c.execute("""SELECT 1 FROM subscription_seen s
+            JOIN work_aliases a ON a.old_id=s.work_id
+            WHERE s.subscription_id=? AND a.new_id=? LIMIT 1""",
+            (sub['id'],row['id'])).fetchone():continue
         key=media_key(meta,row['show_key'])
         if key is None:continue
         if c.execute('SELECT 1 FROM subscription_jobs WHERE subscription_id=? AND media_key=?',
@@ -202,12 +220,14 @@ def run_due(c,root,now=None,force_id=None):
             total=enqueue_due(c,sub,root,now)
             c.execute('RELEASE subscription_scan')
             error=''
-        except Exception:
+        except Exception as exc:
             # One malformed offer must not block all other subscriptions or
             # leave half a batch queued. Back off and keep the plan active.
             c.execute('ROLLBACK TO subscription_scan')
             c.execute('RELEASE subscription_scan')
-            total=0;error='Prüfung fehlgeschlagen; erneuter Versuch beim nächsten Termin'
+            total=0
+            error=(str(exc) if isinstance(exc,AmbiguousTitle)
+                   else 'Prüfung fehlgeschlagen; erneuter Versuch beim nächsten Termin')
         c.execute('UPDATE subscriptions SET last_check=?,next_check=?,queued_count=queued_count+?,last_error=? WHERE id=?',
                   (now,nxt,total,error,sub['id']))
         result.append({'id':sub['id'],'title':sub['title'],'queued':total,'next_check':nxt,
