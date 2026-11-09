@@ -708,12 +708,12 @@ def film_likelihood(source):
     """Priority hint only, never a proof of film identity or an auto-match."""
     if not source:return 0,''
     topic=key(source.get('topic'))
-    if topic in NEWS_TOPICS or topic in FORMAT_GENERIC or FORMAT_WORDS.search(topic):
-        return 0,''
+    if topic in NEWS_TOPICS or FORMAT_WORDS.search(topic):return 0,''
     duration=int(source.get('duration') or 0)
     if not 2400<=duration<=15000:return 0,''
-    desc=core.clean(source.get('description',''))[:260]
     if topic in FILM_RUBRICS:return 3,'Explizite Filmrubrik'
+    if topic in FORMAT_GENERIC:return 0,''
+    desc=core.clean(source.get('description',''))[:260]
     if FILM_PHRASE.search(desc):return 2,'Ausdrücklicher Filmhinweis im Sendertext'
     return 0,''
 
