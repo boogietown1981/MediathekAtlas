@@ -22,6 +22,7 @@ function updateSubscriptionSchedule(){
 $('subscription-mode').onchange=updateSubscriptionSchedule;
 $('subscription-kind').onchange=()=>{
  $('subscription-show-key').value='';
+ if($('subscription-kind').value!=='movie')$('subscription-year').value='';
  $('subscription-existing').checked=$('subscription-kind').value==='movie';
 };
 updateSubscriptionSchedule();
