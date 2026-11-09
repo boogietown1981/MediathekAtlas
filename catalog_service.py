@@ -1,5 +1,5 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
-import hashlib,json,time,threading
+import hashlib,json,time,threading,secrets
 from collections import deque
 import platform
 from pathlib import Path
@@ -18,9 +18,14 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic()
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.subscription_wake=threading.Event()
     def start(self):
-        for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
+        for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
+            threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
+        # Start four cheap long-lived threads, activate only the configured count.
+        for index in range(4):
+            fn=lambda index=index:self.metadata_loop(index)
+            threading.Thread(target=self.supervise,args=(fn,),daemon=True,name='recognition_worker_%d'%(index+1)).start()
     def supervise(self,fn):
         while not self.stop.is_set():
             try:
@@ -75,7 +80,7 @@ class Service:
             if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
             changes=catalog.finish_snapshot(c,started,changes)
             catalog.set_state(c,'last_complete',time.time())
-        self.format_wake.set()
+        self.format_wake.set();self.subscription_wake.set()
         diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
         self.status(phase='complete',processed=count,changes=changes);return count
     def sync_loop(self):
@@ -97,6 +102,52 @@ class Service:
     def metadata_state(self,**state):
         self.metadata_status={**state,'checked_session':self.checked,'updated_at':time.time()}
         diagnostics.event('metadata_status',**self.metadata_status)
+    def subscription_loop(self):
+        """Create queued download jobs from user-approved subscriptions."""
+        import subscriptions
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    c.execute('BEGIN IMMEDIATE')
+                    result=subscriptions.run_due(c,self.settings()['download_dir'])
+                for row in result:
+                    if row['queued']:
+                        diagnostics.event('subscription_jobs_queued',id=row['id'],
+                                          queued=row['queued'],title=row['title'])
+            except Exception as e:diagnostics.error('subscription_scheduler_failed',e)
+            self.subscription_wake.wait(60);self.subscription_wake.clear()
+
+    def lease_work(self):
+        now=time.time()
+        with self.db() as c:
+            c.execute('DELETE FROM metadata_leases WHERE expires<=?',(now,))
+            row=self.pick(c)
+            if row is None:return None
+            owner=secrets.token_hex(12)
+            added=c.execute('INSERT OR IGNORE INTO metadata_leases VALUES(?,?,?)',
+                            (row['id'],owner,now+1800)).rowcount
+            return (row['id'],owner) if added else None
+
+    def metadata_once(self):
+        if not self.settings().get('auto_metadata',True):return False
+        claim=self.lease_work()
+        if claim is None:
+            with self.worker_lock:active=self.active_checks
+            if not active and self.metadata_status.get('phase')!='waiting':
+                self.metadata_state(phase='waiting')
+            return False
+        wid,owner=claim
+        thread=threading.current_thread().name
+        with self.worker_lock:
+            self.active_checks+=1;self.active_work[thread]=wid
+        try:
+            return self._metadata_once_claimed(wid)
+        finally:
+            with self.db() as c:
+                c.execute('DELETE FROM metadata_leases WHERE work_id=? AND owner=?',(wid,owner))
+            with self.worker_lock:
+                self.active_checks=max(0,self.active_checks-1);self.active_work.pop(thread,None)
+
     def pick(self,c):
         """User priority, bounded show completion, new work, then due retries.
 
@@ -105,8 +156,9 @@ class Service:
         """
         now=time.time()
         row=c.execute("""SELECT w.* FROM metadata_priority p JOIN works w ON w.id=p.work_id
-            WHERE w.state NOT IN ('manual','matched') AND w.next_try<=?
-            ORDER BY p.requested LIMIT 1""",(now,)).fetchone()
+            WHERE w.state NOT IN ('manual','matched','format') AND w.next_try<=?
+              AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
+            ORDER BY p.requested LIMIT 1""",(now,now)).fetchone()
         if row:return row
         config=self.settings()
         mode=config.get('scan_priority','balanced')
@@ -129,7 +181,8 @@ class Service:
                     row=c.execute("""SELECT w.* FROM works w WHERE w.kind=? AND w.state=?
                         AND w.next_try<=?"""+predicate+where+"""
                         AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
-                        ORDER BY w.next_try """+direction+""" LIMIT 1""",(kind,state,now)+params).fetchone()
+                        AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
+                        ORDER BY w.next_try """+direction+""" LIMIT 1""",(kind,state,now)+params+(now,)).fetchone()
                     if row:return row
             return None
         def focused():
@@ -139,8 +192,9 @@ class Service:
                     WHERE f.until>? AND f.remaining>0 AND w.kind='series'
                       AND w.state IN ('pending','retry','identified') AND w.next_try<=?
                       AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+                      AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
                     """+where+""" ORDER BY f.updated DESC,w.attempts ASC,w.next_try ASC LIMIT 1""",
-                    (now,now)+params).fetchone()
+                    (now,now,now)+params).fetchone()
                 if row:return row
             return None
         if mode=='movies_first':
@@ -153,8 +207,9 @@ class Service:
                     WHERE h.score>=2 AND w.kind='unknown' AND w.attempts=0
                       AND w.state IN ('pending','retry','identified') AND w.next_try<=?
                       AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+                      AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
                     """+where+""" ORDER BY h.score DESC,w.next_try ASC LIMIT 1""",
-                    (now,)+params).fetchone()
+                    (now,now)+params).fetchone()
                 if row:return row
         elif mode=='series_first':
             row=focused()
@@ -192,7 +247,10 @@ class Service:
         return {'first_pass_session':self.first_pass_checks,'repeat_session':self.repeat_checks,
                 'series_template_session':self.template_hits,
                 'news_format_shortcuts_session':self.news_shortcuts,
-                'first_pass_per_minute':round(rate,2)}
+                'first_pass_per_minute':round(rate,2),
+                'recognition_workers_active':self.active_checks,
+                'recognition_workers_configured':max(1,min(4,int(self.settings().get('metadata_workers',2)))),
+                'recognition_worker_ids':dict(self.active_work)}
     def store_outcome(self,c,row,entry,m,recognized,chosen,result,outcome):
         """Persist one recognition result; shared by local checks and mesh results."""
         wid=row['id'];dest=wid
@@ -225,16 +283,12 @@ class Service:
             if row['state']=='identified':outcome='identified'
             c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
         return outcome,dest
-    def metadata_once(self):
+    def _metadata_once_claimed(self,selected_id):
         config=self.settings()
-        if not config.get('auto_metadata',True):
-            if self.metadata_status.get('phase')!='paused':self.metadata_state(phase='paused')
-            return False
+        if not config.get('auto_metadata',True):return False
         with self.db() as c:
-            row=self.pick(c)
-            if not row:
-                if self.metadata_status.get('phase')!='waiting':self.metadata_state(phase='waiting')
-                return False
+            row=c.execute('SELECT * FROM works WHERE id=?',(selected_id,)).fetchone()
+            if not row or row['state'] in ('manual','matched','format'):return False
             wid=row['id'];original=row['meta'];m=json.loads(original);entry=catalog.item(c,row)
             catalog.focus_take(c,row['show_key'])
             # A result from another instance arrived before this work was imported here.
@@ -296,7 +350,9 @@ class Service:
             with self.db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(ck,time.time()-86400)).fetchone()
             if cached and not priority:result=json.loads(cached[0])
             else:
-                result=core.candidates(entry['source'],m,{**config,'_force_provider_refresh':bool(priority)})
+                # Shared provider concurrency cap avoids overwhelming sender APIs.
+                with self.provider_slots:
+                    result=core.candidates(entry['source'],m,{**config,'_force_provider_refresh':bool(priority)})
                 if not result['warnings'] and not result.get('deferred_providers'):
                     with self.db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(ck,json.dumps(result),time.time()))
             chosen=catalog.auto_choice(m,result['candidates']);recognized=chosen or catalog.work_choice(m,result['candidates'])
@@ -337,12 +393,13 @@ class Service:
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
             self.format_wake.wait(3600);self.format_wake.clear()
-    def metadata_loop(self):
+    def metadata_loop(self,index=0):
         while not self.stop.is_set():
-            # A fixed 2 s pause after every work capped the queue at ~28.000 works per day (diagnosis 0.4.7).
-            # Providers throttle themselves (caches, pauses, HTTP 429 handling); wait only when idle.
+            requested=max(1,min(4,int(self.settings().get('metadata_workers',2))))
+            if index>=requested or not self.settings().get('auto_metadata',True):
+                self.stop.wait(2);continue
             busy=self.metadata_once()
-            self.metadata_wake.wait(METADATA_PAUSE if busy else 2);self.metadata_wake.clear()
+            self.stop.wait(METADATA_PAUSE if busy else 2)
 
     def artwork_loop(self):
         import artwork
