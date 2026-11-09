@@ -1,5 +1,5 @@
 """Personal IMDb dataset snapshot: bounded imports and atomic publication."""
-import csv,gzip,io,json,os,re,shutil,sqlite3,threading,time,unicodedata
+import csv,gzip,io,json,os,re,shutil,sqlite3,threading,time,unicodedata,urllib.error,socket
 from pathlib import Path
 import core,diagnostics
 WEEK=7*86400
@@ -129,7 +129,16 @@ class Archive:
             datasets=[dict(entry) for entry in self.dataset_details]
         try:size=self.path.stat().st_size if updated else 0
         except OSError:size=0
-        return {**state,'updated':updated,
+        staged=[]
+        for kind in HEADERS:
+            full=self.root/(kind+'.tsv.gz')
+            part=self.root/(kind+'.tsv.gz.part')
+            try:
+                complete=full.stat().st_size if full.exists() else 0
+                partial=part.stat().st_size if part.exists() else 0
+            except OSError:complete=partial=0
+            staged.append({'key':kind,'downloaded_bytes':complete,'partial_bytes':partial})
+        return {**state,'staged_downloads':staged,'updated':updated,
                 'next_update':max(updated+WEEK if version==VERSION else 0,retry_at) if updated or retry_at else None,
                 'ready':bool(updated),'path':str(self.path),'performance':performance,
                 'datasets':datasets,'archive_bytes':size,'archive_version':version}
@@ -147,18 +156,38 @@ class Archive:
             if requested or self.due():self.update()
             self.wake.wait(30)
     def fetch(self,kind,path):
-        """Download one dataset; resume an interrupted transfer and reuse a fresh complete file.
+        """Resume partial IMDb files, retry transient failures, retain successful files.
 
-        Diagnosis 0.5.15: a read timeout after 334 of 521 MB discarded every file of the round,
-        and the next hourly attempt started all seven downloads again."""
-        if path.exists() and time.time()-path.stat().st_mtime<2*86400:return
+        A transient network loss should not restart hundreds of megabytes of
+        completed transfers. Cached complete files are kept for one week while
+        the initial database import has not yet succeeded.
+        """
+        if path.exists() and time.time()-path.stat().st_mtime<7*86400:return
+        for attempt in range(3):
+            if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
+            try:
+                self._fetch_once(kind,path,attempt)
+                return
+            except (urllib.error.URLError,TimeoutError,ConnectionError,EOFError,ValueError) as exc:
+                # Do not repeatedly retry non-transient 4xx failures or malformed data.
+                if isinstance(exc,urllib.error.HTTPError) and exc.code not in (408,429,500,502,503,504):
+                    raise
+                if isinstance(exc,ValueError) and str(exc)!='IMDb-Download unvollständig':
+                    raise
+                if attempt==2:raise
+                self.progress(phase='retrying',dataset=kind,attempt=attempt+2,
+                              error='Verbindung unterbrochen; vorhandener Teil-Download bleibt erhalten')
+                if self.stop.wait(1+2*attempt):raise InterruptedError('IMDb-Import beendet') from None
+
+    def _fetch_once(self,kind,path,attempt=0):
         part=path.with_name(path.name+'.part');have=part.stat().st_size if part.exists() else 0
-        self.progress(phase='downloading',dataset=kind,received=have,total=0,error='',rows=0)
+        self.progress(phase='downloading',dataset=kind,received=have,total=0,
+                      error='',rows=0,attempt=attempt+1)
         with core.open_url(BASE+FILES[kind],**({'headers':{'Range':'bytes=%d-'%have}} if have else {})) as response:
-            resumed=have and getattr(response,'status',200)==206
+            resumed=bool(have and getattr(response,'status',200)==206)
             if not resumed:have=0
-            length=int(response.headers.get('Content-Length') or 0);total=have+length if length else 0
-            # Reject a transfer before writing when it would consume the remaining disk reserve.
+            length=int(response.headers.get('Content-Length') or 0)
+            total=have+length if length else 0
             if length and shutil.disk_usage(self.root).free<length+512*1024**2:
                 raise OSError('IMDb: zu wenig freier Speicher für restlichen Download und 512 MiB Reserve; bisheriges Archiv bleibt nutzbar')
             with part.open('ab' if resumed else 'wb') as f:
@@ -167,7 +196,8 @@ class Archive:
                     if self.stop.is_set():raise InterruptedError('IMDb-Import beendet')
                     block=response.read(1024*1024)
                     if not block:break
-                    if shutil.disk_usage(self.root).free<len(block)+512*1024**2:raise OSError('IMDb: zu wenig freier Speicher (mindestens 512 MiB frei lassen); das bisherige Archiv bleibt nutzbar')
+                    if shutil.disk_usage(self.root).free<len(block)+512*1024**2:
+                        raise OSError('IMDb: zu wenig freier Speicher (mindestens 512 MiB frei lassen); das bisherige Archiv bleibt nutzbar')
                     f.write(block);received+=len(block)
                     if time.monotonic()-last>.5:self.progress(received=received,total=total);last=time.monotonic()
         if total and received!=total:raise ValueError('IMDb-Download unvollständig')
