@@ -614,9 +614,11 @@ def prioritize(c,ids=None,show=''):
     for wid in (ids or [])[:1000]:
         row=c.execute('SELECT state FROM works WHERE id=?',(wid,)).fetchone()
         if not row or row[0] in ('manual','matched'):continue
-        if row[0]=='format':
-            # An explicit request scans a format contribution once and keeps it out of the format pass.
-            m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0]);m['scan_requested']=True
+        # An explicit request must never be reclassified by the automatic
+        # format scanner while a user is waiting for this particular work.
+        m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0])
+        if not m.get('scan_requested'):
+            m['scan_requested']=True
             c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE id=?",(wid,))
         c.execute('INSERT OR IGNORE INTO metadata_priority VALUES(?,?)',(wid,time.time()));count+=1
@@ -688,6 +690,7 @@ def mark_news_format(c,row,source):
     do not imply that its episode has an external episode ID.
     """
     if not is_news_contribution(row,source):return False
+    if c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(row['id'],)).fetchone():return False
     m=json.loads(row['meta'] or '{}')
     topic=cleaned(source.get('topic'))
     m['kind']='series';m['title']=topic;m['episode_title']=m.get('episode_title') or cleaned(source.get('title')) or topic
