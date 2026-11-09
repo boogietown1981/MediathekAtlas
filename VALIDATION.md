@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.25.1 – Release-Kandidatenprüfung (10. November 2026)
+
+- `tests/test_meshpeer.py`: Konfiguration der Verbundpartner sowie bewusst rotierte Schlüssel, Ablehnung alter Schlüssel, bestehende Partnerschaften und Reconnect.
+- `tests/test_imdb_archive.py`: Wiederaufnahme ab vorhandenem Byte-Offset, Zeitüberschreitung/Wiederholung, lokale Archiv-Downloads nach Neustart.
+- Vollständige CI-Matrix mit Python 3.9/3.13/3.14 und macOS; NAS-Pakete in Actions. Nur grüne Hauptbranch-Builds für Installation verwenden.
+- Praxistest: Synology und QNAP teilen ihre Codes, Mac fügt je einen hinzu; bei HTTP 403 die gespeicherte NAS-Adresse gegen den tatsächlichen Dienstport und die aktuelle Freigabe prüfen.
+- IMDb: prüfe DNS/TLS und ausreichend freien Speicher auf dem Gerät; ein fehlgeschlagener Download belegt keine fiktiven Archivdatensätze.
+
+
+
 ## 0.5.25 – Worker-Pool und geplante Download-Abos (9. November 2026)
 
 - `tests/test_v0525.py`: eindeutige SQLite-Auftragsreservierung, parallele Claims, Laufzeitende und Wiederaufnahme nach Absturz, Nutzerzustimmung, nur bestätigte Serienepisoden, Film-Abo bei Verfügbarkeit, wöchentlicher Check einschließlich 48-Stunden-Nachprüffenster, abgelaufene Angebote, Mehrfachdownloads und Persistenz über Neustarts.
