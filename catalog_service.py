@@ -18,9 +18,9 @@ def retry_delay(attempts,result):
 METADATA_PAUSE=.1
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.recent_first=deque();self.started_at=time.monotonic()
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic()
     def start(self):
-        for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
+        for fn in (self.sync_loop,self.metadata_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop):threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
     def supervise(self,fn):
         while not self.stop.is_set():
             try:
@@ -41,6 +41,16 @@ class Service:
                 return
             if self.stop.wait(.35):return
 
+    def film_hint_loop(self):
+        """Classify existing unknown works in small resumable batches without API requests."""
+        processed=0
+        while not self.stop.is_set():
+            with self.db() as c:n=catalog.backfill_film_hints(c,limit=400)
+            processed+=n
+            if not n:
+                diagnostics.event('film_hint_backfill_complete',scanned=processed)
+                return
+            if self.stop.wait(.04):return
     def status(self,**state):
         changed=state.get('phase')!=self.current.get('phase')
         self.current={**state,'updated_at':time.time()}
@@ -136,6 +146,16 @@ class Service:
         if mode=='movies_first':
             row=choose(True,'movie')
             if row:return row
+            # Unknown works with *explicit* film rubrics/production cues go before
+            # generic series. A hint changes scheduling only, never metadata.
+            for where,params,_ in scopes:
+                row=c.execute("""SELECT w.* FROM film_hints h JOIN works w ON w.id=h.work_id
+                    WHERE h.score>=2 AND w.kind='unknown' AND w.attempts=0
+                      AND w.state IN ('pending','retry','identified') AND w.next_try<=?
+                      AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+                    """+where+""" ORDER BY h.score DESC,w.next_try ASC LIMIT 1""",
+                    (now,)+params).fetchone()
+                if row:return row
         elif mode=='series_first':
             row=focused()
             if row:return row
@@ -170,7 +190,9 @@ class Service:
     def scan_progress(self):
         rate=self.scan_rate()
         return {'first_pass_session':self.first_pass_checks,'repeat_session':self.repeat_checks,
-                'series_template_session':self.template_hits,'first_pass_per_minute':round(rate,2)}
+                'series_template_session':self.template_hits,
+                'news_format_shortcuts_session':self.news_shortcuts,
+                'first_pass_per_minute':round(rate,2)}
     def store_outcome(self,c,row,entry,m,recognized,chosen,result,outcome):
         """Persist one recognition result; shared by local checks and mesh results."""
         wid=row['id'];dest=wid
@@ -217,11 +239,25 @@ class Service:
             catalog.focus_take(c,row['show_key'])
             # A result from another instance arrived before this work was imported here.
             if self.mesh_adopt_stored(c,row):return True
+            # Explicit user priority is stronger than automatic broadcaster
+            # categorization, even when this is a known daily news programme.
+            priority=c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(wid,)).fetchone()
+            if entry and not priority and catalog.mark_news_format(c,row,entry['source']):
+                self.news_shortcuts+=1
+                if self.news_shortcuts==1 or self.news_shortcuts%250==0:
+                    diagnostics.event('news_format_shortcut',total=self.news_shortcuts,
+                                      title=m.get('title',''),providers_skipped=True)
+                # This is NOT a provider check; never inflate real recognition
+                # throughput or the first-pass ETA with format classifications.
+                if self.news_shortcuts==1 or self.news_shortcuts%50==0:
+                    self.metadata_state(phase='result',title=entry['source'].get('topic') or m['title'],
+                                        outcome='format',from_cache=True,
+                                        providers=[],provider_checks=[],seconds=0)
+                return True
             # A uniquely identified series is already stored locally. Reuse its
             # identity for the next unnumbered episode, and ask IMDb Offline only
             # for explicit episode evidence. Manually prioritized works still
             # run the normal full provider chain.
-            priority=c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(wid,)).fetchone()
             numbered=isinstance(m.get('season'),int) and isinstance(m.get('episode'),int)
             if entry and not priority and not numbered and row['state'] in ('pending','retry','review','identified'):
                 known=catalog.series_template_candidate(c,row,entry['source'])
