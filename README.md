@@ -1,4 +1,15 @@
-# MediathekAtlas · 0.5.24 Preview
+# MediathekAtlas · 0.5.25 Preview
+
+## 0.5.25 · Parallele Metadatenerkennung und automatische Download-Abos
+
+- **Erkennung:** Einstellbar mit 1, 2 (Standard) oder 4 parallelen Erkennungsworkern. Ein SQLite-basierter, eindeutiger Werk-Lease verhindert doppelte Prüfungen; abgelaufene Reservierungen werden nach Absturz wieder freigegeben. Externe Metadatenanbieter werden gleichzeitig von höchstens zwei Workerketten abgefragt. Status-Karten zeigen die aktiven und konfigurierten Worker.
+- **Download-Abos:** Eigener Menüpunkt. Der Nutzer kann Filme oder Serien abonnieren – entweder „sobald verfügbar“ (Katalogabgleich in 15-Minuten-Abständen) oder mit einem wöchentlichen Prüfungstermin nach Gerätezeit. Titel- und Serienkennungen müssen eindeutig passen. Abos können pausiert, fortgesetzt, gelöscht und manuell geprüft werden.
+- **Sicherheit und Rechte:** Automatischer Download ist ausdrücklich zustimmungspflichtig und wird nur für rechtmäßig zugängliche, direkt unterstützte Senderdateien mit bestätigter Werk- und bei Serien belegter Episodenidentität zugelassen. Keine HLS/DASH- oder DRM-Umgehung. Doppelte Aufträge werden nach Werk-/Episodenkennung, Zielpfad und bestehender Historie verhindert.
+- **Persistenz:** Abos, nächste Prüfung, bereits eingereihte Episoden und die Zuordnung zwischen Abo und Downloadauftrag bleiben bei Neustarts erhalten. Bestehende Folgen können optional einbezogen werden; Serienabos nehmen standardmäßig nur spätere Folgen auf. Bereits eingereihte Aufträge bleiben beim Löschen eines Abos erhalten.
+- **Verhalten:** Die Aboprüfung erstellt ausschließlich reguläre Downloadjobs. Der normale Download-Worker führt Übertragung, Umwandlung, Fehlerdiagnose und Wiederaufnahme aus. Fehlende oder nicht eindeutig verifizierte Folgen werden nicht automatisch als heruntergeladen betrachtet.
+- **Validierung:** Regressionstests für Worker-Leases, Absturz-Wiederaufnahme, Titel- und Episodenabgleich, deduplizierte Aufträge, Wochenplan, abgelaufene Angebote und das Weiterbestehen von Abos nach DB-Neustart.
+
+
 
 ## Neu in 0.5.24: Nachrichtensendungen, Filmhinweise und effiziente Statistiken
 
