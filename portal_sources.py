@@ -394,6 +394,15 @@ def archive_detail_document(identifier,doc):
     if any(v['kind']=='series' for v in variants):
         result['content_format_hint']='series_or_mixed_upload'
         result['content_format_reason']='Mindestens ein Dateiname mit expliziter Episodenkennung'
+        result['kind']='series'
+    elif variants and all(v['kind']=='movie' for v in variants):
+        result['kind']='movie'
+    else:
+        result['kind']='unknown'
+    # The canonical ArchiveMedia validation is conservative until independent
+    # external references and file/episode runtime evidence exist.
+    from portal_metadata_policy import assess_archive
+    result['work_assessment']=assess_archive(result)
     return result
 
 
