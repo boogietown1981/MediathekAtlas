@@ -105,6 +105,13 @@ def seed(row):
     if re.match(r'(?i)^(?:Drama|Thriller|Komödie|Dokumentarfilm|Krimi|Science-Fiction|Fantasy|Animation)\s*(?:[.,|:·]|(?:Deutschland|Frankreich|USA|Großbritannien|Österreich|Schweiz)\b|(?:19|20)\d{2}\b)',desc):genre_hint+=' '+desc[:100]
     m['genres']=[g for g,rx in GENRES.items() if re.search(rx,genre_hint,re.I)]
     m.update(genre_source='Senderhinweis' if m['genres'] else 'Unbekannt',title=cleaned(m['title']),episode_title=cleaned(m.get('episode_title','')))
+    import video_causality
+    role=video_causality.explicit_format(row)
+    if role:
+        # Keep the programme name as a relation, not as a verified full episode.
+        if topic:m['related_series_title']=topic
+        m.update(role,kind='other',title=title,episode_verified=False,
+                 season=None,episode=None,episode_reference_id=None)
     return m
 
 def origin_meta(c,row):
@@ -113,7 +120,7 @@ def origin_meta(c,row):
     if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
         options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
         if len(options)==1:template=json.loads(options[0][0])
-    if template:
+    if template and not m.get('video_role'):
         m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
         for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
         m['genres']=normalized_genres(m.get('genres'))
@@ -126,6 +133,8 @@ def series_template_candidate(c,row,source):
     """
     topic=source.get('topic') or ''
     if row['kind'] not in ('unknown','series') or not topic:return None
+    import video_causality
+    if video_causality.explicit_format(source):return None
     if not 300<=int(source.get('duration') or 0)<=3900:return None
     if key(topic)==key(source.get('title')):return None
     templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
@@ -182,7 +191,10 @@ def ingest(c,rows,seen=None):
         if cur.rowcount:update_film_hint(c,wid,m,row)
         c.execute('UPDATE works SET topic=? WHERE id=?',(row.get('topic',''),wid))
         if cur.rowcount:
-            if template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
+            if m.get('video_role'):
+                # Distinct extra, neither a series episode nor a movie match.
+                c.execute("UPDATE works SET state='format' WHERE id=?",(wid,))
+            elif template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
             for genre in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,genre))
         c.execute('INSERT INTO offers VALUES(?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,special=excluded.special,rank=excluded.rank,seen=excluded.seen,active=1',(oid,wid,json.dumps(row),special(row),ranking(row),seen));ids.append(oid)
     return ids
