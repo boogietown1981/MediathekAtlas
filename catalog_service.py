@@ -439,7 +439,9 @@ class Service:
             extras=self.episode_extras
             items=self.episode_sender_items
             sender_matches=self.episode_sender_matched
-        if outcome in ('matched','suspected','extra') or n==1 or n%100==0:
+        # Individual short-video discoveries already have their own diagnostic
+        # events; keep progress reports bounded so they don't evict errors.
+        if outcome=='matched' or n==1 or n%100==0:
             diagnostics.event('episode_worker_progress',outcome=outcome,
                               checks=n,matched=matched,unresolved=unresolved,
                               suspected=suspect,extras=extras,
