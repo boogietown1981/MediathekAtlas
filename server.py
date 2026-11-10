@@ -483,6 +483,22 @@ class Handler(BaseHTTPRequestHandler):
                                   variants=detail['variants_displayed'],
                                   complete=detail['inventory_complete'])
                 return self.send({'detail':detail,'ok':True})
+            if path=='/api/portal-archive-probe':
+                if d.get('acknowledged') is not True:
+                    raise ValueError('Nur nach bestätigter Berechtigung zur technischen Teilprüfung')
+                item_id=str(d.get('id') or '')
+                filename=str(d.get('filename') or '')
+                # Save the result only after a bounded, user-initiated probe.
+                # This route does not enqueue downloads or enumerate an archive.
+                with db() as c:
+                    report=portal_sources.probe_archive_variant(
+                        c,item_id,filename,acknowledged=True)
+                diagnostics.event('portal_video_technical_probe',
+                                  state=report['state'],
+                                  bytes=report['bytes_sampled'],
+                                  audio_tracks=sum(t['type']=='audio' for t in report['tracks']),
+                                  subtitle_tracks=sum(t['type']=='subtitle' for t in report['tracks']))
+                return self.send({'probe':report})
             if path=='/api/portal-netzkino-add':
                 item=portal_sources.manual_netzkino(d.get('title',''),
                           d.get('url',''),d.get('year'))
