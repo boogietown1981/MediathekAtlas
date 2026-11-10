@@ -54,6 +54,25 @@ def reference(row):
             return ('ZDF Mediathek',ident) if re.fullmatch(r'[a-z0-9][a-z0-9-]{2,200}',ident) else None
     return None
 
+def imported_reference(row):
+    """Sender page identity from an existing import, never a live API request."""
+    ref=reference(row)
+    if ref:return ref
+    try:p=urllib.parse.urlsplit(str(row.get('url_website') or ''))
+    except ValueError:return None
+    providers={'www.arte.tv':'arte','arte.tv':'arte',
+               'www.3sat.de':'3sat','3sat.de':'3sat',
+               'www.kika.de':'KiKA','kika.de':'KiKA'}
+    provider=providers.get((p.hostname or '').lower())
+    if not provider or p.scheme!='https' or p.username or p.password or p.port not in (None,443):
+        return None
+    if not p.path or len(p.path)<5:return None
+    # Other participating broadcasters are passive-only until they offer an
+    # authorized metadata interface. A stable path hash is NOT a verified episode ID.
+    ident='link:'+core.hashlib.sha256(p.path.encode()).hexdigest()[:24]
+    return (provider,ident)
+
+
 def imported_episode_evidence(row,meta):
     """Read existing MediathekViewWeb offer metadata without contacting a sender.
 
@@ -61,7 +80,7 @@ def imported_episode_evidence(row,meta):
     season/episode from this source alone.
     """
     if meta.get('kind')!='series' or not meta.get('reference_id'):return None
-    ref=reference(row)
+    ref=imported_reference(row)
     if not ref:return None
     topic=_text(row.get('topic'))
     if not topic or CONTAINER.search(topic):return None
