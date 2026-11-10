@@ -4,8 +4,11 @@ import tempfile
 import unittest
 import zipfile
 from pathlib import Path
+import sys
 
-from packaging.macos_zip import APP_NAME, LAUNCHER, PLIST, RESOURCES, build_zip, verify_zip
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT / "packaging"))
+from macos_zip import APP_NAME, LAUNCHER, PLIST, RESOURCES, build_zip, verify_zip
 
 
 class PortableMacOSZipTests(unittest.TestCase):
