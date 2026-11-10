@@ -13,7 +13,28 @@ def probe(path):
     if not any(s.get('codec_type')=='video' for s in d.get('streams',[])):raise ValueError('Datei enthält keine Videospur')
     return d
 
-def remux(source,dest,meta):
+def check_episode_runtime(row,meta,measured_seconds=None):
+    """Use catalog duration first, then a locally measured duration if present.
+
+    No network probing is ever triggered here. The requirement for independent
+    expected runtimes avoids discarding legitimate two-minute anime episodes.
+    """
+    import video_causality
+    source=dict(row)
+    if measured_seconds is not None and measured_seconds>0:
+        source['duration']=measured_seconds
+    evidence=video_causality.evaluate(source,meta)
+    if meta.get('video_role_needs_review') or evidence:
+        role=evidence.get('video_role') if evidence else meta.get('video_role')
+        if role in ('trailer','clip','extra','short_excerpt_suspected','compilation_suspected'):
+            reason=evidence.get('video_role_reason') if evidence else meta.get('video_role_reason')
+            raise ValueError('Video ist möglicherweise keine vollständige Folge: '+
+                             (reason or 'Kurzformat markiert')+
+                             '. Bitte Zuordnung vor dem Download prüfen.')
+    return True
+
+
+def remux(source,dest,meta,original=None):
     ffmpeg=tool('ffmpeg')
     if not ffmpeg:raise ValueError('ffmpeg konnte nicht gestartet werden. Unter Einstellungen die Werkzeugprüfung öffnen.')
     tags={'title':meta.get('episode_title') or meta['title'],'date':str(meta.get('year') or ''),'description':meta.get('description',''),
@@ -27,7 +48,8 @@ def remux(source,dest,meta):
     args += ['-f','matroska',str(dest)]
     r=subprocess.run(args,capture_output=True,timeout=7200)
     if r.returncode:raise ValueError('MKV-Erstellung fehlgeschlagen: '+r.stderr.decode(errors='replace')[-250:])
-    original=probe(source);final=probe(dest)
+    original=original if original is not None else probe(source)
+    final=probe(dest)
     a=float(original.get('format',{}).get('duration') or 0);b=float(final.get('format',{}).get('duration') or 0)
     if a and abs(a-b)>max(2,a*.01):raise ValueError('Laufzeit nach MKV-Erstellung weicht ab')
     return final
@@ -45,6 +67,9 @@ def quality_summary(details):
             for s in details.get('streams',[]) if s.get('codec_type') in ('video','audio','subtitle')]
 
 def run(row,meta,root,quality,update,cancelled):
+    # The catalogue already records most offer runtimes. Reject obvious extras
+    # before any download or FFmpeg process; FFprobe is not a catalog scanner.
+    if meta.get('kind')=='series':check_episode_runtime(row,meta)
     if not tool('ffmpeg') or not tool('ffprobe'):raise ValueError('ffmpeg oder ffprobe ist nicht startbar. Unter Einstellungen die gefundenen Pfade prüfen.')
     keys={'hd':['url_video_hd','url_video','url_video_low'],'standard':['url_video','url_video_hd','url_video_low'],'low':['url_video_low','url_video','url_video_hd']}
     url=row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
@@ -79,7 +104,12 @@ def run(row,meta,root,quality,update,cancelled):
             require_space(dest.parent,int(received*1.05)+reserve)
             update('tagging',received,total,speed=0,eta=None)
             if cancelled():raise ValueError('Download abgebrochen')
-            details=remux(src,out,meta)
+            original_probe=probe(src)
+            if meta.get('kind')=='series':
+                try:actual=float(original_probe.get('format',{}).get('duration') or 0)
+                except (TypeError,ValueError,OverflowError):actual=0
+                check_episode_runtime(row,meta,actual if actual>0 else None)
+            details=remux(src,out,meta,original=original_probe)
             if cancelled():raise ValueError('Download abgebrochen')
             streams=core.parse_streams(details);duration=float(details.get('format',{}).get('duration') or 0)
             # Stage all mandatory sidecars before publishing any file.
