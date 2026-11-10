@@ -277,7 +277,8 @@ class Handler(BaseHTTPRequestHandler):
             with db() as c:
                 result=portal_sources.listing(c,source=q.get('source',[''])[0],
                             query=q.get('query',[''])[0],
-                            offset=q.get('offset',['0'])[0])
+                            offset=q.get('offset',['0'])[0],
+                            locale=q.get('locale',['all'])[0])
             return self.send(result)
         if path=='/api/portal-archive-detail':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
