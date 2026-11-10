@@ -10,7 +10,7 @@ function notice(s,kind='info',source=''){clearTimeout(noticeTimer);const box=$('
 async function request(path,data){const control=new AbortController(),timer=setTimeout(()=>control.abort(),60000);try{return await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Atlas-Token':token},body:data?JSON.stringify(data):undefined,signal:control.signal});}catch(e){throw Error(e.name==='AbortError'?'Der lokale Dienst antwortet seit 60 Sekunden nicht. Erneuter Versuch folgt.':'Verbindung zum lokalen Dienst unterbrochen. Falls sie nicht zurückkehrt: MediathekAtlas erneut öffnen.');}finally{clearTimeout(timer);}}
 async function api(path,data){const r=await request(path,data);const d=await r.json();if(r.status===401&&d.login){location.reload();throw Error('Anmeldung abgelaufen. Bitte erneut anmelden.');}if(!r.ok)throw Error(d.error||'Anfrage fehlgeschlagen');return d;}
 async function busy(button,fn){const old=button.textContent;button.disabled=true;button.textContent='Bitte warten …';try{await fn();}catch(e){notice(e.message,'error');if($('editor').open)$('lookup-status').textContent=e.message;}finally{button.disabled=false;button.textContent=old;}}
-for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','review','queue','subscriptions','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}if(b.dataset.view==='subscriptions')loadSubscriptions();};
+for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','portals','review','queue','subscriptions','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}if(b.dataset.view==='subscriptions')loadSubscriptions();if(b.dataset.view==='portals')loadPortals();};
 function openSubscriptionView(){
  const tab=document.querySelector('[data-view="subscriptions"]');
  if(tab)tab.click();
@@ -502,3 +502,85 @@ function renderRatings(m){const host=$('detail-rating'),chips=el('div',undefined
 function renderServer(server){meshServer=server||{};$('mesh-share').hidden=!meshServer.network;$('mesh-share-hint').hidden=!!meshServer.network;$('access-panel').hidden=$('logout').hidden=!server.network;$('quit-app').hidden=!!server.managed;if(server.network){$('edition').textContent='v'+server.version+' · NAS-Dienst';$('location-pill').textContent='● Auf dem NAS · Anmeldung aktiv';}}
 $('logout').onclick=e=>busy(e.target,async()=>{await api('logout',{});location.reload();});
 $('access-panel').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{try{await api('password',{current:$('access-current').value,new:$('access-new').value});$('access-result').textContent='Passwort geändert.';$('access-current').value=$('access-new').value='';}catch(err){$('access-result').textContent=err.message;}});};
+
+/* Portal adapters: intentionally separate from local downloadable offers. */
+let portalOffset=0,portalBusy=false;
+function portalPageUrl(item){
+  try{
+    const p=new URL(item.page_url);
+    const host=p.hostname.toLowerCase();
+    if(p.protocol!=='https:'||p.username||p.password||p.port)return '';
+    if(item.source==='internet_archive'&&host==='archive.org')return p.href;
+    if(item.source==='netzkino'&&(host==='netzkino.de'||host==='www.netzkino.de'))return p.href;
+  }catch(_){}
+  return '';
+}
+function portalLabel(source){return source==='internet_archive'?'Internet Archive':source==='netzkino'?'Netzkino':source;}
+function portalItemCard(item){
+  const card=el('article',undefined,'portal-result'),h=el('h4',item.title);
+  card.append(h);
+  const detail=el('p',(item.year?item.year+' · ':'')+portalLabel(item.source),'muted');
+  card.append(detail);
+  if(item.description)card.append(el('p',item.description.length>380?item.description.slice(0,380)+' …':item.description,'portal-description'));
+  if(item.local_work_id){
+    card.append(el('small','Möglicher Eintrag im Hauptkatalog (gleicher Titel und Jahr). Keine automatische Zusammenführung.','portal-match'));
+  }
+  if(item.license_url)card.append(el('p','Gemeldete Lizenz: '+item.license_url,'portal-licence'));
+  if(item.rights)card.append(el('p','Rechtehinweis: '+item.rights.slice(0,240),'portal-licence'));
+  card.append(el('small','Nur Originalseite · Rechte und Verfügbarkeit nicht geprüft · kein Download','portal-rights'));
+  const target=portalPageUrl(item);
+  if(target){
+    const link=el('a','Originalseite beim Anbieter öffnen','portal-link');
+    link.href=target;link.target='_blank';link.rel='noopener noreferrer';
+    card.append(link);
+  }
+  return card;
+}
+async function loadPortals(){
+  if(appStopped||$('portals').hidden||portalBusy)return;
+  portalBusy=true;
+  try{
+    const filters=new URLSearchParams({source:$('portal-source').value,
+      query:$('portal-filter').value.trim(),offset:portalOffset});
+    const [state,result]=await Promise.all([api('portals'),api('portal-items?'+filters)]);
+    $('portal-total').textContent='('+countLabel(result.total)+')';
+    const parts=state.sources.map(s=>s.name+': '+countLabel(s.items));
+    $('portal-status').textContent='Gespeicherte Angebote · '+parts.join(' · ');
+    const host=$('portal-items');host.replaceChildren();
+    if(!result.items.length){
+      host.append(el('p','Noch keine gespeicherten Filmverweise. Oben nach Archivfilmen suchen oder einen Netzkino-Filmlink hinzufügen.','muted'));
+    } else for(const item of result.items)host.append(portalItemCard(item));
+    $('portal-prev').disabled=portalOffset<=0;
+    $('portal-next').disabled=portalOffset+result.items.length>=result.total;
+  }catch(e){$('portal-status').textContent=e.message;notice(e.message,'error');}
+  finally{portalBusy=false;}
+}
+$('portal-archive-search').onsubmit=e=>{
+  e.preventDefault();
+  busy($('portal-archive-search').querySelector('button'),async()=>{
+    const query=$('portal-archive-query').value.trim();
+    const result=await api('portal-search',{source:'internet_archive',query});
+    portalOffset=0;$('portal-source').value='internet_archive';$('portal-filter').value='';
+    await loadPortals();
+    notice(countLabel(result.added_or_updated)+' Archive-Metadatensätze übernommen. Rechte und Downloads bleiben ungeprüft.');
+  });
+};
+$('portal-netzkino-add').onsubmit=e=>{
+  e.preventDefault();
+  busy($('portal-netzkino-add').querySelector('button'),async()=>{
+    const result=await api('portal-netzkino-add',{
+      title:$('portal-netzkino-title').value.trim(),
+      url:$('portal-netzkino-url').value.trim(),
+      year:$('portal-netzkino-year').value.trim()||null
+    });
+    portalOffset=0;$('portal-source').value='netzkino';$('portal-filter').value='';
+    $('portal-netzkino-add').reset();
+    await loadPortals();
+    notice('Netzkino-Filmverweis gespeichert – keine automatische Medienübernahme.');
+  });
+};
+$('portal-filter-run').onclick=()=>{portalOffset=0;loadPortals();};
+$('portal-source').onchange=()=>{portalOffset=0;loadPortals();};
+$('portal-filter').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();portalOffset=0;loadPortals();}};
+$('portal-prev').onclick=()=>{portalOffset=Math.max(0,portalOffset-40);loadPortals();};
+$('portal-next').onclick=()=>{portalOffset+=40;loadPortals();};
