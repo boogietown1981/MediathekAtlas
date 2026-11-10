@@ -1,5 +1,15 @@
 # Änderungsverlauf – MediathekAtlas
 
+## In Arbeit – Isolierte externe Filmportale (noch keine Release-Freigabe)
+
+- **Plattformtrennung:** Deutscher Mediathekkatalog und seine Download-/Episodenwarteschlangen bleiben unberührt. Internet Archive und Netzkino erhalten eigene SQLite-Daten, eine eigene Übersicht, Sprachfilter und Quellstatus.
+- **ArchiveMedia 0.10.53:** Vollständige ArchiveMedia-Anwendung bleibt unabhängig erreichbar; Read-only-Companion über localhost zeigt Zustand und öffnet die Original-Oberfläche. Der begrenzte neue URL-/Uploader-/Collection-Scanner ist kein Ersatz für Clean Scan, die historische Uploader-Priorisierung oder die komplette ArchiveMedia-Pipeline.
+- **Metadatenvergleich:** Herkunft, unabhängige Werkreferenzen, Episoden- und tatsächliche Videolaufzeit sowie technische Ton- und Untertitelspuren bleiben getrennte Belege. Originaler ArchiveMedia-Referenzpfad und die Werkvalidierung werden MIT-lizenziert wiederverwendet. Gemeinsame Dateibenennung bleibt `package_media.canonical_target`.
+- **Internet Archive:** Vom Nutzer ausgelöste Suche, originale Film-/Serien- und Fassungsgruppen, Clip-Filter, optionale gezielte 8-MiB-Teilproben, kein pauschaler Download. Scopes werden mit Cursor und Retry gespeichert und können parallel zu den deutschen Scan-Workern laufen.
+- **Netzkino:** Nur vom Nutzer eingegebene Filmseiten; kein Scraping, keine Stream-Extraktion und keine Umgehung der Werbewiedergabe.
+- **Freigabe:** Getrennter Entwicklungsbranch; native macOS-, Linux- und NAS-Tests und reale Archivetests vor einem Merge erforderlich.
+
+
 ## 0.5.30 – 10. November 2026 (Preview)
 
 - Sender-First-Episodenprüfung: Der Episodenworker übernimmt bereits importierte, eindeutig zugehörige ARD-/ZDF-Senderlinks und ihre Quellidentitäten, bevor IMDb Offline nach einer Episode sucht.
