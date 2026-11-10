@@ -1,11 +1,16 @@
 """Shared conservative evidence gates for provider fallback and catalogue writes."""
 ORDER=('IMDb Offline','TVDB','TMDB','OMDb','Wikidata')
-def issues(meta,c):
+def issues(meta,c,work_only=False):
     errors=[]
     if meta.get('kind') in ('movie','series') and c.get('kind')!=meta['kind']:errors.append('Medienart widerspricht der Quelle')
     if c.get('similarity',0)<.985:errors.append('Titel nicht eindeutig genug')
     if c.get('year_mismatch') or (meta.get('year') and c.get('year') and meta['year']!=c['year']):errors.append('Erscheinungsjahr widersprüchlich')
-    if c.get('runtime_mismatch'):errors.append('Laufzeit widersprüchlich')
+    # Short clips may share a valid *show* title. They can receive the series
+    # identity, but never a verified full-episode identity.
+    suspicious=bool(c.get('video_role_needs_review'))
+    if suspicious and not work_only:errors.append('Video ist vermutlich Trailer/Ausschnitt, nicht vollständige Folge')
+    if c.get('runtime_mismatch') and not (work_only and suspicious and c.get('kind')=='series'):
+        errors.append('Laufzeit widersprüchlich')
     if c.get('kind')=='series':
         for field in ('season','episode'):
             if meta.get(field) is not None and c.get(field) is not None and meta[field]!=c[field]:errors.append('Staffel/Folge widersprüchlich')
@@ -27,7 +32,7 @@ def conflict(a,b):
     return False
 
 def choose(meta,rows,work_only=False):
-    good=[c for c in rows if not issues(meta,c) and ((work_only and (c.get('provider') in ORDER[:-1] or c.get('confidence')=='high')) or verified(meta,c))]
+    good=[c for c in rows if not issues(meta,c,work_only=work_only) and ((work_only and (c.get('provider') in ORDER[:-1] or c.get('confidence')=='high')) or verified(meta,c))]
     if not good or any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):return None
     good.sort(key=lambda c:ORDER.index(c.get('provider')) if c.get('provider') in ORDER else 99)
     chosen=dict(good[0]);sources=dict(chosen.get('field_sources') or {})
