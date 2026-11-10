@@ -65,8 +65,8 @@ class SenderEvidenceTests(unittest.TestCase):
             broadcaster.lookup_limited(offer(url=ARD_URL+'a'))
             with self.assertRaises(broadcaster.Unavailable):
                 broadcaster.lookup_limited(offer(url=ARD_URL+'b'))
+            self.assertGreater(broadcaster.automated_retry_at('ARD Mediathek'),time.time())
         self.assertEqual(lookup.call_count,2)
-        self.assertGreater(broadcaster.automated_retry_at('ARD Mediathek'),time.time())
         broadcaster._CACHE[(broadcaster.reference(src))]=(time.time(),info())
         with patch.object(broadcaster,'AUTOMATED_HOURLY_LIMIT',2),patch('broadcaster.lookup',side_effect=AssertionError('network')):
             self.assertEqual(broadcaster.lookup_limited(src)['series'],'Servicezeit')
