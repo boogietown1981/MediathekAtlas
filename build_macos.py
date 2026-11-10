@@ -7,7 +7,7 @@ app=ROOT/'build'/'MediathekAtlas.app'
 if app.exists():shutil.rmtree(app)
 resources=app/'Contents'/'Resources';code=resources/'app';macos=app/'Contents'/'MacOS'
 code.mkdir(parents=True);macos.mkdir(parents=True)
-for name in ('core.py','stable_runtime.py','imdb_archive.py','matching.py','artwork.py','downloads.py','runtime_tools.py','metadata.py','local_library.py','negative_cache.py','provider_stats.py','tvdb.py','series_download.py','subscriptions.py','diagnostics.py','diagnostics_cli.py','catalog.py','catalog_service.py','meshjournal.py','streaming.py','meshpeer.py','filmlist.py','broadcaster.py','server.py','instance.py','access.py','version.py','LICENSE'):
+for name in ('core.py','stable_runtime.py','imdb_archive.py','matching.py','artwork.py','downloads.py','runtime_tools.py','metadata.py','local_library.py','negative_cache.py','provider_stats.py','tvdb.py','series_download.py','subscriptions.py','diagnostics.py','diagnostics_cli.py','catalog.py','catalog_service.py','meshjournal.py','streaming.py','meshpeer.py','filmlist.py','broadcaster.py','portal_sources.py','server.py','instance.py','access.py','version.py','LICENSE'):
     shutil.copy2(ROOT/name,code/name)
 for name in ('web','vendor','assets'):
     shutil.copytree(ROOT/name,code/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
