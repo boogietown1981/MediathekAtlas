@@ -28,7 +28,7 @@ class DashboardResponsiveTests(unittest.TestCase):
 
     def test_grid_changes_at_available_container_width(self):
         self.assertIn('container-type:inline-size',CSS)
-        widths={'1159':4,'899':3,'689':2,'419':1}
+        widths={'979':4,'779':3,'609':2,'419':1}
         for width,columns in widths.items():
             with self.subTest(width=width):
                 # Avoid regexp escaping of CSS function parentheses.
