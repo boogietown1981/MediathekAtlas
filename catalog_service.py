@@ -430,7 +430,7 @@ class Service:
         sender_deferred=False
         sender_status='no_sender_link' if not imported else 'imported'
         config=self.settings()
-        if imported and config.get('sender_direct_lookup',False):
+        if imported and broadcaster.reference(source) and config.get('sender_direct_lookup',False):
             try:
                 info=broadcaster.lookup_limited(source)
                 if info:
