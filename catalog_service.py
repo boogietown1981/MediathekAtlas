@@ -373,7 +373,7 @@ class Service:
             outcome='matched' if chosen else 'identified'
             recognized.update(state='auto_matched' if chosen else 'work_identified',reason='Werk und Episode abgeglichen' if chosen else 'Werk erkannt; Dateizuordnung noch zu prüfen')
             dest=catalog.save_metadata(c,wid,recognized,outcome) or wid
-            if recognized['kind']=='series':
+            if recognized['kind']=='series' and not recognized.get('video_role_needs_review'):
                 if metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']):
                     c.execute('INSERT OR REPLACE INTO series_templates VALUES(?,?,?,?)',(catalog.key(entry['source']['topic']),recognized['provider'],recognized['reference_id'],json.dumps(recognized)))
                 if row['show_key']:catalog.propagate_series(c,row['show_key'],recognized)
@@ -381,10 +381,11 @@ class Service:
                     peers=c.execute("SELECT * FROM works WHERE topic=? AND kind='unknown' AND state NOT IN ('manual','matched')",(entry['source']['topic'],)).fetchall()
                     for peer in peers:
                         own=json.loads(peer['meta']);own.update(kind='series',episode_title=own['title'])
-                        for key in ('title','year','provider','reference_id','poster','genres','genre_source'):own[key]=recognized.get(key)
+                        for key in ('title','year','provider','reference_id','poster','genres','genre_source','reference_runtime_seconds'):own[key]=recognized.get(key)
                         catalog.save_metadata(c,peer['id'],own,'identified')
             # Boost siblings only once their work identities have been propagated.
-            if (recognized['kind']=='series' and self.settings().get('complete_series',True) and
+            if (recognized['kind']=='series' and not recognized.get('video_role_needs_review')
+                and self.settings().get('complete_series',True) and
                 recognized.get('reference_id') and
                 metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])):
                 show=catalog.showkey(recognized)
@@ -532,6 +533,12 @@ class Service:
             # Explicit user priority is stronger than automatic broadcaster
             # categorization, even when this is a known daily news programme.
             priority=c.execute('SELECT 1 FROM metadata_priority WHERE work_id=?',(wid,)).fetchone()
+            if entry and not priority and catalog.mark_explicit_extra(c,row,entry['source']):
+                diagnostics.event('video_extra_classified',work_id=wid,title=entry['source'].get('title',''),
+                                  reason='explicit_title')
+                self.metadata_state(phase='result',title=entry['source'].get('title',''),
+                                    outcome='format',from_cache=True,seconds=0)
+                return True
             if entry and not priority and catalog.mark_news_format(c,row,entry['source']):
                 self.news_shortcuts+=1
                 if self.news_shortcuts==1 or self.news_shortcuts%250==0:
@@ -582,7 +589,7 @@ class Service:
         self.metadata_state(phase='checking',title=m['title'],work_id=wid,providers=providers)
         started=time.monotonic()
         try:
-            ck=catalog.digest(json.dumps(['v044',config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
+            ck=catalog.digest(json.dumps(['v0531',config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
             with self.db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(ck,time.time()-86400)).fetchone()
             if cached and not priority:result=json.loads(cached[0])
             else:
