@@ -52,6 +52,16 @@ class TVDBCircuitTests(unittest.TestCase):
                 self.assertTrue(later.exception.paused)
             self.assertEqual(fetch.call_count, 2)
 
+    def test_cached_series_still_available_during_outage(self):
+        with patch('core.open_url',
+                   side_effect=[response({'token': 'secret'}), response([]), failure(503)]) as fetch:
+            prior = tvdb.request('search', 'key', params={'query': 'Known Show'})
+            with self.assertRaises(tvdb.TVDBError):
+                tvdb.request('series/123/extended', 'key')
+            self.assertEqual(tvdb.request('search', 'key',
+                                          params={'query': 'Known Show'}), prior)
+            self.assertEqual(fetch.call_count, 3)
+
     def test_network_failures_back_off_exponentially_per_credential(self):
         clock = [1000.0]
         error = urllib.error.URLError('internal-hostname-never-leak')
