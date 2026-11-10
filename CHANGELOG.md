@@ -1,5 +1,15 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.29 – 10. November 2026 (Preview)
+
+- Dashboard-Kennzahlen passen sich automatisch der tatsächlichen Fenster- bzw. Inhaltsbreite an (fünf, vier, drei, zwei oder eine Spalte); große Fenster zeigen zwei gleichmäßige Reihen mit je fünf statt acht plus zwei Kennzahlen.
+- Gleichmäßige Abmessungen und angeglichene Höhen für Kacheln und Statusbereiche, verbesserte Schriftgrößen und Zeilenumbrüche für große Katalogzahlen.
+- Zwei gleich breite Statusbereiche für aktuelle Erkennung und Metadatenanbieter (bei geringer Breite untereinander); anpassbare Anbieterkacheln.
+- Eigenständige Statuschips für Haupt- und Episodenworker, offene/bereite Episoden sowie bestätigte Werke/Folgen anstelle einer langen schlecht lesbaren Textzeile.
+- Suchfeld und Schaltflächen reagieren auf Fenstergrößenänderungen ohne unnötige Maximalbreite oder überlappende Bedienfelder.
+- Keine Änderungen an Katalog, Datenbank, Downloadvorgang, Worker-Scheduling oder Erkennungslogik.
+
+
 ## 0.5.28 – 10. November 2026 (Preview)
 
 - Unabhängige Episodenwarteschlange in SQLite. Bereits identifizierte Serien mit eindeutiger Anbieter-ID werden ohne erneute komplette Serienidentifikation von eigenen Episodenworkern geprüft.
