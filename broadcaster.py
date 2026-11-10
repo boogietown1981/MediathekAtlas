@@ -274,7 +274,10 @@ def candidate(row,meta,info):
            'sender_evidence':'original_sender_page',
            'reason':'Sendereihe laut '+info['provider']+'; Angaben zu genau diesem Angebot.'}
         # The page is this very episode: its own numbering counts as verified episode evidence.
-        c['episode_verified']=bool(runtime_agrees and isinstance(c['season'],int) and isinstance(c['episode'],int) and c['episode']>0)
+        c['episode_verified']=bool(runtime_agrees and
+            isinstance(info.get('season'),int) and info['season']>=0 and
+            isinstance(info.get('episode'),int) and info['episode']>0 and
+            c.get('season')==info['season'] and c.get('episode')==info['episode'])
         return c
     # Only enrich offers already classified as films; a single news or magazine clip is no film.
     if meta.get('kind')!='movie':return None
