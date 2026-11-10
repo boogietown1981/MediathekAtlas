@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, portal_sources
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -43,6 +43,7 @@ with db() as c:
     c.executescript('CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT);CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS metadata_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL);')
     catalog.initialize(c)
     subscriptions.initialize(c)
+    portal_sources.initialize(c)
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
@@ -264,6 +265,15 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/review':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
+        if path=='/api/portals':
+            with db() as c:return self.send(portal_sources.state(c))
+        if path=='/api/portal-items':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:
+                result=portal_sources.listing(c,source=q.get('source',[''])[0],
+                            query=q.get('query',[''])[0],
+                            offset=q.get('offset',['0'])[0])
+            return self.send(result)
         if path=='/api/catalog':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:result=catalog.listing(c,query=q.get('query',[''])[0],kind=q.get('kind',[''])[0],genre=q.get('genre',[''])[0],show=q.get('show',[''])[0],offset=q.get('offset',[0])[0],archive=q.get('archive',['0'])[0]=='1',state=q.get('state',[''])[0],sort=q.get('sort',['title'])[0],downloaded=q.get('downloaded',['hide'])[0],collection=q.get('collection',[''])[0])
@@ -444,6 +454,22 @@ class Handler(BaseHTTPRequestHandler):
                 import tvdb
                 return self.send(tvdb.test_access(settings().get('tvdb',''),settings().get('tvdb_pin','')))
             if path=='/api/test-omdb':return self.send(metadata.test_omdb(settings().get('omdb','')))
+            if path=='/api/portal-search':
+                if d.get('source')!='internet_archive':
+                    raise ValueError('Nur Internet Archive bietet hier eine dokumentierte Such-API')
+                rows=portal_sources.search_archive(d.get('query',''))
+                with db() as c:
+                    saved=portal_sources.save(c,rows,query=d.get('query',''))
+                diagnostics.event('portal_metadata_import',source='internet_archive',items=len(saved),
+                                  mode='user_activated')
+                return self.send({'added_or_updated':len(saved),
+                                  'access':'official_site_only','download_enabled':False})
+            if path=='/api/portal-netzkino-add':
+                item=portal_sources.manual_netzkino(d.get('title',''),
+                          d.get('url',''),d.get('year'))
+                with db() as c:portal_sources.save(c,[item])
+                diagnostics.event('portal_manual_link_added',source='netzkino')
+                return self.send({'item':item,'ok':True})
             if path=='/api/search':
                 found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
                 with db() as c:catalog.ingest(c,found['results'])
