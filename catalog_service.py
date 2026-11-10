@@ -17,13 +17,14 @@ def retry_delay(attempts,result):
 
 METADATA_PAUSE=.1
 MAX_RECOGNITION_WORKERS=8
+MAX_EPISODE_WORKERS=4
 
 def sqlite_busy(exc):
     return isinstance(exc,sqlite3.OperationalError) and any(
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_active=0;self.episode_last_count=(0,0,0)
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -32,6 +33,9 @@ class Service:
         for index in range(MAX_RECOGNITION_WORKERS):
             fn=lambda index=index:self.metadata_loop(index)
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name='recognition_worker_%d'%(index+1)).start()
+        for index in range(MAX_EPISODE_WORKERS):
+            fn=lambda index=index:self.episode_loop(index)
+            threading.Thread(target=self.supervise,args=(fn,),daemon=True,name='episode_worker_%d'%(index+1)).start()
     def supervise(self,fn):
         while not self.stop.is_set():
             try:
@@ -129,7 +133,7 @@ class Service:
             except Exception as e:diagnostics.error('subscription_scheduler_failed',e)
             self.subscription_wake.wait(60);self.subscription_wake.clear()
 
-    def lease_work(self):
+    def lease_work(self,queue='identity'):
         """Claim atomically, but never hold a writer lock during catalogue selection.
 
         Read the candidate before BEGIN IMMEDIATE; verify it is still eligible
@@ -141,13 +145,16 @@ class Service:
             now=time.time()
             try:
                 with self.db() as c:
-                    row=self.pick(c)
+                    row=self.pick_episode(c) if queue=='episode' else self.pick(c)
                     if row is None:return None
                     c.execute('BEGIN IMMEDIATE')
                     active=c.execute('SELECT state,next_try FROM works WHERE id=?',(row['id'],)).fetchone()
+                    episode=c.execute('SELECT next_try FROM episode_queue WHERE work_id=?',(row['id'],)).fetchone()
                     leased=c.execute('SELECT expires FROM metadata_leases WHERE work_id=?',(row['id'],)).fetchone()
                     if (not active or active['state']!=row['state'] or active['state'] in ('manual','matched','format')
-                            or active['next_try']>now or leased and leased['expires']>now):
+                            or (episode is None if queue=='episode' else episode is not None)
+                            or (episode['next_try']>now if queue=='episode' and episode else active['next_try']>now)
+                            or leased and leased['expires']>now):
                         continue
                     if now>=self.lease_gc_at:
                         c.execute('DELETE FROM metadata_leases WHERE expires<=?',(now,))
@@ -165,20 +172,21 @@ class Service:
                 if self.stop.wait(min(.75,.04*(attempt+1))):return None
         return None
 
-    def metadata_once(self):
+    def metadata_once(self,queue='identity'):
         if not self.settings().get('auto_metadata',True):return False
-        claim=self.lease_work()
+        claim=self.lease_work('episode') if queue=='episode' else self.lease_work()
         if claim is None:
             with self.worker_lock:active=self.active_checks
-            if not active and self.metadata_status.get('phase')!='waiting':
+            if queue=='identity' and not active and self.metadata_status.get('phase')!='waiting':
                 self.metadata_state(phase='waiting')
             return False
         wid,owner=claim
         thread=threading.current_thread().name
         with self.worker_lock:
             self.active_checks+=1;self.active_work[thread]=wid
+            if queue=='episode':self.episode_active+=1
         try:
-            return self._metadata_once_claimed(wid)
+            return self._episode_once_claimed(wid) if queue=='episode' else self._metadata_once_claimed(wid)
         finally:
             try:
                 for attempt in range(4):
@@ -193,6 +201,24 @@ class Service:
             finally:
                 with self.worker_lock:
                     self.active_checks=max(0,self.active_checks-1);self.active_work.pop(thread,None)
+                    if queue=='episode':self.episode_active=max(0,self.episode_active-1)
+
+    def pick_episode(self,c):
+        """Select only recognised series awaiting a separate episode match."""
+        now=time.time()
+        parts=self.mesh_filter
+        if parts is not None and not parts:return None
+        scope=(' AND substr(w.id,1,2) IN (%s)'%','.join('?'*len(parts))) if parts else ''
+        params=tuple('%02x'%p for p in sorted(parts)) if parts else ()
+        query='''SELECT w.* FROM episode_queue q JOIN works w ON w.id=q.work_id
+             WHERE w.kind='series' AND w.state='identified' AND q.next_try<=?
+             AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
+             AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)'''
+        row=c.execute(query+scope+''' AND EXISTS(SELECT 1 FROM metadata_priority p WHERE p.work_id=w.id)
+             ORDER BY q.next_try ASC LIMIT 1''',(now,now)+params).fetchone()
+        if row:return row
+        return c.execute(query+scope+" ORDER BY q.next_try ASC LIMIT 1",
+                         (now,now)+params).fetchone()
 
     def pick(self,c):
         """User priority, bounded show completion, new work, then due retries.
@@ -203,6 +229,7 @@ class Service:
         now=time.time()
         row=c.execute("""SELECT w.* FROM metadata_priority p JOIN works w ON w.id=p.work_id
             WHERE w.state NOT IN ('manual','matched','format') AND w.next_try<=?
+              AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
               AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
             ORDER BY p.requested LIMIT 1""",(now,now)).fetchone()
         if row:return row
@@ -225,7 +252,8 @@ class Service:
                 for state in states:
                     predicate=' AND w.attempts=0' if fresh else ' AND w.attempts>0'
                     row=c.execute("""SELECT w.* FROM works w WHERE w.kind=? AND w.state=?
-                        AND w.next_try<=?"""+predicate+where+"""
+                        AND w.next_try<=?
+                        AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)"""+predicate+where+"""
                         AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
                         AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
                         ORDER BY w.next_try """+direction+""" LIMIT 1""",(kind,state,now)+params+(now,)).fetchone()
@@ -237,6 +265,7 @@ class Service:
                 row=c.execute("""SELECT w.* FROM series_focus f JOIN works w ON w.show_key=f.show_key
                     WHERE f.until>? AND f.remaining>0 AND w.kind='series'
                       AND w.state IN ('pending','retry','identified') AND w.next_try<=?
+                      AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
                       AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
                       AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
                     """+where+""" ORDER BY f.updated DESC,w.attempts ASC,w.next_try ASC LIMIT 1""",
@@ -252,6 +281,7 @@ class Service:
                 row=c.execute("""SELECT w.* FROM film_hints h JOIN works w ON w.id=h.work_id
                     WHERE h.score>=2 AND w.kind='unknown' AND w.attempts=0
                       AND w.state IN ('pending','retry','identified') AND w.next_try<=?
+                      AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
                       AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
                       AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
                     """+where+""" ORDER BY h.score DESC,w.next_try ASC LIMIT 1""",
