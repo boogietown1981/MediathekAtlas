@@ -223,7 +223,18 @@ def listing(c,source='',query='',offset=0,limit=40):
     rows=c.execute('SELECT metadata FROM portal_items'+clause+
                    ' ORDER BY updated DESC,title COLLATE NOCASE,id LIMIT ? OFFSET ?',
                    (*params,limit,offset)).fetchall()
-    return {'total':count,'offset':offset,'items':[json.loads(r[0]) for r in rows]}
+    items=[json.loads(r[0]) for r in rows]
+    # Safe, read-only hint: only exact movie title PLUS exact known year.
+    # A hint is never an automatic metadata merge or download permission.
+    names=sorted({x['title'] for x in items if x.get('year')})
+    if names and c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='works'").fetchone():
+        placeholders=','.join('?' for _ in names)
+        matches=c.execute("SELECT id,title,year FROM works WHERE kind='movie' AND title IN ("+
+                          placeholders+") LIMIT 200",names).fetchall()
+        indexed={(r[1],r[2]):r[0] for r in matches}
+        for item in items:
+            item['local_work_id']=indexed.get((item['title'],item.get('year')))
+    return {'total':count,'offset':offset,'items':items}
 
 
 def state(c):
