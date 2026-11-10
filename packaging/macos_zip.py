@@ -55,7 +55,7 @@ def verify_zip(destination: Path, version: str | None = None) -> dict:
             raise ValueError("Dateien fehlen im App-Paket: " + ", ".join(absent))
         if not (entries[LAUNCHER].external_attr >> 16) & 0o111:
             raise ValueError("Startprogramm ist im ZIP nicht ausführbar")
-        if (entries[LAUNCHER].external_attr >> 16) & stat.S_IFMT(0o170000) == stat.S_IFLNK:
+        if stat.S_IFMT(entries[LAUNCHER].external_attr >> 16) == stat.S_IFLNK:
             raise ValueError("Startprogramm ist ein Symlink")
         info = plistlib.loads(archive.read(PLIST))
         if info.get("CFBundleExecutable") != "MediathekAtlas":
@@ -69,6 +69,9 @@ def verify_zip(destination: Path, version: str | None = None) -> dict:
 
 
 def main() -> None:
+    # When run as python packaging/macos_zip.py, Python starts with the
+    # packaging subdirectory on sys.path rather than the repository root.
+    sys.path.insert(0, str(ROOT))
     from version import VERSION
     parser = argparse.ArgumentParser()
     parser.add_argument("--verify", action="store_true",
