@@ -113,6 +113,11 @@ const body=el('div',undefined,'cardbody'),displayTitle=m.title||r.title,heading=
 if(m.video_role){
   const note=el('div',m.video_role_needs_review?'⚠ Kein Nachweis einer vollständigen Episode':'◇ Trailer / Ausschnitt / Extra','atlas-video-role');
   note.title=m.video_role_reason||'Laufzeit oder Sendertitel sprechen für ein Kurzformat';
+  if(m.source_duration_seconds&&m.expected_runtime_seconds){
+    const actual=(m.source_duration_seconds/60).toLocaleString('de-DE',{maximumFractionDigits:1});
+    const expected=(m.expected_runtime_seconds/60).toLocaleString('de-DE',{maximumFractionDigits:1});
+    note.append(el('small',' · '+actual+' statt '+expected+' Min. · '+(m.expected_runtime_source||'Referenzquelle unbekannt')));
+  }
   body.append(note);
 }
 if(m.kind==='series'&&m.networks?.length)body.append(el('small',m.networks.join(' · ')));const pick=pickLabel(m,item.state);if(pick){const badge=el('div',pick,'pick-badge');badge.title=pickReason(m);body.append(badge);}if(m.rating!=null&&Number.isFinite(Number(m.rating)))body.append(el('small','★ '+m.rating+' / 10 · '+ratingSource(m)));
@@ -209,7 +214,9 @@ function catalogProgress(c){
      ['identified','Werke erkannt: '+countLabel(c.quality_session?.identified||0)],
      ['confirmed','Vollständig: '+countLabel(c.quality_session?.matched||0)+' · Folgen: '+countLabel(c.episode_matched_session||0)],
      ['sender','Senderbelege: '+countLabel(c.episode_sender_imported_session||0)+' · Seiten bestätigt: '+countLabel(c.episode_sender_items_session||0)],
-     ['sender-matches','Sender-Folgen bestätigt: '+countLabel(c.episode_sender_matched_session||0)]
+     ['sender-matches','Sender-Folgen bestätigt: '+countLabel(c.episode_sender_matched_session||0)],
+     ['episode-checks','Episodenprüfungen: '+countLabel(c.episode_checked_session||0)],
+     ['shorts','Kurzvideos vermutet: '+countLabel(c.episode_suspected_session||0)+' · Extras: '+countLabel(c.episode_extras_session||0)]
    ];
    if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
    workers.replaceChildren();
@@ -346,7 +353,15 @@ $('quit-app').onclick=e=>busy(e.target,async()=>{await api('shutdown',{});appSto
 let reviewRows=[],reviewOffset=0,reviewSequence=0,reviewSelection=new Set(),latestSettings={};
 const reviewLabels={pending:'Vorgemerkt',retry:'Wiederholung',review:'Zu prüfen',identified:'Werk erkannt · Folge offen',matched:'Automatisch zugeordnet',manual:'Manuell bestätigt',format:'Beitrag einer Sendung · nicht abgeglichen'};
 function selectionStatus(){$('review-selected').textContent=reviewSelection.size+' ausgewählt';$('review-priority').disabled=!reviewSelection.size;}
-function evidence(m){const values=[];if(m.provider)values.push('Quelle: '+m.provider);if(m.reference_id)values.push('ID: '+m.reference_id);if(Number.isFinite(m.similarity))values.push('Titelähnlichkeit: '+Math.round(m.similarity*100)+' % (keine Trefferwahrscheinlichkeit)');if(m.episode_verified)values.push('Episode abgeglichen');if(m.year_mismatch)values.push('Erscheinungsjahr widerspricht');if(m.runtime_mismatch)values.push('Laufzeit widerspricht');if(m.reason)values.push(m.reason);return values.join(' · ')||'Noch keine externen Belege.';}
+function readableMinutes(sec){const n=Number(sec);return Number.isFinite(n)&&n>0?(n/60).toLocaleString('de-DE',{maximumFractionDigits:1})+' Min.':null;}
+function evidence(m){const values=[];if(m.provider)values.push('Quelle: '+m.provider);if(m.reference_id)values.push('ID: '+m.reference_id);if(Number.isFinite(m.similarity))values.push('Titelähnlichkeit: '+Math.round(m.similarity*100)+' % (keine Trefferwahrscheinlichkeit)');if(m.episode_verified)values.push('Episode abgeglichen');if(m.year_mismatch)values.push('Erscheinungsjahr widerspricht');if(m.runtime_mismatch)values.push('Laufzeit widerspricht');
+if(m.video_role_needs_review||m.video_role){
+  values.push('Videoformat: '+(m.video_role_needs_review?'Kurzvideo/Vollständigkeit unbestätigt':'Trailer/Ausschnitt/Extra'));
+  if(m.source_duration_seconds)values.push('Angebot: '+readableMinutes(m.source_duration_seconds)+' ('+(m.source_runtime_source||'Sender-Katalogimport')+')');
+  if(m.expected_runtime_seconds)values.push('Erwartet: '+readableMinutes(m.expected_runtime_seconds)+' ('+(m.expected_runtime_source||'Referenzquelle offen')+')');
+  if(m.video_role_reason)values.push(m.video_role_reason);
+}
+if(m.reason)values.push(m.reason);return values.join(' · ')||'Noch keine externen Belege.';}
 async function loadReview(){const sequence=++reviewSequence;try{const d=await api('review?'+new URLSearchParams({query:$('review-query').value,state:$('review-state').value,offset:reviewOffset}));if(sequence!==reviewSequence)return;reviewRows=d.items;reviewSelection.clear();$('review-all').checked=false;selectionStatus();$('review-count').textContent=d.total+' Einträge · Seite '+(Math.floor(reviewOffset/48)+1);$('review-prev').disabled=reviewOffset===0;$('review-next').disabled=reviewOffset+48>=d.total;const host=$('review-list');host.replaceChildren();if(!reviewRows.length)host.append(el('p','Keine Einträge für diese Auswahl.','empty'));
 for(const item of reviewRows){const row=el('article',undefined,'review-row'),check=el('input');check.type='checkbox';check.setAttribute('aria-label','Auswählen: '+item.metadata.title);check.dataset.work=item.work_id;check.onchange=()=>{if(check.checked)reviewSelection.add(item.work_id);else reviewSelection.delete(item.work_id);selectionStatus();};const source=el('div'),target=el('div'),action=el('div');source.append(el('small','QUELLE'),el('h3',item.source.title),el('p',[item.source.topic,item.source.channel].filter(Boolean).join(' · ')));target.append(el('small','KATALOG'),el('h3',item.metadata.title),el('p',(kindLabels[item.metadata.kind]||'Noch unklar')+' · '+(item.metadata.year||'Jahr offen')+' · '+reviewLabels[item.state]),el('p',evidence(item.metadata),'muted'));if(item.metadata.kind==='series')target.append(el('p',item.metadata.episode_title||'Episode offen'));const suggestions=item.metadata.suggestions||[];if(suggestions.length)target.append(el('small',suggestions.length+' Vorschläge im Prüfdialog'));const button=el('button','Vergleichen & korrigieren');button.onclick=()=>edit(item);action.append(button);row.append(check,source,target,action);host.append(row);}}
 catch(e){if(sequence===reviewSequence)$('review-count').textContent=e.message;}}
@@ -444,6 +459,14 @@ function renderDetailExtras(item){
  renderRatings(m);
  const data=$('detail-data');data.replaceChildren();const add=(k,v)=>{if(v!==undefined&&v!==null&&v!==''){data.append(el('dt',k),el('dd',String(v)));}};
  add('Empfehlung',pickLabel(m,item.state)?pickReason(m):null);add('Originalsender / Netzwerk',(m.networks||[]).join(', '));add('Produktionsfirmen',(m.studios||[]).join(', '));add('Metadatenquelle',m.provider);add('Anbieter-ID',m.reference_id);add('Zuordnung',({manual:'Manuell bestätigt',matched:'Automatisch bestätigt',identified:'Werk erkannt · Folge noch prüfen',pending:'Noch offen',review:'Prüfung erforderlich',retry:'Abgleich vorgemerkt',format:'Beitrag einer Sendung · nicht mit Filmdatenbanken abgeglichen'})[item.state]||item.state);
+ if(m.video_role){
+   add('Videotyp / Plausibilität',m.video_role_needs_review?'Vermutetes Kurzformat – keine bestätigte Episode':'Trailer, Ausschnitt oder Extra');
+   add('Grund',m.video_role_reason);
+   add('Videolaufzeit',readableMinutes(m.source_duration_seconds||r.duration));
+   add('Erwartete Episodenlaufzeit',readableMinutes(m.expected_runtime_seconds));
+   add('Referenz zur Laufzeit',m.expected_runtime_source);
+   add('Laufzeitangabe des Angebots',m.source_runtime_source||'Sender-Katalogimport');
+ }
  if(!item.series_parent){add('Laufzeit des Angebots',r.duration?Math.round(r.duration/60)+' Minuten':null);add('Sender',r.channel);add('Fassung',item.special||'Regulär');add('Verfügbarkeit',item.available?'Aktuell gelistet':'Nicht mehr gelistet');add('Ablaufdatum',availabilityLabel(r));if(m.kind==='series'){add('Staffel / Folge',Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'Noch nicht bestätigt');add('Episodentitel',m.episode_title);}}
  add('Drehbuch',(credits.writers||[]).join(', '));
  $('detail-credits').textContent=[credits.directors?.length?'Regie: '+credits.directors.join(', '):'',credits.cast?.length?'Besetzung: '+credits.cast.map(x=>x.name+(x.role?' ('+x.role+')':'')).join(', '):''].filter(Boolean).join(' · ');
