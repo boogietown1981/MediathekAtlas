@@ -557,7 +557,8 @@ class Service:
                 enriched=dict(m)
                 if suspicion:
                     for key in ('video_role','video_role_reason','video_role_evidence',
-                                'source_duration_seconds','expected_runtime_seconds'):
+                                'source_duration_seconds','source_runtime_source',
+                                'expected_runtime_seconds','expected_runtime_source'):
                         if suspicion.get(key) is not None:enriched[key]=suspicion[key]
                     enriched['video_role_needs_review']=True
                     enriched['episode_verified']=False
