@@ -55,8 +55,8 @@ class TVDBCircuitTests(unittest.TestCase):
     def test_network_failures_back_off_exponentially_per_credential(self):
         clock = [1000.0]
         error = urllib.error.URLError('internal-hostname-never-leak')
-        with patch('tvdb.time.monotonic', side_effect=lambda: clock[0]), \\
-             patch('core.open_url', side_effect=error) as fetch, \\
+        with patch('tvdb.time.monotonic', side_effect=lambda: clock[0]), \
+             patch('core.open_url', side_effect=error) as fetch, \
              patch('diagnostics.event') as log:
             for attempt, delay in enumerate((60, 120, 240), 1):
                 with self.assertRaises(tvdb.TVDBError) as caught:
@@ -97,8 +97,8 @@ class DeferredRecognitionTests(unittest.TestCase):
         tmdb_hit = {**meta, 'provider': 'TMDB', 'reference_id': '12',
                     'similarity': 1.0, 'episode_verified': False,
                     'year_mismatch': False, 'runtime_mismatch': False}
-        with patch('imdb_archive.ACTIVE', None), \\
-             patch('metadata.tvdb_candidates', side_effect=tvdb.TVDBError(paused=True)), \\
+        with patch('imdb_archive.ACTIVE', None), \
+             patch('metadata.tvdb_candidates', side_effect=tvdb.TVDBError(paused=True)), \
              patch('metadata.tmdb_candidates', return_value=[tmdb_hit]):
             result = metadata.candidates(source, meta, {'tvdb': 'secret', 'tmdb': 'secret2'})
         self.assertEqual(result['deferred_providers'], ['TVDB'])
