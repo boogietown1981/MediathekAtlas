@@ -194,14 +194,25 @@ function catalogProgress(c){
  const rev=[c.offers,c.matched,c.identified,c.review,c.works,c.formats].join(':');
  if(rev!==catalogRevision&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
  const workers=$('metadata-workers-status');
- if(workers)workers.textContent='Parallele Erkennung: '+countLabel(c.recognition_workers_active||0)+
-   ' von '+countLabel(c.recognition_workers_configured||2)+' Workern aktiv. Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt.'+
-   ' · '+countLabel(c.quality_session?.identified||0)+' Werke erkannt, Folge offen'+
-   ' · '+countLabel(c.quality_session?.matched||0)+' vollständig bestätigt'+
-   ' · Episoden-Queue: '+countLabel(c.episode_queue_total||0)+' offen ('+countLabel(c.episode_queue_due||0)+' bereit)' +
-   ' · Episodenworker: '+countLabel(c.episode_workers_active||0)+'/'+countLabel(c.episode_workers_configured||2)+
-   ' · '+countLabel(c.episode_matched_session||0)+' Folgen bestätigt'+
-   (c.sqlite_busy_retries_session?' · '+countLabel(c.sqlite_busy_retries_session)+' SQLite-Wiederholungen':'');
+ if(workers){
+   // Keep each status value in a separate adaptive chip.
+   const chips=[
+     ['identity','Hauptworker: '+countLabel(c.recognition_workers_active||0)+' / '+countLabel(c.recognition_workers_configured||2)+' aktiv'],
+     ['episode','Episodenworker: '+countLabel(c.episode_workers_active||0)+' / '+countLabel(c.episode_workers_configured||2)+' aktiv'],
+     ['queue','Episoden-Queue: '+countLabel(c.episode_queue_total||0)+' offen'],
+     ['due','Davon bereit: '+countLabel(c.episode_queue_due||0)],
+     ['identified','Werke erkannt: '+countLabel(c.quality_session?.identified||0)],
+     ['confirmed','Vollständig: '+countLabel(c.quality_session?.matched||0)+' · Folgen: '+countLabel(c.episode_matched_session||0)]
+   ];
+   if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
+   workers.replaceChildren();
+   for(const [kind,label] of chips){
+     const item=el('span',label,'atlas-worker-chip');
+     item.dataset.kind=kind;
+     workers.append(item);
+   }
+   workers.append(el('span','Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt.','atlas-worker-hint'));
+ }
 }
 const fields=['title','kind','year','season','episode','episode_title','description'];
 function fill(){$('genres').value=(meta.genres||[]).join(', ');for(const f of fields)$(f).value=meta[f]??'';$('confirmed').checked=false;$('preview').textContent='Bitte Zielnamen prüfen.';}
@@ -240,6 +251,7 @@ function renderMetadata(m={},settings={},pauses={}){
  const current=$('metadata-status');
  current.replaceChildren();
  const name=el('strong',(labels[m.phase]||'Wird gestartet')+(m.title?' · '+m.title:''),'atlas-current-title');
+ name.title=name.textContent;
  const summary=el('small',(m.outcome?outcomes[m.outcome]+' · ':'')+countLabel(m.checked_session||0)+' Abgleiche seit Start');
  current.append(name,summary);
  const warnings=visibleWarnings(m.warnings);
