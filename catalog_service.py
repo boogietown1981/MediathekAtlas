@@ -24,7 +24,7 @@ def sqlite_busy(exc):
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -344,6 +344,10 @@ class Service:
                 'episode_checked_session':self.episode_checked,
                 'episode_matched_session':self.episode_matched,
                 'episode_unresolved_session':self.episode_unresolved,
+                'episode_suspected_session':self.episode_suspected,
+                'episode_extras_session':self.episode_extras,
+                'episode_retried_session':self.episode_retried,
+                'episode_reset_session':self.episode_resets,
                 'episode_sender_imported_session':self.episode_sender_imported,
                 'episode_sender_items_session':self.episode_sender_items,
                 'episode_sender_matched_session':self.episode_sender_matched,
@@ -406,6 +410,42 @@ class Service:
             if row['state']=='identified':outcome='identified'
             c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
         return outcome,dest
+    def record_episode_result(self,outcome,imported=False,sender_verified=False,
+                              sender_item=False,sender_deferred=False,
+                              sender_status='not_checked'):
+        """Count each committed episode claim exactly once, including early exits.
+
+        A short excerpt is *processed*, but neither matched nor unresolved.
+        Persisted work metadata remains the source of truth across restarts;
+        these counters explicitly describe only this app session.
+        """
+        with self.worker_lock:
+            self.episode_checked+=1
+            if outcome=='matched':self.episode_matched+=1
+            elif outcome=='unresolved':self.episode_unresolved+=1
+            elif outcome=='suspected':self.episode_suspected+=1
+            elif outcome=='extra':self.episode_extras+=1
+            elif outcome=='retry':self.episode_retried+=1
+            elif outcome=='reset':self.episode_resets+=1
+            if imported:
+                self.episode_sender_imported+=1
+                if sender_verified:self.episode_sender_matched+=1
+                if sender_item:self.episode_sender_items+=1
+                if sender_deferred:self.episode_sender_deferred+=1
+            n=self.episode_checked
+            matched=self.episode_matched
+            unresolved=self.episode_unresolved
+            suspect=self.episode_suspected
+            extras=self.episode_extras
+            items=self.episode_sender_items
+            sender_matches=self.episode_sender_matched
+        if outcome in ('matched','suspected','extra') or n==1 or n%100==0:
+            diagnostics.event('episode_worker_progress',outcome=outcome,
+                              checks=n,matched=matched,unresolved=unresolved,
+                              suspected=suspect,extras=extras,
+                              sender_items=items,sender_matched=sender_matches,
+                              sender_status=sender_status)
+
     def _episode_once_claimed(self,selected_id):
         """Resolve a known show's episode from imported sender evidence first.
 
@@ -413,6 +453,9 @@ class Service:
         page confirms a distinct video even when there is no season/episode
         number; it must NOT be counted as a complete episode match.
         """
+        # Finish the SQLite transaction before recording a session counter.
+        # Early exits are real completed queue claims, not invisible work.
+        preflight=None
         with self.db() as c:
             row=c.execute('SELECT * FROM works WHERE id=?',(selected_id,)).fetchone()
             task=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(selected_id,)).fetchone()
@@ -423,26 +466,35 @@ class Service:
                 if catalog.mark_explicit_extra(c,row,entry['source']):
                     diagnostics.event('video_extra_classified',work_id=selected_id,
                                       title=entry['source'].get('title',''),reason='explicit_title')
-                    return True
-                runtime_meta=dict(m)
-                if not runtime_meta.get('reference_runtime_seconds'):
-                    typical=video_causality.sample_series_runtime(c,row['show_key'],selected_id)
-                    if typical:runtime_meta['reference_runtime_seconds']=typical
-                causality=video_causality.evaluate(entry['source'],runtime_meta)
-                if causality:
-                    m.update(causality,video_role_needs_review=True,episode_verified=False,
-                             reason='Serienidentität bekannt, Videolaufzeit passt nicht zur ganzen Folge')
-                    c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
-                              (json.dumps(m),time.time(),selected_id))
-                    diagnostics.event('episode_runtime_suspect',work_id=selected_id,
-                                      actual=causality.get('source_duration_seconds'),
-                                      expected=causality.get('expected_runtime_seconds'),
-                                      role=causality['video_role'])
-                    return True
-            if not m.get('provider') or not m.get('reference_id'):
+                    preflight='extra'
+                else:
+                    runtime_meta=dict(m)
+                    if not runtime_meta.get('reference_runtime_seconds'):
+                        typical=video_causality.sample_series_runtime(c,row['show_key'],selected_id)
+                        if typical:
+                            runtime_meta['reference_runtime_seconds']=typical
+                            runtime_meta['reference_runtime_source']='Serien-Katalogmedian (mind. 5 Vergleichsangebote)'
+                    causality=video_causality.evaluate(entry['source'],runtime_meta)
+                    if causality:
+                        m.update(causality,video_role_needs_review=True,episode_verified=False,
+                                 reason='Serienidentität bekannt, Videolaufzeit passt nicht zur ganzen Folge')
+                        c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
+                                  (json.dumps(m),time.time(),selected_id))
+                        diagnostics.event('episode_runtime_suspect',work_id=selected_id,
+                                          actual=causality.get('source_duration_seconds'),
+                                          expected=causality.get('expected_runtime_seconds'),
+                                          source=causality.get('expected_runtime_source'),
+                                          role=causality['video_role'])
+                        preflight='suspected'
+            if preflight is None and (not m.get('provider') or not m.get('reference_id')):
                 c.execute("UPDATE works SET state='pending',next_try=0 WHERE id=?",(selected_id,))
-                return True
-            c.execute('DELETE FROM metadata_priority WHERE work_id=?',(selected_id,))
+                preflight='reset'
+            if preflight is None:
+                c.execute('DELETE FROM metadata_priority WHERE work_id=?',(selected_id,))
+
+        if preflight is not None:
+            self.record_episode_result(preflight,sender_status='offline_preflight')
+            return True
 
         source=entry['source'] if entry else {}
         imported=broadcaster.imported_episode_evidence(source,m) if entry else None
@@ -543,24 +595,11 @@ class Service:
                 c.execute("""UPDATE episode_queue SET attempts=attempts+1,
                     last_outcome=?,next_try=?,updated=? WHERE work_id=?""",
                     (outcome,time.time()+delay,time.time(),selected_id))
-        with self.worker_lock:
-            self.episode_checked+=1
-            if outcome=='matched':self.episode_matched+=1
-            if outcome=='unresolved':self.episode_unresolved+=1
-            if imported:
-                self.episode_sender_imported+=1
-                if sender_verified:self.episode_sender_matched+=1
-                if sender_candidate and sender_candidate.get('sender_item_verified'):
-                    self.episode_sender_items+=1
-                if sender_deferred:self.episode_sender_deferred+=1
-            n=self.episode_checked
-            items=self.episode_sender_items;matched=self.episode_sender_matched
-        if outcome=='matched' or n==1 or n%100==0:
-            diagnostics.event('episode_worker_progress',outcome=outcome,
-                              checks=n,matched=self.episode_matched,
-                              unresolved=self.episode_unresolved,
-                              sender_items=items,sender_matched=matched,
-                              sender_status=sender_status)
+        self.record_episode_result(outcome,imported=bool(imported),
+                                   sender_verified=bool(sender_verified),
+                                   sender_item=bool(sender_candidate and sender_candidate.get('sender_item_verified')),
+                                   sender_deferred=sender_deferred,
+                                   sender_status=sender_status)
         return True
 
     def _metadata_once_claimed(self,selected_id):
