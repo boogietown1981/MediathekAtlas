@@ -327,7 +327,24 @@ class Service:
             counts=dict(self.quality_counts)
             first=self.first_pass_checks;repeat=self.repeat_checks;template=self.template_hits
         total=sum(counts.values());elapsed=max(1,time.monotonic()-self.started_at)
-        return {'first_pass_session':first,'repeat_session':repeat,
+        now=time.monotonic()
+        if self.db is not None and now-self.episode_last_count[0]>=30:
+            try:
+                with self.db() as c:
+                    total_ep=c.execute('SELECT COUNT(*) FROM episode_queue').fetchone()[0]
+                    due_ep=c.execute('SELECT COUNT(*) FROM episode_queue WHERE next_try<=?',(time.time(),)).fetchone()[0]
+                self.episode_last_count=(now,total_ep,due_ep)
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+        _,ep_total,ep_due=self.episode_last_count
+        return {'episode_queue_total':ep_total,'episode_queue_due':ep_due,
+                'episode_workers_active':self.episode_active,
+                'episode_workers_configured':max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2)))),
+                'episode_checked_session':self.episode_checked,
+                'episode_matched_session':self.episode_matched,
+                'episode_unresolved_session':self.episode_unresolved,
+                'first_pass_session':first,'repeat_session':repeat,
                 'series_template_session':template,
                 'news_format_shortcuts_session':self.news_shortcuts,
                 'first_pass_per_minute':round(rate,2),
@@ -384,6 +401,56 @@ class Service:
             if row['state']=='identified':outcome='identified'
             c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
         return outcome,dest
+    def _episode_once_claimed(self,selected_id):
+        """Check one episode without repeating external series-identification calls.
+
+        Offline IMDb episode evidence is accepted only through the same
+        conservative auto_choice() validation as the identity pipeline.
+        """
+        with self.db() as c:
+            row=c.execute('SELECT * FROM works WHERE id=?',(selected_id,)).fetchone()
+            task=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(selected_id,)).fetchone()
+            if not row or not task or row['state']!='identified':return False
+            m=json.loads(row['meta']);original=row['meta'];entry=catalog.item(c,row)
+            # Older inconsistent rows must be returned to the identity worker.
+            if not m.get('provider') or not m.get('reference_id'):
+                c.execute("UPDATE works SET state='pending',next_try=0 WHERE id=?",(selected_id,))
+                return True
+            c.execute('DELETE FROM metadata_priority WHERE work_id=?',(selected_id,))
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        verified=None;error=False
+        if entry and archive and archive.updated:
+            try:
+                candidates=archive.candidates(entry['source'],m)
+                verified=catalog.auto_choice(m,candidates)
+            except Exception as exc:
+                diagnostics.error('episode_local_lookup_failed',exc,work_id=selected_id)
+                error=True
+        with self.db() as c:
+            current=c.execute('SELECT meta,state FROM works WHERE id=?',(selected_id,)).fetchone()
+            if not current or current['state']!='identified' or current['meta']!=original:return True
+            if verified and verified.get('episode_verified'):
+                verified.update(state='auto_matched',reason='IMDb-Episode eindeutig bestätigt')
+                catalog.save_metadata(c,selected_id,verified,'matched')
+                outcome='matched'
+            else:
+                outcome='retry' if error or not (archive and archive.updated) else 'unresolved'
+                delay=3600 if outcome=='retry' else 30*86400
+                c.execute("""UPDATE episode_queue SET attempts=attempts+1,
+                    last_outcome=?,next_try=?,updated=? WHERE work_id=?""",
+                    (outcome,time.time()+delay,time.time(),selected_id))
+        with self.worker_lock:
+            self.episode_checked+=1
+            if outcome=='matched':self.episode_matched+=1
+            if outcome=='unresolved':self.episode_unresolved+=1
+            n=self.episode_checked
+        if outcome=='matched' or n==1 or n%100==0:
+            diagnostics.event('episode_worker_progress',outcome=outcome,
+                              checks=self.episode_checked,matched=self.episode_matched,
+                              unresolved=self.episode_unresolved)
+        return True
+
     def _metadata_once_claimed(self,selected_id):
         config=self.settings()
         if not config.get('auto_metadata',True):return False
@@ -519,6 +586,18 @@ class Service:
                 busy=False  # Recheck promptly; do not restart or lose the worker.
             # Preserve the existing wake/idle contract for UI priorities and
             # immediate interruption, also with more than one worker.
+            self.metadata_wake.wait(METADATA_PAUSE if busy else 2)
+            self.metadata_wake.clear()
+
+    def episode_loop(self,index=0):
+        while not self.stop.is_set():
+            requested=max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2))))
+            if index>=requested or not self.settings().get('auto_metadata',True):
+                self.stop.wait(2);continue
+            try:busy=self.metadata_once('episode')
+            except sqlite3.OperationalError as exc:
+                if not sqlite_busy(exc):raise
+                self.sqlite_busy_count+=1;busy=False
             self.metadata_wake.wait(METADATA_PAUSE if busy else 2)
             self.metadata_wake.clear()
 
