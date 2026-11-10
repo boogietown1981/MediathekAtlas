@@ -1,7 +1,53 @@
 """Provider metadata and evidence-based episode reconciliation."""
-import re,time,threading,hashlib,json
+import re,time,threading,hashlib,json,socket,ssl,http.client,urllib.error
 import core,diagnostics,provider_stats,negative_cache
 _CACHE={};_WD_CACHE={};_LOCK=threading.Lock()
+# Short provider-scoped outage circuit: network failures must not repeatedly
+# occupy all metadata workers. This is strictly in-memory; work-level retry
+# dates and matching evidence remain durable in SQLite.
+_OUTAGE_LOCK=threading.Lock()
+_OUTAGES={}
+_OUTAGE_THRESHOLD=2
+_OUTAGE_WINDOW=180.0
+_OUTAGE_BASE_PAUSE=180.0
+_OUTAGE_MAX_PAUSE=900.0
+
+def _network_failure(exc):
+    """Only transport failures trigger a circuit; a normal 404 is not an outage."""
+    return isinstance(exc,(urllib.error.URLError,TimeoutError,ConnectionError,
+          socket.timeout,socket.gaierror,ssl.SSLError,http.client.RemoteDisconnected,
+          ConnectionResetError,ConnectionAbortedError,ConnectionRefusedError,
+          BrokenPipeError)) and not isinstance(exc,urllib.error.HTTPError)
+
+def provider_pause(provider):
+    """Return remaining seconds for provider; zero means the provider may run."""
+    with _OUTAGE_LOCK:
+        state=_OUTAGES.get(provider)
+        return max(0.0,state['until']-time.monotonic()) if state else 0.0
+
+def provider_success(provider):
+    """A successful request ends a transient outage without touching other providers."""
+    with _OUTAGE_LOCK:_OUTAGES.pop(provider,None)
+
+def provider_failure(provider,exc):
+    """After repeated transport errors, cool down that provider only."""
+    if not _network_failure(exc):return False
+    now=time.monotonic()
+    with _OUTAGE_LOCK:
+        old=_OUTAGES.get(provider)
+        if not old or now-old['first']>_OUTAGE_WINDOW:
+            old={'first':now,'count':0,'until':0.0,'opens':0}
+        old['count']+=1
+        if old['count']>=_OUTAGE_THRESHOLD and now>=old['until']:
+            old['opens']+=1
+            old['until']=now+min(_OUTAGE_MAX_PAUSE,_OUTAGE_BASE_PAUSE*(2**min(old['opens']-1,3)))
+            diagnostics.event('provider_transient_pause',provider=provider,
+                              seconds=round(old['until']-now),
+                              failures=old['count'])
+        _OUTAGES[provider]=old
+        return old['until']>now
+
+
 GENRES={'Comedy':'Komödie','Crime':'Krimi','Documentary':'Dokumentation','Dokumentarfilm':'Dokumentation','Family':'Kinder & Familie','Familienserie':'Kinder & Familie','Familienfilm':'Kinder & Familie','Kids':'Kinder & Familie','Kinder':'Kinder & Familie','Zeichentrickserie':'Animation','animated television series':'Animation','Familie':'Kinder & Familie','Children':'Kinder & Familie','Romance':'Romantik','Liebesfilm':'Romantik','Sci-Fi':'Science-Fiction','Science Fiction':'Science-Fiction','Animation':'Animation','Adventure':'Abenteuer','Action':'Action','History':'Historie','War':'Kriegsfilm','TV Movie':'TV-Film','Music':'Musik','Mystery':'Mystery','Horror':'Horror','Fantasy':'Fantasy','Drama':'Drama','Thriller':'Thriller',
         'Biography':'Biografie','Biographie':'Biografie','Biopic':'Biografie','Historisch':'Historie','Historien':'Historie','Geschichte':'Historie','Krieg':'Kriegsfilm','Kriminal':'Krimi','Kriminalität':'Krimi','Dokumentar':'Dokumentation','Doku':'Dokumentation','Liebe':'Romantik','Romanze':'Romantik','Romantisch':'Romantik','Komödien':'Komödie','Comedy Serie':'Komödie','Sitcom':'Komödie','Zeichentrick':'Animation','Anime':'Animation','Animiert':'Animation','Trickfilm':'Animation','Fernsehfilm':'TV-Film','Fernseh':'TV-Film','TV':'TV-Film','Musikfilm':'Musik','Musical':'Musical','Musicalfilm':'Musical','Sport':'Sport','Sports':'Sport','Western':'Western','Abenteuer':'Abenteuer','Mysteryfilm':'Mystery','Suspense':'Thriller','Psychothriller':'Thriller','Kinderfilm':'Kinder & Familie','Kinderserie':'Kinder & Familie','Jugend':'Kinder & Familie','Talk':'Talk','Talk Show':'Talk','Talkshow':'Talk','News':'Nachrichten','Reality':'Reality-TV','Reality TV':'Reality-TV','Game Show':'Spielshow','Gameshow':'Spielshow','Quiz':'Spielshow','Quizshow':'Spielshow','Soap':'Seifenoper','Short':'Kurzfilm','Kurz':'Kurzfilm','Film Noir':'Film noir','Politics':'Politik','Martial Arts':'Martial Arts','Science':'Wissenschaft','Wissen':'Wissenschaft','Satire':'Satire','Kabarett':'Kabarett','Erotik':'Erotik','Erotic':'Erotik','Mini Series':'Miniserie','Miniseries':'Miniserie','Travel':'Reise','Food':'Kochen','Cooking':'Kochen'}
 # Words that only name the medium; a genre made of nothing else carries no information.
@@ -375,6 +421,10 @@ def candidates(row,meta,settings):
             if field=='omdb' and omdb_status(settings[field])['paused']:
                 if 'OMDb' not in deferred and not imdb_checked():deferred.append('OMDb')
                 checked({'provider':provider,'status':'paused','count':0});break
+            if provider_pause(provider) and not settings.get('_force_provider_refresh',False):
+                if provider not in deferred:deferred.append(provider)
+                checked({'provider':provider,'status':'paused','count':0})
+                break
             # Reuse a confirmed no-result for the same provider query. Errors,
             # expired tokens and rate limits are never negative evidence.
             credential=settings.get(field,'')
@@ -391,6 +441,7 @@ def candidates(row,meta,settings):
                 for c in hits:
                     video_causality.annotate(row,c)
                     c['plausibility_issues']=matching.issues(meta,c)
+                provider_success(provider)
                 if not hits:negative_cache.remember(provider,k,title,year,credential)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
                 diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
@@ -407,6 +458,7 @@ def candidates(row,meta,settings):
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
                     if provider not in deferred and not imdb_checked():deferred.append(provider)
                     checked({'provider':provider,'status':'paused','count':0});break
+                provider_failure(provider,e)
                 checked({'provider':provider,'status':'error','count':0})
                 warnings.append(provider+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=provider,title=title)
         if matching.sufficient(meta,out):
@@ -416,6 +468,10 @@ def candidates(row,meta,settings):
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:
+            if provider_pause('Wikidata') and not settings.get('_force_provider_refresh',False):
+                if 'Wikidata' not in deferred:deferred.append('Wikidata')
+                checked({'provider':'Wikidata','status':'paused','count':0})
+                break
             year=meta.get('year') if k=='movie' else None
             if negative_cache.contains('Wikidata',k,title,year,
                                       force=settings.get('_force_provider_refresh',False)):
@@ -424,9 +480,14 @@ def candidates(row,meta,settings):
             start=time.monotonic()
             try:
                 d=wikidata(title,k,year)
+                provider_success('Wikidata')
                 if not d:negative_cache.remember('Wikidata',k,title,year)
                 if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
                 diagnostics.event('provider_complete',provider='Wikidata',title=title,kind=k,candidates=int(bool(d)),seconds=round(time.monotonic()-start,2))
-            except Exception as e:checked({'provider':'Wikidata','status':'error','count':0});warnings.append('Wikidata: '+core.safe_error(e));diagnostics.error('provider_failed',e,provider='Wikidata',title=title)
+            except Exception as e:
+                provider_failure('Wikidata',e)
+                checked({'provider':'Wikidata','status':'error','count':0})
+                warnings.append('Wikidata: '+core.safe_error(e))
+                diagnostics.error('provider_failed',e,provider='Wikidata',title=title)
     return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
