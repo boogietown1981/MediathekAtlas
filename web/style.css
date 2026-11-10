@@ -269,3 +269,53 @@ dialog.player::backdrop{background:#000c}
  #discover #search{grid-template-columns:minmax(0,1fr)}
  #discover #search input{grid-column:auto}
 }
+
+/* 0.5.31 – settings use all available width and collapse into menus.
+   Existing control IDs and form submissions remain unchanged. */
+#settings{min-width:0}
+#settings>.atlas-settings-heading{display:flex;align-items:baseline;justify-content:space-between;gap:12px;flex-wrap:wrap;margin:0 0 14px}
+#settings>.atlas-settings-heading h2{margin:0}
+#settings>.atlas-settings-heading p{margin:0}
+.atlas-settings-layout{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));align-items:start;gap:14px}
+.atlas-settings-layout>.panel{max-width:none;min-width:0;padding:17px 20px;margin:0}
+.atlas-settings-layout>[hidden]{display:none!important}
+.atlas-settings-card-wide{grid-column:1/-1}
+.atlas-settings-card>summary{cursor:pointer;list-style:none;font-weight:650;font-size:14px;color:#d9f4ea;display:flex;align-items:center;justify-content:space-between;gap:8px;min-height:34px}
+.atlas-settings-card>summary::-webkit-details-marker,.atlas-settings-submenu>summary::-webkit-details-marker{display:none}
+.atlas-settings-card>summary:before,.atlas-settings-submenu>summary:before{content:'▸';color:#80dbc2;font-size:15px;flex:0 0 12px}
+.atlas-settings-card[open]>summary:before,.atlas-settings-submenu[open]>summary:before{content:'▾'}
+.atlas-settings-card>summary small,.atlas-settings-submenu>summary small{margin-left:auto;font-size:11px;font-weight:400;color:#8caebd;text-align:right}
+.atlas-settings-card>.atlas-settings-body{padding-top:12px}
+.atlas-settings-card-header{display:flex;align-items:baseline;gap:16px;flex-wrap:wrap;margin-bottom:10px}
+.atlas-settings-card-header h3{font-size:16px;margin:0}
+.atlas-settings-card-header p{margin:0}
+.atlas-settings-submenu{min-width:0;border:1px solid #314354;border-radius:10px;background:#111c29;margin-top:9px;overflow:hidden}
+.atlas-settings-submenu>summary{cursor:pointer;list-style:none;display:flex;align-items:center;gap:10px;color:#d8e9f0;font-weight:650;font-size:13px;padding:13px 15px}
+.atlas-settings-submenu[open]>summary{border-bottom:1px solid #2c3e4c;background:#172635}
+.atlas-settings-fields{padding:14px 16px 16px;display:grid;grid-template-columns:repeat(2,minmax(0,1fr));column-gap:16px;row-gap:10px;align-items:start}
+.atlas-settings-fields>label{display:block;min-width:0;margin:0;overflow-wrap:anywhere}
+.atlas-settings-fields>.check{display:flex;align-items:start;grid-column:1/-1;gap:10px}
+.atlas-settings-fields>.check input{margin-top:3px;flex:0 0 auto}
+.atlas-settings-fields>p{grid-column:1/-1;margin:0;max-width:115ch;line-height:1.5}
+.atlas-settings-fields>button,.atlas-settings-fields>[role=status],.atlas-settings-fields>#key-state{min-width:0}
+.atlas-settings-fields input,.atlas-settings-fields textarea,.atlas-settings-fields select{width:100%;min-width:0}
+.atlas-settings-actions{display:flex;align-items:center;gap:10px;flex-wrap:wrap;padding-top:14px}
+.atlas-settings-actions button{margin:0}
+.atlas-settings-footer{padding:14px 0 0;max-width:120ch}
+.atlas-settings-footer p{margin:4px 0}
+#settings #imdb-settings-datasets{grid-template-columns:repeat(auto-fit,minmax(min(100%,190px),1fr))}
+#settings .runtime-item:last-child{margin-bottom:4px}
+#settings .mesh-direct{min-width:0}
+@media(max-width:1060px){
+ .atlas-settings-layout{grid-template-columns:minmax(0,1fr)}
+ .atlas-settings-fields{grid-template-columns:repeat(2,minmax(0,1fr))}
+}
+@media(max-width:660px){
+ .atlas-settings-layout>.panel{padding:14px}
+ .atlas-settings-fields{grid-template-columns:minmax(0,1fr);padding:12px}
+ .atlas-settings-submenu>summary{flex-wrap:wrap}
+ .atlas-settings-submenu>summary small{flex:0 0 100%;margin:0 0 0 22px;text-align:left}
+ .atlas-settings-card>summary{flex-wrap:wrap}
+ .atlas-settings-card>summary small{flex-basis:100%;text-align:left;margin:0 0 0 22px}
+ .atlas-settings-actions button{width:100%}
+}
