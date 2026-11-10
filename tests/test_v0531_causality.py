@@ -175,9 +175,9 @@ class EpisodeQueueRuntimeTests(unittest.TestCase):
         finally:c.close()
 
     def test_episode_worker_uses_feed_duration_and_no_network_or_probe(self):
-        with (patch('broadcaster.lookup_limited',side_effect=AssertionError('No remote')),
-              patch('downloads.probe',side_effect=AssertionError('No ffprobe'))):
-            self.assertTrue(self.service.metadata_once('episode'))
+        with patch('broadcaster.lookup_limited',side_effect=AssertionError('No remote')):
+            with patch('downloads.probe',side_effect=AssertionError('No ffprobe')):
+                self.assertTrue(self.service.metadata_once('episode'))
         with self.db() as c:
             w=c.execute('SELECT state,meta FROM works WHERE id=?',(self.wid,)).fetchone()
             m=json.loads(w['meta'])
