@@ -179,7 +179,7 @@ dialog.player::backdrop{background:#000c}
 .atlas-worker-chip[data-kind="identity"],.atlas-worker-chip[data-kind="episode"]{color:#92e5d1}
 .atlas-worker-chip[data-kind="confirmed"]{color:#84e9ca}
 .atlas-worker-hint{grid-column:1/-1;color:#8faebb;font-size:10px;line-height:1.35;margin-top:2px}
-@container (max-width:1159px){
+@container (max-width:979px){
  .atlas-status-grid{grid-template-columns:repeat(4,minmax(0,1fr))}
 }
 @container (max-width:980px){
@@ -187,10 +187,10 @@ dialog.player::backdrop{background:#000c}
  .atlas-import-summary{grid-template-columns:repeat(5,minmax(0,1fr))}
  .atlas-import-caption{grid-column:1/-1}
 }
-@container (max-width:899px){
+@container (max-width:779px){
  .atlas-status-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
-@container (max-width:689px){
+@container (max-width:609px){
  .atlas-status-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
  .atlas-import-summary{grid-template-columns:repeat(3,minmax(0,1fr))}
 }
