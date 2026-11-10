@@ -534,7 +534,76 @@ function portalItemCard(item){
     link.href=target;link.target='_blank';link.rel='noopener noreferrer';
     card.append(link);
   }
+  if(item.source==='internet_archive'){
+    const inspect=el('button','Fassungen, Folgen und Sprachen prüfen','portal-inspect');
+    inspect.type='button';
+    const holder=el('div',undefined,'portal-archive-detail');
+    inspect.onclick=()=>busy(inspect,async()=>{
+      let state=await api('portal-archive-detail?'+new URLSearchParams({id:item.id}));
+      let detail=state.detail;
+      if(!detail){
+        const fetched=await api('portal-archive-inspect',{id:item.id});
+        detail=fetched.detail;
+      }
+      showArchiveManifest(holder,detail);
+      inspect.textContent='Gespeicherte Detailansicht öffnen';
+    });
+    card.append(inspect,holder);
+  }
   return card;
+}
+function archiveFormatLabel(role){
+  return {content:'Ursprungsdatei',derivative:'Weitere Fassung / abgeleitet',
+    technical:'Technische Datei',unknown:'Nicht sicher erkannt'}[role]||'Video';
+}
+function archiveLanguages(values){
+  return Array.isArray(values)&&values.length?values.join(', ').toUpperCase():'Unbekannt';
+}
+function showArchiveManifest(host,manifest){
+  host.replaceChildren();
+  if(!manifest||typeof manifest!=='object'){host.append(el('p','Keine Archivdetails verfügbar.','muted'));return;}
+  const heading=el('div',undefined,'portal-manifest-heading');
+  heading.append(el('strong','ArchiveMedia-Erkennung · '+(manifest.normalized_title||manifest.title||'')));
+  heading.append(el('small','Identität: '+(manifest.identity_origin||'unbekannt')+
+      ' · '+(manifest.identity_confidence||'unbestätigt')));
+  host.append(heading);
+  host.append(el('p','Archiv-Eintrag: '+countLabel(manifest.files_in_manifest)+
+      ' Dateien, davon '+countLabel(manifest.video_files_found)+' Videodateien im geprüften Bestand.','muted'));
+  if(!manifest.inventory_complete)
+    host.append(el('p','Nur Teilbestand angezeigt: weitere Dateien sind möglicherweise vorhanden.','portal-warning'));
+  if(manifest.content_format_hint==='series_or_mixed_upload')
+    host.append(el('p','Mehrteiliger Upload mit Episodenkennungen – nicht als einzelner Film zusammenfassen.','portal-warning'));
+  if(manifest.content_format_hint==='clip')
+    host.append(el('p','ArchiveMedia erkennt Hinweise auf Trailer oder Clips, keine bestätigte Filmfassung.','portal-warning'));
+  host.append(el('p','Sprache laut Archivbeschreibung: '+
+    archiveLanguages(manifest.upload_language_codes)+
+    ' · Sprachhinweise sind keine bestätigten Tonspuren.','muted'));
+  if(manifest.upload_audio_hint_languages?.length)
+    host.append(el('p','Audio-Hinweis aus Upload-Titel: '+
+      archiveLanguages(manifest.upload_audio_hint_languages)+' (ungeprüft)','muted'));
+  const list=el('div',undefined,'portal-manifest-variants');
+  for(const v of manifest.video_variants||[]){
+    const box=el('div',undefined,'portal-manifest-variant');
+    const name=v.title||v.filename;
+    box.append(el('strong',name));
+    const format=[v.kind==='series'&&v.episode!=null?
+      'Folge '+(v.season!=null?'S'+v.season+' / ':'')+'E'+v.episode:null,
+      v.kind==='series'&&v.episode==null?'Serienzugehörigkeit, Folge offen':null,
+      archiveFormatLabel(v.file_role),v.format||null].filter(Boolean).join(' · ');
+    box.append(el('small',format));
+    box.append(el('small','Datei: '+v.filename));
+    const infos=[];
+    if(v.audio_hint_languages?.length)infos.push('Audio-Dateiname: '+archiveLanguages(v.audio_hint_languages));
+    if(v.subtitle_hint_languages?.length)infos.push('Untertitel-Dateiname: '+archiveLanguages(v.subtitle_hint_languages));
+    if(v.sidecar_subtitles?.length)infos.push('Mögliche Untertiteldateien: '+v.sidecar_subtitles.length);
+    if(v.size_bytes)infos.push('Größe: '+(v.size_bytes/1024/1024).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB');
+    box.append(el('small',infos.length?infos.join(' · '):'Sprachen nicht nachgewiesen'));
+    if(v.identity_warning)box.append(el('small','Hinweis: '+v.identity_warning,'portal-warning'));
+    list.append(box);
+  }
+  if(!list.childElementCount)list.append(el('p','Keine Videodateien im geprüften Dateimanifest erkannt.','muted'));
+  host.append(list);
+  host.append(el('small','Dateinamen und Upload-Angaben sind Hinweise, keine technische Spurprüfung. Keine Downloads über diese Funktion.','portal-rights'));
 }
 async function loadPortals(){
   if(appStopped||$('portals').hidden||portalBusy)return;
