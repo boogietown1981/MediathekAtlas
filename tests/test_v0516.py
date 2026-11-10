@@ -33,7 +33,10 @@ class BroadcasterFormatTests(unittest.TestCase):
             m=json.loads(c.execute("SELECT meta FROM works WHERE state='format'").fetchone()[0])
             self.assertEqual((m['provider'],m['poster']),('ARD Mediathek','https://example.org/p.jpg'))
             service=catalog_service.Service(self.db,dict,threading.Event(),Path(self.tmp.name))
-            self.assertEqual(service.pick(c)['topic'],'In aller Freundschaft')
+            # Known scripted shows stay eligible for episode matching, but
+            # must no longer occupy the main title-identification queue.
+            self.assertIsNone(service.pick(c))
+            self.assertEqual(service.pick_episode(c)['topic'],'In aller Freundschaft')
     def test_rule_change_runs_once(self):
         with self.db() as c:
             catalog.assign_formats(c);catalog.assign_formats(c)
