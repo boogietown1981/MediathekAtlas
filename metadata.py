@@ -149,6 +149,8 @@ def resolve_episode(meta,candidate,episodes):
     if len(matches)==1 and len(unique)==1:
         ep=next(iter(unique.values()));candidate.update(season=ep['season_number'],episode=ep['episode_number'],episode_title=ep['name'],episode_verified=True,description=ep.get('overview') or candidate['description'])
         runtime=ep.get('runtime');duration=meta.get('_source_duration')
+        if isinstance(runtime,(int,float)) and runtime>0:
+            candidate['episode_runtime_seconds']=runtime*60
         if isinstance(runtime,(int,float)) and runtime>0 and duration:
             candidate['runtime_mismatch']=abs(runtime*60-duration)>max(300,runtime*6)
             candidate['runtime_agrees']=not candidate['runtime_mismatch']
@@ -169,6 +171,12 @@ def tmdb_candidates(row,meta,key,kind,title):
            'year_mismatch':bool(kind=='movie' and meta.get('year') and year!=meta['year']),'runtime_mismatch':mismatch,'runtime_agrees':bool(runtime and row.get('duration') and not mismatch),
            'episode_verified':False,'reason':'Titel, Medienart und zusätzliche Quellenbelege werden verglichen.'}
         if kind=='series':
+            # Only a stable typical TV runtime qualifies; mixed-duration
+            # series keep the expected duration unknown rather than guessed.
+            durations=[x for x in (d.get('episode_run_time') or [])
+                       if isinstance(x,(int,float)) and 1<=x<=240]
+            if durations and max(durations)-min(durations)<=max(3,min(durations)*.2):
+                c['reference_runtime_seconds']=round(sum(durations)/len(durations)*60)
             # Series overview kept apart: resolve_episode replaces description with the episode plot.
             c['show_description']=d.get('overview') or ''
             c['episode_title']=meta.get('episode_title') or row['title'];epmeta={**meta,'_source_title':row['title'],'_source_duration':row.get('duration')};episodes=[]
@@ -213,6 +221,7 @@ def omdb_candidates(row,meta,key,kind,title):
        'rating':float(d['imdbRating']) if str(d.get('imdbRating','')).replace('.','',1).isdigit() else None,'votes':int(str(d['imdbVotes']).replace(',','')) if str(d.get('imdbVotes','')).replace(',','').isdigit() else None,'rating_source':'IMDb','ratings':parse_ratings(d),'similarity':score,'year_mismatch':bool(kind=='movie' and meta.get('year') and year!=meta['year']),'runtime_mismatch':mismatch,
        'runtime_agrees':bool(kind=='movie' and runtime and row.get('duration') and not mismatch),'episode_verified':False,'reason':'OMDb-Titel, Medienart, Laufzeit und Episodendaten.'}
     if kind=='series':
+        if 1<=runtime<=240:c['reference_runtime_seconds']=runtime*60
         c['episode_title']=meta.get('episode_title') or row['title'];episodes=[]
         count=int(d.get('totalSeasons','0')) if str(d.get('totalSeasons','')).isdigit() else 0
         seasons=[meta['season']] if meta.get('season') is not None else list(range(1,min(count,24)+1))
@@ -247,6 +256,9 @@ def tvdb_candidates(row,meta,credential,kind,title):
            'similarity':score,'year_mismatch':False,'runtime_mismatch':False,'runtime_agrees':False,
            'episode_verified':False,'episode_title':meta.get('episode_title') or row['title'],
            'reason':'TVDB-Serientitel und deutsche Episodentitel; offizielle ausgestrahlte Reihenfolge.'}
+        avg=d.get('averageRuntime')
+        if isinstance(avg,(int,float)) and 1<=avg<=240:
+            c['reference_runtime_seconds']=avg*60
         episodes=[];complete=False
         for page in range(20):
             result=get('series/'+sid+'/episodes/official/deu',{'page':page})
