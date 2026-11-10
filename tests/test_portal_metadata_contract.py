@@ -113,6 +113,14 @@ class MetadataEvidenceTests(unittest.TestCase):
         self.assertEqual(result['primary']['imdb_id'],'tt999')
         self.assertEqual(result['trail'][1]['state'],'skipped_sufficient')
 
+    def test_archive_ui_reports_evidence_separately_from_spoken_language(self):
+        app=(pathlib.Path(__file__).resolve().parents[1]/'web'/'app.js').read_text(encoding='utf-8')
+        self.assertIn("manifest.work_assessment",app)
+        self.assertIn("Werk-/Dateibeleg:",app)
+        self.assertIn("Video-Inhalt nicht bestätigt",app)
+        self.assertIn("Sprachhinweise sind keine bestätigten Tonspuren",app)
+        self.assertIn("Tonspuren (Containerangaben)",app)
+
     def test_filename_plan_uses_existing_single_engine(self):
         self.assertIn('canonical_target',policy.filename_rules()['engine'])
         self.assertFalse(policy.filename_rules()['guesses_used_as_verified_languages'])
