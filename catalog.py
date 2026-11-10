@@ -114,6 +114,26 @@ def seed(row):
                  season=None,episode=None,episode_reference_id=None)
     return m
 
+def mark_explicit_extra(c,w,source):
+    """Safely repair an earlier automatic series recognition of a trailer/clip.
+
+    Only provisional automatic states may change. Never undo a user decision
+    or replace a verified downloaded episode without review.
+    """
+    if not w or w['state'] in ('manual','matched'):return False
+    import video_causality
+    role=video_causality.explicit_format(source)
+    if not role:return False
+    m=json.loads(w['meta'] or '{}')
+    if source.get('topic'):m['related_series_title']=source['topic']
+    m.update(role,kind='other',title=cleaned(source.get('title')) or m['title'],
+             episode_verified=False,season=None,episode=None,episode_reference_id=None,
+             reason='Kurzformat ausdrücklich im Sendertitel gekennzeichnet; keine vollständige Folge')
+    c.execute("""UPDATE works SET title=?,kind='other',show_key=?,meta=?,state='format',
+        next_try=0 WHERE id=?""",(m['title'],showkey(m),json.dumps(m),w['id']))
+    return True
+
+
 def origin_meta(c,row):
     """Seed metadata of an offer as on import (including a unique series template) and the template used."""
     m=seed(row);template=None
