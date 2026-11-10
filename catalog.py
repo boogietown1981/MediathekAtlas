@@ -928,6 +928,17 @@ def recover_download_queue(c):
     
 def initialize(c):
     c.executescript(SCHEMA)
+    # SQLite CREATE TRIGGER IF NOT EXISTS does not replace older definitions.
+    # Rebuild once, preserving all queue rows, retries and user choices.
+    if not get_state(c,'episode_queue_causality_triggers_v0531',False):
+        c.executescript("""DROP TRIGGER IF EXISTS episode_queue_work_insert;
+            DROP TRIGGER IF EXISTS episode_queue_work_update;
+            DROP TRIGGER IF EXISTS episode_queue_work_delete;""")
+        c.executescript(SCHEMA)
+        c.execute("""DELETE FROM episode_queue WHERE EXISTS
+            (SELECT 1 FROM works w WHERE w.id=episode_queue.work_id
+             AND COALESCE(json_extract(w.meta,'$.video_role_needs_review'),0)!=0)""")
+        set_state(c,'episode_queue_causality_triggers_v0531',True)
     if 'topic' not in [r[1] for r in c.execute('PRAGMA table_info(works)')]:c.execute("ALTER TABLE works ADD COLUMN topic TEXT DEFAULT ''")
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
