@@ -137,6 +137,7 @@ def entry(source,external_id,title,page_url,year=None,description='',
         'evidence':evidence,'access':'official_site_only',
         'download_allowed':False,'available_until':None,
         'availability':'unverified','rights_verified':False,
+        'language_claim':'','language_evidence':'unavailable',
     }
 
 
@@ -159,7 +160,7 @@ def archive_query(query,rows=20):
     n=max(1,min(MAX_SEARCH_RESULTS,int(rows)))
     params=[('q',clause),('output','json'),('rows',str(n)),('page','1')]
     params.extend(('fl[]',field) for field in (
-        'identifier','title','year','date','description','licenseurl','rights'))
+        'identifier','title','year','date','description','language','licenseurl','rights'))
     return 'https://archive.org/advancedsearch.php?'+urllib.parse.urlencode(params)
 
 
@@ -178,10 +179,13 @@ def archive_document(doc):
         if len(name)<2:continue
         seen.add(ident)
         url='https://archive.org/details/'+urllib.parse.quote(ident,safe='')
-        results.append(entry('internet_archive',ident,name,url,
-                             raw.get('year') or raw.get('date'),
-                             raw.get('description'),raw.get('licenseurl'),
-                             raw.get('rights'),evidence='official_archive_search_metadata'))
+        item=entry('internet_archive',ident,name,url,
+                   raw.get('year') or raw.get('date'),
+                   raw.get('description'),raw.get('licenseurl'),
+                   raw.get('rights'),evidence='official_archive_search_metadata')
+        item['language_claim']=text(raw.get('language'),120)
+        item['language_evidence']='archive_search_metadata' if item['language_claim'] else 'unavailable'
+        results.append(item)
     return results
 
 
@@ -517,13 +521,21 @@ def save(c,rows,query=None):
     return ids
 
 
-def listing(c,source='',query='',offset=0,limit=40):
+def listing(c,source='',query='',offset=0,limit=40,locale='all'):
     if source and source not in SOURCES:raise ValueError('Unbekannte Quelle')
     offset=max(0,min(int(offset),100000))
     limit=max(1,min(int(limit),60))
     where=[];params=[]
     if source:
         where.append('source=?');params.append(source)
+    if locale not in ('all','de'):raise ValueError('Ungültiger Sprachfilter')
+    if locale=='de' and source=='internet_archive':
+        # Unknown languages remain findable; exclude only explicitly marked
+        # other-language entries from this Archive-specific view.
+        where.append("""(COALESCE(json_extract(metadata,'$.language_claim'),'')=''
+         OR lower(json_extract(metadata,'$.language_claim')) LIKE '%german%'
+         OR lower(json_extract(metadata,'$.language_claim')) LIKE '%deutsch%'
+         OR lower(json_extract(metadata,'$.language_claim')) IN ('de','deu','ger','de-de'))""")
     if text(query):
         where.append('title_key LIKE ?')
         fragment=title_key(query)[:90].replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
