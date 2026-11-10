@@ -545,7 +545,7 @@ function portalItemCard(item){
         const fetched=await api('portal-archive-inspect',{id:item.id});
         detail=fetched.detail;
       }
-      showArchiveManifest(holder,detail);
+      showArchiveManifest(holder,detail,state.probes||{},item.id);
       inspect.textContent='Gespeicherte Detailansicht öffnen';
     });
     card.append(inspect,holder);
@@ -559,18 +559,43 @@ function archiveFormatLabel(role){
 function archiveLanguages(values){
   return Array.isArray(values)&&values.length?values.join(', ').toUpperCase():'Unbekannt';
 }
-function showArchiveManifest(host,manifest){
+function archiveProbeSummary(probe){
+  const part=el('div',undefined,'portal-probe-summary');
+  if(!probe){part.append(el('small','Spuren noch nicht technisch geprüft.','muted'));return part;}
+  part.append(el('strong','Technische Teilprüfung · '+(probe.state||'unbekannt')));
+  const lines=['Übertragene Daten: '+((probe.bytes_sampled||0)/1048576).toLocaleString('de-DE',{maximumFractionDigits:2})+' MiB',
+    probe.method||'Unbekannte Prüfart',
+    'Tonspuren (Containerangaben): '+archiveLanguages(probe.audio_languages_from_tracks),
+    'Untertitelspuren (Containerangaben): '+archiveLanguages(probe.subtitle_languages_from_tracks)];
+  for(const line of lines)part.append(el('small',line));
+  for(const t of probe.tracks||[]){
+    const summary=[t.type==='video'?'Video':t.type==='audio'?'Audio':'Untertitel',
+      t.codec||'Codec unbekannt',t.language?.toUpperCase()||'Sprache unbekannt',
+      t.evidence||'Teilprüfung'].join(' · ');
+    part.append(el('small',summary));
+  }
+  part.append(el('small',probe.detail||probe.note||'Nur partielle Spurdaten.','portal-warning'));
+  return part;
+}
+function showArchiveManifest(host,manifest,probes={},itemId=''){
   host.replaceChildren();
-  if(!manifest||typeof manifest!=='object'){host.append(el('p','Keine Archivdetails verfügbar.','muted'));return;}
+  if(!manifest||typeof manifest!=='object'){
+    host.append(el('p','Keine Archivdetails verfügbar.','muted'));return;
+  }
   const heading=el('div',undefined,'portal-manifest-heading');
   heading.append(el('strong','ArchiveMedia-Erkennung · '+(manifest.normalized_title||manifest.title||'')));
   heading.append(el('small','Identität: '+(manifest.identity_origin||'unbekannt')+
       ' · '+(manifest.identity_confidence||'unbestätigt')));
   host.append(heading);
   host.append(el('p','Archiv-Eintrag: '+countLabel(manifest.files_in_manifest)+
-      ' Dateien, davon '+countLabel(manifest.video_files_found)+' Videodateien im geprüften Bestand.','muted'));
-  if(!manifest.inventory_complete)
-    host.append(el('p','Nur Teilbestand angezeigt: weitere Dateien sind möglicherweise vorhanden.','portal-warning'));
+      ' Dateien · '+countLabel(manifest.video_files_found)+' Videodateien · '+
+      countLabel(manifest.video_families_found||0)+' mögliche Videowerke/Fassungsgruppen.','muted'));
+  host.append(el('p','Ausgeblendet: '+countLabel(manifest.hidden_short_clips||0)+
+      ' kurze Videos, '+countLabel(manifest.hidden_technical_clips||0)+
+      ' Trailer/technische Segmente, '+countLabel(manifest.non_video_files_ignored||0)+
+      ' andere Dateitypen.','muted'));
+  if(!manifest.inventory_complete||!manifest.display_complete)
+    host.append(el('p','Nur eine begrenzte Auswahl relevanter Videodateien angezeigt; weitere Fassungen können vorhanden sein.','portal-warning'));
   if(manifest.content_format_hint==='series_or_mixed_upload')
     host.append(el('p','Mehrteiliger Upload mit Episodenkennungen – nicht als einzelner Film zusammenfassen.','portal-warning'));
   if(manifest.content_format_hint==='clip')
@@ -581,6 +606,13 @@ function showArchiveManifest(host,manifest){
   if(manifest.upload_audio_hint_languages?.length)
     host.append(el('p','Audio-Hinweis aus Upload-Titel: '+
       archiveLanguages(manifest.upload_audio_hint_languages)+' (ungeprüft)','muted'));
+  const consent=el('label',undefined,'portal-consent');
+  const checkbox=document.createElement('input');
+  checkbox.type='checkbox';
+  consent.append(checkbox,document.createTextNode(
+    ' Ich bin berechtigt, für die technische Prüfung einen begrenzten Datenausschnitt von Archive.org abzurufen (max. 8 MiB je Video).'));
+  host.append(consent);
+  host.append(el('p','Ohne Berechtigung erfolgt kein Video-Datenabruf. Nur auf ausdrücklichen Klick – keine automatische Hintergrundprüfung.','muted'));
   const list=el('div',undefined,'portal-manifest-variants');
   for(const v of manifest.video_variants||[]){
     const box=el('div',undefined,'portal-manifest-variant');
@@ -593,18 +625,38 @@ function showArchiveManifest(host,manifest){
     box.append(el('small',format));
     box.append(el('small','Datei: '+v.filename));
     const infos=[];
+    if(v.duration_seconds)infos.push('Laufzeit laut Archiv: '+(v.duration_seconds/60).toLocaleString('de-DE',{maximumFractionDigits:1})+' Min.');
     if(v.audio_hint_languages?.length)infos.push('Audio-Dateiname: '+archiveLanguages(v.audio_hint_languages));
     if(v.subtitle_hint_languages?.length)infos.push('Untertitel-Dateiname: '+archiveLanguages(v.subtitle_hint_languages));
-    if(v.sidecar_subtitles?.length)infos.push('Mögliche Untertiteldateien: '+v.sidecar_subtitles.length);
-    if(v.size_bytes)infos.push('Größe: '+(v.size_bytes/1024/1024).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB');
-    box.append(el('small',infos.length?infos.join(' · '):'Sprachen nicht nachgewiesen'));
+    if(v.sidecar_subtitles?.length)infos.push('Untertiteldateien: '+v.sidecar_subtitles.length);
+    if(v.size_bytes)infos.push('Größe: '+(v.size_bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB');
+    box.append(el('small',infos.length?infos.join(' · '):'Sprachen und Laufzeit nicht nachgewiesen'));
     if(v.identity_warning)box.append(el('small','Hinweis: '+v.identity_warning,'portal-warning'));
+    const info=el('div',undefined,'portal-probe-info');
+    info.append(archiveProbeSummary(probes[v.filename]));
+    box.append(info);
+    if(v.technical_probe_available){
+      const btn=el('button','Format und Tonspuren prüfen (bis 8 MiB)','portal-verify');
+      btn.type='button';
+      btn.onclick=()=>{
+        if(!checkbox.checked){notice('Zunächst die Berechtigung zum Teilabruf bestätigen.','error');return;}
+        busy(btn,async()=>{
+          const result=await api('portal-archive-probe',{
+            id:itemId,filename:v.filename,acknowledged:true});
+          info.replaceChildren(archiveProbeSummary(result.probe));
+          notice('Technische Teilprüfung abgeschlossen: '+(result.probe.state||'unbekannt'));
+        });
+      };
+      box.append(btn);
+    }
     list.append(box);
   }
-  if(!list.childElementCount)list.append(el('p','Keine Videodateien im geprüften Dateimanifest erkannt.','muted'));
+  if(!list.childElementCount)
+    list.append(el('p','Keine relevanten, längeren Videodateien gefunden. Kleine Clips und andere Dateitypen bleiben ausgeblendet.','muted'));
   host.append(list);
-  host.append(el('small','Dateinamen und Upload-Angaben sind Hinweise, keine technische Spurprüfung. Keine Downloads über diese Funktion.','portal-rights'));
+  host.append(el('small','FFprobe/Containerindex bestätigen nur deklarierte Ton- und Untertitelspuren, nicht die tatsächlich gesprochene Sprache oder die Vollständigkeit des Films.','portal-rights'));
 }
+
 async function loadPortals(){
   if(appStopped||$('portals').hidden||portalBusy)return;
   portalBusy=true;
