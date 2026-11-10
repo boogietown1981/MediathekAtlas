@@ -176,7 +176,7 @@ class Service:
         if not self.settings().get('auto_metadata',True):return False
         claim=self.lease_work('episode') if queue=='episode' else self.lease_work()
         if claim is None:
-            with self.worker_lock:active=self.active_checks
+            with self.worker_lock:active=max(0,self.active_checks-self.episode_active)
             if queue=='identity' and not active and self.metadata_status.get('phase')!='waiting':
                 self.metadata_state(phase='waiting')
             return False
@@ -323,7 +323,7 @@ class Service:
     def scan_progress(self):
         with self.worker_lock:
             rate=self.scan_rate()
-            active=self.active_checks;running=dict(self.active_work)
+            active=max(0,self.active_checks-self.episode_active);running=dict(self.active_work)
             counts=dict(self.quality_counts)
             first=self.first_pass_checks;repeat=self.repeat_checks;template=self.template_hits
         total=sum(counts.values());elapsed=max(1,time.monotonic()-self.started_at)
