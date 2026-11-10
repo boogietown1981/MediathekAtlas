@@ -34,7 +34,7 @@ diagnostics.register_secrets(TOKEN)
 
 @contextmanager
 def db():
-    c=sqlite3.connect(ROOT/'catalog.db',timeout=20);c.row_factory=sqlite3.Row
+    c=sqlite3.connect(ROOT/'catalog.db',timeout=30);c.row_factory=sqlite3.Row
     try:
         with c:yield c
     finally:c.close()
@@ -540,7 +540,7 @@ class Handler(BaseHTTPRequestHandler):
                 if 'metadata_workers' in d:
                     try:n=int(d['metadata_workers'])
                     except (ValueError,TypeError):raise ValueError('Ungültige Workerzahl') from None
-                    if n not in (1,2,4):raise ValueError('Erlaubt sind 1, 2 oder 4 Worker')
+                    if n not in (1,2,4,8):raise ValueError('Erlaubt sind 1, 2, 4 oder 8 Worker')
                     s['metadata_workers']=n
                 if 'library_dirs' in d:
                     paths=d['library_dirs']

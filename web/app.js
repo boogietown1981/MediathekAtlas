@@ -159,7 +159,9 @@ const atlasStatusFields=[
  ['review','Zu prüfen','Weitere Belege erforderlich'],
  ['formats','Sendungsbeiträge','Kein Filmabgleich nötig'],
  ['first_pass_remaining','Erstprüfung offen','Noch nie geprüft'],
- ['first_pass_per_minute','Erstprüfungen / Min.','Tatsächlicher Nettofortschritt']
+ ['first_pass_per_minute','Erstprüfungen / Min.','Tatsächlicher Nettofortschritt'],
+ ['match_rate_session','Vollständige Trefferquote','Seit App-Start · ohne Sendungsformate'],
+ ['matched_per_hour_session','Bestätigte Werke / Std.','Seit App-Start · hochgerechnet']
 ];
 function catalogProgress(c){
  if(!c)return;
@@ -176,7 +178,7 @@ function catalogProgress(c){
  }
  for(const [key] of atlasStatusFields){
    const value=board.querySelector('[data-value="'+key+'"]');
-   if(value)value.textContent=key==='first_pass_per_minute'?(Number(c[key])>0?Number(c[key]).toLocaleString('de-DE',{maximumFractionDigits:1}):'–'):countLabel(c[key]||0);
+   if(value)value.textContent=key==='first_pass_per_minute'||key==='matched_per_hour_session'?(Number(c[key])>0?Number(c[key]).toLocaleString('de-DE',{maximumFractionDigits:1}):'–'):key==='match_rate_session'?Number(c[key]||0).toLocaleString('de-DE',{maximumFractionDigits:1})+' %':countLabel(c[key]||0);
  }
  const eta=board.querySelector('[data-foot="first_pass_remaining"]');
  if(eta){
@@ -193,7 +195,10 @@ function catalogProgress(c){
  if(rev!==catalogRevision&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
  const workers=$('metadata-workers-status');
  if(workers)workers.textContent='Parallele Erkennung: '+countLabel(c.recognition_workers_active||0)+
-   ' von '+countLabel(c.recognition_workers_configured||2)+' Workern aktiv. Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt.';
+   ' von '+countLabel(c.recognition_workers_configured||2)+' Workern aktiv. Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt.'+
+   ' · '+countLabel(c.quality_session?.identified||0)+' Werke erkannt, Folge offen'+
+   ' · '+countLabel(c.quality_session?.matched||0)+' vollständig bestätigt'+
+   (c.sqlite_busy_retries_session?' · '+countLabel(c.sqlite_busy_retries_session)+' SQLite-Wiederholungen':'');
 }
 const fields=['title','kind','year','season','episode','episode_title','description'];
 function fill(){$('genres').value=(meta.genres||[]).join(', ');for(const f of fields)$(f).value=meta[f]??'';$('confirmed').checked=false;$('preview').textContent='Bitte Zielnamen prüfen.';}

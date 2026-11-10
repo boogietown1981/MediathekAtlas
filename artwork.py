@@ -113,8 +113,12 @@ def run_once(service):
         row=c.execute("SELECT w.* FROM works w LEFT JOIN artwork_checks a ON a.work_id=w.id WHERE w.state IN ('manual','matched','identified') AND (a.next_try IS NULL OR a.next_try<?) AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) ORDER BY COALESCE(a.next_try,0),w.updated DESC LIMIT 1",(time.time(),)).fetchone()
         if not row:return False
         original=row['meta'];m=json.loads(original)
-        c.execute('INSERT OR REPLACE INTO artwork_checks VALUES(?,?)',(row['id'],time.time()+86400))
-    if m.get('discovery_enriched') and m.get('poster') and m.get('fanart') and m.get('rating') is not None and (not config.get('omdb') or m.get('ratings')) and (m['kind']!='series' or m.get('show_description')):return True
+        # Reserve briefly while lookup runs. A database lock must not make this
+        # artwork disappear from the queue for 24 hours.
+        c.execute('INSERT OR REPLACE INTO artwork_checks VALUES(?,?)',(row['id'],time.time()+300))
+    if m.get('discovery_enriched') and m.get('poster') and m.get('fanart') and m.get('rating') is not None and (not config.get('omdb') or m.get('ratings')) and (m['kind']!='series' or m.get('show_description')):
+        with service.db() as c:c.execute('UPDATE artwork_checks SET next_try=? WHERE work_id=?',(time.time()+86400,row['id']))
+        return True
     key=core.hashlib.sha256(json.dumps([m.get('provider'),m.get('reference_id'),m['kind'],m['title'],m.get('year'),bool(config.get('tmdb')),bool(config.get('tvdb')),bool(config.get('omdb')),'v0516'],sort_keys=True).encode()).hexdigest()
     with service.db() as c:cache=c.execute('SELECT payload FROM artwork_cache WHERE id=? AND checked>?',(key,time.time()-86400)).fetchone()
     if cache:found,errors=json.loads(cache[0]),[]
@@ -130,6 +134,9 @@ def run_once(service):
             apply(m,found)
             c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
             if not errors:shared=share_series(c,row,m,found)
+    with service.db() as c:
+        c.execute('UPDATE artwork_checks SET next_try=? WHERE work_id=?',
+                  (time.time()+(3600 if errors else 86400),row['id']))
     service.artwork_checked+=1+shared
     # Cache hits repeat a known result; logging each of them crowded real events out of the rotating log.
     if not cache or errors:diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors,shared=shared)

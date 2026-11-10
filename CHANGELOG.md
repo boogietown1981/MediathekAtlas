@@ -1,5 +1,15 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.26 – 10. November 2026 (Testbuild)
+
+- Bis zu acht Erkennungsworker, externes API-Limit bleibt zwei; konfigurierbar mit Rücksicht auf schwache NAS.
+- IMDb Offline erkennt bei eindeutigem Beleg auch Episodentitel mit ausdrücklich getrenntem Serienpräfix.
+- SQLite-Leases: Kandidaten außerhalb der Schreibtransaktion auswählen, Busy-Wiederholungen statt Worker-Abbrüchen.
+- Cover-Prüfungen: kurze Reservierungen statt ganztägigem Aussetzen nach einem Fehler.
+- Kataloglisten tolerieren während des Aufbaus zusammengeführte/entfernte Datensätze.
+- Neue Qualitätskennzahlen: vollständige Trefferquote, bestätigte Werke pro Stunde, SQLite-Busy-Zähler.
+- 11 gezielte Regressionstests; Pakete technisch geprüft, reale Performance-/Gerätetests offen.
+
 ## 0.5.25.1 – 10. November 2026
 
 - Alle sieben PRs #9–#15 für 0.5.19–0.5.25 in korrekter Reihenfolge nach main zusammengeführt; vollständige Historie erhalten.

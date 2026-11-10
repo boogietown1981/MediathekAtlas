@@ -241,6 +241,9 @@ def mesh_download(c,meta,work_id=None):
     return {'name':r[1],'state':'loading' if r[2]=='claim' else 'local' if r[5] else 'transfer' if r[4] else 'remote'}
 
 def item(c,w):
+    # A canonical merge may remove a work between listing and the detail query.
+    # Treat that as an absent row, never turn a routine refresh into HTTP 500.
+    if w is None:return None
     r=c.execute('SELECT * FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC,seen DESC LIMIT 1',(w['id'],)).fetchone()
     if not r:return None
     row=json.loads(r['payload']);row.update(offer_expiry(c,r['id']));count=c.execute('SELECT COUNT(*) FROM offers WHERE work_id=?',(w['id'],)).fetchone()[0]
@@ -358,7 +361,9 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     total=c.execute('SELECT COUNT(*) FROM ('+base+')',args).fetchone()[0]
     rows=c.execute('SELECT g.*,w.title FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+({'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE'))+' LIMIT 48 OFFSET ?',args+[offset]).fetchall();out=[]
     for row in rows:
-        w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone();entry=item(c,w)
+        w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone()
+        if w is None:continue  # merged by another worker after the paged query
+        entry=item(c,w)
         if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show);out.append(entry)
     return {'items':out,'total':total,'offset':offset}
 

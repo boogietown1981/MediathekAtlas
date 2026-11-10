@@ -16,14 +16,20 @@ def retry_delay(attempts,result):
     return min(30*86400,3*86400*2**min(max(attempts-1,0),4))
 
 METADATA_PAUSE=.1
+MAX_RECOGNITION_WORKERS=8
+
+def sqlite_busy(exc):
+    return isinstance(exc,sqlite3.OperationalError) and any(
+        x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.subscription_wake=threading.Event();self.lease_gc_at=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
-        # Start four cheap long-lived threads, activate only the configured count.
-        for index in range(4):
+        # Eight long-lived workers are cheap while idle; actual concurrency is configurable.
+        # Provider concurrency remains limited independently to two.
+        for index in range(MAX_RECOGNITION_WORKERS):
             fn=lambda index=index:self.metadata_loop(index)
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name='recognition_worker_%d'%(index+1)).start()
     def supervise(self,fn):
@@ -124,24 +130,40 @@ class Service:
             self.subscription_wake.wait(60);self.subscription_wake.clear()
 
     def lease_work(self):
-        now=time.time()
-        with self.db() as c:
-            # Serialize the short pick+claim operation, not the network request.
-            # Unlike an INSERT OR IGNORE, UPSERT may safely reclaim an expired
-            # lease even if housekeeping has not removed it yet.
-            c.execute('BEGIN IMMEDIATE')
-            if now>=self.lease_gc_at:
-                c.execute('DELETE FROM metadata_leases WHERE expires<=?',(now,))
-                self.lease_gc_at=now+60
-            row=self.pick(c)
-            if row is None:return None
-            owner=secrets.token_hex(12)
-            added=c.execute("""INSERT INTO metadata_leases(work_id,owner,expires)
-                VALUES(?,?,?) ON CONFLICT(work_id) DO UPDATE SET
-                  owner=excluded.owner,expires=excluded.expires
-                WHERE metadata_leases.expires<=?""",
-                (row['id'],owner,now+1800,now)).rowcount
-            return (row['id'],owner) if added else None
+        """Claim atomically, but never hold a writer lock during catalogue selection.
+
+        Read the candidate before BEGIN IMMEDIATE; verify it is still eligible
+        when the short write lock is held. Under eight workers a lost race just
+        picks a different candidate. Busy databases yield instead of killing a
+        worker or permanently losing its progress.
+        """
+        for attempt in range(12):
+            now=time.time()
+            try:
+                with self.db() as c:
+                    row=self.pick(c)
+                    if row is None:return None
+                    c.execute('BEGIN IMMEDIATE')
+                    active=c.execute('SELECT state,next_try FROM works WHERE id=?',(row['id'],)).fetchone()
+                    leased=c.execute('SELECT expires FROM metadata_leases WHERE work_id=?',(row['id'],)).fetchone()
+                    if (not active or active['state']!=row['state'] or active['state'] in ('manual','matched','format')
+                            or active['next_try']>now or leased and leased['expires']>now):
+                        continue
+                    if now>=self.lease_gc_at:
+                        c.execute('DELETE FROM metadata_leases WHERE expires<=?',(now,))
+                        self.lease_gc_at=now+60
+                    owner=secrets.token_hex(12)
+                    added=c.execute("""INSERT INTO metadata_leases(work_id,owner,expires)
+                        VALUES(?,?,?) ON CONFLICT(work_id) DO UPDATE SET
+                          owner=excluded.owner,expires=excluded.expires
+                        WHERE metadata_leases.expires<=?""",
+                        (row['id'],owner,now+1800,now)).rowcount
+                    if added:return (row['id'],owner)
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(min(.75,.04*(attempt+1))):return None
+        return None
 
     def metadata_once(self):
         if not self.settings().get('auto_metadata',True):return False
@@ -159,8 +181,15 @@ class Service:
             return self._metadata_once_claimed(wid)
         finally:
             try:
-                with self.db() as c:
-                    c.execute('DELETE FROM metadata_leases WHERE work_id=? AND owner=?',(wid,owner))
+                for attempt in range(4):
+                    try:
+                        with self.db() as c:
+                            c.execute('DELETE FROM metadata_leases WHERE work_id=? AND owner=?',(wid,owner))
+                        break
+                    except sqlite3.OperationalError as e:
+                        if not sqlite_busy(e):raise
+                        self.sqlite_busy_count+=1
+                        if self.stop.wait(.1*(attempt+1)):break
             finally:
                 with self.worker_lock:
                     self.active_checks=max(0,self.active_checks-1);self.active_work.pop(thread,None)
@@ -253,22 +282,32 @@ class Service:
         # At least one minute of measurements for a useful ETA.
         if duration<60 or len(self.recent_first)<20:return 0.0
         return len(self.recent_first)*60/max(60,duration)
-    def record_check(self,was_first,from_template=False):
-        self.checked+=1
-        if was_first:
-            self.first_pass_checks+=1;self.recent_first.append(time.monotonic())
-        else:self.repeat_checks+=1
-        if from_template:self.template_hits+=1
-    def scan_progress(self):
-        rate=self.scan_rate()
+    def record_check(self,was_first,from_template=False,outcome=None):
         with self.worker_lock:
+            self.checked+=1
+            if was_first:
+                self.first_pass_checks+=1;self.recent_first.append(time.monotonic())
+            else:self.repeat_checks+=1
+            if from_template:self.template_hits+=1
+            if outcome in self.quality_counts:self.quality_counts[outcome]+=1
+    def scan_progress(self):
+        with self.worker_lock:
+            rate=self.scan_rate()
             active=self.active_checks;running=dict(self.active_work)
-        return {'first_pass_session':self.first_pass_checks,'repeat_session':self.repeat_checks,
-                'series_template_session':self.template_hits,
+            counts=dict(self.quality_counts)
+            first=self.first_pass_checks;repeat=self.repeat_checks;template=self.template_hits
+        total=sum(counts.values());elapsed=max(1,time.monotonic()-self.started_at)
+        return {'first_pass_session':first,'repeat_session':repeat,
+                'series_template_session':template,
                 'news_format_shortcuts_session':self.news_shortcuts,
                 'first_pass_per_minute':round(rate,2),
+                'quality_session':counts,
+                'match_rate_session':round(100*counts['matched']/total,1) if total else 0.0,
+                'identified_rate_session':round(100*(counts['matched']+counts['identified'])/total,1) if total else 0.0,
+                'matched_per_hour_session':round(counts['matched']*3600/elapsed,1),
+                'sqlite_busy_retries_session':self.sqlite_busy_count,
                 'recognition_workers_active':active,
-                'recognition_workers_configured':max(1,min(4,int(self.settings().get('metadata_workers',2)))),
+                'recognition_workers_configured':max(1,min(MAX_RECOGNITION_WORKERS,int(self.settings().get('metadata_workers',2)))),
                 'recognition_worker_ids':running}
     def store_outcome(self,c,row,entry,m,recognized,chosen,result,outcome):
         """Persist one recognition result; shared by local checks and mesh results."""
@@ -354,7 +393,7 @@ class Service:
                     if outcome=='identified':
                         c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+30*86400,dest))
                     c.execute('UPDATE works SET attempts=MAX(attempts,1) WHERE id=?',(dest,))
-                    self.record_check(row['attempts']==0,from_template=True)
+                    self.record_check(row['attempts']==0,from_template=True,outcome=outcome)
                     self.metadata_state(phase='result',title=known['title'],outcome=outcome,
                                         provider_checks=[],from_cache=True,series_template=True,
                                         candidates=1 if verified else 0,warnings=[],seconds=0)
@@ -376,18 +415,31 @@ class Service:
                     with self.db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(ck,json.dumps(result),time.time()))
             chosen=catalog.auto_choice(m,result['candidates']);recognized=chosen or catalog.work_choice(m,result['candidates'])
             outcome='retry' if result['warnings'] or result.get('deferred_providers') else 'review'
-            with self.db() as c:
-                now=c.execute('SELECT meta,state FROM works WHERE id=?',(wid,)).fetchone()
-                if not now or now['meta']!=original or now['state']=='manual':return True
-                outcome,dest=self.store_outcome(c,row,entry,m,recognized,chosen,result,outcome)
-                # Provider errors stay local and are retried; only final results are shared. A recheck that
-                # could not reach its provider (paused Mediathek) changed nothing and is not shared either.
-                if outcome!='retry' and (recognized or not (result['warnings'] or result.get('deferred_providers'))):self.mesh_publish(c,'match.result',wid,dest,outcome,recognized or m,providers)
-            self.record_check(row['attempts']==0);self.metadata_state(phase='result',title=recognized['title'] if recognized else m['title'],outcome=outcome,provider_checks=result.get('provider_checks',[]),from_cache=bool(cached),candidates=len(result['candidates']),warnings=result['warnings'],seconds=round(time.monotonic()-started,2),providers=providers)
+            for write_attempt in range(4):
+                try:
+                    with self.db() as c:
+                        now=c.execute('SELECT meta,state FROM works WHERE id=?',(wid,)).fetchone()
+                        if not now or now['meta']!=original or now['state']=='manual':return True
+                        outcome,dest=self.store_outcome(c,row,entry,m,recognized,chosen,result,outcome)
+                        # Only final provider results may be shared; transient errors stay local.
+                        if outcome!='retry' and (recognized or not (result['warnings'] or result.get('deferred_providers'))):self.mesh_publish(c,'match.result',wid,dest,outcome,recognized or m,providers)
+                    break
+                except sqlite3.OperationalError as e:
+                    if not sqlite_busy(e) or write_attempt==3:raise
+                    self.sqlite_busy_count+=1
+                    if self.stop.wait(.15*(write_attempt+1)):raise InterruptedError('Erkennung beendet') from None
+            self.record_check(row['attempts']==0,outcome=outcome);self.metadata_state(phase='result',title=recognized['title'] if recognized else m['title'],outcome=outcome,provider_checks=result.get('provider_checks',[]),from_cache=bool(cached),candidates=len(result['candidates']),warnings=result['warnings'],seconds=round(time.monotonic()-started,2),providers=providers)
         except Exception as e:
             diagnostics.error('metadata_failed',e,work_id=wid)
-            with self.db() as c:
-                c.execute("UPDATE works SET state='retry',next_try=? WHERE id=?",(time.time()+3600,wid));catalog.set_state(c,'metadata_error',core.safe_error(e))
+            # A local SQLite lock must not defer an otherwise valid work for an hour.
+            delay=30 if sqlite_busy(e) else 3600
+            try:
+                with self.db() as c:
+                    c.execute("UPDATE works SET state='retry',next_try=? WHERE id=?",(time.time()+delay,wid))
+                    catalog.set_state(c,'metadata_error',core.safe_error(e))
+            except sqlite3.OperationalError as db_error:
+                if not sqlite_busy(db_error):raise
+                self.sqlite_busy_count+=1
             self.metadata_state(phase='error',title=m['title'],error=core.safe_error(e),providers=providers)
         return True
     def reclassify_loop(self):
@@ -414,10 +466,14 @@ class Service:
             self.format_wake.wait(3600);self.format_wake.clear()
     def metadata_loop(self,index=0):
         while not self.stop.is_set():
-            requested=max(1,min(4,int(self.settings().get('metadata_workers',2))))
+            requested=max(1,min(MAX_RECOGNITION_WORKERS,int(self.settings().get('metadata_workers',2))))
             if index>=requested or not self.settings().get('auto_metadata',True):
                 self.stop.wait(2);continue
-            busy=self.metadata_once()
+            try:busy=self.metadata_once()
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                busy=False  # Recheck promptly; do not restart or lose the worker.
             # Preserve the existing wake/idle contract for UI priorities and
             # immediate interruption, also with more than one worker.
             self.metadata_wake.wait(METADATA_PAUSE if busy else 2)
@@ -426,7 +482,11 @@ class Service:
     def artwork_loop(self):
         import artwork
         while not self.stop.is_set():
-            artwork.run_once(self)
+            try:artwork.run_once(self)
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                # Only the short artwork claim is postponed; keep this worker alive.
+                self.sqlite_busy_count+=1
             self.stop.wait(3)
 
     # Mesh: share recognition results between instances through a synced folder (meshjournal).
