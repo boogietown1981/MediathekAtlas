@@ -31,9 +31,13 @@ class DashboardResponsiveTests(unittest.TestCase):
         widths={'1159':4,'899':3,'689':2,'419':1}
         for width,columns in widths.items():
             with self.subTest(width=width):
-                self.assertRegex(CSS,
-                    r'@container\s*\(max-width:'+width+r'px\)\s*\{\s*\.atlas-status-grid\s*\{\s*grid-template-columns:'
-                    + ('repeat('+str(columns)+r',minmax\(0,1fr\)\)' if columns>1 else r'minmax\(0,1fr\)'))
+                # Avoid regexp escaping of CSS function parentheses.
+                query='@container (max-width:'+width+'px)'
+                self.assertIn(query,CSS)
+                section=CSS.split(query,1)[1].split('}',1)[0]
+                template=('repeat('+str(columns)+',minmax(0,1fr))'
+                          if columns>1 else 'minmax(0,1fr)')
+                self.assertIn('grid-template-columns:'+template,section)
 
     def test_cards_stretch_and_wrap_numeric_values(self):
         self.assertIn('grid-auto-rows:minmax(116px,1fr)',CSS)
