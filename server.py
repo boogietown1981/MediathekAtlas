@@ -53,7 +53,7 @@ def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
-    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'episode_workers':2,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 def record(i):
     with db() as c:
@@ -542,6 +542,11 @@ class Handler(BaseHTTPRequestHandler):
                     except (ValueError,TypeError):raise ValueError('Ungültige Workerzahl') from None
                     if n not in (1,2,4,8):raise ValueError('Erlaubt sind 1, 2, 4 oder 8 Worker')
                     s['metadata_workers']=n
+                if 'episode_workers' in d:
+                    try:n=int(d['episode_workers'])
+                    except (ValueError,TypeError):raise ValueError('Ungültige Episoden-Workerzahl') from None
+                    if n not in (1,2,4):raise ValueError('Erlaubt sind 1, 2 oder 4 Episoden-Worker')
+                    s['episode_workers']=n
                 if 'library_dirs' in d:
                     paths=d['library_dirs']
                     if isinstance(paths,str):paths=paths.splitlines()
