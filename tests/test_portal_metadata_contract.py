@@ -23,6 +23,35 @@ class MetadataEvidenceTests(unittest.TestCase):
         self.assertEqual(result['independent_sources'],['Wikimedia'])
         self.assertFalse(result['verified_video'])
 
+    def test_specialized_source_cannot_alone_certify_a_work(self):
+        # A reliable provider ID can support a WORK, not a video or episode.
+        for provider,identifier in (('Wikidata','Q12'),
+                                    ('AniList','anilist-12'),
+                                    ('TVmaze','show-12')):
+            with self.subTest(provider=provider):
+                result=policy.assess_references([{
+                    'provider':provider,'confidence':'high',
+                    'candidate_kind':'series','candidate_id':identifier
+                }],'series')
+                self.assertFalse(result['identity_supported'])
+                self.assertFalse(result['verified_episode'])
+                self.assertFalse(result['verified_video'])
+        result=policy.assess_references([{
+            'provider':'IMDb Offline','confidence':'high',
+            'candidate_kind':'movie','candidate_id':'tt98765'
+        }],'movie')
+        self.assertTrue(result['identity_supported'])
+        self.assertEqual(result['primary_references'],['IMDb'])
+        self.assertFalse(result['verified_video'])
+
+    def test_untestable_high_confidence_title_is_not_an_identifier(self):
+        result=policy.assess_references([{
+            'provider':'TMDB','confidence':'high',
+            'candidate_kind':'movie','candidate_title':'Popular Film'
+        }],'movie')
+        self.assertFalse(result['identity_supported'])
+        self.assertEqual(result['strong_references'],0)
+
     def test_conflicting_year_and_imdb_ids_block_automatic_reference(self):
         refs=[
             {'provider':'IMDb Offline','confidence':'high','candidate_kind':'movie',
