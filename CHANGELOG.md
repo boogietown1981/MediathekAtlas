@@ -1,5 +1,17 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.28 – 10. November 2026 (Preview)
+
+- Unabhängige Episodenwarteschlange in SQLite. Bereits identifizierte Serien mit eindeutiger Anbieter-ID werden ohne erneute komplette Serienidentifikation von eigenen Episodenworkern geprüft.
+- Automatische, einmalige Migration alter identifizierter Serien; Trigger halten die Warteschlange bei neu erkannten Werken, Katalogzusammenführungen, manuellen Bestätigungen und Formatklassifikationen aktuell.
+- Hauptworker überspringen die Episodenwarteschlange. Gemeinsame atomare Metadaten-Leases verhindern parallele Doppelbearbeitung, auch nach Neustarts; eigene Retry-Zeitpunkte und Ergebniszustände bleiben in SQLite erhalten.
+- Episodenworker prüfen zunächst nur das lokale IMDb-Archiv und vergeben Staffel/Folge nur mit eindeutigem Beleg. Keine zusätzlichen API-Anfragen für Tausende Folgen einer Sendung; unsichere Zuordnungen bleiben `identified`.
+- Unabhängige Episoden-Metriken, Anzahl wartender und bereiter Folge-Aufträge, konfigurierbare 1/2/4 Episodenworker im UI.
+- Erkannte Episoden werden aus der separaten Queue entfernt; erfolglose Prüffälle erhalten einen 30-Tage-Nachprüftermin, temporäre Archivfehler eine kürzere Wiederholung.
+- Die ETA für neue Werkidentitäten zählt keine bereits in der Episodenwarteschlange liegenden Beiträge mehr.
+- Tests für Queue-Routing, Konkurrenz, Neustart-Wiederaufnahme, eindeutige Episodenbelege und manuelle Priorisierung.
+
+
 ## 0.5.27 – 10. November 2026 (Preview / Diagnose-Fixes)
 
 - TVDB-Anfragen erhalten ein separates Zeitlimit von zwölf Sekunden statt der bisherigen 35 Sekunden; andere Anbieter behalten ihren bisherigen Standard.
