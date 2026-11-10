@@ -46,7 +46,9 @@ jobs:
   # hold back the NAS packages, which only need the Linux results.
   test-macos:
     name: Python 3.13 · macos-latest
-    runs-on: macos-latest
+    # macos-latest is macOS 26 / arm64 and frequently times out without an
+    # allocated runner. Pin the stable macOS 15 arm64 pool instead.
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -67,6 +69,31 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: MediathekAtlas-macOS-Preview
+          path: dist/MediathekAtlas_v*_macOS.zip
+          if-no-files-found: error
+
+  # This app uses a shell launcher, Python sources, resources and an Info.plist;
+  # it contains no compiled macOS binary, so we can create a distributable .app
+  # ZIP on Linux without requiring an Apple runner. This does NOT replace
+  # macOS-native integration tests, which remain a separate mandatory check.
+  macos-portable:
+    name: macOS-App · portable Paketierung auf Linux
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: App-Layout erzeugen
+        run: python build_macos.py
+      - name: Ausführbares .app-ZIP erstellen und validieren
+        run: |
+          python packaging/macos_zip.py
+          python packaging/macos_zip.py --verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediathekAtlas-macOS-Portable-Unverified
           path: dist/MediathekAtlas_v*_macOS.zip
           if-no-files-found: error
 
