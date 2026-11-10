@@ -221,4 +221,20 @@ class SettingsLayoutTests(unittest.TestCase):
         self.assertIn('@media(max-width:660px)',css)
 
 
+    def test_checkbox_inputs_keep_native_dimensions_on_wide_panels(self):
+        """Regression: width:100% on checkbox caused 800px tall labels."""
+        css=(ROOT/'web'/'style.css').read_text(encoding='utf-8')
+        html=(ROOT/'web'/'index.html').read_text(encoding='utf-8')
+        # Ordinary inputs stay fluid; checkboxes retain a fixed compact size.
+        self.assertIn('.atlas-settings-fields input:not([type="checkbox"])',css)
+        self.assertIn('.atlas-settings-fields>label.check>input[type="checkbox"]{width:16px;height:16px;',css)
+        self.assertIn('flex:0 0 16px;',css)
+        self.assertIn('.atlas-settings-fields>.check{display:flex;align-items:flex-start;grid-column:auto;',css)
+        for field in ('auto_catalog','auto_metadata','sender_direct_lookup','complete_series'):
+            self.assertIn('type="checkbox" id="'+field+'"',html)
+        # Two-column desktop settings remain independent of the window height.
+        self.assertIn('.atlas-settings-fields{padding:',css)
+        self.assertIn('grid-template-columns:repeat(2,minmax(0,1fr))',css)
+
+
 if __name__=='__main__':unittest.main()
