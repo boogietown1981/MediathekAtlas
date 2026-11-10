@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, portal_sources
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, portal_sources, portal_control
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -44,6 +44,7 @@ with db() as c:
     catalog.initialize(c)
     subscriptions.initialize(c)
     portal_sources.initialize(c)
+    portal_control.initialize(c)
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
@@ -266,7 +267,11 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
         if path=='/api/portals':
-            with db() as c:return self.send(portal_sources.state(c))
+            with db() as c:
+                result=portal_sources.state(c)
+                result['platform_control']=portal_control.source_status(c)
+                result['archive_scopes']=portal_control.list_scopes(c)
+            return self.send(result)
         if path=='/api/portal-items':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:
@@ -460,6 +465,29 @@ class Handler(BaseHTTPRequestHandler):
                 import tvdb
                 return self.send(tvdb.test_access(settings().get('tvdb',''),settings().get('tvdb_pin','')))
             if path=='/api/test-omdb':return self.send(metadata.test_omdb(settings().get('omdb','')))
+            if path=='/api/portal-controls':
+                source=d.get('source')
+                if source is not None:source=str(source)
+                with db() as c:
+                    portal_control.set_controls(c,source=source,
+                        enabled=d.get('enabled'),
+                        workers=d.get('workers'),
+                        locale=d.get('locale'),
+                        max_active=d.get('max_active'))
+                    result=portal_control.source_status(c)
+                diagnostics.event('portal_controls_updated',source=source,
+                                  enabled=d.get('enabled'),workers=d.get('workers'))
+                return self.send(result)
+            if path=='/api/portal-scope-add':
+                with db() as c:
+                    scope_id=portal_control.add_scope(c,d.get('kind'),d.get('value'),
+                                 priority=d.get('priority'),page_budget=d.get('page_budget',8))
+                return self.send({'id':scope_id,'ok':True})
+            if path=='/api/portal-scope-control':
+                with db() as c:
+                    portal_control.control_scope(c,d.get('id'),d.get('action'),
+                                                 priority=d.get('priority'))
+                return self.send({'ok':True})
             if path=='/api/portal-search':
                 if d.get('source')!='internet_archive':
                     raise ValueError('Nur Internet Archive bietet hier eine dokumentierte Such-API')
@@ -740,6 +768,7 @@ if __name__=='__main__':
     server=Server((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
+        portal_control.Scheduler(db,STOP).start()
         SERVICE.start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
