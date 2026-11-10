@@ -37,6 +37,7 @@ CREATE TABLE IF NOT EXISTS portal_scopes(
  next_try REAL NOT NULL DEFAULT 0,
  cursor INTEGER NOT NULL DEFAULT 1,
  pages_done INTEGER NOT NULL DEFAULT 0,
+ run_pages INTEGER NOT NULL DEFAULT 0,
  page_budget INTEGER NOT NULL DEFAULT 8,
  imported INTEGER NOT NULL DEFAULT 0,
  failures INTEGER NOT NULL DEFAULT 0,
@@ -152,7 +153,7 @@ def add_scope(c,kind,value,priority=None,page_budget=8):
 def list_scopes(c,source='internet_archive'):
     if source!='internet_archive':return []
     return [dict(r) for r in c.execute("""SELECT id,source,kind,scope,label,priority,
-       state,enabled,cursor,pages_done,page_budget,imported,failures,last_error,
+       state,enabled,cursor,pages_done,run_pages,page_budget,imported,failures,last_error,
        last_success,updated FROM portal_scopes WHERE source=?
        ORDER BY priority,id LIMIT 300""",(source,))]
 
@@ -161,7 +162,7 @@ def control_scope(c,scope_id,action,priority=None):
     r=c.execute('SELECT source,state,enabled FROM portal_scopes WHERE id=?',(int(scope_id),)).fetchone()
     if not r:raise ValueError('Scanquelle nicht gefunden')
     if action=='start':
-        c.execute("""UPDATE portal_scopes SET enabled=1,state='queued',next_try=0,
+        c.execute("""UPDATE portal_scopes SET enabled=1,state='queued',run_pages=0,next_try=0,
           updated=? WHERE id=?""",(time.time(),scope_id))
     elif action=='pause':
         c.execute("""UPDATE portal_scopes SET enabled=0,state='paused',updated=?
@@ -230,12 +231,13 @@ def finish(c,scope_id,rows,more,detail=None):
     if rows:portals.save(c,rows)
     if detail and rows:portals.save_archive_detail(c,rows[0]['id'],detail)
     pages_done=r['pages_done']+1
-    # The scan never runs past the page budget without another manual start.
-    stop=(not more or pages_done>=r['page_budget'])
+    run_pages=r['run_pages']+1
+    # Persist the total cursor; resume a new bounded tranche on next Start.
+    stop=(not more or run_pages>=r['page_budget'])
     state='paused' if not r['enabled'] else ('complete' if not more else 'paused' if stop else 'queued')
-    c.execute("""UPDATE portal_scopes SET cursor=?,pages_done=?,imported=imported+?,
+    c.execute("""UPDATE portal_scopes SET cursor=?,pages_done=?,run_pages=?,imported=imported+?,
        state=?,enabled=?,last_success=?,last_error='',next_try=?,updated=?
-       WHERE id=?""",(r['cursor']+int(bool(more)),pages_done,len(rows),state,
+       WHERE id=?""",(r['cursor']+int(bool(more)),pages_done,run_pages,len(rows),state,
                       0 if stop else 1,time.time(),time.time()+2,time.time(),scope_id))
 
 
@@ -247,7 +249,7 @@ def failure(c,scope_id,error):
     c.execute("""UPDATE portal_scopes SET failures=?,state=?,
        next_try=?,last_error=?,updated=? WHERE id=?""",
        (count,'retry' if r['enabled'] else 'paused',time.time()+pause,
-        type(error).__name__+': '+str(error)[:140],time.time(),scope_id))
+        type(error).__name__+': '+core.safe_error(error),time.time(),scope_id))
 
 
 class Scheduler:
@@ -269,8 +271,7 @@ class Scheduler:
                 status=source_status(c)
                 archive=next((p for p in status['platforms']
                               if p['source']=='internet_archive'),None)
-                slots=min(MAX_ARCHIVE_WORKERS,archive['workers'],
-                          status['max_active_platforms']) if archive and archive['enabled'] else 0
+                slots=min(MAX_ARCHIVE_WORKERS,archive['workers']) if archive and archive['enabled'] else 0
                 if number>=slots:continue
             with LOCK:
                 if _ACTIVE['internet_archive']>=slots:continue
