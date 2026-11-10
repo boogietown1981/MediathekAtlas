@@ -126,18 +126,24 @@ class WorkerAndCatalogueTests(unittest.TestCase):
         self.assertEqual(len([r for r in results if r]),8)
         self.assertEqual(len({r[0] for r in results}),8)
     def test_sqlite_busy_does_not_crash_worker(self):
-        # Another writer holds the database briefly; the claim must be retried.
-        held=threading.Event();release=threading.Event()
-        def locker():
-            c=sqlite3.connect(self.db_path)
-            try:
-                c.execute('BEGIN IMMEDIATE');held.set();release.wait(timeout=5);c.rollback()
-            finally:c.close()
-        thread=threading.Thread(target=locker);thread.start();self.assertTrue(held.wait(3))
-        t=threading.Timer(.25,release.set);t.start()
-        try:claimed=self.svc.lease_work()
-        finally:release.set();thread.join(timeout=3);t.join(timeout=3)
+        # Deterministically inject a transient SQLite write lock. Real timing-
+        # based locks can expire before slow CI runners reach BEGIN IMMEDIATE.
+        connect=self.svc.db
+        failures=[0]
+        @contextmanager
+        def locked_once():
+            with connect() as c:
+                class Connection:
+                    def execute(self,sql,*args):
+                        if sql=='BEGIN IMMEDIATE' and failures[0]==0:
+                            failures[0]+=1
+                            raise sqlite3.OperationalError('database is locked')
+                        return c.execute(sql,*args)
+                yield Connection()
+        self.svc.db=locked_once
+        claimed=self.svc.lease_work()
         self.assertIsNotNone(claimed)
+        self.assertEqual(failures,[1])
         self.assertGreaterEqual(self.svc.sqlite_busy_count,1)
     def test_quality_metrics_distinguish_full_from_partial(self):
         self.svc.record_check(True,outcome='identified')
