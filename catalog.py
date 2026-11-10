@@ -28,6 +28,7 @@ WHEN NEW.kind='series' AND NEW.state='identified'
  AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
  AND json_type(NEW.meta,'$.deferred_providers') IS NULL
  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0
 BEGIN
  INSERT OR IGNORE INTO episode_queue(work_id) VALUES(NEW.id);
 END;
@@ -37,12 +38,14 @@ BEGIN
     (NEW.id!=OLD.id OR NEW.kind!='series' OR NEW.state!='identified'
      OR NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NULL
      OR json_type(NEW.meta,'$.deferred_providers') IS NOT NULL
-     OR COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)!=0);
+     OR COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)!=0
+     OR COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)!=0);
  INSERT OR IGNORE INTO episode_queue(work_id)
  SELECT NEW.id WHERE NEW.kind='series' AND NEW.state='identified'
   AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
   AND json_type(NEW.meta,'$.deferred_providers') IS NULL
-  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0;
+  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0;
 END;
 CREATE TRIGGER IF NOT EXISTS episode_queue_work_delete AFTER DELETE ON works
 BEGIN DELETE FROM episode_queue WHERE work_id=OLD.id; END;
@@ -142,7 +145,7 @@ def origin_meta(c,row):
         if len(options)==1:template=json.loads(options[0][0])
     if template and not m.get('video_role'):
         m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
-        for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
+        for k in ('title','year','provider','reference_id','poster','genres','genre_source','reference_runtime_seconds'):m[k]=template.get(k)
         m['genres']=normalized_genres(m.get('genres'))
     return m,template
 
@@ -164,7 +167,7 @@ def series_template_candidate(c,row,source):
     if not known.get('reference_id') or not known.get('provider'):return None
     own=json.loads(row['meta'])
     if own.get('year') and known.get('year') and own['year']!=known['year']:return None
-    for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description'):
+    for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description','reference_runtime_seconds'):
         if k in known:own[k]=known[k]
     own['kind']='series'
     own['episode_title']=own.get('episode_title') or source.get('title') or ''
@@ -645,7 +648,7 @@ def work_choice(meta,rows):
 
 def propagate_series(c,old_show,m):
     # Transfer work metadata, never a sibling's episode number or episode plot.
-    common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description') if k in m}
+    common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description','reference_runtime_seconds') if k in m}
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
         own=json.loads(row['meta'])
         # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
@@ -936,7 +939,8 @@ def initialize(c):
             SELECT id FROM works WHERE kind='series' AND state='identified'
             AND NULLIF(json_extract(meta,'$.reference_id'),'') IS NOT NULL
             AND json_type(meta,'$.deferred_providers') IS NULL
-            AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0""")
+            AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0
+            AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)=0""")
         set_state(c,'episode_queue_migrated_v0528',True)
 
 def review_listing(c,query='',state='open',offset=0):
