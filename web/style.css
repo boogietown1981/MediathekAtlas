@@ -319,3 +319,6 @@ dialog.player::backdrop{background:#000c}
  .atlas-settings-card>summary small{flex-basis:100%;text-align:left;margin:0 0 0 22px}
  .atlas-settings-actions button{width:100%}
 }
+
+/* Metadata causality is descriptive, never proof of the audiovisual content. */
+.atlas-video-role{border:1px solid #8b7139;background:#342a19;color:#ffd796;border-radius:8px;padding:8px 10px;font-size:11px;line-height:1.35;overflow-wrap:anywhere}
