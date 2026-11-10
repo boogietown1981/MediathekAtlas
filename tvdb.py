@@ -83,12 +83,14 @@ def request(path, key, pin='', params=None, force=False):
     # Failures are handled once per credential, not once per waiting worker.
     with _LOCK:
         now = time.monotonic()
-        pause = _PAUSED.get(credential)
-        if not force and pause and now < pause[0]:
-            raise TVDBError(pause[1], pause[2], paused=True)
+        # Verified recent responses remain usable without network calls,
+        # even while the provider is temporarily unreachable.
         cached = _CACHE.get(ck)
         if not force and cached and now - cached[0] < 21600:
             return cached[1]
+        pause = _PAUSED.get(credential)
+        if not force and pause and now < pause[0]:
+            raise TVDBError(pause[1], pause[2], paused=True)
         try:
             for attempt in range(2):
                 token = _TOKENS.get(credential)
