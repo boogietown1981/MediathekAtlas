@@ -43,6 +43,9 @@ def assess_references(references,kind,year=None):
         provider=r.get('provider')
         if provider not in KNOWN:continue
         if r.get('candidate_kind') and r['candidate_kind']!=kind:continue
+        # A strongly-worded title match without a durable provider identifier
+        # is still a hypothesis, not an independently checkable work reference.
+        if not _identifier(r):continue
         group=INDEPENDENCE.get(provider,provider)
         strong.append((group,r))
     conflicts=[]
@@ -66,10 +69,18 @@ def assess_references(references,kind,year=None):
         conflicts.append("Unabhängige Anbieter nennen unterschiedliche Erscheinungsjahre")
     if len(imdb_ids)>1:
         conflicts.append("Widersprüchliche IMDb-Werkkennungen")
+    primary={'IMDb','TVDB','TMDB','OMDb'}
+    trusted=groups.intersection(primary)
+    # Wikidata/Wikipedia often repeat each other; Anime/TVmaze serve as
+    # specialized corroboration. A single non-primary source does not silently
+    # certify a generic movie or episode.
+    sufficient=bool(trusted) or len(groups)>=2
     return {"independent_sources":sorted(groups),
+            "primary_references":sorted(trusted),
             "strong_references":len(strong),
             "conflicts":list(dict.fromkeys(conflicts)),
-            "identity_supported":bool(strong) and not conflicts,
+            "identity_supported":sufficient and not conflicts,
+            "verified_episode":False,
             "verified_video":False}
 
 
