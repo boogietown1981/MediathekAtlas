@@ -313,10 +313,12 @@ def candidates(row,meta,settings):
     import broadcaster
     def from_broadcaster():
         ref=broadcaster.reference(row)
-        if not ref:return None
+        # Undocumented web endpoints are never polled in the background by
+        # default. The existing import remains usable without direct access.
+        if not ref or not settings.get('sender_direct_lookup',False):return None
         start=time.monotonic()
         try:
-            c=broadcaster.candidate(row,meta,broadcaster.lookup(row))
+            c=broadcaster.candidate(row,meta,broadcaster.lookup_limited(row))
             if c:c['plausibility_issues']=matching.issues(meta,c);out.append(c)
             checked({'provider':ref[0],'status':'checked','count':int(bool(c))})
             diagnostics.event('provider_complete',provider=ref[0],title=row.get('title',''),candidates=int(bool(c)),seconds=round(time.monotonic()-start,2))
@@ -333,7 +335,10 @@ def candidates(row,meta,settings):
     def imdb_checked():return any(x['provider']=='IMDb Offline' and x['status']=='checked' for x in checks)
     # A work already identified as a broadcaster's own Sendereihe is unknown to the film databases;
     # asking them again for every episode only cost requests and quota.
-    if meta.get('provider') in broadcaster.PROVIDERS and broadcaster.reference(row):return from_broadcaster()
+    sender_first=bool(settings.get('sender_direct_lookup',False) and kind!='movie' and broadcaster.reference(row))
+    if sender_first:
+        direct=from_broadcaster()
+        if direct and direct['candidates']:return direct
     if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
         try:
             local=imdb_archive.ACTIVE.candidates(row,meta)
@@ -389,7 +394,7 @@ def candidates(row,meta,settings):
         if matching.sufficient(meta,out):
             return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
     # Own productions: the offer's own Mediathek page, then the free Wikidata fallback.
-    if not out:from_broadcaster()
+    if not out and not sender_first:from_broadcaster()
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:
