@@ -31,6 +31,9 @@ GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau|tagesthemen|nachrichten|aktuell|h
              (re.compile(r'(?i)\b(?:kultur\w*|literatur\w*|philosophie|scobel|musik\w*|konzert\w*)\b'),'Kultur')]
 _CACHE={};_LOCK=threading.Lock();_REQUEST_LOCK=threading.Lock();_PAUSED={};_TOKEN={};_LAST=[0.0]
 CACHE_SECONDS=86400;PAUSE_SECONDS=900;MIN_INTERVAL=.5
+# Automated requests require explicit permission and share a capped provider budget.
+AUTOMATED_HOURLY_LIMIT=120
+_AUTOMATED_BUDGET={}
 
 class Unavailable(RuntimeError):
     """Mediathek temporarily unreachable; the work is retried later instead of being marked unknown."""
@@ -50,6 +53,72 @@ def reference(row):
         if path[0] in ('video','play') or path[-1].endswith('.html'):
             return ('ZDF Mediathek',ident) if re.fullmatch(r'[a-z0-9][a-z0-9-]{2,200}',ident) else None
     return None
+
+def imported_reference(row):
+    """Sender page identity from an existing import, never a live API request."""
+    ref=reference(row)
+    if ref:return ref
+    try:p=urllib.parse.urlsplit(str(row.get('url_website') or ''))
+    except ValueError:return None
+    providers={'www.arte.tv':'arte','arte.tv':'arte',
+               'www.3sat.de':'3sat','3sat.de':'3sat',
+               'www.kika.de':'KiKA','kika.de':'KiKA'}
+    try:
+        provider=providers.get((p.hostname or '').lower())
+        permitted_port=p.port in (None,443)
+    except ValueError:return None
+    if not provider or p.scheme!='https' or p.username or p.password or not permitted_port:
+        return None
+    if not p.path or len(p.path)<5:return None
+    # Other participating broadcasters are passive-only until they offer an
+    # authorized metadata interface. A stable path hash is NOT a verified episode ID.
+    ident='link:'+core.hashlib.sha256(p.path.encode()).hexdigest()[:24]
+    return (provider,ident)
+
+
+def imported_episode_evidence(row,meta):
+    """Read existing MediathekViewWeb offer metadata without contacting a sender.
+
+    A linked video is not evidence for a numbered episode. Never auto-confirm
+    season/episode from this source alone.
+    """
+    if meta.get('kind')!='series' or not meta.get('reference_id'):return None
+    ref=imported_reference(row)
+    if not ref:return None
+    topic=_text(row.get('topic'))
+    if not topic or CONTAINER.search(topic):return None
+    if core.title_similarity(topic,meta.get('title') or '')<.985:return None
+    return {'sender_provider':ref[0],'sender_page_id':ref[1],
+            'sender_evidence':'imported_offer','sender_episode_title':_text(row.get('title')),
+            'sender_item_verified':False}
+
+
+def automated_retry_at(provider):
+    with _LOCK:
+        start,used=_AUTOMATED_BUDGET.get(provider,(0,0))
+        return max(start+3600 if used>=AUTOMATED_HOURLY_LIMIT else 0,
+                   _PAUSED.get(provider,0))
+
+
+def lookup_limited(row):
+    """Capped opt-in unattended lookup; user-initiated lookups stay separate."""
+    ref=reference(row)
+    if not ref:return None
+    provider=ref[0]
+    with _LOCK:
+        cached=_CACHE.get(ref)
+        if cached and time.time()-cached[0]<CACHE_SECONDS:return cached[1]
+    # A paused provider must not consume the hourly allowance.
+    if status(provider)['paused']:raise Unavailable(provider+' pausiert')
+    with _LOCK:
+        now=time.time()
+        start,used=_AUTOMATED_BUDGET.get(provider,(now,0))
+        if now-start>=3600:start,used=now,0
+        if used>=AUTOMATED_HOURLY_LIMIT:
+            raise Unavailable(provider+': automatisches Stundenlimit erreicht')
+        _AUTOMATED_BUDGET[provider]=(start,used+1)
+    return lookup(row)
+
 
 def status(provider):
     with _LOCK:until=_PAUSED.get(provider,0)
@@ -224,9 +293,16 @@ def candidate(row,meta,info):
            'episode_title':info.get('title') or meta.get('episode_title') or row.get('title',''),'similarity':max(core.title_similarity(meta.get('title') or '',series),core.title_similarity(topic,series)),
            'season':info.get('season') if info.get('season') is not None else meta.get('season'),'episode':info.get('episode') if info.get('episode') is not None else meta.get('episode'),
            'runtime_agrees':runtime_agrees,'runtime_mismatch':bool(duration and own and not runtime_agrees),'episode_scan_complete':True,
+           'sender_provider':info['provider'],'sender_page_id':info.get('reference_id'),
+           'sender_item_verified':bool(info.get('reference_id') and runtime_agrees
+               and core.title_similarity(info.get('title') or '',row.get('title') or '')>=.85),
+           'sender_evidence':'original_sender_page',
            'reason':'Sendereihe laut '+info['provider']+'; Angaben zu genau diesem Angebot.'}
         # The page is this very episode: its own numbering counts as verified episode evidence.
-        c['episode_verified']=bool(runtime_agrees and isinstance(c['season'],int) and isinstance(c['episode'],int) and c['episode']>0)
+        c['episode_verified']=bool(runtime_agrees and
+            isinstance(info.get('season'),int) and info['season']>=0 and
+            isinstance(info.get('episode'),int) and info['episode']>0 and
+            c.get('season')==info['season'] and c.get('episode')==info['episode'])
         return c
     # Only enrich offers already classified as films; a single news or magazine clip is no film.
     if meta.get('kind')!='movie':return None

@@ -93,17 +93,17 @@ class IntegrationTests(unittest.TestCase):
     def setUp(self):broadcaster._CACHE.clear();broadcaster._PAUSED.clear()
     def test_fallback_after_film_databases(self):
         with patch('metadata.tmdb_candidates',return_value=[]),patch('metadata.wikidata') as wiki,patch('broadcaster.lookup',return_value=broadcaster.parse_ard(ard_page())):
-            r=metadata.candidates(self.row,{'kind':'unknown','title':'Zecken im Garten'},{'tmdb':'k'})
+            r=metadata.candidates(self.row,{'kind':'unknown','title':'Zecken im Garten'},{'tmdb':'k','sender_direct_lookup':True})
         self.assertEqual(r['candidates'][0]['provider'],'ARD Mediathek');wiki.assert_not_called()
         self.assertIn({'provider':'ARD Mediathek','status':'checked','count':1},r['provider_checks'])
     def test_known_sendereihe_skips_film_databases(self):
         meta={'kind':'series','title':'Servicezeit','provider':'ARD Mediathek','reference_id':'x'}
         with patch('metadata.tmdb_candidates') as tmdb,patch('metadata.tvdb_candidates') as tvdb,patch('broadcaster.lookup',return_value=broadcaster.parse_ard(ard_page())):
-            r=metadata.candidates(self.row,meta,{'tmdb':'k','tvdb':'k'})
+            r=metadata.candidates(self.row,meta,{'tmdb':'k','tvdb':'k','sender_direct_lookup':True})
         tmdb.assert_not_called();tvdb.assert_not_called();self.assertEqual(r['candidates'][0]['title'],'Servicezeit')
     def test_unavailable_defers_instead_of_warning(self):
         with patch('broadcaster.lookup',side_effect=broadcaster.Unavailable('ARD Mediathek: HTTP 503')),patch('metadata.wikidata',return_value=None):
-            r=metadata.candidates(self.row,{'kind':'unknown','title':'Zecken im Garten'},{})
+            r=metadata.candidates(self.row,{'kind':'unknown','title':'Zecken im Garten'},{'sender_direct_lookup':True})
         self.assertEqual(r['deferred_providers'],['ARD Mediathek']);self.assertEqual(r['warnings'],[])
     def test_broadcaster_images_allowed(self):
         self.assertTrue(artwork.valid('https://api.ardmediathek.de/image-service/images/urn:ard:image:ep?w=1280'))

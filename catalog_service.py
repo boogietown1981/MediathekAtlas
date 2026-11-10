@@ -24,7 +24,7 @@ def sqlite_busy(exc):
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_active=0;self.episode_last_count=(0,0,0)
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -344,6 +344,10 @@ class Service:
                 'episode_checked_session':self.episode_checked,
                 'episode_matched_session':self.episode_matched,
                 'episode_unresolved_session':self.episode_unresolved,
+                'episode_sender_imported_session':self.episode_sender_imported,
+                'episode_sender_items_session':self.episode_sender_items,
+                'episode_sender_matched_session':self.episode_sender_matched,
+                'episode_sender_deferred_session':self.episode_sender_deferred,
                 'first_pass_session':first,'repeat_session':repeat,
                 'series_template_session':template,
                 'news_format_shortcuts_session':self.news_shortcuts,
@@ -402,41 +406,96 @@ class Service:
             c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
         return outcome,dest
     def _episode_once_claimed(self,selected_id):
-        """Check one episode without repeating external series-identification calls.
+        """Resolve a known show's episode from imported sender evidence first.
 
-        Offline IMDb episode evidence is accepted only through the same
-        conservative auto_choice() validation as the identity pipeline.
+        Automatic original-page requests require explicit permission. A sender
+        page confirms a distinct video even when there is no season/episode
+        number; it must NOT be counted as a complete episode match.
         """
         with self.db() as c:
             row=c.execute('SELECT * FROM works WHERE id=?',(selected_id,)).fetchone()
             task=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(selected_id,)).fetchone()
             if not row or not task or row['state']!='identified':return False
             m=json.loads(row['meta']);original=row['meta'];entry=catalog.item(c,row)
-            # Older inconsistent rows must be returned to the identity worker.
             if not m.get('provider') or not m.get('reference_id'):
                 c.execute("UPDATE works SET state='pending',next_try=0 WHERE id=?",(selected_id,))
                 return True
             c.execute('DELETE FROM metadata_priority WHERE work_id=?',(selected_id,))
+
+        source=entry['source'] if entry else {}
+        imported=broadcaster.imported_episode_evidence(source,m) if entry else None
+        sender_candidate=None
+        sender_verified=None
+        sender_error=False
+        sender_deferred=False
+        sender_status='no_sender_link' if not imported else 'imported'
+        config=self.settings()
+        if imported and broadcaster.reference(source) and config.get('sender_direct_lookup',False):
+            try:
+                info=broadcaster.lookup_limited(source)
+                if info:
+                    candidate=broadcaster.candidate(source,m,info)
+                    import matching
+                    if candidate and not matching.issues(m,candidate):
+                        sender_candidate=candidate
+                        sender_status='sender_item' if candidate.get('sender_item_verified') else 'sender_series'
+                        if candidate.get('sender_item_verified') and candidate.get('episode_verified'):
+                            sender_verified=catalog.auto_choice(m,[candidate])
+                    else:sender_status='sender_conflict'
+                else:sender_status='sender_not_found'
+            except broadcaster.Unavailable:
+                sender_deferred=True
+                sender_status='sender_deferred'
+            except Exception as exc:
+                diagnostics.error('episode_sender_lookup_failed',exc,work_id=selected_id)
+                sender_error=True
+                sender_status='sender_error'
+
         import imdb_archive
         archive=imdb_archive.ACTIVE
-        verified=None;error=False
-        if entry and archive and archive.updated:
+        imdb_verified=None;imdb_error=False
+        if not sender_verified and entry and archive and archive.updated:
             try:
-                candidates=archive.candidates(entry['source'],m)
-                verified=catalog.auto_choice(m,candidates)
+                candidates=archive.candidates(source,m)
+                imdb_verified=catalog.auto_choice(m,candidates)
             except Exception as exc:
                 diagnostics.error('episode_local_lookup_failed',exc,work_id=selected_id)
-                error=True
+                imdb_error=True
+        verified=sender_verified or imdb_verified
         with self.db() as c:
             current=c.execute('SELECT meta,state FROM works WHERE id=?',(selected_id,)).fetchone()
             if not current or current['state']!='identified' or current['meta']!=original:return True
             if verified and verified.get('episode_verified'):
-                verified.update(state='auto_matched',reason='IMDb-Episode eindeutig bestätigt')
+                verified.update(state='auto_matched',
+                    reason='Originalsender: Folge eindeutig bestätigt' if sender_verified
+                           else 'IMDb-Episode eindeutig bestätigt')
                 catalog.save_metadata(c,selected_id,verified,'matched')
                 outcome='matched'
             else:
-                outcome='retry' if error or not (archive and archive.updated) else 'unresolved'
-                delay=3600 if outcome=='retry' else 30*86400
+                enriched=dict(m)
+                if imported:
+                    # Offer identity is NOT a verified episode number.
+                    for field in ('sender_provider','sender_page_id','sender_evidence','sender_episode_title'):
+                        if imported.get(field):enriched[field]=imported[field]
+                if sender_candidate and sender_candidate.get('sender_item_verified'):
+                    enriched.update(sender_item_verified=True,sender_evidence='original_sender_page')
+                    for field in ('broadcast','series_description'):
+                        if sender_candidate.get(field):enriched[field]=sender_candidate[field]
+                    if not enriched.get('description') and sender_candidate.get('description'):
+                        enriched['description']=sender_candidate['description']
+                    sender_status='sender_item'
+                if enriched!=m:
+                    c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
+                              (json.dumps(enriched),time.time(),selected_id))
+                if sender_deferred or sender_error or imdb_error or not (archive and archive.updated):
+                    outcome='retry'
+                    delay=3600
+                    if sender_deferred and imported:
+                        delay=max(delay,broadcaster.automated_retry_at(imported['sender_provider'])-time.time())
+                    delay=max(60,min(6*3600,delay))
+                else:
+                    outcome='unresolved'
+                    delay=30*86400
                 c.execute("""UPDATE episode_queue SET attempts=attempts+1,
                     last_outcome=?,next_try=?,updated=? WHERE work_id=?""",
                     (outcome,time.time()+delay,time.time(),selected_id))
@@ -444,11 +503,20 @@ class Service:
             self.episode_checked+=1
             if outcome=='matched':self.episode_matched+=1
             if outcome=='unresolved':self.episode_unresolved+=1
+            if imported:
+                self.episode_sender_imported+=1
+                if sender_verified:self.episode_sender_matched+=1
+                if sender_candidate and sender_candidate.get('sender_item_verified'):
+                    self.episode_sender_items+=1
+                if sender_deferred:self.episode_sender_deferred+=1
             n=self.episode_checked
+            items=self.episode_sender_items;matched=self.episode_sender_matched
         if outcome=='matched' or n==1 or n%100==0:
             diagnostics.event('episode_worker_progress',outcome=outcome,
-                              checks=self.episode_checked,matched=self.episode_matched,
-                              unresolved=self.episode_unresolved)
+                              checks=n,matched=self.episode_matched,
+                              unresolved=self.episode_unresolved,
+                              sender_items=items,sender_matched=matched,
+                              sender_status=sender_status)
         return True
 
     def _metadata_once_claimed(self,selected_id):
