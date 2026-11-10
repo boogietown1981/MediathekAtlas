@@ -86,7 +86,7 @@ class ArchiveMediaVideoTests(unittest.TestCase):
         saved=portals.archive_saved_detail(con,item['id'])
         self.assertEqual(saved['detail']['video_families_found'],2)
         self.assertEqual(saved['probes'],{})
-        with self.assertRaisesRegex(ValueError,'Berechtigung'):
+        with self.assertRaisesRegex(ValueError,'Zugriffsberechtigung'):
             portals.probe_archive_variant(con,item['id'],'film.mkv',acknowledged=False)
         with patch('portal_sources.archive_probe.inspect',return_value={
                 'state':'partial','bytes':1048576,'method':'Containerindex MP4',
