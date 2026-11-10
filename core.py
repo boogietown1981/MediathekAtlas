@@ -25,10 +25,10 @@ class Redirect(urllib.request.HTTPRedirectHandler):
         public_url(newurl)
         return super().redirect_request(req,fp,code,msg,headers,newurl)
 
-def open_url(url,data=None,headers=None):
+def open_url(url,data=None,headers=None,timeout=35):
     public_url(url)
     req=urllib.request.Request(url,data=data,headers={'User-Agent':UA,**(headers or {})})
-    return urllib.request.build_opener(Redirect()).open(req,timeout=35)
+    return urllib.request.build_opener(Redirect()).open(req,timeout=timeout)
 
 def fetch(url,data=None,headers=None):
     for attempt in range(3):

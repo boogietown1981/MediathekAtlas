@@ -296,7 +296,7 @@ def query_title(title):
     import catalog
     return catalog.cleaned(title) or str(title or '')
 def candidates(row,meta,settings):
-    meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings')};kind=meta['kind'];topic=row.get('topic','');queries=[]
+    meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
     meta['title']=query_title(meta['title'])
     if kind=='series':queries=[('series',meta['title'])]
     elif kind=='movie':queries=[('movie',meta['title'])]
@@ -372,6 +372,15 @@ def candidates(row,meta,settings):
                 checked({'provider':provider,'status':'checked','count':len(hits)})
                 diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
             except Exception as e:
+                if provider=='TVDB':
+                    import tvdb
+                    if isinstance(e,tvdb.TVDBError) and e.paused:
+                        # A credential-scoped circuit is already open. Retain
+                        # other providers' evidence and schedule a later retry
+                        # rather than writing thousands of identical tracebacks.
+                        if provider not in deferred:deferred.append(provider)
+                        checked({'provider':provider,'status':'paused','count':0})
+                        break
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
                     if provider not in deferred and not imdb_checked():deferred.append(provider)
                     checked({'provider':provider,'status':'paused','count':0});break
