@@ -301,6 +301,10 @@ class Archive:
         for h in hits:
             kind='series' if h['titleType'] in ('tvSeries','tvMiniSeries') else 'movie'
             m={**meta,'title':title,'kind':kind,'year':h['startYear'],'provider':'IMDb Offline','reference_id':h['tconst'],'genres':(h['genres'] or '').split(',') if h['genres'] else [],'genre_source':'IMDb Offline','similarity':1.0,'confidence':'high','year_mismatch':bool(meta.get('year') and h['startYear'] and meta['year']!=h['startYear']),'episode_verified':False,'runtime_agrees':False,'runtime_mismatch':False,'rating':h['averageRating'],'votes':h['numVotes'],'reason':'Exakter Titel im lokalen IMDb-Archiv','season':None,'episode':None,'poster':'','episode_reference_id':None}
+            if kind=='series' and h['runtimeMinutes'] and 1<=h['runtimeMinutes']<=240:
+                # A separately catalogued series runtime is informative, but
+                # never proves an individual video is a full episode.
+                m['reference_runtime_seconds']=h['runtimeMinutes']*60
             if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
                 delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
             if kind=='series':
@@ -318,6 +322,7 @@ class Archive:
                 if len(eps)==1:
                     e=eps[0];season=e['seasonNumber'];episode=e['episodeNumber']
                     if e['runtimeMinutes'] and row.get('duration'):
+                        m['episode_runtime_seconds']=e['runtimeMinutes']*60
                         m['runtime_mismatch']=abs(e['runtimeMinutes']*60-row['duration'])>max(300,e['runtimeMinutes']*6)
                         m['runtime_agrees']=not m['runtime_mismatch']
                     if season is not None and episode and (meta.get('season') in (None,season)) and (meta.get('episode') in (None,episode)):
