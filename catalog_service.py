@@ -418,6 +418,27 @@ class Service:
             task=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(selected_id,)).fetchone()
             if not row or not task or row['state']!='identified':return False
             m=json.loads(row['meta']);original=row['meta'];entry=catalog.item(c,row)
+            if entry:
+                import video_causality
+                if catalog.mark_explicit_extra(c,row,entry['source']):
+                    diagnostics.event('video_extra_classified',work_id=selected_id,
+                                      title=entry['source'].get('title',''),reason='explicit_title')
+                    return True
+                runtime_meta=dict(m)
+                if not runtime_meta.get('reference_runtime_seconds'):
+                    typical=video_causality.sample_series_runtime(c,row['show_key'],selected_id)
+                    if typical:runtime_meta['reference_runtime_seconds']=typical
+                causality=video_causality.evaluate(entry['source'],runtime_meta)
+                if causality:
+                    m.update(causality,video_role_needs_review=True,episode_verified=False,
+                             reason='Serienidentität bekannt, Videolaufzeit passt nicht zur ganzen Folge')
+                    c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
+                              (json.dumps(m),time.time(),selected_id))
+                    diagnostics.event('episode_runtime_suspect',work_id=selected_id,
+                                      actual=causality.get('source_duration_seconds'),
+                                      expected=causality.get('expected_runtime_seconds'),
+                                      role=causality['video_role'])
+                    return True
             if not m.get('provider') or not m.get('reference_id'):
                 c.execute("UPDATE works SET state='pending',next_try=0 WHERE id=?",(selected_id,))
                 return True
