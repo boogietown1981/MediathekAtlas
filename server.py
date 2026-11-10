@@ -274,6 +274,12 @@ class Handler(BaseHTTPRequestHandler):
                             query=q.get('query',[''])[0],
                             offset=q.get('offset',['0'])[0])
             return self.send(result)
+        if path=='/api/portal-archive-detail':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:
+                item_id=q.get('id',[''])[0]
+                result=portal_sources.archive_saved_detail(c,item_id)
+            return self.send(result)
         if path=='/api/catalog':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:result=catalog.listing(c,query=q.get('query',[''])[0],kind=q.get('kind',[''])[0],genre=q.get('genre',[''])[0],show=q.get('show',[''])[0],offset=q.get('offset',[0])[0],archive=q.get('archive',['0'])[0]=='1',state=q.get('state',[''])[0],sort=q.get('sort',['title'])[0],downloaded=q.get('downloaded',['hide'])[0],collection=q.get('collection',[''])[0])
@@ -464,6 +470,19 @@ class Handler(BaseHTTPRequestHandler):
                                   mode='user_activated')
                 return self.send({'added_or_updated':len(saved),
                                   'access':'official_site_only','download_enabled':False})
+            if path=='/api/portal-archive-inspect':
+                item_id=str(d.get('id') or '')
+                with db() as c:
+                    row=c.execute('SELECT source,external_id FROM portal_items WHERE id=?',
+                                  (item_id,)).fetchone()
+                if not row or row['source']!='internet_archive':
+                    raise ValueError('Gespeicherter Internet-Archive-Eintrag fehlt')
+                detail=portal_sources.fetch_archive_detail(row['external_id'])
+                with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
+                diagnostics.event('portal_archive_manifest_inspected',files=detail['files_in_manifest'],
+                                  variants=detail['variants_displayed'],
+                                  complete=detail['inventory_complete'])
+                return self.send({'detail':detail,'ok':True})
             if path=='/api/portal-netzkino-add':
                 item=portal_sources.manual_netzkino(d.get('title',''),
                           d.get('url',''),d.get('year'))
