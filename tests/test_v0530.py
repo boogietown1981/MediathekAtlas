@@ -113,7 +113,13 @@ class EpisodeWorkerTests(unittest.TestCase):
     def data(self):
         with self.db() as c:
             row=c.execute('SELECT state,meta FROM works WHERE id=?',(self.wid,)).fetchone()
-            queue=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(self.wid,)).fetchone()
+            wid=self.wid
+            if row is None:
+                alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(wid,)).fetchone()
+                if alias:
+                    wid=alias[0]
+                    row=c.execute('SELECT state,meta FROM works WHERE id=?',(wid,)).fetchone()
+            queue=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(wid,)).fetchone()
             return row['state'],json.loads(row['meta']),queue
 
     def test_off_by_default_preserves_imported_sender_page(self):
