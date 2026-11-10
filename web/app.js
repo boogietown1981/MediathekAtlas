@@ -587,6 +587,18 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
   heading.append(el('small','Identität: '+(manifest.identity_origin||'unbekannt')+
       ' · '+(manifest.identity_confidence||'unbestätigt')));
   host.append(heading);
+  // ArchiveMedia preserves distinct evidence for the title, work, actual
+  // episode and video file. A metadata-only light scan never claims content
+  // or spoken language has been verified.
+  const assessment=manifest.work_assessment||{};
+  const stages={unresolved:'Nicht unabhängig bestätigt',
+    candidate:'Werkkandidat – prüfen',work_supported:'Werkreferenz vorhanden',
+    content_supported:'Datei plausibel, Inhalt nicht bewiesen',
+    conflicted:'Widersprüchliche Belege',manual:'Manuell prüfen'};
+  host.append(el('p','Werk-/Dateibeleg: '+(stages[assessment.stage]||
+      'Ungeprüft')+' · Video-Inhalt nicht bestätigt','portal-evidence'));
+  for(const conflict of (assessment.conflicts||[]).slice(0,4))
+    host.append(el('p','Konflikt: '+String(conflict),'portal-warning'));
   host.append(el('p','Archiv-Eintrag: '+countLabel(manifest.files_in_manifest)+
       ' Dateien · '+countLabel(manifest.video_files_found)+' Videodateien · '+
       countLabel(manifest.video_families_found||0)+' mögliche Videowerke/Fassungsgruppen.','muted'));
