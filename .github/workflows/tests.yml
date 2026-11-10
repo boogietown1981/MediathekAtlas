@@ -8,6 +8,12 @@ on:
 permissions:
   contents: read
 
+# A PR update supersedes prior jobs; do not consume scarce hosted macOS
+# capacity with obsolete versions of the same change.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   test:
     name: Python ${{ matrix.python }} · ${{ matrix.os }}
@@ -45,7 +51,7 @@ jobs:
   # Separate job: macOS runners are sometimes not assigned for a long time; that must not
   # hold back the NAS packages, which only need the Linux results.
   test-macos:
-    name: Python 3.13 · macos-latest
+    name: Python 3.13 · macos-15
     # macos-latest is macOS 26 / arm64 and frequently times out without an
     # allocated runner. Pin the stable macOS 15 arm64 pool instead.
     runs-on: macos-15
