@@ -63,8 +63,11 @@ def imported_reference(row):
     providers={'www.arte.tv':'arte','arte.tv':'arte',
                'www.3sat.de':'3sat','3sat.de':'3sat',
                'www.kika.de':'KiKA','kika.de':'KiKA'}
-    provider=providers.get((p.hostname or '').lower())
-    if not provider or p.scheme!='https' or p.username or p.password or p.port not in (None,443):
+    try:
+        provider=providers.get((p.hostname or '').lower())
+        permitted_port=p.port in (None,443)
+    except ValueError:return None
+    if not provider or p.scheme!='https' or p.username or p.password or not permitted_port:
         return None
     if not p.path or len(p.path)<5:return None
     # Other participating broadcasters are passive-only until they offer an
