@@ -25,6 +25,11 @@ def provider_pause(provider):
         state=_OUTAGES.get(provider)
         return max(0.0,state['until']-time.monotonic()) if state else 0.0
 
+def network_provider_status(provider):
+    seconds=provider_pause(provider)
+    return {'paused':bool(seconds),'remaining_seconds':int(seconds+0.999),
+            'reason':'transient_network' if seconds else None}
+
 def provider_success(provider):
     """A successful request ends a transient outage without touching other providers."""
     with _OUTAGE_LOCK:_OUTAGES.pop(provider,None)
