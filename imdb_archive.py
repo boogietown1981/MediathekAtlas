@@ -57,6 +57,26 @@ def norm(s):
     return ' '.join(re.sub(r'[^\w]+',' ',unicodedata.normalize('NFKC',s or '').casefold().replace('&',' und ')).split())
 def number(s):return None if s in (None,'\\N','') else int(s)
 
+def episode_search_terms(row,meta,show_title):
+    """Exact IMDb name probes, including a clearly prefixed broadcaster episode title.
+
+    No fuzzy assignment: IMDb's episode query must still return exactly one row,
+    and supplied season/episode numbers and runtimes remain authoritative.
+    """
+    titles=(meta.get('episode_title'),row.get('title'))
+    seen=set();out=[]
+    for raw in titles:
+        if not isinstance(raw,str) or not raw.strip():continue
+        possibilities=[raw]
+        if show_title:
+            prefix=re.match(r'^\s*'+re.escape(str(show_title))+r'\s*[:\-–—|]\s*(.+?)\s*$',raw,re.I)
+            if prefix:possibilities.append(prefix.group(1))
+        for name in possibilities:
+            value=norm(name)
+            if value and value not in seen:
+                seen.add(value);out.append(value)
+    return out
+
 def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
     c=sqlite3.connect(path)
     try:
@@ -284,8 +304,10 @@ class Archive:
             if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
                 delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
             if kind=='series':
-                epname=norm(meta.get('episode_title') or row.get('title'))
-                eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (h['tconst'],epname),('episode',h['tconst'],epname))
+                eps=[]
+                for epname in episode_search_terms(row,meta,title):
+                    eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (h['tconst'],epname),('episode',h['tconst'],epname))
+                    if eps:break
                 number_fallback=False
                 # SxxExx from the offer can identify the canonical episode even if
                 # the broadcaster does not provide its official episode title.
