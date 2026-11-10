@@ -330,3 +330,41 @@ dialog.player::backdrop{background:#000c}
 .portal-consent>input[type=checkbox]{width:17px!important;height:17px!important;max-width:17px;flex:0 0 17px;margin:1px 0 0;padding:0}
 .portal-verify,.portal-inspect{align-self:flex-start;margin-top:5px;white-space:normal}
 @media(max-width:620px){.portal-archive-detail{width:100%}.portal-manifest-variant{padding:9px}}
+
+/* v0.5.x Platform isolation: one dashboard per source, mediathek remains default */
+.platform-tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #354957;padding:0 0 13px;margin:0 0 16px}
+.platform-tab{border-radius:8px;min-height:36px;padding:8px 14px}
+.platform-tab.active{border-color:#6cbaa5;background:#183b39;color:#d8ffea}
+.platform-summary{display:grid;grid-template-columns:minmax(0,1fr);gap:13px;margin-bottom:16px}
+.platform-stats-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,245px),1fr));gap:12px}
+.platform-stat{border:1px solid #374c58;border-radius:11px;padding:13px 15px;background:#162530;display:flex;flex-direction:column;gap:6px;min-width:0}
+.platform-stat strong{font-size:15px}
+.platform-stat small{line-height:1.45;color:#9ebec7}
+.platform-global{display:flex;align-items:end;gap:12px;flex-wrap:wrap;padding:14px 17px!important;margin:0;min-width:0}
+.platform-global>label,.platform-config-form>label,.platform-scope-form>label{display:flex;flex-direction:column;gap:6px;min-width:0;font-size:12px}
+.platform-global small{flex:1 1 300px}
+.platform-global button,.platform-config-form button,.platform-scope-form button{margin:0}
+.platform-archive-controls{max-width:none!important;margin:0 0 16px;padding:17px 20px!important}
+.platform-archive-controls .portal-heading{margin-bottom:12px}
+.platform-archive-controls .portal-heading p{font-size:12px}
+.platform-config-form{display:grid;grid-template-columns:repeat(3,minmax(0,1fr)) auto;align-items:end;gap:12px;margin:0 0 18px}
+.platform-config-form label.platform-checkbox{display:flex;flex-direction:row;align-items:center;gap:8px;flex-wrap:wrap;font-size:12px}
+.platform-config-form label.platform-checkbox input[type=checkbox]{flex:0 0 17px!important;width:17px!important;height:17px!important;max-width:17px!important;margin:0}
+.platform-config-form select,.platform-scope-form select,.platform-scope-form input{width:100%;max-width:100%;min-width:0}
+.platform-scope-form{display:grid;grid-template-columns:1.2fr 2fr 0.8fr 0.8fr auto;gap:12px;align-items:end;margin:14px 0}
+.platform-scope-list{display:grid;grid-template-columns:repeat(auto-fit,minmax(min(100%,320px),1fr));gap:10px;margin:12px 0}
+.platform-scope-item{border:1px solid #334d59;border-radius:10px;padding:12px;background:#172633;display:flex;flex-direction:column;gap:7px;overflow-wrap:anywhere}
+.platform-scope-item strong{font-size:12px;color:#d8f8ee}
+.platform-scope-item small{font-size:11px;color:#aac6d0}
+.platform-scope-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap;margin-top:6px}
+.platform-scope-actions button{margin:0;font-size:11px;padding:7px 10px}
+#portals[data-platform="overview"] #archive-platform-controls{display:none}
+#portals[data-platform="archive"] .portal-card:nth-child(2){display:none}
+#portals[data-platform="netzkino"] .portal-card:nth-child(1){display:none}
+#portals[data-platform="netzkino"] #archive-platform-controls{display:none}
+#portals[data-platform="netzkino"] #portal-platform-overview{display:none}
+#portals[data-platform="archive"] #portal-platform-overview{display:none}
+#portals[data-platform="archive"] .portal-dashboard,
+#portals[data-platform="netzkino"] .portal-dashboard{grid-template-columns:minmax(0,1fr)}
+@media(max-width:1200px){.platform-config-form{grid-template-columns:repeat(2,minmax(0,1fr))}.platform-scope-form{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:660px){.platform-config-form,.platform-scope-form{grid-template-columns:minmax(0,1fr)}.platform-global{align-items:stretch}.platform-global>label,.platform-global button{width:100%}.platform-archive-controls{padding:13px!important}}
