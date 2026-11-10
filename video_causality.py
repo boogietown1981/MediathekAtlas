@@ -66,20 +66,30 @@ def evaluate(source,candidate=None):
     explicit=explicit_format(source)
     actual=seconds((source or {}).get('duration'))
     expected=expected_seconds(candidate)
+    # Trace the evidence back to the origin; a catalogue-derived median must
+    # remain visibly different from a provider's episode-specific runtime.
+    candidate=candidate or {}
+    if seconds(candidate.get('episode_runtime_seconds')):
+        origin=candidate.get('episode_runtime_source') or (
+            str(candidate.get('provider') or 'Metadatenanbieter')+' · Episodenlaufzeit')
+    else:
+        origin=candidate.get('reference_runtime_source') or (
+            str(candidate.get('provider') or 'Metadatenanbieter')+' · Serienlaufzeit')
+    runtime_evidence={'source_duration_seconds':actual,
+                      'source_runtime_source':'Sender-Katalogimport',
+                      'expected_runtime_seconds':expected,
+                      'expected_runtime_source':origin if expected else None}
     if explicit:
-        return {**explicit,'source_duration_seconds':actual,
-                'expected_runtime_seconds':expected}
+        return {**explicit,**runtime_evidence}
     if expected and expected>=600 and actual:
         if actual<=min(600,expected*.4) and actual<expected*.45:
             return {'video_role':'short_excerpt_suspected',
                     'video_role_reason':'Laufzeit unplausibel: %.0f s statt etwa %.0f s'%(actual,expected),
-                    'video_role_evidence':'independent_runtime',
-                    'source_duration_seconds':actual,'expected_runtime_seconds':expected}
+                    'video_role_evidence':'independent_runtime',**runtime_evidence}
         if actual>expected*1.85 and actual-expected>=900:
             return {'video_role':'compilation_suspected',
                     'video_role_reason':'Laufzeit wesentlich länger als eine reguläre Folge',
-                    'video_role_evidence':'independent_runtime',
-                    'source_duration_seconds':actual,'expected_runtime_seconds':expected}
+                    'video_role_evidence':'independent_runtime',**runtime_evidence}
     return None
 
 
