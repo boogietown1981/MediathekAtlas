@@ -46,6 +46,18 @@ class SenderEvidenceTests(unittest.TestCase):
         self.assertIsNone(broadcaster.imported_episode_evidence(offer(url='https://bad.example/video/id'),m))
         self.assertIsNone(broadcaster.imported_episode_evidence(offer(topic='Filme im MDR'),m))
 
+    def test_passive_arte_3sat_kika_import_never_uses_live_api(self):
+        m={'title':'Servicezeit','kind':'series','provider':'TMDB','reference_id':'123'}
+        for host,path in [('www.arte.tv','/de/videos/example'),('www.3sat.de','/kultur/sendung-100.html'),
+                          ('www.kika.de','/serie/beitrag-100')]:
+            with self.subTest(host=host),patch('broadcaster.lookup_limited',side_effect=AssertionError('no direct access')) as request:
+                evidence=broadcaster.imported_episode_evidence(offer(url='https://'+host+path),m)
+                self.assertIsNotNone(evidence)
+                self.assertEqual(evidence['sender_evidence'],'imported_offer')
+                self.assertFalse(evidence['sender_item_verified'])
+                self.assertTrue(evidence['sender_page_id'].startswith('link:'))
+                request.assert_not_called()
+
     def test_sender_does_not_confirm_inherited_numbers(self):
         m={'title':'Servicezeit','kind':'series','season':3,'episode':7}
         candidate=broadcaster.candidate(offer(),m,info(numbered=False))
