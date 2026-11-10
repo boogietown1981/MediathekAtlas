@@ -23,6 +23,8 @@ from vendor.archive_portals import catalog_identity as archive_identity
 from vendor.archive_portals import item_language_hints as archive_languages
 from vendor.archive_portals import unified_inventory as archive_inventory
 from vendor.archive_portals import video_triage as archive_triage
+from vendor.archive_portals import catalog_repair as archive_families
+from vendor.archive_portals import media_probe as archive_probe
 from vendor.archivemedia import linguistics as archive_tracks
 
 MAX_SEARCH_RESULTS=30
@@ -63,6 +65,13 @@ CREATE TABLE IF NOT EXISTS portal_archive_details (
  item_id TEXT PRIMARY KEY REFERENCES portal_items(id) ON DELETE CASCADE,
  payload TEXT NOT NULL,
  checked REAL NOT NULL
+);
+CREATE TABLE IF NOT EXISTS portal_video_probes (
+ item_id TEXT NOT NULL REFERENCES portal_items(id) ON DELETE CASCADE,
+ filename TEXT NOT NULL,
+ payload TEXT NOT NULL,
+ checked REAL NOT NULL,
+ PRIMARY KEY(item_id,filename)
 );
 """
 
@@ -191,8 +200,16 @@ def search_archive(query,rows=20):
     return archive_document(doc)
 
 
-MAX_ARCHIVE_FILES=350
-MAX_VISIBLE_VARIANTS=150
+MAX_ARCHIVE_FILES=10000
+MAX_VISIBLE_VARIANTS=120
+MAX_VERSIONS_PER_FAMILY=6
+# Browsing excludes short, unrelated clips by default. These are visibility
+# thresholds, NOT content-identity claims. Small legitimate films are counted
+# as hidden, not automatically called trailers.
+MIN_FILM_DURATION_SECONDS=600
+MIN_SERIES_EPISODE_SECONDS=240
+MIN_UNKNOWN_DURATION_BYTES=24*1024*1024
+MAX_PROBE_BYTES=8*1024*1024
 
 
 def _file_size(value):
@@ -200,6 +217,10 @@ def _file_size(value):
         number=int(value)
         return number if 0<=number<2**63 else None
     except (TypeError,ValueError,OverflowError):return None
+
+
+def _duration(value):
+    return archive_inventory._duration(value)
 
 
 def _episode_fields(name):
@@ -213,11 +234,32 @@ def _episode_fields(name):
     except (TypeError,ValueError):return {'kind':'movie','season':None,'episode':None}
 
 
-def archive_detail_document(identifier,doc):
-    """Reuse ArchiveMedia recognition to distinguish items and file variants.
+def _safe_archive_filename(filename):
+    """Treat file paths from the remote manifest as untrusted input."""
+    if not isinstance(filename,str) or not filename or len(filename)>900:
+        raise ValueError('Ungültiger Archiv-Dateiname')
+    if ('\\' in filename or filename.startswith('/') or '://' in filename
+            or '\x00' in filename or any(ord(ch)<32 for ch in filename)):
+        raise ValueError('Archiv-Dateiname enthält ungültige Zeichen')
+    parts=filename.split('/')
+    if any(part in ('','.','..') for part in parts):
+        raise ValueError('Archiv-Dateiname enthält ungültige Pfadbestandteile')
+    return filename
 
-    An Archive.org item is one *upload*, not necessarily one movie or series.
-    A filename is a claim, not proof of language or episode identity.
+
+def _archive_video_url(identifier,filename):
+    identifier=internet_archive_id(identifier)
+    filename=_safe_archive_filename(filename)
+    quoted='/'.join(urllib.parse.quote(piece,safe='') for piece in filename.split('/'))
+    return ('https://archive.org/download/'+urllib.parse.quote(identifier,safe='')+'/'+quoted)
+
+
+def archive_detail_document(identifier,doc):
+    """ArchiveMedia-style item+variant identity with selective video browsing.
+
+    An Archive.org item is one upload, not necessarily one movie or series.
+    All other file categories and short clips stay outside the visible
+    media catalogue; no FFprobe or bytes are fetched during this step.
     """
     identifier=internet_archive_id(identifier)
     if not isinstance(doc,dict) or not isinstance(doc.get('metadata'),dict):
@@ -230,25 +272,59 @@ def archive_detail_document(identifier,doc):
     hints=archive_languages.infer(meta)
     candidates=[]
     subtitles=[]
+    hidden_short=hidden_technical=hidden_unknown=ignored_nonvideo=0
+    valid_names=set()
     for raw in raw_files[:MAX_ARCHIVE_FILES]:
         if not isinstance(raw,dict) or not isinstance(raw.get('name'),str):continue
-        filename=text(raw['name'],900)
-        if not filename:continue
+        try:filename=_safe_archive_filename(raw['name'])
+        except ValueError:continue
+        valid_names.add(filename)
         category,role,reason=archive_inventory.classify(filename,raw)
-        if category=='video':candidates.append((filename,raw,role,reason))
-        elif role=='sidecar':subtitles.append({'name':filename,'size':_file_size(raw.get('size'))})
-    one_video=len(candidates)==1 and len(raw_files)<=MAX_ARCHIVE_FILES
+        if category=='video':
+            candidates.append((filename,raw,role,reason))
+        elif role=='sidecar':
+            subtitles.append({'name':filename,'size':_file_size(raw.get('size'))})
+        else:ignored_nonvideo+=1
+    eligible=[]
+    all_candidate_names={entry[0] for entry in candidates}
+    for filename,raw,role,reason in candidates:
+        duration=_duration(raw.get('length'))
+        size=_file_size(raw.get('size'))
+        episode=_episode_fields(filename)
+        technical=archive_families.technical_role(filename,raw.get('original'),duration,len(candidates))
+        if technical in ('bdmv_stream','transport_segment','extra_or_clip'):
+            hidden_technical+=1
+            continue
+        minimum=MIN_SERIES_EPISODE_SECONDS if episode['kind']=='series' else MIN_FILM_DURATION_SECONDS
+        if duration is not None and duration<minimum:
+            hidden_short+=1
+            continue
+        if duration is None and size is not None and size<MIN_UNKNOWN_DURATION_BYTES:
+            # Missing metadata must not be silently accepted as a movie.
+            hidden_unknown+=1
+            continue
+        family=archive_families.family_key(identifier,filename,raw.get('original'),all_candidate_names)
+        eligible.append((filename,raw,role,reason,episode,technical,family,duration))
+    # Prefer original files and known-duration video for each logical family;
+    # derivatives remain alternatives, not separate movies.
+    eligible.sort(key=lambda e:(
+        e[6],0 if e[5]=='primary_video' else 1,
+        0 if e[7] is not None else 1,-(_file_size(e[1].get('size')) or 0),e[0]))
+    selected=[];per_family={};families=set()
+    for entry in eligible:
+        family=entry[6]
+        per_family[family]=per_family.get(family,0)+1
+        if per_family[family]>MAX_VERSIONS_PER_FAMILY:continue
+        if len(selected)>=MAX_VISIBLE_VARIANTS:break
+        selected.append(entry);families.add(family)
+    one_video=len({e[6] for e in eligible})==1 and len(candidates)<=MAX_ARCHIVE_FILES
     variants=[]
-    for filename,raw,role,reason in candidates[:MAX_VISIBLE_VARIANTS]:
-        parsed=_episode_fields(filename)
-        parsed['title']=PurePosixPath(filename).stem
+    for filename,raw,role,reason,episode,technical,family,duration in selected:
+        parsed=dict(episode,title=PurePosixPath(filename).stem)
         resolved=archive_identity.resolve_variant(
             filename,item_title,identity,parsed,meta,one_video=one_video)
         track_hints=archive_tracks.parse_filename_tracks(filename)
-        sidecars=archive_tracks.match_sidecar_subtitles(
-            filename,subtitles) if subtitles else []
-        # These languages are only declared in titles/filenames, NOT verified
-        # codec/track metadata. No FFprobe and no video bytes are requested.
+        sidecars=archive_tracks.match_sidecar_subtitles(filename,subtitles) if subtitles else []
         variants.append({
             'filename':filename,'title':text(resolved.get('title'),240),
             'identity_origin':text(resolved.get('identity_origin'),90),
@@ -256,10 +332,12 @@ def archive_detail_document(identifier,doc):
             'identity_warning':text(resolved.get('identity_warning'),350),
             'kind':resolved.get('kind') if resolved.get('kind') in ('movie','series') else 'unknown',
             'season':resolved.get('season'),'episode':resolved.get('episode'),
+            'family_id':family,'technical_role':technical,
             'file_role':role,'file_role_reason':reason,
             'format':text(raw.get('format'),100),
             'size_bytes':_file_size(raw.get('size')),
-            'length_claim':text(raw.get('length'),32),
+            'duration_seconds':duration,
+            'duration_source':'Internet Archive file metadata' if duration is not None else None,
             'source':text(raw.get('source'),30),
             'original':text(raw.get('original'),400),
             'audio_hint_languages':track_hints['audio'],
@@ -268,6 +346,8 @@ def archive_detail_document(identifier,doc):
             'subtitle_hint_origin':track_hints['subtitle_origin'],
             'sidecar_subtitles':sidecars[:12],
             'languages_verified':False,
+            'technical_validation':'not_inspected',
+            'technical_probe_available':bool(_file_size(raw.get('size'))),
         })
     group_format,format_reason=archive_triage.classify(
         item_title,filenames=[v[0] for v in candidates[:50]])
@@ -292,20 +372,89 @@ def archive_detail_document(identifier,doc):
         'content_format_reason':format_reason,
         'video_variants':variants,
         'video_files_found':len(candidates),
+        'video_families_found':len({e[6] for e in eligible}),
+        'video_files_eligible':len(eligible),
         'files_in_manifest':len(raw_files),
         'files_inspected':min(len(raw_files),MAX_ARCHIVE_FILES),
         'variants_displayed':len(variants),
-        'inventory_complete':len(raw_files)<=MAX_ARCHIVE_FILES and len(candidates)<=MAX_VISIBLE_VARIANTS,
+        'hidden_short_clips':hidden_short,
+        'hidden_technical_clips':hidden_technical,
+        'hidden_unknown_small_files':hidden_unknown,
+        'non_video_files_ignored':ignored_nonvideo,
+        'inventory_complete':len(raw_files)<=MAX_ARCHIVE_FILES,
+        'display_complete':len(eligible)<=len(selected),
         'download_allowed':False,'rights_verified':False,
         'availability':'unverified',
-        'evidence':'ArchiveMedia v0.10.53 / Internet Archive metadata; keine Inhaltsprüfung',
+        'evidence':'ArchiveMedia v0.10.53 / Video-Manifest und Filter; noch kein technischer Nachweis',
     }
-    # A collection of separate episodes is not one confirmed "movie" even if
-    # IA's top-level mediatype happens to be movies.
     if any(v['kind']=='series' for v in variants):
         result['content_format_hint']='series_or_mixed_upload'
         result['content_format_reason']='Mindestens ein Dateiname mit expliziter Episodenkennung'
     return result
+
+
+def probe_archive_variant(c,item_id,filename,acknowledged=False,fetcher=None,ffprobe_binary=None):
+    """User-initiated bounded download: no full media files and no silent scans.
+
+    Real audio/subtitle language here means stream *metadata* identified via
+    container index/ffprobe, not language recognized by listening to speech.
+    """
+    if acknowledged is not True:
+        raise ValueError('Vor dem technischen Datenabruf Zugriffsberechtigung bestätigen')
+    saved=archive_saved_detail(c,item_id)['detail']
+    if not saved or saved.get('source')!='internet_archive':
+        raise ValueError('Bitte erst den Archiv-Dateibestand prüfen')
+    filename=_safe_archive_filename(filename)
+    variant=next((x for x in saved.get('video_variants',[])
+                  if x.get('filename')==filename),None)
+    if not variant:
+        raise ValueError('Nur bereits angezeigte, relevante Videodateien können geprüft werden')
+    if not variant.get('technical_probe_available') or not variant.get('size_bytes'):
+        raise ValueError('Dateigröße unbekannt: sichere Teilprüfung nicht möglich')
+    if variant['size_bytes']<=MAX_PROBE_BYTES:
+        # A bounded probe of a whole tiny clip is not a reason to ingest it.
+        raise ValueError('Kurzes Video wird ohne vollständigen Download nicht geprüft')
+    url=_archive_video_url(saved['external_id'],filename)
+    result=archive_probe.inspect(url,filename,variant['size_bytes'],
+                                  ffprobe_binary=ffprobe_binary,fetcher=fetcher,
+                                  max_total_bytes=MAX_PROBE_BYTES)
+    # Do not turn "unknown" into an invented absence of a language/track.
+    tracks=[]
+    for track in result.get('tracks',[]):
+        if track.get('type') not in ('video','audio','subtitle'):continue
+        tracks.append({'type':track.get('type'),
+                       'codec':text(track.get('codec'),90),
+                       'language':archive_tracks.normalize_language(track.get('language')),
+                       'evidence':text(track.get('evidence') or result.get('evidence') or
+                                        result.get('method'),100),
+                       'title':text(track.get('title'),100)})
+    report={
+        'state':result.get('state','indeterminate'),
+        'filename':filename,
+        'kind':'bounded_http_range',
+        'method':text(result.get('method'),140),
+        'detail':text(result.get('detail'),250),
+        'bytes_sampled':min(int(result.get('bytes') or 0),MAX_PROBE_BYTES),
+        'track_metadata_partial':True,
+        'container_verified':bool(tracks),
+        'tracks':tracks,
+        'audio_languages_from_tracks':sorted({t['language'] for t in tracks
+                                               if t['type']=='audio' and t['language']}),
+        'subtitle_languages_from_tracks':sorted({t['language'] for t in tracks
+                                                  if t['type']=='subtitle' and t['language']}),
+        'download_allowed':False,
+        'note':'Teilabruf: Container-/Spurangaben, keine vollständige Film- oder Sprachinhaltsprüfung.',
+    }
+    c.execute("""INSERT INTO portal_video_probes(item_id,filename,payload,checked)
+        VALUES (?,?,?,?) ON CONFLICT(item_id,filename) DO UPDATE SET
+        payload=excluded.payload,checked=excluded.checked""",
+        (item_id,filename,json.dumps(report,ensure_ascii=False),time.time()))
+    return report
+
+
+def saved_archive_probes(c,item_id):
+    return {row[0]:json.loads(row[1]) for row in c.execute(
+        'SELECT filename,payload FROM portal_video_probes WHERE item_id=?',(item_id,))}
 
 
 def fetch_archive_detail(identifier):
@@ -336,7 +485,8 @@ def save_archive_detail(c,item_id,detail):
 
 def archive_saved_detail(c,item_id):
     row=c.execute('SELECT payload,checked FROM portal_archive_details WHERE item_id=?',(item_id,)).fetchone()
-    return {'detail':json.loads(row[0]),'checked':row[1]} if row else {'detail':None,'checked':None}
+    return {'detail':json.loads(row[0]),'checked':row[1],
+            'probes':saved_archive_probes(c,item_id)} if row else {'detail':None,'checked':None,'probes':{}}
 
 
 def save(c,rows,query=None):
