@@ -69,6 +69,21 @@ class ProviderOutageTests(unittest.TestCase):
         self.assertEqual(metadata.provider_pause('Wikidata'),0)
         self.assertGreater(metadata.provider_pause('TMDB'),0)
 
+    def test_repeated_outages_escalate_after_pause_expiry(self):
+        error=urllib.error.URLError('connection reset')
+        with patch('metadata.time.monotonic') as clock:
+            clock.return_value=100
+            metadata.provider_failure('TMDB',error)
+            clock.return_value=101
+            metadata.provider_failure('TMDB',error)
+            self.assertEqual(metadata._OUTAGES['TMDB']['opens'],1)
+            clock.return_value=282
+            metadata.provider_failure('TMDB',error)
+            clock.return_value=283
+            metadata.provider_failure('TMDB',error)
+            self.assertEqual(metadata._OUTAGES['TMDB']['opens'],2)
+            self.assertEqual(metadata._OUTAGES['TMDB']['until'],283+360)
+
     def test_paused_tmdb_does_not_block_independent_fallback(self):
         err=urllib.error.URLError('network down')
         metadata.provider_failure('TMDB',err)
