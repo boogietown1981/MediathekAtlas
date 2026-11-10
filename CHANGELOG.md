@@ -1,5 +1,16 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.30 – 10. November 2026 (Preview)
+
+- Sender-First-Episodenprüfung: Der Episodenworker übernimmt bereits importierte, eindeutig zugehörige ARD-/ZDF-Senderlinks und ihre Quellidentitäten, bevor IMDb Offline nach einer Episode sucht.
+- Unnummerierte Beiträge bekommen einen separat ausgewiesenen Senderbeleg; eine bekannte Video-ID allein ist keine bestätigte Staffel- oder Folgennummer. Vorhandene lokal vermutete Episodennummern werden nicht mehr als angebliche Senderbestätigung übernommen.
+- Optionaler Direktabgleich über bestehende ARD-/ZDF-Seitenadapter nur bei ausdrücklicher Aktivierung durch Personen mit entsprechender Berechtigung; standardmäßig ausgeschaltet. Automatische Abfragen auf 120 pro Stunde und Anbieter begrenzt, gecachte Antworten werden ohne zusätzliche Anfrage wiederverwendet.
+- Bei Berechtigung und eindeutigen Original-Senderdaten können nummerierte Folgen vollständig zugeordnet werden. IMDb Offline dient als unabhängiger Fallback; bei Anbieterfehlern bleibt die Episode in der persistenten Warteschlange.
+- Getrennte Diagnosezähler für importierte Senderbelege, bestätigte Original-Senderseiten, nummerierte Senderfolgen und zurückgestellte Direktanfragen.
+- Testabdeckung für Offline-Betrieb, Berechtigungsschalter, sichere Nummernverifikation, Budgetbegrenzung, Fehlerwiederholung, IMDb-Fallback und manuelle Konkurrenzänderungen.
+- Keine automatische Massensuche auf internen ARD-/ZDF-Schnittstellen ohne Freigabe; keine Umgehung technischer Schutzmaßnahmen.
+
+
 ## 0.5.29 – 10. November 2026 (Preview)
 
 - Dashboard-Kennzahlen passen sich automatisch der tatsächlichen Fenster- bzw. Inhaltsbreite an (fünf, vier, drei, zwei oder eine Spalte); große Fenster zeigen zwei gleichmäßige Reihen mit je fünf statt acht plus zwei Kennzahlen.
