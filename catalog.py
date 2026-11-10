@@ -19,6 +19,34 @@ CREATE INDEX IF NOT EXISTS offer_work ON offers(work_id,active,rank DESC);
 CREATE TABLE IF NOT EXISTS series_templates(topic TEXT,provider TEXT,reference TEXT,meta TEXT,PRIMARY KEY(topic,provider,reference));
 CREATE TABLE IF NOT EXISTS metadata_priority(work_id TEXT PRIMARY KEY,requested REAL);
 CREATE TABLE IF NOT EXISTS series_focus(show_key TEXT PRIMARY KEY,until REAL,remaining INTEGER,updated REAL);
+CREATE TABLE IF NOT EXISTS episode_queue(work_id TEXT PRIMARY KEY,next_try REAL NOT NULL DEFAULT 0,attempts INTEGER NOT NULL DEFAULT 0,last_outcome TEXT NOT NULL DEFAULT 'pending',updated REAL NOT NULL DEFAULT 0);
+CREATE INDEX IF NOT EXISTS episode_queue_due ON episode_queue(next_try,work_id);
+-- The work state is the source of truth: manual matches, format classification,
+-- merges and deletion automatically remove stale episode tasks.
+CREATE TRIGGER IF NOT EXISTS episode_queue_work_insert AFTER INSERT ON works
+WHEN NEW.kind='series' AND NEW.state='identified'
+ AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
+ AND json_type(NEW.meta,'$.deferred_providers') IS NULL
+ AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
+BEGIN
+ INSERT OR IGNORE INTO episode_queue(work_id) VALUES(NEW.id);
+END;
+CREATE TRIGGER IF NOT EXISTS episode_queue_work_update AFTER UPDATE OF id,kind,state,meta ON works
+BEGIN
+ DELETE FROM episode_queue WHERE work_id=OLD.id AND
+    (NEW.id!=OLD.id OR NEW.kind!='series' OR NEW.state!='identified'
+     OR NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NULL
+     OR json_type(NEW.meta,'$.deferred_providers') IS NOT NULL
+     OR COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)!=0);
+ INSERT OR IGNORE INTO episode_queue(work_id)
+ SELECT NEW.id WHERE NEW.kind='series' AND NEW.state='identified'
+  AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
+  AND json_type(NEW.meta,'$.deferred_providers') IS NULL
+  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0;
+END;
+CREATE TRIGGER IF NOT EXISTS episode_queue_work_delete AFTER DELETE ON works
+BEGIN DELETE FROM episode_queue WHERE work_id=OLD.id; END;
+
 CREATE INDEX IF NOT EXISTS work_first_pass ON works(attempts,state,kind,next_try);
 CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
@@ -382,6 +410,7 @@ def stats(c):
     first=c.execute("""SELECT COUNT(*) FROM works w
         WHERE w.attempts=0 AND w.kind IN ('movie','series','unknown')
           AND w.state IN ('pending','retry','identified')
+          AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
           AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""").fetchone()[0]
     return {
         'types':kinds,'works':sum(kinds.values()),
@@ -628,7 +657,9 @@ def prioritize(c,ids=None,show=''):
             m['scan_requested']=True
             c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE id=?",(wid,))
-        c.execute('INSERT OR IGNORE INTO metadata_priority VALUES(?,?)',(wid,time.time()));count+=1
+        c.execute('INSERT OR IGNORE INTO metadata_priority VALUES(?,?)',(wid,time.time()))
+        c.execute("UPDATE episode_queue SET next_try=0 WHERE work_id=?",(wid,))
+        count+=1
     return count
 
 # Recurring broadcast formats (news, regional and service magazines). Their single contributions are
@@ -867,6 +898,14 @@ def initialize(c):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
     c.execute('CREATE INDEX IF NOT EXISTS work_topic ON works(topic)')
     if not get_state(c,'genre_spellings_v053',False):merge_genre_spellings(c);set_state(c,'genre_spellings_v053',True)
+    # One-time migration of existing identified episodes; no destructive resets.
+    if not get_state(c,'episode_queue_migrated_v0528',False):
+        c.execute("""INSERT OR IGNORE INTO episode_queue(work_id)
+            SELECT id FROM works WHERE kind='series' AND state='identified'
+            AND NULLIF(json_extract(meta,'$.reference_id'),'') IS NOT NULL
+            AND json_type(meta,'$.deferred_providers') IS NULL
+            AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0""")
+        set_state(c,'episode_queue_migrated_v0528',True)
 
 def review_listing(c,query='',state='open',offset=0):
     """Flat work/episode list: do not hide unresolved episodes behind a series parent."""
