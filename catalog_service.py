@@ -451,13 +451,17 @@ class Service:
         sender_error=False
         sender_deferred=False
         sender_status='no_sender_link' if not imported else 'imported'
+        suspicion=None
         config=self.settings()
         if imported and broadcaster.reference(source) and config.get('sender_direct_lookup',False):
             try:
                 info=broadcaster.lookup_limited(source)
                 if info:
                     candidate=broadcaster.candidate(source,m,info)
-                    import matching
+                    import matching,video_causality
+                    if candidate:
+                        video_causality.annotate(source,candidate)
+                        if candidate.get('video_role_needs_review'):suspicion=candidate
                     if candidate and not matching.issues(m,candidate):
                         sender_candidate=candidate
                         sender_status='sender_item' if candidate.get('sender_item_verified') else 'sender_series'
@@ -479,11 +483,15 @@ class Service:
         if not sender_verified and entry and archive and archive.updated:
             try:
                 candidates=archive.candidates(source,m)
-                imdb_verified=catalog.auto_choice(m,candidates)
+                import video_causality
+                for candidate in candidates:
+                    video_causality.annotate(source,candidate)
+                    if candidate.get('video_role_needs_review'):suspicion=candidate
+                if not suspicion:imdb_verified=catalog.auto_choice(m,candidates)
             except Exception as exc:
                 diagnostics.error('episode_local_lookup_failed',exc,work_id=selected_id)
                 imdb_error=True
-        verified=sender_verified or imdb_verified
+        verified=None if suspicion else (sender_verified or imdb_verified)
         with self.db() as c:
             current=c.execute('SELECT meta,state FROM works WHERE id=?',(selected_id,)).fetchone()
             if not current or current['state']!='identified' or current['meta']!=original:return True
@@ -495,6 +503,17 @@ class Service:
                 outcome='matched'
             else:
                 enriched=dict(m)
+                if suspicion:
+                    for key in ('video_role','video_role_reason','video_role_evidence',
+                                'source_duration_seconds','expected_runtime_seconds'):
+                        if suspicion.get(key) is not None:enriched[key]=suspicion[key]
+                    enriched['video_role_needs_review']=True
+                    enriched['episode_verified']=False
+                    enriched['reason']='Serie erkannt, diese Videodatei ist möglicherweise nur ein Kurzformat'
+                    diagnostics.event('episode_runtime_suspect',work_id=selected_id,
+                                      actual=enriched.get('source_duration_seconds'),
+                                      expected=enriched.get('expected_runtime_seconds'),
+                                      role=enriched.get('video_role'))
                 if imported:
                     # Offer identity is NOT a verified episode number.
                     for field in ('sender_provider','sender_page_id','sender_evidence','sender_episode_title'):
@@ -509,7 +528,10 @@ class Service:
                 if enriched!=m:
                     c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
                               (json.dumps(enriched),time.time(),selected_id))
-                if sender_deferred or sender_error or imdb_error or not (archive and archive.updated):
+                if suspicion:
+                    outcome='suspected'
+                    delay=0
+                elif sender_deferred or sender_error or imdb_error or not (archive and archive.updated):
                     outcome='retry'
                     delay=3600
                     if sender_deferred and imported:
