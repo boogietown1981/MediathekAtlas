@@ -1,5 +1,16 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.27 – 10. November 2026 (Preview / Diagnose-Fixes)
+
+- TVDB-Anfragen erhalten ein separates Zeitlimit von zwölf Sekunden statt der bisherigen 35 Sekunden; andere Anbieter behalten ihren bisherigen Standard.
+- TVDB-Ausfälle, Zeitüberschreitungen, ungültige Antworten und HTTP-5xx öffnen eine anbieterschlüsselbezogene Ausfallsperre mit 60/120/240/480/900 Sekunden Wartezeit. HTTP 401/403/429 behalten eine längere Sperre.
+- Diagnose unterscheidet TVDB-Fehlerursachen ohne API-Schlüssel, Tokens oder Antwortinhalte offenzulegen.
+- Bei vorübergehend gesperrtem TVDB werden gültige IMDb-/TMDB-Ergebnisse weiterhin gespeichert. Fehlende Zusatzprüfungen bleiben pro Werk markiert und werden später mit Backoff nachgeholt.
+- Serienvorlagen dürfen einen explizit gespeicherten ausstehenden Anbieterabgleich nicht als bereits erledigt überspringen; bestätigte Episoden werden nicht herabgestuft.
+- Regressionstests für Timeouts, Schlüsselseparation, Circuit Breaker, erfolgreiche Wiederaufnahme und persistierte Teilergebnisse.
+- Offen: End-to-End-Performance und Erkennungsrate müssen am realen Katalog validiert werden; keine automatische Episodenverifikation allein aus einer Serienidentität.
+
+
 ## 0.5.26 – 10. November 2026 (Testbuild)
 
 - Bis zu acht Erkennungsworker, externes API-Limit bleibt zwei; konfigurierbar mit Rücksicht auf schwache NAS.
