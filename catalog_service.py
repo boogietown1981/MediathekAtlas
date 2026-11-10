@@ -313,6 +313,12 @@ class Service:
         """Persist one recognition result; shared by local checks and mesh results."""
         wid=row['id'];dest=wid
         if recognized:
+            # A successful fallback is valuable even if an optional provider
+            # is temporarily unavailable. Keep the missing providers as a
+            # resumable per-work marker, not as a failed recognition.
+            recognized.pop('deferred_providers',None)
+            if result.get('deferred_providers'):
+                recognized['deferred_providers']=list(dict.fromkeys(result['deferred_providers']))
             outcome='matched' if chosen else 'identified'
             recognized.update(state='auto_matched' if chosen else 'work_identified',reason='Werk und Episode abgeglichen' if chosen else 'Werk erkannt; Dateizuordnung noch zu prüfen')
             dest=catalog.save_metadata(c,wid,recognized,outcome) or wid
@@ -334,9 +340,16 @@ class Service:
                 if catalog.focus_series(c,show):
                     diagnostics.event('series_completion_queued',show_key=show,limit=24)
             # Programme data of a Sendereihe rarely changes; daily rechecks of every episode would only load the Mediathek.
-            if outcome=='identified':c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+(30*86400 if recognized.get('provider') in broadcaster.PROVIDERS else 86400),dest))
+            if outcome=='identified':
+                delay=(retry_delay(row['attempts']+1,result) if result.get('deferred_providers')
+                       else 30*86400 if recognized.get('provider') in broadcaster.PROVIDERS else 86400)
+                c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+delay,dest))
         else:
             m['suggestions']=result['candidates'];m['metadata_warnings']=result['warnings']
+            if result.get('deferred_providers'):
+                m['deferred_providers']=list(dict.fromkeys(result['deferred_providers']))
+            else:
+                m.pop('deferred_providers',None)
             # Keep recognized show metadata if only its episode remains unresolved.
             if row['state']=='identified':outcome='identified'
             c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
@@ -371,7 +384,7 @@ class Service:
             # for explicit episode evidence. Manually prioritized works still
             # run the normal full provider chain.
             numbered=isinstance(m.get('season'),int) and isinstance(m.get('episode'),int)
-            if entry and not priority and not numbered and row['state'] in ('pending','retry','review','identified'):
+            if entry and not priority and not numbered and not m.get('deferred_providers') and row['state'] in ('pending','retry','review','identified'):
                 known=catalog.series_template_candidate(c,row,entry['source'])
                 if known:
                     import imdb_archive
