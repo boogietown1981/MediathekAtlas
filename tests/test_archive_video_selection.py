@@ -26,7 +26,7 @@ def movie_manifest(extra_clips=0):
         {'name':'cover.jpg','size':'50000'},
     ]
     for k in range(extra_clips):
-        files.append({'name':'clip_%05d.mp4'%k,'size':'500000',
+        files.append({'name':'small_%05d.mp4'%k,'size':'500000',
                       'length':'00:15','source':'original'})
     return {'metadata':{'identifier':'movie_test','title':'A Movie',
                         'year':'1988','language':'English'},
@@ -37,9 +37,9 @@ class ArchiveMediaVideoTests(unittest.TestCase):
     def test_keeps_movies_episode_families_and_language_hints(self):
         data=portals.archive_detail_document('movie_test',movie_manifest(700))
         self.assertEqual(data['files_in_manifest'],710)
-        self.assertEqual(data['video_files_found'],705)
-        self.assertEqual(data['hidden_short_clips'],701)
-        self.assertEqual(data['hidden_technical_clips'],1)
+        self.assertEqual(data['video_files_found'],706)
+        self.assertEqual(data['hidden_short_clips'],700)
+        self.assertEqual(data['hidden_technical_clips'],2)
         self.assertEqual(data['video_files_eligible'],4)
         self.assertEqual(data['video_families_found'],2)
         self.assertEqual(data['non_video_files_ignored'],3)
@@ -50,13 +50,13 @@ class ArchiveMediaVideoTests(unittest.TestCase):
         self.assertEqual((episode['season'],episode['episode']),(1,2))
         self.assertEqual(episode['audio_hint_languages'],['de'])
         self.assertFalse(episode['languages_verified'])
-        self.assertIn('video',data['content_format_hint'])
+        self.assertEqual(data['content_format_hint'],'series_or_mixed_upload')
         self.assertFalse(data['download_allowed'])
 
     def test_short_episodes_not_wrongly_confirmed_as_trailers(self):
         fixture={'metadata':{'title':'Short anime','series':'Short anime'},'files':[
-            {'name':'Short_anime_S01E01.mp4','size':'20000000','length':'02:00'},
-            {'name':'Short_anime_S01E02.mp4','size':'30000000','length':'05:00'},
+            {'name':'Short.anime.S01E01.mp4','size':'20000000','length':'02:00'},
+            {'name':'Short.anime.S01E02.mp4','size':'30000000','length':'05:00'},
         ]}
         result=portals.archive_detail_document('short_anime_001',fixture)
         self.assertEqual(result['hidden_short_clips'],1)
@@ -125,7 +125,7 @@ class ArchiveMediaVideoTests(unittest.TestCase):
                 portals.archive_detail_document('movie_test',movie_manifest(200)))
         with patch('portal_sources.archive_probe.inspect',
                    side_effect=AssertionError('No HTTP should run')) as probe:
-            for name in ('trailer.mp4','clip_00001.mp4','film.pdf','../film.mkv'):
+            for name in ('trailer.mp4','small_00001.mp4','film.pdf','../film.mkv'):
                 with self.subTest(name=name),self.assertRaises(ValueError):
                     portals.probe_archive_variant(con,item['id'],name,acknowledged=True)
         probe.assert_not_called()
