@@ -64,7 +64,12 @@ class ScopeTest(unittest.TestCase):
             control.finish(self.c,aid,[],more=True)
         row=control.list_scopes(self.c)[0]
         self.assertEqual((row['state'],row['cursor'],row['pages_done']),('queued',2,1))
-        with self.c:claimed=control._claim(self.c)
+        # Production throttles the next Archive.org page for two seconds.
+        # Advance the clock in this deterministic test instead of bypassing it.
+        import time
+        with patch('portal_control.time.time',return_value=time.time()+3):
+            with self.c:claimed=control._claim(self.c)
+        self.assertIsNotNone(claimed)
         self.assertEqual(claimed['cursor'],2)
         with self.c:control.finish(self.c,aid,[],more=True)
         row=control.list_scopes(self.c)[0]
