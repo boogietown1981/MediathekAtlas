@@ -312,3 +312,21 @@ dialog.player::backdrop{background:#000c}
   .portal-filters{width:100%}
   .portal-filters input,.portal-filters select,.portal-filters button{width:100%;max-width:none}
 }
+
+/* Archive.org upload is a container; visible cards represent media variants. */
+.portal-archive-detail{min-width:0;margin-top:8px;padding-top:8px;border-top:1px solid #304858}
+.portal-manifest-heading{display:flex;flex-direction:column;gap:5px;margin-bottom:10px;overflow-wrap:anywhere}
+.portal-manifest-heading strong{font-size:13px}
+.portal-manifest-heading small{color:#a8c3d0}
+.portal-archive-detail>p{font-size:11px;line-height:1.5;margin:7px 0}
+.portal-manifest-variants{display:grid;grid-template-columns:minmax(0,1fr);gap:10px;margin:12px 0}
+.portal-manifest-variant{display:flex;flex-direction:column;gap:6px;border:1px solid #3a4c5b;border-radius:9px;padding:10px 12px;background:#101b26;min-width:0}
+.portal-manifest-variant strong{font-size:12px;overflow-wrap:anywhere}
+.portal-manifest-variant small{font-size:10px;color:#b6cdd8;overflow-wrap:anywhere}
+.portal-probe-summary{display:flex;flex-direction:column;gap:4px;border-left:2px solid #668b8f;padding:7px 10px;background:#192b32;min-width:0}
+.portal-probe-summary strong{font-size:11px}
+.portal-warning{color:#ffc783!important;font-size:11px;line-height:1.45;overflow-wrap:anywhere}
+.portal-consent{display:flex;align-items:start;gap:9px;padding:10px 12px;background:#24302d;border:1px solid #608178;border-radius:8px;font-size:11px;line-height:1.45}
+.portal-consent>input[type=checkbox]{width:17px!important;height:17px!important;max-width:17px;flex:0 0 17px;margin:1px 0 0;padding:0}
+.portal-verify,.portal-inspect{align-self:flex-start;margin-top:5px;white-space:normal}
+@media(max-width:620px){.portal-archive-detail{width:100%}.portal-manifest-variant{padding:9px}}
