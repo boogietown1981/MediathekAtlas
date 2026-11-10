@@ -1,5 +1,18 @@
 # Änderungsverlauf – MediathekAtlas
 
+## 0.5.31 – 10. November 2026 (Preview, Kausalitätsprüfung & Einstellungen)
+
+- Kausalitätsprüfung nach dem Prinzip aus ArchiveMedia: Serienidentität und vollständige Episodenidentität werden getrennt behandelt; offenkundige Trailer, Teaser, Openings, Extras und Ausschnitte werden bereits beim Import anhand eindeutiger Titelmarkierungen als Kurzformate geführt.
+- Unabhängige IMDb-, TMDB- und TVDB-Laufzeiten werden mit der vom Sender bereits angegebenen tatsächlichen Dauer verglichen. Beispiel: 2 Minuten statt 20 Minuten → Verdacht auf Ausschnitt, keine automatisierte vollständige Episodenbestätigung.
+- Zwei-Minuten-Episoden echter Kurzformatserien bleiben möglich, wenn die Referenzdauer ebenfalls kurz ist oder keine unabhängige Soll-Laufzeit bekannt ist. Auf Basis der Laufzeit allein wird nichts definitiv als Trailer deklariert.
+- Bereits identifizierte Serien behalten ihre Werkidentität, während auffällig kurze einzelne Videofassungen als überprüfungsbedürftig markiert und aus der Episodenwarteschlange genommen werden. Explizit als Trailer bezeichnete automatische Alteinträge werden im regulären Erkennungslauf als Sonderformat eingeordnet.
+- Persistente SQLite-Trigger werden bei bestehenden Katalogen einmalig migriert. Manuelle und bereits endgültig bestätigte Zuordnungen werden nicht automatisch verändert.
+- Download-Kontrolle: vorhandene Sender-Laufzeitdaten werden vor jedem Download genutzt, ohne FFprobe oder FFmpeg auszuführen. FFprobe misst eine tatsächlich heruntergeladene Datei vor der Veröffentlichung; erst danach wird FFmpeg für verlustfreies Remuxing eingesetzt. Kein FFprobe-Massenscan.
+- Einstellungen auf responsive Kacheln und ausklappbare Menüs umgestellt: Erkennung & Worker, Bibliothek, API-Schlüssel, IMDb, Werkzeuge sowie NAS/Verbund. Die vorhandenen Formularfelder und Sicherheitsfunktionen bleiben bestehen.
+- Regressionstests für Anime-Beispiele, Trailer-Ausnahmen, kurze echte Episoden, Neustart-Persistenz, Download-Vorprüfung und Einstellungen.
+- Die geplante FTS5-Suche und Kategorie „Letzte Chance“ sind eigene weitere Arbeitspakete und nicht Bestandteil dieses Teils der Preview.
+
+
 ## 0.5.30 – 10. November 2026 (Preview)
 
 - Sender-First-Episodenprüfung: Der Episodenworker übernimmt bereits importierte, eindeutig zugehörige ARD-/ZDF-Senderlinks und ihre Quellidentitäten, bevor IMDb Offline nach einer Episode sucht.
