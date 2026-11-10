@@ -86,6 +86,9 @@ def lookup_limited(row):
     with _LOCK:
         cached=_CACHE.get(ref)
         if cached and time.time()-cached[0]<CACHE_SECONDS:return cached[1]
+    # A paused provider must not consume the hourly allowance.
+    if status(provider)['paused']:raise Unavailable(provider+' pausiert')
+    with _LOCK:
         now=time.time()
         start,used=_AUTOMATED_BUDGET.get(provider,(now,0))
         if now-start>=3600:start,used=now,0
