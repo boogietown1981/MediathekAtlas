@@ -15,8 +15,15 @@ import time
 import unicodedata
 import urllib.parse
 from urllib.error import HTTPError, URLError
+from pathlib import PurePosixPath
 
 import core
+# ArchiveMedia v0.10.53 helpers, vendored with original MIT license.
+from vendor.archive_portals import catalog_identity as archive_identity
+from vendor.archive_portals import item_language_hints as archive_languages
+from vendor.archive_portals import unified_inventory as archive_inventory
+from vendor.archive_portals import video_triage as archive_triage
+from vendor.archivemedia import linguistics as archive_tracks
 
 MAX_SEARCH_RESULTS=30
 MAX_RESPONSE_BYTES=2*1024*1024
@@ -51,6 +58,11 @@ CREATE TABLE IF NOT EXISTS portal_source_state (
  last_query TEXT,
  last_success REAL,
  last_count INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS portal_archive_details (
+ item_id TEXT PRIMARY KEY REFERENCES portal_items(id) ON DELETE CASCADE,
+ payload TEXT NOT NULL,
+ checked REAL NOT NULL
 );
 """
 
@@ -177,6 +189,154 @@ def search_archive(query,rows=20):
     except (ValueError,UnicodeDecodeError):
         raise ValueError('Internet Archive: ungültige Metadatenantwort') from None
     return archive_document(doc)
+
+
+MAX_ARCHIVE_FILES=350
+MAX_VISIBLE_VARIANTS=150
+
+
+def _file_size(value):
+    try:
+        number=int(value)
+        return number if 0<=number<2**63 else None
+    except (TypeError,ValueError,OverflowError):return None
+
+
+def _episode_fields(name):
+    """Only explicitly labelled episode tokens are eligible for episode hints."""
+    match=archive_identity.EPISODE.search(name)
+    if not match:return {'kind':'movie','season':None,'episode':None}
+    try:
+        return {'kind':'series',
+                'season':int(match.group('s') or match.group('s2') or 1),
+                'episode':int(match.group('e') or match.group('e2') or match.group('e3'))}
+    except (TypeError,ValueError):return {'kind':'movie','season':None,'episode':None}
+
+
+def archive_detail_document(identifier,doc):
+    """Reuse ArchiveMedia recognition to distinguish items and file variants.
+
+    An Archive.org item is one *upload*, not necessarily one movie or series.
+    A filename is a claim, not proof of language or episode identity.
+    """
+    identifier=internet_archive_id(identifier)
+    if not isinstance(doc,dict) or not isinstance(doc.get('metadata'),dict):
+        raise ValueError('Internet Archive: Metadaten des Eintrags fehlen')
+    meta=doc['metadata']
+    raw_files=doc.get('files')
+    if not isinstance(raw_files,list):raw_files=[]
+    identity=archive_identity.resolve_item(meta,identifier)
+    item_title=text(meta.get('title') or identity['title'],240)
+    hints=archive_languages.infer(meta)
+    candidates=[]
+    subtitles=[]
+    for raw in raw_files[:MAX_ARCHIVE_FILES]:
+        if not isinstance(raw,dict) or not isinstance(raw.get('name'),str):continue
+        filename=text(raw['name'],900)
+        if not filename:continue
+        category,role,reason=archive_inventory.classify(filename,raw)
+        if category=='video':candidates.append((filename,raw,role,reason))
+        elif role=='sidecar':subtitles.append({'name':filename,'size':_file_size(raw.get('size'))})
+    one_video=len(candidates)==1 and len(raw_files)<=MAX_ARCHIVE_FILES
+    variants=[]
+    for filename,raw,role,reason in candidates[:MAX_VISIBLE_VARIANTS]:
+        parsed=_episode_fields(filename)
+        parsed['title']=PurePosixPath(filename).stem
+        resolved=archive_identity.resolve_variant(
+            filename,item_title,identity,parsed,meta,one_video=one_video)
+        track_hints=archive_tracks.parse_filename_tracks(filename)
+        sidecars=archive_tracks.match_sidecar_subtitles(
+            filename,subtitles) if subtitles else []
+        # These languages are only declared in titles/filenames, NOT verified
+        # codec/track metadata. No FFprobe and no video bytes are requested.
+        variants.append({
+            'filename':filename,'title':text(resolved.get('title'),240),
+            'identity_origin':text(resolved.get('identity_origin'),90),
+            'identity_confidence':text(resolved.get('identity_confidence'),30),
+            'identity_warning':text(resolved.get('identity_warning'),350),
+            'kind':resolved.get('kind') if resolved.get('kind') in ('movie','series') else 'unknown',
+            'season':resolved.get('season'),'episode':resolved.get('episode'),
+            'file_role':role,'file_role_reason':reason,
+            'format':text(raw.get('format'),100),
+            'size_bytes':_file_size(raw.get('size')),
+            'length_claim':text(raw.get('length'),32),
+            'source':text(raw.get('source'),30),
+            'original':text(raw.get('original'),400),
+            'audio_hint_languages':track_hints['audio'],
+            'audio_hint_origin':track_hints['audio_origin'],
+            'subtitle_hint_languages':track_hints['subtitles'],
+            'subtitle_hint_origin':track_hints['subtitle_origin'],
+            'sidecar_subtitles':sidecars[:12],
+            'languages_verified':False,
+        })
+    group_format,format_reason=archive_triage.classify(
+        item_title,filenames=[v[0] for v in candidates[:50]])
+    result={
+        'source':'internet_archive','external_id':identifier,
+        'page_url':'https://archive.org/details/'+urllib.parse.quote(identifier,safe=''),
+        'title':item_title,'normalized_title':identity['title'],
+        'identity_origin':identity['origin'],
+        'identity_confidence':identity['confidence'],
+        'year':year_number(meta.get('year') or meta.get('date')),
+        'description':archive_identity.clean(meta.get('description'))[:2000],
+        'license_url':text(meta.get('licenseurl'),500),
+        'rights':text(meta.get('rights'),500),
+        'upload_language_codes':hints['archive_language_codes'].split(',') if hints['archive_language_codes'] else [],
+        'upload_audio_hint_languages':hints['audio_hint_languages'].split(',') if hints['audio_hint_languages'] else [],
+        'upload_subtitle_hint_languages':hints['subtitle_hint_languages'].split(',') if hints['subtitle_hint_languages'] else [],
+        'upload_language_evidence':{
+            'audio':hints['audio_hint_source'],
+            'reason':hints['audio_hint_reason'],
+            'subtitle':hints['subtitle_hint_source']},
+        'content_format_hint':group_format,
+        'content_format_reason':format_reason,
+        'video_variants':variants,
+        'video_files_found':len(candidates),
+        'files_in_manifest':len(raw_files),
+        'files_inspected':min(len(raw_files),MAX_ARCHIVE_FILES),
+        'variants_displayed':len(variants),
+        'inventory_complete':len(raw_files)<=MAX_ARCHIVE_FILES and len(candidates)<=MAX_VISIBLE_VARIANTS,
+        'download_allowed':False,'rights_verified':False,
+        'availability':'unverified',
+        'evidence':'ArchiveMedia v0.10.53 / Internet Archive metadata; keine Inhaltsprüfung',
+    }
+    # A collection of separate episodes is not one confirmed "movie" even if
+    # IA's top-level mediatype happens to be movies.
+    if any(v['kind']=='series' for v in variants):
+        result['content_format_hint']='series_or_mixed_upload'
+        result['content_format_reason']='Mindestens ein Dateiname mit expliziter Episodenkennung'
+    return result
+
+
+def fetch_archive_detail(identifier):
+    """One user-requested call to the official Archive metadata endpoint."""
+    identifier=internet_archive_id(identifier)
+    url='https://archive.org/metadata/'+urllib.parse.quote(identifier,safe='')
+    try:
+        with core.open_url(url,timeout=25) as response:
+            raw=response.read(MAX_RESPONSE_BYTES+1)
+    except (HTTPError,URLError,TimeoutError) as exc:
+        raise ValueError('Internet Archive: Details derzeit nicht erreichbar') from exc
+    if len(raw)>MAX_RESPONSE_BYTES:raise ValueError('Internet Archive: Manifest zu groß (nicht importiert)')
+    try:doc=json.loads(raw)
+    except (ValueError,UnicodeDecodeError):
+        raise ValueError('Internet Archive: ungültiges Manifest') from None
+    return archive_detail_document(identifier,doc)
+
+
+def save_archive_detail(c,item_id,detail):
+    """Preserve other variants/metadata and never touch video download queue."""
+    row=c.execute('SELECT source,external_id FROM portal_items WHERE id=?',(item_id,)).fetchone()
+    if not row or row[0]!='internet_archive' or row[1]!=detail.get('external_id'):
+        raise ValueError('Internet-Archive-Katalogeintrag nicht gefunden')
+    c.execute("""INSERT INTO portal_archive_details(item_id,payload,checked) VALUES(?,?,?)
+        ON CONFLICT(item_id) DO UPDATE SET payload=excluded.payload,checked=excluded.checked""",
+        (item_id,json.dumps(detail,ensure_ascii=False),time.time()))
+
+
+def archive_saved_detail(c,item_id):
+    row=c.execute('SELECT payload,checked FROM portal_archive_details WHERE item_id=?',(item_id,)).fetchone()
+    return {'detail':json.loads(row[0]),'checked':row[1]} if row else {'detail':None,'checked':None}
 
 
 def save(c,rows,query=None):
