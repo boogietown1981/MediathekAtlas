@@ -40,9 +40,15 @@ def provider_failure(provider,exc):
     now=time.monotonic()
     with _OUTAGE_LOCK:
         old=_OUTAGES.get(provider)
-        if not old or now-old['first']>_OUTAGE_WINDOW:
-            old={'first':now,'count':0,'until':0.0,'opens':0}
+        if not old or (now-old.get('last',now)>3600 and now>=old['until']):
+            old={'first':now,'last':now,'count':0,'until':0.0,'opens':0}
+        elif now-old['first']>_OUTAGE_WINDOW:
+            # Reset short-window failures, but remember repeated outages for
+            # exponential cooldowns after the previous pause has expired.
+            old['first']=now
+            old['count']=0
         old['count']+=1
+        old['last']=now
         if old['count']>=_OUTAGE_THRESHOLD and now>=old['until']:
             old['opens']+=1
             old['until']=now+min(_OUTAGE_MAX_PAUSE,_OUTAGE_BASE_PAUSE*(2**min(old['opens']-1,3)))
