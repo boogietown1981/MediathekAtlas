@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, portal_sources, portal_control
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, portal_sources, portal_control, archive_companion, portal_metadata_policy
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -266,6 +266,15 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/review':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
+        if path=='/api/archive-companion':
+            status=archive_companion.read_status()
+            if NETWORK:status['ui_url']=None
+            return self.send(status)
+        if path=='/api/portal-policy':
+            return self.send({'sources':{k:portal_metadata_policy.source_policy(k)
+                          for k in portal_metadata_policy.PROVENANCE},
+                          'filename':portal_metadata_policy.filename_rules(),
+                          'reference_order':portal_metadata_policy.PRIORITY})
         if path=='/api/portals':
             with db() as c:
                 result=portal_sources.state(c)
