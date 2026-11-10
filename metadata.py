@@ -322,7 +322,7 @@ def candidates(row,meta,settings):
     out=[];warnings=[];deferred=[];checks=[]
     def checked(value):
         checks.append(value);provider_stats.observe(value['provider'],value['status'],value['count'])
-    import broadcaster
+    import broadcaster,video_causality
     def from_broadcaster():
         ref=broadcaster.reference(row)
         # Undocumented web endpoints are never polled in the background by
@@ -331,7 +331,9 @@ def candidates(row,meta,settings):
         start=time.monotonic()
         try:
             c=broadcaster.candidate(row,meta,broadcaster.lookup_limited(row))
-            if c:c['plausibility_issues']=matching.issues(meta,c);out.append(c)
+            if c:
+                video_causality.annotate(row,c)
+                c['plausibility_issues']=matching.issues(meta,c);out.append(c)
             checked({'provider':ref[0],'status':'checked','count':int(bool(c))})
             diagnostics.event('provider_complete',provider=ref[0],title=row.get('title',''),candidates=int(bool(c)),seconds=round(time.monotonic()-start,2))
         except broadcaster.Unavailable:
@@ -357,7 +359,9 @@ def candidates(row,meta,settings):
             if meta.get('kind') not in ('movie','series') and row.get('topic') and row['topic']!=meta.get('title'):
                 local.extend(imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'series','title':row['topic']}))
             out.extend(local)
-            for c in local:c['plausibility_issues']=matching.issues(meta,c)
+            for c in local:
+                video_causality.annotate(row,c)
+                c['plausibility_issues']=matching.issues(meta,c)
             checked({'provider':'IMDb Offline','status':'checked','count':len(local)})
             if matching.sufficient(meta,out):
                 return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
@@ -384,7 +388,9 @@ def candidates(row,meta,settings):
             start=time.monotonic()
             try:
                 hits=fn(row,meta,(settings[field],settings.get('tvdb_pin','')) if field=='tvdb' else settings[field],k,title);out.extend(hits)
-                for c in hits:c['plausibility_issues']=matching.issues(meta,c)
+                for c in hits:
+                    video_causality.annotate(row,c)
+                    c['plausibility_issues']=matching.issues(meta,c)
                 if not hits:negative_cache.remember(provider,k,title,year,credential)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
                 diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
