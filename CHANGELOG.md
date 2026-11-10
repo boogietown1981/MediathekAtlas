@@ -2,6 +2,11 @@
 
 ## 0.5.31 – 10. November 2026 (Preview, Kausalitätsprüfung & Einstellungen)
 
+- Folgekorrektur nach Diagnose 10.11.: Episodenprüfungen erfassen jetzt auch frühe Kurzvideo-Abbrüche und explizite Trailer als eigene Sitzungszähler; Zählung erst nach erfolgreichem DB-Commit. Prüfungen, bestätigte Episoden, Verdachtsfälle, Extras, Retries und Rückstellungen werden getrennt angezeigt.
+- Laufzeitbelege enthalten die beim Sender importierte tatsächliche Dauer, die Referenzlaufzeit, deren Herkunft (Metadatenanbieter oder Serien-Katalogmedian) und einen präzisen Begründungstext; Details, Prüfdialog und Katalogkarten machen diese Felder sichtbar. Verdachtsfälle sind keine endgültigen Trailerbeweise.
+- TMDB und Wikidata öffnen bei zwei transportbedingten Fehlern innerhalb eines kurzen Fensters eine anbieterspezifische Netzwerkpause (anfangs 3, maximal 15 Minuten). Unabhängige Anbieter und IMDb Offline bleiben verfügbar, es werden keine falschen Negativtreffer gecacht; Wiederholungsaufträge behalten ihre SQLite-Wiedervorlagen. Pausenzustände sind im Dashboard und der Anbieterstatistik sichtbar.
+- Zähler-, Laufzeitquellen- und Ausfallregressionstests ergänzen die bisherige 0.5.31-Suite; bei vielen Kurzvideos bleibt die Ereignisprotokollierung begrenzt.
+
 - Kausalitätsprüfung nach dem Prinzip aus ArchiveMedia: Serienidentität und vollständige Episodenidentität werden getrennt behandelt; offenkundige Trailer, Teaser, Openings, Extras und Ausschnitte werden bereits beim Import anhand eindeutiger Titelmarkierungen als Kurzformate geführt.
 - Unabhängige IMDb-, TMDB- und TVDB-Laufzeiten werden mit der vom Sender bereits angegebenen tatsächlichen Dauer verglichen. Beispiel: 2 Minuten statt 20 Minuten → Verdacht auf Ausschnitt, keine automatisierte vollständige Episodenbestätigung.
 - Zwei-Minuten-Episoden echter Kurzformatserien bleiben möglich, wenn die Referenzdauer ebenfalls kurz ist oder keine unabhängige Soll-Laufzeit bekannt ist. Auf Basis der Laufzeit allein wird nichts definitiv als Trailer deklariert.
