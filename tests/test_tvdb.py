@@ -4,7 +4,7 @@ from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 import tvdb,metadata,catalog,core,diagnostics
 class TVDBTests(unittest.TestCase):
- def setUp(self):tvdb._CACHE.clear();tvdb._TOKENS.clear();tvdb._PAUSED.clear()
+ def setUp(self):tvdb._CACHE.clear();tvdb._TOKENS.clear();tvdb._PAUSED.clear();tvdb._FAILURES.clear()
  def response(self,d):return io.BytesIO(json.dumps({'status':'success','data':d}).encode())
  def test_login_pin_cache_and_token_private(self):
   with patch('core.open_url',side_effect=[self.response({'token':'private-token'}),self.response([])]) as fetch:
