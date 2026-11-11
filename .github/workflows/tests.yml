@@ -15,6 +15,24 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  integration-regressions:
+    name: Netzkino · ArchiveMedia · Unified UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Plattform- und Erkennungsregressionen
+        run: |
+          cd integration/preview/0.5.31.11
+          python -m unittest discover -s tests -v
+      - name: Browser-UI-Smoketests
+        run: |
+          node integration/preview/0.5.31.11/tests/netzkino_ui_smoke.cjs
+          node integration/preview/0.5.31.11/tests/netzkino_series_ui_smoke.cjs
+          node integration/preview/0.5.31.11/tests/unified_catalog_ui_smoke.cjs
+
   test:
     name: Python ${{ matrix.python }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
