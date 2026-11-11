@@ -28,8 +28,10 @@ WHEN NEW.kind='series' AND NEW.state='identified'
  AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
  AND json_type(NEW.meta,'$.deferred_providers') IS NULL
  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0
 BEGIN
- INSERT OR IGNORE INTO episode_queue(work_id) VALUES(NEW.id);
+ INSERT INTO episode_queue(work_id) SELECT NEW.id
+ WHERE NOT EXISTS(SELECT 1 FROM episode_queue WHERE work_id=NEW.id);
 END;
 CREATE TRIGGER IF NOT EXISTS episode_queue_work_update AFTER UPDATE OF id,kind,state,meta ON works
 BEGIN
@@ -37,12 +39,15 @@ BEGIN
     (NEW.id!=OLD.id OR NEW.kind!='series' OR NEW.state!='identified'
      OR NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NULL
      OR json_type(NEW.meta,'$.deferred_providers') IS NOT NULL
-     OR COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)!=0);
- INSERT OR IGNORE INTO episode_queue(work_id)
+     OR COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)!=0
+     OR COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)!=0);
+ INSERT INTO episode_queue(work_id)
  SELECT NEW.id WHERE NEW.kind='series' AND NEW.state='identified'
   AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
   AND json_type(NEW.meta,'$.deferred_providers') IS NULL
-  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0;
+  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0
+ AND NOT EXISTS(SELECT 1 FROM episode_queue WHERE work_id=NEW.id);
 END;
 CREATE TRIGGER IF NOT EXISTS episode_queue_work_delete AFTER DELETE ON works
 BEGIN DELETE FROM episode_queue WHERE work_id=OLD.id; END;
@@ -105,7 +110,34 @@ def seed(row):
     if re.match(r'(?i)^(?:Drama|Thriller|Komödie|Dokumentarfilm|Krimi|Science-Fiction|Fantasy|Animation)\s*(?:[.,|:·]|(?:Deutschland|Frankreich|USA|Großbritannien|Österreich|Schweiz)\b|(?:19|20)\d{2}\b)',desc):genre_hint+=' '+desc[:100]
     m['genres']=[g for g,rx in GENRES.items() if re.search(rx,genre_hint,re.I)]
     m.update(genre_source='Senderhinweis' if m['genres'] else 'Unbekannt',title=cleaned(m['title']),episode_title=cleaned(m.get('episode_title','')))
+    import video_causality
+    role=video_causality.explicit_format(row)
+    if role:
+        # Keep the programme name as a relation, not as a verified full episode.
+        if topic:m['related_series_title']=topic
+        m.update(role,kind='other',title=title,episode_verified=False,
+                 season=None,episode=None,episode_reference_id=None)
     return m
+
+def mark_explicit_extra(c,w,source):
+    """Safely repair an earlier automatic series recognition of a trailer/clip.
+
+    Only provisional automatic states may change. Never undo a user decision
+    or replace a verified downloaded episode without review.
+    """
+    if not w or w['state'] in ('manual','matched'):return False
+    import video_causality
+    role=video_causality.explicit_format(source)
+    if not role:return False
+    m=json.loads(w['meta'] or '{}')
+    if source.get('topic'):m['related_series_title']=source['topic']
+    m.update(role,kind='other',title=cleaned(source.get('title')) or m['title'],
+             episode_verified=False,season=None,episode=None,episode_reference_id=None,
+             reason='Kurzformat ausdrücklich im Sendertitel gekennzeichnet; keine vollständige Folge')
+    c.execute("""UPDATE works SET title=?,kind='other',show_key=?,meta=?,state='format',
+        next_try=0 WHERE id=?""",(m['title'],showkey(m),json.dumps(m),w['id']))
+    return True
+
 
 def origin_meta(c,row):
     """Seed metadata of an offer as on import (including a unique series template) and the template used."""
@@ -113,9 +145,9 @@ def origin_meta(c,row):
     if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
         options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
         if len(options)==1:template=json.loads(options[0][0])
-    if template:
+    if template and not m.get('video_role'):
         m.update(kind='series',episode_title=m.get('episode_title') or row['title'])
-        for k in ('title','year','provider','reference_id','poster','genres','genre_source'):m[k]=template.get(k)
+        for k in ('title','year','provider','reference_id','poster','genres','genre_source','reference_runtime_seconds'):m[k]=template.get(k)
         m['genres']=normalized_genres(m.get('genres'))
     return m,template
 
@@ -126,6 +158,8 @@ def series_template_candidate(c,row,source):
     """
     topic=source.get('topic') or ''
     if row['kind'] not in ('unknown','series') or not topic:return None
+    import video_causality
+    if video_causality.explicit_format(source):return None
     if not 300<=int(source.get('duration') or 0)<=3900:return None
     if key(topic)==key(source.get('title')):return None
     templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
@@ -135,7 +169,7 @@ def series_template_candidate(c,row,source):
     if not known.get('reference_id') or not known.get('provider'):return None
     own=json.loads(row['meta'])
     if own.get('year') and known.get('year') and own['year']!=known['year']:return None
-    for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description'):
+    for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description','reference_runtime_seconds'):
         if k in known:own[k]=known[k]
     own['kind']='series'
     own['episode_title']=own.get('episode_title') or source.get('title') or ''
@@ -182,7 +216,10 @@ def ingest(c,rows,seen=None):
         if cur.rowcount:update_film_hint(c,wid,m,row)
         c.execute('UPDATE works SET topic=? WHERE id=?',(row.get('topic',''),wid))
         if cur.rowcount:
-            if template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
+            if m.get('video_role'):
+                # Distinct extra, neither a series episode nor a movie match.
+                c.execute("UPDATE works SET state='format' WHERE id=?",(wid,))
+            elif template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
             for genre in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,genre))
         c.execute('INSERT INTO offers VALUES(?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,special=excluded.special,rank=excluded.rank,seen=excluded.seen,active=1',(oid,wid,json.dumps(row),special(row),ranking(row),seen));ids.append(oid)
     return ids
@@ -613,7 +650,7 @@ def work_choice(meta,rows):
 
 def propagate_series(c,old_show,m):
     # Transfer work metadata, never a sibling's episode number or episode plot.
-    common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description') if k in m}
+    common={k:m[k] for k in ('title','year','provider','reference_id','poster','genres','genre_source','show_description','reference_runtime_seconds') if k in m}
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
         own=json.loads(row['meta'])
         # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
@@ -893,6 +930,25 @@ def recover_download_queue(c):
     
 def initialize(c):
     c.executescript(SCHEMA)
+    # SQLite CREATE TRIGGER IF NOT EXISTS does not replace older definitions.
+    # Rebuild once, preserving all queue rows, retries and user choices.
+    if not get_state(c,'episode_queue_causality_triggers_v0531',False):
+        c.executescript("""DROP TRIGGER IF EXISTS episode_queue_work_insert;
+            DROP TRIGGER IF EXISTS episode_queue_work_update;
+            DROP TRIGGER IF EXISTS episode_queue_work_delete;""")
+        c.executescript(SCHEMA)
+        c.execute("""DELETE FROM episode_queue WHERE EXISTS
+            (SELECT 1 FROM works w WHERE w.id=episode_queue.work_id
+             AND COALESCE(json_extract(w.meta,'$.video_role_needs_review'),0)!=0)""")
+        set_state(c,'episode_queue_causality_triggers_v0531',True)
+    # Recreate the trigger definitions without altering existing queue rows.
+    # Outer UPSERT conflict handling must never override an inner OR IGNORE.
+    if not get_state(c,'episode_queue_safe_upsert_v05311',False):
+        c.executescript("""DROP TRIGGER IF EXISTS episode_queue_work_insert;
+            DROP TRIGGER IF EXISTS episode_queue_work_update;
+            DROP TRIGGER IF EXISTS episode_queue_work_delete;""")
+        c.executescript(SCHEMA)
+        set_state(c,'episode_queue_safe_upsert_v05311',True)
     if 'topic' not in [r[1] for r in c.execute('PRAGMA table_info(works)')]:c.execute("ALTER TABLE works ADD COLUMN topic TEXT DEFAULT ''")
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
@@ -904,7 +960,8 @@ def initialize(c):
             SELECT id FROM works WHERE kind='series' AND state='identified'
             AND NULLIF(json_extract(meta,'$.reference_id'),'') IS NOT NULL
             AND json_type(meta,'$.deferred_providers') IS NULL
-            AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0""")
+            AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0
+            AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)=0""")
         set_state(c,'episode_queue_migrated_v0528',True)
 
 def review_listing(c,query='',state='open',offset=0):

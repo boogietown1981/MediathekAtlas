@@ -88,6 +88,9 @@ class OfferGroupingTests(unittest.TestCase):
 
 class NegativeCacheTests(unittest.TestCase):
     def setUp(self):
+        # Provider cooldowns are process-global in production; independent
+        # test cases must not inherit another test's simulated outage.
+        with metadata._OUTAGE_LOCK:metadata._OUTAGES.clear()
         self.tmp=tempfile.TemporaryDirectory()
         self.old_path=negative_cache._PATH
         negative_cache.configure(Path(self.tmp.name)/'misses.sqlite')
@@ -96,6 +99,7 @@ class NegativeCacheTests(unittest.TestCase):
         if c:c.close();del negative_cache._LOCAL.connection
         negative_cache._PATH=self.old_path
         self.tmp.cleanup()
+        with metadata._OUTAGE_LOCK:metadata._OUTAGES.clear()
     def test_persistent_positive_miss_only_and_force(self):
         negative_cache.remember('TMDB','movie','A title',year=2020,credential='key')
         self.assertTrue(negative_cache.contains('TMDB','movie','A title',2020,'key'))

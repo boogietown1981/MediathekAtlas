@@ -1,7 +1,64 @@
 """Provider metadata and evidence-based episode reconciliation."""
-import re,time,threading,hashlib,json
+import re,time,threading,hashlib,json,socket,ssl,http.client,urllib.error
 import core,diagnostics,provider_stats,negative_cache
 _CACHE={};_WD_CACHE={};_LOCK=threading.Lock()
+# Short provider-scoped outage circuit: network failures must not repeatedly
+# occupy all metadata workers. This is strictly in-memory; work-level retry
+# dates and matching evidence remain durable in SQLite.
+_OUTAGE_LOCK=threading.Lock()
+_OUTAGES={}
+_OUTAGE_THRESHOLD=2
+_OUTAGE_WINDOW=180.0
+_OUTAGE_BASE_PAUSE=180.0
+_OUTAGE_MAX_PAUSE=900.0
+
+def _network_failure(exc):
+    """Only transport failures trigger a circuit; a normal 404 is not an outage."""
+    return isinstance(exc,(urllib.error.URLError,TimeoutError,ConnectionError,
+          socket.timeout,socket.gaierror,ssl.SSLError,http.client.RemoteDisconnected,
+          ConnectionResetError,ConnectionAbortedError,ConnectionRefusedError,
+          BrokenPipeError)) and not isinstance(exc,urllib.error.HTTPError)
+
+def provider_pause(provider):
+    """Return remaining seconds for provider; zero means the provider may run."""
+    with _OUTAGE_LOCK:
+        state=_OUTAGES.get(provider)
+        return max(0.0,state['until']-time.monotonic()) if state else 0.0
+
+def network_provider_status(provider):
+    seconds=provider_pause(provider)
+    return {'paused':bool(seconds),'remaining_seconds':int(seconds+0.999),
+            'reason':'transient_network' if seconds else None}
+
+def provider_success(provider):
+    """A successful request ends a transient outage without touching other providers."""
+    with _OUTAGE_LOCK:_OUTAGES.pop(provider,None)
+
+def provider_failure(provider,exc):
+    """After repeated transport errors, cool down that provider only."""
+    if not _network_failure(exc):return False
+    now=time.monotonic()
+    with _OUTAGE_LOCK:
+        old=_OUTAGES.get(provider)
+        if not old or (now-old.get('last',now)>3600 and now>=old['until']):
+            old={'first':now,'last':now,'count':0,'until':0.0,'opens':0}
+        elif now-old['first']>_OUTAGE_WINDOW:
+            # Reset short-window failures, but remember repeated outages for
+            # exponential cooldowns after the previous pause has expired.
+            old['first']=now
+            old['count']=0
+        old['count']+=1
+        old['last']=now
+        if old['count']>=_OUTAGE_THRESHOLD and now>=old['until']:
+            old['opens']+=1
+            old['until']=now+min(_OUTAGE_MAX_PAUSE,_OUTAGE_BASE_PAUSE*(2**min(old['opens']-1,3)))
+            diagnostics.event('provider_transient_pause',provider=provider,
+                              seconds=round(old['until']-now),
+                              failures=old['count'])
+        _OUTAGES[provider]=old
+        return old['until']>now
+
+
 GENRES={'Comedy':'Komödie','Crime':'Krimi','Documentary':'Dokumentation','Dokumentarfilm':'Dokumentation','Family':'Kinder & Familie','Familienserie':'Kinder & Familie','Familienfilm':'Kinder & Familie','Kids':'Kinder & Familie','Kinder':'Kinder & Familie','Zeichentrickserie':'Animation','animated television series':'Animation','Familie':'Kinder & Familie','Children':'Kinder & Familie','Romance':'Romantik','Liebesfilm':'Romantik','Sci-Fi':'Science-Fiction','Science Fiction':'Science-Fiction','Animation':'Animation','Adventure':'Abenteuer','Action':'Action','History':'Historie','War':'Kriegsfilm','TV Movie':'TV-Film','Music':'Musik','Mystery':'Mystery','Horror':'Horror','Fantasy':'Fantasy','Drama':'Drama','Thriller':'Thriller',
         'Biography':'Biografie','Biographie':'Biografie','Biopic':'Biografie','Historisch':'Historie','Historien':'Historie','Geschichte':'Historie','Krieg':'Kriegsfilm','Kriminal':'Krimi','Kriminalität':'Krimi','Dokumentar':'Dokumentation','Doku':'Dokumentation','Liebe':'Romantik','Romanze':'Romantik','Romantisch':'Romantik','Komödien':'Komödie','Comedy Serie':'Komödie','Sitcom':'Komödie','Zeichentrick':'Animation','Anime':'Animation','Animiert':'Animation','Trickfilm':'Animation','Fernsehfilm':'TV-Film','Fernseh':'TV-Film','TV':'TV-Film','Musikfilm':'Musik','Musical':'Musical','Musicalfilm':'Musical','Sport':'Sport','Sports':'Sport','Western':'Western','Abenteuer':'Abenteuer','Mysteryfilm':'Mystery','Suspense':'Thriller','Psychothriller':'Thriller','Kinderfilm':'Kinder & Familie','Kinderserie':'Kinder & Familie','Jugend':'Kinder & Familie','Talk':'Talk','Talk Show':'Talk','Talkshow':'Talk','News':'Nachrichten','Reality':'Reality-TV','Reality TV':'Reality-TV','Game Show':'Spielshow','Gameshow':'Spielshow','Quiz':'Spielshow','Quizshow':'Spielshow','Soap':'Seifenoper','Short':'Kurzfilm','Kurz':'Kurzfilm','Film Noir':'Film noir','Politics':'Politik','Martial Arts':'Martial Arts','Science':'Wissenschaft','Wissen':'Wissenschaft','Satire':'Satire','Kabarett':'Kabarett','Erotik':'Erotik','Erotic':'Erotik','Mini Series':'Miniserie','Miniseries':'Miniserie','Travel':'Reise','Food':'Kochen','Cooking':'Kochen'}
 # Words that only name the medium; a genre made of nothing else carries no information.
@@ -149,6 +206,8 @@ def resolve_episode(meta,candidate,episodes):
     if len(matches)==1 and len(unique)==1:
         ep=next(iter(unique.values()));candidate.update(season=ep['season_number'],episode=ep['episode_number'],episode_title=ep['name'],episode_verified=True,description=ep.get('overview') or candidate['description'])
         runtime=ep.get('runtime');duration=meta.get('_source_duration')
+        if isinstance(runtime,(int,float)) and runtime>0:
+            candidate['episode_runtime_seconds']=runtime*60
         if isinstance(runtime,(int,float)) and runtime>0 and duration:
             candidate['runtime_mismatch']=abs(runtime*60-duration)>max(300,runtime*6)
             candidate['runtime_agrees']=not candidate['runtime_mismatch']
@@ -169,6 +228,12 @@ def tmdb_candidates(row,meta,key,kind,title):
            'year_mismatch':bool(kind=='movie' and meta.get('year') and year!=meta['year']),'runtime_mismatch':mismatch,'runtime_agrees':bool(runtime and row.get('duration') and not mismatch),
            'episode_verified':False,'reason':'Titel, Medienart und zusätzliche Quellenbelege werden verglichen.'}
         if kind=='series':
+            # Only a stable typical TV runtime qualifies; mixed-duration
+            # series keep the expected duration unknown rather than guessed.
+            durations=[x for x in (d.get('episode_run_time') or [])
+                       if isinstance(x,(int,float)) and 1<=x<=240]
+            if durations and max(durations)-min(durations)<=max(3,min(durations)*.2):
+                c['reference_runtime_seconds']=round(sum(durations)/len(durations)*60)
             # Series overview kept apart: resolve_episode replaces description with the episode plot.
             c['show_description']=d.get('overview') or ''
             c['episode_title']=meta.get('episode_title') or row['title'];epmeta={**meta,'_source_title':row['title'],'_source_duration':row.get('duration')};episodes=[]
@@ -179,9 +244,22 @@ def tmdb_candidates(row,meta,key,kind,title):
             for season in seasons[:24]:
                 number=season.get('season_number')
                 if number is None:continue
-                episodes.extend(core.tmdb(f"tv/{d['id']}/season/{number}",key).get('episodes',[]))
-            resolve_episode(epmeta,c,episodes)
-            if not c['episode_scan_complete'] and meta.get('season') is None:c['episode_verified']=False
+                try:
+                    season_data=core.tmdb(f"tv/{d['id']}/season/{number}",key)
+                except ValueError as exc:
+                    # One unavailable/missing season is not a failure of the
+                    # series identity. Never claim a complete episode scan.
+                    if 'HTTP 404' not in str(exc):raise
+                    c['episode_scan_complete']=False
+                    diagnostics.event('tmdb_season_unavailable',provider='TMDB',season=number,
+                                      series_id=str(d['id'])[:32])
+                    continue
+                episodes.extend(season_data.get('episodes',[]))
+            if c['episode_scan_complete']:
+                resolve_episode(epmeta,c,episodes)
+            else:
+                c['episode_verified']=False
+                c['reason']='Serienmetadaten erkannt; mindestens eine Staffel konnte nicht vollständig geprüft werden.' 
         out.append(c)
     return out
 
@@ -213,6 +291,7 @@ def omdb_candidates(row,meta,key,kind,title):
        'rating':float(d['imdbRating']) if str(d.get('imdbRating','')).replace('.','',1).isdigit() else None,'votes':int(str(d['imdbVotes']).replace(',','')) if str(d.get('imdbVotes','')).replace(',','').isdigit() else None,'rating_source':'IMDb','ratings':parse_ratings(d),'similarity':score,'year_mismatch':bool(kind=='movie' and meta.get('year') and year!=meta['year']),'runtime_mismatch':mismatch,
        'runtime_agrees':bool(kind=='movie' and runtime and row.get('duration') and not mismatch),'episode_verified':False,'reason':'OMDb-Titel, Medienart, Laufzeit und Episodendaten.'}
     if kind=='series':
+        if 1<=runtime<=240:c['reference_runtime_seconds']=runtime*60
         c['episode_title']=meta.get('episode_title') or row['title'];episodes=[]
         count=int(d.get('totalSeasons','0')) if str(d.get('totalSeasons','')).isdigit() else 0
         seasons=[meta['season']] if meta.get('season') is not None else list(range(1,min(count,24)+1))
@@ -247,6 +326,9 @@ def tvdb_candidates(row,meta,credential,kind,title):
            'similarity':score,'year_mismatch':False,'runtime_mismatch':False,'runtime_agrees':False,
            'episode_verified':False,'episode_title':meta.get('episode_title') or row['title'],
            'reason':'TVDB-Serientitel und deutsche Episodentitel; offizielle ausgestrahlte Reihenfolge.'}
+        avg=d.get('averageRuntime')
+        if isinstance(avg,(int,float)) and 1<=avg<=240:
+            c['reference_runtime_seconds']=avg*60
         episodes=[];complete=False
         for page in range(20):
             result=get('series/'+sid+'/episodes/official/deu',{'page':page})
@@ -309,8 +391,10 @@ def candidates(row,meta,settings):
         queries.append(('movie',meta['title']))
     out=[];warnings=[];deferred=[];checks=[]
     def checked(value):
-        checks.append(value);provider_stats.observe(value['provider'],value['status'],value['count'])
-    import broadcaster
+        checks.append(value)
+        if not settings.get('_external_reference_validation',False):
+            provider_stats.observe(value['provider'],value['status'],value['count'])
+    import broadcaster,video_causality
     def from_broadcaster():
         ref=broadcaster.reference(row)
         # Undocumented web endpoints are never polled in the background by
@@ -319,7 +403,9 @@ def candidates(row,meta,settings):
         start=time.monotonic()
         try:
             c=broadcaster.candidate(row,meta,broadcaster.lookup_limited(row))
-            if c:c['plausibility_issues']=matching.issues(meta,c);out.append(c)
+            if c:
+                video_causality.annotate(row,c)
+                c['plausibility_issues']=matching.issues(meta,c);out.append(c)
             checked({'provider':ref[0],'status':'checked','count':int(bool(c))})
             diagnostics.event('provider_complete',provider=ref[0],title=row.get('title',''),candidates=int(bool(c)),seconds=round(time.monotonic()-start,2))
         except broadcaster.Unavailable:
@@ -345,7 +431,9 @@ def candidates(row,meta,settings):
             if meta.get('kind') not in ('movie','series') and row.get('topic') and row['topic']!=meta.get('title'):
                 local.extend(imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'series','title':row['topic']}))
             out.extend(local)
-            for c in local:c['plausibility_issues']=matching.issues(meta,c)
+            for c in local:
+                video_causality.annotate(row,c)
+                c['plausibility_issues']=matching.issues(meta,c)
             checked({'provider':'IMDb Offline','status':'checked','count':len(local)})
             if matching.sufficient(meta,out):
                 return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}
@@ -359,6 +447,10 @@ def candidates(row,meta,settings):
             if field=='omdb' and omdb_status(settings[field])['paused']:
                 if 'OMDb' not in deferred and not imdb_checked():deferred.append('OMDb')
                 checked({'provider':provider,'status':'paused','count':0});break
+            if provider_pause(provider) and not settings.get('_force_provider_refresh',False):
+                if provider not in deferred:deferred.append(provider)
+                checked({'provider':provider,'status':'paused','count':0})
+                break
             # Reuse a confirmed no-result for the same provider query. Errors,
             # expired tokens and rate limits are never negative evidence.
             credential=settings.get(field,'')
@@ -372,7 +464,10 @@ def candidates(row,meta,settings):
             start=time.monotonic()
             try:
                 hits=fn(row,meta,(settings[field],settings.get('tvdb_pin','')) if field=='tvdb' else settings[field],k,title);out.extend(hits)
-                for c in hits:c['plausibility_issues']=matching.issues(meta,c)
+                for c in hits:
+                    video_causality.annotate(row,c)
+                    c['plausibility_issues']=matching.issues(meta,c)
+                provider_success(provider)
                 if not hits:negative_cache.remember(provider,k,title,year,credential)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
                 diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
@@ -389,6 +484,7 @@ def candidates(row,meta,settings):
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
                     if provider not in deferred and not imdb_checked():deferred.append(provider)
                     checked({'provider':provider,'status':'paused','count':0});break
+                provider_failure(provider,e)
                 checked({'provider':provider,'status':'error','count':0})
                 warnings.append(provider+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=provider,title=title)
         if matching.sufficient(meta,out):
@@ -398,6 +494,10 @@ def candidates(row,meta,settings):
     # Free fallback: retain the original cautious Wikidata matching and its evidence.
     if not out:
         for k,title in queries:
+            if provider_pause('Wikidata') and not settings.get('_force_provider_refresh',False):
+                if 'Wikidata' not in deferred:deferred.append('Wikidata')
+                checked({'provider':'Wikidata','status':'paused','count':0})
+                break
             year=meta.get('year') if k=='movie' else None
             if negative_cache.contains('Wikidata',k,title,year,
                                       force=settings.get('_force_provider_refresh',False)):
@@ -406,9 +506,14 @@ def candidates(row,meta,settings):
             start=time.monotonic()
             try:
                 d=wikidata(title,k,year)
+                provider_success('Wikidata')
                 if not d:negative_cache.remember('Wikidata',k,title,year)
                 if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
                 diagnostics.event('provider_complete',provider='Wikidata',title=title,kind=k,candidates=int(bool(d)),seconds=round(time.monotonic()-start,2))
-            except Exception as e:checked({'provider':'Wikidata','status':'error','count':0});warnings.append('Wikidata: '+core.safe_error(e));diagnostics.error('provider_failed',e,provider='Wikidata',title=title)
+            except Exception as e:
+                provider_failure('Wikidata',e)
+                checked({'provider':'Wikidata','status':'error','count':0})
+                warnings.append('Wikidata: '+core.safe_error(e))
+                diagnostics.error('provider_failed',e,provider='Wikidata',title=title)
     return {'candidates':out,'warnings':warnings,'deferred_providers':deferred,'provider_checks':checks}

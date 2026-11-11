@@ -1,0 +1,150 @@
+/* Netzkino: public GraphQL catalogue and HAR snapshot; official-site playback only. */
+(() => {
+  'use strict';
+  const $ = id => document.getElementById(id);
+  const endpoint = (p, data) => window.api(p, data);
+  let searchSeq = 0;
+  let timer;
+  let offset = 0;
+  const pageSize = 80;
+  const make = (tag, value, cls) => {
+    const n = document.createElement(tag);
+    if (value !== undefined) n.textContent = value;
+    if (cls) n.className = cls;
+    return n;
+  };
+  const date = value => value ? new Date(value * 1000).toLocaleString('de-DE') : 'Noch kein erfolgreicher Abgleich';
+  let pollTimer = null;
+  const isVisible = () => {
+    const portal = $('portals');
+    return !!(portal && !portal.hidden && portal.dataset.platform === 'netzkino');
+  };
+  function scheduleRefresh(delay = 30000) {
+    clearTimeout(pollTimer);
+    if (isVisible()) pollTimer = setTimeout(() => { if (isVisible()) refresh(); }, delay);
+  }
+
+  function message(value, isError = false) {
+    $('netzkino-status').textContent = value;
+    $('netzkino-status').classList.toggle('netzkino-error', isError);
+  }
+  async function refresh() {
+    const seq = ++searchSeq;
+    const q = $('netzkino-filter').value.trim();
+    const origin = $('netzkino-origin').value;
+    try {
+      const data = await endpoint('netzkino?' + new URLSearchParams({q, origin, offset}));
+      if (seq !== searchSeq) return;
+      const status = data.status || {};
+      $('netzkino-auto').checked = !!status.auto;
+      $('netzkino-sync').disabled = !!status.running;
+      $('netzkino-sync').textContent = status.running ? 'Abgleich läuft …' : '↻ Katalog jetzt prüfen';
+      const phase = status.running ? 'Läuft' : status.last_result === 'partial' ? 'Teilabgleich' :
+        status.last_result === 'complete' ? 'Vollständig abgefragt' : status.last_result === 'failed' ? 'Fehlgeschlagen' :
+        'HAR-Startbestand, nicht live bestätigt';
+      const categoryDetail = status.categories_total ?
+        ` · Kategorien ${status.categories_checked || 0}/${status.categories_total}` +
+        ` · Fehler ${status.category_errors || 0} · Leer ${status.categories_empty || 0}` : '';
+      $('netzkino-sync-summary').textContent =
+        `${status.catalog_count || 0} Katalogtitel · ${status.manual_count || 0} gemerkt · ` +
+        `${phase} · Letzter Datenabruf: ${date(status.last_success)}` + categoryDetail +
+        (status.last_error ? ` · Hinweis: ${status.last_error}` :
+          !status.last_success ? ` · ${status.snapshot_seed_count || 0} Titel aus bereinigtem HAR.` :
+          ` · Neu ${status.new || 0}, verändert ${status.changed || 0}, unverändert ${status.unchanged || 0}`);
+      $('netzkino-sync-summary').dataset.phase = status.last_result || (status.running ? 'running' : 'never');
+      const total = Number(data.total || 0);
+      if (offset >= total && offset > 0) { offset = 0; return refresh(); }
+      $('netzkino-prev').disabled = offset === 0;
+      $('netzkino-next').disabled = offset + pageSize >= total;
+      $('netzkino-page-label').textContent = `${total ? offset+1 : 0}–${Math.min(offset+pageSize,total)} von ${total}`;
+      const host = $('netzkino-items'); host.replaceChildren();
+      if (!data.items.length) host.append(make('p', q ? 'Keine passenden Einträge.' :
+        'Noch keine Filmverknüpfungen. Du kannst einen Link speichern oder den Katalogabgleich starten.', 'empty'));
+      for (const item of data.items) {
+        const card = make('article', undefined, 'netzkino-item');
+        const title = make('h3', item.title);
+        const label = make('small', item.origin === 'manual' ? 'Manuell gemerkt · Streaming beim Anbieter' :
+          item.source === 'har_snapshot' ? 'HAR-Startbestand vom 11.11.2026 · noch nicht live abgeglichen' :
+          'Netzkino-GraphQL-Katalog · Werkidentität nicht extern bestätigt');
+        if (item.poster && /^https:\/\//i.test(item.poster)) {
+          const img = make('img', undefined, 'netzkino-poster');
+          img.src = item.poster; img.alt = `Cover: ${item.title}`; img.loading = 'lazy';
+          img.referrerPolicy = 'no-referrer'; card.append(img);
+        }
+        const facts = [item.kind === 'series' ? 'Serie' : 'Film', item.year || null,
+          item.fsk !== null && item.fsk !== undefined ? `FSK ${item.fsk}` : null,
+          item.access_hint || null].filter(Boolean).join(' · ');
+        const info = make('div', facts, 'netzkino-facts');
+        const genres = item.genres ? make('small', item.genres, 'netzkino-genres') : null;
+        const summary = item.summary ? make('p', item.summary, 'netzkino-description') : null;
+        const actions = make('div', undefined, 'netzkino-actions');
+        const open = make('a', '▶ Bei Netzkino ansehen', 'netzkino-open');
+        open.href = item.url;
+        open.target = '_blank'; open.rel = 'noopener noreferrer';
+        actions.append(open);
+        if (item.origin === 'manual') {
+          const remove = make('button', 'Verknüpfung entfernen');
+          remove.type = 'button';
+          remove.onclick = async () => {
+            if (!confirm(`Netzkino-Verknüpfung „${item.title}“ entfernen?`)) return;
+            try {
+              await endpoint('netzkino-remove', {id: item.id});
+              await refresh();
+            } catch (error) { message(error.message, true); }
+          };
+          actions.append(remove);
+        }
+        card.append(title, label, info);
+        if (genres) card.append(genres);
+        if (summary) card.append(summary);
+        card.append(actions); host.append(card);
+      }
+      if (status.running) message('Katalogabgleich läuft; bisherige Titel bleiben sichtbar.');
+      else if (status.last_result === 'partial') message('Teilabgleich: einige Kategorien nicht verfügbar. Bereits erkannte Titel bleiben sichtbar.');
+      else if (status.last_error) message(status.last_error, true);
+      else message(`${data.items.length} Netzkino-Einträge angezeigt.`);
+      scheduleRefresh(status.running ? 4000 : 30000);
+    } catch (error) {
+      const detail = `Kataloganzeige fehlgeschlagen: ${error.message}`;
+      $('netzkino-sync-summary').textContent = detail;
+      $('netzkino-sync-summary').dataset.phase = 'ui-error';
+      message(detail, true);
+      scheduleRefresh(30000);
+    }
+  }
+  $('netzkino-add').onsubmit = async event => {
+    event.preventDefault();
+    const submit = $('netzkino-add').querySelector('[type=submit]'); submit.disabled = true;
+    try {
+      await endpoint('netzkino-add', {title: $('netzkino-title').value.trim(), url: $('netzkino-url').value.trim()});
+      $('netzkino-title').value = ''; $('netzkino-url').value = '';
+      await refresh();
+    } catch (error) { message(error.message, true); }
+    finally { submit.disabled = false; }
+  };
+  $('netzkino-sync').onclick = async () => {
+    try {
+      const r = await endpoint('netzkino-sync', {});
+      message(r.started ? 'Katalogprüfung gestartet.' : 'Katalogprüfung läuft bereits.');
+      await refresh();
+    } catch (error) { message(error.message, true); }
+  };
+  $('netzkino-auto').onchange = async () => {
+    const checked = $('netzkino-auto').checked;
+    try { await endpoint('netzkino-auto', {enabled: checked}); await refresh(); }
+    catch (error) { $('netzkino-auto').checked = !checked; message(error.message, true); }
+  };
+  $('netzkino-filter').oninput = () => { offset = 0; clearTimeout(timer); timer = setTimeout(refresh, 250); };
+  $('netzkino-origin').onchange = () => { offset = 0; refresh(); };
+  $('netzkino-prev').onclick = () => { offset = Math.max(0,offset-pageSize); refresh(); };
+  $('netzkino-next').onclick = () => { offset += pageSize; refresh(); };
+  const sidebar = document.querySelector('[data-view="netzkino"]');
+  if (sidebar) sidebar.addEventListener('click', refresh);
+  const onPlatformClick = () => setTimeout(() => { if (isVisible()) refresh(); }, 0);
+  for (const tab of document.querySelectorAll('.platform-tab[data-platform="netzkino"]'))
+    tab.addEventListener('click', onPlatformClick);
+  window.MediathekAtlasNetzkino = {refresh};
+  if (document.readyState === 'loading')
+    document.addEventListener('DOMContentLoaded', () => { if (isVisible()) refresh(); });
+  else if (isVisible()) refresh();
+})();

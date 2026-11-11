@@ -1,4 +1,124 @@
+## 0.5.31.11 – Mediatheken-Dashboard, Episoden-Queue und Diagnose (Test)
+- Die Scanner-/Erkennungsübersicht ist im Mediatheken- und Gesamtkatalog wieder direkt sichtbar, nicht mehr im eingeklappten Expertenbereich. Die Zahlen bleiben ausdrücklich auf den Mediathekenbestand bezogen.
+- Unter „Letzte Erkennung“: getrennte responsive Bereiche für Worker, Qualität, Episoden & Senderbelege sowie Fehler/Wiederholungen. Jeder bisherige Statuszähler bleibt sichtbar.
+- Episoden-Worker priorisieren innerhalb der **48 ältesten fälligen Aufgaben** Fälle mit expliziten Staffel-/Folgenhinweisen; weder Aufgaben noch Wartezeiten werden gelöscht oder umgeschrieben. Manuelle Priorität hat weiterhin Vorrang.
+- TMDB-HTTP-404 für einzelne Staffeln verwirft keine bereits erkannten Serienmetadaten; die Episodenliste bleibt als unvollständig gekennzeichnet, ohne falsche Bestätigung.
+- OMDb-Anbieterstatus zeigt auch den konkreten Grund einer Pause (z. B. Schlüssel abgelehnt), ohne Schlüssel anzuzeigen.
+- Netzkino-Kategoriediagnose unterscheidet >=20 Einträge, >20 Einträge und größte beobachtete Kategorie. Eine feste 20er-API-Grenze wird nicht mehr behauptet. Auch 29/29 Kategorien bedeutet nicht vollständigen Gesamtkatalog.
+- ArchiveMedia-Vollmodus, Netzkino-Wiedergabe, deutsche Metadatenprovider, Videoaudit und bestehende Downloads bleiben erhalten. Keine Änderung an Live-Daten oder GitHub.
+
+## 0.5.31.10 – In-App-Wiedergabe und ehrliche Katalogabdeckung (Test)
+- „Ansehen“ ruft den offiziellen Netzkino-Player in einem nativen WebKit-Fenster innerhalb der lokalen macOS-Anwendung auf. Es erfolgt kein automatischer Browser-Redirect mehr. Fehlende WebKit-Unterstützung wird verständlich gemeldet; „Beim Anbieter öffnen“ bleibt eine separate manuelle Aktion.
+- Im gemeinsamen Hauptkatalog und im Plattformkatalog wird „▶ Ansehen“ direkt angeboten. Eine Serienkarte führt weiterhin zur Folgenübersicht.
+- Der Netzkino-Abgleich wird nicht mehr als vollständiger Gesamtkatalog bezeichnet: Der aktuelle Adapter kennt kuratierte Startseitenkategorien mit oftmals 20 Elementen. Diagnose zählt Kategorien am beobachteten Anzeigelimit. Es wird keine unbelegte GraphQL-Paginierung erfunden, keine fehlenden 1.700 Titel behauptet und kein Katalogeintrag entfernt.
+- Die separate Verwaltung ausdrücklich lizenzierter Dateien bleibt im aufklappbaren Expertenbereich erhalten, wird aber nicht mehr als regulärer Netzkino-Filmdownload dargestellt. Weiterhin keine Freigabe zur Aufzeichnung werbefinanzierter Streams/Umgehung von Schutzmaßnahmen.
+- Bestehende Mediatheken-, IMDb/TMDB/TVDB-, Videoaudit-, Serien- und ArchiveMedia-Funktionen bleiben erhalten. Keine automatische GitHub-Schreiboperation.
+
+## 0.5.31.9 – Gesondert berechtigte Datei-Downloads (Test)
+- Netzkino-Titeldetails zeigen den offiziellen Weg zur Offline-Nutzung in der Netzkino-App und zusätzlich eine **separat lizenzierte** Direktdatei-Option. Netzkino AVOD-/Plus-Angebote erhalten **keinen** automatischen Downloadstatus; die Filmlizenz und der erlaubte Datei-Endpunkt müssen unabhängig vorliegen.
+- Eigene persistente SQLite-Warteschlange für ausdrücklich freigegebene HTTPS-MP4/MKV/WebM/MOV-Dateien. Ein Worker, Fortschritt, Pause, Retry und Range-Wiederaufnahme mit Datei-Validator; atomare Veröffentlichung und No-Overwrite. Keine `yt-dlp`-Downloads, keine HLS/DASH-, DRM-, Werbe- oder Geo-Umgehung.
+- Ausführliche lokale Fehlermeldungen ohne Medien-URL/Token in UI oder Diagnose. Filmdatenbank/ArchiveMedia/öffentlich-rechtliche Jobs bleiben getrennt und unverändert.
+- Quellcode-Freigabe ist keine Kopierlizenz für Inhalte: Die in der App angegebene Rechtebasis wird **nicht unabhängig verifiziert**. Automatische Dateiausleitung für den normalen Netzkino-Katalog bleibt deaktiviert.
+
+## 0.5.31.8 – Einheitliche Katalognavigation und Detailfenster (Test)
+- **Ursachenbehebung Netzkino-Modal:** Globale `aside`-Navigation wirkte ungewollt auf die Detail-Sidebar und versetzte das Cover an den Fensterrand; Sidebar nun `div`, Root-Navigation auf `body > aside` begrenzt. Vollbreiter, responsiver Infobereich mit zweispaltigen Fakten und unverändertem Provenienz-Abgleich.
+- **Einheitliche Hauptansicht:** Gesamt / Mediatheken / Netzkino über eine Such-, Genre- und Sortierleiste; gleiche Film-/Serienkarten und Detailaktionen, gemeinsame Ergebnissicht ohne Vermischen der Datenbanken. Serienfolgen von Netzkino bleiben innerhalb des Hauptkatalogs navigierbar.
+- **Bestandsschutz:** Der vollständige öffentlich-rechtliche Katalog mit Scanner, Fortschritt, Suchbaum und bisherigen Aktionen bleibt als erweiterter aufklappbarer Bereich erhalten; ArchiveMedia PR #24, Videoaudit PR #23, Netzkino GraphQL, Referenzprüfung und offizieller Player bleiben unverändert.
+- **Präzision:** Katalogtreffer pro Quelle paginiert; globale Sortierung über Hunderttausende Werke und automatische Cross-Provider-Werkidentität werden nicht als erledigt behauptet. Pluto TV bleibt eine nicht aktive Quelle.
+
+## 0.5.31.7 – Anbieterübergreifende Netzkino-Metadatenprüfung (Preview)
+- Kompakter Netzkino-Detaildialog: Kurzdaten (Jahr, FSK, Laufzeit, Land, Sprache, Zugang) links als zweispaltige Kacheln; Beschreibung und vollständige Credits rechts. Responsive ohne versteckte Felder.
+- Netzkino-Titeldetails können die bestehende ARD/ZDF-Kette IMDb Offline, TVDB, TMDB, OMDb und Wikidata verwenden. Nur auf Nutzerauswahl; Ergebnisse werden sieben Tage lokal zwischengespeichert, unvollständige Providerergebnisse kürzer.
+- Datenprovenienz je ergänztem Feld; vorhandene Netzkino-Titel, Covers, Beschreibungen und Rechte bleiben maßgeblich. Film-/Serienidentitäten werden nicht automatisch als bestätigt markiert; widersprüchliche Referenzen erfordern Prüfung.
+- Ausdrückliche Serien-/Folgen-Trennung: Ein bestätigter Serientitel weist noch keine konkret verfügbare Episode nach.
+- Diagnose: aggregierte Referenzstatus-Zähler ohne Film-IDs, Titel, Streamingadressen oder API-Schlüssel.
+- Deutsche Mediathek, PR #23 Videoaudit, PR #24 ArchiveMedia, Netzkino-GraphQL, yt-dlp-Metadatenprobe und offizielle WebKit-Wiedergabe unverändert.
+
+## 0.5.31.6 – Quellennavigation, Netzkino-Details, optionaler yt-dlp-Check (Preview)
+- Hauptansicht: Gesamt / Mediatheken / Netzkino ohne Verschmelzen der beiden Datenbanken oder unerwiesene Dubletten-Zusammenführung. Netzkino wird zusätzlich im Hauptkatalog mit Filmen/Serien angezeigt.
+- Detailfenster analog zur Mediatheken-Titelseite: Beschreibung, Originaltitel, Jahr, Genres, FSK, Laufzeit, Land, Originalsprache, Besetzung, Regie, Drehbuch und Anbieterkategorie – nur soweit vorhanden; fehlende Daten bleiben sichtbar als unbekannt.
+- Bei manuellem Öffnen werden öffentlich sichtbare Netzkino MovieDetails-Metadaten per im HAR beobachteter GraphQL-Operation geladen und sieben Tage datensparsam zwischengespeichert; keine Streamadressen und keine massenhaften Filmseitenaufrufe.
+- Optionaler yt-dlp-Metadatencheck nur nach Nutzerklick. Ausgabe-Whitelist, Zeit-/Größenlimits, kein Mediendownload, kein Übernehmen von Streaming-URLs und keine Verfügbarkeits- oder Rechtebestätigung.
+- Native macOS-Wiedergabe im separaten, selbst erzeugten WKWebView-Fenster über die offizielle Netzkino-Seite, sofern Swift auf dem Ziel-Mac vorhanden; sonst Browserlink. Keine Werbung/DRM umgehen.
+- Pluto-TV-Reiter als ausdrücklich noch nicht aktiver Platzhalter. Keine Behauptung eines vorhandenen Extraktors oder Downloadrechts.
+- Diagnose ergänzt Zahl öffentlicher gecachter Details und gesperrter Wiederholungsversuche; keine Nutzerdaten, Titel oder URL-Export.
+- PR #23 Videoaudit und PR #24 ArchiveMedia-Vollmodus sowie getrennte Downloadwarteschlangen unverändert; vollständiger nativer Build auf dem Mac erforderlich.
+
+## 0.5.31.5 – Netzkino: Filme / Serien / Folgen (lokale Testversion)
+- Öffentliche Netzkino-Katalogeinträge getrennt nach Filmen und Serien anzeigen. Explizit mit Staffel- oder Folgennummer gekennzeichnete ContentMovie-Einträge werden als einzelne Episoden eingeordnet, ohne die Rohdaten umzuschreiben.
+- Serien erhalten eine stabile, zusammengefasste Karte; Folgen sortiert nach Staffel und Folgennummer, jede Folge behält ihre offizielle Netzkino-URL. Unklare Film-Mehrteiler und Filmreihen werden nicht automatisch zu Serien.
+- Nummerierungslücken werden als Kataloghinweise angezeigt, nicht als Verfügbarkeitsbehauptung. Manuelle Verknüpfungen bleiben erhalten.
+- Diagnoseexport enthält getrennte Film-/Serien-/Episodenzähler, ohne Titel, URLs oder Nutzerdaten. Keine Veränderung des Download-, Werk- oder ArchiveMedia-Katalogs.
+- ArchiveMedia-Vollmodus, Internet-Archive-Adapter, Netzkino-GraphQL-Abgleich, Warteschlangen-Fix und fortsetzbares Videoaudit bleiben erhalten.
+
+## 0.5.31.4 – Netzkino-Kategoriefehler / Plattformanzeige (Teststand)
+- Leere Netzkino-Kategorien werden von echten GraphQL-/Netzwerkfehlern unterschieden; bei Kategoriefehlern bleibt ein vorhandener gültiger Homepage-Katalog als ausdrücklich unvollständiger Teilabgleich verfügbar.
+- Rate-Limits (429) und Zugangsfehler (401/403) stoppen weitere Kategorieabfragen. Rückzug statt Umgehung. Vollständigkeitsstatus und letzter vollständiger Abgleich werden separat persistiert.
+- Diagnose enthält nun Anzahl leerer Kategorien, Fehlerarten und letzten Teil-/Voll-Abgleich; keine Filmnamen, Medienlinks, HAR-Header oder Sitzungstokens.
+- Ein UI-Ladefehler erscheint neben dem Katalog-Knopf statt nur unterhalb der Trefferliste. Beim Wechsel auf den Netzkino-Reiter werden Einträge neu geladen.
+- Netzkino blendet ArchiveMedia-Companion, Archivscanner, alte Netzkino-Doppelformulare und gemischte Portal-Trefferliste aus. Der ArchiveMedia-Vollmodus bleibt im Archiv-Reiter erhalten.
+- Isolierte Portaldaten, bestehende Arbeitsdatenbank und 0.5.31.1-Altbestandsprüfung bleiben unverändert. Kein automatischer Video-Download.
+- Öffentliche GraphQL-Endpunkte sind anhand eines HAR verifiziert, die rechtliche Freigabe und dauerhafte Live-Nutzbarkeit nicht; Test-Build, noch kein offizielles Release.
+
+## 0.5.31.3 – integrierter Plattform- und Fehlerdiagnose-Teststand
+- Einheitliche Testversion aus 0.5.31 + Netzkino-GraphQL/HAR-Katalog + 0.5.31.1-Korrekturen + ArchiveMedia-Companion/Portaladapter aus PR #24.
+- Diagnoseexport und Offline-CLI protokollieren nun Netzkino-Bestände, GraphQL/HAR-Herkunft, Kategoriestatus, Letztfehler, Metadatenvollständigkeit, Altbestandsprüfung und Archive-Portalscopes; ohne Medien-URLs, Titel oder Zugangsdaten.
+- Netzkino-Katalogabgleich protokolliert Start, erfolgreiche Kategorien, neue/geänderte Titel und HTTP-Fehlerklasse datensparsam.
+- ArchiveMedia bleibt als eigenständige vollständige Anwendung erhalten; ihre Mediathek- und Download-Daten werden nicht verändert.
+- Abgleich gegen GitHub-PRs #23 und #24; Voll-Tests und nativer macOS-Build sind auf Zielgerät nachzuholen.
+
+## In Arbeit – Isolierte externe Filmportale (noch keine Release-Freigabe)
+
+- **Plattformtrennung:** Deutscher Mediathekkatalog und seine Download-/Episodenwarteschlangen bleiben unberührt. Internet Archive und Netzkino erhalten eigene SQLite-Daten, eine eigene Übersicht, Sprachfilter und Quellstatus.
+- **ArchiveMedia 0.10.53:** Vollständige ArchiveMedia-Anwendung bleibt unabhängig erreichbar; Read-only-Companion über localhost zeigt Zustand und öffnet die Original-Oberfläche. Der begrenzte neue URL-/Uploader-/Collection-Scanner ist kein Ersatz für Clean Scan, die historische Uploader-Priorisierung oder die komplette ArchiveMedia-Pipeline.
+- **Metadatenvergleich:** Herkunft, unabhängige Werkreferenzen, Episoden- und tatsächliche Videolaufzeit sowie technische Ton- und Untertitelspuren bleiben getrennte Belege. Originaler ArchiveMedia-Referenzpfad und die Werkvalidierung werden MIT-lizenziert wiederverwendet. Gemeinsame Dateibenennung bleibt `package_media.canonical_target`.
+- **Internet Archive:** Vom Nutzer ausgelöste Suche, originale Film-/Serien- und Fassungsgruppen, Clip-Filter, optionale gezielte 8-MiB-Teilproben, kein pauschaler Download. Scopes werden mit Cursor und Retry gespeichert und können parallel zu den deutschen Scan-Workern laufen.
+- **Netzkino:** Nur vom Nutzer eingegebene Filmseiten; kein Scraping, keine Stream-Extraktion und keine Umgehung der Werbewiedergabe.
+- **Freigabe:** Getrennter Entwicklungsbranch; native macOS-, Linux- und NAS-Tests und reale Archivetests vor einem Merge erforderlich.
+
+
+
+## 0.5.31.2 – Netzkino-Katalogimport (lokale Preview)
+- Die im Netzwerkmitschnitt vom 11.11.2026 beobachteten lesenden GraphQL-Katalogoperationen AllContent und CategoryDataBySlug ersetzen die ungeeignete Sitemap als Standardquelle.
+- Bereinigter HAR-Startbestand: 449 unterscheidbare Film- und Serienobjekte; keine HTTP-Header, Sitzungen, Player-Streams oder Tokens enthalten. Der Snapshot ist ausdrücklich kein Live-Verfügbarkeitsnachweis.
+- Katalogdaten je Film: Quelltitel, Jahr, Genre-Hinweise, FSK, Cover, Quellkategorie und AVOD-/Plus-Hinweis, soweit vom Anbieter geliefert.
+- Begrenzte Kategorienabfragen, Timeouts, vorübergehende Fehler und HTTP-429-Rückzug. Keine automatischen Filmseiten-Massenabfragen und keine Medien-Downloads.
+- Die bestehende SQLite-Netzkino-Datenbank wird verlustfrei um zusätzliche Felder erweitert. Bestehende manuelle Links, Downloads und MediathekView-Katalog bleiben erhalten.
+- Eine Nutzungserlaubnis für automatisierten Abruf ist nicht bestätigt. Die Schnittstelle kann sich ändern; vollständige Filmabdeckung wird nicht behauptet.
+
+## 0.5.31.1 – Netzkino + sichere Altbestands-Klassifizierung (lokale Testversion)
+- Sichere Episoden-Trigger: Duplicate-Guard statt INSERT OR IGNORE innerhalb von UPSERT-Triggern; Bestandsjobs bleiben erhalten.
+- Einmaliger fortsetzbarer lokaler Videorollen-Audit mit eigenem Cursor, kleiner Batchgröße, Persistenz und Fortschrittsanzeige. Auch bereits erkannte und automatisch bestätigte Werke werden geprüft.
+- Manuell bestätigte Zuordnungen und fertige Downloads bleiben unverändert; automatische Treffer mit Laufzeitkonflikt erhalten eine Prüfmarkierung statt einer stillen Herabstufung.
+- Separater Netzkino-Streaming-Katalog mit Link-Speicherung, opt-in Sitemap-Prüfung und offiziellem Player (kein Mediendownload).
+- Die Live-Katalogquelle und macOS-Ausführung müssen auf dem Zielgerät noch überprüft werden.
+
+## Unreleased: Netzkino-Streaming-Preview (lokaler Patch, Basis v0.5.31)
+- Separater Netzkino-Reiter: manuell geprüfte Filmseiten als Streaming-Verknüpfungen speichern und über den offiziellen Webplayer öffnen.
+- Isolierte lokale SQLite-Datenbank `netzkino_links.sqlite3`; kein Einfluss auf den Senderkatalog, Downloadjobs, MeshSync oder bestehende Metadaten.
+- Nur HTTPS auf `netzkino.de`, keine fremden URLs, keine Stream-Extraktion, kein Video-Download und keine DRM-Umgehung.
+- Regressionsprüfungen für URL-Validierung, Dubletten, Persistenz, Löschung und Suchfilter.
+- Ausstehend: offizieller Katalogimport, Metadatenreferenzen und native macOS-/NAS-Integrationstests.
+
 # Änderungsverlauf – MediathekAtlas
+
+## 0.5.31 – 10. November 2026 (Preview, Kausalitätsprüfung & Einstellungen)
+
+- Folgekorrektur nach Diagnose 10.11.: Episodenprüfungen erfassen jetzt auch frühe Kurzvideo-Abbrüche und explizite Trailer als eigene Sitzungszähler; Zählung erst nach erfolgreichem DB-Commit. Prüfungen, bestätigte Episoden, Verdachtsfälle, Extras, Retries und Rückstellungen werden getrennt angezeigt.
+- Laufzeitbelege enthalten die beim Sender importierte tatsächliche Dauer, die Referenzlaufzeit, deren Herkunft (Metadatenanbieter oder Serien-Katalogmedian) und einen präzisen Begründungstext; Details, Prüfdialog und Katalogkarten machen diese Felder sichtbar. Verdachtsfälle sind keine endgültigen Trailerbeweise.
+- TMDB und Wikidata öffnen bei zwei transportbedingten Fehlern innerhalb eines kurzen Fensters eine anbieterspezifische Netzwerkpause (anfangs 3, maximal 15 Minuten). Unabhängige Anbieter und IMDb Offline bleiben verfügbar, es werden keine falschen Negativtreffer gecacht; Wiederholungsaufträge behalten ihre SQLite-Wiedervorlagen. Pausenzustände sind im Dashboard und der Anbieterstatistik sichtbar.
+- Zähler-, Laufzeitquellen- und Ausfallregressionstests ergänzen die bisherige 0.5.31-Suite; bei vielen Kurzvideos bleibt die Ereignisprotokollierung begrenzt.
+
+- Kausalitätsprüfung nach dem Prinzip aus ArchiveMedia: Serienidentität und vollständige Episodenidentität werden getrennt behandelt; offenkundige Trailer, Teaser, Openings, Extras und Ausschnitte werden bereits beim Import anhand eindeutiger Titelmarkierungen als Kurzformate geführt.
+- Unabhängige IMDb-, TMDB- und TVDB-Laufzeiten werden mit der vom Sender bereits angegebenen tatsächlichen Dauer verglichen. Beispiel: 2 Minuten statt 20 Minuten → Verdacht auf Ausschnitt, keine automatisierte vollständige Episodenbestätigung.
+- Zwei-Minuten-Episoden echter Kurzformatserien bleiben möglich, wenn die Referenzdauer ebenfalls kurz ist oder keine unabhängige Soll-Laufzeit bekannt ist. Auf Basis der Laufzeit allein wird nichts definitiv als Trailer deklariert.
+- Bereits identifizierte Serien behalten ihre Werkidentität, während auffällig kurze einzelne Videofassungen als überprüfungsbedürftig markiert und aus der Episodenwarteschlange genommen werden. Explizit als Trailer bezeichnete automatische Alteinträge werden im regulären Erkennungslauf als Sonderformat eingeordnet.
+- Persistente SQLite-Trigger werden bei bestehenden Katalogen einmalig migriert. Manuelle und bereits endgültig bestätigte Zuordnungen werden nicht automatisch verändert.
+- Download-Kontrolle: vorhandene Sender-Laufzeitdaten werden vor jedem Download genutzt, ohne FFprobe oder FFmpeg auszuführen. FFprobe misst eine tatsächlich heruntergeladene Datei vor der Veröffentlichung; erst danach wird FFmpeg für verlustfreies Remuxing eingesetzt. Kein FFprobe-Massenscan.
+- Einstellungen auf responsive Kacheln und ausklappbare Menüs umgestellt: Erkennung & Worker, Bibliothek, API-Schlüssel, IMDb, Werkzeuge sowie NAS/Verbund. Die vorhandenen Formularfelder und Sicherheitsfunktionen bleiben bestehen.
+- Regressionstests für Anime-Beispiele, Trailer-Ausnahmen, kurze echte Episoden, Neustart-Persistenz, Download-Vorprüfung und Einstellungen.
+- Die geplante FTS5-Suche und Kategorie „Letzte Chance“ sind eigene weitere Arbeitspakete und nicht Bestandteil dieses Teils der Preview.
+
 
 ## 0.5.30 – 10. November 2026 (Preview)
 

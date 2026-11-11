@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -43,6 +43,8 @@ with db() as c:
     c.executescript('CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT);CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS metadata_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL);')
     catalog.initialize(c)
     subscriptions.initialize(c)
+    portal_sources.initialize(c)
+    portal_control.initialize(c)
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
@@ -234,11 +236,36 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path in ('/app.js','/player.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        if path in ('/app.js','/player.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
+        if path=='/api/video-audit':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:
+                video_backfill.initialize(c)
+                return self.send(video_backfill.status(c,q.get('offset',['0'])[0]))
+        if path=='/api/netzkino-details':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
+        if path=='/api/netzkino-downloads':
+            return self.send(netzkino_downloads.listing(ROOT))
+        if path=='/api/netzkino-reference-report':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return self.send(netzkino_enrichment.cached(ROOT,q.get('id',[''])[0]))
+        if path=='/api/netzkino-grouped':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            data=netzkino.grouped_catalog(ROOT,view=q.get('view',['movies'])[0],
+                series_key=q.get('series_key',[''])[0],
+                query=q.get('q',[''])[0],origin=q.get('origin',['all'])[0],
+                offset=q.get('offset',['0'])[0],limit=q.get('limit',['80'])[0],
+                genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0])
+            data['status']=netzkino.state(ROOT)
+            return self.send(data)
+        if path=='/api/netzkino':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
         if path=='/api/play':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job')}
             try:
@@ -256,7 +283,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_licensed_downloads':netzkino_downloads.summary(ROOT),'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -264,6 +291,35 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/review':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
+        if path=='/api/archive-companion':
+            status=archive_companion.read_status()
+            if NETWORK:status['ui_url']=None
+            return self.send(status)
+        if path=='/api/portal-policy':
+            return self.send({'sources':{k:portal_metadata_policy.source_policy(k)
+                          for k in portal_metadata_policy.PROVENANCE},
+                          'filename':portal_metadata_policy.filename_rules(),
+                          'reference_order':portal_metadata_policy.PRIORITY})
+        if path=='/api/portals':
+            with db() as c:
+                result=portal_sources.state(c)
+                result['platform_control']=portal_control.source_status(c)
+                result['archive_scopes']=portal_control.list_scopes(c)
+            return self.send(result)
+        if path=='/api/portal-items':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:
+                result=portal_sources.listing(c,source=q.get('source',[''])[0],
+                            query=q.get('query',[''])[0],
+                            offset=q.get('offset',['0'])[0],
+                            locale=q.get('locale',['all'])[0])
+            return self.send(result)
+        if path=='/api/portal-archive-detail':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:
+                item_id=q.get('id',[''])[0]
+                result=portal_sources.archive_saved_detail(c,item_id)
+            return self.send(result)
         if path=='/api/catalog':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:result=catalog.listing(c,query=q.get('query',[''])[0],kind=q.get('kind',[''])[0],genre=q.get('genre',[''])[0],show=q.get('show',[''])[0],offset=q.get('offset',[0])[0],archive=q.get('archive',['0'])[0]=='1',state=q.get('state',[''])[0],sort=q.get('sort',['title'])[0],downloaded=q.get('downloaded',['hide'])[0],collection=q.get('collection',[''])[0])
@@ -306,7 +362,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
                               'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb',''))},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
+                    'tmdb':metadata.network_provider_status('TMDB'),
+                    'wikidata':metadata.network_provider_status('Wikidata')},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     # Finished downloads are served over HTTP so a browser on another device can fetch them;
     # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
@@ -435,6 +493,14 @@ class Handler(BaseHTTPRequestHandler):
                 token=ACCESS.change_password(str(d.get('current','')),str(d.get('new','')))
                 diagnostics.event('access_password_changed')
                 return self.send({'ok':True},cookies=[self.session_cookie(token)])
+            if path=='/api/netzkino-add':
+                return self.send({'item':netzkino.add(ROOT,d.get('title'),d.get('url'))})
+            if path=='/api/netzkino-remove':
+                return self.send({'removed':netzkino.remove(ROOT,d.get('id'))})
+            if path=='/api/netzkino-sync':
+                return self.send({'started':netzkino.start_sync(ROOT)})
+            if path=='/api/netzkino-auto':
+                return self.send({'status':netzkino.set_auto(ROOT,d.get('enabled'))})
             if path=='/api/shutdown' and MANAGED:raise ValueError('Der Dienst wird vom NAS verwaltet. Bitte im Paket-Zentrum bzw. App Center stoppen.')
             if path=='/api/shutdown':
                 self.send({'ok':True});STOP.set()
@@ -444,6 +510,114 @@ class Handler(BaseHTTPRequestHandler):
                 import tvdb
                 return self.send(tvdb.test_access(settings().get('tvdb',''),settings().get('tvdb_pin','')))
             if path=='/api/test-omdb':return self.send(metadata.test_omdb(settings().get('omdb','')))
+            if path=='/api/portal-controls':
+                source=d.get('source')
+                if source is not None:source=str(source)
+                with db() as c:
+                    portal_control.set_controls(c,source=source,
+                        enabled=d.get('enabled'),
+                        workers=d.get('workers'),
+                        locale=d.get('locale'),
+                        max_active=d.get('max_active'))
+                    result=portal_control.source_status(c)
+                diagnostics.event('portal_controls_updated',source=source,
+                                  enabled=d.get('enabled'),workers=d.get('workers'))
+                return self.send(result)
+            if path=='/api/portal-scope-add':
+                with db() as c:
+                    scope_id=portal_control.add_scope(c,d.get('kind'),d.get('value'),
+                                 priority=d.get('priority'),page_budget=d.get('page_budget',8))
+                return self.send({'id':scope_id,'ok':True})
+            if path=='/api/portal-scope-control':
+                with db() as c:
+                    portal_control.control_scope(c,d.get('id'),d.get('action'),
+                                                 priority=d.get('priority'))
+                return self.send({'ok':True})
+            if path=='/api/portal-search':
+                if d.get('source')!='internet_archive':
+                    raise ValueError('Nur Internet Archive bietet hier eine dokumentierte Such-API')
+                rows=portal_sources.search_archive(d.get('query',''))
+                with db() as c:
+                    saved=portal_sources.save(c,rows,query=d.get('query',''))
+                diagnostics.event('portal_metadata_import',source='internet_archive',items=len(saved),
+                                  mode='user_activated')
+                return self.send({'added_or_updated':len(saved),
+                                  'access':'official_site_only','download_enabled':False})
+            if path=='/api/portal-archive-inspect':
+                item_id=str(d.get('id') or '')
+                with db() as c:
+                    row=c.execute('SELECT source,external_id FROM portal_items WHERE id=?',
+                                  (item_id,)).fetchone()
+                if not row or row['source']!='internet_archive':
+                    raise ValueError('Gespeicherter Internet-Archive-Eintrag fehlt')
+                detail=portal_sources.fetch_archive_detail(row['external_id'])
+                with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
+                diagnostics.event('portal_archive_manifest_inspected',files=detail['files_in_manifest'],
+                                  variants=detail['variants_displayed'],
+                                  complete=detail['inventory_complete'])
+                return self.send({'detail':detail,'ok':True})
+            if path=='/api/portal-archive-probe':
+                if d.get('acknowledged') is not True:
+                    raise ValueError('Nur nach bestätigter Berechtigung zur technischen Teilprüfung')
+                item_id=str(d.get('id') or '')
+                filename=str(d.get('filename') or '')
+                # Save the result only after a bounded, user-initiated probe.
+                # This route does not enqueue downloads or enumerate an archive.
+                with db() as c:
+                    report=portal_sources.probe_archive_variant(
+                        c,item_id,filename,acknowledged=True)
+                diagnostics.event('portal_video_technical_probe',
+                                  state=report['state'],
+                                  bytes=report['bytes_sampled'],
+                                  audio_tracks=sum(t['type']=='audio' for t in report['tracks']),
+                                  subtitle_tracks=sum(t['type']=='subtitle' for t in report['tracks']))
+                return self.send({'probe':report})
+            if path=='/api/netzkino-download-add':
+                if NETWORK:raise ValueError('Berechtigte Direktdateien nur im lokalen macOS-Modus')
+                result=netzkino_downloads.enqueue(ROOT,str(d.get('id','')),
+                    d.get('file_url',''),d.get('rights_basis',''),
+                    d.get('rights_note',''),confirmed=d.get('confirmed') is True)
+                diagnostics.event('netzkino_licensed_download_enqueued',created=result['created'])
+                return self.send(result)
+            if path=='/api/netzkino-download-action':
+                if NETWORK:raise ValueError('Dateiverwaltung nur im lokalen macOS-Modus')
+                result=netzkino_downloads.action(ROOT,d.get('id',''),d.get('action',''),
+                    output=Path(DEFAULT_DOWNLOAD_DIR)/'Netzkino-lizenzierte-Dateien')
+                diagnostics.event('netzkino_licensed_download_control',action=d.get('action',''))
+                return self.send(result)
+            if path=='/api/netzkino-enrich':
+                item_id=str(d.get('id',''))
+                with SERVICE.provider_slots:
+                    result=netzkino_enrichment.enrich(ROOT,item_id,settings(),
+                                                        force=d.get('force') is True)
+                diagnostics.event('netzkino_reference_check',status=result['status'],
+                    candidates=len(result.get('references',[])),
+                    checked_providers=len(result.get('provider_checks',[])))
+                return self.send(result)
+            if path=='/api/netzkino-metadata-probe':
+                item_id=str(d.get('id',''))
+                editorial=netzkino_details.get(ROOT,item_id)
+                result=yt_dlp_probe.probe(editorial['page_url'],editorial['details'])
+                diagnostics.event('netzkino_metadata_validation',status=result['status'],
+                                  conflicts=len(result.get('warnings',[])))
+                return self.send(result)
+            if path=='/api/netzkino-watch':
+                item_id=str(d.get('id',''))
+                page=netzkino_details.find_page(ROOT,item_id)
+                helper=Path(__file__).with_name('netzkino_webplayer')
+                if sys.platform=='darwin' and helper.is_file() and os.access(helper,os.X_OK) and not NETWORK:
+                    subprocess.Popen([str(helper),page],stdin=subprocess.DEVNULL,
+                        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
+                    diagnostics.event('netzkino_official_player',mode='native_webkit')
+                    return self.send({'mode':'native_webkit'})
+                diagnostics.event('netzkino_official_player',mode='native_unavailable')
+                return self.send({'mode':'native_unavailable'})
+            if path=='/api/portal-netzkino-add':
+                item=portal_sources.manual_netzkino(d.get('title',''),
+                          d.get('url',''),d.get('year'))
+                with db() as c:portal_sources.save(c,[item])
+                diagnostics.event('portal_manual_link_added',source='netzkino')
+                return self.send({'item':item,'ok':True})
             if path=='/api/search':
                 found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
                 with db() as c:catalog.ingest(c,found['results'])
@@ -678,7 +852,15 @@ class Server(ThreadingHTTPServer):
 if __name__=='__main__':
     server=Server((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
+    if not NETWORK and not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
+        # Separate low-concurrency worker; does not alter broadcaster/ArchiveMedia queues.
+        threading.Thread(target=netzkino_downloads.loop,
+            args=(ROOT,Path(DEFAULT_DOWNLOAD_DIR)/'Netzkino-lizenzierte-Dateien',STOP),
+            daemon=True,name='netzkino_licensed_file_worker').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
+        threading.Thread(target=netzkino.loop,args=(ROOT,STOP),daemon=True,name='netzkino_catalog_scheduler').start()
+    if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
+        portal_control.Scheduler(db,STOP).start()
         SERVICE.start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)

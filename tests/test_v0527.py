@@ -101,6 +101,12 @@ class TVDBCircuitTests(unittest.TestCase):
 
 
 class DeferredRecognitionTests(unittest.TestCase):
+    def setUp(self):
+        # Keep provider-circuit state local to the deliberately mocked case.
+        with metadata._OUTAGE_LOCK:metadata._OUTAGES.clear()
+    def tearDown(self):
+        with metadata._OUTAGE_LOCK:metadata._OUTAGES.clear()
+
     def test_fallback_remains_available_when_tvdb_is_paused(self):
         source = {'title': 'Folge 10', 'topic': 'Testserie', 'duration': 1800}
         meta = {'title': 'Testserie', 'kind': 'series'}

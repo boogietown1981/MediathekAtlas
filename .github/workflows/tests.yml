@@ -8,7 +8,31 @@ on:
 permissions:
   contents: read
 
+# A PR update supersedes prior jobs; do not consume scarce hosted macOS
+# capacity with obsolete versions of the same change.
+concurrency:
+  group: tests-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
+  integration-regressions:
+    name: Netzkino · ArchiveMedia · Unified UI
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Plattform- und Erkennungsregressionen
+        run: |
+          cd integration/preview/0.5.31.11
+          python -m unittest discover -s tests -v
+      - name: Browser-UI-Smoketests
+        run: |
+          node integration/preview/0.5.31.11/tests/netzkino_ui_smoke.cjs
+          node integration/preview/0.5.31.11/tests/netzkino_series_ui_smoke.cjs
+          node integration/preview/0.5.31.11/tests/unified_catalog_ui_smoke.cjs
+
   test:
     name: Python ${{ matrix.python }} · ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
@@ -45,8 +69,10 @@ jobs:
   # Separate job: macOS runners are sometimes not assigned for a long time; that must not
   # hold back the NAS packages, which only need the Linux results.
   test-macos:
-    name: Python 3.13 · macos-latest
-    runs-on: macos-latest
+    name: Python 3.13 · macos-15
+    # macos-latest is macOS 26 / arm64 and frequently times out without an
+    # allocated runner. Pin the stable macOS 15 arm64 pool instead.
+    runs-on: macos-15
     timeout-minutes: 30
     steps:
       - uses: actions/checkout@v5
@@ -67,6 +93,31 @@ jobs:
       - uses: actions/upload-artifact@v4
         with:
           name: MediathekAtlas-macOS-Preview
+          path: dist/MediathekAtlas_v*_macOS.zip
+          if-no-files-found: error
+
+  # This app uses a shell launcher, Python sources, resources and an Info.plist;
+  # it contains no compiled macOS binary, so we can create a distributable .app
+  # ZIP on Linux without requiring an Apple runner. This does NOT replace
+  # macOS-native integration tests, which remain a separate mandatory check.
+  macos-portable:
+    name: macOS-App · portable Paketierung auf Linux
+    needs: test
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: App-Layout erzeugen
+        run: python build_macos.py
+      - name: Ausführbares .app-ZIP erstellen und validieren
+        run: |
+          python packaging/macos_zip.py
+          python packaging/macos_zip.py --verify
+      - uses: actions/upload-artifact@v4
+        with:
+          name: MediathekAtlas-macOS-Portable-Unverified
           path: dist/MediathekAtlas_v*_macOS.zip
           if-no-files-found: error
 
