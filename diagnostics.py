@@ -36,6 +36,13 @@ def tail():
             f.seek(max(0,p.stat().st_size-128*1024));data=f.read()
         return '\n'.join(data.decode('utf-8',errors='replace').splitlines()[-400:])
 def export(snapshot):
+    # Read-only platform snapshots for both UI export and offline diagnostics CLI.
+    # Never initialize a DB, query a website or attach catalogue/stream files.
+    try:
+        from diagnostic_extensions import collect
+        snapshot={**snapshot,**collect(_root)}
+    except (OSError,ValueError,RuntimeError) as exc:
+        snapshot={**snapshot,'platform_diagnostics':{'error_type':type(exc).__name__}}
     out=io.BytesIO()
     with _lock,zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
         z.writestr('status.json',json.dumps(clean({'version':VERSION,'system':platform.system(),'machine':platform.machine(),'python':platform.python_version(),**snapshot}),ensure_ascii=False,indent=2))
