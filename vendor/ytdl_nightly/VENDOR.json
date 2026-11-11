@@ -1,0 +1,18 @@
+{
+  "name": "ytdl-nightly",
+  "repository": "https://github.com/boogietown1981/ytdl-nightly",
+  "commit": "5be5fe944ad1afd3e1a93a6e3c52f900940c5678",
+  "version": "2026.11.06",
+  "license": "Unlicense (public domain), see LICENSE",
+  "trimmed": true,
+  "extractor_modules": [
+    "__init__.py",
+    "adobepass.py",
+    "common.py",
+    "lazy_extractors.py",
+    "netzkino.py",
+    "niconico.py",
+    "openload.py"
+  ],
+  "updated_with": "tools/update_ytdl_nightly.py"
+}
