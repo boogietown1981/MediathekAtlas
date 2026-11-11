@@ -52,6 +52,8 @@ jobs:
             python "$PREVIEW/apply_$patch.py" .
           done
           test "$(python -c 'from version import VERSION;print(VERSION)')" = '0.5.31.11'
+      - name: Install FFmpeg tools required by project unit tests
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq ffmpeg
       - name: Run all source and UI regressions
         shell: bash
         run: |
