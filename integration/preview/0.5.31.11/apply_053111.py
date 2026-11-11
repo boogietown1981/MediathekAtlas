@@ -38,7 +38,7 @@ def patch(root,dry_run=False):
           'web/index.html','web/app.js','web/style.css','web/netzkino.js',
           'web/unified_catalog.js','version.py','build_macos.py','CHANGELOG.md']
     d={k:(root/k).read_text('utf-8') for k in keys}
-    if d['version.py'].strip()!="VERSION='0.5.31.10'":
+    if "VERSION='0.5.31.10'" not in d['version.py'].splitlines():
         raise RuntimeError('Erwartet 0.5.31.10, erhalten: '+d['version.py'].strip()[:80])
     for marker in ('/api/archive-companion','/api/netzkino-grouped','/api/video-audit',
                    '/api/netzkino-watch','/api/netzkino-enrich','/api/netzkino-downloads'):
