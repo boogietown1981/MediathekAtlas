@@ -20,11 +20,20 @@ APP_DIRS=('web','vendor','assets')
 def app_files():
     return sorted(p.name for p in ROOT.glob('*.py') if p.name not in BUILD_ONLY)+['LICENSE']
 
+def normalize_modes(dest):
+    # The NAS service runs as an unprivileged package user. Source files that were
+    # created with 0600 (e.g. by atomic-write helpers) would make server.py fail
+    # with PermissionError at import time. Packages therefore always ship 0644/0755.
+    for p in [dest,*dest.rglob('*')]:
+        if p.is_symlink():continue
+        p.chmod(0o755 if p.is_dir() or p.suffix=='.sh' else 0o644)
+
 def copy_app(dest):
     dest.mkdir(parents=True)
     for name in app_files():shutil.copy2(ROOT/name,dest/name)
     for name in APP_DIRS:
         shutil.copytree(ROOT/name,dest/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc','.DS_Store','*.icns'))
+    normalize_modes(dest)
 
 def render(text,port=PORT):return text.replace('@VERSION@',VERSION).replace('@PORT@',str(port))
 

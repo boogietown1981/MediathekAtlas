@@ -32,7 +32,8 @@
     // Restore the actual historic mediatheken status board *above* the shared
     // catalogue. Move live nodes with IDs; do not clone elements or handlers.
     const historic=advanced.querySelector('.background-status');
-    if (!historic) throw new Error('Scan- und Erkennungsübersicht fehlt');
+    // A missing status board must not break the whole catalogue (0.5.31.11 threw here).
+    if (!historic) { console.warn('MediathekAtlas: Scan- und Erkennungsübersicht fehlt'); return; }
     const dashboard=el('section',undefined,'background-status atlas-main-dashboard');
     dashboard.id='atlas-main-dashboard';
     dashboard.setAttribute('aria-label','Mediatheken-Scanner und Metadatenabgleich');

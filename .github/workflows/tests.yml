@@ -43,8 +43,9 @@ jobs:
           python -m compileall -q *.py tests vendor/archivemedia
           bash -n launcher.sh
           for f in packaging/nas/*.sh packaging/qnap/shared/*.sh packaging/synology/scripts/*; do sh -n "$f"; done
-          node --check web/app.js
-          node --check web/login.js
+          for f in web/*.js; do node --check "$f"; done
+      - name: UI-Smoke-Tests (Netzkino, gemeinsamer Katalog)
+        run: for f in tests/*.cjs; do node "$f"; done
       - name: Unit-Tests
         run: python -m unittest discover -s tests -v
 
