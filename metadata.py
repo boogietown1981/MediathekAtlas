@@ -244,9 +244,22 @@ def tmdb_candidates(row,meta,key,kind,title):
             for season in seasons[:24]:
                 number=season.get('season_number')
                 if number is None:continue
-                episodes.extend(core.tmdb(f"tv/{d['id']}/season/{number}",key).get('episodes',[]))
-            resolve_episode(epmeta,c,episodes)
-            if not c['episode_scan_complete'] and meta.get('season') is None:c['episode_verified']=False
+                try:
+                    season_data=core.tmdb(f"tv/{d['id']}/season/{number}",key)
+                except ValueError as exc:
+                    # One unavailable/missing season is not a failure of the
+                    # series identity. Never claim a complete episode scan.
+                    if 'HTTP 404' not in str(exc):raise
+                    c['episode_scan_complete']=False
+                    diagnostics.event('tmdb_season_unavailable',provider='TMDB',season=number,
+                                      series_id=str(d['id'])[:32])
+                    continue
+                episodes.extend(season_data.get('episodes',[]))
+            if c['episode_scan_complete']:
+                resolve_episode(epmeta,c,episodes)
+            else:
+                c['episode_verified']=False
+                c['reason']='Serienmetadaten erkannt; mindestens eine Staffel konnte nicht vollständig geprüft werden.' 
         out.append(c)
     return out
 
@@ -378,7 +391,9 @@ def candidates(row,meta,settings):
         queries.append(('movie',meta['title']))
     out=[];warnings=[];deferred=[];checks=[]
     def checked(value):
-        checks.append(value);provider_stats.observe(value['provider'],value['status'],value['count'])
+        checks.append(value)
+        if not settings.get('_external_reference_validation',False):
+            provider_stats.observe(value['provider'],value['status'],value['count'])
     import broadcaster,video_causality
     def from_broadcaster():
         ref=broadcaster.reference(row)

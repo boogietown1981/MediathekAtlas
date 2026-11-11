@@ -10,7 +10,7 @@ function notice(s,kind='info',source=''){clearTimeout(noticeTimer);const box=$('
 async function request(path,data){const control=new AbortController(),timer=setTimeout(()=>control.abort(),60000);try{return await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Atlas-Token':token},body:data?JSON.stringify(data):undefined,signal:control.signal});}catch(e){throw Error(e.name==='AbortError'?'Der lokale Dienst antwortet seit 60 Sekunden nicht. Erneuter Versuch folgt.':'Verbindung zum lokalen Dienst unterbrochen. Falls sie nicht zurückkehrt: MediathekAtlas erneut öffnen.');}finally{clearTimeout(timer);}}
 async function api(path,data){const r=await request(path,data);const d=await r.json();if(r.status===401&&d.login){location.reload();throw Error('Anmeldung abgelaufen. Bitte erneut anmelden.');}if(!r.ok)throw Error(d.error||'Anfrage fehlgeschlagen');return d;}
 async function busy(button,fn){const old=button.textContent;button.disabled=true;button.textContent='Bitte warten …';try{await fn();}catch(e){notice(e.message,'error');if($('editor').open)$('lookup-status').textContent=e.message;}finally{button.disabled=false;button.textContent=old;}}
-for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','review','queue','subscriptions','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}if(b.dataset.view==='subscriptions')loadSubscriptions();};
+for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','portals','review','queue','subscriptions','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}if(b.dataset.view==='subscriptions')loadSubscriptions();if(b.dataset.view==='portals')loadPortals();};
 function openSubscriptionView(){
  const tab=document.querySelector('[data-view="subscriptions"]');
  if(tab)tab.click();
@@ -220,12 +220,26 @@ function catalogProgress(c){
    ];
    if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
    workers.replaceChildren();
-   for(const [kind,label] of chips){
-     const item=el('span',label,'atlas-worker-chip');
-     item.dataset.kind=kind;
-     workers.append(item);
+   // The grouping is presentation only: keep every existing session counter.
+   const groupSpec=[
+     ['Worker & Scan', ['identity','episode']],
+     ['Erkennungsqualität', ['identified','confirmed']],
+     ['Episoden & Senderbelege', ['queue','due','episode-checks','sender','sender-matches','shorts']],
+     ['Fehler & Wiederholungen', ['retry']]
+   ];
+   for(const [name,kinds] of groupSpec){
+     const group=el('section',undefined,'atlas-worker-group');
+     group.append(el('h4',name));
+     for(const [kind,label] of chips.filter(([id])=>kinds.includes(id))){
+       const item=el('span',label,'atlas-worker-chip');
+       item.dataset.kind=kind;
+       group.append(item);
+     }
+     if(name==='Fehler & Wiederholungen' && !c.sqlite_busy_retries_session)
+       group.append(el('span','Keine SQLite-Sperrkonflikte seit Start','atlas-worker-chip'));
+     workers.append(group);
    }
-   workers.append(el('span','Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt.','atlas-worker-hint'));
+   workers.append(el('span','Externe Anbieteranfragen bleiben auf zwei gleichzeitig begrenzt. Fällige Episoden sind keine bestätigten Folgen.','atlas-worker-hint'));
  }
 }
 const fields=['title','kind','year','season','episode','episode_title','description'];
@@ -274,7 +288,7 @@ function renderMetadata(m={},settings={},pauses={}){
  const providers=[
   ['TMDB',pauses.tmdb?.paused?'Netzwerkpause · '+Math.ceil(pauses.tmdb.remaining_seconds/60)+' Min.':settings.tmdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tmdb_set&&!pauses.tmdb?.paused],
   ['TVDB',settings.tvdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tvdb_set],
-  ['OMDb',pauses.omdb?.paused?'Pausiert · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
+  ['OMDb',pauses.omdb?.paused?'Pausiert: '+({key:'Schlüssel abgelehnt',inactive:'Schlüssel nicht aktiviert',auth:'Zugang abgelehnt',limit:'Anfragelimit',network:'Netzwerk',response:'Ungültige Antwort'}[pauses.omdb.reason]||'Anbieterfehler')+' · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
   ['Wikidata',pauses.wikidata?.paused?'Netzwerkpause · '+Math.ceil(pauses.wikidata.remaining_seconds/60)+' Min.':'Kostenlose Rückfallquelle',!pauses.wikidata?.paused],
   ['IMDb Offline',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
  ];
@@ -530,3 +544,350 @@ function renderRatings(m){const host=$('detail-rating'),chips=el('div',undefined
 function renderServer(server){meshServer=server||{};$('mesh-share').hidden=!meshServer.network;$('mesh-share-hint').hidden=!!meshServer.network;$('access-panel').hidden=$('logout').hidden=!server.network;$('quit-app').hidden=!!server.managed;if(server.network){$('edition').textContent='v'+server.version+' · NAS-Dienst';$('location-pill').textContent='● Auf dem NAS · Anmeldung aktiv';}}
 $('logout').onclick=e=>busy(e.target,async()=>{await api('logout',{});location.reload();});
 $('access-panel').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{try{await api('password',{current:$('access-current').value,new:$('access-new').value});$('access-result').textContent='Passwort geändert.';$('access-current').value=$('access-new').value='';}catch(err){$('access-result').textContent=err.message;}});};
+
+let portalOffset=0,portalBusy=false;
+function portalPageUrl(item){
+  try{
+    const p=new URL(item.page_url);
+    const host=p.hostname.toLowerCase();
+    if(p.protocol!=='https:'||p.username||p.password||p.port)return '';
+    if(item.source==='internet_archive'&&host==='archive.org')return p.href;
+    if(item.source==='netzkino'&&(host==='netzkino.de'||host==='www.netzkino.de'))return p.href;
+  }catch(_){}
+  return '';
+}
+function portalLabel(source){return source==='internet_archive'?'Internet Archive':source==='netzkino'?'Netzkino':source;}
+function portalItemCard(item){
+  const card=el('article',undefined,'portal-result'),h=el('h4',item.title);
+  card.append(h);
+  const detail=el('p',(item.year?item.year+' · ':'')+portalLabel(item.source),'muted');
+  card.append(detail);
+  if(item.description)card.append(el('p',item.description.length>380?item.description.slice(0,380)+' …':item.description,'portal-description'));
+  if(item.local_work_id){
+    card.append(el('small','Möglicher Eintrag im Hauptkatalog (gleicher Titel und Jahr). Keine automatische Zusammenführung.','portal-match'));
+  }
+  if(item.license_url)card.append(el('p','Gemeldete Lizenz: '+item.license_url,'portal-licence'));
+  if(item.rights)card.append(el('p','Rechtehinweis: '+item.rights.slice(0,240),'portal-licence'));
+  card.append(el('small','Nur Originalseite · Rechte und Verfügbarkeit nicht geprüft · kein Download','portal-rights'));
+  const target=portalPageUrl(item);
+  if(target){
+    const link=el('a','Originalseite beim Anbieter öffnen','portal-link');
+    link.href=target;link.target='_blank';link.rel='noopener noreferrer';
+    card.append(link);
+  }
+  if(item.source==='internet_archive'){
+    const inspect=el('button','Fassungen, Folgen und Sprachen prüfen','portal-inspect');
+    inspect.type='button';
+    const holder=el('div',undefined,'portal-archive-detail');
+    inspect.onclick=()=>busy(inspect,async()=>{
+      let state=await api('portal-archive-detail?'+new URLSearchParams({id:item.id}));
+      let detail=state.detail;
+      if(!detail){
+        const fetched=await api('portal-archive-inspect',{id:item.id});
+        detail=fetched.detail;
+      }
+      showArchiveManifest(holder,detail,state.probes||{},item.id);
+      inspect.textContent='Gespeicherte Detailansicht öffnen';
+    });
+    card.append(inspect,holder);
+  }
+  return card;
+}
+function archiveFormatLabel(role){
+  return {content:'Ursprungsdatei',derivative:'Weitere Fassung / abgeleitet',
+    technical:'Technische Datei',unknown:'Nicht sicher erkannt'}[role]||'Video';
+}
+function archiveLanguages(values){
+  return Array.isArray(values)&&values.length?values.join(', ').toUpperCase():'Unbekannt';
+}
+function archiveProbeSummary(probe){
+  const part=el('div',undefined,'portal-probe-summary');
+  if(!probe){part.append(el('small','Spuren noch nicht technisch geprüft.','muted'));return part;}
+  part.append(el('strong','Technische Teilprüfung · '+(probe.state||'unbekannt')));
+  const lines=['Übertragene Daten: '+((probe.bytes_sampled||0)/1048576).toLocaleString('de-DE',{maximumFractionDigits:2})+' MiB',
+    probe.method||'Unbekannte Prüfart',
+    'Tonspuren (Containerangaben): '+archiveLanguages(probe.audio_languages_from_tracks),
+    'Untertitelspuren (Containerangaben): '+archiveLanguages(probe.subtitle_languages_from_tracks)];
+  for(const line of lines)part.append(el('small',line));
+  for(const t of probe.tracks||[]){
+    const summary=[t.type==='video'?'Video':t.type==='audio'?'Audio':'Untertitel',
+      t.codec||'Codec unbekannt',t.language?.toUpperCase()||'Sprache unbekannt',
+      t.evidence||'Teilprüfung'].join(' · ');
+    part.append(el('small',summary));
+  }
+  part.append(el('small',probe.detail||probe.note||'Nur partielle Spurdaten.','portal-warning'));
+  return part;
+}
+function showArchiveManifest(host,manifest,probes={},itemId=''){
+  host.replaceChildren();
+  if(!manifest||typeof manifest!=='object'){
+    host.append(el('p','Keine Archivdetails verfügbar.','muted'));return;
+  }
+  const heading=el('div',undefined,'portal-manifest-heading');
+  heading.append(el('strong','ArchiveMedia-Erkennung · '+(manifest.normalized_title||manifest.title||'')));
+  heading.append(el('small','Identität: '+(manifest.identity_origin||'unbekannt')+
+      ' · '+(manifest.identity_confidence||'unbestätigt')));
+  host.append(heading);
+  // ArchiveMedia preserves distinct evidence for the title, work, actual
+  // episode and video file. A metadata-only light scan never claims content
+  // or spoken language has been verified.
+  const assessment=manifest.work_assessment||{};
+  const stages={unresolved:'Nicht unabhängig bestätigt',
+    candidate:'Werkkandidat – prüfen',work_supported:'Werkreferenz vorhanden',
+    content_supported:'Datei plausibel, Inhalt nicht bewiesen',
+    conflicted:'Widersprüchliche Belege',manual:'Manuell prüfen'};
+  host.append(el('p','Werk-/Dateibeleg: '+(stages[assessment.stage]||
+      'Ungeprüft')+' · Video-Inhalt nicht bestätigt','portal-evidence'));
+  for(const conflict of (assessment.conflicts||[]).slice(0,4))
+    host.append(el('p','Konflikt: '+String(conflict),'portal-warning'));
+  host.append(el('p','Archiv-Eintrag: '+countLabel(manifest.files_in_manifest)+
+      ' Dateien · '+countLabel(manifest.video_files_found)+' Videodateien · '+
+      countLabel(manifest.video_families_found||0)+' mögliche Videowerke/Fassungsgruppen.','muted'));
+  host.append(el('p','Ausgeblendet: '+countLabel(manifest.hidden_short_clips||0)+
+      ' kurze Videos, '+countLabel(manifest.hidden_technical_clips||0)+
+      ' Trailer/technische Segmente, '+countLabel(manifest.non_video_files_ignored||0)+
+      ' andere Dateitypen.','muted'));
+  if(!manifest.inventory_complete||!manifest.display_complete)
+    host.append(el('p','Nur eine begrenzte Auswahl relevanter Videodateien angezeigt; weitere Fassungen können vorhanden sein.','portal-warning'));
+  if(manifest.content_format_hint==='series_or_mixed_upload')
+    host.append(el('p','Mehrteiliger Upload mit Episodenkennungen – nicht als einzelner Film zusammenfassen.','portal-warning'));
+  if(manifest.content_format_hint==='clip')
+    host.append(el('p','ArchiveMedia erkennt Hinweise auf Trailer oder Clips, keine bestätigte Filmfassung.','portal-warning'));
+  host.append(el('p','Sprache laut Archivbeschreibung: '+
+    archiveLanguages(manifest.upload_language_codes)+
+    ' · Sprachhinweise sind keine bestätigten Tonspuren.','muted'));
+  if(manifest.upload_audio_hint_languages?.length)
+    host.append(el('p','Audio-Hinweis aus Upload-Titel: '+
+      archiveLanguages(manifest.upload_audio_hint_languages)+' (ungeprüft)','muted'));
+  const consent=el('label',undefined,'portal-consent');
+  const checkbox=document.createElement('input');
+  checkbox.type='checkbox';
+  consent.append(checkbox,document.createTextNode(
+    ' Ich bin berechtigt, für die technische Prüfung einen begrenzten Datenausschnitt von Archive.org abzurufen (max. 8 MiB je Video).'));
+  host.append(consent);
+  host.append(el('p','Ohne Berechtigung erfolgt kein Video-Datenabruf. Nur auf ausdrücklichen Klick – keine automatische Hintergrundprüfung.','muted'));
+  const list=el('div',undefined,'portal-manifest-variants');
+  for(const v of manifest.video_variants||[]){
+    const box=el('div',undefined,'portal-manifest-variant');
+    const name=v.title||v.filename;
+    box.append(el('strong',name));
+    const format=[v.kind==='series'&&v.episode!=null?
+      'Folge '+(v.season!=null?'S'+v.season+' / ':'')+'E'+v.episode:null,
+      v.kind==='series'&&v.episode==null?'Serienzugehörigkeit, Folge offen':null,
+      archiveFormatLabel(v.file_role),v.format||null].filter(Boolean).join(' · ');
+    box.append(el('small',format));
+    box.append(el('small','Datei: '+v.filename));
+    const infos=[];
+    if(v.duration_seconds)infos.push('Laufzeit laut Archiv: '+(v.duration_seconds/60).toLocaleString('de-DE',{maximumFractionDigits:1})+' Min.');
+    if(v.audio_hint_languages?.length)infos.push('Audio-Dateiname: '+archiveLanguages(v.audio_hint_languages));
+    if(v.subtitle_hint_languages?.length)infos.push('Untertitel-Dateiname: '+archiveLanguages(v.subtitle_hint_languages));
+    if(v.sidecar_subtitles?.length)infos.push('Untertiteldateien: '+v.sidecar_subtitles.length);
+    if(v.size_bytes)infos.push('Größe: '+(v.size_bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB');
+    box.append(el('small',infos.length?infos.join(' · '):'Sprachen und Laufzeit nicht nachgewiesen'));
+    if(v.identity_warning)box.append(el('small','Hinweis: '+v.identity_warning,'portal-warning'));
+    const info=el('div',undefined,'portal-probe-info');
+    info.append(archiveProbeSummary(probes[v.filename]));
+    box.append(info);
+    if(v.technical_probe_available){
+      const btn=el('button','Format und Tonspuren prüfen (bis 8 MiB)','portal-verify');
+      btn.type='button';
+      btn.onclick=()=>{
+        if(!checkbox.checked){notice('Zunächst die Berechtigung zum Teilabruf bestätigen.','error');return;}
+        busy(btn,async()=>{
+          const result=await api('portal-archive-probe',{
+            id:itemId,filename:v.filename,acknowledged:true});
+          info.replaceChildren(archiveProbeSummary(result.probe));
+          notice('Technische Teilprüfung abgeschlossen: '+(result.probe.state||'unbekannt'));
+        });
+      };
+      box.append(btn);
+    }
+    list.append(box);
+  }
+  if(!list.childElementCount)
+    list.append(el('p','Keine relevanten, längeren Videodateien gefunden. Kleine Clips und andere Dateitypen bleiben ausgeblendet.','muted'));
+  host.append(list);
+  host.append(el('small','FFprobe/Containerindex bestätigen nur deklarierte Ton- und Untertitelspuren, nicht die tatsächlich gesprochene Sprache oder die Vollständigkeit des Films.','portal-rights'));
+}
+
+async function loadArchiveCompanion(){
+  const status=$('archive-companion-status'),open=$('archive-full-open');
+  if(!status||!open)return;
+  open.hidden=true;
+  status.textContent='Verbindung zu ArchiveMedia auf diesem Rechner wird geprüft …';
+  try{
+    const data=await api('archive-companion');
+    if(!data.connected){
+      status.textContent='ArchiveMedia läuft nicht auf 127.0.0.1:8789. Starte die eigenständige Anwendung, um ihre vollständigen Scan-, Erkennungs- und Downloadfunktionen zu nutzen.';
+    }else{
+      status.textContent='ArchiveMedia '+data.version+
+         ' · '+(data.ready?'Bereit':data.phase||'Initialisierung läuft')+
+         (data.compatible?' · eigenständiger Vollmodus':' · Aktualisierung empfohlen');
+      if(data.compatible&&data.ui_url==='http://127.0.0.1:8789/'){
+        open.hidden=false;open.href=data.ui_url;
+      }
+    }
+  }catch(e){status.textContent='ArchiveMedia-Status derzeit nicht verfügbar: '+e.message;}
+}
+function portalView(name){
+  $('portals').dataset.platform=name;
+  for(const b of document.querySelectorAll('.platform-tab'))
+    b.classList.toggle('active',b.dataset.platform===name);
+  $('portal-source').value=name==='archive'?'internet_archive':name==='netzkino'?'netzkino':'';
+  $('portal-language').value=name==='archive'?'de':'all';
+  portalOffset=0;loadPortals();
+  if(name==='archive')loadArchiveCompanion();
+  if(name==='netzkino')window.MediathekAtlasNetzkino?.refresh?.();
+}
+for(const b of document.querySelectorAll('.platform-tab'))
+  b.onclick=()=>portalView(b.dataset.platform);
+function portalScopeTitle(kind){
+  return ({item:'Einzelne Archive.org-URL',collection:'Sammlung',uploader:'Öffentlicher Uploader'})[kind]||kind;
+}
+function displayPortalControls(data){
+  const control=data.platform_control||{max_active_platforms:3,active_platforms:0,platforms:[]};
+  $('platform-max-active').value=String(control.max_active_platforms||3);
+  const cards=$('platform-dashboard');cards.replaceChildren();
+  const summary=el('article',undefined,'platform-stat');
+  summary.append(el('strong','Aktive externe Scanner: '+(control.active_platforms||0)+' / maximal '+control.max_active_platforms));
+  summary.append(el('small','Der deutsche Mediathek-Katalog ist unabhängig. Nur tatsächlich angeschlossene Plattformen zählen.'));
+  cards.append(summary);
+  for(const p of control.platforms||[]){
+    const card=el('article',undefined,'platform-stat');
+    card.append(el('strong',p.name+' · '+(p.enabled?'Aktiv':p.can_scan?'Pausiert':'Manuell')));
+    card.append(el('small',p.can_scan?'Konfigurierte Metadaten-Worker: '+p.workers:'Externer Portal-Scanner nicht verfügbar; Netzkino-GraphQL-Abgleich über den Netzkino-Reiter'));
+    const queues=p.queues||{};
+    card.append(el('small','Scanbereiche · wartend: '+(queues.queued||0)+
+      ' · laufend: '+(queues.running||0)+' · abgeschlossen: '+(queues.complete||0)));
+    cards.append(card);
+  }
+  const archive=(control.platforms||[]).find(p=>p.source==='internet_archive');
+  if(archive){
+    $('archive-scanner-enabled').checked=archive.enabled;
+    $('archive-scanner-workers').value=String(Math.min(2,archive.workers));
+    $('archive-scanner-locale').value=archive.locale;
+  }
+  const host=$('archive-scope-results');host.replaceChildren();
+  if(!data.archive_scopes?.length)host.append(el('p','Noch keine einzelnen URLs, Sammlungen oder Uploader für diesen begrenzten Scanner hinterlegt.','muted'));
+  for(const scope of data.archive_scopes||[]){
+    const card=el('article',undefined,'platform-scope-item');
+    card.append(el('strong',portalScopeTitle(scope.kind)+' · '+scope.scope));
+    card.append(el('small','Status '+scope.state+' · Priorität '+scope.priority+
+      ' · Seiten '+scope.pages_done+' · Importiert '+scope.imported));
+    card.append(el('small','Nächste Seite '+scope.cursor+' · Budget '+scope.page_budget+' Seiten pro Start'));
+    if(scope.last_error)card.append(el('small','Letzter Fehler: '+scope.last_error,'portal-warning'));
+    const actions=el('div',undefined,'platform-scope-actions');
+    const toggle=el('button',scope.enabled?'Pausieren':'Start / Fortsetzen');
+    toggle.type='button';
+    toggle.onclick=()=>busy(toggle,async()=>{
+      await api('portal-scope-control',{id:scope.id,action:scope.enabled?'pause':'start'});
+      await loadPortals();
+    });
+    actions.append(toggle);
+    const promote=el('button','Priorität 0');
+    promote.type='button';
+    promote.onclick=()=>busy(promote,async()=>{
+      await api('portal-scope-control',{id:scope.id,action:'priority',priority:0});
+      await loadPortals();
+    });
+    actions.append(promote);
+    if(scope.state!=='running'){
+      const remove=el('button','Entfernen');remove.type='button';
+      remove.onclick=()=>busy(remove,async()=>{
+        await api('portal-scope-control',{id:scope.id,action:'remove'});
+        await loadPortals();
+      });
+      actions.append(remove);
+    }
+    card.append(actions);host.append(card);
+  }
+}
+$('platform-global-controls').onsubmit=e=>{
+  e.preventDefault();
+  const button=$('platform-global-controls').querySelector('button');
+  busy(button,async()=>{
+    await api('portal-controls',{max_active:Number($('platform-max-active').value)});
+    await loadPortals();notice('Globale Obergrenze gespeichert.');
+  });
+};
+$('platform-archive-settings').onsubmit=e=>{
+  e.preventDefault();
+  const button=$('platform-archive-settings').querySelector('button');
+  busy(button,async()=>{
+    await api('portal-controls',{
+      source:'internet_archive',enabled:$('archive-scanner-enabled').checked,
+      workers:Number($('archive-scanner-workers').value),
+      locale:$('archive-scanner-locale').value});
+    await loadPortals();
+    notice('Internet-Archive-Scansteuerung gespeichert.');
+  });
+};
+$('archive-scope-kind').onchange=()=>{
+  const kind=$('archive-scope-kind').value;
+  $('archive-scope-value').placeholder=kind==='item'?'https://archive.org/details/...':
+     kind==='collection'?'Collection-ID':'@OeffentlicherName';
+  $('archive-scope-priority').value=kind==='item'?'0':kind==='uploader'?'10':'20';
+};
+$('archive-scope-add').onsubmit=e=>{
+  e.preventDefault();
+  const button=$('archive-scope-add').querySelector('button');
+  busy(button,async()=>{
+    await api('portal-scope-add',{kind:$('archive-scope-kind').value,
+      value:$('archive-scope-value').value.trim(),
+      priority:Number($('archive-scope-priority').value),
+      page_budget:Number($('archive-scope-budget').value)});
+    $('archive-scope-value').value='';
+    await loadPortals();
+    notice('Scanbereich gespeichert. Zum tatsächlichen Start Freigabe per Start-Schalter nötig.');
+  });
+};
+async function loadPortals(){
+  if(appStopped||$('portals').hidden||portalBusy)return;
+  portalBusy=true;
+  try{
+    const filters=new URLSearchParams({source:$('portal-source').value,
+      query:$('portal-filter').value.trim(),offset:portalOffset,locale:$('portal-language').value});
+    const [state,result]=await Promise.all([api('portals'),api('portal-items?'+filters)]);
+    displayPortalControls(state);
+    $('portal-total').textContent='('+countLabel(result.total)+')';
+    const parts=state.sources.map(s=>s.name+': '+countLabel(s.items));
+    $('portal-status').textContent='Gespeicherte Angebote · '+parts.join(' · ');
+    const host=$('portal-items');host.replaceChildren();
+    if(!result.items.length){
+      host.append(el('p','Noch keine gespeicherten Filmverweise. Oben nach Archivfilmen suchen oder einen Netzkino-Filmlink hinzufügen.','muted'));
+    } else for(const item of result.items)host.append(portalItemCard(item));
+    $('portal-prev').disabled=portalOffset<=0;
+    $('portal-next').disabled=portalOffset+result.items.length>=result.total;
+  }catch(e){$('portal-status').textContent=e.message;notice(e.message,'error');}
+  finally{portalBusy=false;}
+}
+$('portal-archive-search').onsubmit=e=>{
+  e.preventDefault();
+  busy($('portal-archive-search').querySelector('button'),async()=>{
+    const query=$('portal-archive-query').value.trim();
+    const result=await api('portal-search',{source:'internet_archive',query});
+    portalOffset=0;$('portal-source').value='internet_archive';$('portal-filter').value='';
+    await loadPortals();
+    notice(countLabel(result.added_or_updated)+' Archive-Metadatensätze übernommen. Rechte und Downloads bleiben ungeprüft.');
+  });
+};
+$('portal-netzkino-add').onsubmit=e=>{
+  e.preventDefault();
+  busy($('portal-netzkino-add').querySelector('button'),async()=>{
+    const result=await api('portal-netzkino-add',{
+      title:$('portal-netzkino-title').value.trim(),
+      url:$('portal-netzkino-url').value.trim(),
+      year:$('portal-netzkino-year').value.trim()||null
+    });
+    portalOffset=0;$('portal-source').value='netzkino';$('portal-filter').value='';
+    $('portal-netzkino-add').reset();
+    await loadPortals();
+    notice('Netzkino-Filmverweis gespeichert – keine automatische Medienübernahme.');
+  });
+};
+$('portal-filter-run').onclick=()=>{portalOffset=0;loadPortals();};
+$('portal-source').onchange=()=>{portalOffset=0;loadPortals();};
+$('portal-language').onchange=()=>{portalOffset=0;loadPortals();};
+$('portal-filter').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();portalOffset=0;loadPortals();}};
+$('portal-prev').onclick=()=>{portalOffset=Math.max(0,portalOffset-40);loadPortals();};
+$('portal-next').onclick=()=>{portalOffset+=40;loadPortals();};

@@ -30,7 +30,8 @@ WHEN NEW.kind='series' AND NEW.state='identified'
  AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
  AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0
 BEGIN
- INSERT OR IGNORE INTO episode_queue(work_id) VALUES(NEW.id);
+ INSERT INTO episode_queue(work_id) SELECT NEW.id
+ WHERE NOT EXISTS(SELECT 1 FROM episode_queue WHERE work_id=NEW.id);
 END;
 CREATE TRIGGER IF NOT EXISTS episode_queue_work_update AFTER UPDATE OF id,kind,state,meta ON works
 BEGIN
@@ -40,12 +41,13 @@ BEGIN
      OR json_type(NEW.meta,'$.deferred_providers') IS NOT NULL
      OR COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)!=0
      OR COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)!=0);
- INSERT OR IGNORE INTO episode_queue(work_id)
+ INSERT INTO episode_queue(work_id)
  SELECT NEW.id WHERE NEW.kind='series' AND NEW.state='identified'
   AND NULLIF(json_extract(NEW.meta,'$.reference_id'),'') IS NOT NULL
   AND json_type(NEW.meta,'$.deferred_providers') IS NULL
   AND COALESCE(json_extract(NEW.meta,'$.episode_verified'),0)=0
- AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0;
+ AND COALESCE(json_extract(NEW.meta,'$.video_role_needs_review'),0)=0
+ AND NOT EXISTS(SELECT 1 FROM episode_queue WHERE work_id=NEW.id);
 END;
 CREATE TRIGGER IF NOT EXISTS episode_queue_work_delete AFTER DELETE ON works
 BEGIN DELETE FROM episode_queue WHERE work_id=OLD.id; END;
@@ -939,6 +941,14 @@ def initialize(c):
             (SELECT 1 FROM works w WHERE w.id=episode_queue.work_id
              AND COALESCE(json_extract(w.meta,'$.video_role_needs_review'),0)!=0)""")
         set_state(c,'episode_queue_causality_triggers_v0531',True)
+    # Recreate the trigger definitions without altering existing queue rows.
+    # Outer UPSERT conflict handling must never override an inner OR IGNORE.
+    if not get_state(c,'episode_queue_safe_upsert_v05311',False):
+        c.executescript("""DROP TRIGGER IF EXISTS episode_queue_work_insert;
+            DROP TRIGGER IF EXISTS episode_queue_work_update;
+            DROP TRIGGER IF EXISTS episode_queue_work_delete;""")
+        c.executescript(SCHEMA)
+        set_state(c,'episode_queue_safe_upsert_v05311',True)
     if 'topic' not in [r[1] for r in c.execute('PRAGMA table_info(works)')]:c.execute("ALTER TABLE works ADD COLUMN topic TEXT DEFAULT ''")
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)

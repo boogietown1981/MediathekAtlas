@@ -26,7 +26,7 @@ def sqlite_busy(exc):
 class Service:
     def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0
     def start(self):
-        for fn in (self.sync_loop,self.reclassify_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
+        for fn in (self.sync_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
         # Eight long-lived workers are cheap while idle; actual concurrency is configurable.
         # Provider concurrency remains limited independently to two.
@@ -217,8 +217,21 @@ class Service:
         row=c.execute(query+scope+''' AND EXISTS(SELECT 1 FROM metadata_priority p WHERE p.work_id=w.id)
              ORDER BY q.next_try ASC LIMIT 1''',(now,now)+params).fetchone()
         if row:return row
-        return c.execute(query+scope+" ORDER BY q.next_try ASC LIMIT 1",
-                         (now,now)+params).fetchone()
+        rows=c.execute(query+scope+" ORDER BY q.next_try ASC LIMIT 48",
+                       (now,now)+params).fetchall()
+        if not rows:return None
+        def evidence(row):
+            try:m=json.loads(row['meta'] or '{}')
+            except (TypeError,ValueError):return 0
+            season,episode=m.get('season'),m.get('episode')
+            if isinstance(season,int) and not isinstance(season,bool) and season>=0 and isinstance(episode,int) and not isinstance(episode,bool) and episode>0:
+                return 3
+            if m.get('sender_page_id') or m.get('sender_evidence'):
+                return 2
+            if m.get('episode_title') and m['episode_title']!=m.get('title'):
+                return 1
+            return 0
+        return max(rows,key=evidence)  # stable FIFO for equal evidence
 
     def pick(self,c):
         """User priority, bounded show completion, new work, then due retries.
@@ -712,6 +725,23 @@ class Service:
                 self.sqlite_busy_count+=1
             self.metadata_state(phase='error',title=m['title'],error=core.safe_error(e),providers=providers)
         return True
+    def video_audit_loop(self):
+        # Reads only local catalogue rows, in short persisted transactions.
+        import video_backfill
+        with self.db() as c:video_backfill.initialize(c)
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n=video_backfill.audit_batch(c,limit=120)
+            except sqlite3.OperationalError as exc:
+                if not sqlite_busy(exc):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(.7):return
+                continue
+            if n==0:
+                diagnostics.event('video_audit_complete')
+                return
+            if self.stop.wait(.12):return
+
     def reclassify_loop(self):
         processed=0
         while not self.stop.is_set():
