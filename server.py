@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -48,7 +48,10 @@ with db() as c:
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
-    for completed in c.execute("SELECT payload FROM jobs WHERE state='done'").fetchall():catalog.mark_downloaded(c,json.loads(completed[0]))
+    for completed in c.execute("SELECT payload FROM jobs WHERE state='done'").fetchall():
+        done_job=json.loads(completed[0])
+        # Time-limited Netzkino copies never mark Mediathek works as downloaded.
+        if not netzkino_downloads.is_netzkino(done_job):catalog.mark_downloaded(c,done_job)
     catalog.recover_download_queue(c)
 
 def settings():
@@ -66,9 +69,13 @@ def record(i):
     return json.loads(r[0])
 
 def put_job(j):
+    if j['state']=='done':netzkino_downloads.stamp(j)
     with db() as c:
         c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
-        if j['state']=='done':catalog.mark_downloaded(c,j)
+        if j['state']=='done' and not netzkino_downloads.is_netzkino(j):catalog.mark_downloaded(c,j)
+
+def netzkino_download_summary():
+    with db() as c:return netzkino_downloads.summary(c)
 
 def jobs():
     with db() as c:rows=c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC LIMIT 100').fetchall()
@@ -86,8 +93,10 @@ def worker():
             r=c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
             if not r:continue
             j=json.loads(r[0])
-            o=c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
-            blocked=SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
+            # Netzkino offline copies are per device (30-day licence): no Verbund claim/sharing.
+            local_only=netzkino_downloads.is_netzkino(j)
+            o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
+            blocked=None if local_only else SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
             if blocked:
                 # Queued before the other instance's claim arrived (e.g. series packages).
                 j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
@@ -99,10 +108,10 @@ def worker():
         def update(state,received=0,total=0,**kw):
             if cancelled():return
             j.update(state=state,received=received,total=total,**kw);put_job(j)
-            if state!='done' and time.time()-claimed[0]>meshjournal.CLAIM_RENEW:
+            if not local_only and state!='done' and time.time()-claimed[0]>meshjournal.CLAIM_RENEW:
                 claimed[0]=time.time();SERVICE.mesh_claim(j)
         try:
-            claimed[0]=time.time();SERVICE.mesh_claim(j)
+            if not local_only:claimed[0]=time.time();SERVICE.mesh_claim(j)
             if not all(j['metadata'].get(k) for k in ('poster','fanart')):
                 pictures,errors=artwork.lookup(j['metadata'],settings())
                 for field in ('poster','fanart','artwork_provider'):
@@ -112,7 +121,7 @@ def worker():
         except Exception as e:
             diagnostics.error('download_failed',e,job_id=j['id'])
             if not cancelled():j.update(state='error',error=core.safe_error(e));put_job(j)
-        if j.get('state')=='done':
+        if j.get('state')=='done' and not local_only:
             try:SERVICE.mesh_done(j)
             except OSError as e:diagnostics.error('mesh_done_failed',e,job_id=j['id'])
         elif claimed[0]:SERVICE.mesh_release(j)
@@ -250,7 +259,10 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
         if path=='/api/netzkino-downloads':
-            return self.send(netzkino_downloads.listing(ROOT))
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None)
+            result['ytdl']=ytdl_bridge.status()
+            return self.send(result)
         if path=='/api/netzkino-reference-report':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send(netzkino_enrichment.cached(ROOT,q.get('id',[''])[0]))
@@ -283,7 +295,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_licensed_downloads':netzkino_downloads.summary(ROOT),'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -375,7 +387,10 @@ class Handler(BaseHTTPRequestHandler):
         if not row:return self.send({'error':'Nur abgeschlossene Downloads können geladen werden'},404)
         job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
         if not target.is_file():return self.send({'error':'Datei wurde verschoben oder ist nicht verfügbar'},404)
-        self.send_file(target,q.get('inline',['0'])[0]=='1')
+        inline=q.get('inline',['0'])[0]=='1'
+        # 30-day Netzkino copies: playback yes, copying to other devices no (expiry could not follow).
+        if not inline and netzkino_downloads.is_offline(job):return self.send({'error':'Netzkino-Offlinekopien können nur in MediathekAtlas abgespielt werden'},403)
+        self.send_file(target,inline)
     def send_file(self,target,inline):
         size=target.stat().st_size;start,end=0,size-1;status=200
         span=downloads_range(self.headers.get('Range'),size)
@@ -573,17 +588,25 @@ class Handler(BaseHTTPRequestHandler):
                                   subtitle_tracks=sum(t['type']=='subtitle' for t in report['tracks']))
                 return self.send({'probe':report})
             if path=='/api/netzkino-download-add':
-                if NETWORK:raise ValueError('Berechtigte Direktdateien nur im lokalen macOS-Modus')
-                result=netzkino_downloads.enqueue(ROOT,str(d.get('id','')),
-                    d.get('file_url',''),d.get('rights_basis',''),
-                    d.get('rights_note',''),confirmed=d.get('confirmed') is True)
-                diagnostics.event('netzkino_licensed_download_enqueued',created=result['created'])
+                # One queue for everything: same worker, folders and names as Mediathek videos.
+                item_id=str(d.get('id',''));root=settings()['download_dir']
+                with db() as c:
+                    if d.get('file_url'):
+                        result=netzkino_downloads.enqueue_file(c,ROOT,root,item_id,d.get('file_url',''),
+                            d.get('rights_basis',''),d.get('rights_note',''),confirmed=d.get('confirmed') is True)
+                    else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id)
+                diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
                 return self.send(result)
             if path=='/api/netzkino-download-action':
-                if NETWORK:raise ValueError('Dateiverwaltung nur im lokalen macOS-Modus')
-                result=netzkino_downloads.action(ROOT,d.get('id',''),d.get('action',''),
-                    output=Path(DEFAULT_DOWNLOAD_DIR)/'Netzkino-lizenzierte-Dateien')
-                diagnostics.event('netzkino_licensed_download_control',action=d.get('action',''))
+                action=d.get('action','');job_id=str(d.get('id',''))
+                with db() as c:
+                    row=c.execute('SELECT payload FROM jobs WHERE id=?',(job_id,)).fetchone()
+                    if not row or not netzkino_downloads.is_netzkino(json.loads(row[0])):raise ValueError('Netzkino-Download nicht gefunden')
+                    if action=='cancel':
+                        c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(job_id,));result={'ok':True,'state':'cancelled'}
+                    elif action=='delete':result=netzkino_downloads.delete_now(c,job_id)
+                    else:raise ValueError('Für diesen Auftrag unzulässige Aktion')
+                diagnostics.event('netzkino_download_control',action=action)
                 return self.send(result)
             if path=='/api/netzkino-enrich':
                 item_id=str(d.get('id',''))
@@ -852,11 +875,12 @@ class Server(ThreadingHTTPServer):
 if __name__=='__main__':
     server=Server((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
-    if not NETWORK and not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
-        # Separate low-concurrency worker; does not alter broadcaster/ArchiveMedia queues.
-        threading.Thread(target=netzkino_downloads.loop,
-            args=(ROOT,Path(DEFAULT_DOWNLOAD_DIR)/'Netzkino-lizenzierte-Dateien',STOP),
-            daemon=True,name='netzkino_licensed_file_worker').start()
+    try:
+        with db() as c:moved=netzkino_downloads.migrate_legacy(ROOT,c,settings()['download_dir'])
+        if moved:diagnostics.event('netzkino_licensed_jobs_migrated',count=moved)
+    except Exception as e:diagnostics.error('netzkino_legacy_migration_failed',e)
+    # 30-day offline period: expired Netzkino copies are removed hourly (all platforms).
+    threading.Thread(target=netzkino_downloads.loop,args=(db,STOP),daemon=True,name='netzkino_offline_expiry').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         threading.Thread(target=netzkino.loop,args=(ROOT,STOP),daemon=True,name='netzkino_catalog_scheduler').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):

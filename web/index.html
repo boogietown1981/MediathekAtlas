@@ -209,10 +209,14 @@
   <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-nk-image" alt="Filmcover" hidden><dl id="atlas-nk-quickfacts" aria-label="Netzkino-Kurzdaten"></dl></div>
     <div class="nk-detail-main"><p id="atlas-nk-description"></p><dl id="atlas-nk-facts"></dl>
       <p id="atlas-nk-evidence" role="status"></p><div id="atlas-nk-reference" role="status"></div><dl id="atlas-nk-reference-facts"></dl><div id="atlas-nk-validation" role="status"></div>
+      <section id="atlas-nk-offline" class="nk-offline" aria-label="Netzkino offline">
+        <div class="nk-offline-head"><h3>Offline ansehen</h3><button type="button" id="atlas-nk-offline-add" class="primary">↓ Offline herunterladen (30 Tage)</button></div>
+        <p id="atlas-nk-download-status" class="muted" role="status">Netzkino-Titel dürfen heruntergeladen und 30 Tage offline genutzt werden. Danach entfernt MediathekAtlas die Datei automatisch.</p>
+        <div id="atlas-nk-download-jobs" aria-live="polite"></div>
+      </section>
       <details id="atlas-nk-downloads">
-          <summary>Expertenfunktion: separat lizenzierte Videodateien (kein Netzkino-Stream-Download)</summary>
-          <p>Die kostenlose Netzkino-Wiedergabe ist keine allgemeine Datei-Downloadfreigabe. Die vom Anbieter angebotene Offline-Funktion nutzt du über die <a href="https://play.google.com/store/apps/details?id=de.netzkino.android.ics" target="_blank" rel="noopener noreferrer">offizielle Android-App</a> (Geräteunterstützung beim Anbieter prüfen).</p>
-          <p>Ein eigener Datei-Download ist hier nur möglich, wenn du **zusätzlich** die entsprechende Berechtigung und eine vom Rechteinhaber bereitgestellte direkte Videodatei besitzt. Keine Streaming-/Player-URLs einfügen.</p>
+          <summary>Eigene, separat lizenzierte Videodatei hinzufügen (ohne Ablauf)</summary>
+          <p class="muted">Nur für Dateien eines anderen Rechteinhabers mit eigener, dauerhafter Freigabe. Für normale Netzkino-Titel oben „Offline herunterladen“ verwenden.</p>
           <form id="atlas-nk-download-form">
             <label class="nk-download-wide">Berechtigter direkter HTTPS-Dateilink (MP4, MKV, WebM, MOV)<input id="atlas-nk-download-url" type="url" required maxlength="1200" placeholder="https://rechteinhaber.example/film.mp4"></label>
             <label>Nachweisart<select id="atlas-nk-download-basis" required>
@@ -222,11 +226,9 @@
               <option value="public_domain">Nachweislich gemeinfreies Werk</option>
             </select></label>
             <label class="nk-download-wide">Quelle der Berechtigung / Freigabe (ohne Tokens)<textarea id="atlas-nk-download-note" required minlength="24" maxlength="600" rows="2"></textarea></label>
-            <label class="nk-download-wide nk-download-check"><input type="checkbox" id="atlas-nk-download-confirm" required> Ich habe das Recht, diese konkrete Datei unabhängig vom Netzkino-Stream lokal herunterzuladen.</label>
-            <button class="primary" type="submit">Berechtigten Datei-Download vormerken</button>
+            <label class="nk-download-wide nk-download-check"><input type="checkbox" id="atlas-nk-download-confirm" required> Ich habe das Recht, diese konkrete Datei dauerhaft lokal zu speichern.</label>
+            <button type="submit">Lizenzierte Datei einreihen</button>
           </form>
-          <p id="atlas-nk-download-status" role="status"></p>
-          <div id="atlas-nk-download-jobs" aria-live="polite"></div>
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>

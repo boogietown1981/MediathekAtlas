@@ -1,90 +1,161 @@
-"""Explicitly authorised direct-file downloads linked to Netzkino catalogue items.
+"""Netzkino offline downloads through the shared MediathekAtlas download queue.
 
-Netzkino's AVOD/Plus streams are NOT download grants. This module neither
-extracts player/manifest URLs nor bypasses ads, DRM, access controls or geo
-restrictions. Only a separately licensed, user-supplied HTTPS direct file from
-an independent authorised distributor can be queued; rights are user-asserted,
-not independently verified. Separate SQLite and output folder; existing
-MediathekAtlas/ArchiveMedia queues remain untouched.
+Since 0.5.32 there is exactly one download implementation: a Netzkino title
+becomes a regular job in the ``jobs`` table and is processed by the same worker
+as Mediathek videos (downloads.run). Therefore Netzkino files get the same
+folder layout and names (core.target: ``Filme/<Titel> (<Jahr>)/…mkv`` or
+``Serien/<Serie>/Season NN/<Serie> - SxxEyy.mkv``), the same MKV tagging, NFO and
+metadata.json sidecars and the same ``.partial`` staging.
+
+Differences to Mediathek jobs, all stored in the job payload:
+* ``source._resolver='netzkino'``: the progressive MP4 address is resolved with
+  ytdl-nightly (ytdl_bridge) right before the download, never stored in advance;
+* ``license.kind='netzkino_offline'``: offline use is limited to OFFLINE_DAYS
+  after completion. ``expire()`` then removes the video, its sidecars and
+  artwork that only belonged to it, and marks the job ``expired``;
+* such jobs are not announced to other Verbund systems and do not mark
+  Mediathek works as downloaded.
+
+The 0.5.31.9 "licensed direct file" queue (separate SQLite + worker) is
+migrated into the shared queue; explicit user-licensed direct files remain
+possible through ``enqueue_file``.
 """
 from __future__ import annotations
 
-import contextlib
 import ipaddress
-import os
+import json
 import re
-import socket
+import secrets
 import sqlite3
-import threading
 import time
-import urllib.error
 import urllib.parse
-import urllib.request
-import uuid
 from pathlib import Path
 
-MAX_BYTES = 16 * 1024 ** 3  # bounded 16 GiB per permitted direct file
-CHUNK = 256 * 1024
-EXTENSIONS = {'.mp4', '.mkv', '.webm', '.mov'}
-MIME_TYPES = {'video/mp4', 'video/x-matroska', 'video/webm', 'video/quicktime',
-              'application/octet-stream'}
-STATES = {'queued', 'running', 'paused', 'complete', 'error', 'cancelled'}
-RIGHTS = {'rights_holder', 'written_permission', 'public_domain'}
+OFFLINE_DAYS = 30
+OFFLINE_SECONDS = OFFLINE_DAYS * 86400
+LICENSE_OFFLINE = 'netzkino_offline'
+LICENSE_FILE = 'licensed_file'
+ACTIVE = ('queued', 'downloading', 'tagging')
 ID_RE = re.compile(r'^[0-9a-f]{32}$')
-_LOCK = threading.Lock()
-
-SCHEMA = '''
-CREATE TABLE IF NOT EXISTS licensed_netzkino_downloads (
- id TEXT PRIMARY KEY, netzkino_id TEXT NOT NULL, title TEXT NOT NULL,
- source_url TEXT NOT NULL, rights_basis TEXT NOT NULL, rights_note TEXT NOT NULL,
- target_name TEXT NOT NULL, state TEXT NOT NULL, bytes_done INTEGER NOT NULL DEFAULT 0,
- bytes_total INTEGER NOT NULL DEFAULT 0, etag TEXT NOT NULL DEFAULT '',
- last_modified TEXT NOT NULL DEFAULT '', error_code TEXT NOT NULL DEFAULT '',
- created REAL NOT NULL, updated REAL NOT NULL);
-CREATE INDEX IF NOT EXISTS ix_nk_license_state ON licensed_netzkino_downloads(state,created);
-'''
+EXTENSIONS = {'.mp4', '.mkv', '.webm', '.mov'}
+RIGHTS = {'rights_holder', 'written_permission', 'public_domain'}
+LEGACY_DB = 'netzkino_licensed_downloads.sqlite3'
+IMAGE_STEMS = ('poster', 'fanart')
+IMAGE_EXT = ('.jpg', '.png')
 
 
-def _connect_raw(root):
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / 'netzkino_licensed_downloads.sqlite3'
-    c = sqlite3.connect(str(path), timeout=8)
-    c.row_factory = sqlite3.Row
-    c.executescript(SCHEMA)
-    if os.name != 'nt':
-        try: os.chmod(path, 0o600)
-        except OSError: pass
-    return c
+# ---------------------------------------------------------------- job model
+def is_netzkino(job):
+    return (job or {}).get('origin') == 'netzkino'
 
 
-@contextlib.contextmanager
-def _conn(root):
-    c=_connect_raw(root)
+def is_offline(job):
+    return ((job or {}).get('license') or {}).get('kind') == LICENSE_OFFLINE
+
+
+def _people(values):
+    out = []
+    for v in values or []:
+        name = v.get('name') if isinstance(v, dict) else v
+        if isinstance(name, str) and name.strip():
+            out.append(' '.join(name.split())[:120])
+    return out[:20]
+
+
+def metadata(row, details):
+    """Map Netzkino catalogue + public details to the shared metadata schema."""
+    import netzkino
+    d = {**(details or {})}
+    title = ' '.join(str(d.get('title') or row.get('title') or '').split())[:180]
+    if not title:
+        raise ValueError('Netzkino-Titel ohne Namen')
+    media = netzkino.classify_media({'title': title, 'kind': row.get('kind') or 'movie'})
+    year = d.get('year') if d.get('year') is not None else row.get('year')
+    meta = {'kind': 'movie', 'title': title, 'episode_title': '', 'year': year,
+            'season': None, 'episode': None,
+            'description': d.get('description') or row.get('summary') or '',
+            'genres': list(d.get('genres') or [g.strip() for g in (row.get('genres') or '').split(',') if g.strip()])[:12],
+            'poster': d.get('poster') or row.get('poster') or '', 'fanart': d.get('backdrop') or '',
+            'cast': [{'name': n} for n in _people(d.get('cast'))],
+            'directors': _people(d.get('directors')), 'writers': _people(d.get('writers')),
+            'provider': 'Netzkino', 'reference_id': d.get('content_id') or row.get('content_id') or None,
+            'state': 'manual', 'reason': 'Netzkino-Katalogangaben; Offline-Nutzung zeitlich begrenzt.'}
+    # Same rule as for Mediathek videos: series names only with season AND
+    # episode. "Folge 3" without a season stays a film-style title instead of
+    # inventing "Staffel 1".
+    if media['media_type'] == 'episode' and media['season'] and media['episode']:
+        meta.update(kind='series', title=media['series_title'], season=media['season'],
+                    episode=media['episode'], episode_title=media['episode_title'] or title)
+    elif media['media_type'] == 'series':
+        raise ValueError('Bitte eine einzelne Folge auswählen; ganze Serien werden folgenweise geladen')
+    return meta
+
+
+def build_job(root, download_dir, item_id, *, details_get=None, now=None):
+    """Create (but do not store) the shared-queue job for one Netzkino title."""
+    import core, netzkino_details, ytdl_bridge
+    if not ID_RE.fullmatch(str(item_id or '')):
+        raise ValueError('Ungültige Netzkino-Katalogkennung')
+    db = netzkino_details._connect(root)
     try:
-        with c:yield c
-    finally:c.close()
+        row = netzkino_details._find(db, item_id)
+    finally:
+        db.close()
+    page = ytdl_bridge.page_url(row['url'])
+    details = (details_get or netzkino_details.get)(root, item_id).get('details') or {}
+    meta = core.validate_meta(metadata(row, details))
+    source_id = 'netzkino:' + item_id
+    target = str(core.target(download_dir, meta, source_id))
+    source = {'_id': source_id, '_resolver': 'netzkino', '_page_url': page,
+              'channel': 'Netzkino', 'title': row['title'],
+              'duration': details.get('duration_seconds') or row.get('duration')}
+    return {'id': secrets.token_hex(8), 'source': source, 'metadata': meta,
+            'root': str(download_dir), 'quality': 'best', 'target': target,
+            'state': 'queued', 'received': 0, 'total': 0,
+            'origin': 'netzkino', 'netzkino_id': item_id,
+            'license': {'kind': LICENSE_OFFLINE, 'days': OFFLINE_DAYS,
+                        'granted': time.time() if now is None else float(now),
+                        'note': 'Netzkino: Download erlaubt, Offline-Nutzung %d Tage' % OFFLINE_DAYS}}
 
 
-def initialize(root):
-    """Recover a previously interrupted worker without discarding progress."""
-    with _conn(root) as c:
-        c.execute("UPDATE licensed_netzkino_downloads SET state='queued' WHERE state='running'")
+def _duplicate(c, job):
+    for payload, state in c.execute("SELECT payload,state FROM jobs WHERE state IN ('queued','downloading','tagging','done')"):
+        other = json.loads(payload)
+        if other.get('target') == job['target']:
+            return other.get('id'), state
+        if is_netzkino(other) and job.get('netzkino_id') and other.get('netzkino_id') == job['netzkino_id'] \
+                and (other.get('license') or {}).get('kind') == job['license']['kind']:
+            return other.get('id'), state
+    return None
 
 
+def insert(c, job):
+    """Store a job in the shared queue unless the title/file is already there."""
+    found = _duplicate(c, job)
+    if found:
+        return {'id': found[0], 'created': False, 'state': found[1]}
+    if Path(job['target']).exists():
+        raise FileExistsError('Zieldatei existiert bereits – nichts überschrieben')
+    c.execute('INSERT INTO jobs VALUES(?,?,?)', (job['id'], json.dumps(job), job['state']))
+    return {'id': job['id'], 'created': True, 'state': job['state'], 'target': job['target']}
+
+
+def enqueue(c, root, download_dir, item_id, **kw):
+    return insert(c, build_job(root, download_dir, item_id, **kw))
+
+
+# ------------------------------------------- explicitly licensed direct files
 def _safe_host(host):
     h = (host or '').lower().rstrip('.')
     if not h or len(h) > 240 or '.' not in h or h.endswith(('.local', '.internal', '.test', '.localhost')):
         raise ValueError('Nur öffentliche HTTPS-Downloadserver sind erlaubt')
-    # Public Netzkino playback/CDN endpoints must not be converted to files.
-    if any(h == name or h.endswith('.' + name) for name in
-           ('netzkino.de', 'pluto.tv', 'tubitv.com', 'netzkino-seite.netzkino.de')):
-        raise ValueError('Streaming-Anbieteradressen sind keine Downloadfreigabe')
+    if any(h == n or h.endswith('.' + n) for n in ('netzkino.de', 'pluto.tv', 'tubitv.com')):
+        raise ValueError('Für Netzkino-Titel „Offline herunterladen“ verwenden; dieses Feld ist für fremde Lizenzdateien')
     try:
-        address = ipaddress.ip_address(h.strip('[]'))
+        ipaddress.ip_address(h.strip('[]'))
     except ValueError:
-        address = None
-    if address is not None:
+        pass
+    else:
         raise ValueError('Direkte IP-Adressen sind nicht gestattet')
     if not re.fullmatch(r'[a-z0-9.-]+', h) or '..' in h:
         raise ValueError('Ungültiger Downloadserver')
@@ -94,245 +165,221 @@ def _safe_host(host):
 def direct_url(value):
     if not isinstance(value, str) or not (15 <= len(value) <= 1200):
         raise ValueError('Berechtigten direkten Datei-Link angeben')
-    try: p = urllib.parse.urlsplit(value)
-    except ValueError: raise ValueError('Ungültige Datei-Adresse') from None
-    if (p.scheme != 'https' or p.port not in (None,443) or p.username or p.password
+    try:
+        p = urllib.parse.urlsplit(value)
+    except ValueError:
+        raise ValueError('Ungültige Datei-Adresse') from None
+    if (p.scheme != 'https' or p.port not in (None, 443) or p.username or p.password
             or p.query or p.fragment or '\\' in p.path or '%' in p.path):
         raise ValueError('Nur HTTPS-Dateilinks ohne Zugangstoken, Parameter oder Umleitungen')
     _safe_host(p.hostname)
-    suffix = Path(p.path).suffix.lower()
-    if suffix not in EXTENSIONS or not p.path.startswith('/'):
+    if Path(p.path).suffix.lower() not in EXTENSIONS or not p.path.startswith('/'):
         raise ValueError('Nur explizite MP4/MKV/WebM/MOV-Dateien; keine Streaming-Playlists')
     return urllib.parse.urlunsplit((p.scheme, p.netloc.lower(), p.path, '', ''))
 
 
-def _resolve_public(host):
-    """Block local/private DNS destinations. This is an additional, not sole SSRF guard."""
-    try: addresses = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
-    except OSError: raise ValueError('Downloadserver kann nicht aufgelöst werden') from None
-    if not addresses: raise ValueError('Downloadserver ist nicht erreichbar')
-    for entry in addresses:
-        ip = ipaddress.ip_address(entry[4][0])
-        if not ip.is_global:
-            raise ValueError('Private oder reservierte Downloadserver sind gesperrt')
-
-
-class NoRedirect(urllib.request.HTTPRedirectHandler):
-    def redirect_request(self, request, fp, code, msg, headers, newurl):
-        raise ValueError('Weiterleitungen sind nicht freigegeben')
-
-
-def _open(req):
-    _resolve_public(urllib.parse.urlsplit(req.full_url).hostname)
-    # No system proxy to private destinations; no cookies/credentials.
-    opener = urllib.request.build_opener(urllib.request.ProxyHandler({}), NoRedirect())
-    return opener.open(req, timeout=25)
-
-
-def _safe_title(title):
-    value = re.sub(r'[\\/<>:"|?*\x00-\x1f]+', ' ', str(title or 'Netzkino'))
-    value = ' '.join(value.split()).strip(' .')[:120]
-    return value or 'Netzkino'
-
-
-def _source_item(root, netzkino_id):
-    if not ID_RE.fullmatch(str(netzkino_id or '')):
-        raise ValueError('Ungültige Netzkino-Katalogkennung')
-    import netzkino
-    c=netzkino._connect(root)
-    try:
-        found=c.execute('SELECT title,year FROM netzkino_catalog WHERE id=?', (netzkino_id,)).fetchone()
-        if not found:
-            found=c.execute('SELECT title,NULL AS year FROM netzkino_links WHERE id=?', (netzkino_id,)).fetchone()
-        if not found: raise ValueError('Netzkino-Titel ist nicht im lokalen Katalog vorhanden')
-        return str(found['title']), found['year']
-    finally: c.close()
-
-
-def enqueue(root, netzkino_id, file_url, rights_basis, rights_note, confirmed=False):
+def enqueue_file(c, root, download_dir, item_id, file_url, rights_basis, rights_note,
+                 confirmed=False, **kw):
+    """User-licensed direct file for a Netzkino title: no expiry, same naming."""
     if confirmed is not True:
         raise ValueError('Ausdrückliche Bestätigung der gesonderten Downloadberechtigung erforderlich')
     if rights_basis not in RIGHTS:
         raise ValueError('Art der separaten Downloadberechtigung fehlt')
     note = ' '.join(str(rights_note or '').split())
-    if len(note) < 24 or len(note) > 600:
+    if not 24 <= len(note) <= 600:
         raise ValueError('Konkrete Rechtequelle/Freigabe dokumentieren (mindestens 24 Zeichen)')
     url = direct_url(file_url)
-    title, year = _source_item(root, netzkino_id)
-    ext = Path(urllib.parse.urlsplit(url).path).suffix.lower()
-    filename = f'{_safe_title(title)}{(" (" + str(year) + ")") if year else ""} [NK-{netzkino_id[:10]}]{ext}'
-    now = time.time(); job_id = uuid.uuid4().hex
-    with _conn(root) as c:
-        existing = c.execute('''SELECT id FROM licensed_netzkino_downloads
-            WHERE netzkino_id=? AND source_url=? AND state IN ('queued','running','paused','complete')''',
-            (netzkino_id,url)).fetchone()
-        if existing: return {'id':existing['id'],'created':False}
-        c.execute('''INSERT INTO licensed_netzkino_downloads (
-            id,netzkino_id,title,source_url,rights_basis,rights_note,target_name,state,created,updated)
-            VALUES(?,?,?,?,?,?,?, 'queued',?,?)''',
-            (job_id,netzkino_id,title,url,rights_basis,note,filename,now,now))
-    return {'id':job_id,'created':True}
+    job = build_job(root, download_dir, item_id, **kw)
+    job['source'].pop('_resolver', None)
+    job['source']['_download_url'] = url
+    job['license'] = {'kind': LICENSE_FILE, 'rights_basis': rights_basis, 'note': note,
+                      'granted': job['license']['granted']}
+    return insert(c, job)
 
 
-def _public(r):
-    keys = ('id','netzkino_id','title','target_name','state','bytes_done','bytes_total','error_code','created','updated')
-    return {k:r[k] for k in keys}
-
-
-def listing(root, limit=50):
-    with _conn(root) as c:
-        rows=c.execute('''SELECT * FROM licensed_netzkino_downloads ORDER BY created DESC LIMIT ?''',
-                       (min(100,max(1,int(limit))),)).fetchall()
-    return {'items':[_public(r) for r in rows],
-            'policy':'Nur separat berechtigte, explizite Direktdateien. Netzkino-Playerstreams sind nicht freigegeben.',
-            'automatic_netzkino_downloads':False}
-
-
-def summary(root):
-    with _conn(root) as c:
-        counts={str(s):int(n) for s,n in c.execute('''SELECT state,COUNT(*) FROM licensed_netzkino_downloads GROUP BY state''')}
-    return {k:counts.get(k,0) for k in ('queued','running','paused','complete','error','cancelled')}
-
-
-def action(root, job_id, mode, output=None):
-    if not ID_RE.fullmatch(str(job_id or '')):
-        raise ValueError('Ungültige Auftragskennung')
-    now = time.time()
-    with _conn(root) as c:
-        found=c.execute('SELECT state,target_name FROM licensed_netzkino_downloads WHERE id=?',(job_id,)).fetchone()
-        if not found: raise ValueError('Downloadauftrag nicht vorhanden')
-        state=found['state']
-        if mode=='pause' and state in ('queued','running'):
-            c.execute('UPDATE licensed_netzkino_downloads SET state=?,updated=? WHERE id=?',('paused',now,job_id))
-        elif mode=='resume' and state in ('paused','error'):
-            c.execute('''UPDATE licensed_netzkino_downloads SET state='queued',error_code='',updated=? WHERE id=?''',(now,job_id))
-        elif mode=='cancel' and state in ('queued','running','paused','error'):
-            c.execute("UPDATE licensed_netzkino_downloads SET state='cancelled',updated=? WHERE id=?",(now,job_id))
-            # Running worker closes the file before removal; never unlink it here.
-            if output is not None and state!='running':
-                part=Path(output)/(found['target_name']+'.part')
-                if part.is_file() and not part.is_symlink():part.unlink()
-        elif mode=='pause' and state=='paused' or mode=='resume' and state=='queued':pass
-        else: raise ValueError('Für diesen Auftrag unzulässige Aktion')
-    return {'ok':True,'state':{'pause':'paused','resume':'queued','cancel':'cancelled'}[mode]}
-
-
-def _state(root, job_id):
-    with _conn(root) as c:
-        r=c.execute('SELECT state FROM licensed_netzkino_downloads WHERE id=?',(job_id,)).fetchone()
-    return r['state'] if r else 'paused'
-
-
-def _update(root, job_id, **fields):
-    allowed={'state','bytes_done','bytes_total','etag','last_modified','error_code'}
-    fields={k:v for k,v in fields.items() if k in allowed}
-    fields['updated']=time.time()
-    with _conn(root) as c:
-        c.execute('UPDATE licensed_netzkino_downloads SET '+','.join(k+'=?' for k in fields)+' WHERE id=?',
-                  (*fields.values(),job_id))
-
-
-def _claim(root):
-    with _conn(root) as c:
-        c.execute('BEGIN IMMEDIATE')
-        row=c.execute("SELECT * FROM licensed_netzkino_downloads WHERE state='queued' ORDER BY created LIMIT 1").fetchone()
-        if row:c.execute("UPDATE licensed_netzkino_downloads SET state='running',updated=? WHERE id=?",(time.time(),row['id']))
-    return dict(row) if row else None
-
-
-def _download(root, output, job, *, opener=None, progress=None):
-    """Download one explicitly permitted file. Caller owns state transitions."""
-    path=direct_url(job['source_url'])
-    suffix=Path(job['target_name']).suffix.lower()
-    if suffix not in EXTENSIONS or Path(job['target_name']).name != job['target_name']:
-        raise ValueError('Ungültiger Zieldateiname')
-    output=Path(output)
-    output.mkdir(parents=True,exist_ok=True,mode=0o700)
-    if output.is_symlink(): raise ValueError('Ausgabeverzeichnis ist ein Symlink')
-    final=output/job['target_name'];partial=output/(job['target_name']+'.part')
-    if final.exists() or final.is_symlink(): raise FileExistsError('Zieldatei existiert bereits; kein Überschreiben')
-    if partial.is_symlink(): raise ValueError('Part-Datei ist ein Symlink')
-    current=partial.stat().st_size if partial.exists() else 0
-    if current>MAX_BYTES:raise ValueError('Teil-Datei überschreitet das Größenlimit')
-    headers={'User-Agent':'MediathekAtlas-LicensedDownload/1', 'Accept':'video/mp4,video/webm,video/*;q=0.5'}
-    if current and not (job.get('etag') or job.get('last_modified')):
-        raise ValueError('Keine sichere Wiederaufnahme ohne ETag/Last-Modified')
-    if current:
-        headers['Range']=f'bytes={current}-'
-        if job.get('etag'):headers['If-Range']=job['etag']
-        elif job.get('last_modified'):headers['If-Range']=job['last_modified']
-    req=urllib.request.Request(path,headers=headers)
-    opener=opener or _open
-    with opener(req) as response:
-        status=getattr(response,'status',None)
-        if status is None:status=response.getcode()
-        if current and status!=206: raise ValueError('Server unterstützt sichere Wiederaufnahme nicht')
-        if not current and status!=200:raise ValueError('Unerwartete HTTP-Antwort')
-        mime=str(response.headers.get('Content-Type') or '').split(';',1)[0].strip().lower()
-        if mime not in MIME_TYPES:raise ValueError('Anbieter liefert keine direkte Videodatei')
-        content_length=response.headers.get('Content-Length')
-        try:length=int(content_length) if content_length is not None else None
-        except (ValueError,TypeError):raise ValueError('Ungültige Content-Length') from None
-        if length is None or length < 0 or current+length>MAX_BYTES:
-            raise ValueError('Dateigröße unbekannt oder außerhalb des Limits')
-        if current:
-            cr=str(response.headers.get('Content-Range') or '')
-            m=re.fullmatch(r'bytes (\d+)-(\d+)/(\d+)',cr)
-            if not m or int(m[1])!=current or int(m[3])!=current+length:
-                raise ValueError('Ungültiger HTTP-Range-Nachweis')
-            if job.get('etag') and response.headers.get('ETag') and response.headers.get('ETag')!=job['etag']:
-                raise ValueError('Dateiquelle hat sich seit Beginn geändert')
-        total=current+length
-        _update(root,job['id'],bytes_total=total,etag=response.headers.get('ETag') or job.get('etag') or '',
-                last_modified=response.headers.get('Last-Modified') or job.get('last_modified') or '')
-        fd=os.open(partial, os.O_WRONLY|os.O_CREAT|os.O_NOFOLLOW|(os.O_APPEND if current else os.O_TRUNC),0o600)
-        written=current;last_report=0;last_state_check=0
-        try:
-            with os.fdopen(fd,'ab' if current else 'wb') as target:
-                while True:
-                    if time.monotonic()-last_state_check>.4:
-                        if _state(root,job['id'])!='running':return 'paused'
-                        last_state_check=time.monotonic()
-                    chunk=response.read(min(CHUNK,total-written)) if written<total else b''
-                    if not chunk: break
-                    target.write(chunk)
-                    written+=len(chunk)
-                    if written>total:raise ValueError('Antwort länger als gemeldete Dateigröße')
-                    if time.monotonic()-last_report>.5:
-                        _update(root,job['id'],bytes_done=written)
-                        if progress:progress(written,total)
-                        last_report=time.monotonic()
-                target.flush();os.fsync(target.fileno())
-        finally:_update(root,job['id'],bytes_done=written)
-        if written!=total:raise IOError('Datei unvollständig; wird fortgesetzt')
-        if _state(root,job['id'])!='running':return 'paused'
-        # Atomic no-overwrite publish: never replace a pre-existing user's file.
-        os.link(partial, final, follow_symlinks=False)
-        partial.unlink()
-        return 'complete'
-
-
-def _work_one(root, output, job, *, opener=None):
+def migrate_legacy(root, c, download_dir):
+    """Move open 0.5.31.9 licensed-file jobs into the shared queue (once, idempotent)."""
+    path = Path(root) / LEGACY_DB
+    if not path.is_file():
+        return 0
+    moved = 0
+    legacy = sqlite3.connect(str(path), timeout=8)
+    legacy.row_factory = sqlite3.Row
     try:
-        outcome=_download(root,output,job,opener=opener)
-        # User may pause during the final write. Never overwrite pause with done.
-        if outcome=='complete' and _state(root,job['id'])=='running':
-            _update(root,job['id'],state='complete',error_code='')
-        if _state(root,job['id'])=='cancelled':
-            part=Path(output)/(job['target_name']+'.part')
-            if part.is_file() and not part.is_symlink():part.unlink()
-    except (ValueError, OSError, urllib.error.URLError, urllib.error.HTTPError) as exc:
-        # No signed URLs, response bodies or secrets in logs/status.
-        code=('target_exists' if isinstance(exc,FileExistsError) else
-              'invalid_source' if isinstance(exc,ValueError) else
-              'network_or_file_error')
-        if _state(root,job['id'])=='running':_update(root,job['id'],state='error',error_code=code)
-    return _state(root,job['id'])
+        names = {r[0] for r in legacy.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+        if 'licensed_netzkino_downloads' not in names:
+            return 0
+        rows = legacy.execute("""SELECT * FROM licensed_netzkino_downloads
+            WHERE state IN ('queued','running','paused','error')""").fetchall()
+        for r in rows:
+            try:
+                enqueue_file(c, root, download_dir, r['netzkino_id'], r['source_url'],
+                             r['rights_basis'], r['rights_note'], True,
+                             details_get=lambda _r, _i: {'details': {}})
+                moved += 1
+            except (ValueError, OSError):
+                pass  # stays visible in the legacy table; nothing is deleted
+            with legacy:
+                legacy.execute("UPDATE licensed_netzkino_downloads SET state='migrated' WHERE id=?", (r['id'],))
+    finally:
+        legacy.close()
+    return moved
 
 
-def loop(root,output,stop):
-    initialize(root)
-    while not stop.is_set():
-        with _LOCK:job=_claim(root)
-        if job:_work_one(root,output,job)
-        else:stop.wait(1.5)
+# ------------------------------------------------------- offline life cycle
+def stamp(job, now=None):
+    """Called when a job reaches 'done': start the offline period."""
+    if is_offline(job) and not job.get('offline_until'):
+        now = time.time() if now is None else float(now)
+        job['downloaded_at'] = now
+        job['offline_until'] = now + OFFLINE_SECONDS
+    return job
+
+
+def _inside(path, root):
+    try:
+        Path(path).resolve().relative_to(Path(root).expanduser().resolve())
+        return True
+    except (ValueError, OSError):
+        return False
+
+
+def _has_video(folder):
+    return any(p.is_file() and p.suffix.lower() in ('.mkv', '.mp4', '.m4v', '.avi', '.mov', '.webm', '.ts')
+               for p in folder.iterdir())
+
+
+def _drop_artwork(folder, extra=()):
+    for stem in IMAGE_STEMS:
+        for ext in IMAGE_EXT:
+            p = folder / (stem + ext)
+            if p.is_file() and not p.is_symlink():
+                p.unlink()
+    for name in extra:
+        p = folder / name
+        if p.is_file() and not p.is_symlink():
+            p.unlink()
+
+
+def _rmdir(folder):
+    try:
+        folder.rmdir()
+        return True
+    except OSError:
+        return False
+
+
+def remove_files(job):
+    """Delete exactly the files this job published; never touch unrelated media."""
+    target = Path(job.get('path') or job.get('target') or '')
+    root = job.get('root') or ''
+    if not target.name or not root or not _inside(target, root):
+        return []
+    removed = []
+    for p in (target, target.with_suffix('.nfo'), target.with_suffix('.metadata.json')):
+        if p.is_file() and not p.is_symlink():
+            p.unlink()
+            removed.append(str(p))
+    folder = target.parent
+    if not folder.is_dir():
+        return removed
+    if (job.get('metadata') or {}).get('kind') == 'series':
+        _rmdir(folder)  # empty season folder
+        show = folder.parent
+        if show.is_dir() and not any(p.is_dir() for p in show.iterdir()) and not _has_video(show):
+            _drop_artwork(show, ('tvshow.nfo',))
+            _rmdir(show)
+    elif not _has_video(folder):
+        _drop_artwork(folder)
+        _rmdir(folder)
+    return removed
+
+
+def _finish(c, job, state, now):
+    job.update(state=state, expired_at=now, file_state='removed')
+    c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), state, job['id']))
+
+
+def expire(c, now=None):
+    """Remove offline copies whose period has ended. Returns the expired job ids."""
+    now = time.time() if now is None else float(now)
+    done = []
+    for (payload,) in c.execute("SELECT payload FROM jobs WHERE state='done'").fetchall():
+        job = json.loads(payload)
+        if not is_offline(job):
+            continue
+        if not job.get('offline_until'):
+            stamp(job, now)  # finished without bookkeeping: start now, never early
+            c.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(job), job['id']))
+            continue
+        if job['offline_until'] > now:
+            continue
+        remove_files(job)
+        _finish(c, job, 'expired', now)
+        done.append(job['id'])
+    return done
+
+
+def delete_now(c, job_id, now=None):
+    """User removes an offline copy before the period ends."""
+    r = c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'", (str(job_id),)).fetchone()
+    if not r:
+        raise ValueError('Nur fertige Netzkino-Downloads können gelöscht werden')
+    job = json.loads(r[0])
+    if not is_netzkino(job):
+        raise ValueError('Kein Netzkino-Download')
+    remove_files(job)
+    _finish(c, job, 'removed', time.time() if now is None else float(now))
+    return {'ok': True, 'state': 'removed'}
+
+
+def loop(db, stop, interval=3600):
+    """Hourly expiry check; also runs right after start."""
+    import diagnostics
+    while True:
+        try:
+            with db() as c:
+                expired = expire(c)
+            if expired:
+                diagnostics.event('netzkino_offline_expired', count=len(expired))
+        except Exception as exc:  # never stop the service because of cleanup
+            diagnostics.error('netzkino_offline_expiry_failed', exc)
+        if stop.wait(interval):
+            return
+
+
+# ------------------------------------------------------------- read models
+def _public(job, now):
+    until = job.get('offline_until')
+    return {'id': job['id'], 'netzkino_id': job.get('netzkino_id'), 'state': job.get('state'),
+            'title': (job.get('metadata') or {}).get('title'),
+            'target_name': Path(job.get('path') or job.get('target') or '').name,
+            'received': job.get('received', 0), 'total': job.get('total', 0),
+            'error': '' if job.get('state') == 'done' else job.get('error', ''), 'license': (job.get('license') or {}).get('kind'),
+            'offline_until': until,
+            'days_left': None if not until else max(0, int((until - now + 86399) // 86400))}
+
+
+def listing(c, item_id=None, limit=50, now=None):
+    now = time.time() if now is None else float(now)
+    items = []
+    for payload, state in c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC'):
+        job = json.loads(payload)
+        if not is_netzkino(job) or (item_id and job.get('netzkino_id') != item_id):
+            continue
+        job['state'] = state
+        items.append(_public(job, now))
+        if len(items) >= limit:
+            break
+    return {'items': items, 'offline_days': OFFLINE_DAYS,
+            'policy': 'Netzkino-Titel dürfen heruntergeladen und %d Tage offline genutzt werden; '
+                      'danach entfernt MediathekAtlas die Datei automatisch.' % OFFLINE_DAYS}
+
+
+def summary(c):
+    counts = {}
+    for payload, state in c.execute('SELECT payload,state FROM jobs'):
+        if is_netzkino(json.loads(payload)):
+            counts[state] = counts.get(state, 0) + 1
+    return {k: counts.get(k, 0) for k in ('queued', 'downloading', 'tagging', 'done', 'error',
+                                         'cancelled', 'expired', 'removed')}

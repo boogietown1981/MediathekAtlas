@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.25.1
+# MediathekAtlas · 0.5.32
+
+## Neu in 0.5.32: Netzkino offline ansehen
+
+- Netzkino-Titel lassen sich im Detailfenster mit **„Offline herunterladen (30 Tage)“** laden. Gespeichert wird genau wie bei Mediathek-Videos (gleiche Ordner, Dateinamen, MKV, NFO, Cover).
+- Nach 30 Tagen entfernt MediathekAtlas die Datei automatisch; die Restlaufzeit steht im Detailfenster und in der Downloadliste.
+- Die Dateiadresse ermittelt das mitgelieferte ytdl-nightly. Aktualisieren: `python3 tools/update_ytdl_nightly.py` (Entwickler) oder testweise `MEDIATHEKATLAS_YTDL_DIR=/pfad/zu/ytdl-nightly`.
+- DRM-geschützte Titel werden nicht geladen. Netzkino liefert nur innerhalb Deutschlands aus.
 
 ## 0.5.25.1 – Verbund wiederherstellen und IMDb-Offline-Download absichern
 

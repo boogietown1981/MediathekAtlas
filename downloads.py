@@ -66,13 +66,25 @@ def quality_summary(details):
              'channels':s.get('channels'), 'language':s.get('tags',{}).get('language')}
             for s in details.get('streams',[]) if s.get('codec_type') in ('video','audio','subtitle')]
 
+QUALITY_KEYS={'hd':['url_video_hd','url_video','url_video_low'],'standard':['url_video','url_video_hd','url_video_low'],'low':['url_video_low','url_video','url_video_hd']}
+
+def source_url(row,quality='best'):
+    """Direct file address for one job. Sources without a stable file address
+    (Netzkino pages) carry a resolver and are resolved right before download,
+    so the rest of the pipeline (MKV, NFO, naming, .partial staging) is shared."""
+    if row.get('_resolver')=='netzkino':
+        import ytdl_bridge
+        return ytdl_bridge.resolve(row.get('_page_url'))['url']
+    if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
+    keys=QUALITY_KEYS
+    return row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
+
 def run(row,meta,root,quality,update,cancelled):
     # The catalogue already records most offer runtimes. Reject obvious extras
     # before any download or FFmpeg process; FFprobe is not a catalog scanner.
     if meta.get('kind')=='series':check_episode_runtime(row,meta)
     if not tool('ffmpeg') or not tool('ffprobe'):raise ValueError('ffmpeg oder ffprobe ist nicht startbar. Unter Einstellungen die gefundenen Pfade prüfen.')
-    keys={'hd':['url_video_hd','url_video','url_video_low'],'standard':['url_video','url_video_hd','url_video_low'],'low':['url_video_low','url_video','url_video_hd']}
-    url=row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
+    url=source_url(row,quality)
     if not url:raise ValueError('Keine Downloadadresse vorhanden')
     if '.m3u8' in url.lower() or '.mpd' in url.lower():raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
     dest=core.target(root,meta,row['_id'])

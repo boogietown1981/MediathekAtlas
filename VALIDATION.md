@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.32 – Netzkino offline und Integrationsstand (11. November 2026)
+
+- Ausgeführt (Linux, Python 3.13): `python3 -m unittest discover -s tests` → 499 Tests OK (1 übersprungen), darunter 16 neue Netzkino-Offline-Tests (ytdl-nightly-Import, Extraktor gegen synthetische Next.js-Seite, DRM/HLS-Ablehnung, Benennung identisch zu `core.target`, Ende-zu-Ende-Download mit echtem FFmpeg-Remux, 30-Tage-Ablauf, Schutz fremder Dateien, Altauftrags-Übernahme, NAS-Dateirechte) und 29 aus dem Integrationspaket übernommene Netzkino-Tests.
+- UI-Smoke-Tests (`node tests/*.cjs`) und `node --check web/*.js` OK; Browser-Durchlauf (Playwright/Chromium) Detailfenster → Offline herunterladen → Auftrag sichtbar, ohne JavaScript-Fehler.
+- QNAP-Dienstlebenszyklus-Test (`test_qdk_project_and_service_lifecycle`) wieder grün; war im 0.5.31.11-Integrationsstand rot (Dateirechte 0600).
+- **Nicht geprüft:** echter Netzkino-Abruf (netzkino.de aus der Build-Umgebung nicht erreichbar), Wiedergabe auf macOS, Installation auf Synology/QNAP-Hardware.
+
 ## 0.5.25.1 – Release-Kandidatenprüfung (10. November 2026)
 
 - `tests/test_meshpeer.py`: Konfiguration der Verbundpartner sowie bewusst rotierte Schlüssel, Ablehnung alter Schlüssel, bestehende Partnerschaften und Reconnect.

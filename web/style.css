@@ -633,3 +633,11 @@ dialog.player::backdrop{background:#000c}
 @media(max-width:900px){#atlas-main-dashboard .atlas-status-bottom{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:660px){#atlas-main-dashboard #metadata-workers-status{grid-template-columns:1fr}#atlas-main-dashboard .atlas-worker-group{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:440px){#atlas-main-dashboard .atlas-worker-group{grid-template-columns:1fr}}
+
+/* 0.5.32 Netzkino offline downloads */
+.nk-offline{border:1px solid #3b4b54;border-radius:10px;padding:12px;margin:12px 0;display:grid;gap:8px}
+.nk-offline-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.nk-offline-head h3{margin:0;font-size:1rem}
+#atlas-nk-download-jobs{display:grid;gap:8px}
+#atlas-nk-download-jobs .nk-offline-job button{justify-self:start}
+#atlas-nk-download-jobs .nk-warning{color:#ffb78e}
