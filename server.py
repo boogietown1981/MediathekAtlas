@@ -882,6 +882,10 @@ if __name__=='__main__':
     # 30-day offline period: expired Netzkino copies are removed hourly (all platforms).
     threading.Thread(target=netzkino_downloads.loop,args=(db,STOP),daemon=True,name='netzkino_offline_expiry').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
+        # IMDb/TVDB/TMDB/OMDb/Wikidata for every Netzkino title, automatically and gently.
+        threading.Thread(target=netzkino_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
+                         daemon=True,name='netzkino_auto_enrichment').start()
+    if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         threading.Thread(target=netzkino.loop,args=(ROOT,STOP),daemon=True,name='netzkino_catalog_scheduler').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()

@@ -379,3 +379,60 @@ def metrics(root):
             counts[status]=counts.get(status,0)+1
         return {'checked':sum(counts.values()),'by_status':counts}
     finally:db.close()
+
+
+# ------------------------------------------------------------------ 0.5.32
+# Automatic background enrichment. Until 0.5.31.11 the provider check (IMDb
+# offline, TVDB, TMDB, OMDb, Wikidata) only ran when a title was opened and
+# "Referenzen prüfen" was clicked, so Netzkino titles stayed without metadata.
+def pending(root, limit=10, now=None):
+    """Titles that have never been checked, then stale/partial checks."""
+    now=time.time() if now is None else float(now)
+    db=_conn(root)
+    try:
+        rows=db.execute('''SELECT c.id, r.checked, r.payload FROM netzkino_catalog c
+            LEFT JOIN netzkino_reference_checks r ON r.item_id=c.id
+            WHERE r.item_id IS NULL OR r.checked < ?
+            ORDER BY (r.item_id IS NOT NULL), c.updated DESC LIMIT ?''',
+            (now-RETRY_TTL, max(1,int(limit))*4)).fetchall()
+    finally:db.close()
+    out=[]
+    for item_id,checked,payload in rows:
+        if checked is not None:
+            try:status=json.loads(payload).get('status')
+            except (TypeError,ValueError,AttributeError):status=None
+            if status!='partial' and now-checked<GOOD_TTL:continue
+        out.append(item_id)
+        if len(out)>=limit:break
+    return out
+
+
+def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None):
+    """Low-priority worker: one title every `gap` seconds, never parallel to
+    the user's own provider requests (shared `slots`), pauses when automatic
+    metadata is switched off in the settings."""
+    import diagnostics
+    enrich_one=enrich_one or enrich
+    failed=set()
+    while not stop.is_set():
+        try:
+            current=settings()
+            if not current.get('auto_metadata',True):
+                stop.wait(300);continue
+            todo=[i for i in pending(root,limit=20) if i not in failed]
+            if not todo:
+                stop.wait(idle);failed.clear();continue
+            done=0
+            for item_id in todo:
+                if stop.is_set():return
+                try:
+                    with slots:enrich_one(root,item_id,current)
+                    done+=1
+                except Exception as exc:  # one broken title must not stop the worker
+                    failed.add(item_id)
+                    diagnostics.error('netzkino_auto_enrich_failed',exc)
+                stop.wait(gap)
+            if done:diagnostics.event('netzkino_auto_enrich_batch',checked=done)
+        except Exception as exc:
+            diagnostics.error('netzkino_auto_enrich_loop',exc)
+            stop.wait(300)

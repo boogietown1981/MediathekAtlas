@@ -43,7 +43,7 @@
       $('netzkino-sync').disabled = !!status.running;
       $('netzkino-sync').textContent = status.running ? 'Abgleich läuft …' : '↻ Katalog jetzt prüfen';
       const phase = status.running ? 'Läuft' : status.last_result === 'partial' ? 'Teilabgleich' :
-        status.last_result === 'complete' ? 'Startseiten-Abgleich erfolgreich (Gesamtkatalog nicht vollständig)' : status.last_result === 'failed' ? 'Fehlgeschlagen' :
+        status.last_result === 'complete' ? (status.sitemap_entries ? 'Abgleich erfolgreich (Startseite + Sitemap)' : 'Startseiten-Abgleich erfolgreich, Sitemap nicht erreichbar (Gesamtkatalog unvollständig)') : status.last_result === 'failed' ? 'Fehlgeschlagen' :
         'HAR-Startbestand, nicht live bestätigt';
       const categoryDetail = status.categories_total ?
         ` · Kategorien ${status.categories_checked || 0}/${status.categories_total}` +
@@ -51,9 +51,10 @@
         ` · Kategorien mit ≥20 Titeln ${status.category_cap_hits || 0}` +
         ` · über 20 Titel ${status.category_over_20 || 0}` +
         ` · größte Kategorie ${status.category_max_items || 0}` : '';
+      const sitemapDetail = status.sitemap_entries ? ` · Sitemap ${status.sitemap_entries} Titel (${status.sitemap_new || 0} neu)` : (status.sitemap_errors?.length ? ' · Sitemap nicht verfügbar ('+status.sitemap_errors.join(', ')+')' : '');
       $('netzkino-sync-summary').textContent =
         `${status.catalog_count || 0} Katalogtitel · ${status.manual_count || 0} gemerkt · ` +
-        `${phase} · Letzter Datenabruf: ${date(status.last_success)}` + categoryDetail +
+        `${phase} · Letzter Datenabruf: ${date(status.last_success)}` + categoryDetail + sitemapDetail +
         (status.last_error ? ` · Hinweis: ${status.last_error}` :
           !status.last_success ? ` · ${status.snapshot_seed_count || 0} Titel aus bereinigtem HAR.` :
           ` · Neu ${status.new || 0}, verändert ${status.changed || 0}, unverändert ${status.unchanged || 0}`);

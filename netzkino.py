@@ -24,9 +24,14 @@ from pathlib import Path
 _HOSTS = frozenset(('netzkino.de', 'www.netzkino.de'))
 _ID_RE = re.compile(r'^[a-f0-9]{32}$')
 _MAX_SITEMAP = 8 * 1024 * 1024
-_MAX_SITEMAPS = 4
+_MAX_SITEMAPS = 40
 _MAX_ITEMS = 12000
 _CATALOG_URL = 'https://www.netzkino.de/api/sitemap'
+# Full-catalogue completion: the GraphQL frontpage only lists curated rows
+# (~450 of 2.500+ titles). Standard Next.js sitemap locations, tried in order.
+_SITEMAP_CANDIDATES = ('https://www.netzkino.de/sitemap.xml',
+                       'https://www.netzkino.de/sitemap-index.xml',
+                       _CATALOG_URL)
 _GRAPHQL_URL = 'https://data.netzkino.de/netzkino/graphql'
 _QUERY_HASHES = {
     'AllContent':'51eb32b81108d564d20969692d53311885bc80b2d1a7041ce5cba1398923caa6',
@@ -277,8 +282,13 @@ def state(root):
             'categories_checked':int(_get(db,'categories_checked','0')),
             'category_errors':int(_get(db,'category_errors','0')),
             'last_http_status':int(_get(db,'last_http_status','0')),
-            'catalog_scope':'Kuratierte Startseiten-Kategorien, nicht der vollständige Netzkino-Katalog',
-            'coverage_status':'startpage_only',
+            'catalog_scope':('Startseiten-Kategorien plus Netzkino-Sitemap' if int(_get(db,'sitemap_entries','0'))
+                             else 'Kuratierte Startseiten-Kategorien, nicht der vollständige Netzkino-Katalog'),
+            'coverage_status':'startpage_plus_sitemap' if int(_get(db,'sitemap_entries','0')) else 'startpage_only',
+            'sitemap_entries':int(_get(db,'sitemap_entries','0')),
+            'sitemap_new':int(_get(db,'sitemap_new','0')),
+            'sitemap_checked':float(_get(db,'sitemap_checked','0')),
+            'sitemap_errors':json.loads(_get(db,'sitemap_errors','[]')),
             'category_cap_hits':int(_get(db,'category_cap_hits','0')),
             'category_over_20':int(_get(db,'category_over_20','0')),
             'category_max_items':int(_get(db,'category_max_items','0')),
@@ -344,7 +354,8 @@ def _movie_from_url(raw, title=''):
     if path_parts and path_parts[0].lower() in excluded: return None
     # The public site has changed routes over time; only explicitly movie-like
     # paths are considered a catalogue item, never a guessed generic page.
-    movie_roots = {'film', 'filme', 'movie', 'movies', 'video', 'videos', 'watch'}
+    # 'details' is the current public route (netzkino.de/details/<slug>).
+    movie_roots = {'details', 'film', 'filme', 'movie', 'movies', 'video', 'videos', 'watch'}
     if not (len(path_parts) >= 2 and path_parts[0].lower() in movie_roots):
         fragment = p.fragment.lstrip('!/')
         frag_parts = [x for x in fragment.split('/') if x]
@@ -357,6 +368,9 @@ def _movie_from_url(raw, title=''):
     label = ' '.join(str(title or '').split()).strip()[:180]
     if not label:
         label = re.sub(r'[-_]+', ' ', slug).strip().title()
+    if path_parts and path_parts[0].lower() == 'details':
+        # Canonical form identical to GraphQL entries, so both sources dedupe by id.
+        url = verified_url('https://www.netzkino.de/details/' + urllib.parse.quote(slug, safe='-._~'))
     if len(label) < 2: return None
     return {'id': _key(url), 'title': label, 'url': url}
 
@@ -706,13 +720,74 @@ def sync_graphql(root, fetch=None, now=None):
                 http_status=getattr(exc,'code',0),categories_checked=checked)
         return {'ok':False,'error':msg,'categories_checked':checked}
 
-def sync(root, fetcher=None, now=None, graphql_fetch=None):
+def _collect_sitemaps(fetcher):
+    """All movie routes of the first sitemap location that yields any."""
+    errors=[]
+    for start in _SITEMAP_CANDIDATES:
+        visited,pending,found=set(),[start],{}
+        try:
+            while pending and len(visited)<_MAX_SITEMAPS:
+                url=pending.pop(0)
+                if url in visited:continue
+                visited.add(url)
+                items,children,_kind=parse_sitemap(fetcher(url))
+                found.update((x['id'],x) for x in items)
+                if len(found)>_MAX_ITEMS:raise ValueError('Zu viele Katalogeinträge.')
+                pending.extend(c for c in children if c not in visited and c not in pending)
+        except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,OSError,ValueError) as exc:
+            errors.append(_category_failure_type(exc) if not isinstance(exc,urllib.error.HTTPError) else 'http_%d'%exc.code)
+            if not found:continue
+        if found:return list(found.values()),start,bool(pending),errors
+    return [],None,False,errors
+
+
+def complete_from_sitemap(root, fetcher=None, now=None):
+    """Add titles that the curated GraphQL frontpage does not list.
+
+    Only *new* rows are inserted (source 'sitemap'); GraphQL rows keep their
+    richer data. Nothing is deleted. Details (cover, year, description) are
+    loaded when a title is opened, exactly like for every other title.
+    """
+    now=time.time() if now is None else float(now)
+    items,used,truncated,errors=_collect_sitemaps(fetcher or _fetch_xml)
+    db=_connect(root)
+    try:
+        with db:
+            added=0
+            for item in items:
+                cur=db.execute("""INSERT INTO netzkino_catalog(id,title,url,source,confidence,created,updated,kind)
+                    VALUES(?,?,?,'sitemap','public_sitemap_unverified',?,?,'movie')
+                    ON CONFLICT DO NOTHING""",(item['id'],item['title'],item['url'],now,now))
+                added+=cur.rowcount if cur.rowcount and cur.rowcount>0 else 0
+            total=db.execute('SELECT COUNT(*) FROM netzkino_catalog').fetchone()[0]
+            for key,value in [('sitemap_entries',len(items)),('sitemap_new',added),
+                              ('sitemap_source',used or ''),('sitemap_truncated',int(truncated)),
+                              ('sitemap_errors',json.dumps(errors)),('sitemap_checked',now),
+                              ('catalog_total',total)]:
+                _set(db,key,value)
+    finally:db.close()
+    _notify('netzkino_sitemap_completion',entries=len(items),new=added,
+            found=bool(used),truncated=truncated,errors=len(errors))
+    return {'ok':bool(items),'entries':len(items),'new':added,'source':used,
+            'truncated':truncated,'errors':errors}
+
+
+def sync(root, fetcher=None, now=None, graphql_fetch=None, sitemap_fetch=None):
     """Atomic successful refresh. No deletion on empty, unavailable, invalid data.
 
     Tests inject `fetcher` for legacy sitemap parsing; production uses first-party catalogue GraphQL.
     """
     if fetcher is None:
-        return sync_graphql(root, fetch=graphql_fetch, now=now)
+        result=sync_graphql(root, fetch=graphql_fetch, now=now)
+        # Tests that inject only graphql_fetch must not reach the network.
+        if graphql_fetch is None or sitemap_fetch is not None:
+            try:
+                extra=complete_from_sitemap(root, fetcher=sitemap_fetch, now=now)
+            except Exception as exc:  # completion never breaks the GraphQL result
+                extra={'ok':False,'error':_category_failure_type(exc)}
+            result['sitemap']=extra
+            if extra.get('ok'):result['coverage_status']='startpage_plus_sitemap'
+        return result
     now = time.time() if now is None else float(now)
     db = _connect(root)
     try:

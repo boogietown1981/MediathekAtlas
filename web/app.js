@@ -228,7 +228,7 @@ function catalogProgress(c){
      ['Fehler & Wiederholungen', ['retry']]
    ];
    for(const [name,kinds] of groupSpec){
-     const group=el('section',undefined,'atlas-worker-group');
+     const group=el('section',undefined,'atlas-worker-group');group.dataset.group=String(groupSpec.findIndex(g=>g[0]===name));
      group.append(el('h4',name));
      for(const [kind,label] of chips.filter(([id])=>kinds.includes(id))){
        const item=el('span',label,'atlas-worker-chip');

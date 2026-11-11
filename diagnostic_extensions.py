@@ -76,7 +76,11 @@ def netzkino(root):
                           category_cap_hits=_int(values.get('category_cap_hits')),
                           category_over_20=_int(values.get('category_over_20')),
                           category_max_items=_int(values.get('category_max_items')),
-                          coverage_status='startpage_only',
+                          coverage_status='startpage_plus_sitemap' if _int(values.get('sitemap_entries')) else 'startpage_only',
+                          sitemap_entries=_int(values.get('sitemap_entries')),
+                          sitemap_new=_int(values.get('sitemap_new')),
+                          sitemap_truncated=values.get('sitemap_truncated')=='1',
+                          sitemap_errors=[str(x)[:40] for x in (json.loads(values.get('sitemap_errors') or '[]') if (values.get('sitemap_errors') or '').startswith('[') else [])][:6],
                           time_budget_hit=values.get('time_budget_hit')=='1',
                           last_complete_success=_float(values.get('last_complete_success')),
                           last_result=values.get('last_result','never') if values.get('last_result') in
