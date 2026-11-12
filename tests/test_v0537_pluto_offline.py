@@ -185,8 +185,10 @@ class WiringTests(unittest.TestCase):
         s = (ROOT / 'server.py').read_text()
         self.assertIn('pluto_downloads.enqueue(c,ROOT,', s)
         self.assertIn("'/api/offline-download-action'", s)
-        js = (ROOT / 'web' / 'pluto.js').read_text()
-        self.assertIn("'pluto-download-add'", js)
+        # 0.5.40: the panel is the shared portal_panel.js, pluto.js configures it with key 'pluto'.
+        js = (ROOT / 'web' / 'portal_panel.js').read_text()
+        self.assertIn("key: 'pluto'", (ROOT / 'web' / 'pluto.js').read_text())
+        self.assertIn("K + '-download-add'", js)
         self.assertIn("'offline-download-action'", js)
         self.assertIn("item.kind !== 'channel'", js)
         self.assertIn('id="pluto-offline-jobs"', (ROOT / 'web' / 'index.html').read_text())

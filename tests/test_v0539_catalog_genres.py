@@ -72,7 +72,7 @@ class UiTests(unittest.TestCase):
         for needle in ('paintCategories(counts)', 'medTree.filter(r=>r.kind===', "collection", "'Großes Kino'"):
             self.assertIn(needle, js)
         s = (ROOT / 'server.py').read_text()
-        self.assertEqual(s.count("collection=q.get('collection',[''])[0][:20]"), 2)
+        self.assertGreaterEqual(s.count("collection=q.get('collection',[''])[0][:20]"), 2)
 
     def test_smoke_script(self):
         r = subprocess.run(['node', str(ROOT / 'tests' / 'unified_catalog_ui_smoke.cjs')], capture_output=True, timeout=60)

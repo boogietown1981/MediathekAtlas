@@ -505,7 +505,7 @@ const body=el('div',undefined,'cardbody'),episode=m.kind==='series'&&Number.isIn
 const heading=el('h3',(m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;
 body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading);if(episode)body.append(el('p',episode,'episode-heading'));
 body.append(el('p',(j.state==='done'?(j.file_state==='missing'?'⚠ ':'✓ '):j.state==='error'?'⚠ ':'◌ ')+(j.state==='done'&&j.file_state==='missing'?'Datei verschoben / derzeit nicht erreichbar':(labels[j.state]||j.state))+(m.provider?' · '+m.provider:''),'badge'));
-if(j.state==='done'&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));body.append(el('small',(j.origin==='pluto'?'Pluto TV':'Netzkino')+' offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage')+'; danach automatische Entfernung',left<=3?'atlas-current-warning':'muted'));}
+if(j.state==='done'&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));body.append(el('small',({pluto:'Pluto TV',justwatch:'JustWatch TV'}[j.origin]||'Netzkino')+' offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage')+'; danach automatische Entfernung',left<=3?'atlas-current-warning':'muted'));}
 if(j.state==='downloading'){const p=el('progress');p.max=j.total||1;if(j.total)p.value=j.received||0;body.append(p,el('small',((j.received||0)/1048576).toFixed(1)+' MiB'+(j.total?' / '+(j.total/1048576).toFixed(1)+' MiB':'')+' · '+(Number(j.speed)>0?(j.speed/1048576).toFixed(1)+' MiB/s':'Geschwindigkeit wird ermittelt')+(Number.isFinite(j.eta)?' · ca. '+Math.ceil(j.eta/60)+' Min.':'')));}
 if(j.error||j.note)body.append(el('small',j.error||j.note,'job-note'));
 const details=el('details',undefined,'file-details');details.open=openJobDetails.has(j.id);details.ontoggle=()=>details.open?openJobDetails.add(j.id):openJobDetails.delete(j.id);details.append(el('summary',j.state==='done'&&j.size_bytes?'Datei & Qualität · '+(j.size_bytes/1048576).toFixed(0)+' MiB':'Datei & Speicherort'));
@@ -740,6 +740,7 @@ function portalView(name){
   if(name==='archive')loadArchiveCompanion();
   if(name==='netzkino')window.MediathekAtlasNetzkino?.refresh?.();
   if(name==='pluto')window.MediathekAtlasPluto?.refresh?.();
+  if(name==='justwatch')window.MediathekAtlasJustWatch?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);
@@ -768,7 +769,7 @@ function displayPortalControls(data){
     const card=el('article',undefined,'platform-stat platform-stat-'+p.source);
     const phase=p.running?'Abgleich läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise':p.last_result==='failed'?'Fehlgeschlagen':'Noch nicht geladen';
     card.append(el('strong',p.name+' · '+phase));
-    card.append(el('small',countLabel(p.titles||0)+' Filme & Serien'+(p.channels?' · '+p.channels+' Live-Sender':'')+(p.last_success?' · Stand '+new Date(p.last_success*1000).toLocaleString('de-DE'):'')));
+    card.append(el('small',countLabel(p.titles||0)+' Filme & Serien'+(p.channels?' · '+p.channels+' Live-Sender':'')+(p.playable!==undefined?' · '+(p.playable||0)+' im Player abspielbar':'')+(p.last_success?' · Stand '+new Date(p.last_success*1000).toLocaleString('de-DE'):'')));
     const ref=p.reference||{},by=ref.by_status||{};
     card.append(el('small','IMDb/TVDB-Abgleich: '+(ref.checked||0)+' geprüft · '+(by.candidate||0)+' eindeutig · '+(by.review||0)+' zu prüfen'));
     const off=p.offline||{};

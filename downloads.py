@@ -78,11 +78,14 @@ def source_url(row,quality='best'):
     if row.get('_resolver')=='pluto':
         import pluto_downloads
         return pluto_downloads.resolve(row)
+    if row.get('_resolver')=='justwatch':
+        import justwatch_downloads
+        return justwatch_downloads.resolve(row)
     if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
     keys=QUALITY_KEYS
     return row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
 
-HLS_RESOLVERS={'pluto'}
+HLS_RESOLVERS={'pluto','justwatch'}
 
 def public_url(row,url):
     """Address written to metadata.json. Session-bound HLS addresses carry a token in the

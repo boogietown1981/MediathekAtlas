@@ -1,5 +1,13 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.40 – JustWatch TV (12. November 2026)
+
+- Parser gegen Björns echten HAR-Mitschnitt geprüft (GetPopularTitles-Antwort): 22 von 40 Titeln als JustWatch-TV-Free erkannt (die übrigen gehörten zu Plus/Store), 1 mit Stream für externe Player, Cover- und Seitenadressen gültig.
+- Neue Tests `tests/test_v0540_justwatch.py` (20, Antworten im HAR-Format): nur Paket `jwt`, Paging per Cursor, Kategorien/Bewertung/Großes Kino, Bestandsschutz bei Fehlern, GraphQL-Fehlermeldung, Folgen nur von JustWatch TV, Adressprüfung (fremde Hosts, http, Benutzerdaten), frische Stream-Adresse mit DRM-Prüfung, Ablehnung kopiergeschützter Streams (auch in der Varianten-Playlist), Titel ohne externen Stream, Offline-Auftrag (Benennung, 30 Tage, IMDb-ID in der NFO, keine Stream-Adresse im Auftrag), **echter HLS-Download mit ffmpeg** gegen lokalen Server, Referenzabgleich über die gemeinsame Engine, Server-/UI-/Bundle-Einbindung.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem JustWatch-Katalog: Katalogquelle „JustWatch TV“ mit Kategorien und „Großes Kino“-Abzeichen, Dashboard-Karte, Plattform-Reiter mit Kategorien, „▶ Ansehen“/„⬇ Offline speichern (30 Tage)“ nur bei freigegebenen Titeln, sonst „Bei JustWatch ansehen“, Detailansicht, Serie → Folgen, Player und Download-Worker melden in der Cloud korrekt „JustWatch ist nicht erreichbar“; Pluto-Reiter funktioniert unverändert über das gemeinsame Panel; keine JavaScript-Fehler.
+- Volllauf `python3 -m unittest discover -s tests` → 578 Tests OK.
+- **Nicht geprüft:** echte Abfragen an apis.justwatch.com (aus der Build-Umgebung gesperrt) – insbesondere ob JustWatch die schlanken MediathekAtlas-Abfragen genauso beantwortet wie die der Website; ob die externen Streams Werbung/Kopierschutz enthalten (im HAR wurde keine Wiedergabe mitgeschnitten); Lauf auf macOS/NAS.
+
 ## 0.5.39 – Mediathek-Genres und Entdecken im Katalog (12. November 2026)
 
 - Neue Tests `tests/test_v0539_catalog_genres.py` (5): Schwellen für Großes Kino/Serienfavoriten identisch zum Mediathek-Katalog (7,5; 10.000 IMDb / 1.000 TMDB), Filter `collection` für Pluto und Netzkino, UI-Einbindung, bestehender Smoke-Test des gemeinsamen Katalogs.

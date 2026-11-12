@@ -8,12 +8,13 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto'];
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch'];
+  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV'};
   const TYPES = ['movies','series'];
   let source='mediatheken',kind='series',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
   let medGenres=[],medTree=[],collection='';
-  const heading=() => ({all:'Gesamtkatalog',mediatheken:'Öffentlich-rechtliche Mediatheken',netzkino:'Netzkino',pluto:'Pluto TV'}[source]);
+  const heading=() => ({all:'Gesamtkatalog',mediatheken:'Öffentlich-rechtliche Mediatheken',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
     const discover=$('discover');
@@ -77,7 +78,7 @@
     $('atlas-source-content').hidden=false;
     updateControls();refresh();
   }
-  function labelSource(item) {return item.source==='netzkino'?'Netzkino':item.source==='pluto'?'Pluto TV':'Mediathek';}
+  function labelSource(item) {return item.source==='netzkino'?'Netzkino':PORTALS[item.source]||'Mediathek';}
   function medRow(item) {
     const m=item.metadata||{},r=item.source||{};
     return {source:'mediatheken',id:item.work_id||'',raw:item,kind:m.kind||'',
@@ -110,8 +111,9 @@
       episode_count:item.episode_count||0,access_hint:item.access_hint||'',
       season:item.season,episode:item.episode,series_key:item.series_key};
   }
-  function plRow(item) {
-    return {source:'pluto',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
+  // Pluto TV and JustWatch TV deliver the same row shape (shared portal panel).
+  function plRow(item,src='pluto') {
+    return {source:src,playable:item.playable!==0&&item.playable!==false,web_url:item.web_url||'',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',description:item.summary||'',
       genres:(item.categories||[]).filter(c=>c!=='Unbekannt'),score:item.score||null,duration:item.duration||null,
       season:item.season,episode:item.episode};
@@ -147,7 +149,7 @@
     if (pick) text.append(el('div',pick,'pick-badge'));
     if (item.description) text.append(el('p',item.description.slice(0,220),'atlas-uc-desc'));
     const actions=el('div',undefined,'atlas-uc-actions');
-    const details=el('button',item.kind==='series'&&item.source==='netzkino'?'Folgen anzeigen':item.source==='pluto'?'Details':'Details & Angebote','atlas-uc-details');
+    const details=el('button',item.kind==='series'&&item.source==='netzkino'?'Folgen anzeigen':PORTALS[item.source]?'Details':'Details & Angebote','atlas-uc-details');
     details.type='button';
     details.onclick=()=>openItem(item);
     actions.append(details);
@@ -161,17 +163,22 @@
       };
       actions.append(watch);
     }
-    if (item.source==='pluto' && item.kind!=='series') {
+    if (PORTALS[item.source] && item.kind!=='series' && item.playable) {
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
-      watch.onclick=()=>window.playPluto?.(item.id,item.title);
+      watch.onclick=()=>(item.source==='justwatch'?window.playJustWatch:window.playPluto)?.(item.id,item.title);
       actions.append(watch);
     }
-    if (item.source==='netzkino'||item.source==='pluto') actions.append(el('small','Wiedergabe im MediathekAtlas-Player · 30 Tage offline speicherbar'));
+    if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {
+      const link=el('a','Bei JustWatch ansehen','button');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
+      actions.append(link);
+    }
+    if (item.source==='netzkino'||(PORTALS[item.source]&&item.playable)) actions.append(el('small','Wiedergabe im MediathekAtlas-Player · 30 Tage offline speicherbar'));
     text.append(actions);card.append(art,text);
     return card;
   }
   function openItem(item) {
     if (item.source==='pluto') window.MediathekAtlasPluto?.openDetail(item.id);
+    else if (item.source==='justwatch') window.MediathekAtlasJustWatch?.openDetail(item.id);
     else if (item.source==='netzkino') {
       if (item.kind==='series') {
         // Retain the previous platform-level openSeries handler as a fallback.
@@ -235,6 +242,7 @@
     const nkNeeded=(source==='all'||source==='netzkino');
     const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;
     const plNeeded=(source==='all'||source==='pluto') && !seriesKey;
+    const jwNeeded=(source==='all'||source==='justwatch') && !seriesKey;
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -247,13 +255,16 @@
     if (plNeeded)requests.push({source:'pluto',req:window.api('pluto?'+new URLSearchParams({
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
+    if (jwNeeded)requests.push({source:'justwatch',req:window.api('justwatch?'+new URLSearchParams({
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
+    }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));
     if (seq!==sequence) return;
     const rows=[],notes=[],totals=[],facets=[],counts=[];
     for(let i=0;i<requests.length;i++) {
       const request=requests[i],result=responses[i];
       if(result.status!=='fulfilled') {
-        notes.push(({netzkino:'Netzkino',pluto:'Pluto TV'}[request.source]||'Mediatheken')+' nicht verfügbar: '+result.reason.message);
+        notes.push(({netzkino:'Netzkino',...PORTALS}[request.source]||'Mediatheken')+' nicht verfügbar: '+result.reason.message);
         continue;
       }
       const data=result.value;
@@ -265,11 +276,11 @@
         counts.push(...medTree.filter(r=>r.kind===(kind==='movies'?'movie':'series')));
         for (const item of data.items||[]) facets.push(...genreList(item.metadata?.genres));
         notes.push('Mediatheken: '+data.total+' Treffer');
-      } else if (request.source==='pluto') {
-        rows.push(...(data.items||[]).map(plRow));
+      } else if (PORTALS[request.source]) {
+        rows.push(...(data.items||[]).map(item=>plRow(item,request.source)));
         facets.push(...(data.genre_counts||[]).map(g=>g.genre).filter(g=>g!=='Unbekannt'));
         counts.push(...(data.genre_counts||[]));
-        notes.push('Pluto TV: '+data.total+' Treffer');
+        notes.push(PORTALS[request.source]+': '+data.total+' Treffer');
       } else {
         rows.push(...(data.items||[]).map(nkRow));
         facets.push(...(data.genres||[]).filter(g=>g!=='Unbekannt'));
@@ -306,7 +317,7 @@
   $('atlas-cross-next')?.addEventListener('click',()=>{offset+=48;refresh();});
   $('atlas-cross-open-portal')?.addEventListener('click',()=>{
     document.querySelector('[data-view="portals"]')?.click();
-    document.querySelector('.platform-tab[data-platform="'+(source==='pluto'?'pluto':'netzkino')+'"]')?.click();
+    document.querySelector('.platform-tab[data-platform="'+(PORTALS[source]?source:'netzkino')+'"]')?.click();
   });
   arrangeAdvanced();
   // The category tree is computed in the background after start; ask again until it is there.

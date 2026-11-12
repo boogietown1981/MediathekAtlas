@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -75,7 +75,7 @@ def put_job(j):
         if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
 
 def netzkino_download_summary():
-    with db() as c:return {**netzkino_downloads.summary(c),'pluto':netzkino_downloads.summary(c,'pluto')}
+    with db() as c:return {**netzkino_downloads.summary(c),'pluto':netzkino_downloads.summary(c,'pluto'),'justwatch':netzkino_downloads.summary(c,'justwatch')}
 
 def jobs():
     with db() as c:rows=c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC LIMIT 100').fetchall()
@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/justwatch.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
@@ -269,6 +269,26 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/netzkino-details':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
+        if path=='/api/justwatch':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:
+                if q.get('view',[''])[0]=='episodes':data=justwatch.episodes(ROOT,q.get('series',[''])[0])
+                else:data=justwatch.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
+                                            offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
+                                            genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
+                                            collection=q.get('collection',[''])[0][:20])
+            except ValueError as e:return self.send({'error':str(e)},404)
+            data['status']=justwatch.state(ROOT)
+            return self.send(data)
+        if path=='/api/justwatch-details':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:return self.send(justwatch.item(ROOT,q.get('id',[''])[0]))
+            except ValueError as e:return self.send({'error':str(e)},404)
+        if path=='/api/justwatch-downloads':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None,origin='justwatch')
+            result['ffmpeg']=bool(downloads.tool('ffmpeg'))
+            return self.send(result)
         if path=='/api/pluto-details':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:return self.send(pluto.item(ROOT,q.get('id',[''])[0]))
@@ -300,7 +320,7 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
         if path=='/api/play':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto')}
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch')}
             try:
                 with db() as c:source=streaming.resolve(c,root=ROOT,**ref)
                 info=streaming.plan(source)
@@ -316,7 +336,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -338,9 +358,9 @@ class Handler(BaseHTTPRequestHandler):
                 result=portal_sources.state(c)
                 result['platform_control']=portal_control.source_status(c)
                 result['archive_scopes']=portal_control.list_scopes(c)
-                offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto')}
+                offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch')}
             # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
-            nk=netzkino.state(ROOT);pl=pluto.state(ROOT)
+            nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT)
             result['film_platforms']=[
                 {'source':'netzkino','name':'Netzkino','titles':nk.get('catalog_count',0),'last_success':nk.get('last_success',0),
                  'last_result':nk.get('last_result'),'running':nk.get('running'),'reference':netzkino_enrichment.metrics(ROOT),
@@ -348,7 +368,11 @@ class Handler(BaseHTTPRequestHandler):
                 {'source':'pluto','name':'Pluto TV','titles':(pl.get('movies',0) or 0)+(pl.get('series',0) or 0),
                  'channels':pl.get('channels',0),'last_success':pl.get('last_success',0),'last_result':pl.get('last_result'),
                  'running':pl.get('running'),'reference':pluto_enrichment.metrics(ROOT),
-                 'offline':offline['pluto'],'offline_days':pluto_downloads.OFFLINE_DAYS}]
+                 'offline':offline['pluto'],'offline_days':pluto_downloads.OFFLINE_DAYS},
+                {'source':'justwatch','name':'JustWatch TV','titles':(jw.get('movies',0) or 0)+(jw.get('series',0) or 0),
+                 'playable':jw.get('playable',0),'last_success':jw.get('last_success',0),'last_result':jw.get('last_result'),
+                 'running':jw.get('running'),'reference':justwatch_enrichment.metrics(ROOT),
+                 'offline':offline['justwatch'],'offline_days':justwatch_downloads.OFFLINE_DAYS}]
             return self.send(result)
         if path=='/api/portal-items':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -448,7 +472,8 @@ class Handler(BaseHTTPRequestHandler):
         if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
-                                                  netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],root=ROOT)
+                                                  netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
+                                                  justwatch=q.get('justwatch',[''])[0],root=ROOT)
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
@@ -542,6 +567,10 @@ class Handler(BaseHTTPRequestHandler):
                 token=ACCESS.change_password(str(d.get('current','')),str(d.get('new','')))
                 diagnostics.event('access_password_changed')
                 return self.send({'ok':True},cookies=[self.session_cookie(token)])
+            if path=='/api/justwatch-sync':
+                return self.send({'started':justwatch.start_sync(ROOT)})
+            if path=='/api/justwatch-auto':
+                return self.send({'status':justwatch.set_auto(ROOT,d.get('enabled'))})
             if path=='/api/pluto-sync':
                 return self.send({'started':pluto.start_sync(ROOT)})
             if path=='/api/pluto-auto':
@@ -647,6 +676,19 @@ class Handler(BaseHTTPRequestHandler):
                 with SERVICE.provider_slots:
                     result=pluto_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
                 diagnostics.event('pluto_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+                return self.send(result)
+            if path=='/api/justwatch-enrich':
+                with SERVICE.provider_slots:
+                    result=justwatch_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+                diagnostics.event('justwatch_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+                return self.send(result)
+            if path=='/api/justwatch-download-add':
+                item_id=str(d.get('id',''))
+                try:
+                    with SERVICE.provider_slots:justwatch_enrichment.enrich(ROOT,item_id,settings())
+                except Exception as e:diagnostics.error('justwatch_download_enrich_failed',e)
+                with db() as c:result=justwatch_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
+                diagnostics.event('justwatch_download_enqueued',created=result['created'])
                 return self.send(result)
             if path=='/api/pluto-download-add':
                 item_id=str(d.get('id',''))
@@ -948,9 +990,12 @@ if __name__=='__main__':
                          daemon=True,name='netzkino_auto_enrichment').start()
         threading.Thread(target=pluto_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
                          daemon=True,name='pluto_auto_enrichment').start()
+        threading.Thread(target=justwatch_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
+                         daemon=True,name='justwatch_auto_enrichment').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         threading.Thread(target=netzkino.loop,args=(ROOT,STOP),daemon=True,name='netzkino_catalog_scheduler').start()
         threading.Thread(target=pluto.loop,args=(ROOT,STOP),daemon=True,name='pluto_catalog_scheduler').start()
+        threading.Thread(target=justwatch.loop,args=(ROOT,STOP),daemon=True,name='justwatch_catalog_scheduler').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
         SERVICE.start()

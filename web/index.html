@@ -9,6 +9,7 @@
   <button type="button" data-catalog-source="mediatheken" class="primary">Mediatheken</button>
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
   <button type="button" data-catalog-source="pluto">Pluto TV</button>
+  <button type="button" data-catalog-source="justwatch">JustWatch TV</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Katalog · Serien</h2>
@@ -43,6 +44,7 @@
     <button class="platform-tab" type="button" data-platform="archive">Internet Archive</button>
     <button class="platform-tab" type="button" data-platform="netzkino">Netzkino</button>
     <button class="platform-tab" type="button" data-platform="pluto">Pluto TV</button>
+    <button class="platform-tab" type="button" data-platform="justwatch">JustWatch TV</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -73,6 +75,35 @@
   <div class="netzkino-pages"><button type="button" id="pluto-prev">← Zurück</button>
     <span id="pluto-page-label" class="muted"></span>
     <button type="button" id="pluto-next">Weiter →</button></div>
+</section>
+<section id="justwatch" class="pluto-panel justwatch-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>JustWatch TV · eigene Filme und Serien</h3>
+    <p class="muted">Nur das kostenlose Angebot „JustWatch TV Free“ (mit Werbung); JustWatch Plus, Leihtitel und Angebote anderer Dienste werden nicht geladen.
+       Wiedergabe im MediathekAtlas-Player für Titel, die JustWatch für externe Player freigibt; die übrigen öffnen die offizielle JustWatch-Seite.
+       Abspielbare Filme und Folgen dürfen 30 Tage offline gespeichert werden (mit der Werbung, die JustWatch ausliefert); danach entfernt MediathekAtlas die Datei automatisch.
+       Kopiergeschützte (DRM-)Streams werden weder abgespielt noch gespeichert. Keine Anmeldung, kein Entfernen von Werbung.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="justwatch-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="justwatch-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="justwatch-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="JustWatch-Ansicht">
+    <button type="button" id="justwatch-view-movies" class="primary">Filme</button>
+    <button type="button" id="justwatch-view-series">Serien</button>
+    <button type="button" id="justwatch-back" hidden>← Zur Serienübersicht</button>
+    <span id="justwatch-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>JustWatch-Titel suchen<input type="search" id="justwatch-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="justwatch-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="justwatch-categories" class="portal-categories" role="group" aria-label="JustWatch-Kategorien" hidden></div>
+  <p id="justwatch-status" class="muted" role="status"></p>
+  <details id="justwatch-offline" class="nk-offline justwatch-offline"><summary>Offline-Kopien von JustWatch TV <span id="justwatch-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="justwatch-offline-jobs"></div></details>
+  <div id="justwatch-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="justwatch-prev">← Zurück</button>
+    <span id="justwatch-page-label" class="muted"></span>
+    <button type="button" id="justwatch-next">Weiter →</button></div>
 </section>
   <div id="portal-platform-overview" class="platform-summary">
     <div id="platform-dashboard" class="platform-stats-grid" aria-label="Status je Plattform"></div>
@@ -279,4 +310,14 @@
         <p id="atlas-pl-offline-status" class="muted" role="status"></p>
       </section>
       <div id="atlas-pl-actions" class="netzkino-actions"></div></div></div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/pluto.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>
+</dialog><dialog id="atlas-justwatch-detail" class="atlas-justwatch-detail" aria-label="JustWatch TV Film- und Seriendetails">
+  <div class="nk-detail-heading"><h2 id="atlas-jw-title">JustWatch-TV-Details</h2><button type="button" id="atlas-jw-close" aria-label="Schließen">✕</button></div>
+  <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-jw-image" alt="Cover" hidden><dl id="atlas-jw-quickfacts" aria-label="JustWatch-Kurzdaten"></dl></div>
+    <div class="nk-detail-main"><p id="atlas-jw-description"></p><dl id="atlas-jw-facts"></dl>
+      <div id="atlas-jw-reference" role="status"></div><dl id="atlas-jw-reference-facts"></dl>
+      <section class="nk-offline" aria-label="JustWatch offline">
+        <div class="nk-offline-head"><h3>Offline ansehen</h3><span id="atlas-jw-offline-slot"></span></div>
+        <p id="atlas-jw-offline-status" class="muted" role="status"></p>
+      </section>
+      <div id="atlas-jw-actions" class="netzkino-actions"></div></div></div>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>

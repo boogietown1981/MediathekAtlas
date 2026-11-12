@@ -114,6 +114,9 @@ def nfo(meta,streams,duration):
     provider={'TMDB':'tmdb','TVDB':'tvdb','OMDb':'imdb','IMDb Offline':'imdb'}.get(meta.get('provider'))
     if meta['kind']!='series' and provider and meta.get('reference_id'):
         ET.SubElement(root,'uniqueid',{'type':provider,'default':'true'}).text=str(meta['reference_id'])
+    elif meta['kind']!='series' and re.fullmatch(r'tt\d{5,10}',str(meta.get('imdb_id') or '')):
+        # IMDb id published by the source itself (e.g. JustWatch) when no reference was selected.
+        ET.SubElement(root,'uniqueid',{'type':'imdb','default':'true'}).text=meta['imdb_id']
     if meta['kind']=='series' and meta.get('provider')=='IMDb Offline' and meta.get('episode_verified') and meta.get('episode_reference_id'):
         ET.SubElement(root,'uniqueid',{'type':'imdb','default':'true'}).text=str(meta['episode_reference_id'])
     for genre in meta.get('genres',[]):ET.SubElement(root,'genre').text=genre
@@ -137,6 +140,8 @@ def show_nfo(meta):
     if provider and meta.get('reference_id'):
         ET.SubElement(root,'uniqueid',{'type':provider,'default':'true'}).text=str(meta['reference_id'])
         ET.SubElement(root,'episodeguide').text=json.dumps({provider:str(meta['reference_id'])})
+    elif re.fullmatch(r'tt\d{5,10}',str(meta.get('show_imdb_id') or '')):
+        ET.SubElement(root,'uniqueid',{'type':'imdb','default':'true'}).text=meta['show_imdb_id']
     for genre in meta.get('genres',[]):ET.SubElement(root,'genre').text=genre
     if meta.get('fanart'):ET.SubElement(ET.SubElement(root,'fanart'),'thumb').text=meta['fanart']
     append_credits(root,meta.get('show_credits') or {})

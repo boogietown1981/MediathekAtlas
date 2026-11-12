@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.5.39
+# MediathekAtlas · 0.5.40
+
+## Neu in 0.5.40: JustWatch TV
+
+- Plattformen → JustWatch TV: die kostenlosen eigenen Filme und Serien von JustWatch TV (ohne Plus, Leihtitel oder andere Dienste), mit Kategorien, Bewertung, Details, im Katalog unter „JustWatch TV“ und „Gesamt“.
+- Titel, die JustWatch für externe Player freigibt, laufen im MediathekAtlas-Player und lassen sich 30 Tage offline speichern. Alle anderen öffnen die offizielle JustWatch-Seite. Kopiergeschützte (DRM-)Streams werden weder abgespielt noch gespeichert.
 
 ## Neu in 0.5.39: Genres und „Großes Kino“ wieder im Katalog
 

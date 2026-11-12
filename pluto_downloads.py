@@ -89,18 +89,9 @@ def build_job(root, download_dir, item_id, now=None):
                         'note': 'Pluto TV: Download erlaubt, Offline-Nutzung %d Tage' % OFFLINE_DAYS}}
 
 
-def _duplicate(c, job):
-    import json
-    for payload, state in c.execute("SELECT payload,state FROM jobs WHERE state IN ('queued','downloading','tagging','done')"):
-        other = json.loads(payload)
-        if other.get('target') == job['target'] or (other.get('origin') == 'pluto' and other.get('pluto_id') == job['pluto_id']):
-            return {'id': other.get('id'), 'created': False, 'state': state}
-    return None
-
-
 def enqueue(c, root, download_dir, item_id, now=None):
     job = build_job(root, download_dir, item_id, now)
-    return _duplicate(c, job) or offline.insert(c, job)
+    return offline.portal_duplicate(c, job) or offline.insert(c, job)
 
 
 def resolve(row):
