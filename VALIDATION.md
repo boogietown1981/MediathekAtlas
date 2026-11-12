@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.69 – Joyn-Abruf sichtbar (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (816 Tests), davon 2 neu in `tests/test_v0565_joyn.py` (Sender und Titel während des Abrufs sichtbar, ignorierter Offset beendet die Genre-Seite nach einer Wiederholung).
+- Nicht geprüft: echte Laufzeit des Joyn-Abrufs und ob Joyn `offset` beachtet (aus der Cloud gesperrt); die Diagnose nach dem nächsten Abruf zeigt es über `joyn_sync_progress`.
+
 ## 0.5.67 – Live-TV-Reiter (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (814 Tests), davon 5 neu in `tests/test_v0567_live_tv_budget.py` (alle Anbieter antworten; langsamer Anbieter hält die anderen nicht auf und zeigt den letzten Stand; langsamer Anbieter ohne früheren Stand; fehlerhafte Anbieter werden benannt).
 - Im Browser (Chromium, Testdaten): Reiter Live-TV zeigt die Sender.

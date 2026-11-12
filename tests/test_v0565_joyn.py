@@ -222,5 +222,44 @@ class JoynTest(unittest.TestCase):
         self.assertTrue(all(not str(p).startswith('c.') for p in pending))
 
 
+class JoynProgress(unittest.TestCase):
+    """0.5.68: Björn saw an empty Joyn platform while the first catalogue run was still loading."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_channels_and_titles_are_visible_during_the_run(self):
+        seen = []
+
+        class Watch(Api):
+            def __call__(inner, operation, variables=None):
+                if operation == 'PageOverviewGenre' and variables['path'] == '/serien/genre/comedy':
+                    seen.append((len(joyn.listing(self.root, 'live')['items']),
+                                 joyn.listing(self.root, 'movies', limit='all')['total']))
+                return super().__call__(operation, variables)
+        joyn.sync(self.root, request=Watch(), now=1794500000.0, gap=0)
+        self.assertEqual(seen, [(3, 33)])
+
+    def test_ignored_offset_ends_the_genre_after_one_repeat(self):
+        class Same(Api):
+            def __call__(inner, operation, variables=None):
+                if operation == 'PageOverviewGenre':
+                    inner.calls.append((operation, variables))
+                    return page(variables['path'], HORROR_1)
+                return super().__call__(operation, variables)
+        api = Same()
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertTrue(result['ok'])
+        per_path = {}
+        for op, v in api.calls:
+            if op == 'PageOverviewGenre':
+                per_path[v['path']] = per_path.get(v['path'], 0) + 1
+        self.assertTrue(all(n == 2 for n in per_path.values()), per_path)   # not MAX_PAGES
+
+
 if __name__ == '__main__':
     unittest.main()

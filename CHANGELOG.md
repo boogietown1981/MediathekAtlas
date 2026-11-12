@@ -1,3 +1,8 @@
+## 0.5.69 – Joyn: Katalog erscheint schon während des ersten Abrufs
+- Björn (12.11.2026, Diagnose 0.5.66): Joyn bleibt bei Sendern und Filmen/Serien komplett leer. Befund: kein Fehler, `api.joyn.de` erreichbar; der erste Katalogabruf lief zum Zeitpunkt der Diagnose seit 3,5 Minuten (`joyn_sync_started`, `last_result=running`). Bis 0.5.65 wurde erst am Ende gespeichert, also blieb alles leer, bis jede Genre-Seite geladen war (1 s Pause je Seite).
+- `joyn.py`: Live-Sender werden direkt nach der Senderliste gespeichert, Filme und Serien nach jeder Genre-Seite (`_save_progress`, `last_loaded` erneuert die gespeicherte Plattform-Ansicht); Fortschritt „Genre-Seite n von m“ im Status und als Ereignis `joyn_sync_progress` (nur Zahlen). Pause 0,4 s statt 1 s. Eine Seite ohne neue Titel beendet die Genre-Seite (Schutz, falls Joyn `offset` ignoriert; sonst bis zu 60 gleiche Seiten je Genre).
+- `web/portal_panel.js`: Fortschritt in der Statuszeile aller Plattformen, solange ein Abruf läuft.
+
 ## 0.5.67 – Live-TV-Reiter mit Zeitgrenze je Anbieter
 - Björn (12.11.2026, Bildschirmfoto 0.5.61): Reiter Live-TV bleibt bei „Live-Sender werden geladen …“. Nicht nachstellbar; zwei mögliche Wege abgesichert: Darstellungsfehler (seit 0.5.66 abgefangen und gemeldet) und ein Anbieter, dessen Datenbank nicht antwortet.
 - `live_tv.channels`: Pluto, Rakuten, Joyn in eigenen Threads mit `BUDGET = 4.0` s; späte oder fehlerhafte Anbieter liefern `_LAST` (letzter vollständiger Stand) und einen Fehlertext je Anbieter. Die Filmliste wird weiter in der Verbindung des Aufrufers gelesen.
