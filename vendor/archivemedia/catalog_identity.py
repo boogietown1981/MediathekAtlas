@@ -9,6 +9,7 @@ from pathlib import Path
 
 NUMBERED = re.compile(r'(?i)^(?:\d{1,7}|(?:video|movie|film|file|track|clip|part|episode|ep|folge|sample|download)[\s._-]*\d{0,5}|(?:video|movie|film|file|track|clip|part|episode|ep|folge|sample|download))$')
 GENERIC = re.compile(r'(?i)^(?:untitled|unknown|unbenannter titel|unbekannt|no title|episode|film|movie|video|tv|anime|animation|full movie|part\s*\d+)$')
+TECHNICAL_LABEL = re.compile(r'(?i)^\s*(?:(?:\d{3,4}\s*p|\d{3,4}\s*[x×]\s*\d{3,4}|[24]k|sd|hd|uhd|full[ ._-]?hd|low[ ._-]?res|high[ ._-]?res|h\.?264|h\.?265|x264|x265|hevc|avc|vp9|av1|(?:mp4|mkv|mov|avi|webm)|transcod(?:e|ed)|rendition|quality|resolution)(?:[ ._-]+(?:video|copy|version|transcode|render|output|file|encode|source))?|(?:video|clip|encode|rendition|quality|resolution)[ ._-]+(?:360p|480p|720p|1080p|1440p|2160p|4k))\s*$')
 EPISODE = re.compile(r'(?i)(?:\bS(?P<s>\d{1,2})[\s._-]*E(?P<e>\d{1,3})\b|\b(?P<s2>\d{1,2})x(?P<e2>\d{1,3})\b|\b(?:episode|ep|folge)[\s._-]*(?P<e3>\d{1,3})\b)')
 
 
@@ -23,7 +24,7 @@ def clean(value):
 
 def meaning_title(value):
     s=clean(value)
-    if not s or len(s)>180 or len(s)<3 or NUMBERED.fullmatch(s) or GENERIC.fullmatch(s):return False
+    if not s or len(s)>180 or len(s)<3 or NUMBERED.fullmatch(s) or GENERIC.fullmatch(s) or TECHNICAL_LABEL.fullmatch(s):return False
     if not any(ch.isalpha() for ch in s):return False
     if s.lower() in ('this','that','it','these','those','there','here','we','they','he','she','some','many'):return False
     if re.fullmatch(r'(?i)(?:https?://)?[\w.-]+(?:/\S+)?',s) and ('/' in s or '.' in s and not ' ' in s):return False

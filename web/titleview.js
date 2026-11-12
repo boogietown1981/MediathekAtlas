@@ -31,7 +31,10 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,im
  const top=el('div',undefined,'tv-topbar'),close=el('button',titleReturn==='portals'?'← Zurück zur Plattform':titleReturn==='discover'?'← Zurück zum Dashboard':'← Zurück','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
  const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=art(poster||meta.poster,'Poster: '+(meta.title||''));
  if(img)cover.append(img);else cover.append(el('span',/^Serie\b/.test(type)?'SERIE':/^Live/.test(type)?'LIVE':/^Folge/.test(type)?'FOLGE':'FILM'));
- const text=el('div',undefined,'tv-herotext');text.append(el('p',type,'eyebrow'),el('h1',meta.title||'Ohne Titel'));
+ const text=el('div',undefined,'tv-herotext');const h1=el('h1',undefined,'tv-title'),logo=meta.logo?artImage(meta.logo,meta.title||'Ohne Titel','tv-logo'):null;
+ // Fanart.tv logo (0.5.56) replaces the plain title; the title stays as alt text and tooltip.
+ if(logo){logo.onerror=()=>{logo.remove();h1.textContent=meta.title||'Ohne Titel';};logo.title=meta.title||'';h1.append(logo);}else h1.textContent=meta.title||'Ohne Titel';
+ text.append(el('p',type,'eyebrow'),h1);
  const line=el('div',undefined,'tv-facts');for(const f of facts.filter(Boolean)){line.append(typeof f==='string'?el('span',f):f);}text.append(line);
  const buttons=el('div',undefined,'tv-actions');buttons.append(...actions.filter(Boolean));text.append(buttons);
  const plot=el('p',overview||overviewHint,'tv-overview'+(overview?'':' muted'));text.append(plot);

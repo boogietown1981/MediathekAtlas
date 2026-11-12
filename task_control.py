@@ -54,6 +54,10 @@ TASKS = {
     'subscriptions': {'label': 'Download-Abos', 'group': 'Downloads',
                       'hint': 'Legt aus Abos neue Download-Aufträge an.',
                       'can': ('pause',)},
+    'backup': {'label': 'Datenbanksicherung', 'group': 'Wartung',
+               'hint': 'Sichert die Katalogdatenbank wöchentlich geprüft nach „Backups“ (4 automatische bleiben, '
+                       'eigene Sicherungen werden nie automatisch gelöscht).',
+               'can': ('pause', 'start')},
 }
 for _key, _name in PORTALS:
     TASKS['catalog:' + _key] = {

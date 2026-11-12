@@ -243,8 +243,9 @@ def run(row,meta,root,quality,update,cancelled):
                     except FileExistsError:pass
             # Films: '<Datei>-poster' / '<Datei>-backdrop' next to the video (Kodi, Jellyfin, Plex);
             # series: poster/fanart once in the show folder for tvshow.nfo.
-            if meta['kind']=='series':images=[('poster',dest.parent.parent/'poster'),('fanart',dest.parent.parent/'fanart')]
-            else:images=[('poster',dest.with_name(dest.stem+'-poster')),('fanart',dest.with_name(dest.stem+'-backdrop'))]
+            # Fanart.tv logos (0.5.56): 'clearlogo' / '<Datei>-clearlogo' as Jellyfin and Kodi expect.
+            if meta['kind']=='series':images=[('poster',dest.parent.parent/'poster'),('fanart',dest.parent.parent/'fanart'),('logo',dest.parent.parent/'clearlogo')]
+            else:images=[('poster',dest.with_name(dest.stem+'-poster')),('fanart',dest.with_name(dest.stem+'-backdrop')),('logo',dest.with_name(dest.stem+'-clearlogo'))]
             missing=[field for field,stem in images if meta.get(field) and not artwork.save_image(meta[field],stem)]
             update('done',received,total,path=str(dest),measured=quality_summary(details),size_bytes=dest.stat().st_size,speed=0,eta=None,note='Video fertig; Bilder nicht abrufbar: '+', '.join(missing) if missing else '')
 

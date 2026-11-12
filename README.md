@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.55
+# MediathekAtlas · 0.5.56
+
+## Neu in 0.5.56: Archive Media Stufe 1 – Fanart.tv und Datenbanksicherungen
+
+- **Fanart.tv:** Zusätzliche Poster, Hintergrundbilder und Titel-Logos für bereits erkannte Filme und Serien (über IMDb-, TVDB- oder TMDB-Kennung). Widerspricht die Kennung bei Fanart.tv, werden die Bilder verworfen. Vorhandene TMDB-/TVDB-Bilder bleiben, Fanart.tv füllt Lücken. Das Logo ersetzt auf der Titelseite den Schriftzug und wird bei Downloads als `clearlogo` für Jellyfin/Kodi abgelegt. Schlüssel unter Verwaltung → Einstellungen → Metadatenanbieter (Projektschlüssel und/oder persönlicher Schlüssel).
+- **Datenbanksicherungen:** Die Katalogdatenbank wird wöchentlich geprüft gesichert (Ordner „Backups“ im Datenordner, SQLite-Online-Sicherung, die App bleibt nutzbar). Vier automatische Sicherungen bleiben erhalten, eigene nie automatisch gelöscht. Unter Verwaltung → Einstellungen → Datenbanksicherungen: Liste, „Jetzt sichern“, Mehrfachauswahl löschen mit Bestätigung. Unter Verwaltung → Aufgaben als „Datenbanksicherung“ pausier- und startbar.
+- **ArchiveMedia v0.10.53:** `fanart_client` und `backup_manager` übernommen, die alten v0.10.12-Kopien angeglichen (Herkunft und Prüfsummen in `PROVENANCE.json`).
+
 
 ## Neu in 0.5.55: Dashboard nur mit Filmen und Serien, Bereich „Verwaltung“, schnellere Oberfläche
 

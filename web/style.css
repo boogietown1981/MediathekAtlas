@@ -803,3 +803,11 @@ body.atlas-hide-title-cast .tv-section:has(.tv-cast),
 body.atlas-hide-title-info .tv-info,
 body.atlas-hide-title-versions .tv-section:has(.tv-versionlist){display:none!important}
 body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-uc-body{min-height:0}
+/* 0.5.56: Fanart.tv logo in the title page */
+.tv-title .tv-logo{display:block;max-height:110px;max-width:min(440px,100%);object-fit:contain;object-position:left center;filter:drop-shadow(0 2px 8px rgba(0,0,0,.45))}
+/* 0.5.56: Datenbanksicherungen */
+.backup-list{display:flex;flex-direction:column;gap:4px;max-height:280px;overflow:auto;margin:8px 0}
+.backup-row{display:grid;grid-template-columns:22px minmax(150px,auto) 90px 90px 1fr;gap:10px;align-items:center;padding:7px 9px;border:1px solid #2c3b49;border-radius:9px;font-size:12px}
+.backup-row code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fb3c2}
+.backup-kind{font-size:11px;border-radius:999px;padding:2px 8px;border:1px solid #3a4c5a;color:#b5c9d3;text-align:center}
+.backup-kind.own{border-color:#6cbaa5;color:#d8ffea}

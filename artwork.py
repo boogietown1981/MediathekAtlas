@@ -3,7 +3,8 @@ import json,re,time,urllib.parse,os
 from pathlib import Path
 import core,diagnostics,metadata
 import broadcaster
-HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','images.justwatch.com'}|broadcaster.IMAGE_HOSTS
+from vendor.archive_portals import fanart_client
+HOSTS={'assets.fanart.tv','image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','images.justwatch.com'}|broadcaster.IMAGE_HOSTS
 # Portal artwork (0.5.42): Pluto TV and Netzkino deliver their covers from these hosts.
 PORTAL_HOST=re.compile(r'^(?:[a-z0-9-]+\.)*(?:pluto\.tv|netzkino\.de|cloudfront\.net|rakuten\.tv|wuaki\.tv|ytimg\.com)$')
 def valid(url):
@@ -14,7 +15,7 @@ def compatible(m,h):
     date=str(h.get('release_date') or h.get('first_air_date') or h.get('year') or '')
     return bool(m.get('year') and date[:4]==str(m['year']) and core.title_similarity(m['title'],title)>=.985)
 def lookup(m,s):
-    found={};errors=[];imdb_id=m.get('reference_id') if m.get('provider') in ('OMDb','IMDb Offline') else m.get('imdb_id')
+    found={};errors=[];tmdb_id=tvdb_id=None;imdb_id=m.get('reference_id') if m.get('provider') in ('OMDb','IMDb Offline') else m.get('imdb_id')
     if s.get('tvdb') and m['kind']=='series':
         try:
             import tvdb
@@ -25,6 +26,7 @@ def lookup(m,s):
                 hits=[h for h in hits if compatible(m,h)]
                 if len(hits)==1:sid=hits[0].get('tvdb_id')
             if sid:
+                tvdb_id=sid
                 d=get('series/'+str(sid)+'/extended')
                 if valid(d.get('image')):found['poster']=d['image']
                 if d.get('overview'):found['show_description']=str(d['overview'])
@@ -46,6 +48,7 @@ def lookup(m,s):
                 hits=[h for h in hits if compatible(m,h)]
                 if len(hits)==1:sid=hits[0]['id']
             if sid:
+                tmdb_id=sid
                 d=core.tmdb(kind+'/'+str(sid),s['tmdb'])
                 found['networks']=[x['name'] for x in d.get('networks',[]) if x.get('name')]
                 found['studios']=[x['name'] for x in d.get('production_companies',[]) if x.get('name')]
@@ -60,6 +63,9 @@ def lookup(m,s):
                 found['artwork_provider']=('TVDB + TMDB' if found.get('artwork_provider') else 'TMDB')
         except Exception as e:errors.append(core.safe_error(e))
     if imdb_id:found['imdb_id']=imdb_id
+    if fanart_keys(s):
+        try:fanart_lookup(m,s,found,imdb_id,tmdb_id,tvdb_id)
+        except Exception as e:errors.append(core.safe_error(e))
     if s.get('omdb') and imdb_id and not m.get('ratings') and not metadata.omdb_status(s['omdb'])['paused']:
         try:
             d=metadata.omdb({'i':imdb_id},s['omdb'])
@@ -67,6 +73,52 @@ def lookup(m,s):
                 found['ratings']=metadata.parse_ratings(d)
         except Exception as e:errors.append(core.safe_error(e))
     return found,errors
+
+def fanart_keys(s):
+    """Fanart.tv (0.5.56, from ArchiveMedia v0.10.53): project key and/or personal client key."""
+    return bool(s.get('fanart') or s.get('fanart_personal'))
+
+def _fanart_fetch(request):
+    headers={k:v for k,v in request.header_items() if k.lower()!='user-agent'}
+    with core.open_url(request.full_url,headers=headers,timeout=12) as response:
+        if urllib.parse.urlsplit(response.geturl()).hostname!='webservice.fanart.tv':
+            raise ValueError('Fanart.tv: unzulässige Weiterleitung')
+        content=response.read(1024*1024+1)
+    if len(content)>1024*1024:raise ValueError('Fanart.tv: Antwort zu groß')
+    return json.loads(content)
+
+def fanart_lookup(m,s,found,imdb_id=None,tmdb_id=None,tvdb_id=None):
+    """Posters, backgrounds and logos for an already identified work.
+
+    Only queried with a known IMDb/TVDB/TMDB ID; Fanart.tv must not contradict
+    that ID. Images are reference artwork, never proof of a concrete video file.
+    """
+    kind=m.get('kind')
+    if kind not in ('movie','series'):return None
+    if m.get('provider')=='TVDB' and not tvdb_id:tvdb_id=m.get('reference_id')
+    if m.get('provider')=='TMDB' and not tmdb_id:tmdb_id=m.get('reference_id')
+    ids=[('tvdb',tvdb_id),('imdb',imdb_id),('tmdb',tmdb_id)] if kind=='series' else [('imdb',imdb_id),('tmdb',tmdb_id)]
+    for source,ident in ids:
+        ident=str(ident or '').strip()
+        if not ident:continue
+        try:result=fanart_client.lookup(kind,ident,source=source,project_key=s.get('fanart',''),personal_key=s.get('fanart_personal',''),fetch=_fanart_fetch)
+        except ValueError as e:
+            if 'Ungültig' in str(e):continue
+            raise
+        found['fanart_checked']=True
+        if not result or result.get('confidence')=='conflict':
+            if result:found['fanart_conflict']=result.get('reason')
+            continue
+        images=result.get('images') or {}
+        used=False
+        for field,key in (('poster','poster'),('fanart','background'),('logo','logo')):
+            url=(images.get(key) or {}).get('url')
+            if valid(url) and not (m.get(field) or found.get(field)):found[field]=url;used=True
+        if used:
+            prov=found.get('artwork_provider')
+            found['artwork_provider']=prov+' + Fanart.tv' if prov and 'Fanart.tv' not in prov else (prov or 'Fanart.tv')
+        return result
+    return None
 
 def save_image(url,stem):
     if not valid(url):return False
@@ -89,11 +141,11 @@ def save_image(url,stem):
     except (OSError,ValueError,TimeoutError):return False
 
 def apply(m,found):
-    for field in ('poster','fanart'):
+    for field in ('poster','fanart','logo'):
         if found.get(field) and not m.get(field):m[field]=found[field]
     if m.get('rating') is None and found.get('rating') is not None:
         for field in ('rating','votes','rating_source'):m[field]=found.get(field)
-    for field in ('networks','studios','ratings','imdb_id','discovery_enriched'):
+    for field in ('networks','studios','ratings','imdb_id','discovery_enriched','fanart_checked'):
         if found.get(field):m[field]=found[field]
     if found.get('show_description') and not m.get('show_description'):m['show_description']=found['show_description']
     m['artwork_provider']=found.get('artwork_provider',m.get('artwork_provider',''))
@@ -112,7 +164,7 @@ def share_series(c,row,m,found):
 
 def run_once(service):
     config=service.settings()
-    if not config.get('auto_metadata',True) or not (config.get('tvdb') or config.get('tmdb') or config.get('omdb')):return False
+    if not config.get('auto_metadata',True) or not (config.get('tvdb') or config.get('tmdb') or config.get('omdb') or fanart_keys(config)):return False
     with service.db() as c:
         row=c.execute("SELECT w.* FROM works w LEFT JOIN artwork_checks a ON a.work_id=w.id WHERE w.state IN ('manual','matched','identified') AND (a.next_try IS NULL OR a.next_try<?) AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) ORDER BY COALESCE(a.next_try,0),w.updated DESC LIMIT 1",(time.time(),)).fetchone()
         if not row:return False
@@ -120,10 +172,10 @@ def run_once(service):
         # Reserve briefly while lookup runs. A database lock must not make this
         # artwork disappear from the queue for 24 hours.
         c.execute('INSERT OR REPLACE INTO artwork_checks VALUES(?,?)',(row['id'],time.time()+300))
-    if m.get('discovery_enriched') and m.get('poster') and m.get('fanart') and m.get('rating') is not None and (not config.get('omdb') or m.get('ratings')) and (m['kind']!='series' or m.get('show_description')):
+    if m.get('discovery_enriched') and m.get('poster') and m.get('fanart') and m.get('rating') is not None and (not config.get('omdb') or m.get('ratings')) and (m['kind']!='series' or m.get('show_description')) and (not fanart_keys(config) or m.get('fanart_checked') or m.get('logo')):
         with service.db() as c:c.execute('UPDATE artwork_checks SET next_try=? WHERE work_id=?',(time.time()+86400,row['id']))
         return True
-    key=core.hashlib.sha256(json.dumps([m.get('provider'),m.get('reference_id'),m['kind'],m['title'],m.get('year'),bool(config.get('tmdb')),bool(config.get('tvdb')),bool(config.get('omdb')),'v0516'],sort_keys=True).encode()).hexdigest()
+    key=core.hashlib.sha256(json.dumps([m.get('provider'),m.get('reference_id'),m['kind'],m['title'],m.get('year'),bool(config.get('tmdb')),bool(config.get('tvdb')),bool(config.get('omdb')),fanart_keys(config),'v0556'],sort_keys=True).encode()).hexdigest()
     with service.db() as c:cache=c.execute('SELECT payload FROM artwork_cache WHERE id=? AND checked>?',(key,time.time()-86400)).fetchone()
     if cache:found,errors=json.loads(cache[0]),[]
     else:
