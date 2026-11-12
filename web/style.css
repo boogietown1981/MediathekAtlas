@@ -689,3 +689,9 @@ dialog.player::backdrop{background:#000c}
 .portal-title-section>button,.portal-title-section>div>button{margin-top:12px}
 .portal-title-section .tv-info{margin:8px 0 4px}
 .portal-title-jobs{display:grid;gap:8px;margin-top:12px}
+/* 0.5.47: one offline control for every tile and episode row */
+.atlas-offline{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;flex-basis:100%}
+.atlas-offline-note{flex-basis:100%;margin:0!important;font-size:12px;min-height:1em;overflow-wrap:anywhere}
+.atlas-offline-note:empty{display:none}
+.atlas-offline-button.atlas-offline-done{background:#21372f;color:#8af1d1;border-color:#3d6b5a;opacity:1}
+.tv-epactions .atlas-offline{flex-basis:auto}

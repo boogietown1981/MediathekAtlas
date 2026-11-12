@@ -14,7 +14,7 @@ window.AtlasPortalPanel = function (cfg) {
   if (!$(K)) return null;
   const pageSize = 60;
   let view = 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
-  let offline = new Map(), offlineDays = 30, ffmpeg = true, genre = '';
+  let genre = '';
   const cats = () => window.AtlasPortalCategories;
   const ACTIVE = ['queued', 'downloading', 'tagging'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar', error: 'Fehler',
@@ -85,14 +85,11 @@ window.AtlasPortalPanel = function (cfg) {
         cfg.play()(item.id, item.kind === 'episode' && series ? series.title + ' · ' + label : label);
       };
       actions.append(play);
-      if (item.kind !== 'channel') actions.append(offlineButton(item));
+      const off = item.kind !== 'channel' && window.AtlasOffline?.control(K, item.id, label);
+      if (off) actions.append(off);
       if (cfg.externalLink && item.web_url) actions.append(externalLink(item));
     }
     box.append(actions);
-    if (item.kind !== 'channel' && item.kind !== 'series' && playable(item)) {
-      const state = make('small', '', 'pluto-offline-state'); state.dataset.portalId = item.id;
-      box.append(state); paintState(state, offline.get(item.id));
-    }
     return box;
   }
 
@@ -105,37 +102,6 @@ window.AtlasPortalPanel = function (cfg) {
     else a.setAttribute('aria-disabled', 'true');
     return a;
   }
-  function offlineButton(item) {
-    const b = make('button', `⬇ Offline speichern (${offlineDays} Tage)`); b.type = 'button'; b.dataset.portalOffline = item.id;
-    paintButton(b, offline.get(item.id));
-    b.onclick = async () => {
-      b.disabled = true;
-      try {
-        const r = await window.api(K + '-download-add', {id: item.id});
-        say(r.created ? `„${item.title}“ ist eingereiht. Gespeichert wird wie bei Mediathek-Videos; nach ${offlineDays} Tagen wird die Datei entfernt.` :
-          `„${item.title}“ ist bereits eingereiht oder offline verfügbar.`);
-        await refreshOffline();
-      } catch (e) { say('Kein Download gestartet: ' + e.message, true); b.disabled = false; }
-    };
-    return b;
-  }
-  function paintButton(b, job) {
-    const busy = job && (ACTIVE.includes(job.state) || job.state === 'done');
-    b.disabled = !!busy || !ffmpeg;
-    b.title = !ffmpeg ? 'ffmpeg fehlt in dieser Installation' : busy ? 'Bereits eingereiht oder offline verfügbar' :
-      `${NAME} erlaubt ${offlineDays} Tage Offline-Nutzung; Werbung bleibt enthalten`;
-  }
-  function paintState(node, job) {
-    node.className = 'pluto-offline-state muted';
-    if (!job) { node.textContent = ''; return; }
-    if (job.state === 'done' && job.offline_until) {
-      node.textContent = `Offline bis ${day(job.offline_until)} · ${daysText(job.days_left)}`;
-      if (job.days_left <= 3) node.className = 'pluto-offline-state nk-warning';
-    } else if (job.state === 'downloading') node.textContent = 'Lädt · ' + mib(job.received);
-    else if (ACTIVE.includes(job.state)) node.textContent = LABELS[job.state];
-    else if (job.state === 'error') { node.textContent = 'Offline-Speicherung fehlgeschlagen'; node.className = 'pluto-offline-state nk-warning'; }
-    else node.textContent = '';
-  }
   function jobAction(label, job, action) {
     const b = make('button', label); b.type = 'button';
     b.onclick = async () => {
@@ -143,7 +109,7 @@ window.AtlasPortalPanel = function (cfg) {
       try {
         if (action === 'retry') await window.api('retry', {id: job.id});
         else await window.api('offline-download-action', {id: job.id, action});
-        await refreshOffline();
+        await refreshOffline(); window.AtlasOffline?.refresh(K);
       } catch (e) { say(e.message, true); b.disabled = false; }
     };
     return b;
@@ -151,13 +117,7 @@ window.AtlasPortalPanel = function (cfg) {
   async function refreshOffline() {
     let data;
     try { data = await window.api(K + '-downloads'); } catch (e) { return; }
-    offlineDays = data.offline_days || offlineDays; ffmpeg = data.ffmpeg !== false;
     const items = data.items || [];
-    // Newest job per title decides the card state (listing is newest first).
-    offline = new Map();
-    for (const job of items) if (job[K + '_id'] && !offline.has(job[K + '_id'])) offline.set(job[K + '_id'], job);
-    for (const node of document.querySelectorAll('#' + P + '-items [data-portal-id]')) paintState(node, offline.get(node.dataset.portalId));
-    for (const b of document.querySelectorAll('#' + P + '-items [data-portal-offline]')) paintButton(b, offline.get(b.dataset.portalOffline));
     const shown = items.filter(j => !['expired', 'removed'].includes(j.state));
     $(P + '-offline-count').textContent = shown.length ? `· ${shown.filter(j => j.state === 'done').length} verfügbar, ${shown.filter(j => ACTIVE.includes(j.state)).length} in Arbeit` : '· keine';
     const host = $(P + '-offline-jobs'); host.replaceChildren();
@@ -235,6 +195,8 @@ window.AtlasPortalPanel = function (cfg) {
     catch (e) { say(e.message, true); }
   };
   // Details (0.5.42): the shared title page (web/portal_title.js), same as in the catalogue.
+  // A tile started or finished a copy: keep the list "Offline gespeichert" in step.
+  window.AtlasOffline?.onChange(K, () => { if (visible()) refreshOffline(); });
   const openDetail = id => window.AtlasPortalTitle?.open(K, id);
   return {refresh, openDetail};
 };

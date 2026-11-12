@@ -188,7 +188,9 @@ class WiringTests(unittest.TestCase):
         # 0.5.40: the panel is the shared portal_panel.js, pluto.js configures it with key 'pluto'.
         js = (ROOT / 'web' / 'portal_panel.js').read_text()
         self.assertIn("key: 'pluto'", (ROOT / 'web' / 'pluto.js').read_text())
-        self.assertIn("K + '-download-add'", js)
+        # 0.5.47: the tile control is the shared offline_button.js.
+        self.assertIn("AtlasOffline?.control(K, item.id", js)
+        self.assertIn("source + '-download-add'", (ROOT / 'web' / 'offline_button.js').read_text())
         self.assertIn("'offline-download-action'", js)
         self.assertIn("item.kind !== 'channel'", js)
         self.assertIn('id="pluto-offline-jobs"', (ROOT / 'web' / 'index.html').read_text())

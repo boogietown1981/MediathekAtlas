@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.46
+# MediathekAtlas · 0.5.47
+
+## Neu in 0.5.47: „30 Tage offline speichern“ in jeder Kachel
+
+- Netzkino, Pluto TV und JustWatch TV haben in jeder Film-Kachel (Katalog und Plattform-Reiter) und in jeder Folgenzeile denselben Knopf „⬇ Offline speichern (30 Tage)“ mit Status: Vorgemerkt, Lädt mit Fortschritt und „Abbrechen“, „✓ Offline verfügbar bis …“, bei einem Fehler der Grund und „↻ Erneut offline speichern“.
 
 ## Neu in 0.5.46: Katalogfehler nennen die Ursache
 

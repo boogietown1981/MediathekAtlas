@@ -242,7 +242,11 @@
       const link=el('a','Bei JustWatch ansehen','button');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
       actions.append(link);
     }
-    if (item.source==='netzkino'||(PORTALS[item.source]&&item.playable)) actions.append(el('small','Wiedergabe im MediathekAtlas-Player · 30 Tage offline speicherbar'));
+    // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.
+    if (item.kind!=='series' && (item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&item.playable)) {
+      const off=window.AtlasOffline?.control(item.source,item.id,item.title);
+      if (off) actions.append(off);
+    }
     text.append(actions);card.append(art,text);
     return card;
   }

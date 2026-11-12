@@ -152,6 +152,9 @@
           detail.onclick = () => (window.AtlasPortalTitle?.open('netzkino', item.id) || window.AtlasNetzkinoDetail?.open(item.id));
           actions.prepend(detail);
         }
+        // 0.5.47: the same 30-day offline control as on every other platform tile.
+        const off = !isGroup && /^[a-f0-9]{32}$/.test(item.id || '') && window.AtlasOffline?.control('netzkino', item.id, item.title);
+        if (off) actions.append(off);
         card.append(actions); host.append(card);
       }
       if (status.running) message('Katalogabgleich läuft; bisherige Titel bleiben sichtbar.');

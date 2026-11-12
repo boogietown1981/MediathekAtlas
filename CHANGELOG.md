@@ -1,3 +1,9 @@
+## 0.5.47 – „30 Tage offline speichern“ einheitlich in jeder Kachel
+- Björn (12.11.2026): Der Download bei Pluto und JustWatch funktioniert nicht sauber und ist nicht einheitlich dargestellt; der 30-Tage-Offline-Speicher gehört schon in die Kachelansicht.
+- Befund: Den Knopf gab es nur in den Kacheln der Reiter Pluto TV und JustWatch TV. Katalog-Kacheln zeigten nur einen Hinweistext, Netzkino-Kacheln gar nichts; ein Fehler erschien in der Kachel ohne Grund und ohne Wiederholen.
+- Neu `web/offline_button.js` (`AtlasOffline.control`): ein Bedienelement für alle drei Anbieter, in Katalog-Kacheln, Plattform-Kacheln (Netzkino, Pluto TV, JustWatch TV) und Folgenzeilen der Serienseite. Zustände: „⬇ Offline speichern (30 Tage)“, „Vorgemerkt“, „Lädt · x / y MiB“ mit „Abbrechen“, „MKV wird erstellt“, „✓ Offline verfügbar · bis <Datum> · noch n Tage“, bei Fehler/Abbruch der Grund und „↻ Erneut offline speichern“ (startet denselben Auftrag neu). Der Status aller sichtbaren Kacheln kommt in einer Anfrage je Anbieter und aktualisiert sich während eines Downloads alle 3 s.
+- Die bisherige Kachel-Variante in `portal_panel.js` und die Folgen-Variante in `portal_title.js` entfallen (keine doppelte Umsetzung). Die Listen „Offline gespeichert“ je Plattform bleiben und laufen synchron.
+
 ## 0.5.46 – Katalogfehler mit Ursache, Netzprüfung im Diagnose-Export
 - Björn (12.11.2026): „die Kataloge synchronisieren nicht mehr“ – Netzkino „Fehlgeschlagen · Netzkino-Katalogserver nicht erreichbar“, Pluto und JustWatch laden nicht. In der Testumgebung nicht nachstellbar (dort ist kein Anbieter erreichbar); die bisherige Meldung verriet die Ursache nicht.
 - Neu `netcheck.py`: Die Fehlermeldung aller drei Kataloge nennt die Ursache (Name nicht auflösbar – DNS/Werbefilter/kein Internet, Zertifikat nicht prüfbar, Zeitüberschreitung, Verbindung abgelehnt/abgebrochen, Proxy), ohne Adressen oder Schlüssel. Die Ereignisse `…_sync_failed` tragen die Fehlerart.

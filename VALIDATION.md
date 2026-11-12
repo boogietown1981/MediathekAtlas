@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.47 – Offline speichern in jeder Kachel (12. November 2026)
+
+- Neue Tests `tests/test_v0547_offline_tiles.py` (4): ein Bedienelement für alle Anbieter, alle Kachelansichten nutzen es, keine zweite Umsetzung, Auslieferung und Ladereihenfolge.
+- Browser-Durchlauf (Playwright, Testbestand mit drei eingespielten Aufträgen): Katalog- und Plattform-Kacheln zeigen denselben Zustand – JustWatch „✓ Offline verfügbar · bis 12.12.2026 · noch 30 Tage“, Pluto „Unterbrochen“ mit Wiederholen, Netzkino „Fehlgeschlagen: <Grund>“; Wiederholen in der Netzkino-Kachel → „Vorgemerkt“; freie Titel „⬇ Offline speichern (30 Tage)“; keine JavaScript-Fehler.
+- **Nicht geprüft:** echte Downloads von Pluto TV und JustWatch TV (kein Anbieterzugang in der Testumgebung). Was bei Björn „nicht sauber“ lief, ist ohne Fehlermeldung/Diagnose offen.
+
 ## 0.5.46 – Katalogfehler mit Ursache (12. November 2026)
 
 - Neue Tests `tests/test_v0546_network_cause.py` (6): Ursachen unterschieden (DNS, Zertifikat, Zeitüberschreitung, abgelehnt, Proxy), keine Adressen in der Meldung, Pluto-/JustWatch-Meldung mit Ursache, Netzprüfung meldet Fehler ohne Ausnahme, Verdrahtung.

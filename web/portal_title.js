@@ -141,14 +141,14 @@
   // 0.5.45: episodes come with the series model (portal_title.py) and are shown like the Mediathek
   // series page: season tabs ("Alle · n", "Staffel N · n"), one row per episode with play, offline
   // and details, the same for Netzkino, Pluto TV and JustWatch TV (Björn, 12.11.2026).
-  function episodesSection(m, host, token) {
+  function episodesSection(m, host) {
     const src = SOURCES[m.source], episodes = m.episodes || [];
     const sec = section('Staffeln & Folgen · ' + episodes.length, 'portal-title-episodes');
     const tabs = make('div', undefined, 'tv-tabs'), list = make('div', undefined, 'tv-episodes');
     tabs.setAttribute('role', 'tablist'); sec.append(tabs, list); host.append(sec);
     if (!episodes.length) { list.append(make('p', 'Keine Folgen im Katalog.', 'empty')); return; }
     const seasons = [...new Set(episodes.map(e => e.season))].sort((a, b) => (a ?? 1e9) - (b ?? 1e9));
-    let current = 'all', jobs = new Map();
+    let current = 'all';
     const tab = (key, text, count) => {
       const t = button(text + ' · ' + count, 'tv-tab' + (key === current ? ' active' : ''), () => { current = key; paintTabs(); paintRows(); });
       t.setAttribute('role', 'tab'); t.setAttribute('aria-selected', String(key === current)); return t;
@@ -159,12 +159,6 @@
       tabs.append(tab('all', 'Alle', episodes.length));
       for (const s of seasons) tabs.append(tab(s, s == null ? 'Ohne Staffel' : 'Staffel ' + s, episodes.filter(e => e.season === s).length));
     }
-    async function offline(e, btn) {
-      btn.disabled = true;
-      try { const r = await window.api(src.add, {id: e.id}); window.notice?.(r.created ? 'Folge eingereiht.' : 'Bereits eingereiht oder offline verfügbar.'); }
-      catch (err) { window.notice?.('Kein Download gestartet: ' + err.message, 'error'); btn.disabled = false; return; }
-      await loadJobs();
-    }
     function paintRows() {
       list.replaceChildren();
       for (const e of episodes) {
@@ -174,34 +168,19 @@
         thumb.append(make('span', code || 'Folge', 'tv-code')); row.append(thumb);
         const body = make('div', undefined, 'tv-epbody');
         body.append(make('h3', (Number.isInteger(e.episode) ? e.episode + '. ' : '') + (e.title || m.title)));
-        const job = jobs.get(e.id);
-        const meta = [mins(e.duration), e.year, job ? (LABELS[job.state] || job.state) + (job.state === 'done' && job.days_left != null ? ' · noch ' + job.days_left + ' T.' : '') : ''];
+        const meta = [mins(e.duration), e.year];
         body.append(make('p', meta.filter(Boolean).join(' · '), 'tv-epmeta'));
         if (e.summary) body.append(make('p', e.summary, 'tv-epdesc'));
         const acts = make('div', undefined, 'tv-epactions');
         if (e.playable) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || ''))));
         else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
-        if (e.offline) {
-          const busy = job && (ACTIVE.includes(job.state) || job.state === 'done');
-          const b = button(busy ? '✓ ' + LABELS[job.state] : '⬇ Offline speichern', '', ev => offline(e, ev.target));
-          b.disabled = !!busy; acts.append(b);
-        }
+        const off = e.offline && window.AtlasOffline?.control(m.source, e.id, m.title + (code ? ' · ' + code : ''));
+        if (off) acts.append(off);
         acts.append(button('Details', '', () => open(m.source, e.id)));
         body.append(acts); row.append(body); list.append(row);
       }
     }
-    async function loadJobs() {
-      if (!episodes.some(e => e.offline)) return;
-      try {
-        const base = src.jobs('').split('?')[0];
-        const data = await window.api(base + '?' + new URLSearchParams({ids: episodes.map(e => e.id).join(',')}));
-        if (token !== seq) return;
-        const key = m.source + '_id'; jobs = new Map();
-        for (const j of data.items || []) if (!['expired', 'removed'].includes(j.state) && !jobs.has(j[key])) jobs.set(j[key], j);
-        paintRows();
-      } catch (e) { /* the rows stay usable without a job state */ }
-    }
-    paintTabs(); paintRows(); loadJobs();
+    paintTabs(); paintRows();
   }
 
   async function open(source, id) {
@@ -233,7 +212,7 @@
     host.replaceChildren(...hero({meta: {title: label, poster: m.poster, fanart: m.fanart}, type: m.kind_label + ' · ' + m.provider, facts,
       overview: m.description, overviewHint: 'Keine Inhaltsangabe veröffentlicht.', actions, info,
       cast: (m.cast || []).map(name => ({name})), image}));
-    if (m.kind === 'series') episodesSection(m, host, token);
+    if (m.kind === 'series') episodesSection(m, host);
     if (m.offline?.allowed) offlineSection(m, host).catch(() => {});
     if (m.kind !== 'channel' && !(m.source === 'netzkino' && m.kind === 'series')) referenceSection(m, host);
     providerSection(m, host);
