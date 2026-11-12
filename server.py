@@ -605,16 +605,18 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
         if path=='/api/play':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn')}
+            direct_youtube=q.get('direct',[''])[0]=='1'
             yt_id=q.get('youtube',[''])[0]
             if yt_id:
                 # 0.5.53: a finished offline copy plays locally; otherwise the official embedded player.
                 with db() as c:done=[j for j in netzkino_downloads.listing(c,item_id=yt_id,origin='youtube')['items'] if j['state']=='done']
-                if not done:
+                if done:ref['job']=done[0]['id']
+                elif direct_youtube:ref['youtube']=yt_id   # 0.5.78: own player, stream resolved by yt-dlp (opt-in switch)
+                else:
                     try:info=youtube.play_info(ROOT,yt_id)
                     except ValueError as e:return self.send({'error':str(e)},404)
                     diagnostics.event('playback_start',mode='embed',origin='online',hls=False,provider='youtube')
                     return self.send(info)
-                ref['job']=done[0]['id']
             # 0.5.63: the player's wish for the picture size ('auto', 'max' or a height such as '480')
             quality=_play_quality(q)
             try:
@@ -775,7 +777,8 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],root=ROOT,quality=_play_quality(q))
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],root=ROOT,quality=_play_quality(q),
+                                                  youtube=q.get('youtube',[''])[0])
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
