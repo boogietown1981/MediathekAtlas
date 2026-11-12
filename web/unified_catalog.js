@@ -135,6 +135,8 @@
     if (p.channels) tile('Live-Sender',num(p.channels));
     if (p.playable!==undefined) tile('im Player abspielbar',num(p.playable));
     if (p.sources!==undefined) tile('Kanäle/Playlists',num(p.sources));
+    // 0.5.74: YouTube music videos have their own count (they are no films or series).
+    if (p.music!==undefined) tile('Musik-Playlists & -Videos',num(p.music),num(p.tracks||0)+' Musikvideos, im YouTube-Bereich unter „Musikvideos“');
     if (p.key_set===false) tile('API-Schlüssel','fehlt','Im YouTube-Bereich einen Schlüssel für die YouTube Data API v3 eintragen');
     if (p.protected) tile('kopiergeschützt (nur beim Anbieter)',num(p.protected));
     tile('Stand des Katalogs',when(p.last_success));
@@ -144,6 +146,7 @@
     if (by.partial) tile('Anbieter nicht erreichbar',num(by.partial),'Wird später automatisch erneut geprüft');
     tile('noch offen',num(Math.max(0,titles-checked)),'Wird im Hintergrund abgeglichen (ein Titel alle 6 s)');
     card.append(tiles);
+    if (p.running && p.progress) card.append(el('small','Abruf läuft: '+p.progress,'muted atlas-portal-running'));
     const share=titles?Math.min(100,Math.round(checked*100/titles)):0;
     const bar=el('div',undefined,'atlas-portal-progress');const fill=el('span');fill.style.width=share+'%';bar.append(fill);
     bar.setAttribute('role','progressbar');bar.setAttribute('aria-valuenow',String(share));bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');

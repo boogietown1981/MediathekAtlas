@@ -38,7 +38,9 @@
         const b = make('button', label); b.type = 'button';
         b.onclick = async () => {
           b.disabled = true;
-          try { renderSources((await window.api('youtube-sources', {action, id: s.id})).sources || []); say(action === 'remove' ? 'Entfernt. Beim nächsten Abruf verschwinden seine Titel.' : 'Gespeichert. „↻ Katalog jetzt laden“ übernimmt die Änderung.'); }
+          try { const r = await window.api('youtube-sources', {action, id: s.id}); renderSources(r.sources || []);
+            say(action === 'remove' ? 'Entfernt. Beim nächsten Abruf verschwinden seine Titel.' : r.started ? 'Gespeichert und wird jetzt eingelesen.' : 'Gespeichert. „↻ Katalog jetzt laden“ übernimmt die Änderung.');
+            if (r.started) setTimeout(panel.refresh, 1500); }
           catch (e) { say(e.message, true); b.disabled = false; }
         };
         acts.append(b);
@@ -84,7 +86,11 @@
       const r = await window.api('youtube-sources', {action: 'add', url: $('youtube-source-url').value, kind: $('youtube-source-kind').value,
         label: $('youtube-source-label').value, min_minutes: $('youtube-source-min').value || null});
       renderSources(r.sources || []); $('youtube-source-url').value = ''; $('youtube-source-label').value = ''; $('youtube-source-min').value = '';
-      say('Hinzugefügt. „↻ Katalog jetzt laden“ liest den Kanal ein.');
+      // 0.5.74: the server reads a new source right away; the status line shows the progress.
+      const where = $('youtube-source-kind').value === 'music' ? ' Sie erscheint danach unter „Musikvideos“.' : '';
+      say(r.started ? 'Hinzugefügt und wird eingelesen (läuft schon ein Abruf, direkt danach); der Fortschritt steht oben im Status.' + where :
+        'Hinzugefügt. „↻ Katalog jetzt laden“ liest die Quelle ein.' + where);
+      if (r.started || r.status?.running) setTimeout(panel.refresh, 1500);
     } catch (e) { say(e.message, true); }
   };
   // Series episodes are shorter than films: the suggested minimum follows the kind (films 60, series 10 min).

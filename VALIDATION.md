@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.75 – YouTube-Abruf sofort, Fortschritt (12. November 2026)
+- Grundlage: Björns Diagnose `MediathekAtlas_Diagnose_2026-11-12T23-09-56-456Z` (0.5.72): YouTube 9 Quellen, 3.806 Filme, `music: 0`, letzter Abruf 22:21, kein Abruf nach dem Eintragen; 3× `AttributeError` durch das Protokollfeld `level`.
+- Automatisch: gesamte Python-Suite, davon 4 neu in `tests/test_v0575_youtube_progress.py` (Fortschritt während des Laufs und Lesen parallel dazu, WAL, Nachlauf bei Quelle während eines Laufs, Protokollfeld `level`).
+- Nicht geprüft: echter API-Abruf (kein Schlüssel in der Bauumgebung).
+
 ## 0.5.73 – Skripte der Seite kommen zuverlässig an (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (833 Tests), davon 3 neu in `tests/test_v0573_script_loading.py`; `node --check`; Oberflächen-Kurztests.
 - Im Browser (Chromium): `/player.js` einmal abgewiesen – wird über `/code/player` nachgeladen, Player vorhanden; alle Adressen mit „player“ abgewiesen – kommt über `/code/~reyalp`; 40 gleichzeitige Anfragen an den Server alle mit 200 beantwortet.

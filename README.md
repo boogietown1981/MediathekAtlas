@@ -1,5 +1,11 @@
-# MediathekAtlas · 0.5.73
+# MediathekAtlas · 0.5.75
 
+## Neu in 0.5.75: YouTube-Quellen sofort eingelesen, mit Fortschritt
+
+- Eine neu eingetragene Playlist, ein Kanal oder ein Video wird sofort eingelesen. Läuft gerade ein Abruf, kommt sie direkt danach dran.
+- Während des Abrufs steht im YouTube-Bereich und auf der Plattformkarte, welche Quelle gerade dran ist und wie viele Videos geprüft werden.
+- Die Plattformkarte zeigt Musik-Playlists und Musikvideos in einer eigenen Kachel.
+- Behoben: Ein Protokollfehler konnte Wiedergabe-Statistik und Stream-Ende abbrechen.
 ## Neu in 0.5.73: Alle Teile der Seite kommen an
 
 Enthält alles bis 0.5.72.

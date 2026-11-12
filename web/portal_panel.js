@@ -256,6 +256,8 @@ window.AtlasPortalPanel = function (cfg) {
     const st = data.status || {};
     say(data.error ? 'Folgen konnten nicht aktualisiert werden: ' + data.error :
       !total && !st.last_success ? 'Noch kein ' + SHORT + '-Katalog geladen. „↻ Katalog jetzt laden“ startet den Abruf.' :
+      !total && view === 'music' && !q ? (st.running ? 'Abruf läuft – die Musikvideos erscheinen, sobald er fertig ist.' :
+        'Noch keine Musikvideos. Unter „YouTube-Kanäle & API-Schlüssel“ eine Playlist oder ein Video mit der Art „Musikvideos“ eintragen.') :
       !total ? 'Keine passenden Einträge.' : '', !!data.error);
   }
 

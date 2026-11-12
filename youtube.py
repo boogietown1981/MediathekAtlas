@@ -80,6 +80,7 @@ DEFAULT_SOURCES = (
 _KEY = lambda: ''                 # set by server.configure(): returns the stored API key
 _SYNC_LOCK = threading.Lock()
 _ACTIVE = False
+_PROGRESS = ''                    # 0.5.74: what a running catalogue run is doing, for the status line
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS youtube_items(
@@ -134,6 +135,12 @@ def _connect(root):
             pass
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
+    # 0.5.74: readers (catalogue tab, dashboard) must not wait while a long catalogue run writes.
+    try:
+        if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
+            db.execute('PRAGMA journal_mode=WAL')
+    except sqlite3.OperationalError:
+        pass   # file system without shared memory (some network shares): stays in the default mode
     db.executescript(SCHEMA)
     if 'skipped' not in {r[1] for r in db.execute('PRAGMA table_info(youtube_sources)')}:
         db.execute("ALTER TABLE youtube_sources ADD COLUMN skipped TEXT NOT NULL DEFAULT '{}'")   # 0.5.54
@@ -795,6 +802,7 @@ def update_source(root, source_id, action):
 
 def sync(root, request=None, now=None, gap=None, key=None):
     """Read all enabled sources. Rows stay; listed are the titles seen in the latest successful run."""
+    global _PROGRESS
     now = time.time() if now is None else float(now)
     if request is None:
         key = (key if key is not None else _KEY()) or ''
@@ -822,7 +830,9 @@ def sync(root, request=None, now=None, gap=None, key=None):
     try:
         if not active:
             raise ValueError('Keine YouTube-Kanäle eingetragen')
-        for src in active:
+        for number, src in enumerate(active, 1):
+            name = src.get('label') or src.get('title') or src['ref']
+            _PROGRESS = 'Quelle %d von %d: %s' % (number, len(active), name)
             db = _connect(root)
             try:
                 try:
@@ -830,6 +840,7 @@ def sync(root, request=None, now=None, gap=None, key=None):
                     if (not src['playlist'] and not single) or not src['checked'] or now - (src['checked'] or 0) > 30 * 86400:
                         src.update(resolve_source(request, src))
                     entries = [(src['ref'][2:], 0)] if single else playlist_entries(request, src['playlist'], gap)
+                    _PROGRESS = 'Quelle %d von %d: %s · %d Videos werden geprüft' % (number, len(active), name, len(entries))
                     facts = load_facts(request, db, [v for v, _ in entries], now, gap)
                     minimum = max(1, _int(src.get('min_minutes'), 1, 600) or (EPISODE_MINUTES if src['kind'] == 'series' else MOVIE_MINUTES)) * 60
                     skipped = {}
@@ -1087,7 +1098,7 @@ def state(root):
     try:
         srcs = [dict(r) for r in db.execute('SELECT enabled,last_error FROM youtube_sources')]
         return {
-            'running': _ACTIVE, 'auto': _get(db, 'auto', '1') == '1', 'key_set': bool(str(_KEY() or '').strip()),
+            'running': _ACTIVE, 'progress': _PROGRESS if _ACTIVE else '', 'auto': _get(db, 'auto', '1') == '1', 'key_set': bool(str(_KEY() or '').strip()),
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0),
             'last_success': float(_get(db, 'last_success', '0') or 0),
             'next_attempt': float(_get(db, 'next_attempt', '0') or 0),
@@ -1117,20 +1128,32 @@ def set_auto(root, enabled):
     return state(root)
 
 
+_AGAIN = False                    # 0.5.74: a source was added during a run -> one more run afterwards
+
+
 def _run(root):
-    global _ACTIVE
+    global _ACTIVE, _AGAIN
     try:
-        sync(root)
+        while True:
+            sync(root)
+            with _SYNC_LOCK:
+                if not _AGAIN:
+                    break
+                _AGAIN = False
     finally:
         with _SYNC_LOCK:
             _ACTIVE = False
 
 
-def start_sync(root):
-    global _ACTIVE
+def start_sync(root, queue=False):
+    """Start a catalogue run. With ``queue`` a request during a running one is remembered and
+    read right after it (True is returned then as well)."""
+    global _ACTIVE, _AGAIN
     with _SYNC_LOCK:
         if _ACTIVE:
-            return False
+            if queue:
+                _AGAIN = True
+            return queue
         _ACTIVE = True
     threading.Thread(target=_run, args=(root,), daemon=True, name='youtube_catalog_sync').start()
     return True
