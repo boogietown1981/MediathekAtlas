@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.70 – hls.js-Wiedergabe, einheitliche Kacheln, Fassungen (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (821 Tests), davon 7 neu in `tests/test_v0570_hls_tiles.py`; `node --check` für alle eigenen Skripte.
+- Im Browser (Chromium) mit selbst erzeugten Test-Streams: hls.js spielt einen Stream mit drei Stufen und getrennter Tonspur, die Qualitätswahl schaltet auf 480p um, ohne ffmpeg-Anfrage; Blitz/Piepton-Stream: Ton und Bild höchstens rund 100 ms auseinander (Messgenauigkeit ca. 50 ms); Server ohne CORS-Freigabe: Rückfall auf ffmpeg, Stream läuft.
+- Nicht geprüft: echte Streams der Anbieter (ob sie das direkte Laden von einer lokalen Seite erlauben, zeigt sich erst bei Björn; sonst greift der Rückfall), Safari, Firefox, Björns Rechner. Die Kacheln und Fassungs-Knöpfe sind mit Testdaten geprüft, echte Downloads nicht.
+
 ## 0.5.69 – Joyn-Abruf sichtbar (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (816 Tests), davon 2 neu in `tests/test_v0565_joyn.py` (Sender und Titel während des Abrufs sichtbar, ignorierter Offset beendet die Genre-Seite nach einer Wiederholung).
 - Nicht geprüft: echte Laufzeit des Joyn-Abrufs und ob Joyn `offset` beachtet (aus der Cloud gesperrt); die Diagnose nach dem nächsten Abruf zeigt es über `joyn_sync_progress`.

@@ -1,4 +1,14 @@
-# MediathekAtlas · 0.5.69
+# MediathekAtlas · 0.5.70
+
+## Neu in 0.5.70: Streams wie auf den Anbieterseiten, einheitliche Kacheln, Fassungen
+
+Enthält alles bis 0.5.69 (Joyn).
+
+- **Wiedergabe wie auf den Anbieterseiten:** Live-Sender und Streams von Pluto TV, Rakuten TV, JustWatch TV und den Sendern lädt jetzt der Browser selbst (mit der freien Bibliothek hls.js, Apache-2.0, in der App enthalten). Er hält einen Puffer vor, passt die Qualität laufend an die Verbindung an und hält Bild und Ton zusammen. Bisher lief jeder Stream ohne Puffer durch ffmpeg, daher das Anfangspuffern und das Ruckeln. „Qualität“ im Player schaltet jetzt ohne Neustart um.
+- **Rückfall:** Erlaubt ein Anbieter das direkte Laden nicht, läuft der Stream wie bisher über ffmpeg. In der Kopfzeile des Players steht dann „über MediathekAtlas umgewandelt“.
+- **Chrome:** Der neue eingebaute HLS-Player von Chrome wird nicht mehr benutzt. Safari spielt weiter selbst ab.
+- **Einheitliche Kacheln:** Jede Kachel hat dieselben Knöpfe: Details, Ansehen (oder „↗ Bei … ansehen“ als gleich geformter Knopf) und einen Download-Knopf, wenn ein Download möglich ist. Das gilt jetzt auch für ARD, ZDF & Co. („⬇ Herunterladen“). Ist kein Download möglich, steht dort nichts mehr; der Kopierschutz-Hinweis steht nur noch auf der Titelseite.
+- **Fassungen auf der Titelseite:** Film- und Folgenseiten der Plattformen zeigen „Fassungen zum Herunterladen“ mit einem Knopf je Auflösung des Anbieters; ein Klick speichert genau diese Fassung. Bei ARD, ZDF & Co. stehen die Dateien (HD, Standard, Klein) als Knöpfe über der Fassungsliste.
 
 ## Neu in 0.5.69: Joyn füllt sich schon beim ersten Laden
 
