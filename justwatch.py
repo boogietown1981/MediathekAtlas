@@ -759,6 +759,16 @@ def fresh_stream(root, row, post=None, now=None):
     return url
 
 
+def released_now(root, row, post=None, now=None):
+    """0.5.76: does JustWatch release a stream for external players at this moment? Asked live,
+    because the real youth-protection window (FSK 16: 22-6 h, FSK 18: 23-6 h) is wider than the
+    fixed night start and the stored catalogue flag can be hours old. Never raises."""
+    try:
+        return bool(fresh_stream(root, row, post, now))
+    except Exception:
+        return False
+
+
 def play_source(root, item_id, post=None, check=None, now=None):
     """Source for streaming.plan: HLS, checked for copy protection before use."""
     if not VALID_ID.fullmatch(str(item_id or '')):

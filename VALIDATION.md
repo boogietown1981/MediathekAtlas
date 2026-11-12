@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.76 – JustWatch: Download nach Live-Auskunft (13. November 2026)
+- Automatisch: gesamte Python-Suite grün (839 Tests), davon 6 neu in `tests/test_v0576_justwatch_download.py` (sofort bei Freigabe, Vormerkung ohne Freigabe trotz altem Katalogwert, keine Frage bei Titeln ohne Zeitfenster, Live-Frage wirft nie, Arbeiter fragt vor dem Verschieben, keine gemerkte Adresse beim Download); `.cjs`-Tests.
+- Ausgewertet: Björns Diagnose vom 12.11.2026 23:09 UTC. JustWatch-Abruf dort vollständig (220 Filme, 18 Serien, 67 abspielbar, 38 nur im Zeitfenster, 129 kopiergeschützt); kein JustWatch-Download protokolliert.
+- Nicht geprüft: Live-Abruf und echter Download gegen JustWatch (aus der Bauumgebung nicht erreichbar). Die Ursache von Björns Fehlversuch ist damit nicht bestätigt.
+
 ## 0.5.73 – Skripte der Seite kommen zuverlässig an (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (833 Tests), davon 3 neu in `tests/test_v0573_script_loading.py`; `node --check`; Oberflächen-Kurztests.
 - Im Browser (Chromium): `/player.js` einmal abgewiesen – wird über `/code/player` nachgeladen, Player vorhanden; alle Adressen mit „player“ abgewiesen – kommt über `/code/~reyalp`; 40 gleichzeitige Anfragen an den Server alle mit 200 beantwortet.

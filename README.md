@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.73
+# MediathekAtlas · 0.5.76
+
+## Neu in 0.5.76: JustWatch – Download startet, sobald der Titel abspielbar ist
+
+Enthält alles bis 0.5.73.
+
+- Titel mit Jugendschutz-Zeitfenster: Beim Klick auf „Offline speichern“ fragt MediathekAtlas JustWatch direkt, ob der Stream gerade freigegeben ist. Ist er es, startet der Download sofort (JustWatch gibt ab 16 schon ab 22 Uhr und ab 18 ab 23 Uhr frei). Ist er es nicht, wird er für die Nacht vorgemerkt – auch wenn der Katalog zuletzt nachts gelesen wurde.
+- Die Stream-Adresse wird bei jedem Start und jedem neuen Versuch frisch geholt, nie aus dem Zwischenspeicher.
 
 ## Neu in 0.5.73: Alle Teile der Seite kommen an
 
