@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.5.49
+# MediathekAtlas · 0.5.50
+
+## Neu in 0.5.50: JustWatch – Nacht-Vormerkung nur bei echtem Zeitfenster, Hinweis bei Kopierschutz
+
+- „🌙 Heute Nacht offline speichern“ erscheint nur noch bei Titeln, für die JustWatch selbst ein Jugendschutz-Zeitfenster meldet (FSK 16/18).
+- Titel, die JustWatch nur im eigenen, kopiergeschützten Player (DRM) abspielt – z. B. die Folgen von „Andromeda“ –, zeigen „🔒 Kopiergeschützt (DRM): nur im JustWatch-Player“ und den Knopf „Bei JustWatch ansehen“. Wiedergabe und Offline-Kopie in MediathekAtlas sind dafür nicht möglich; der Kopierschutz wird nicht umgangen.
 
 ## Neu in 0.5.49: Plattform-Ansicht wie der Katalog, JustWatch-Folgen, geteilter Abgleich
 

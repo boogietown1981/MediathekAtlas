@@ -96,7 +96,9 @@ def _portal(root, source, item_id):
     elif m['kind'] != 'series':
         m['playable'] = it.get('playable') not in (0, False)
         # 0.5.48: JustWatch releases some titles only at night (youth protection): reserve the download.
-        night = source == 'justwatch' and not m['playable']
+        # 0.5.50: only with a real time window; without one the title is copy protected (JustWatch player only).
+        night = source == 'justwatch' and not m['playable'] and bool(it.get('night'))
+        m['protected'] = source == 'justwatch' and not m['playable'] and not night
         m['offline'] = {'allowed': m['playable'] or night, 'days': OFFLINE_DAYS, 'night': night}
     m['web_url'] = _https(it.get('web_url'))
     facts = m['provider_facts']
@@ -113,7 +115,8 @@ def _portal(root, source, item_id):
         facts.append(['IMDb-Bewertung laut JustWatch', ('%s / 10' % it['imdb_score']) + (' · %s Stimmen' % votes if votes else '')])
     if source == 'justwatch':
         facts.append(['Paket', 'JustWatch TV Free (mit Werbung)'])
-        facts.append(['Stream', 'freigegeben' if m['playable'] else 'derzeit nicht freigegeben (oft Jugendschutz: nur 0 bis 6 Uhr) – nachts offline speicherbar'])
+        facts.append(['Stream', 'freigegeben' if m['playable'] else 'nur im kopiergeschützten JustWatch-Player (DRM) – hier weder Wiedergabe noch Offline-Kopie'
+                      if m.get('protected') else 'Jugendschutz-Zeitfenster (nachts) – Offline-Kopie für die Nacht vormerkbar'])
     if source == 'pluto':
         facts.append(['Angebot', 'Pluto TV, kostenlos mit Werbung'])
     _fill_from_reference(m, report)
@@ -172,11 +175,12 @@ def _episode(source, e, series_poster=''):
         return v if 0 <= v <= hi else None
     title = _text(e.get('episode_title') or e.get('title'), 200)
     playable = e.get('playable') not in (0, False)
+    night = source == 'justwatch' and not playable and bool(e.get('night'))
     return {'id': str(e.get('id') or ''), 'title': title, 'season': num(e.get('season'), 999),
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': playable or source == 'justwatch', 'night': source == 'justwatch' and not playable,
+            'offline': playable or night, 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url'))}
 
 

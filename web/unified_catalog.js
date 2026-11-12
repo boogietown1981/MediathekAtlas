@@ -204,7 +204,7 @@
   }
   // Pluto TV and JustWatch TV deliver the same row shape (shared portal panel).
   function plRow(item,src='pluto') {
-    return {source:src,playable:item.playable!==0&&item.playable!==false,web_url:item.web_url||'',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
+    return {source:src,night:!!item.night,playable:item.playable!==0&&item.playable!==false,web_url:item.web_url||'',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',description:item.summary||'',
       genres:(item.categories||[]).filter(c=>c!=='Unbekannt'),score:item.score||null,duration:item.duration||null,
       season:item.season,episode:item.episode};
@@ -265,7 +265,9 @@
     }
     // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.
     // 0.5.48: JustWatch titles released only at night (youth protection) can be reserved.
-    const night=item.source==='justwatch'&&!item.playable;
+    // 0.5.50: only with a real time window; other titles without a stream are copy protected.
+    const night=item.source==='justwatch'&&!item.playable&&!!item.night;
+    if (item.source==='justwatch'&&item.kind!=='series'&&!item.playable&&!night) { const lock=window.AtlasOffline?.protectedNote(); if (lock) actions.append(lock); }
     if (item.kind!=='series' && (item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.playable||night))) {
       const off=window.AtlasOffline?.control(item.source,item.id,item.title,{night});
       if (off) actions.append(off);

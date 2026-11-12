@@ -60,7 +60,8 @@ CREATE TABLE IF NOT EXISTS justwatch_items(
   series_id TEXT NOT NULL DEFAULT '', season INTEGER, episode INTEGER, year INTEGER, duration INTEGER,
   rating TEXT NOT NULL DEFAULT '', genre TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
   poster TEXT NOT NULL DEFAULT '', imdb_id TEXT NOT NULL DEFAULT '', imdb_score REAL, imdb_votes INTEGER,
-  playable INTEGER NOT NULL DEFAULT 0, web_url TEXT NOT NULL DEFAULT '', seen REAL NOT NULL, updated REAL NOT NULL);
+  playable INTEGER NOT NULL DEFAULT 0, web_url TEXT NOT NULL DEFAULT '', seen REAL NOT NULL, updated REAL NOT NULL,
+  night INTEGER NOT NULL DEFAULT 0);
 CREATE INDEX IF NOT EXISTS justwatch_items_kind ON justwatch_items(kind, seen);
 CREATE INDEX IF NOT EXISTS justwatch_items_series ON justwatch_items(series_id, season, episode);
 CREATE TABLE IF NOT EXISTS justwatch_state(name TEXT PRIMARY KEY, value TEXT NOT NULL);
@@ -72,7 +73,7 @@ CATALOG_QUERY = '''query MediathekAtlasJustWatchTv($country: Country!, $language
   popularTitles(country: $country, filter: $filter, first: $first, sortBy: POPULAR, sortRandomSeed: 0, after: $after) {
     edges { node { id objectType
       content(country: $country, language: $language) {
-        title fullPath originalReleaseYear shortDescription runtime ageCertification
+        title fullPath originalReleaseYear shortDescription runtime ageCertification%s
         posterUrl(profile: S718, format: JPG)
         genres { shortName translation(language: $language) }
         externalIds { imdbId }
@@ -81,6 +82,11 @@ CATALOG_QUERY = '''query MediathekAtlasJustWatchTv($country: Country!, $language
         standardWebURL streamUrlExternalPlayer monetizationType package { shortName } } } }
     pageInfo { endCursor hasNextPage }
     totalCount } }'''
+# 0.5.50: JustWatch itself says when a title has a youth-protection time window (FSK 16: 22-6 h,
+# FSK 18: 23-6 h; empty list = no window). The basic query is the fallback if the field is refused.
+CATALOG_QUERY_BASIC = CATALOG_QUERY % ''
+CATALOG_QUERY = CATALOG_QUERY % ('\n        ageCertificationDetails(country: $country) '
+                                 '{ ageValue availableHours { fromMinute toMinute } }')
 
 SEASONS_QUERY = '''query MediathekAtlasJustWatchTvSeasons($fullPath: String!, $country: Country!, $language: Language!) {
   urlV2(fullPath: $fullPath) { node { id
@@ -134,6 +140,13 @@ def _connect(root):
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
     db.executescript(SCHEMA)
+    if 'night' not in {r[1] for r in db.execute('PRAGMA table_info(justwatch_items)')}:
+        # 0.5.50: older stock; until the next catalogue run the age rating decides (16/18 = time window).
+        with db:
+            db.execute('ALTER TABLE justwatch_items ADD COLUMN night INTEGER NOT NULL DEFAULT 0')
+            db.execute("UPDATE justwatch_items SET night=1 WHERE CAST(rating AS INTEGER)>=16")
+            db.execute("UPDATE justwatch_items SET night=1 WHERE kind='episode' AND series_id IN "
+                       "(SELECT id FROM justwatch_items WHERE kind='series' AND night=1)")
     return db
 
 
@@ -262,6 +275,18 @@ def _offer(offers):
     return None
 
 
+def night_only(content):
+    """True if JustWatch releases the title only inside a youth-protection time window."""
+    details = content.get('ageCertificationDetails') if isinstance(content, dict) else None
+    if isinstance(details, dict) and isinstance(details.get('availableHours'), list):
+        return bool(details['availableHours'])
+    age = _int((details or {}).get('ageValue') if isinstance(details, dict) else None, 0, 21)
+    if age is None:
+        found = re.search(r'\d{1,2}', str((content or {}).get('ageCertification') or ''))
+        age = int(found.group()) if found else 0
+    return age >= 16
+
+
 def item_from(node):
     """Film or series from a popularTitles node; None if it is not a JustWatch TV Free title."""
     if not isinstance(node, dict):
@@ -288,7 +313,7 @@ def item_from(node):
         'imdb_id': imdb if re.fullmatch(r'tt\d{5,10}', imdb) else '',
         'imdb_score': _float(scoring.get('imdbScore'), 0, 10), 'imdb_votes': _int(scoring.get('imdbVotes'), 0),
         'playable': 1 if offer and stream_url(offer.get('streamUrlExternalPlayer')) else 0,
-        'web_url': web_url((offer or {}).get('standardWebURL'), path)}
+        'web_url': web_url((offer or {}).get('standardWebURL'), path), 'night': 1 if night_only(content) else 0}
 
 
 def parse_page(data):
@@ -324,14 +349,15 @@ def parse_seasons(data, series):
                         'duration': runtime * 60 if runtime else None, 'rating': '', 'genre': '',
                         'summary': _text(c.get('shortDescription'), 1600), 'poster': '', 'imdb_id': '',
                         'imdb_score': None, 'imdb_votes': None, 'playable': 1 if url else 0,
-                        'web_url': web_url(offer.get('standardWebURL'), series.get('path') or '')})
+                        'web_url': web_url(offer.get('standardWebURL'), series.get('path') or ''),
+                        'night': 1 if series.get('night') else 0})   # episodes follow their series
     return out, streams
 
 
 # ---------------------------------------------------------------- storage
 
 FIELDS = ('kind', 'title', 'path', 'series_id', 'season', 'episode', 'year', 'duration', 'rating', 'genre',
-          'summary', 'poster', 'imdb_id', 'imdb_score', 'imdb_votes', 'playable', 'web_url')
+          'summary', 'poster', 'imdb_id', 'imdb_score', 'imdb_votes', 'playable', 'web_url', 'night')
 
 
 def _store(db, items, now):
@@ -340,7 +366,7 @@ def _store(db, items, now):
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)),
                       ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)),
-                   (item['id'], *[item[f] for f in FIELDS], now, now))
+                   (item['id'], *[item.get(f, 0) if f == 'night' else item[f] for f in FIELDS], now, now))
 
 
 def sync(root, post=None, now=None, gap=None):
@@ -357,7 +383,7 @@ def sync(root, post=None, now=None, gap=None):
     finally:
         db.close()
     _notify('justwatch_sync_started')
-    found, cursor, pages, total, partial = {}, '', 0, 0, False
+    found, cursor, pages, total, partial, query = {}, '', 0, 0, False, CATALOG_QUERY
     try:
         while pages < MAX_PAGES and len(found) < MAX_ITEMS:
             variables = {'country': COUNTRY, 'language': LANGUAGE, 'first': PAGE, 'after': cursor,
@@ -365,7 +391,14 @@ def sync(root, post=None, now=None, gap=None):
                                     'excludeGenres': [], 'searchQuery': ''},
                          'watchNowFilter': {'packages': [PACKAGE], 'monetizationTypes': []}}
             try:
-                items, cursor, more, total = parse_page(_data(post(CATALOG_QUERY, variables)))
+                try:
+                    items, cursor, more, total = parse_page(_data(post(query, variables)))
+                except Exception as exc:
+                    if found or query is CATALOG_QUERY_BASIC or _offline(exc):
+                        raise
+                    query = CATALOG_QUERY_BASIC   # time-window field refused: age rating decides instead
+                    _notify('justwatch_query_fallback')
+                    items, cursor, more, total = parse_page(_data(post(query, variables)))
             except Exception:
                 if not found:
                     raise
@@ -383,7 +416,9 @@ def sync(root, post=None, now=None, gap=None):
         items = list(found.values())
         counts = {'movies': sum(1 for i in items if i['kind'] == 'movie'),
                   'series': sum(1 for i in items if i['kind'] == 'series'),
-                  'playable': sum(1 for i in items if i['playable'])}
+                  'playable': sum(1 for i in items if i['playable']),
+                  'night_only': sum(1 for i in items if i['night'] and not i['playable']),
+                  'protected': sum(1 for i in items if i['kind'] == 'movie' and not i['playable'] and not i['night'])}
         db = _connect(root)
         try:
             with db:
@@ -685,8 +720,14 @@ def night_start(now=None):
     return start.timestamp()
 
 
-NOT_PLAYABLE = ('JustWatch gibt für diesen Titel gerade keinen Stream frei (oft Jugendschutz: nur 0 bis 6 Uhr). '
-                '„Heute Nacht offline speichern“ oder „Bei JustWatch ansehen“ verwenden.')
+# 0.5.50 (Björn's HAR of "Andromeda", FSK 12, 12.11.2026): titles without an address for external
+# players run in JustWatch's own player only, Widevine/PlayReady/FairPlay protected (licence server,
+# SAMPLE-AES). That is copy protection, not a time window: no player here and no offline copy.
+PROTECTED = ('JustWatch spielt diesen Titel nur im eigenen, kopiergeschützten Player (DRM) ab. '
+             'Wiedergabe und Offline-Kopie in MediathekAtlas sind dafür nicht möglich; „Bei JustWatch ansehen“ verwenden.')
+NOT_PLAYABLE = PROTECTED
+NIGHT_NOT_PLAYABLE = ('JustWatch hat auch im Jugendschutz-Zeitfenster keinen Stream für externe Player freigegeben; '
+                      'der Titel läuft nur im kopiergeschützten JustWatch-Player.')
 
 
 def fresh_stream(root, row, post=None, now=None):
@@ -709,7 +750,7 @@ def fresh_stream(root, row, post=None, now=None):
             if url:
                 break
     if not url:
-        raise ValueError(NOT_PLAYABLE)
+        raise ValueError(NIGHT_NOT_PLAYABLE if row.get('night') else PROTECTED)
     _SOURCES[row['id']] = (now + SOURCE_TTL, url)
     return url
 

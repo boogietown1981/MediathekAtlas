@@ -79,7 +79,8 @@ window.AtlasPortalPanel = function (cfg) {
     } else if (!playable(item)) {
       actions.append(externalLink(item));
       // 0.5.48: released by the provider only at night (youth protection) -> reserve the download.
-      const night = cfg.nightOffline && item.kind !== 'channel' && window.AtlasOffline?.control(K, item.id, label, {night: true});
+      // 0.5.50: only with a real time window (item.night); otherwise the title is copy protected.
+      const night = cfg.nightOffline && item.kind !== 'channel' && (item.night ? window.AtlasOffline?.control(K, item.id, label, {night: true}) : window.AtlasOffline?.protectedNote());
       if (night) actions.append(night);
     } else {
       const play = make('button', item.kind === 'channel' ? '▶ Live ansehen' : '▶ Ansehen', 'primary'); play.type = 'button';

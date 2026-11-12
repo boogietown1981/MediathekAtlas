@@ -14,6 +14,7 @@
   const make = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
   const day = ts => new Date(ts * 1000).toLocaleDateString('de-DE', {day: '2-digit', month: '2-digit', year: 'numeric'});
   const clock = ts => new Date(ts * 1000).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+  const PROTECTED = 'Kopiergeschützt (DRM): nur im JustWatch-Player, keine Offline-Kopie möglich.';
   const NIGHT = 'Jugendschutz: JustWatch gibt diesen Titel nur von 0 bis 6 Uhr frei.';
   const mib = n => (Number(n || 0) / 1048576).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' MiB';
   // Per source: live controls, newest job per title, tool state, poll timer.
@@ -104,6 +105,8 @@
     node.append(button, cancel, note); st.controls.add(ctl); paint(ctl); schedule(source);
     return node;
   }
-  window.AtlasOffline = {control, refresh, job: (source, id) => state[source]?.jobs.get(id),
+  /* 0.5.50: the same short reason wherever a title cannot be saved because it is copy protected. */
+  function protectedNote() { const n = make('small', '🔒 ' + PROTECTED, 'atlas-offline-note atlas-offline-protected muted'); n.title = 'JustWatch liefert diesen Titel nur verschlüsselt (Widevine/PlayReady/FairPlay) an den eigenen Player.'; return n; }
+  window.AtlasOffline = {control, refresh, protectedNote, job: (source, id) => state[source]?.jobs.get(id),
     onChange: (source, fn) => state[source]?.listeners.add(fn)};
 })();

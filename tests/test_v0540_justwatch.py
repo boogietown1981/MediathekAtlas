@@ -160,7 +160,7 @@ class PlaybackTests(Fixture):
     def test_title_without_external_stream(self):
         self.sync()
         api = lambda q, v: {'data': {'urlV2': {'node': {'watchNowOffer': offer('jwt', None), 'offers': []}}}}
-        with self.assertRaisesRegex(ValueError, 'gerade keinen Stream frei'):
+        with self.assertRaisesRegex(ValueError, 'kopiergeschützten Player'):
             jw.play_source(self.root, 'tm101', post=api, check=lambda u: None)
         with self.assertRaisesRegex(ValueError, 'Folge'):
             jw.play_source(self.root, 'ts200', post=self.api, check=lambda u: None)

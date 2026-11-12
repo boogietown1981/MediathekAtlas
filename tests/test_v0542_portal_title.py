@@ -66,8 +66,8 @@ class TitleModelTests(unittest.TestCase):
         self.assertIn(['Pluto TV-Genre', 'Sci-Fi & Fantasy'], pl['provider_facts'])
         self.assertIn(['IMDb-ID laut JustWatch TV', 'tt1038988'], jw['provider_facts'])
         # JustWatch title without external stream: no player, no offline copy, official page.
-        # 0.5.48: no player by day, but the download can be reserved for the night window.
-        self.assertFalse(jw['playable']); self.assertTrue(jw['offline']['allowed']); self.assertTrue(jw['offline']['night'])
+        # 0.5.50: without a youth-protection window it is copy protected (night reservation: test_v0550).
+        self.assertFalse(jw['playable']); self.assertFalse(jw['offline']['allowed']); self.assertTrue(jw['protected'])
         self.assertFalse(pl['offline']['night'])
         self.assertTrue(jw['web_url'].startswith('https://www.justwatch.com/'))
         self.assertEqual(jw['rating']['value'], 7.4)

@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.50 – JustWatch: Zeitfenster und Kopierschutz (12. November 2026)
+- Automatisch: 652 Python-Tests und alle `.cjs`-Tests grün, darunter 10 neue in `tests/test_v0550_justwatch_protected.py` (Zeitfenster aus `availableHours`, Rückfall auf die Altersfreigabe, Rückfall auf die Abfrage ohne das Feld, Migration alter Bestände, Ablehnung geschützter Titel, Titelseite, Kacheln).
+- Browser (Chromium, Testbestand): Titel ohne Stream und ohne Zeitfenster zeigt in Katalog und Plattform-Reiter „Bei JustWatch ansehen“ und den Kopierschutz-Hinweis, kein Offline-Knopf; keine Skriptfehler.
+- Grundlage: Björns Mitschnitt von justwatch.com/de/Serie/Andromeda (12.11.2026, 16:46 UTC), ausgewertet, nicht im Repository.
+- Nicht geprüft: Live-Abruf gegen JustWatch (aus der Bauumgebung nicht erreichbar), insbesondere ob das neue Abfragefeld angenommen wird und ob Titel mit Zeitfenster nachts einen Stream für externe Player bekommen.
+
 ## 0.5.49 – Plattform-Ansicht, JustWatch-Folgen, geteilter Abgleich (12. November 2026)
 
 - Neue Tests `tests/test_v0549_platform_view.py` (9): zweite Plattform fragt nicht erneut (auch bei anderer Schreibweise), kein Teilen ohne Jahr / bei anderem Jahr / anderer Art, unvollständige Antworten werden nicht gespeichert, Ablauf, „Jetzt abgleichen“ fragt neu; JustWatch-Folgen: abgelehnte und leere Sammelabfrage → Staffelseiten (mit Rückfall auf 20 Folgen je Abfrage, fremde Pfade verworfen), Netzausfall nur eine Anfrage; Übersicht in den Plattform-Reitern, Reitername.

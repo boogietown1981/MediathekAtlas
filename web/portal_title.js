@@ -165,6 +165,7 @@
         else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
         const off = e.offline && window.AtlasOffline?.control(m.source, e.id, m.title + (code ? ' · ' + code : ''), {night: !!e.night});
         if (off) acts.append(off);
+        else if (e.protected) { const lock = window.AtlasOffline?.protectedNote(); if (lock) acts.append(lock); }
         acts.append(button('Details', '', () => open(m.source, e.id)));
         body.append(acts); row.append(body); list.append(row);
       }
@@ -194,7 +195,7 @@
     if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
-      !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : 'Nur beim Anbieter abspielbar') : ''];
+      !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : 'Nur beim Anbieter abspielbar') : ''];
     const info = [['Kategorien', (m.categories || []).join(', ')], ['Regie', (m.directors || []).join(', ')], ['Drehbuch', (m.writers || []).join(', ')],
       ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Quelle', m.provider],
       ['Zuordnung', REF[m.reference?.status] ? (m.reference.status === 'candidate' ? '✓ ' : '◌ ') + REF[m.reference.status].split(';')[0] : '']];

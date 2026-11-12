@@ -51,6 +51,7 @@ class ReservedJobTests(unittest.TestCase):
                 db.execute('INSERT INTO justwatch_items(%s) VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)' % cols,
                            (item_id, 'movie', title, '/de/Film/x' + item_id, '', None, None, 2009, 7200, '16', 'Drama', '', '', '', None, None,
                             playable, 'https://www.justwatch.com/de/Film/x?package=jwt', 1, 1))
+            db.execute("UPDATE justwatch_items SET night=1 WHERE id='tm1'")   # 0.5.50: real time window
         db.close()
 
     def tearDown(self):
