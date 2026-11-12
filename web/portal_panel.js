@@ -43,6 +43,7 @@ window.AtlasPortalPanel = function (cfg) {
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +
       `Stand: ${date(st.last_success)}` + (stored ? ' · bleibt nach Neustart erhalten' : '') +
+      (st.running && st.progress ? ` · ${st.progress}` : '') +
       (st.last_error ? ` · Hinweis: ${st.last_error}` : '');
     $(P + '-summary').dataset.phase = st.last_result || 'never';
     clearTimeout(poll);

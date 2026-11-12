@@ -58,7 +58,7 @@ PAGE_SIZE = 32                     # as the website
 MAX_PAGES = 60                     # per genre path
 MAX_ITEMS = 20000
 MAX_ANSWER = 16 * 1024 * 1024
-REQUEST_GAP = 1.0
+REQUEST_GAP = 0.4                  # 0.5.68: 1 s made the first run take many minutes
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
 ASSET_ID = r'[a-z0-9][a-z0-9_\-]{0,80}'
@@ -357,7 +357,10 @@ def _merge(found, item):
 
 
 def _load_genre(request, path, plus, gap, found):
-    """All pages of one genre path; False when it stopped early."""
+    """All pages of one genre path; False when it stopped early. A page that brings no title not
+    already seen on this path ends the path (0.5.68: protects against an ignored offset, which
+    would otherwise repeat the same 32 titles up to MAX_PAGES times)."""
+    seen = set()
     for page in range(MAX_PAGES):
         if gap and page:
             time.sleep(gap)
@@ -368,13 +371,38 @@ def _load_genre(request, path, plus, gap, found):
             if page == 0:
                 raise
             return False
+        ids = {str(node.get('id') or '') for node in assets}
+        fresh = ids - seen
+        seen |= ids
         for node in assets:
             it = item_from(node, plus)
             if it:
                 _merge(found, it)
-        if len(assets) < PAGE_SIZE or len(found) >= MAX_ITEMS:
+        if len(assets) < PAGE_SIZE or not fresh or len(found) >= MAX_ITEMS:
             return True
     return False
+
+
+def _counts(items):
+    return {'movies': sum(1 for i in items if i['kind'] == 'movie'),
+            'series': sum(1 for i in items if i['kind'] == 'series'),
+            'channels': sum(1 for i in items if i['kind'] == 'channel'),
+            'plus': sum(1 for i in items if i['offer'] == 'plus')}
+
+
+def _save_progress(root, found, now, progress):
+    """0.5.68: store what is loaded so far, so channels and titles appear during the run
+    (Björn: "Joyn bleibt bei Sendern und Filmen bzw. Serien komplett leer" while the first run
+    was still loading). last_loaded changes, so the stored platform view is rebuilt."""
+    items = list(found.values())
+    db = _connect(root)
+    try:
+        with db:
+            _store(db, items, now)
+            for key, value in [('last_loaded', time.time()), ('progress', progress), *_counts(items).items()]:
+                _set(db, key, value)
+    finally:
+        db.close()
 
 
 def sync(root, request=None, now=None, gap=None):
@@ -398,6 +426,7 @@ def sync(root, request=None, now=None, gap=None):
             ch = channel_from(node, pos + 1)
             if ch:
                 found.setdefault(ch['id'], ch)
+        _save_progress(root, found, now, 'Live-Sender geladen, Genre-Seiten folgen')
         try:
             extra = _data(request('GenresPaths'))
         except Exception as exc:
@@ -406,28 +435,27 @@ def sync(root, request=None, now=None, gap=None):
         paths = genre_paths(navigation, extra)
         if not paths:
             raise ValueError('Joyn nannte keine Genre-Seiten')
-        for path, plus in paths:
+        for number, (path, plus) in enumerate(paths, 1):
             try:
                 partial |= not _load_genre(request, path, plus, gap, found)
             except Exception as exc:
                 partial = True
                 notes.append(_error(exc))
+            _save_progress(root, found, now, 'Genre-Seite %d von %d' % (number, len(paths)))
+            _notify('joyn_sync_progress', step=number, steps=len(paths), partial=partial, **_counts(list(found.values())))
             if gap:
                 time.sleep(gap)
         if not any(i['kind'] in ('movie', 'series') for i in found.values()):
             raise ValueError(notes[0] if notes else 'Joyn lieferte keine Filme oder Serien')
         items = list(found.values())
-        counts = {'movies': sum(1 for i in items if i['kind'] == 'movie'),
-                  'series': sum(1 for i in items if i['kind'] == 'series'),
-                  'channels': sum(1 for i in items if i['kind'] == 'channel'),
-                  'plus': sum(1 for i in items if i['offer'] == 'plus')}
+        counts = _counts(items)
         db = _connect(root)
         try:
             with db:
                 _store(db, items, now)
                 previous = float(_get(db, 'last_success', '0') or 0)
                 visible_since = previous if partial and previous else now
-                for key, value in [('last_success', visible_since), ('last_loaded', now),
+                for key, value in [('last_success', visible_since), ('last_loaded', time.time()), ('progress', ''),
                                    ('last_result', 'partial' if partial else 'complete'),
                                    ('last_error', ('Katalog nur teilweise geladen' + (': ' + notes[0] if notes else '')) if partial else ''),
                                    ('next_attempt', now + 24 * 3600), *counts.items()]:
@@ -441,7 +469,7 @@ def sync(root, request=None, now=None, gap=None):
         db = _connect(root)
         try:
             with db:
-                for key, value in [('last_result', 'failed'), ('last_error', message),
+                for key, value in [('last_result', 'failed'), ('last_error', message), ('progress', ''),
                                    ('last_http_status', getattr(exc, 'code', 0) or 0), ('next_attempt', now + 3600)]:
                     _set(db, key, value)
         finally:
@@ -560,7 +588,8 @@ def state(root):
             'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': movies, 'series': series, 'channels': _int(_get(db, 'channels', '0')) or 0,
-            'plus': _int(_get(db, 'plus', '0')) or 0, 'protected': movies + series, 'playable': 0}
+            'plus': _int(_get(db, 'plus', '0')) or 0, 'protected': movies + series, 'playable': 0,
+            'progress': _get(db, 'progress') if _ACTIVE else ''}
     finally:
         db.close()
 

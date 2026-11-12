@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.67
+# MediathekAtlas · 0.5.69
+
+## Neu in 0.5.69: Joyn füllt sich schon beim ersten Laden
+
+- Die Joyn-Sender stehen sofort nach dem Start des Abrufs im Reiter Live-TV und unter Plattformen → Joyn. Filme und Serien kommen Genre für Genre dazu, die Statuszeile zeigt „Genre-Seite n von m“. Vorher erschien alles erst am Ende des mehrminütigen ersten Abrufs.
 
 ## Neu in 0.5.67: Live-TV-Reiter bleibt nicht mehr hängen
 
