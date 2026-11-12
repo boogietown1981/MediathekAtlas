@@ -1,12 +1,19 @@
-# MediathekAtlas · 0.5.76
+# MediathekAtlas · 0.5.77
 
-## Neu in 0.5.76: Die Seite bringt alle ihre Teile selbst mit, Streams sammeln erst Puffer
+## Neu in 0.5.77: Die Seite bringt alle ihre Teile selbst mit, Streams sammeln erst Puffer
 
-Enthält alles bis 0.5.75 (YouTube-Quellen sofort eingelesen).
+Sammelstand: enthält 0.5.75 (YouTube-Quellen sofort eingelesen) und 0.5.76 (JustWatch-Download).
 
 - **Nichts geht mehr verloren:** Die Seite lädt ihre rund zwanzig Skripte nicht mehr einzeln nach, sie stecken in der Seite selbst. Bisher konnte ein einzelnes Skript ausbleiben, dann fehlte der Player, die Netzkino-Wiedergabe („Cannot read properties of undefined (reading 'play')“) oder ein Plattform-Reiter. Das ist unabhängig vom Browser.
 - **Flüssigere Wiedergabe:** Online-Streams sammeln erst einen Vorrat, bevor sie laufen: 8 Sekunden beim Start, 4 nach dem Spulen, 5 nach jedem Stocken. Der Player zeigt dabei „Puffer wird gefüllt … 3 von 8 s“. Länger als 15 Sekunden wartet er nie, ein Klick auf Wiedergabe startet sofort.
 
+
+## Neu in 0.5.76: JustWatch – Download startet, sobald der Titel abspielbar ist
+
+Enthält alles bis 0.5.73.
+
+- Titel mit Jugendschutz-Zeitfenster: Beim Klick auf „Offline speichern“ fragt MediathekAtlas JustWatch direkt, ob der Stream gerade freigegeben ist. Ist er es, startet der Download sofort (JustWatch gibt ab 16 schon ab 22 Uhr und ab 18 ab 23 Uhr frei). Ist er es nicht, wird er für die Nacht vorgemerkt – auch wenn der Katalog zuletzt nachts gelesen wurde.
+- Die Stream-Adresse wird bei jedem Start und jedem neuen Versuch frisch geholt, nie aus dem Zwischenspeicher.
 
 ## Neu in 0.5.75: YouTube-Quellen sofort eingelesen, mit Fortschritt
 

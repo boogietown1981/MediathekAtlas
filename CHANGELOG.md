@@ -1,9 +1,17 @@
-## 0.5.76 – Skripte in der Seite, Startpuffer
+## 0.5.77 – Skripte in der Seite, Startpuffer
 - Björn (12.11.2026, 0.5.73, Chrome): Videos starten, bei Netzkino „Integrierte Wiedergabe: Cannot read properties of undefined (reading 'play')“, unter „Plattform“ wird nichts angezeigt. `window.AtlasNetzkinoDetail` fehlte, also kam `netzkino_detail.js` nicht an (zuvor `player.js`). Warum einzelne Anfragen in seinem Browser scheitern, ist weiter offen; die Diagnose (0.5.72) enthält dazu nichts.
 - `page_scripts.py` (neu): `inline_scripts()` setzt die eigenen Skripte beim Ausliefern von `/` in die Seite (je Datei ein eigenes `<script data-file>`, gleiche Reihenfolge, `//# sourceURL` für Dateinamen in Fehlermeldungen, `</script` im Code maskiert). `web/index.html` und die Einzeladressen bleiben unverändert; hls.js wird weiter bei Bedarf geladen (sonst ffmpeg).
 - Björn (13.11.2026): „Abspielen nicht richtig smooth, vorher mehr buffern bis sich der Stream fängt; auf der Website deutlich flüssiger“. `web/player.js`: `gate()` hält Online-Streams (hls.js, ffmpeg-Weg, direkte Datei) an, bis `ahead()` Sekunden Vorrat da sind: `GATE={start:8,seek:4,stall:5,max:15}`; nach dem ersten `playing` und bei jedem `waiting`. Ein `play` des Nutzers beendet das Warten. `playback_stats` unverändert.
 - `web/unified_catalog.js`: klare Meldung, falls die Netzkino-Wiedergabe fehlt.
-- Zusammengeführt mit 0.5.75 (YouTube-Thread; dort auch das Diagnose-Feld `quality_level` statt `level`). 0.5.74 ist nie erschienen.
+- Sammelstand mit 0.5.75 (YouTube-Thread; dort auch das Diagnose-Feld `quality_level` statt `level`) und 0.5.76 (JustWatch-Thread, claude/project-thread-xr83m3). 0.5.74 ist nie erschienen.
+
+## 0.5.76 – JustWatch: Download startet, sobald JustWatch den Titel freigibt
+- Björn (12.11.2026, 0.5.73): Jugendschutz-Filme lassen sich bei JustWatch TV jetzt direkt ansehen, der Download funktioniert aber nicht; Frage, ob der Link vorher neu geholt werden muss. Die Diagnose von 23:09 UTC enthält keinen JustWatch-Download (weder eingereiht noch fehlgeschlagen), die genaue Fehlermeldung ist nicht bekannt.
+- Gefundene Abweichung zwischen Wiedergabe und Download: Die Wiedergabe fragt JustWatch live, der Download entschied nach dem gespeicherten Katalogwert und einer festen Uhrzeit (00:10–05:00). JustWatch gibt aber ab 16 von 22 bis 6 Uhr und ab 18 von 23 bis 6 Uhr frei. Folge: Zwischen 22/23 Uhr und 00:10 lief der Film, der Download wurde nur „vorgemerkt“; tagsüber startete ein Download mit nachts gelesenem Katalogwert sofort und schlug fehl.
+- `justwatch.released_now`: Live-Frage nach dem Stream. `justwatch_downloads.build_job` und der Warteschlangen-Arbeiter (`justwatch_downloads.released`) richten sich danach: freigegeben → sofort laden, nicht freigegeben → für die Nacht vormerken.
+- `justwatch_downloads.resolve` verwirft die fünf Minuten gemerkte Adresse und holt bei jedem Start eine neue (die signierte Adresse stand nie im Auftrag).
+- Offen: Ob das Björns Fehler war, ist nicht belegt. Bleibt der Download bei abspielbaren Titeln stehen, wird die Meldung unter der Kachel bzw. ein Diagnose-Export direkt nach dem Fehlversuch gebraucht.
+- Nebenbefund aus der Diagnose (nicht Teil dieser Version): `playback_stats` wirft `AttributeError: module 'logging' has no attribute ''` (server.py, `diagnostics.event(..., level=…)`).
 
 ## 0.5.75 – YouTube: neue Quellen sofort einlesen, Fortschritt, Musikvideos auf der Plattformkarte
 - Björn (12.11.2026, 0.5.73, Diagnose 0.5.72): Playlist mit 80 Musikvideos eingetragen, Musikvideos erscheinen nicht, YouTube zeigt unter Plattformen nichts, unklar ob der Abruf läuft. Ursache laut Diagnose: Nach dem Eintragen wurde kein Abruf gestartet (letzter Lauf 22:21, nächster automatisch erst nach 24 h, `music: 0`); der Hinweis auf „↻ Katalog jetzt laden“ war leicht zu übersehen.
@@ -11,7 +19,6 @@
 - `youtube.py`: Fortschritt `progress` im Status („Quelle 3 von 10: Meine Hits · 80 Videos werden geprüft“), sichtbar in der Statuszeile des YouTube-Bereichs und auf der Plattformkarte. Datenbank im WAL-Modus, damit Reiter und Dashboard während eines langen Abrufs ohne Warten lesen.
 - Plattformkarte YouTube: eigene Kachel „Musik-Playlists & -Videos“ (Musik zählt nicht unter „Filme & Serien“). Leerer Musik-Reiter erklärt, was zu tun ist bzw. dass der Abruf läuft.
 - `diagnostics.event`: Ein Feld namens `level` (Qualitätsstufe „1.6 Mbit/s“ in `playback_stats` und beim Stream-Ende) brach die Anfrage mit `AttributeError: module 'logging' has no attribute …` ab (Diagnose 0.5.72, 3×). Aufrufe nutzen jetzt `quality_level`; ungültige Stufen werden als Feld `level_value` mit INFO protokolliert.
-
 ## 0.5.73 – Skripte der Seite kommen zuverlässig an
 - Björn (12.11.2026, 0.5.72, Chrome): „Der Player ist nicht geladen (Ursache: Skript nicht ladbar (player.js))“ bei Filmen und Live-TV; soll in Chrome, Safari und Firefox laufen. Die Datei ist im Paket und wird fehlerfrei ausgeliefert; die Anfrage selbst scheitert also im Browser. Wahrscheinlichste Ursache: `ThreadingHTTPServer` mit Standard-Warteschlange 5 bei 21 gleichzeitig geöffneten Verbindungen (HTTP/1.0, eine je Skript); nicht nachgestellt. Möglich bleibt eine Sperre durch Erweiterung/Schutzprogramm.
 - `server.py`: `Server.request_queue_size=128`, `daemon_threads=True`; `SCRIPTS` als eine Liste; zweite Adresse `/code/<name>` und `/code/~<name rückwärts>` (ohne Dateinamen in der Adresse).

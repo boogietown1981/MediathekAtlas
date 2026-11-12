@@ -51,7 +51,7 @@ def metadata(row, series=None):
     return meta
 
 
-def build_job(root, download_dir, item_id, now=None):
+def build_job(root, download_dir, item_id, now=None, released=None):
     import core, justwatch, justwatch_enrichment, portal_reference
     if not justwatch.VALID_ID.fullmatch(str(item_id or '')):
         raise ValueError('Ungültiger JustWatch-Titel')
@@ -73,7 +73,13 @@ def build_job(root, download_dir, item_id, now=None):
     if not row['playable'] and not row.get('night'):
         raise ValueError(justwatch.PROTECTED)
     start = time.time() if now is None else float(now)
-    not_before = 0 if row['playable'] else justwatch.night_start(start)
+    # 0.5.76 (Björn: night titles play at once, the download did not start): the live answer decides.
+    # Released right now -> download right now, also before 00:10 and with an old catalogue flag;
+    # not released -> wait for the night, also if the catalogue was read inside a window.
+    waits = bool(row.get('night')) and not (released or (lambda r: justwatch.released_now(root, r)))(row)
+    if not row['playable'] and not row.get('night'):
+        waits = False
+    not_before = justwatch.night_start(start) if waits else 0
     try:
         report = justwatch_enrichment.cached(root, item_id)
     except Exception:
@@ -87,19 +93,31 @@ def build_job(root, download_dir, item_id, now=None):
     return {'id': secrets.token_hex(8), 'source': source, 'metadata': meta,
             'root': str(download_dir), 'quality': 'best', 'target': target,
             'state': 'queued', 'received': 0, 'total': 0,
-            **({'not_before': not_before, 'night': True, 'note': justwatch.NIGHT_NOTE} if not row['playable'] else {}),
+            **({'not_before': not_before, 'night': True, 'note': justwatch.NIGHT_NOTE} if waits else {}),
             'origin': 'justwatch', 'justwatch_id': item_id,
             'license': {'kind': LICENSE, 'days': OFFLINE_DAYS,
                         'granted': time.time() if now is None else float(now),
                         'note': 'JustWatch TV: Download erlaubt, Offline-Nutzung %d Tage' % OFFLINE_DAYS}}
 
 
-def enqueue(c, root, download_dir, item_id, now=None):
-    job = build_job(root, download_dir, item_id, now)
+def enqueue(c, root, download_dir, item_id, now=None, released=None):
+    job = build_job(root, download_dir, item_id, now, released)
     return offline.portal_duplicate(c, job) or offline.insert(c, job)
 
 
 def resolve(row):
-    """Fresh, DRM-checked HLS address for downloads.run."""
+    """Fresh, DRM-checked HLS address for downloads.run (asked again at every start and retry;
+    the signed address is never stored in the job)."""
     import justwatch
+    justwatch._SOURCES.pop(row['_justwatch_id'], None)   # 0.5.76: no address from the five-minute memory
     return justwatch.play_source(row['_justwatch_home'], row['_justwatch_id'])['url']
+
+
+def released(row):
+    """Worker: is the title of this reserved job released right now?"""
+    import justwatch
+    source = row.get('source') or {}
+    try:
+        return justwatch.released_now(source['_justwatch_home'], justwatch.item(source['_justwatch_home'], source['_justwatch_id'])['item'])
+    except Exception:
+        return False

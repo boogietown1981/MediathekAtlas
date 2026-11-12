@@ -137,7 +137,7 @@ window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocooki
 // 0.5.68: only Safari (and other Apple WebKit browsers) plays HLS itself. Chrome reports a built-in
 // HLS player as well since late 2025, but it is new and plays live streams unevenly.
 function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayType('application/vnd.apple.mpegurl');}
-// 0.5.76 (Björn, 13.11.2026: "nicht richtig smooth, vorher mehr buffern bis sich der Stream fängt"): online streams
+// 0.5.77 (Björn, 13.11.2026: "nicht richtig smooth, vorher mehr buffern bis sich der Stream fängt"): online streams
 // collect a reserve before they run – 8 s at the start, 4 s after a seek, 5 s after every stall – instead of
 // starting with the first frame and stalling again at once. At most 15 s of waiting; a click on play ends it.
 const GATE={start:8,seek:4,stall:5,max:15};

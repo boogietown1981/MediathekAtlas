@@ -113,7 +113,7 @@ class ProtectedTitleTests(unittest.TestCase):
     def test_protected_title_is_not_queued(self):
         with self.assertRaisesRegex(ValueError, 'kopiergeschützten Player'):
             justwatch_downloads.build_job(self.root, self.root / 'media', 'tm9', 1000)
-        self.assertTrue(justwatch_downloads.build_job(self.root, self.root / 'media', 'tm1', 1000)['night'])
+        self.assertTrue(justwatch_downloads.build_job(self.root, self.root / 'media', 'tm1', 1000, released=lambda row: False)['night'])
 
     def test_title_page_says_protected_instead_of_night(self):
         import portal_title

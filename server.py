@@ -222,7 +222,7 @@ def worker():
             if j.get('night'):
                 # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
                 later=justwatch.night_start()
-                if later>time.time():
+                if later>time.time() and not justwatch_downloads.released(j):   # 0.5.76: released already (22/23 h) -> start now
                     j['not_before']=later;c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
             # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
             local_only=netzkino_downloads.is_portal(j)

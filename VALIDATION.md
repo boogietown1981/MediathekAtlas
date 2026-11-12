@@ -1,15 +1,19 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
-## 0.5.76 – Skripte in der Seite, Startpuffer (13. November 2026)
-- Automatisch: gesamte Python-Suite grün (TESTS Tests), davon 6 neu in `tests/test_v0576_inline_scripts_buffer.py`; `node --check`; Oberflächen-Kurztests.
-- Im Browser (Chromium): alle Anfragen auf `*.js` abgewiesen – Seite vollständig (Player, Netzkino, Offline-Knopf, Pluto, YouTube vorhanden, keine Skriptfehler, keine Skript-Anfrage); Fehler nennen weiter die Datei. Puffer: GATECHECK
-- Nicht geprüft: Firefox, Safari (nicht in der Bauumgebung). Ursache der gescheiterten Einzelanfragen bei Björn. Ob der Puffer die Wiedergabe bei Björn spürbar ruhiger macht (echte Anbieter-Streams, seine Leitung). YouTube-Änderungen aus 0.5.75 nur über die übernommenen Tests.
+## 0.5.77 – Skripte in der Seite, Startpuffer, Sammelstand (13. November 2026)
+- Automatisch: gesamte Python-Suite grün (849 Tests), davon 6 neu in `tests/test_v0577_inline_scripts_buffer.py`; `node --check`; Oberflächen-Kurztests.
+- Im Browser (Chromium): alle Anfragen auf `*.js` abgewiesen – Seite vollständig (Player, Netzkino, Offline-Knopf, Pluto, YouTube vorhanden, keine Skriptfehler, keine Skript-Anfrage); Fehler nennen weiter die Datei. Puffer: hls.js-Stream läuft nach kurzem Sammeln an; gedrosselte Segmente (1,8 s Verzögerung) – Wiedergabe wartet sichtbar („Puffer wird gefüllt … 3 von 8 s“) und läuft danach ohne weiteres Stocken; kurze Datei über den ffmpeg-Weg – Warten endet nach 3 s ohne Zuwachs. Wiedergabe-Abläufe aus 0.5.70/0.5.72 erneut grün.
+- Nicht geprüft: Firefox, Safari (nicht in der Bauumgebung). Ursache der gescheiterten Einzelanfragen bei Björn. Ob der Puffer die Wiedergabe bei Björn spürbar ruhiger macht (echte Anbieter-Streams, seine Leitung). YouTube- (0.5.75) und JustWatch-Änderungen (0.5.76) nur über die übernommenen Tests.
+
+## 0.5.76 – JustWatch: Download nach Live-Auskunft (13. November 2026)
+- Automatisch: gesamte Python-Suite grün (839 Tests), davon 6 neu in `tests/test_v0576_justwatch_download.py` (sofort bei Freigabe, Vormerkung ohne Freigabe trotz altem Katalogwert, keine Frage bei Titeln ohne Zeitfenster, Live-Frage wirft nie, Arbeiter fragt vor dem Verschieben, keine gemerkte Adresse beim Download); `.cjs`-Tests.
+- Ausgewertet: Björns Diagnose vom 12.11.2026 23:09 UTC. JustWatch-Abruf dort vollständig (220 Filme, 18 Serien, 67 abspielbar, 38 nur im Zeitfenster, 129 kopiergeschützt); kein JustWatch-Download protokolliert.
+- Nicht geprüft: Live-Abruf und echter Download gegen JustWatch (aus der Bauumgebung nicht erreichbar). Die Ursache von Björns Fehlversuch ist damit nicht bestätigt.
 
 ## 0.5.75 – YouTube-Abruf sofort, Fortschritt (12. November 2026)
 - Grundlage: Björns Diagnose `MediathekAtlas_Diagnose_2026-11-12T23-09-56-456Z` (0.5.72): YouTube 9 Quellen, 3.806 Filme, `music: 0`, letzter Abruf 22:21, kein Abruf nach dem Eintragen; 3× `AttributeError` durch das Protokollfeld `level`.
 - Automatisch: gesamte Python-Suite, davon 4 neu in `tests/test_v0575_youtube_progress.py` (Fortschritt während des Laufs und Lesen parallel dazu, WAL, Nachlauf bei Quelle während eines Laufs, Protokollfeld `level`).
 - Nicht geprüft: echter API-Abruf (kein Schlüssel in der Bauumgebung).
-
 ## 0.5.73 – Skripte der Seite kommen zuverlässig an (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (833 Tests), davon 3 neu in `tests/test_v0573_script_loading.py`; `node --check`; Oberflächen-Kurztests.
 - Im Browser (Chromium): `/player.js` einmal abgewiesen – wird über `/code/player` nachgeladen, Player vorhanden; alle Adressen mit „player“ abgewiesen – kommt über `/code/~reyalp`; 40 gleichzeitige Anfragen an den Server alle mit 200 beantwortet.
