@@ -456,6 +456,12 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
                 if q.get('view',[''])[0]=='episodes':data=youtube.episodes(ROOT,q.get('series',[''])[0])
+                elif q.get('doubtful',['0'])[0]=='1':
+                    # YouTube thread: uploads sorted out as advertising can be shown on request (read directly).
+                    data=youtube.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
+                                          offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
+                                          genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
+                                          collection=q.get('collection',[''])[0][:20],show_doubtful=True)
                 else:return self.send(portal_page('youtube',youtube,q))
             except ValueError as e:return self.send({'error':str(e)},404)
             data['status']=portal_snapshot.status('youtube',lambda:youtube.state(ROOT))

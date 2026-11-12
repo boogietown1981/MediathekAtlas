@@ -26,6 +26,10 @@
         s.checked ? s.films + ' ' + (s.kind === 'series' ? 'Folgen' : 'Filme') + ' von ' + s.videos + ' Videos · Stand ' + when(s.checked) : 'noch nicht abgerufen',
         s.suggested ? 'Vorschlag (ungeprüft)' : ''].filter(Boolean).join(' · ');
       row.append(make('small', facts, 'muted'));
+      // 0.5.54: what the check left out and why (ArchiveMedia format check, description, length).
+      let skipped = {}; try { skipped = JSON.parse(s.skipped || '{}'); } catch (e) { skipped = {}; }
+      const parts = Object.entries(skipped).sort((a, b) => b[1] - a[1]).map(([why, n]) => n + ' × ' + why);
+      if (parts.length) row.append(make('small', 'Ausgelassen: ' + parts.join(' · '), 'muted'));
       if (s.last_error) row.append(make('small', 'Fehler: ' + s.last_error, 'nk-warning'));
       const acts = make('div', undefined, 'youtube-source-actions');
       for (const [label, action] of [[s.enabled ? 'Pausieren' : 'Aktivieren', s.enabled ? 'disable' : 'enable'], ['Entfernen', 'remove']]) {
@@ -57,7 +61,9 @@
       const st = d.status || {};
       $('youtube-setup-state').textContent = '· ' + (st.key_set ? 'Schlüssel hinterlegt' : 'Schlüssel fehlt') + ' · ' + (st.sources || 0) + ' aktive Quellen' +
         (st.sources_failed ? ' · ' + st.sources_failed + ' mit Fehler' : '') + ' · Offline ' + (st.offline_enabled ? 'an' : 'aus');
-      if (!st.key_set) $('youtube-setup').open = true;
+      // 0.5.62: since 0.5.55 the setup sits in the collapsed "YouTube verwalten" block; without a key,
+      // a source or a catalogue it opens by itself so channels and key are never out of sight.
+      if (!st.key_set || !st.sources || !(st.movies || st.series)) { window.AtlasPlatformLayout?.open('youtube'); $('youtube-setup').open = true; }
     } catch (e) { say(e.message, true); }
   }
 

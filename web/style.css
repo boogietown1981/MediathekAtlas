@@ -816,6 +816,8 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .platform-brief{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:9px 13px;border:1px solid #2c4750;border-radius:10px;background:#10242c;color:#b9ccd6;font-size:12.5px;line-height:1.45}
 .platform-brief span{flex:1 1 320px;min-width:0}
 .platform-brief button{padding:5px 11px;font-size:12px}
-.portal-title-match{margin-top:10px;color:#9aafc0;font-size:12.5px}
-.portal-title-match>summary{cursor:pointer;padding:4px 0}
-.portal-title-match>button{margin-top:8px}
+.portal-title-expert{color:#9aafc0}
+.portal-title-expert>summary{cursor:pointer;font-size:13px;padding:6px 0;color:#9aafc0}
+.portal-title-expert[open]>summary{margin-bottom:8px}
+.portal-title-expert .tv-section{margin-top:14px}
+.portal-title-expert h2{font-size:15px}

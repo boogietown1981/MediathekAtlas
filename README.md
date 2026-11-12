@@ -1,5 +1,14 @@
 # MediathekAtlas · 0.5.60
 
+## Neu in 0.5.60: Plattform-Kataloge sofort, aufgeräumte Titelseiten, weniger Dubletten
+
+Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Korrekturen (Werbevideos aussortieren, Einrichtung öffnet sich von selbst).
+
+- **Plattform-Kataloge sofort:** Jede Plattform hält ihre fertig aufbereitete Liste gespeichert (Ordner `snapshots` im Datenordner), bis ein neuer Katalogabruf fertig ist. Reiter und Dashboard zeigen sie sofort, auch direkt nach dem Start und während Abruf oder Werkzuordnung in die Datenbank schreiben. Neue Bewertungen und Kategorien fließen im Hintergrund ein.
+- **„Alle 24 Stunden aktualisieren“:** Über jedem Plattform-Katalog steht jetzt, ob die tägliche Aktualisierung an ist und von wann der Bestand stammt; „Verwalten“ öffnet den Bereich mit dem Schalter. Der Schalter bestätigt das Speichern und springt nicht mehr zurück, wenn gleichzeitig eine ältere Statusantwort eintrifft.
+- **Titelseiten:** Kandidatenlisten mit tt-Nummern, „IMDb Offline“, „Erscheinungsjahr widersprüchlich“, die Zeile „Zuordnung“ und die Anbieterhinweise stehen nicht mehr auf der Seite, sondern im zugeklappten Bereich „Technische Angaben“ am Ende. „IMDb Offline“ heißt überall „IMDb“. Es gibt nur noch einen Offline-Knopf (oben, er speichert direkt); der Abschnitt „Offline ansehen“ erscheint erst, wenn eine Kopie existiert.
+- **Dubletten:** „Ab ins Meer“ (YouTube) und „Ab ins Meer: Auf der Suche nach der verlorenen Perle“ (Netzkino) werden eine Kachel, wenn der Originaltitel des Uploads den Untertitel enthält oder dieselbe Kennung bzw. dieselbe Laufzeit (höchstens zwei Minuten Abstand, Spielfilmlänge) das belegt. Ohne Beleg bleibt es bei zwei Kacheln („Alien“ ist nicht „Alien: Covenant“).
+
 ## Neu in 0.5.59: Rakuten-TV-Livesender
 
 - **Livesender:** Die Stream-Anfrage an Rakuten TV enthält jetzt dieselben technischen Felder wie die Website (Sitzungskennung, Player- und Qualitätsangaben). Werbekennungen, IP-Adresse, Browserkennung und eine Werbe-Einwilligung werden weiterhin nicht gesendet; die Einwilligung wird als abgelehnt übermittelt, die Werbung bleibt im Stream.

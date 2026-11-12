@@ -65,13 +65,14 @@
     const note = make('p', m.provider + ' erlaubt ' + m.offline.days + ' Tage Offline-Nutzung. Gespeichert wird wie bei Mediathek-Videos ' +
       '(gleicher Ordner, gleiche Benennung, MKV mit NFO); die Datei enthält die Werbung des Anbieters und wird danach automatisch entfernt.', 'muted');
     const list = make('div', undefined, 'portal-title-jobs');
-    const add = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night}) || make('span');
+    // 0.5.60: one offline button only (in the header); this section appears once a copy exists.
     window.AtlasOffline?.onChange(m.source, () => sec.isConnected ? (paint(), true) : false);
-    sec.append(note, add, list); host.append(sec);
+    sec.hidden = true;
+    sec.append(note, list); host.append(sec);
     async function paint() {
       let data; try { data = await window.api(src.jobs(m.id)); } catch (e) { list.textContent = 'Downloadstatus nicht verfügbar: ' + e.message; return; }
       const jobs = (data.items || []).filter(j => !['expired', 'removed'].includes(j.state));
-      list.replaceChildren();
+      list.replaceChildren(); sec.hidden = !jobs.length;
       for (const j of jobs) {
         const row = make('div', undefined, 'nk-offline-job nk-offline-' + j.state);
         row.append(make('strong', (LABELS[j.state] || j.state) + ' · ' + (j.target_name || j.title || '')));
@@ -93,38 +94,33 @@
     await paint();
   }
 
-  // 0.5.60 (Björn, 12.11.2026): the title page names the sources of the data in one line. The
-  // candidate list ("… passt"), warnings and the manual re-check stay available in a closed block.
+  // 0.5.60 (Björn, 12.11.2026, title page of "#Roxy"): candidate lines with tt numbers, "IMDb Offline",
+  // "Erscheinungsjahr widersprüchlich" and the provider's access hints do not belong on a film page.
+  // Both blocks stay available in one closed area "Technische Angaben" at the end of the page.
   const refName = p => p === 'IMDb Offline' ? 'IMDb' : (p || '');
   function referenceSection(m, host) {
-    const sec = section('Quellen der Angaben');
-    const body = make('div'), more = make('details', undefined, 'portal-title-match'), detail = make('div');
-    more.append(make('summary', 'Abgleich im Detail'), detail);
+    const sec = section('Abgleich mit IMDb, TVDB, TMDB, OMDb und Wikidata');
+    const body = make('div');
     const paint = report => {
+      body.replaceChildren(make('p', REF[report.status] || 'Wird geprüft'));
       const meta = report.metadata || {}, src = report.field_sources || {}, dl = make('dl', undefined, 'tv-info');
       for (const [key, label] of [['genres', 'Genres'], ['rating', 'Bewertung'], ['directors', 'Regie'], ['writers', 'Drehbuch'], ['country', 'Land']]) {
         const v = meta[key]; if (v == null || v === '' || (Array.isArray(v) && !v.length) || !src[key] || src[key] === m.provider) continue;
         dl.append(make('dt', label + ' · ' + refName(src[key])), make('dd', key === 'rating' ? v + ' / 10' : Array.isArray(v) ? v.map(x => x.name || x).join(', ') : String(v)));
       }
-      const used = [...new Set(Object.values(src).map(refName).filter(Boolean))];
-      body.replaceChildren();
       if (dl.childElementCount) body.append(dl);
-      else body.append(make('p', used.length ? 'Angaben von ' + used.join(', ') + '.' :
-        report.status === 'candidate' ? 'Angaben von ' + m.provider + '.' : 'Nur Angaben von ' + m.provider + '; weitere Quellen werden im Hintergrund ergänzt.', 'muted'));
-      detail.replaceChildren(make('p', REF[report.status] || 'Wird geprüft', 'muted'));
       for (const r of (report.references || []).slice(0, 6))
-        detail.append(make('small', [refName(r.provider), r.title, r.year, r.reference_id, r.eligible ? '' : (r.issues || []).join(' / ')].filter(Boolean).join(' · '), 'nk-ref-candidate'));
-      if (report.warnings?.length) detail.append(make('p', report.warnings.join(' · '), 'nk-ref-warning'));
+        body.append(make('small', [refName(r.provider), r.title, r.year, r.reference_id, r.eligible ? 'ausgewählt' : (r.issues || []).join(' / ')].filter(Boolean).join(' · '), 'nk-ref-candidate'));
+      if (report.warnings?.length) body.append(make('p', report.warnings.join(' · '), 'nk-ref-warning'));
     };
     paint(m.reference || {});
     const check = button('↻ Erneut abgleichen', '', async () => {
-      check.disabled = true; detail.replaceChildren(make('p', 'Referenzen werden geprüft …'));
+      check.disabled = true; body.replaceChildren(make('p', 'Referenzen werden geprüft …'));
       try { paint(await window.api(SOURCES[m.source].enrich, {id: m.id, force: true})); }
-      catch (e) { detail.replaceChildren(make('p', 'Abgleich nicht möglich: ' + e.message)); }
+      catch (e) { body.replaceChildren(make('p', 'Abgleich nicht möglich: ' + e.message)); }
       finally { check.disabled = false; }
     });
-    more.append(check);
-    sec.append(body, more); host.append(sec);
+    sec.append(body, check); host.append(sec);
   }
 
   function providerSection(m, host) {
@@ -204,21 +200,26 @@
     const actions = [];
     if (m.kind === 'series') actions.push(button('Folgen anzeigen', 'primary', () => host.querySelector('.portal-title-episodes')?.scrollIntoView({behavior: 'smooth'})));
     else if (m.playable) actions.push(button(m.kind === 'channel' ? '▶ Live ansehen' : '▶ Abspielen', 'primary play-button', () => play(m, label)));
-    if (m.offline?.allowed) actions.push(button((m.offline.night ? '🌙 Heute Nacht offline speichern (' : '⬇ Offline speichern (') + m.offline.days + ' Tage)', '', () => host.querySelector('.portal-title-jobs')?.parentElement?.scrollIntoView({behavior: 'smooth'})));
+    if (m.offline?.allowed) {
+      const save = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night});
+      if (save) actions.push(save);
+    }
     if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : 'Nur beim Anbieter abspielbar') : ''];
     const info = [['Kategorien', (m.categories || []).join(', ')], ['Regie', (m.directors || []).join(', ')], ['Drehbuch', (m.writers || []).join(', ')],
-      ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Quelle', m.provider],
-      ['Zuordnung', REF[m.reference?.status] ? (m.reference.status === 'candidate' ? '✓ ' : '◌ ') + REF[m.reference.status].split(';')[0] : '']];
+      ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Anbieter', m.provider]];
     host.replaceChildren(...hero({meta: {title: label, poster: m.poster, fanart: m.fanart}, type: m.kind_label + ' · ' + m.provider, facts,
       overview: m.description, overviewHint: 'Keine Inhaltsangabe veröffentlicht.', actions, info,
       cast: (m.cast || []).map(name => ({name})), image}));
     if (m.kind === 'series') episodesSection(m, host);
     if (m.offline?.allowed) offlineSection(m, host).catch(() => {});
-    if (m.kind !== 'channel' && !(m.source === 'netzkino' && m.kind === 'series')) referenceSection(m, host);
-    providerSection(m, host);
+    const expert = make('details', undefined, 'tv-section portal-title-expert');
+    expert.append(make('summary', 'Technische Angaben · Abgleich und Anbieterdaten'));
+    if (m.kind !== 'channel' && !(m.source === 'netzkino' && m.kind === 'series')) referenceSection(m, expert);
+    providerSection(m, expert);
+    host.append(expert);
     return true;
   }
   window.AtlasPortalTitle = {open};
