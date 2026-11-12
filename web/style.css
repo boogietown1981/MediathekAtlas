@@ -698,6 +698,10 @@ dialog.player::backdrop{background:#000c}
 .atlas-offline{display:flex;flex-wrap:wrap;align-items:center;gap:6px 8px;flex-basis:100%}
 .atlas-offline-note{flex-basis:100%;margin:0!important;font-size:12px;min-height:1em;overflow-wrap:anywhere}
 .atlas-offline-note:empty{display:none}
+/* 0.5.70: versions as buttons on the title pages, external link in the shape of the other tile buttons */
+.atlas-offline-version-row,.download-versions{display:flex;flex-wrap:wrap;gap:8px;margin:0 0 8px}
+.atlas-offline-version-row button,.download-versions button{margin:0}
+:is(#atlas-source-content,#portals,#display) .atlas-uc-actions a.atlas-uc-external{text-decoration:none;display:flex;align-items:center;justify-content:center;box-sizing:border-box;border:1px solid #2b394a;border-radius:8px;background:#172334;color:#e3edf8;padding:6px 10px}
 /* 0.5.63: resolution and provider before an offline copy */
 dialog.atlas-offline-choice{width:min(460px,92vw);padding:18px 20px;background:#111b29;color:#e3edf8;border:1px solid #2b394a;border-radius:12px}
 dialog.atlas-offline-choice::backdrop{background:#000a}

@@ -31,13 +31,14 @@ function heightFor(w){const all=levels();if(!all.length)return 0;if(w==='max')re
 function currentHeight(){return heightFor(S.level||wish());}
 function renderQuality(){const all=levels(),info=S.info;
  // Nothing to choose: one level only, local files, YouTube.
- const show=!!info&&info.origin==='online'&&info.mode!=='embed'&&all.length>1,own=info&&info.hls&&nativeHls();
+ const show=!!info&&info.origin==='online'&&info.mode!=='embed'&&all.length>1,own=info&&info.hls&&nativeHls()&&S.mode==='direct';
  qualityBox.hidden=!show;if(!show)return;
  const w=wish(),auto=heightFor('auto');
- qualitySelect.replaceChildren(new Option(own?'Automatisch (Browser passt an)':'Automatisch ('+(S.level?'jetzt '+currentHeight():'bis '+auto)+'p)','auto'),new Option('Beste ('+heightFor('max')+'p)','max'),...all.map(l=>new Option(l.height+'p'+(l.bandwidth?' · '+(l.bandwidth/1e6).toFixed(1).replace('.',',')+' Mbit/s':''),String(l.height))));
+ qualitySelect.replaceChildren(new Option(S.mode==='hls'?'Automatisch'+(S.hlsHeight&&w==='auto'?' (jetzt '+S.hlsHeight+'p)':' (passt sich der Verbindung an)'):own?'Automatisch (Browser passt an)':'Automatisch ('+(S.level?'jetzt '+currentHeight():'bis '+auto)+'p)','auto'),new Option('Beste ('+heightFor('max')+'p)','max'),...all.map(l=>new Option(l.height+'p'+(l.bandwidth?' · '+(l.bandwidth/1e6).toFixed(1).replace('.',',')+' Mbit/s':''),String(l.height))));
  qualitySelect.value=[...qualitySelect.options].some(o=>o.value===w)?w:'auto';}
 qualitySelect.onchange=async()=>{try{localStorage.setItem('atlas-play-quality',qualitySelect.value);}catch{}
  S.level='';S.retried=false;const info=S.info;if(!info)return;const t=info.live?0:position();
+ if(S.mode==='hls'&&S.hls){S.hls.currentLevel=hlsLevel(wish());renderQuality();return;}   // hls.js switches while playing
  // Safari and the macOS app play HLS themselves and adapt on their own ("Automatisch"); a fixed level
  // comes through MediathekAtlas (ffmpeg) because the browser offers no choice of its own.
  if(info.hls){renderQuality();describe(info);if(nativeHls()&&wish()==='auto'&&info.url)startDirect(info.url,t);else if(info.ffmpeg)startRemux(t);else say('Für eine feste Qualitätsstufe wird ffmpeg benötigt.');return;}
@@ -55,14 +56,40 @@ function stepDown(){const st=S.stats;if(!st||S.mode!=='remux'||wish()!=='auto'||
  startRemux(S.info.live?0:position());}
 function sendStats(){const st=S.stats,info=S.info;if(!st||st.sent||!info)return;stallEnd();if(st.playing)st.watched+=(Date.now()-st.playing)/1000;st.playing=0;
  if(st.watched<5&&!st.stalls)return;st.sent=true;
- api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String(currentHeight()||''),native:!!(info.hls&&S.mode==='direct'),watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
+ api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String((S.mode==='hls'?S.hlsHeight:currentHeight())||''),native:!!(info.hls&&S.mode==='direct'),fallback:S.hlsFailed||'',switches:st.switches||0,watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
 function startRemux(t){if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
+// 0.5.68 (Björn, 12.11.2026: on the providers' own sites the stations run clearly smoother than in the
+// app): HLS is played by hls.js inside the browser, as those sites do - it loads the segments itself,
+// keeps a buffer ahead, adapts the quality to the connection and keeps picture and sound together.
+// Safari keeps its own HLS player. Only when the provider does not allow loading from this page (or
+// the browser lacks the technique) the stream goes through ffmpeg as before.
+function hlsJs(){return !!(window.Hls&&window.Hls.isSupported())&&!/Apple/.test(navigator.vendor||'');}
+function hlsLevel(w){const all=S.hls?S.hls.levels:[];if(!all.length||w==='auto')return -1;const top=w==='max'?1e9:Number(w)||1e9;let best=-1;
+ all.forEach((l,i)=>{const h=l.height||0;if(h<=top&&(best<0||h>(all[best].height||0)||(h===(all[best].height||0)&&l.bitrate<all[best].bitrate)))best=i;});
+ if(best<0)all.forEach((l,i)=>{if(best<0||(l.height||1e9)<(all[best].height||1e9))best=i;});return best;}
+function stopHls(){if(S.hls){try{S.hls.destroy();}catch{}S.hls=null;}}
+function startHls(url,t){stopHls();S.fresh=true;S.mode='hls';video.controls=true;bar.hidden=true;say('Stream wird geladen …');
+ const live=!!S.info.live,H=window.Hls,hls=new H({startPosition:live||!t?-1:t,maxBufferLength:30,maxMaxBufferLength:60,backBufferLength:30,liveSyncDurationCount:3,liveMaxLatencyDurationCount:10,
+  manifestLoadingMaxRetry:1,levelLoadingMaxRetry:3,fragLoadingMaxRetry:4,capLevelToPlayerSize:false});
+ S.hls=hls;let recovered=0;
+ const fallback=reason=>{if(S.hls!==hls)return;const at=live?0:(video.currentTime||t||0);stopHls();S.hlsFailed=reason;video.removeAttribute('src');video.load();
+  if(S.info.ffmpeg)startRemux(at);else if(nativeHls())startDirect(url,at);else say('Dieser Stream lässt sich im Browser nicht laden ('+reason+') und ffmpeg fehlt.');
+  renderQuality();describe(S.info);};
+ hls.on(H.Events.MANIFEST_PARSED,()=>{if(S.hls!==hls)return;
+  const seen=new Map();for(const l of hls.levels)if(l.height&&(!seen.has(l.height)||l.bitrate<seen.get(l.height)))seen.set(l.height,l.bitrate);
+  if(seen.size)S.info.levels=[...seen].map(([height,bandwidth])=>({id:String(height),label:height+'p',height,bandwidth}));
+  hls.currentLevel=hlsLevel(wish());renderQuality();video.play().catch(()=>{});});
+ hls.on(H.Events.LEVEL_SWITCHED,(e,d)=>{const l=hls.levels[d.level];S.hlsHeight=l&&l.height||0;if(S.stats)S.stats.switches=(S.stats.switches||0)+1;renderQuality();});
+ hls.on(H.Events.ERROR,(e,d)=>{if(S.hls!==hls||!d.fatal)return;
+  if(d.type===H.ErrorTypes.MEDIA_ERROR&&recovered<2){recovered++;hls.recoverMediaError();return;}
+  fallback(d.type===H.ErrorTypes.NETWORK_ERROR?'Anbieter nicht direkt erreichbar':String(d.details||d.type));});
+ hls.loadSource(url);hls.attachMedia(video);}
 function startDirect(src,t){S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
 function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode==='direct'){video.currentTime=t;return;}
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.
  S.offset=t;slider.value=t;time.textContent=fmt(t)+' / '+fmt(d);clearTimeout(S.seekTimer);S.seekTimer=setTimeout(()=>startRemux(t),350);}
 async function open(ref,label,key,start){
- save();sendStats();S.retried=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;renderQuality();
+ save();sendStats();S.retried=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;S.hlsFailed='';S.hlsHeight=0;renderQuality();
  $('player-title').textContent=label||'Wird geladen …';$('player-meta').textContent='';$('player-restart').hidden=true;
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
  let info;try{info=await api('play?'+new URLSearchParams({...ref,quality:wish()}));}catch(e){say(e.message);return;}
@@ -72,11 +99,12 @@ async function open(ref,label,key,start){
  if(t)notice('Fortgesetzt bei '+fmt(t)+'. „Von vorn“ startet neu.');
  if(info.mode==='embed'){startEmbed(info,t);return;}
  if(info.mode==='direct')startDirect(info.src,t);
+ else if(info.hls&&info.url&&hlsJs())startHls(info.url,t);
  else if(info.hls&&info.url&&nativeHls()&&(wish()==='auto'||!info.ffmpeg))startDirect(info.url,t);
  else if(!info.ffmpeg)say('Für diesen Stream wird ffmpeg benötigt. Unter Einstellungen die Werkzeugprüfung öffnen.');
  else startRemux(t);}
 function describe(info){
- $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls()&&wish()==='auto')?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');}
+ $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&(S.mode==='remux'||!(info.hls&&(hlsJs()||(nativeHls()&&wish()==='auto'))))?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');}
 // 0.5.53: YouTube – the official embedded player (youtube-nocookie.com). Its IFrame API reports the
 // position via postMessage, so "Weiterschauen" works as for every other title.
 function startEmbed(info,t){S.mode='embed';S.embedPos=t||0;stage.classList.add('embed');embed.hidden=false;
@@ -91,7 +119,7 @@ window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocooki
 // 0.5.68: only Safari (and other Apple WebKit browsers) plays HLS itself. Chrome reports a built-in
 // HLS player as well since late 2025, but it is new and plays live streams unevenly.
 function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayType('application/vnd.apple.mpegurl');}
-function stopVideo(){if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
+function stopVideo(){stopHls();if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
 function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
 function playIndex(i){S.index=i;const item=S.list[i];return open({offer:item.id},episodeLabel(item),episodeKey(item));}
 function episodeLabel(item){const m=item.metadata||{};return (m.title||item.source?.title||'Video')+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?' · S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'')+(m.episode_title?' · '+m.episode_title:'');}
@@ -132,7 +160,7 @@ video.addEventListener('pause',()=>{toggle.textContent='▶';save();const st=S.s
 video.addEventListener('waiting',()=>{say('Puffern …');const st=S.stats;if(st&&st.first&&!S.fresh&&!st.stallAt&&!video.seeking)st.stallAt=Date.now();});
 setInterval(()=>{if(dialog.open)stepDown();},2000);
 video.addEventListener('ended',()=>{save('ended');if(S.list[S.index+1])playIndex(S.index+1);else say('Ende');});
-video.addEventListener('error',()=>{if(!S.info||!video.getAttribute('src'))return;
+video.addEventListener('error',()=>{if(!S.info||!video.getAttribute('src')||S.mode==='hls')return;
  // A browser that cannot decode the broadcaster's file (or an unsupported container) gets the ffmpeg stream instead.
  if(S.mode==='direct'&&S.info.ffmpeg&&!S.retried){S.retried=true;const t=video.currentTime||0;startRemux(t);return;}
  say(S.mode==='remux'?'Wiedergabe fehlgeschlagen. Details im Live-Protokoll; häufige Ursache: Stream nicht mehr verfügbar oder Geosperre.':'Diese Datei kann der Browser nicht abspielen.');});
