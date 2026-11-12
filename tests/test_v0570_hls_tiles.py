@@ -24,7 +24,7 @@ class HlsTests(unittest.TestCase):
         js = text('web/player.js')
         for part in ("function hlsJs()", "function startHls(url,t)", "if(S.info.ffmpeg){startRemux(at)", "hls.recoverMediaError()",
                      "else if(info.hls&&info.url&&hlsJs())startHls(info.url,t);", "S.hls.currentLevel=hlsLevel(wish())",
-                     "function stopVideo(){stopHls();"):
+                     "function stopVideo(){gateOff();stopHls();"):
             self.assertIn(part, js)
         # the browser's own HLS player only on Apple browsers (Chrome's new one plays live streams unevenly)
         self.assertIn("function nativeHls(){return /Apple/.test(navigator.vendor||'')&&", js)

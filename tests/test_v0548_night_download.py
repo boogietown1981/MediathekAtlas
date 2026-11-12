@@ -59,7 +59,7 @@ class ReservedJobTests(unittest.TestCase):
 
     def test_title_without_stream_is_reserved_for_the_night(self):
         now = berlin(12, 17, 25)
-        job = justwatch_downloads.build_job(self.root, self.root / 'media', 'tm1', now)
+        job = justwatch_downloads.build_job(self.root, self.root / 'media', 'tm1', now, released=lambda row: False)
         self.assertEqual(job['not_before'], berlin(13, 0, 10))
         self.assertTrue(job['night']); self.assertIn('Jugendschutz', job['note'])
         free = justwatch_downloads.build_job(self.root, self.root / 'media', 'tm2', now)

@@ -300,7 +300,7 @@
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
       watch.onclick=async()=>{
         watch.disabled=true;
-        try {await window.AtlasNetzkinoDetail.play(item.id,item.title);}
+        try {if(!window.AtlasNetzkinoDetail)throw new Error(window.atlasPlayerMissing?.()||'Die Netzkino-Wiedergabe ist nicht geladen; Seite neu laden.');await window.AtlasNetzkinoDetail.play(item.id,item.title);}
         catch(e){if($('atlas-cross-status'))$('atlas-cross-status').textContent='Integrierte Wiedergabe: '+e.message;}
         finally{watch.disabled=false;}
       };
