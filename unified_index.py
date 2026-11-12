@@ -145,20 +145,29 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
             if name:
                 genre_counts[name] = genre_counts.get(name, 0) + int(row.get('n') or 0)
 
+    pending, seconds = [], {}
+    started = time.monotonic()
     try:
         with db() as c:
+            # wait=False: on a cold start the grouping of the whole catalogue runs in the background
+            # and the other sources are shown first (0.5.57).
             groups = catalog.listing(c, query=query, kind='series' if view == 'series' else 'movie', genre=genre,
-                                     sort='title', downloaded='all', collection=collection, index_only=True)
+                                     sort='title', downloaded='all', collection=collection, index_only=True,
+                                     wait=False)
         found = [{'source': 'mediatheken', 'title': g[2] or 'Ohne Titel', 'year': g[3], 'id': g[0], 'episodes': g[1]}
                  for g in groups]
         offers += found
         counts['mediatheken'] = len(found)
+    except catalog.ListingPending:
+        pending.append('mediatheken')
     except Exception as exc:   # one broken source never hides the others
         errors['mediatheken'] = str(exc)[:160] or exc.__class__.__name__
+    seconds['mediatheken'] = round(time.monotonic() - started, 2)
     for source in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube'):
         module = modules.get(source)
         if module is None:
             continue
+        started = time.monotonic()
         try:
             if source == 'netzkino':
                 found, facets = _netzkino_offers(module, root, view, query, genre, collection)
@@ -169,38 +178,79 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
             add_counts(facets)
         except Exception as exc:
             errors[source] = str(exc)[:160] or exc.__class__.__name__
+        seconds[source] = round(time.monotonic() - started, 2)
+    started = time.monotonic()
     entries = merge(offers, merge_duplicates)
     if sort == 'year':
         entries.sort(key=lambda e: (-(e['year'] or 0), _sort_title(e['title'])))
     else:
         entries.sort(key=lambda e: _sort_title(e['title']))
-    return {'entries': entries, 'counts': counts, 'errors': errors,
+    seconds['merge'] = round(time.monotonic() - started, 2)
+    return {'entries': entries, 'counts': counts, 'errors': errors, 'pending': pending, 'seconds': seconds,
             'genre_counts': [{'genre': g, 'n': n} for g, n in sorted(genre_counts.items())],
             'merged': sum(1 for e in entries if len(e['offers']) > 1)}
 
 
+PENDING_TTL = 2.0
+_BUSY = set()
+ON_BUILD = None   # set by the server: called with (key, index, seconds) after every build
+
+
+def _build_into(key, builder):
+    started = time.monotonic()
+    value = builder()
+    with _LOCK:
+        _CACHE[key] = (time.monotonic(), value)
+        while len(_CACHE) > _MAX:
+            _CACHE.pop(min(_CACHE, key=lambda k: _CACHE[k][0]))
+    if ON_BUILD:
+        try:
+            ON_BUILD(key, value, time.monotonic() - started)
+        except Exception:
+            pass
+    return value
+
+
+def _renew(key, builder):
+    try:
+        with _BUILD:
+            _build_into(key, builder)
+    except Exception:
+        pass
+    finally:
+        with _LOCK:
+            _BUSY.discard(key)
+
+
 def _cached(key, builder):
+    """Fresh index from memory; an outdated one is returned at once and renewed in the background
+    (0.5.57: paging never waits for a rebuild). An index that still waits for a source is only
+    kept for a moment."""
     now = time.monotonic()
     with _LOCK:
         hit = _CACHE.get(key)
-        if hit and now - hit[0] <= TTL:
-            return hit[1]
+        if hit:
+            ttl = PENDING_TTL if hit[1].get('pending') else TTL
+            if now - hit[0] <= ttl:
+                return hit[1]
+            if not hit[1].get('pending'):
+                if key not in _BUSY:
+                    _BUSY.add(key)
+                    threading.Thread(target=_renew, args=(key, builder), daemon=True,
+                                     name='unified_index_renew').start()
+                return hit[1]
     with _BUILD:
         with _LOCK:
             hit = _CACHE.get(key)
-            if hit and time.monotonic() - hit[0] <= TTL:
+            if hit and time.monotonic() - hit[0] <= (PENDING_TTL if hit[1].get('pending') else TTL):
                 return hit[1]
-        value = builder()
-        with _LOCK:
-            _CACHE[key] = (time.monotonic(), value)
-            while len(_CACHE) > _MAX:
-                _CACHE.pop(min(_CACHE, key=lambda k: _CACHE[k][0]))
-        return value
+        return _build_into(key, builder)
 
 
 def invalidate():
     with _LOCK:
         _CACHE.clear()
+        _BUSY.clear()
 
 
 def page(root, db, kind='movies', query='', genre='', sort='title', collection='', offset=0,
@@ -237,4 +287,4 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                 items.append({'title': entry['title'], 'year': entry['year'], 'offers': out})
     return {'items': items, 'total': len(index['entries']), 'offset': offset, 'page': PAGE,
             'counts': index['counts'], 'errors': index['errors'], 'genre_counts': index['genre_counts'],
-            'merged': index['merged'], 'names': NAMES}
+            'merged': index['merged'], 'names': NAMES, 'pending': index.get('pending') or []}

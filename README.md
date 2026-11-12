@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.56
+# MediathekAtlas · 0.5.57
+
+## Neu in 0.5.57: Dashboard ohne Statusblöcke, Katalog sofort nach dem Start
+
+- **Dashboard:** Die Kennzahlen („Katalog & Metadatenabgleich“, „Aktuelle Erkennung“) und der klassische Katalog mit zweiter Suchleiste stehen jetzt fest unter Verwaltung → „Status & Abgleich“ bzw. „Klassischer Katalog“. Bisher verschob sie erst ein Skript nach dem Laden dorthin; startete die App langsam, standen sie so lange doppelt im Dashboard.
+- **Start:** Das Dashboard zeigt sofort die Plattformen (Netzkino, Pluto TV, JustWatch TV, Rakuten TV, YouTube). Der große Bestand von ARD, ZDF & Co. wird im Hintergrund eingelesen und ergänzt die Ansicht von selbst; die Statuszeile sagt das an. Ab dem zweiten Start kommt auch er sofort, weil die zuletzt berechnete Liste gespeichert wird (`listing-cache.json` im Datenordner) und im Hintergrund erneuert wird.
+- **Blättern:** Die zusammengeführte Liste wird nicht mehr alle 45 Sekunden beim nächsten Klick neu aufgebaut, sondern im Hintergrund erneuert.
+- **Diagnose:** Skriptfehler der Oberfläche und langsame Aufbauten der Gesamtliste (mit Sekunden je Quelle) stehen jetzt im Protokoll.
 
 ## Neu in 0.5.56: Archive Media Stufe 1 – Fanart.tv und Datenbanksicherungen
 

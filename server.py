@@ -245,6 +245,14 @@ def worker():
 
 SERVICE=catalog_service.Service(db,settings,STOP,ROOT)
 catalog.LISTING_DB=db
+catalog.load_listings(ROOT/'listing-cache.json')   # 0.5.57: grouped lists of the last run, shown at once after a start
+def _unified_built(key,index,seconds):
+    # Only slow builds are worth a line; the per-source seconds show which source held it up.
+    if seconds>=1.0 or index.get('errors'):
+        diagnostics.event('unified_index_built',kind=key[1],search=bool(key[2]),seconds=round(seconds,2),sources=index.get('seconds'),
+                          counts=index.get('counts'),pending=index.get('pending'),errors=index.get('errors'))
+unified_index.ON_BUILD=_unified_built
+_CLIENT_ERRORS=[0]
 task_control.configure(ROOT/'task-control.json')
 def imdb_updated():
     with db() as c:
@@ -1199,6 +1207,13 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'ok':True})
             if path=='/api/task-action':
                 return self.send(task_action(str(d.get('task',''))[:40],str(d.get('action',''))[:20],d.get('value')))
+            if path=='/api/client-error':
+                # 0.5.57: script errors of the web interface reach the diagnosis (at most 40 per run).
+                if _CLIENT_ERRORS[0]<40:
+                    _CLIENT_ERRORS[0]+=1
+                    diagnostics.event('client_error',message=str(d.get('message',''))[:300],source=str(d.get('source',''))[:120],
+                                      line=str(d.get('line',''))[:12],view=str(d.get('view',''))[:30],agent=str(self.headers.get('User-Agent',''))[:160])
+                return self.send({'ok':True})
             if path=='/api/display':
                 value=ui_prefs.save(ROOT,d.get('display'));unified_index.invalidate();diagnostics.event('display_settings_changed')
                 return self.send({'display':value})

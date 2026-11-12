@@ -1,3 +1,12 @@
+## 0.5.57 – Dashboard ohne Statusblöcke, Start ohne Warten auf den Katalog
+- Björn (12.11.2026, Bildschirmfoto): Dashboard zeigt wieder Kennzahlen, „Aktuelle Erkennung“ und eine zweite Serien/Filme-Suchleiste; nach dem Start ist die App träge, besonders die Kataloge.
+- Ursache Anzeige: Die Blöcke standen in `web/index.html` weiter im Abschnitt `#discover` und wurden erst von `arrangeAdvanced()` (unified_catalog.js, das 16. von 20 Skripten) in die Verwaltung verschoben. Bis dahin, oder falls das Skript nicht lief, zeigte das Dashboard den alten Aufbau. Kein Rückfall durch 0.5.56 (dort ist `unified_catalog.js` unverändert).
+- `web/index.html`: Statusblock als `#atlas-main-dashboard` fest in `#status-boards`, klassischer Katalog fest in `#legacy-body`. `arrangeAdvanced()` ergänzt nur noch die Warteschlangen-Übersicht; der alte Verschiebeweg bleibt für ältere Seiten erhalten.
+- `catalog.py`: gruppierte Listen überleben den Neustart (`load_listings`, `listing-cache.json`, nur langsame Listen ohne Suche, höchstens 6); `listing(..., wait=False)` rechnet die erste Gruppierung im Hintergrund und meldet `ListingPending`; ein Fehler im Hintergrund wird 30 s gemerkt und gemeldet statt wiederholt.
+- `unified_index.py`: Mediatheken-Quelle mit `wait=False`, Feld `pending`; veralteter Index wird sofort geliefert und im Hintergrund erneuert; Sekunden je Quelle (`ON_BUILD` → Ereignis `unified_index_built` ab 1 s).
+- `web/unified_catalog.js`: Hinweis „… wird noch eingelesen“ und selbstständiges Nachladen.
+- `web/app.js`, `server.py`: Skriptfehler der Oberfläche als Ereignis `client_error` (höchstens 5 je Seite, 40 je Lauf).
+
 ## 0.5.56 – Archive Media Stufe 1: Fanart.tv und Datenbanksicherungen
 - Björn (12.11.2026): HomeTube und Archive Media sollen in MediathekAtlas aufgehen; Archive Media ist noch nicht vollständig integriert. Plan: Doc „Integrationsplan: HomeTube und Archive Media in MediathekAtlas“.
 - `vendor/archive_portals/fanart_client.py` (unverändert aus ArchiveMedia v0.10.53): Fanart.tv v3.2, Schlüssel nur in Kopfzeilen, ID-Gegenprüfung, Bildhosts nur `assets.fanart.tv`/`fanart.tv`.

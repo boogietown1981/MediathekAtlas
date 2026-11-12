@@ -420,7 +420,19 @@ _LISTING_MAX=32
 _LISTING={}                # key -> {'rows':[(id,episodes)],'built':monotonic,'busy':bool,'used':monotonic}
 _LISTING_LOCK=threading.Lock()
 _LISTING_BUILD=threading.Lock()   # one heavy aggregation at a time
-_LISTING_STATS={'hits':0,'builds':0,'background':0,'last_seconds':0.0}
+_LISTING_STATS={'hits':0,'builds':0,'background':0,'last_seconds':0.0,'restored':0,'pending':0}
+# 0.5.57: the slow aggregations survive a restart. Björn (12.11.2026): after the start the
+# catalogues took very long. Every start grouped the whole catalogue again before the first
+# page could be shown. The last result is now read from this file, shown at once and renewed
+# in the background.
+LISTING_FILE=None          # set by the server through load_listings()
+LISTING_WAIT=0.6           # seconds a caller with wait=False gives a first aggregation
+_LISTING_KEEP=6
+_LISTING_QUEUED={}         # key -> Event, first aggregations running in the background
+_LISTING_FAILED={}         # key -> (monotonic, exception) of a failed background aggregation
+
+class ListingPending(Exception):
+    """The grouped list is being computed in the background; ask again in a moment."""
 
 def _listing_build(c,where,args,grouping,order):
     started=time.monotonic()
@@ -430,23 +442,58 @@ def _listing_build(c,where,args,grouping,order):
     _LISTING_STATS['builds']+=1;_LISTING_STATS['last_seconds']=round(seconds,2)
     return rows,seconds
 
-def _listing_store(key,rows,seconds):
+def _listing_persist():
+    path=LISTING_FILE
+    if path is None:return
+    with _LISTING_LOCK:
+        keep=sorted(((k,e) for k,e in _LISTING.items() if e['seconds']>=LISTING_SLOW and not e.get('search')),key=lambda ke:-ke[1]['used'])[:_LISTING_KEEP]
+        data=[{'key':[k[0],list(k[1]),k[2],k[3]],'rows':e['rows'],'seconds':e['seconds']} for k,e in keep]
+    try:
+        tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps({'version':1,'saved':time.time(),'entries':data},separators=(',',':')),encoding='utf-8');tmp.replace(path)
+    except OSError:pass   # only the next start is slower
+
+def load_listings(path):
+    """Read the lists of the last run. They count as outdated: shown at once, renewed on first use."""
+    global LISTING_FILE
+    from pathlib import Path
+    LISTING_FILE=Path(path)
+    try:stored=json.loads(LISTING_FILE.read_text(encoding='utf-8'))
+    except (OSError,ValueError):return 0
+    count=0;now=time.monotonic()
+    if not isinstance(stored,dict) or stored.get('version')!=1:return 0
+    with _LISTING_LOCK:
+        for entry in stored.get('entries') or []:
+            try:
+                where,args,grouping,order=entry['key'];rows=[(str(r[0]),int(r[1]),r[2],r[3]) for r in entry['rows']]
+                _LISTING[(where,tuple(args),grouping,order)]={'rows':rows,'built':float('-inf'),'busy':False,'used':now,'seconds':max(float(entry.get('seconds') or 0),LISTING_SLOW),'search':False}
+                count+=1
+            except (KeyError,TypeError,ValueError,IndexError):continue
+    _LISTING_STATS['restored']=count
+    return count
+
+def _listing_store(key,rows,seconds,search=False):
     now=time.monotonic()
     with _LISTING_LOCK:
-        _LISTING[key]={'rows':rows,'built':now,'busy':False,'used':now,'seconds':seconds}
+        _LISTING[key]={'rows':rows,'built':now,'busy':False,'used':now,'seconds':seconds,'search':search}
         while len(_LISTING)>_LISTING_MAX:
             _LISTING.pop(min(_LISTING,key=lambda k:_LISTING[k]['used']))
+    if seconds>=LISTING_SLOW and not search:_listing_persist()
 
-def _listing_refresh(key,where,args,grouping,order):
+def _listing_refresh(key,where,args,grouping,order,search=False):
     try:
         with _LISTING_BUILD:
             with LISTING_DB() as c:rows,seconds=_listing_build(c,where,args,grouping,order)
-        _listing_store(key,rows,seconds);_LISTING_STATS['background']+=1
-    except Exception:
+        _listing_store(key,rows,seconds,search);_LISTING_STATS['background']+=1
+    except Exception as exc:
         with _LISTING_LOCK:
             if key in _LISTING:_LISTING[key]['busy']=False
+            _LISTING_FAILED[key]=(time.monotonic(),exc)   # shown to a caller that does not wait
+            while len(_LISTING_FAILED)>_LISTING_MAX:_LISTING_FAILED.pop(next(iter(_LISTING_FAILED)))
+    finally:
+        with _LISTING_LOCK:done=_LISTING_QUEUED.pop(key,None)
+        if done:done.set()
 
-def _listing_groups(c,where,args,grouping,order,search=False):
+def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
     # Without a server (tests, tools) every call reads the database directly.
     if LISTING_DB is None:return _listing_build(c,where,args,grouping,order)[0]
     key=(where,tuple(args),grouping,order);now=time.monotonic()
@@ -461,20 +508,39 @@ def _listing_groups(c,where,args,grouping,order,search=False):
             if entry['seconds']>=LISTING_SLOW:
                 if not entry['busy']:
                     entry['busy']=True
-                    threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order),daemon=True,name='catalog_listing_refresh').start()
+                    threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()
                 _LISTING_STATS['hits']+=1;return entry['rows']
+        if not wait:
+            failed=_LISTING_FAILED.get(key)
+            if failed and now-failed[0]<=30:raise failed[1]   # do not repeat a failing aggregation at once
+            # The caller (merged dashboard) shows the other sources first: compute in the
+            # background, give a quick aggregation a moment, otherwise report "pending".
+            done=_LISTING_QUEUED.get(key)
+            if done is None:
+                done=_LISTING_QUEUED[key]=threading.Event()
+                threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_first').start()
+    if not wait:
+        done.wait(LISTING_WAIT)
+        with _LISTING_LOCK:
+            entry=_LISTING.get(key)
+            if entry:return entry['rows']   # new, or the outdated one while the new one is computed
+            failed=_LISTING_FAILED.get(key)
+        if failed and failed[0]>=now:raise failed[1]
+        _LISTING_STATS['pending']+=1
+        raise ListingPending()
     with _LISTING_BUILD:
         with _LISTING_LOCK:
             entry=_LISTING.get(key)
             if entry and entry['built']>now:return entry['rows']   # built while waiting
         rows,seconds=_listing_build(c,where,args,grouping,order)
-    _listing_store(key,rows,seconds)
+    _listing_store(key,rows,seconds,search)
     return rows
 
 def invalidate_listings(drop=False):
     """After an import, a download or a manual change: renew on next use. Slow aggregations keep
     answering from memory while they are renewed in the background."""
     with _LISTING_LOCK:
+        _LISTING_FAILED.clear()
         if drop:_LISTING.clear()
         else:
             for entry in _LISTING.values():entry['built']=float('-inf')
@@ -483,7 +549,7 @@ def listing_cache_stats():
     with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}
 
 
-def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False):
+def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False,wait=True):
     clauses=[];args=[]
     if downloaded=='hide':clauses.append('NOT EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
     elif downloaded=='only':clauses.append('EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
@@ -513,7 +579,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
             if entry:entry.update(episodes=1,series_parent=False);out.append(entry)
         return {'items':out,'total':len(rows),'offset':offset}
     order={'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE')
-    groups=_listing_groups(c,where,args,grouping,order,bool(query))
+    groups=_listing_groups(c,where,args,grouping,order,bool(query),wait)
     if index_only:return groups   # (id, episodes, title, year) of every group, for unified_index
     total=len(groups);rows=[{'id':r[0],'episodes':r[1]} for r in groups[offset:offset+48]];out=[]
     for row in rows:

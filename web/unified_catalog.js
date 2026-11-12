@@ -17,6 +17,7 @@
   let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
   let medGenres=[],medTree=[],collection='';
+  let pendingTries=0;
   const heading=() => ({all:'Alle Plattformen',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
@@ -28,6 +29,25 @@
     // with genre tree moves to Verwaltung → Werkkatalog, the scan and recognition boards to
     // Verwaltung → Status & Abgleich. Live nodes are moved, so IDs and handlers stay intact.
     const legacyHost=$('legacy-body'),boards=$('status-boards');
+    const workerOverview=dashboard=>{
+      const workers=$('metadata-workers-status');
+      const statusBottom=dashboard.querySelector('.atlas-status-bottom');
+      if(workers && statusBottom && !dashboard.querySelector('.atlas-worker-overview')){
+        const overview=el('section',undefined,'atlas-worker-overview');
+        overview.append(el('h3','Verarbeitung & Warteschlangen'));
+        overview.append(workers);
+        statusBottom.insertAdjacentElement('afterend',overview);
+        const title=dashboard.querySelector('#metadata-status')?.closest('.atlas-status-panel')?.querySelector('h3');
+        if(title)title.textContent='Letzte Erkennung';
+      }
+    };
+    // 0.5.57: both blocks stand in Verwaltung in the HTML itself. On a slow start the page showed
+    // them in the dashboard until this script had run (Björn, 12.11.2026).
+    if (boards?.querySelector('#atlas-main-dashboard')) {
+      const marker=el('div');marker.id='atlas-catalog-advanced';marker.hidden=true;discover.append(marker);
+      workerOverview($('atlas-main-dashboard'));
+      return;
+    }
     if (legacyHost && boards) {
       const marker=el('div');marker.id='atlas-catalog-advanced';marker.hidden=true;discover.append(marker);
       const historic=discover.querySelector('.background-status');
@@ -43,16 +63,7 @@
       while(historic.firstChild) dashboard.append(historic.firstChild);
       historic.remove();
       boards.append(dashboard);
-      const workers=$('metadata-workers-status');
-      const statusBottom=dashboard.querySelector('.atlas-status-bottom');
-      if(workers && statusBottom){
-        const overview=el('section',undefined,'atlas-worker-overview');
-        overview.append(el('h3','Verarbeitung & Warteschlangen'));
-        overview.append(workers);
-        statusBottom.insertAdjacentElement('afterend',overview);
-        const title=dashboard.querySelector('#metadata-status')?.closest('.atlas-status-panel')?.querySelector('h3');
-        if(title)title.textContent='Letzte Erkennung';
-      }
+      workerOverview(dashboard);
       return;
     }
     const advanced=el('details',undefined,'atlas-catalog-advanced');
@@ -442,6 +453,14 @@
     const notes=Object.entries(data.counts||{}).filter(([,n])=>n).map(([src,n])=>(names[src]||src)+': '+num(n));
     for (const [src,msg] of Object.entries(data.errors||{})) notes.push((names[src]||src)+' nicht verfügbar: '+msg);
     if (data.merged) notes.push(num(data.merged)+' Titel bei mehreren Anbietern zusammengefasst');
+    // 0.5.57: after a start the large catalogue of ARD, ZDF & Co. is grouped in the background.
+    // The other platforms are shown at once and the view completes itself.
+    const waiting=(data.pending||[]).map(src=>names[src]||src);
+    if (waiting.length) {
+      notes.push(waiting.join(', ')+' wird noch eingelesen und erscheint gleich von selbst');
+      pendingTries+=1;
+      if (pendingTries<=90) setTimeout(()=>{ if (seq===sequence && source==='all' && !seriesKey) refreshAll(seq); },pendingTries<5?1500:4000);
+    } else pendingTries=0;
     const counts=[...(data.genre_counts||[]),...medTree.filter(r=>r.kind===(kind==='movies'?'movie':'series'))];
     const facets=[...medGenres,...(data.genre_counts||[]).map(g=>g.genre).filter(g=>g!=='Unbekannt')];
     paint(rows,notes,[data.total||0],facets,true);
