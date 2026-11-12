@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.71 – YouTube-Musikvideos (12. November 2026)
+- Automatisch: gesamte Python-Suite (826 Tests), davon 5 neu in `tests/test_v0571_youtube_music.py`: Adressen, keine Längen- und Werbefilter, Filme unberührt, Wiedergabe, ganze Playlist und Auswahl offline, Ablagepfade, Schalter aus. `node --check` für die geänderten Skripte.
+- Im Browser (Chromium, Testdaten): Reiter „Musikvideos“, Playlist öffnen, ein Video auswählen und speichern, ganze Playlist speichern (bereits eingereihte werden nicht doppelt angelegt), „▶ Playlist abspielen“ öffnet das erste Video mit „Nächstes Video“, keine Skriptfehler.
+- Nicht geprüft: echter Abruf über die YouTube-API und yt-dlp gegen YouTube (aus der Bauumgebung gesperrt, kein Schlüssel).
+
 ## 0.5.70 – hls.js-Wiedergabe, einheitliche Kacheln, Fassungen (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (821 Tests), davon 7 neu in `tests/test_v0570_hls_tiles.py`; `node --check` für alle eigenen Skripte.
 - Im Browser (Chromium) mit selbst erzeugten Test-Streams: hls.js spielt einen Stream mit drei Stufen und getrennter Tonspur, die Qualitätswahl schaltet auf 480p um, ohne ffmpeg-Anfrage; Blitz/Piepton-Stream: Ton und Bild höchstens rund 100 ms auseinander (Messgenauigkeit ca. 50 ms); Server ohne CORS-Freigabe: Rückfall auf ffmpeg, Stream läuft.

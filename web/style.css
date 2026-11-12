@@ -842,3 +842,5 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .youtube-music-tools{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.5rem 0}
 .youtube-music-tools[hidden]{display:none}
 .atlas-music-pick{display:inline-flex;align-items:center;gap:.25rem;font-size:.85em}
+.youtube-music-tools label{display:inline-flex;gap:.4rem;align-items:center;margin:0}.youtube-music-tools select{width:auto}
+.youtube-music-item .netzkino-poster{aspect-ratio:16/9;height:auto;object-fit:cover}

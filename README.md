@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.70
+# MediathekAtlas · 0.5.71
+
+## Neu in 0.5.71: YouTube-Musikvideos
+
+Enthält alles bis 0.5.70.
+
+- **Musikvideos:** Im YouTube-Bereich unter „YouTube-Kanäle & API-Schlüssel“ eine Playlist, einen Kanal oder ein einzelnes Video mit der Art „Musikvideos“ eintragen. Hier gibt es keine Mindestlänge und keinen Werbefilter.
+- **Abspielen:** Der Reiter „Musikvideos“ zeigt Playlists und einzelne Videos. „▶ Playlist abspielen“ spielt ein Video nach dem anderen im offiziellen YouTube-Player oder aus der Offline-Kopie.
+- **Offline:** „⬇ Ganze Playlist offline speichern“ reiht mit einem Klick alle Videos ein. Mit den Kästchen lässt sich auch nur eine Auswahl speichern. Die Dateien liegen unter `Musikvideos/<Playlist>/`. Das geht wie bei Filmen nur, wenn der YouTube-Offline-Schalter an ist.
+
 
 ## Neu in 0.5.70: Streams wie auf den Anbieterseiten, einheitliche Kacheln, Fassungen
 

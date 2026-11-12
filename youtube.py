@@ -873,7 +873,7 @@ def sync(root, request=None, now=None, gap=None, key=None):
         counts = {'movies': sum(1 for i in items if i['kind'] == 'movie'),
                   'series': sum(1 for i in items if i['kind'] == 'series'),
                   'episodes': sum(1 for i in items if i['kind'] == 'episode'),
-                  'playable': sum(1 for i in items if i['kind'] in ('movie', 'episode') and i['playable']),
+                  'playable': sum(1 for i in items if i['kind'] in ('movie', 'episode', 'track') and i['playable']),
                   'music': sum(1 for i in items if i['kind'] == 'album' or (i['kind'] == 'track' and not i['series_id'])),
                   'tracks': sum(1 for i in items if i['kind'] == 'track')}
         db = _connect(root)

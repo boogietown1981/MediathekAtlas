@@ -56,7 +56,7 @@ window.AtlasPortalPanel = function (cfg) {
   }
 
   function card(item) {
-    const box = make('article', undefined, 'netzkino-item pluto-item');
+    const box = make('article', undefined, 'netzkino-item pluto-item' + (item.kind === 'album' || item.kind === 'track' ? ' youtube-music-item' : ''));
     if (item.poster) {
       const img = make('img', undefined, 'netzkino-poster' + (item.kind === 'channel' ? ' pluto-logo' : ''));
       img.src = item.poster; img.alt = ''; img.loading = 'lazy'; box.append(img);
@@ -162,7 +162,8 @@ window.AtlasPortalPanel = function (cfg) {
     try {
       const q = quality(); try { localStorage.setItem('atlas-download-quality', q); } catch (e) { /* private mode */ }
       const r = await window.api(K + '-download-add', {...body, quality: q});
-      const text = `${r.created} Videos werden offline gespeichert` + (r.existing ? `, ${r.existing} schon gespeichert oder eingereiht` : '') +
+      const n = v => v + (v === 1 ? ' Video' : ' Videos');
+      const text = (r.created === 1 ? '1 Video wird' : `${r.created} Videos werden`) + ' offline gespeichert' + (r.existing ? `, ${n(r.existing)} schon gespeichert oder eingereiht` : '') +
         (r.failed ? `, ${r.failed} nicht möglich (${(r.errors || [])[0] || 'Fehler'})` : '') + '.';
       say(text, !r.created && !!r.failed); window.notice?.('„' + (title || 'Playlist') + '“: ' + text);
       picked.clear(); musicTools(); refreshOffline(); window.AtlasOffline?.refresh(K);
