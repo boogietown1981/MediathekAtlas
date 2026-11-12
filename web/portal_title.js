@@ -12,10 +12,9 @@
     netzkino: {play: () => window.playNetzkino, jobs: id => 'netzkino-downloads?id=' + encodeURIComponent(id), add: 'netzkino-download-add',
       action: 'netzkino-download-action', enrich: 'netzkino-enrich', external: 'Bei Netzkino öffnen'},
     pluto: {play: () => window.playPluto, jobs: id => 'pluto-downloads?id=' + encodeURIComponent(id), add: 'pluto-download-add',
-      action: 'offline-download-action', enrich: 'pluto-enrich', episodes: id => 'pluto?view=episodes&series=' + encodeURIComponent(id)},
+      action: 'offline-download-action', enrich: 'pluto-enrich'},
     justwatch: {play: () => window.playJustWatch, jobs: id => 'justwatch-downloads?id=' + encodeURIComponent(id), add: 'justwatch-download-add',
-      action: 'offline-download-action', enrich: 'justwatch-enrich', external: 'Bei JustWatch ansehen',
-      episodes: id => 'justwatch?view=episodes&series=' + encodeURIComponent(id)}
+      action: 'offline-download-action', enrich: 'justwatch-enrich', external: 'Bei JustWatch ansehen'}
   };
   const ACTIVE = ['queued', 'downloading', 'tagging'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar', error: 'Fehler',
@@ -132,37 +131,77 @@
     for (const [k, v] of m.provider_facts || []) if (v) dl.append(make('dt', k), make('dd', v));
     if (dl.childElementCount) sec.append(dl);
     for (const n of m.notes || []) sec.append(make('p', n, 'muted'));
-    if (m.source === 'netzkino' && window.AtlasNetzkinoDetail?.open) {
+    if (m.source === 'netzkino' && m.kind !== 'series' && window.AtlasNetzkinoDetail?.open) {
       // Netzkino extras (yt-dlp cross-check, separately licensed file) stay in the expert view.
       sec.append(button('Netzkino-Expertenansicht (yt-dlp-Prüfung, separat lizenzierte Datei)', '', () => window.AtlasNetzkinoDetail.open(m.id)));
     }
     host.append(sec);
   }
 
-  async function episodesSection(m, host, token) {
-    const src = SOURCES[m.source]; if (!src.episodes) return;
-    const sec = section('Staffeln & Folgen'), list = make('div', undefined, 'tv-episodes');
-    list.append(make('p', 'Folgen werden geladen …', 'muted')); sec.append(list); host.append(sec);
-    let data; try { data = await window.api(src.episodes(m.id)); } catch (e) { list.replaceChildren(make('p', 'Folgen nicht verfügbar: ' + e.message, 'empty')); return; }
-    if (token !== seq) return;
-    list.replaceChildren();
-    if (data.error) list.append(make('p', 'Folgen konnten nicht aktualisiert werden: ' + data.error, 'muted'));
-    const items = data.items || [];
-    if (!items.length) list.append(make('p', 'Keine Folgen im Katalog.', 'empty'));
-    for (const e of items) {
-      const row = make('article', undefined, 'tv-episode'), thumb = make('div', undefined, 'tv-thumb');
-      const img = image(e.poster || m.poster, ''); if (img) thumb.append(img);
-      thumb.append(make('span', epCode(e.season, e.episode) || 'Folge', 'tv-code')); row.append(thumb);
-      const body = make('div', undefined, 'tv-epbody');
-      body.append(make('h3', (Number.isInteger(e.episode) ? e.episode + '. ' : '') + e.title));
-      body.append(make('p', [mins(e.duration), e.year].filter(Boolean).join(' · '), 'tv-epmeta'));
-      if (e.summary) body.append(make('p', e.summary, 'tv-epdesc'));
-      const acts = make('div', undefined, 'tv-epactions'), canPlay = e.playable !== false && e.playable !== 0;
-      if (canPlay) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (epCode(e.season, e.episode) ? epCode(e.season, e.episode) + ' · ' : '') + e.title)));
-      else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
-      acts.append(button('Details & offline speichern', '', () => open(m.source, e.id)));
-      body.append(acts); row.append(body); list.append(row);
+  // 0.5.45: episodes come with the series model (portal_title.py) and are shown like the Mediathek
+  // series page: season tabs ("Alle · n", "Staffel N · n"), one row per episode with play, offline
+  // and details, the same for Netzkino, Pluto TV and JustWatch TV (Björn, 12.11.2026).
+  function episodesSection(m, host, token) {
+    const src = SOURCES[m.source], episodes = m.episodes || [];
+    const sec = section('Staffeln & Folgen · ' + episodes.length, 'portal-title-episodes');
+    const tabs = make('div', undefined, 'tv-tabs'), list = make('div', undefined, 'tv-episodes');
+    tabs.setAttribute('role', 'tablist'); sec.append(tabs, list); host.append(sec);
+    if (!episodes.length) { list.append(make('p', 'Keine Folgen im Katalog.', 'empty')); return; }
+    const seasons = [...new Set(episodes.map(e => e.season))].sort((a, b) => (a ?? 1e9) - (b ?? 1e9));
+    let current = 'all', jobs = new Map();
+    const tab = (key, text, count) => {
+      const t = button(text + ' · ' + count, 'tv-tab' + (key === current ? ' active' : ''), () => { current = key; paintTabs(); paintRows(); });
+      t.setAttribute('role', 'tab'); t.setAttribute('aria-selected', String(key === current)); return t;
+    };
+    function paintTabs() {
+      tabs.replaceChildren();
+      if (seasons.length < 2) return;
+      tabs.append(tab('all', 'Alle', episodes.length));
+      for (const s of seasons) tabs.append(tab(s, s == null ? 'Ohne Staffel' : 'Staffel ' + s, episodes.filter(e => e.season === s).length));
     }
+    async function offline(e, btn) {
+      btn.disabled = true;
+      try { const r = await window.api(src.add, {id: e.id}); window.notice?.(r.created ? 'Folge eingereiht.' : 'Bereits eingereiht oder offline verfügbar.'); }
+      catch (err) { window.notice?.('Kein Download gestartet: ' + err.message, 'error'); btn.disabled = false; return; }
+      await loadJobs();
+    }
+    function paintRows() {
+      list.replaceChildren();
+      for (const e of episodes) {
+        if (current !== 'all' && e.season !== current) continue;
+        const code = epCode(e.season, e.episode), row = make('article', undefined, 'tv-episode'), thumb = make('div', undefined, 'tv-thumb');
+        const img = image(e.poster || m.poster, ''); if (img) thumb.append(img);
+        thumb.append(make('span', code || 'Folge', 'tv-code')); row.append(thumb);
+        const body = make('div', undefined, 'tv-epbody');
+        body.append(make('h3', (Number.isInteger(e.episode) ? e.episode + '. ' : '') + (e.title || m.title)));
+        const job = jobs.get(e.id);
+        const meta = [mins(e.duration), e.year, job ? (LABELS[job.state] || job.state) + (job.state === 'done' && job.days_left != null ? ' · noch ' + job.days_left + ' T.' : '') : ''];
+        body.append(make('p', meta.filter(Boolean).join(' · '), 'tv-epmeta'));
+        if (e.summary) body.append(make('p', e.summary, 'tv-epdesc'));
+        const acts = make('div', undefined, 'tv-epactions');
+        if (e.playable) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || ''))));
+        else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
+        if (e.offline) {
+          const busy = job && (ACTIVE.includes(job.state) || job.state === 'done');
+          const b = button(busy ? '✓ ' + LABELS[job.state] : '⬇ Offline speichern', '', ev => offline(e, ev.target));
+          b.disabled = !!busy; acts.append(b);
+        }
+        acts.append(button('Details', '', () => open(m.source, e.id)));
+        body.append(acts); row.append(body); list.append(row);
+      }
+    }
+    async function loadJobs() {
+      if (!episodes.some(e => e.offline)) return;
+      try {
+        const base = src.jobs('').split('?')[0];
+        const data = await window.api(base + '?' + new URLSearchParams({ids: episodes.map(e => e.id).join(',')}));
+        if (token !== seq) return;
+        const key = m.source + '_id'; jobs = new Map();
+        for (const j of data.items || []) if (!['expired', 'removed'].includes(j.state) && !jobs.has(j[key])) jobs.set(j[key], j);
+        paintRows();
+      } catch (e) { /* the rows stay usable without a job state */ }
+    }
+    paintTabs(); paintRows(); loadJobs();
   }
 
   async function open(source, id) {
@@ -181,7 +220,7 @@
     if (token !== seq) return true;
     const src = SOURCES[source], label = m.kind === 'episode' && m.series ? m.series.title + ' · ' + (epCode(m.season, m.episode) ? epCode(m.season, m.episode) + ' · ' : '') + m.title : m.title;
     const actions = [];
-    if (m.kind === 'series') actions.push(button('Folgen anzeigen', 'primary', () => host.querySelector('.tv-episodes')?.scrollIntoView({behavior: 'smooth'})));
+    if (m.kind === 'series') actions.push(button('Folgen anzeigen', 'primary', () => host.querySelector('.portal-title-episodes')?.scrollIntoView({behavior: 'smooth'})));
     else if (m.playable) actions.push(button(m.kind === 'channel' ? '▶ Live ansehen' : '▶ Abspielen', 'primary play-button', () => play(m, label)));
     if (m.offline?.allowed) actions.push(button('⬇ Offline speichern (' + m.offline.days + ' Tage)', '', () => host.querySelector('.portal-title-jobs')?.parentElement?.scrollIntoView({behavior: 'smooth'})));
     if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
@@ -194,10 +233,9 @@
     host.replaceChildren(...hero({meta: {title: label, poster: m.poster, fanart: m.fanart}, type: m.kind_label + ' · ' + m.provider, facts,
       overview: m.description, overviewHint: 'Keine Inhaltsangabe veröffentlicht.', actions, info,
       cast: (m.cast || []).map(name => ({name})), image}));
-    if (m.kind === 'series') await episodesSection(m, host, token);
-    if (token !== seq) return true;
+    if (m.kind === 'series') episodesSection(m, host, token);
     if (m.offline?.allowed) offlineSection(m, host).catch(() => {});
-    if (m.kind !== 'channel') referenceSection(m, host);
+    if (m.kind !== 'channel' && !(m.source === 'netzkino' && m.kind === 'series')) referenceSection(m, host);
     providerSection(m, host);
     return true;
   }

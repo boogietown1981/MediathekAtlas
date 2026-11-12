@@ -1130,6 +1130,12 @@ def _series_normalize(value):
     return re.sub(r'[^a-z0-9]+',' ',raw).strip()
 
 
+def series_id(series_title):
+    """Deterministic id of a grouped Netzkino series ('' when the title normalises to nothing)."""
+    normalized=_series_normalize(series_title)
+    return 'series-'+hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:24] if normalized else ''
+
+
 def classify_media(item):
     """Identify an *explicit* episode or the provider's native series record.
 
@@ -1215,9 +1221,8 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
         if classification['media_type']=='movie':
             movies.append(enriched)
             continue
-        normalized=_series_normalize(classification['series_title'])
-        if not normalized:continue
-        key='series-'+hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:24]
+        key=series_id(classification['series_title'])
+        if not key:continue
         group=series.setdefault(key,{'id':key,'series_key':key,'title':classification['series_title'],
             'kind':'series','media_type':'series','episode_count':0,'seasons':[],
             'poster':'','year':None,'genres':row.get('genres') or '',

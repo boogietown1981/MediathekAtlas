@@ -30,7 +30,7 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,im
  if(bg){if(!meta.fanart)back.classList.add('blurred');back.append(bg);}wrap.append(back);
  const top=el('div',undefined,'tv-topbar'),close=el('button',titleReturn==='portals'?'← Zurück zur Plattform':'← Zurück zum Katalog','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
  const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=art(poster||meta.poster,'Poster: '+(meta.title||''));
- if(img)cover.append(img);else cover.append(el('span',type==='Serie'?'SERIE':'FILM'));
+ if(img)cover.append(img);else cover.append(el('span',/^Serie\b/.test(type)?'SERIE':/^Live/.test(type)?'LIVE':/^Folge/.test(type)?'FOLGE':'FILM'));
  const text=el('div',undefined,'tv-herotext');text.append(el('p',type,'eyebrow'),el('h1',meta.title||'Ohne Titel'));
  const line=el('div',undefined,'tv-facts');for(const f of facts.filter(Boolean)){line.append(typeof f==='string'?el('span',f):f);}text.append(line);
  const buttons=el('div',undefined,'tv-actions');buttons.append(...actions.filter(Boolean));text.append(buttons);

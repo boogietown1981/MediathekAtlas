@@ -403,9 +403,13 @@ def listing(c, item_id=None, limit=50, now=None, origin='netzkino'):
     now = time.time() if now is None else float(now)
     items = []
     key = origin + '_id'
+    # 0.5.45: a series page asks for all its episodes at once (item_id is then a list of ids).
+    wanted = set(item_id) if isinstance(item_id, (list, tuple, set)) else ({item_id} if item_id else None)
+    if wanted is not None and len(wanted) > 1:
+        limit = max(limit, min(len(wanted) * 3, 3000))
     for payload, state in c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC'):
         job = json.loads(payload)
-        if job.get('origin') != origin or (item_id and job.get(key) != item_id):
+        if job.get('origin') != origin or (wanted is not None and job.get(key) not in wanted):
             continue
         job['state'] = state
         items.append(_public(job, now))

@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.45 – Serienseiten mit allen Folgen (12. November 2026)
+
+- Neue Tests `tests/test_v0545_series_pages.py` (8): Pluto-Serienmodell mit sortierten Folgen (S1E1, S1E2, S2E1) und Serienbild als Ersatz, gleiche Folgenfelder für alle Anbieter, Netzkino-Serien-ID für Folge und Gruppe identisch, unbekannte Netzkino-Serie abgelehnt, Downloadstatus für mehrere Folgen-IDs, Verdrahtung (Reiter, Katalog, Netzkino-Reiter, Server).
+- Browser-Durchlauf (Playwright, Testbestand): Pluto „Folgen anzeigen“ → Serienseite mit Reitern „Alle · 3 / Staffel 1 · 2 / Staffel 2 · 1“, Reiterwechsel filtert; JustWatch-Serie mit „Beim Anbieter ansehen“ für nicht freigegebene Folge; Netzkino-Serie „Acapulco H.E.A.T.“ mit 20 Folgen → Folge → „Zur Serie“ → zurück; „Zurück zur Plattform“; keine JavaScript-Fehler.
+- **Nicht geprüft:** echte Pluto-/JustWatch-Serien live (kein Zugriff aus der Testumgebung).
+
 ## 0.5.44 – IMDb-Zuordnung mit Erscheinungsjahr (12. November 2026)
 
 - Neue Tests `tests/test_v0543_reference_year.py` (7): Björns „#Roxy“-Fall mit den sechs IMDb-IDs aus dem Screenshot → genau tt5646082 (2018), ±1 Jahr kein Widerspruch, zwei Treffer gleichen Jahres bleiben „zu prüfen“, ±1 schlägt „ohne Jahr“, ohne Plattformjahr unverändert, alte „zu prüfen“-Berichte werden erneut eingeplant (auch per SQL-Auswahl).

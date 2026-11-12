@@ -32,6 +32,12 @@ ACCESS=access.Access(ROOT,[DEFAULT_DOWNLOAD_DIR]) if NETWORK else None
 TOKEN=secrets.token_urlsafe(32);STOP=threading.Event()
 diagnostics.register_secrets(TOKEN)
 
+def job_ids(q):
+    """?id=<one> or ?ids=<a>,<b>,… (0.5.45 series pages, at most 1000 ids)."""
+    ids=[x for x in ','.join(q.get('ids',[])).split(',') if x][:1000]
+    return ids or q.get('id',[''])[0] or None
+
+
 @contextmanager
 def db():
     c=sqlite3.connect(ROOT/'catalog.db',timeout=30);c.row_factory=sqlite3.Row
@@ -310,7 +316,7 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:return self.send({'error':str(e)},404)
         if path=='/api/justwatch-downloads':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None,origin='justwatch')
+            with db() as c:result=netzkino_downloads.listing(c,item_id=job_ids(q),origin='justwatch')
             result['ffmpeg']=bool(downloads.tool('ffmpeg'))
             return self.send(result)
         if path=='/api/portal-title':
@@ -324,12 +330,12 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:return self.send({'error':str(e)},404)
         if path=='/api/pluto-downloads':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None,origin='pluto')
+            with db() as c:result=netzkino_downloads.listing(c,item_id=job_ids(q),origin='pluto')
             result['ffmpeg']=bool(downloads.tool('ffmpeg'))
             return self.send(result)
         if path=='/api/netzkino-downloads':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None)
+            with db() as c:result=netzkino_downloads.listing(c,item_id=job_ids(q))
             result['ytdl']=ytdl_bridge.status()
             return self.send(result)
         if path=='/api/netzkino-reference-report':

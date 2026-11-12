@@ -124,7 +124,9 @@
         if (isGroup && item.episode_count) {
           const episodes = make('button', 'Folgen anzeigen (' + item.episode_count + ')', 'netzkino-episodes');
           episodes.type = 'button';
-          episodes.onclick = () => { view = 'episodes'; seriesKey = item.series_key; offset = 0; $('netzkino-filter').value=''; refresh(); };
+          // 0.5.45: the same series page as Pluto TV and JustWatch TV (season tabs, episodes below).
+          episodes.onclick = () => (window.AtlasPortalTitle?.open('netzkino', item.series_key)) ||
+            (() => { view = 'episodes'; seriesKey = item.series_key; offset = 0; $('netzkino-filter').value=''; refresh(); })();
           actions.prepend(episodes);
         }
         if (!isGroup && item.origin === 'manual') {

@@ -250,8 +250,9 @@
     // 0.5.42: every film portal opens the same title page as the Mediathek works.
     if (item.source==='pluto'||item.source==='justwatch') window.AtlasPortalTitle?.open(item.source,item.id);
     else if (item.source==='netzkino') {
-      if (item.kind==='series') {
-        // Retain the previous platform-level openSeries handler as a fallback.
+      if (item.kind==='series' && window.AtlasPortalTitle && /^series-[a-f0-9]{24}$/.test(item.series_key||'')) window.AtlasPortalTitle.open('netzkino',item.series_key);
+      else if (item.kind==='series') {
+        // Fallback without the shared title page (older layout).
         if (!$('atlas-cross-items') && window.MediathekAtlasNetzkino?.openSeries) {
           window.MediathekAtlasNetzkino.openSeries(item.series_key);
         } else {seriesKey=item.series_key;seriesTitle=item.title;offset=0;refresh();}

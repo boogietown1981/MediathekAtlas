@@ -73,7 +73,8 @@ window.AtlasPortalPanel = function (cfg) {
     }
     if (item.kind === 'series') {
       const open = make('button', 'Folgen anzeigen', 'primary'); open.type = 'button';
-      open.onclick = () => { series = item; view = 'episodes'; offset = 0; refresh(); };
+      // 0.5.45: the series opens its title page with all episodes, as in the catalogue.
+      open.onclick = () => openDetail(item.id) || (() => { series = item; view = 'episodes'; offset = 0; refresh(); })();
       actions.append(open);
     } else if (!playable(item)) {
       actions.append(externalLink(item));

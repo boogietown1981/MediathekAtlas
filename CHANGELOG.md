@@ -1,3 +1,10 @@
+## 0.5.45 – Serienseiten mit allen Folgen, für jeden Anbieter gleich
+- Björn (12.11.2026): „bei Serien sollen die Folgen dann auch unter der erkannten Serie dargestellt [werden] … unabhängig des Anbieters gleich“; bei Pluto führte „21 Jump Street“ auf eine schlecht dargestellte Seite und von dort in die Episodenliste unter „Plattformen“.
+- Die gemeinsame Titelseite (`portal_title.js`) zeigt bei Serien „Staffeln & Folgen · n“ wie die Mediathek-Serienseite: Staffel-Reiter (ab zwei Staffeln), je Folge Bild mit SxxEyy, Titel, Laufzeit, Inhalt, ▶ Abspielen bzw. „Beim Anbieter ansehen“, ⬇ Offline speichern direkt in der Zeile (Status „Vorgemerkt/Lädt/Offline verfügbar · noch n T.“) und Details.
+- Die Folgen kommen jetzt mit dem Serienmodell (`portal_title.model` → `episodes`, gleiche Felder für alle Anbieter); keine zweite Episodenabfrage im Browser. Downloadstatus aller Folgen in einer Anfrage (`…-downloads?ids=a,b,…`).
+- „Folgen anzeigen“ in den Plattform-Reitern Pluto TV und JustWatch TV, Netzkino-Serien im Katalog und im Netzkino-Reiter öffnen diese Serienseite; „Zurück“ führt dorthin, wo man herkam.
+- Netzkino: zusammengefasste Serien (aus einzelnen Titeln wie „Acapulco H.E.A.T. Staffel 1 - 1. …“) haben eine eigene Serienseite mit fehlenden Folgennummern unter „Angaben von Netzkino“. Eine einzelne Folge zeigt Serie · SxxEyy · Folgentitel und „Zur Serie“ (`netzkino.series_id`, dieselbe ID wie die Gruppierung).
+
 ## 0.5.44 – IMDb-Zuordnung nutzt das Erscheinungsjahr der Plattform
 - Björn (12.11.2026, „#Roxy“ bei Netzkino): Die Plattform liefert das Filmjahr (2018), trotzdem blieb der Titel „widersprüchlich“, weil IMDb sechs Filme dieses Namens kennt – einer davon (tt12786268) ohne Jahr, dadurch zwei „passende“ IMDb-IDs.
 - Regel jetzt (`netzkino_enrichment.analyze`, gilt für Netzkino, Pluto TV und JustWatch TV): Ist das Jahr bekannt, gewinnt je Datenbank der Treffer mit genau diesem Jahr, dann ±1 Jahr, erst dann Treffer ohne Jahr. ±1 Jahr (Festival-/Kinostart, deutscher Start) ist kein Widerspruch mehr. Zwei Treffer mit demselben Jahr bleiben „zu prüfen“; ohne Jahr der Plattform ändert sich nichts.

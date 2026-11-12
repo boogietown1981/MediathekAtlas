@@ -149,14 +149,78 @@ def _netzkino(root, item_id):
     facts.append(['Datenstand', ('Detailabruf eingeschränkt (%s)' % data['error_type']) if data.get('error_type')
                   else ('zwischengespeichert' if data.get('cached') else 'aktuell geladen')])
     m['notes'].append('Werkidentität und Wiedergaberechte sind nicht unabhängig bestätigt.')
+    # 0.5.45: an explicit episode ("Serie - Folge 3 …") links back to its grouped series page.
+    import netzkino
+    cls = netzkino.classify_media({'title': d.get('title') or ''})
+    if cls.get('media_type') == 'episode' and netzkino.series_id(cls.get('series_title')):
+        m.update(kind='episode', season=cls.get('season'), episode=cls.get('episode'),
+                 title=_text(cls.get('episode_title'), 200) or m['title'],
+                 series={'id': netzkino.series_id(cls['series_title']), 'title': _text(cls['series_title'], 200)})
     _fill_from_reference(m, report)
+    return m
+
+
+def _episode(source, e, series_poster=''):
+    """One episode row, the same for every portal (0.5.45)."""
+    def num(v, hi):
+        try:
+            v = int(v)
+        except (TypeError, ValueError):
+            return None
+        return v if 0 <= v <= hi else None
+    title = _text(e.get('episode_title') or e.get('title'), 200)
+    playable = e.get('playable') not in (0, False)
+    return {'id': str(e.get('id') or ''), 'title': title, 'season': num(e.get('season'), 999),
+            'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
+            'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
+            'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
+            'offline': playable, 'web_url': _https(e.get('web_url'))}
+
+
+def _sort_episodes(rows):
+    return sorted(rows, key=lambda e: (e['season'] is None, e['season'] or 0, e['episode'] is None, e['episode'] or 0, e['title']))
+
+
+def _netzkino_series(root, key):
+    """Netzkino series are grouped from single titles (netzkino.grouped_catalog)."""
+    import netzkino
+    data = netzkino.grouped_catalog(root, view='episodes', series_key=key, limit=1000)
+    series = data.get('series') or {}
+    if not series:
+        raise ValueError('Netzkino-Serie nicht im Katalog; bitte Katalog neu laden')
+    m = _base('netzkino', key, {'status': 'unchecked'})
+    poster = _https(series.get('poster'))
+    m.update(kind='series', title=_text(series.get('title'), 200), year=_year(series.get('year')), poster=poster,
+             categories=[c for c in series.get('categories') or [] if c != 'Unbekannt'])
+    items = data.get('items') or []
+    m['description'] = next((_text(e.get('summary')) for e in items if e.get('summary')), '')
+    m['episodes'] = _sort_episodes([_episode('netzkino', e, poster) for e in items])
+    facts = m['provider_facts']
+    if series.get('genres'):
+        facts.append(['Netzkino-Genres', _text(series['genres'], 200)])
+    facts.append(['Folgen bei Netzkino', str(len(items))])
+    gaps = ['Staffel %s: Folge %s' % (g.get('season'), ', '.join(str(x) for x in g.get('episodes') or []))
+            for g in series.get('numbering_gaps') or []]
+    if gaps:
+        facts.append(['Fehlende Folgennummern', '; '.join(gaps)])
+    m['notes'].append('Netzkino führt Serienfolgen als einzelne Titel; MediathekAtlas fasst sie anhand der Folgentitel zusammen.')
     return m
 
 
 def model(root, source, item_id):
     if source not in PROVIDERS:
         raise ValueError('Unbekannte Plattform')
-    m = _netzkino(root, item_id) if source == 'netzkino' else _portal(root, source, item_id)
+    if source == 'netzkino' and str(item_id).startswith('series-'):
+        m = _netzkino_series(root, item_id)
+    else:
+        m = _netzkino(root, item_id) if source == 'netzkino' else _portal(root, source, item_id)
+        if m['kind'] == 'series':
+            # Episodes belong on the series page, the same for every portal (Björn, 12.11.2026).
+            mod = __import__(source)
+            data = mod.episodes(root, item_id)
+            m['episodes'] = _sort_episodes([_episode(source, e, m['poster']) for e in data.get('items') or []])
+            if data.get('error'):
+                m['notes'].append('Folgen konnten nicht aktualisiert werden: ' + _text(data['error'], 200))
     if not m['title']:
         raise ValueError('Titel nicht im Katalog; bitte Katalog neu laden')
     m['kind_label'] = KIND_LABEL.get(m['kind'], 'Titel')

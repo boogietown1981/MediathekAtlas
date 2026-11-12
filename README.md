@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.44
+# MediathekAtlas · 0.5.45
+
+## Neu in 0.5.45: Serienseiten mit allen Folgen – für jeden Anbieter gleich
+
+- Serien von Pluto TV, JustWatch TV und Netzkino öffnen dieselbe Serienseite wie ARD/ZDF: Staffeln als Reiter („Alle · n“, „Staffel 1 · n“), darunter jede Folge mit ▶ Abspielen, ⬇ Offline speichern (mit Status) und Details. Eine Folge führt über „Zur Serie“ zurück, auch bei Netzkino.
 
 ## Neu in 0.5.44: Bessere IMDb-Zuordnung bei gleichnamigen Filmen
 
