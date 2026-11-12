@@ -14,8 +14,8 @@ function artImage(url,alt,cls){if(!safeArt(url))return null;const img=el('img',u
 
 let titleReturn='discover';
 // Title pages open from the catalogue or from a platform tab (0.5.42) and return there.
-function showTitleView(){if($('title-view').hidden){titleReturn=$('portals')&&!$('portals').hidden?'portals':'discover';titleScroll=window.scrollY;}$('discover').hidden=true;if($('portals'))$('portals').hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
-function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');$(titleReturn==='portals'?'portals':'discover').hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
+function showTitleView(){if($('title-view').hidden){titleReturn=(typeof window.atlasCurrentView==='function'&&window.atlasCurrentView())||($('portals')&&!$('portals').hidden?'portals':'discover');titleScroll=window.scrollY;}for(const v of ['discover','portals','livetv','queue','legacy','review','status','admin','display','subscriptions','logs','settings'])if($(v))$(v).hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
+function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');($(titleReturn)||$('discover')).hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
 window.addEventListener('popstate',()=>{if(!$('title-view').hidden)closeTitleView(true);});
 function pushTitle(){if(!(history.state&&history.state.atlasTitle))history.pushState({atlasTitle:1},'');}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('title-view').hidden&&!document.querySelector('dialog[open]'))closeTitleView();});
@@ -28,7 +28,7 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,im
  const art=image||artImage;
  const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=art(meta.fanart||meta.poster,'');
  if(bg){if(!meta.fanart)back.classList.add('blurred');back.append(bg);}wrap.append(back);
- const top=el('div',undefined,'tv-topbar'),close=el('button',titleReturn==='portals'?'← Zurück zur Plattform':'← Zurück zum Katalog','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
+ const top=el('div',undefined,'tv-topbar'),close=el('button',titleReturn==='portals'?'← Zurück zur Plattform':titleReturn==='discover'?'← Zurück zum Dashboard':'← Zurück','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
  const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=art(poster||meta.poster,'Poster: '+(meta.title||''));
  if(img)cover.append(img);else cover.append(el('span',/^Serie\b/.test(type)?'SERIE':/^Live/.test(type)?'LIVE':/^Folge/.test(type)?'FOLGE':'FILM'));
  const text=el('div',undefined,'tv-herotext');text.append(el('p',type,'eyebrow'),el('h1',meta.title||'Ohne Titel'));

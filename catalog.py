@@ -1,5 +1,5 @@
 """Local work/episode catalogue, alternative offers and conservative matching."""
-import hashlib,json,re,sqlite3,time,unicodedata
+import hashlib,json,re,sqlite3,threading,time,unicodedata
 import core
 SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
 CREATE INDEX IF NOT EXISTS work_retry ON works(state,next_try);
 CREATE INDEX IF NOT EXISTS work_show ON works(show_key);
+CREATE INDEX IF NOT EXISTS work_listing ON works(kind,show_key,id,title,year,state);
 CREATE TABLE IF NOT EXISTS work_genres(work_id TEXT,genre TEXT,PRIMARY KEY(work_id,genre));
 CREATE INDEX IF NOT EXISTS genre_index ON work_genres(genre,work_id);
 CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
@@ -288,6 +289,7 @@ def download_identity(m):
     return canonical(m) or digest(json.dumps([m.get('kind'),key(m.get('title','')),m.get('year'),m.get('season'),m.get('episode')]))
 
 def mark_downloaded(c,job):
+    invalidate_listings()
     identities={download_identity(job['metadata'])}
     source_id=job.get('source',{}).get('_id')
     found=c.execute('SELECT work_id FROM offers WHERE id=?',(source_id,)).fetchone()
@@ -406,7 +408,82 @@ def show_detail(c,show,archive=False,limit=1000):
                    channels=sorted(channels),seasons=[{'season':k,'episodes':v} for k,v in sorted(seasons.items(),key=lambda kv:(kv[0] is None,kv[0] or 0))],truncated=len(rows)>limit)
     return {'show':summary,'episodes':episodes,'work_ids':[w['id'] for w,_ in ranked[:48]]}
 
-def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection=''):
+# 0.5.55: grouped catalogue pages from memory. Björn's diagnosis (12.11.2026): /api/catalog took
+# 7-31 s on every call (239 times in six hours) because each page grouped and sorted all ~680,000
+# works again. The grouped order per filter is now computed once, served from memory and renewed
+# in the background (stale-while-revalidate), so paging and returning to the view are immediate.
+LISTING_DB=None            # set by the server: context-manager factory for background refreshes
+LISTING_TTL=600.0
+LISTING_SEARCH_TTL=120.0
+LISTING_SLOW=1.5             # seconds: from here on an outdated page is served while it is renewed
+_LISTING_MAX=32
+_LISTING={}                # key -> {'rows':[(id,episodes)],'built':monotonic,'busy':bool,'used':monotonic}
+_LISTING_LOCK=threading.Lock()
+_LISTING_BUILD=threading.Lock()   # one heavy aggregation at a time
+_LISTING_STATS={'hits':0,'builds':0,'background':0,'last_seconds':0.0}
+
+def _listing_build(c,where,args,grouping,order):
+    started=time.monotonic()
+    base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
+    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,w.title,w.year FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
+    seconds=time.monotonic()-started
+    _LISTING_STATS['builds']+=1;_LISTING_STATS['last_seconds']=round(seconds,2)
+    return rows,seconds
+
+def _listing_store(key,rows,seconds):
+    now=time.monotonic()
+    with _LISTING_LOCK:
+        _LISTING[key]={'rows':rows,'built':now,'busy':False,'used':now,'seconds':seconds}
+        while len(_LISTING)>_LISTING_MAX:
+            _LISTING.pop(min(_LISTING,key=lambda k:_LISTING[k]['used']))
+
+def _listing_refresh(key,where,args,grouping,order):
+    try:
+        with _LISTING_BUILD:
+            with LISTING_DB() as c:rows,seconds=_listing_build(c,where,args,grouping,order)
+        _listing_store(key,rows,seconds);_LISTING_STATS['background']+=1
+    except Exception:
+        with _LISTING_LOCK:
+            if key in _LISTING:_LISTING[key]['busy']=False
+
+def _listing_groups(c,where,args,grouping,order,search=False):
+    # Without a server (tests, tools) every call reads the database directly.
+    if LISTING_DB is None:return _listing_build(c,where,args,grouping,order)[0]
+    key=(where,tuple(args),grouping,order);now=time.monotonic()
+    with _LISTING_LOCK:
+        entry=_LISTING.get(key)
+        if entry:
+            entry['used']=now;age=now-entry['built']
+            if age<=(LISTING_SEARCH_TTL if search else LISTING_TTL):
+                _LISTING_STATS['hits']+=1;return entry['rows']
+            # Outdated: quick aggregations are simply repeated, slow ones answer from memory
+            # at once and are renewed in the background.
+            if entry['seconds']>=LISTING_SLOW:
+                if not entry['busy']:
+                    entry['busy']=True
+                    threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order),daemon=True,name='catalog_listing_refresh').start()
+                _LISTING_STATS['hits']+=1;return entry['rows']
+    with _LISTING_BUILD:
+        with _LISTING_LOCK:
+            entry=_LISTING.get(key)
+            if entry and entry['built']>now:return entry['rows']   # built while waiting
+        rows,seconds=_listing_build(c,where,args,grouping,order)
+    _listing_store(key,rows,seconds)
+    return rows
+
+def invalidate_listings(drop=False):
+    """After an import, a download or a manual change: renew on next use. Slow aggregations keep
+    answering from memory while they are renewed in the background."""
+    with _LISTING_LOCK:
+        if drop:_LISTING.clear()
+        else:
+            for entry in _LISTING.values():entry['built']=float('-inf')
+
+def listing_cache_stats():
+    with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}
+
+
+def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False):
     clauses=[];args=[]
     if downloaded=='hide':clauses.append('NOT EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
     elif downloaded=='only':clauses.append('EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
@@ -435,9 +512,10 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
             entry=item(c,w)
             if entry:entry.update(episodes=1,series_parent=False);out.append(entry)
         return {'items':out,'total':len(rows),'offset':offset}
-    base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
-    total=c.execute('SELECT COUNT(*) FROM ('+base+')',args).fetchone()[0]
-    rows=c.execute('SELECT g.*,w.title FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+({'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE'))+' LIMIT 48 OFFSET ?',args+[offset]).fetchall();out=[]
+    order={'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE')
+    groups=_listing_groups(c,where,args,grouping,order,bool(query))
+    if index_only:return groups   # (id, episodes, title, year) of every group, for unified_index
+    total=len(groups);rows=[{'id':r[0],'episodes':r[1]} for r in groups[offset:offset+48]];out=[]
     for row in rows:
         w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone()
         if w is None:continue  # merged by another worker after the paged query

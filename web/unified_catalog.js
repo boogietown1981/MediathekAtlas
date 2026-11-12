@@ -14,16 +14,47 @@
   const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube};
   const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen'};
   const TYPES = ['movies','series'];
-  let source='mediatheken',kind='series',genre='',sort='title',search='',offset=0,sequence=0;
+  let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
   let medGenres=[],medTree=[],collection='';
-  const heading=() => ({all:'Gesamtkatalog',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
+  const heading=() => ({all:'Alle Plattformen',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
     const discover=$('discover');
     const switcher=discover?.querySelector('.atlas-source-switch');
     const body=$('atlas-source-content');
     if (!discover || !switcher || !body || $('atlas-catalog-advanced')) return;
+    // 0.5.55 (Björn, 12.11.2026): the dashboard shows films and series only. The work catalogue
+    // with genre tree moves to Verwaltung → Werkkatalog, the scan and recognition boards to
+    // Verwaltung → Status & Abgleich. Live nodes are moved, so IDs and handlers stay intact.
+    const legacyHost=$('legacy-body'),boards=$('status-boards');
+    if (legacyHost && boards) {
+      const marker=el('div');marker.id='atlas-catalog-advanced';marker.hidden=true;discover.append(marker);
+      const historic=discover.querySelector('.background-status');
+      for (const child of [...discover.children]) {
+        if (child!==switcher && child!==body && child!==marker && child!==historic) legacyHost.append(child);
+      }
+      if (!historic) { console.warn('MediathekAtlas: Scan- und Erkennungsübersicht fehlt'); return; }
+      const dashboard=el('section',undefined,'background-status atlas-main-dashboard');
+      dashboard.id='atlas-main-dashboard';
+      dashboard.setAttribute('aria-label','Mediatheken-Scanner und Metadatenabgleich');
+      dashboard.append(el('h2','ARD, ZDF & Co. · Scan & Erkennung','atlas-dashboard-heading'));
+      historic.querySelector('summary')?.remove();
+      while(historic.firstChild) dashboard.append(historic.firstChild);
+      historic.remove();
+      boards.append(dashboard);
+      const workers=$('metadata-workers-status');
+      const statusBottom=dashboard.querySelector('.atlas-status-bottom');
+      if(workers && statusBottom){
+        const overview=el('section',undefined,'atlas-worker-overview');
+        overview.append(el('h3','Verarbeitung & Warteschlangen'));
+        overview.append(workers);
+        statusBottom.insertAdjacentElement('afterend',overview);
+        const title=dashboard.querySelector('#metadata-status')?.closest('.atlas-status-panel')?.querySelector('h3');
+        if(title)title.textContent='Letzte Erkennung';
+      }
+      return;
+    }
     const advanced=el('details',undefined,'atlas-catalog-advanced');
     advanced.id='atlas-catalog-advanced';
     const summary=el('summary','Klassische Katalogansicht (Genre-Baum, Zuordnung, Großes Kino), Scanner und Diagnose');
@@ -73,8 +104,9 @@
     if (!board) {
       board=el('section',undefined,'background-status atlas-portal-dashboard');
       board.id='atlas-portal-dashboard';board.setAttribute('aria-label','Katalog-Übersicht je Plattform');board.hidden=true;
-      const body=$('atlas-source-content');
-      if (typeof body?.parentElement?.insertBefore==='function') body.parentElement.insertBefore(board,body);
+      const body=$('atlas-source-content'),boards=$('status-boards');
+      if (boards) boards.append(board);
+      else if (typeof body?.parentElement?.insertBefore==='function') body.parentElement.insertBefore(board,body);
     }
     return board;
   }
@@ -113,7 +145,7 @@
     const actions=el('div',undefined,'atlas-portal-actions');
     const load=el('button',p.running?'Katalog wird geladen …':'↻ Katalog jetzt laden');load.type='button';load.disabled=!!p.running;
     load.onclick=async()=>{load.disabled=true;try{await window.api(SYNC[p.source],{});}catch(e){load.textContent=e.message;}setTimeout(inTab?()=>mountTabBoard(p.source):refreshPortalBoard,1500);};
-    const open=el('button',inTab?'Im Katalog anzeigen':'Plattform öffnen');open.type='button';
+    const open=el('button',inTab?'Im Dashboard anzeigen':'Plattform öffnen');open.type='button';
     open.onclick=inTab?()=>{document.querySelector('[data-view="discover"]')?.click();document.querySelector('[data-catalog-source="'+p.source+'"]')?.click();}:
       ()=>{document.querySelector('[data-view="portals"]')?.click();document.querySelector('.platform-tab[data-platform="'+p.source+'"]')?.click();};
     actions.append(load,open);card.append(actions);
@@ -141,17 +173,21 @@
   window.AtlasPlatformBoard={mount:mountTabBoard};
   // Returning to the catalogue restarts the overview polling (it pauses while the view is hidden).
   document.querySelector('[data-view="discover"]')?.addEventListener?.('click', () => setTimeout(() => refreshPortalBoard().catch(() => {}), 0));
+  document.addEventListener?.('atlas-view', event => { if (event.detail?.view==='status') refreshPortalBoard().catch(() => {}); });
   async function refreshPortalBoard() {
     clearTimeout(portalTimer);
     const board=portalBoard(),main=$('atlas-main-dashboard');
-    if (main) main.hidden=!(source==='mediatheken'||source==='all');
+    const inStatus=!!$('status-boards');
+    if (main) main.hidden=inStatus?false:!(source==='mediatheken'||source==='all');
     if (!board) return;
-    if (source==='mediatheken' || $('discover')?.hidden) {board.hidden=true;return;}
+    // 0.5.55: the boards live under Verwaltung → Status & Abgleich and show every platform there;
+    // they are only fetched while that view is open.
+    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
     const seq=++portalSeq;let data;
     try {data=await window.api('film-platforms');}catch(e){if(seq===portalSeq){board.hidden=false;board.replaceChildren(el('p','Katalog-Übersicht nicht verfügbar: '+e.message,'muted'));}return;}
-    if (seq!==portalSeq||source==='mediatheken') return;
-    const list=(data.film_platforms||[]).filter(p=>source==='all'||p.source===source);
-    board.replaceChildren(el('h2',source==='all'?'Weitere Kataloge · Bestand & Werkzuordnung':(list[0]?.name||'Katalog')+' · Bestand & Werkzuordnung','atlas-dashboard-heading'));
+    if (seq!==portalSeq||(!inStatus&&source==='mediatheken')) return;
+    const list=(data.film_platforms||[]).filter(p=>inStatus||source==='all'||p.source===source);
+    board.replaceChildren(el('h2',inStatus||source==='all'?'Weitere Kataloge · Bestand & Werkzuordnung':(list[0]?.name||'Katalog')+' · Bestand & Werkzuordnung','atlas-dashboard-heading'));
     const grid=el('div',undefined,'atlas-portal-grid');for(const p of list)grid.append(portalCard(p));board.append(grid);
     board.hidden=false;
     portalTimer=setTimeout(refreshPortalBoard,list.some(p=>p.running)?4000:15000);
@@ -167,7 +203,7 @@
     }
     $('atlas-cross-title').textContent=seriesKey?seriesTitle:heading()+' · '+(kind==='movies'?'Filme':'Serien');
     $('atlas-cross-back-series').hidden=!seriesKey;
-    $('atlas-cross-open-portal').hidden=source==='mediatheken';
+    $('atlas-cross-open-portal').hidden=source==='mediatheken'||source==='all';
   }
   function activate(name) {
     if (!VALID_SOURCES.includes(name)) return;
@@ -178,7 +214,7 @@
     // The overview must never block the catalogue itself.
     refreshPortalBoard().catch(e=>console.warn('MediathekAtlas: Katalog-Übersicht',e));
   }
-  function labelSource(item) {return item.source==='netzkino'?'Netzkino':PORTALS[item.source]||'Mediathek';}
+  function labelSource(item) {return item.source==='netzkino'?'Netzkino':PORTALS[item.source]||'ARD, ZDF & Co.';}
   function medRow(item) {
     const m=item.metadata||{},r=item.source||{};
     return {source:'mediatheken',id:item.work_id||'',raw:item,kind:m.kind||'',
@@ -227,61 +263,98 @@
     }
     return [];
   }
-  function makeCard(item) {
-    const card=el('article',undefined,'atlas-uc-card');
-    const art=el('div',undefined,'atlas-uc-poster');
-    if (hrefOkay(item.poster)) {
-      const img=el('img');img.src=item.poster;img.loading='lazy';img.alt='';img.referrerPolicy='no-referrer';
-      art.append(img);
-    } else art.append(el('span','Kein Cover','atlas-uc-empty-art'));
-    const text=el('div',undefined,'atlas-uc-body');
-    text.append(el('small',labelSource(item),'atlas-uc-source'));
-    const title=el('h3',item.title);
-    text.append(title);
-    const facts=[item.kind==='series'||item.series_parent?'Serie':item.kind==='episode'?'Episode':'Film',
-      item.year,item.kind==='series'&&item.episode_count?item.episode_count+' Folgen':null,
-      item.kind==='episode'&&item.episode?'S'+(item.season??'?')+' E'+item.episode:null,
-      ...genreList(item.genres).slice(0,2)].filter(Boolean).join(' · ');
-    text.append(el('small',facts,'atlas-uc-meta'));
-    const stars=window.AtlasPortalCategories?.rating(item.score);
-    if (stars) text.append(stars);
-    const pick=pickLabel(item);
-    if (pick) text.append(el('div',pick,'pick-badge'));
-    if (item.description) text.append(el('p',item.description.slice(0,220),'atlas-uc-desc'));
-    const actions=el('div',undefined,'atlas-uc-actions');
-    const details=el('button',item.kind==='series'&&item.source==='netzkino'?'Folgen anzeigen':PORTALS[item.source]?'Details':'Details & Angebote','atlas-uc-details');
-    details.type='button';
-    details.onclick=()=>openItem(item);
-    actions.append(details);
+  // 0.5.55: one tile for every source. The buttons of one offer come from actionNodes(), so a
+  // title that several providers offer gets the same buttons per provider inside one tile.
+  function actionNodes(item, withDetails=true) {
+    const nodes=[];
+    if (withDetails) {
+      const details=el('button',item.kind==='series'?'Folgen & Details':'Details','atlas-uc-details');
+      details.type='button';
+      details.onclick=()=>openItem(item);
+      nodes.push(details);
+    }
+    if (item.source==='mediatheken' && !item.series_parent && typeof playMedia==='function' && typeof playable==='function' && playable(item.raw)) {
+      const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
+      watch.onclick=()=>playMedia(item.raw);
+      nodes.push(watch);
+    }
     if (item.source==='netzkino' && item.kind!=='series') {
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
       watch.onclick=async()=>{
         watch.disabled=true;
         try {await window.AtlasNetzkinoDetail.play(item.id,item.title);}
-        catch(e){$('atlas-cross-status').textContent='Integrierte Wiedergabe: '+e.message;}
+        catch(e){if($('atlas-cross-status'))$('atlas-cross-status').textContent='Integrierte Wiedergabe: '+e.message;}
         finally{watch.disabled=false;}
       };
-      actions.append(watch);
+      nodes.push(watch);
     }
     if (PORTALS[item.source] && item.kind!=='series' && item.playable) {
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
       watch.onclick=()=>PLAY[item.source]?.()?.(item.id,item.title);
-      actions.append(watch);
+      nodes.push(watch);
     }
     if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {
-      const link=el('a',EXTERNAL[item.source]||'Beim Anbieter ansehen','button');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
-      actions.append(link);
+      const link=el('a',EXTERNAL[item.source]||'Beim Anbieter ansehen','button atlas-uc-external');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
+      nodes.push(link);
     }
     // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.
     // 0.5.48: JustWatch titles released only at night (youth protection) can be reserved.
     // 0.5.52: only with a real time window; other titles without a stream are copy protected.
     const night=item.source==='justwatch'&&!item.playable&&!!item.night;
-    if (item.source==='justwatch'&&item.kind!=='series'&&!item.playable&&!night) { const lock=window.AtlasOffline?.protectedNote(); if (lock) actions.append(lock); }
+    if (item.source==='justwatch'&&item.kind!=='series'&&!item.playable&&!night) { const lock=window.AtlasOffline?.protectedNote(); if (lock) nodes.push(lock); }
     if (item.kind!=='series' && (item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.source==='youtube'?item.offline:(item.playable||night)))) {
       const off=window.AtlasOffline?.control(item.source,item.id,item.title,{night});
-      if (off) actions.append(off);
+      if (off) nodes.push(off);
     }
-    text.append(actions);card.append(art,text);
+    return nodes;
+  }
+  function makeCard(item) {
+    // item.offers: the same title at several providers (dashboard "Alle"), best offer first.
+    const offers=item.offers&&item.offers.length?item.offers:[item];
+    const main=offers[0];
+    const pickFrom=(field,test)=>(offers.find(o=>test(o[field]))||{})[field];
+    const poster=(offers.find(o=>o.source!=='youtube'&&hrefOkay(o.poster))||offers.find(o=>hrefOkay(o.poster))||{}).poster;
+    const card=el('article',undefined,'atlas-uc-card'+(offers.length>1?' atlas-uc-multi':''));
+    const art=el('div',undefined,'atlas-uc-poster');
+    if (hrefOkay(poster)) {
+      const img=el('img');img.src=poster;img.loading='lazy';img.alt='';img.referrerPolicy='no-referrer';
+      art.append(img);
+    } else art.append(el('span','Kein Cover','atlas-uc-empty-art'));
+    art.classList.add('clickable');art.onclick=()=>openItem(main);
+    const text=el('div',undefined,'atlas-uc-body');
+    text.append(el('small',offers.map(labelSource).join(' · '),'atlas-uc-source'));
+    const title=el('h3',main.title);title.classList.add('clickable');title.onclick=()=>openItem(main);
+    text.append(title);
+    const genres=genreList(pickFrom('genres',g=>genreList(g).length));
+    const year=main.year||pickFrom('year',y=>!!y&&true);
+    const facts=[main.kind==='series'||main.series_parent?'Serie':main.kind==='episode'?'Episode':'Film',
+      year,(main.kind==='series'||main.series_parent)&&main.episode_count?main.episode_count+' Folgen':null,
+      main.kind==='episode'&&main.episode?'S'+(main.season??'?')+' E'+main.episode:null,
+      ...genres.slice(0,2)].filter(Boolean).join(' · ');
+    text.append(el('small',facts,'atlas-uc-meta'));
+    const scored=offers.find(o=>o.score)||main;
+    const stars=window.AtlasPortalCategories?.rating(scored.score);
+    if (stars) text.append(stars);
+    const pick=pickLabel(scored);
+    if (pick) text.append(el('div',pick,'pick-badge'));
+    const description=pickFrom('description',d=>!!d);
+    if (description) text.append(el('p',description.slice(0,220),'atlas-uc-desc'));
+    const actions=el('div',undefined,'atlas-uc-actions');
+    actions.append(...actionNodes(main));
+    text.append(actions);
+    if (offers.length>1) {
+      const more=el('details',undefined,'atlas-uc-more');
+      more.append(el('summary','Auch bei '+offers.slice(1).map(labelSource).join(', ')));
+      for (const other of offers.slice(1)) {
+        const row=el('div',undefined,'atlas-uc-alt');
+        const name=el('button',labelSource(other),'atlas-uc-alt-name');name.type='button';name.title='Titelseite bei '+labelSource(other)+' öffnen';
+        name.onclick=()=>openItem(other);
+        const alt=el('div',undefined,'atlas-uc-actions');alt.append(...actionNodes(other,false));
+        row.append(name,alt);more.append(row);
+      }
+      text.append(more);
+    }
+    card.append(art,text);
     return card;
   }
   function openItem(item) {
@@ -318,9 +391,9 @@
       genre=value;offset=0;$('atlas-cross-genre').value=value;refresh();
     });
   }
-  function paint(rows,notes,totals,facets) {
+  function paint(rows,notes,totals,facets,sorted) {
     const host=$('atlas-cross-items');host.replaceChildren();
-    sortRows(rows);
+    if (!sorted) sortRows(rows);
     const genreSelect=$('atlas-cross-genre'),previous=genreSelect.value;
     const labels=new Map();
     for(const raw of facets){
@@ -339,16 +412,49 @@
     if (!rows.length)host.append(el('p','Keine passenden Werke gefunden.','empty'));
     $('atlas-cross-status').textContent=notes.join(' · ');
     const total=totals.reduce((a,b)=>a+b,0);
-    $('atlas-cross-page').textContent=(total?offset+1:0)+'–'+Math.min(offset+48,Math.max(...totals,0))+' je Quelle · '+total+' Treffer insgesamt';
+    $('atlas-cross-page').textContent=(total?offset+1:0)+'–'+Math.min(offset+48,Math.max(...totals,0))+' von '+num(total);
     $('atlas-cross-prev').disabled=offset===0;
     $('atlas-cross-next').disabled=totals.every(t=>offset+48>=t);
     $('atlas-cross-items').setAttribute('aria-busy','false');
+  }
+  // 0.5.55: "Alle" reads one merged, globally sorted index from the server (unified_index.py):
+  // one request instead of six, the same title of several providers in one tile, and paging over
+  // the whole list instead of per source.
+  const rowOf=(src,item)=>src==='mediatheken'?medRow(item):src==='netzkino'?nkRow(item):plRow(item,src);
+  async function refreshAll(seq) {
+    let data;
+    try {
+      data=await window.api('unified?'+new URLSearchParams({kind,q:search,genre,sort,collection,offset:String(offset)}));
+    } catch(e) {
+      if (seq!==sequence) return;
+      $('atlas-cross-items').replaceChildren(el('p','Die Filme und Serien konnten nicht geladen werden: '+e.message,'empty'));
+      $('atlas-cross-status').textContent='Neuer Versuch über „Suchen“ oder einen Wechsel der Quelle.';
+      $('atlas-cross-items').setAttribute('aria-busy','false');
+      return;
+    }
+    if (seq!==sequence) return;
+    const rows=[];
+    for (const entry of data.items||[]) {
+      const offers=(entry.offers||[]).map(o=>rowOf(o.source,o.item));
+      if (offers.length) rows.push({...offers[0],offers});
+    }
+    const names=data.names||{};
+    const notes=Object.entries(data.counts||{}).filter(([,n])=>n).map(([src,n])=>(names[src]||src)+': '+num(n));
+    for (const [src,msg] of Object.entries(data.errors||{})) notes.push((names[src]||src)+' nicht verfügbar: '+msg);
+    if (data.merged) notes.push(num(data.merged)+' Titel bei mehreren Anbietern zusammengefasst');
+    const counts=[...(data.genre_counts||[]),...medTree.filter(r=>r.kind===(kind==='movies'?'movie':'series'))];
+    const facets=[...medGenres,...(data.genre_counts||[]).map(g=>g.genre).filter(g=>g!=='Unbekannt')];
+    paint(rows,notes,[data.total||0],facets,true);
+    paintCategories(counts);
+    const total=Number(data.total||0);
+    $('atlas-cross-page').textContent=(total?offset+1:0)+'–'+Math.min(offset+48,total)+' von '+num(total);
   }
   async function refresh() {
     const seq=++sequence;
     updateControls();
     $('atlas-cross-items').setAttribute('aria-busy','true');
-    $('atlas-cross-status').textContent='Katalog wird gelesen …';
+    $('atlas-cross-status').textContent='Filme und Serien werden geladen …';
+    if (source==='all' && !seriesKey) return refreshAll(seq);
     const nkNeeded=(source==='all'||source==='netzkino');
     const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;
     const plNeeded=(source==='all'||source==='pluto') && !seriesKey;
@@ -441,13 +547,25 @@
   // The category tree is computed in the background after start; ask again until it is there.
   function loadTree(attempt=0) {
     window.api('catalog-tree').then(data => {
+      const before=medTree.length;
       medTree=(data.tree||[]).filter(entry=>entry&&entry.genre);
       medGenres=medTree.map(entry=>entry.genre);
-      if(source==='all'||source==='mediatheken') refresh();
+      // 0.5.55: only repaint when the genre tree arrived; every retry used to reload the catalogue.
+      if(medTree.length!==before&&(source==='all'||source==='mediatheken')) refresh();
       if((data.loading||!medTree.length) && attempt<20) setTimeout(()=>loadTree(attempt+1),3000);
     }).catch(()=>{if(attempt<20)setTimeout(()=>loadTree(attempt+1),5000);});
   }
   loadTree();
   window.AtlasUnifiedCatalog={activate,refresh};
-  activate('mediatheken');
+  // Shared tile for the platform tabs (web/portal_panel.js, web/netzkino.js) and the preview.
+  window.AtlasCards={card:makeCard,portalRow:plRow,netzkinoRow:nkRow,mediathekRow:medRow};
+  // Start view from Verwaltung → Darstellung (default: all platforms, films).
+  const start=prefs=>{
+    if (TYPES.includes(prefs?.start_kind)) kind=prefs.start_kind;
+    activate(VALID_SOURCES.includes(prefs?.start_source)?prefs.start_source:'all');
+  };
+  if (window.AtlasDisplay?.ready) {
+    window.AtlasDisplay.ready.then(start,()=>start({}));
+    window.AtlasDisplay.onChange((now,before)=>{ if (now.merge_duplicates!==before.merge_duplicates && source==='all') refresh(); });
+  } else start({});
 })();

@@ -2,7 +2,7 @@
 const fs=require('fs'),vm=require('vm'),assert=require('assert');
 const path=require('path');
 class Element {
-  constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.style={};this.className='';this.hidden=false;this.value='';this.textContent='';this.attributes={};this.handlers={};this.disabled=false;this.parentElement=null;this.classList={toggle:(name,on)=>{if(on)this.className+=' '+name;else this.className=this.className.replace(name,'');}};}
+  constructor(tag='div'){this.tag=tag;this.children=[];this.dataset={};this.style={};this.className='';this.hidden=false;this.value='';this.textContent='';this.attributes={};this.handlers={};this.disabled=false;this.parentElement=null;this.classList={toggle:(name,on)=>{if(on)this.className+=' '+name;else this.className=this.className.replace(name,'');},add:name=>{this.className+=' '+name;},remove:name=>{this.className=this.className.replace(name,'');},contains:name=>this.className.split(' ').includes(name)};}
   append(...children){for(const child of children){this.children.push(child);child.parentElement=this;}}
   replaceChildren(...children){this.children=[];this.append(...children);}
   addEventListener(kind,handler){this.handlers[kind]=handler;}
@@ -22,6 +22,10 @@ const fakeApi=async url=>{
  if(url==='film-platforms')return {film_platforms:[]};
  requests.push(url);
  if(url==='catalog-tree')return{tree:[{genre:'Drama'},{genre:'Action'}]};
+ // 0.5.55: "Alle" reads one merged index; the same title of two providers is one entry.
+ if(url.startsWith('unified?'))return {total:2,counts:{mediatheken:1,netzkino:1,pluto:1},errors:{},merged:1,genre_counts:[{genre:'Action',n:1}],names:{mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',pluto:'Pluto TV'},items:[
+   {title:'ARD Beitrag',year:2019,offers:[{source:'mediatheken',item:{work_id:'m1',metadata:{title:'ARD Beitrag',kind:'movie',year:2019,genres:['Drama']},source:{title:'ARD Beitrag'},available:true}}]},
+   {title:'Netzkino Film',year:2018,offers:[{source:'netzkino',item:{id:'b'.repeat(32),title:'Netzkino Film',media_type:'movie',genres:'Action'}},{source:'pluto',item:{id:'p1p1p1p1',kind:'movie',title:'Netzkino Film',playable:1,categories:['Action']}}]}]};
  if(url.startsWith('catalog?'))return {total:1,items:[{work_id:'m1',metadata:{title:'ARD Beitrag',kind:'movie',year:2019,genres:['Drama']},source:{title:'ARD Beitrag'},available:true}]};
  if(url.startsWith('netzkino-grouped?')) {
   const q=new URLSearchParams(url.split('?')[1]);
@@ -41,17 +45,24 @@ const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
  await settle();
  assert.strictEqual(elements['atlas-catalog-advanced'],undefined); // stub does not register dynamic IDs
  assert.strictEqual(legacy.parentElement.tag,'details','legacy catalogue must survive as advanced controls');
- assert.strictEqual(elements.discover.dataset.source,'mediatheken');
+ // 0.5.55: the dashboard starts with all platforms and films, from one merged request.
+ assert.strictEqual(elements.discover.dataset.source,'all');
+ assert.ok(requests.some(u=>u.startsWith('unified?')&&u.includes('kind=movies')),'dashboard must read the merged index');
+ assert.ok(!requests.some(u=>u.startsWith('catalog?')||u.startsWith('netzkino-grouped?')),'"Alle" must not ask every source separately');
+ const tiles=elements['atlas-cross-items'].children.filter(c=>c.tag==='article');
+ assert.strictEqual(tiles.length,2);
+ assert.strictEqual(tiles.filter(c=>c.className.includes('atlas-uc-multi')).length,1,'same title of two providers is one tile');
+ const multi=tiles.find(c=>c.className.includes('atlas-uc-multi')).children[1];
+ assert.strictEqual(multi.children[0].textContent,'Netzkino · Pluto TV');
+ assert.ok(multi.children.some(x=>x.tag==='details'&&x.className==='atlas-uc-more'),'further providers are listed in the tile');
+ sourceTabs[1].click();await settle();
+ assert.ok(requests.some(u=>u.startsWith('catalog?')),'single source ARD, ZDF & Co. keeps its own listing');
  assert.ok(elements['atlas-cross-items'].children.some(c=>c.tag==='article'));
- sourceTabs[0].click();await settle();
- assert.ok(requests.some(u=>u.startsWith('netzkino-grouped?')),'combined view must include Netzkino');
- assert.ok(requests.some(u=>u.startsWith('catalog?')),'combined view must include Mediatheken');
- assert.strictEqual(elements['atlas-cross-items'].children.filter(c=>c.tag==='article').length,2);
  sourceTabs[2].click();kindTabs[1].click();await settle();
  const card=elements['atlas-cross-items'].children.find(c=>c.tag==='article');
  const text=card.children[1];const action=text.children.find(x=>x.className==='atlas-uc-actions').children[0];action.click();await settle();
  assert.ok(requests.some(u=>u.includes('view=episodes')),'series should show episodes inline');
  assert.strictEqual(elements['atlas-cross-back-series'].hidden,false);
  assert.strictEqual(details.length,0);
- console.log('Unified 0.5.31.8 UI: source switch, combined cards, legacy retention and inline series passed');
+ console.log('Unified UI 0.5.55: merged dashboard, source switch, legacy retention and inline series passed');
 })().catch(e=>{console.error(e.stack);process.exitCode=1;});
