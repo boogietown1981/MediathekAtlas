@@ -112,7 +112,7 @@
   <div class="sectionhead"><h2>Netzkino · Streaming-Katalog</h2>
     <a href="https://www.netzkino.de/" target="_blank" rel="noopener noreferrer" class="netzkino-open">Netzkino öffnen</a>
   </div>
-  <p class="muted">Separate Streaming-Bibliothek: offizielle Filmseiten öffnen, ohne Video-Downloads.
+  <p class="muted">Netzkino-Filme direkt im MediathekAtlas-Player ansehen oder für 30 Tage offline speichern.
      Die Zuordnung im Netzkino-Katalog ist zunächst ein Hinweis, keine bestätigte Werkidentität.</p>
   <div class="panel netzkino-sync-panel">
     <h3>Öffentlichen Netzkino-Katalog prüfen</h3>
@@ -123,6 +123,14 @@
       <label class="check"><input type="checkbox" id="netzkino-auto"> Alle 24 Stunden automatisch nachprüfen (Opt-in)</label></div>
     <p id="netzkino-sync-summary" class="muted">Katalogstatus wird geladen …</p>
   </div>
+  <details class="panel netzkino-manual" id="netzkino-recording-panel"><summary>Weitere Titel aus einem Netzkino-Mitschnitt übernehmen</summary>
+    <p class="muted">Netzkino stellt keine vollständige Titelliste bereit (Sitemap ohne Filmseiten, Startseite mit rund 30 Kategorien).
+       So kommen weitere Titel hinzu: netzkino.de im Browser öffnen, Entwicklerwerkzeuge → Netzwerk, Kategorien mit „Alle anzeigen“ durchblättern,
+       suchen und scrollen, dann „Alle als HAR speichern“ und die Datei hier auswählen.</p>
+    <p class="muted">Die Datei wird in diesem Browser gelesen. Übertragen werden nur Antworten von netzkino.de – keine Cookies, Anmeldedaten oder Kopfzeilen.</p>
+    <label>HAR-Datei<input id="netzkino-recording-file" type="file" accept=".har,application/json"></label>
+    <p id="netzkino-recording-status" class="muted" role="status"></p>
+  </details>
   <details class="panel netzkino-manual"><summary>Einzelne Netzkino-Filmseite manuell hinzufügen</summary>
     <form id="netzkino-add" class="netzkino-form">
       <label>Filmtitel<input id="netzkino-title" type="text" minlength="2" maxlength="180" required placeholder="Filmtitel"></label>

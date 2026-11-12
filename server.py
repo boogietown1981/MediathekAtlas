@@ -279,16 +279,16 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
         if path=='/api/play':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job')}
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino')}
             try:
-                with db() as c:source=streaming.resolve(c,**ref)
+                with db() as c:source=streaming.resolve(c,root=ROOT,**ref)
                 info=streaming.plan(source)
             except ValueError as e:return self.send({'error':str(e)},404)
             base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
             if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
             else:info['src']=info.pop('url') if info['mode']=='direct' else base
             info['remux']=base;info['ffmpeg']=bool(downloads.tool('ffmpeg'))
-            diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False))
+            diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False),provider=info.get('provider','mediathek'))
             return self.send(info)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
@@ -415,7 +415,8 @@ class Handler(BaseHTTPRequestHandler):
     def stream(self,q):
         if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
         try:
-            with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0])
+            with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
+                                                  netzkino=q.get('netzkino',[''])[0],root=ROOT)
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
@@ -500,7 +501,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
         try:
             length=int(self.headers.get('Content-Length','0'))
-            if not 0<length<=100000:raise ValueError('Ungültige Anfragegröße')
+            # Netzkino recordings arrive in parts of a few MB (answer texts only, no headers).
+            if not 0<length<=(8*1024*1024 if self.path=='/api/netzkino-recording' else 100000):raise ValueError('Ungültige Anfragegröße')
             d=json.loads(self.rfile.read(length));path=self.path
             if NETWORK and path=='/api/logout':
                 ACCESS.logout(self.session());return self.send({'ok':True},cookies=[self.session_cookie('',0)])
@@ -508,6 +510,8 @@ class Handler(BaseHTTPRequestHandler):
                 token=ACCESS.change_password(str(d.get('current','')),str(d.get('new','')))
                 diagnostics.event('access_password_changed')
                 return self.send({'ok':True},cookies=[self.session_cookie(token)])
+            if path=='/api/netzkino-recording':
+                return self.send(netzkino.import_recording(ROOT,d.get('entries')))
             if path=='/api/netzkino-add':
                 return self.send({'item':netzkino.add(ROOT,d.get('title'),d.get('url'))})
             if path=='/api/netzkino-remove':

@@ -1,6 +1,11 @@
-# MediathekAtlas · 0.5.32
+# MediathekAtlas · 0.5.34
 
-## Neu in 0.5.32: Netzkino offline ansehen
+## Neu in 0.5.34: Netzkino direkt abspielen
+
+- „▶ Ansehen“ spielt Netzkino-Filme im eingebauten MediathekAtlas-Player ab, genau wie Mediathek-Videos (auch auf Synology/QNAP). Eine Offlinekopie hat Vorrang, sonst ermittelt ytdl-nightly die MP4-Datei.
+- Netzkino bietet keine vollständige Titelliste an. Weitere Titel kommen über entdeckte Kategorien, Filmdetails und optional über einen Netzwerk-Mitschnitt (HAR) von netzkino.de hinzu: Plattformen → Netzkino → „Weitere Titel aus einem Netzkino-Mitschnitt übernehmen“.
+
+## 0.5.32: Netzkino offline ansehen
 
 - Netzkino-Titel lassen sich im Detailfenster mit **„Offline herunterladen (30 Tage)“** laden. Gespeichert wird genau wie bei Mediathek-Videos (gleiche Ordner, Dateinamen, MKV, NFO, Cover).
 - Nach 30 Tagen entfernt MediathekAtlas die Datei automatisch; die Restlaufzeit steht im Detailfenster und in der Downloadliste.

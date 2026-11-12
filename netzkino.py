@@ -38,10 +38,11 @@ _QUERY_HASHES = {
     'CategoryDataBySlug':'5e84446505b1211c3d48d08b06685d4f081e984ec35d6dddde9a57183220fea8',
     'MovieDetails':'692ee5a44d28183d6e0bf48b40343c2d231a5d1fcce5483c81f146936f00bf97',
 }
-_MAX_CATEGORIES = 40
+_MAX_CATEGORIES = 40          # frontpage subcategories taken from AllContent
+_MAX_DISCOVERED = 160         # further categories found inside category answers
 _GRAPHQL_LIMIT = 4 * 1024 * 1024
 _REQUEST_GAP_SECONDS = 0.7
-_SYNC_MAX_SECONDS = 180
+_SYNC_MAX_SECONDS = 420
 
 class GraphQLCatalogError(ValueError):
     """A provider's public catalog query failed without storing raw responses."""
@@ -297,6 +298,14 @@ def state(root):
             'last_result':_get(db,'last_result','never'),
             'last_complete_success':float(_get(db,'last_complete_success','0')),
             'time_budget_hit':_get(db,'time_budget_hit','0')=='1',
+            'categories_discovered':int(_get(db,'categories_discovered','0')),
+            'category_pagination':json.loads(_get(db,'category_pagination','{}')),
+            'category_total_max':int(_get(db,'category_total_max','0')),
+            'related_new':int(_get(db,'graphql_related_new','0')),
+            'har_import_added':int(_get(db,'har_import_new','0')),
+            'har_import_checked':float(_get(db,'har_import_checked','0')),
+            'har_operations':json.loads(_get(db,'har_operations','{}')),
+            'source_counts':{r[0]:r[1] for r in db.execute('SELECT source,count(*) FROM netzkino_catalog GROUP BY source')},
         }
     finally: db.close()
 
@@ -554,6 +563,149 @@ def _collect_nodes(content, category, output):
     return seen
 
 
+_PAGINATION_KEYS=('pageInfo','totalCount','total','hasNextPage','endCursor','nextCursor','offset','count')
+_MOVIE_TYPES=('CmsMovie','CmsSeries','CmsEpisode','Movie','Series')
+
+
+def _walk_movies(obj, category, output, depth=0):
+    """Collect film objects anywhere in a GraphQL/Next.js answer (category lists, rows,
+    related titles). Only presentation fields are read; the same validation applies."""
+    if depth>12:return 0
+    seen=0
+    if isinstance(obj,list):
+        for x in obj[:3000]:seen+=_walk_movies(x,category,output,depth+1)
+        return seen
+    if not isinstance(obj,dict):return 0
+    for key,role in (('contentMovie','movie'),('contentSeries','series')):
+        if isinstance(obj.get(key),dict):seen+=_merge(_entry_from_node(obj[key],category,kind=role),output)
+    typename=str(obj.get('__typename') or '')
+    if typename in _MOVIE_TYPES and obj.get('slug'):
+        seen+=_merge(_entry_from_node(obj,category,kind='series' if 'Series' in typename else 'movie'),output)
+    for key,value in obj.items():
+        if key in ('contentMovie','contentSeries','videoSource','licenses'):continue
+        if isinstance(value,(dict,list)):seen+=_walk_movies(value,category,output,depth+1)
+    return seen
+
+
+def _merge(item, output):
+    if not item:return 0
+    old=output.get(item['id'])
+    if old:
+        for k in ('summary','duration','poster','year','genres','fsk'):
+            if item.get(k) and not old.get(k):old[k]=item[k]
+        if not old['category']:old['category']=item['category']
+    else:output[item['id']]=item
+    return 1
+
+
+def _discover_categories(obj, depth=0, out=None):
+    """Category slugs mentioned inside an answer (subcategories, category references)."""
+    out=[] if out is None else out
+    if depth>8 or len(out)>500:return out
+    if isinstance(obj,list):
+        for x in obj[:500]:_discover_categories(x,depth+1,out)
+        return out
+    if not isinstance(obj,dict):return out
+    subs=obj.get('subcategories')
+    nodes=subs.get('nodes') if isinstance(subs,dict) else subs if isinstance(subs,list) else []
+    for cat in nodes or []:
+        if isinstance(cat,dict):_add_slug(cat,out)
+    if 'Category' in str(obj.get('__typename') or ''):_add_slug(obj,out)
+    for key,value in obj.items():
+        if key in ('contentMovie','contentSeries'):continue
+        if isinstance(value,(dict,list)):_discover_categories(value,depth+1,out)
+    return out
+
+
+def _add_slug(cat, out):
+    slug=cat.get('slug')
+    if isinstance(slug,str) and 1<=len(slug)<=140 and re.fullmatch(r'[\w.\-]+',slug):
+        out.append((slug,str(cat.get('title') or '')[:120]))
+
+
+def _pagination(content):
+    """Pagination hints of a category list, to learn whether a category has more titles."""
+    if not isinstance(content,dict):return {}
+    hints={k:content[k] for k in _PAGINATION_KEYS if k in content}
+    info=hints.get('pageInfo')
+    if isinstance(info,dict):hints['pageInfo']={k:info[k] for k in ('hasNextPage','endCursor','totalCount') if k in info}
+    return hints
+
+
+def add_discovered(db, payload, now, source='graphql_related', category=''):
+    """Insert titles found in any public answer (related titles, imported recordings).
+
+    Only new rows are added; existing GraphQL rows keep their data. Returns the count.
+    The caller owns the transaction.
+    """
+    found={}
+    _walk_movies(payload,category,found)
+    added=0
+    for item in list(found.values())[:_MAX_ITEMS]:
+        cur=db.execute('''INSERT INTO netzkino_catalog
+                (id,title,url,source,confidence,created,updated,kind,year,duration,genres,summary,poster,access_hint,category,fsk,content_id)
+                VALUES(?,?,?,?,'public_catalog_unverified',?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT DO NOTHING''',(item['id'],item['title'],item['url'],source,now,now,*_fields(item)))
+        added+=cur.rowcount if cur.rowcount and cur.rowcount>0 else 0
+    if added:
+        key=source+'_new'
+        _set(db,key,int(_get(db,key,'0'))+added)
+    return added
+
+
+_RECORDING_HOSTS=('data.netzkino.de','www.netzkino.de','netzkino.de')
+_NEXT_DATA=re.compile(r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>',re.S)
+
+
+def import_recording(root, entries, now=None):
+    """Add titles from a browser network recording (HAR) of netzkino.de.
+
+    The browser extracts only URL and answer text of netzkino.de requests; headers,
+    cookies and tokens never leave it. Here only public film fields are read and only
+    new titles are added. The observed query names show which catalogue requests the
+    website uses (for example for "Alle anzeigen"), without storing variables or values.
+    """
+    now=time.time() if now is None else float(now)
+    if not isinstance(entries,list) or len(entries)>20000:raise ValueError('Mitschnitt nicht lesbar')
+    operations={};answers=0;ignored=0
+    db=_connect(root)
+    try:
+        with db:
+            added=0
+            for entry in entries:
+                if not isinstance(entry,dict):ignored+=1;continue
+                url=str(entry.get('url') or '')[:4000];text=entry.get('text')
+                parts=urllib.parse.urlsplit(url)
+                if parts.scheme!='https' or parts.hostname not in _RECORDING_HOSTS or not isinstance(text,str):
+                    ignored+=1;continue
+                if len(text)>_GRAPHQL_LIMIT*2:ignored+=1;continue
+                q=urllib.parse.parse_qs(parts.query)
+                op=(q.get('operationName') or [''])[0]
+                if op and re.fullmatch(r'[A-Za-z0-9_]{1,80}',op):operations[op]=operations.get(op,0)+1
+                payload=None
+                stripped=text.lstrip()
+                if stripped[:1] in '{[':
+                    try:payload=json.loads(text)
+                    except ValueError:payload=None
+                else:
+                    m=_NEXT_DATA.search(text)
+                    if m:
+                        try:payload=json.loads(m.group(1))
+                        except ValueError:payload=None
+                if payload is None:ignored+=1;continue
+                answers+=1
+                added+=add_discovered(db,payload,now,source='har_import')
+            total=db.execute('SELECT COUNT(*) FROM netzkino_catalog').fetchone()[0]
+            for key,value in [('har_import_checked',now),('har_import_added',added),
+                              ('har_import_answers',answers),('har_operations',json.dumps(operations,sort_keys=True)),
+                              ('catalog_total',total)]:
+                _set(db,key,value)
+    finally:db.close()
+    _notify('netzkino_recording_import',answers=answers,added=added,ignored=ignored,operations=len(operations))
+    return {'ok':True,'answers':answers,'added':added,'ignored':ignored,'total':total,
+            'operations':sorted(operations)}
+
+
 def _collect_categories(root, output):
     if not isinstance(root,dict):raise ValueError('Netzkino-Kategoriestruktur fehlt.')
     category=root.get('parentCategory') or root.get('category')
@@ -585,7 +737,7 @@ def sync_graphql(root, fetch=None, now=None):
         with db:
             for key,value in [('last_attempt',now),('categories_checked',0),
                               ('categories_total',0),('category_errors',0),
-                              ('categories_empty',0),('category_cap_hits',0),('category_over_20',0),('category_max_items',0),('category_error_types','{}'),
+                              ('categories_empty',0),('categories_discovered',0),('category_pagination','{}'),('category_total_max',0),('category_cap_hits',0),('category_over_20',0),('category_max_items',0),('category_error_types','{}'),
                               ('last_http_status',0),('last_result','running')]:
                 _set(db,key,value)
     finally:db.close()
@@ -609,7 +761,10 @@ def sync_graphql(root, fetch=None, now=None):
         try:
             with db:_set(db,'categories_total',len(cats))
         finally:db.close()
-        for slug,name in cats:
+        known={slug for slug,_ in cats};discovered=0;pagination={};total_max=0
+        index=0
+        while index<len(cats):
+            slug,name=cats[index];index+=1
             if time.monotonic()-started_mono>_SYNC_MAX_SECONDS:
                 stopped_for_budget=True
                 break
@@ -638,6 +793,16 @@ def sync_graphql(root, fetch=None, now=None):
                     else:
                         _collect_nodes(content,name,found)
                         successful+=1
+                    # Titles outside content.nodes (rows, related lists) and further categories.
+                    _walk_movies(category,name,found)
+                    hints=_pagination(content)
+                    for key in hints:pagination[key]=pagination.get(key,0)+1
+                    for key in ('totalCount','total'):
+                        value=hints.get(key) if key in hints else (hints.get('pageInfo') or {}).get(key)
+                        if isinstance(value,int):total_max=max(total_max,value)
+                    for more in _discover_categories(category):
+                        if more[0] not in known and discovered<_MAX_DISCOVERED:
+                            known.add(more[0]);cats.append(more);discovered+=1
             except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,OSError,ValueError) as exc:
                 failures+=1
                 kind=_category_failure_type(exc)
@@ -653,6 +818,8 @@ def sync_graphql(root, fetch=None, now=None):
             try:
                 with db:
                     for key,value in [('categories_checked',checked),('category_errors',failures),
+                                      ('categories_total',len(cats)),('categories_discovered',discovered),
+                                      ('category_pagination',json.dumps(pagination,sort_keys=True)),('category_total_max',total_max),
                                       ('categories_empty',empty),('category_cap_hits',cap_hits),('category_over_20',over_20),('category_max_items',category_max),('category_error_types',json.dumps(error_types,sort_keys=True)),
                                       ('last_http_status',last_http)]:
                         _set(db,key,value)
@@ -699,7 +866,8 @@ def sync_graphql(root, fetch=None, now=None):
                     unchanged=unchanged,categories=len(cats),categories_checked=checked,
                     categories_empty=empty,category_errors=failures,category_cap_hits=cap_hits,category_over_20=over_20,category_max_items=category_max,partial=partial,coverage_status='startpage_only')
             return {'new':new,'changed':changed,'unchanged':unchanged,'count':len(found),
-                    'categories':len(cats),'categories_checked':checked,
+                    'categories':len(cats),'categories_checked':checked,'categories_discovered':discovered,
+                    'category_pagination':pagination,'category_total_max':total_max,
                     'category_errors':failures,'categories_empty':empty,'category_cap_hits':cap_hits,
                     'category_over_20':over_20,'category_max_items':category_max,
                     'coverage_status':'startpage_only','error_types':error_types,'partial':partial,'ok':True}

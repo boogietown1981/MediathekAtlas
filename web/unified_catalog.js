@@ -129,13 +129,13 @@
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
       watch.onclick=async()=>{
         watch.disabled=true;
-        try {await window.AtlasNetzkinoDetail.play(item.id);}
+        try {await window.AtlasNetzkinoDetail.play(item.id,item.title);}
         catch(e){$('atlas-cross-status').textContent='Integrierte Wiedergabe: '+e.message;}
         finally{watch.disabled=false;}
       };
       actions.append(watch);
     }
-    if (item.source==='netzkino') actions.append(el('small','Offizieller Player im Mac-Fenster · kein Stream-Mitschnitt'));
+    if (item.source==='netzkino') actions.append(el('small','Wiedergabe im MediathekAtlas-Player · 30 Tage offline speicherbar'));
     text.append(actions);card.append(art,text);
     return card;
   }

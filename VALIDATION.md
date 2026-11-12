@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.34 – Netzkino-Wiedergabe und Katalogerweiterung (12. November 2026)
+
+- Ausgeführt (Linux, Python 3.13): `python3 -m unittest discover -s tests` → 521 Tests, alle grün nach Neubau des App-Bundles. Neu: 8 Wiedergabetests (Direktwiedergabe der MP4, Offlinekopie hat Vorrang, Zwischenspeicher fürs Spulen, ungültige Kennungen, DRM-Meldung über ytdl-nightly, ffmpeg-Fallback) und 6 Katalogtests (Kategorie-Entdeckung mit Obergrenze, Seitenhinweise, Titel aus Filmdetails, HAR-Import nur von netzkino.de, Diagnoseexport).
+- `node --check web/*.js`, `node tests/*.cjs` OK. Browser-Durchlauf (Playwright/Chromium): Netzkino → „▶ In MediathekAtlas ansehen“ öffnet den App-Player und meldet in der Cloud-Umgebung korrekt „Netzkino ist nicht erreichbar“; HAR-Import einer Testdatei übernimmt den Titel, ignoriert fremde Hosts, keine JavaScript-Fehler.
+- Netzkino-Sitemaps am 12.11.2026 geprüft: `/sitemap.xml` liefert die HTML-Startseite, `/api/sitemap` 4 Infoseiten ohne Filme.
+- **Nicht geprüft:** echte Netzkino-Wiedergabe und Kategorie-Entdeckung gegen die Live-API (aus der Build-Umgebung gesperrt), Wiedergabe auf macOS/NAS-Hardware.
+
 ## 0.5.32 – Netzkino offline und Integrationsstand (11. November 2026)
 
 - Ausgeführt (Linux, Python 3.13): `python3 -m unittest discover -s tests` → 499 Tests OK (1 übersprungen), darunter 16 neue Netzkino-Offline-Tests (ytdl-nightly-Import, Extraktor gegen synthetische Next.js-Seite, DRM/HLS-Ablehnung, Benennung identisch zu `core.target`, Ende-zu-Ende-Download mit echtem FFmpeg-Remux, 30-Tage-Ablauf, Schutz fremder Dateien, Altauftrags-Übernahme, NAS-Dateirechte) und 29 aus dem Integrationspaket übernommene Netzkino-Tests.

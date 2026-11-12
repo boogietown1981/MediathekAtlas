@@ -181,7 +181,7 @@ def _error(exc):
     if name == 'GeoRestrictedError' or 'geo' in text.lower() and 'restrict' in text.lower():
         return ResolveError('Netzkino liefert diesen Titel nur innerhalb Deutschlands aus')
     if 'DRM' in text:
-        return ResolveError('Titel ist DRM-geschützt; ein Offline-Download ist nicht möglich')
+        return ResolveError('Titel ist DRM-geschützt; Wiedergabe und Download sind nur beim Anbieter möglich')
     if 'HTTP Error 404' in text:
         return ResolveError('Titel ist bei Netzkino nicht mehr verfügbar (HTTP 404)')
     if 'HTTP Error' in text:

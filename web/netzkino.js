@@ -43,7 +43,7 @@
       $('netzkino-sync').disabled = !!status.running;
       $('netzkino-sync').textContent = status.running ? 'Abgleich läuft …' : '↻ Katalog jetzt prüfen';
       const phase = status.running ? 'Läuft' : status.last_result === 'partial' ? 'Teilabgleich' :
-        status.last_result === 'complete' ? (status.sitemap_entries ? 'Abgleich erfolgreich (Startseite + Sitemap)' : 'Startseiten-Abgleich erfolgreich, Sitemap nicht erreichbar (Gesamtkatalog unvollständig)') : status.last_result === 'failed' ? 'Fehlgeschlagen' :
+        status.last_result === 'complete' ? 'Abgleich erfolgreich' : status.last_result === 'failed' ? 'Fehlgeschlagen' :
         'HAR-Startbestand, nicht live bestätigt';
       const categoryDetail = status.categories_total ?
         ` · Kategorien ${status.categories_checked || 0}/${status.categories_total}` +
@@ -51,7 +51,10 @@
         ` · Kategorien mit ≥20 Titeln ${status.category_cap_hits || 0}` +
         ` · über 20 Titel ${status.category_over_20 || 0}` +
         ` · größte Kategorie ${status.category_max_items || 0}` : '';
-      const sitemapDetail = status.sitemap_entries ? ` · Sitemap ${status.sitemap_entries} Titel (${status.sitemap_new || 0} neu)` : (status.sitemap_errors?.length ? ' · Sitemap nicht verfügbar ('+status.sitemap_errors.join(', ')+')' : '');
+      const sitemapDetail = (status.sitemap_entries ? ` · Sitemap ${status.sitemap_entries} Titel (${status.sitemap_new || 0} neu)` : '') +
+        (status.categories_discovered ? ` · ${status.categories_discovered} weitere Kategorien entdeckt` : '') +
+        (status.related_new ? ` · ${status.related_new} Titel über Filmdetails ergänzt` : '') +
+        (status.har_import_added ? ` · ${status.har_import_added} Titel aus Mitschnitt` : '');
       $('netzkino-sync-summary').textContent =
         `${status.catalog_count || 0} Katalogtitel · ${status.manual_count || 0} gemerkt · ` +
         `${phase} · Letzter Datenabruf: ${date(status.last_success)}` + categoryDetail + sitemapDetail +
@@ -81,6 +84,8 @@
         const title = make('h3', item.title);
         const label = make('small', isGroup ? 'Zusammengefasste Serie · Originaleinträge bleiben erhalten' : item.origin === 'manual' ? 'Manuell gemerkt · Streaming beim Anbieter' :
           item.source === 'har_snapshot' ? 'HAR-Startbestand vom 11.11.2026 · noch nicht live abgeglichen' :
+          item.source === 'har_import' ? 'Aus eigenem Netzkino-Mitschnitt übernommen' :
+          item.source === 'graphql_related' ? 'Über Netzkino-Filmdetails entdeckt' :
           'Netzkino-GraphQL-Katalog · Werkidentität nicht extern bestätigt');
         if (item.poster && /^https:\/\//i.test(item.poster)) {
           const img = make('img', undefined, 'netzkino-poster');
@@ -104,8 +109,8 @@
         play.hidden = isGroup; // open a series via its episode list, not an arbitrary series URL
         play.onclick = async () => {
           play.disabled = true;
-          try { await window.AtlasNetzkinoDetail.play(item.id); }
-          catch (e) { message('Integrierte Wiedergabe nicht verfügbar: ' + e.message, true); }
+          try { await window.AtlasNetzkinoDetail.play(item.id, item.title); }
+          catch (e) { message('Wiedergabe nicht möglich: ' + e.message, true); }
           finally { play.disabled = false; }
         };
         actions.append(play);
@@ -152,6 +157,49 @@
       scheduleRefresh(30000);
     }
   }
+  // Network recording (HAR) of netzkino.de: only answer texts of netzkino.de requests are sent,
+  // in parts of about 3 MB; headers, cookies and request bodies stay in the browser.
+  const recording = $('netzkino-recording-file');
+  if (recording) recording.onchange = async () => {
+    const file = recording.files?.[0]; const say = text => { $('netzkino-recording-status').textContent = text; };
+    if (!file) return;
+    recording.disabled = true; say('Mitschnitt wird gelesen …');
+    try {
+      const har = JSON.parse(await file.text());
+      const hosts = ['data.netzkino.de', 'www.netzkino.de', 'netzkino.de'];
+      const entries = [];
+      for (const e of har?.log?.entries || []) {
+        let url; try { url = new URL(e.request?.url || ''); } catch { continue; }
+        const content = e.response?.content || {};
+        if (url.protocol !== 'https:' || !hosts.includes(url.hostname) || !content.text) continue;
+        let text = content.text;
+        if (content.encoding === 'base64') { try { text = new TextDecoder().decode(Uint8Array.from(atob(text), c => c.charCodeAt(0))); } catch { continue; } }
+        if (!/^\s*[{[]/.test(text) && !text.includes('__NEXT_DATA__')) continue;
+        const op = url.searchParams.get('operationName');
+        entries.push({url: url.origin + url.pathname + (op ? '?operationName=' + encodeURIComponent(op) : ''), text});
+      }
+      if (!entries.length) throw new Error('Keine Netzkino-Antworten im Mitschnitt gefunden.');
+      let added = 0, answers = 0, total = 0, part = [], size = 0; const operations = new Set();
+      const send = async () => {
+        if (!part.length) return;
+        const r = await endpoint('netzkino-recording', {entries: part});
+        added += r.added || 0; answers += r.answers || 0; total = r.total || total;
+        (r.operations || []).forEach(o => operations.add(o)); part = []; size = 0;
+        say(`${answers} Antworten verarbeitet · ${added} neue Titel …`);
+      };
+      for (const entry of entries) {
+        const length = entry.text.length + entry.url.length;
+        if (length > 7000000) continue;
+        if (size + length > 3000000) await send();
+        part.push(entry); size += length;
+      }
+      await send();
+      say(`Fertig: ${added} neue Titel aus ${answers} Netzkino-Antworten übernommen · Katalog jetzt ${total} Titel` +
+        (operations.size ? ` · beobachtete Abfragen: ${[...operations].join(', ')}` : ''));
+      offset = 0; refresh();
+    } catch (e) { say('Mitschnitt nicht übernommen: ' + e.message); }
+    finally { recording.disabled = false; recording.value = ''; }
+  };
   $('netzkino-add').onsubmit = async event => {
     event.preventDefault();
     const submit = $('netzkino-add').querySelector('[type=submit]'); submit.disabled = true;
