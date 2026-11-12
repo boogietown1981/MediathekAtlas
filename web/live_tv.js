@@ -1,5 +1,6 @@
 /* Live-TV by station (0.5.50): one tab for the live channels of all sources (live_tv.py).
-   ARD, ZDF & Co. come from the film list (topic "Livestream"), Pluto TV from its catalogue.
+   ARD, ZDF & Co. come from the film list (topic "Livestream"), Pluto TV from its catalogue,
+   Rakuten TV and Joyn (0.5.65, link to joyn.de only) from theirs.
    A station offered by several providers is listed once with one play button per provider.
    Favourites are kept per device (localStorage) and shown first. */
 (() => {
@@ -70,6 +71,15 @@
     const actions = make('div', undefined, 'netzkino-actions livetv-actions');
     const many = station.sources.length > 1;
     station.sources.forEach((src, i) => {
+      // 0.5.65: Joyn channels only open joyn.de (no released stream, see joyn.py).
+      if (!src.play) {
+        if (!safeImage(src.link)) return;
+        const a = make('a', '↗ ' + (many ? src.provider_name : 'Bei ' + src.provider_name + ' ansehen'), 'button');
+        a.href = src.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
+        actions.append(a);
+        return;
+      }
       const b = make('button', '▶ ' + (many ? src.provider_name : 'Live ansehen'), i === 0 ? 'primary' : '');
       b.type = 'button';
       b.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
@@ -155,7 +165,7 @@
 
   // Live strip at the provider (0.5.50): the catalogue source "ARD, ZDF & Co." and "Pluto TV" show their
   // live stations above the search, collapsed by default. Sources without live channels show nothing.
-  const STRIP = {mediatheken: 'mediathek', pluto: 'pluto', rakuten: 'rakuten'};
+  const STRIP = {mediatheken: 'mediathek', pluto: 'pluto', rakuten: 'rakuten', joyn: 'joyn'};
   let stripSeq = 0;
   async function strip() {
     const discover = $('discover'), anchor = $('atlas-cross-search');
@@ -180,6 +190,13 @@
     const row = box.querySelector('.livetv-strip-row'); row.replaceChildren();
     for (const st of stations.slice(0, 40)) {
       const src = st.sources.find(x => x.provider === only) || st.sources[0];
+      if (!src.play) {
+        if (!safeImage(src.link)) continue;
+        const a = make('a', '↗ ' + st.name, 'livetv-strip-button button');
+        a.href = src.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.title = src.title + ' · bei ' + src.provider_name + ' ansehen';
+        row.append(a);
+        continue;
+      }
       const b = make('button', '▶ ' + st.name, 'livetv-strip-button'); b.type = 'button';
       b.title = src.title + ' · ' + src.provider_name;
       b.onclick = () => window.playLive?.(src.play, st.name + ' · ' + src.provider_name);

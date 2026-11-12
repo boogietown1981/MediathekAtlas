@@ -1,5 +1,15 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.66 – Wiedergabe, Download-Auswahl, Dubletten, Live-TV (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (809 Tests), davon 23 neu in `tests/test_v0566_playback_downloads.py`; `node --check` für alle Skripte, 6 Node-Oberflächentests.
+- Gemessen mit ffmpeg/ffprobe an einem selbst erzeugten HLS-Stream: Tonversatz 0,778 s bleibt erhalten (vorher 0), nach Spulen Bildversatz 1,0 s bleibt erhalten; Liste mit einer Stufe wird von ffmpeg gespielt (720p, 480p, 240p je nach Wunsch); Download mit „höchstens 480p“ ergibt eine 480p-Datei, „Beste“ 720p.
+- Im Browser (Chromium, Testdaten, Stream und Anbieterantworten nachgestellt): Qualitätsauswahl erscheint und startet den Stream in der gewählten Stufe neu; nach 6 s Warten Reduzierung auf 480p mit Hinweis; Statistik wird gesendet; Download-Dialog zeigt Anbieter und Stufen und sendet Anbieter und Auflösung; Live-TV-Reiter zeigt die Sender des Testbestands.
+- Nicht geprüft: echte Streams von Pluto TV, Rakuten TV, JustWatch TV und den Sendern (aus der Bauumgebung nicht erreichbar); Safari und die macOS-App; Wirkung auf Björns Rechner und Verbindung; YouTube-Download mit gewählter Stufe (yt-dlp nicht ausgeführt); Netzkino mit mehreren Dateien. Der leere Live-TV-Reiter aus 0.5.61 ließ sich nicht nachstellen, die Ursache ist offen.
+
+## 0.5.65 – Joyn (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (777 Tests), davon 9 neu in `tests/test_v0565_joyn.py` (Abfrageadresse und Kopfzeilen wie im HAR, Abruf mit kostenlosen und Joyn+-Titeln, Seitenwechsel bei 32 Einträgen, Genre-Pfade dedupliziert und geprüft, Sammlungen/unbekannte Lizenzen verworfen, Kostenlos schlägt Joyn+, Filter „Joyn+“, Live-Sender mit Plus-Kennung, Radio/ohne Livestream verworfen, PersistedQueryNotFound, Teilabruf, Rotation, Wiedergabe abgelehnt, Titelseite mit Link und Hinweis, Live-TV-Zusammenführung mit ARD, Bild-/Link-Prüfung, Abgleich-Spec). Drei ältere Verdrahtungstests um Joyn ergänzt. `node --check` aller geänderten Skripte.
+- Nicht geprüft: echte Joyn-Antworten (api.joyn.de aus der Cloud gesperrt; Antwortformen aus Björns HAR), ob die Persisted-Query-Hashes nach dem nächsten Joyn-Update noch gelten, Geo-Sperre außerhalb Deutschlands, Wiedergabe und DRM (kein Mitschnitt), Folgenlisten, Mediatheken-Seiten der einzelnen Sender.
+
 ## 0.5.61 – Archive.org-Downloads (12. November 2026)
 - Automatisch: 9 neue Tests in `tests/test_v0561_archive_downloads.py` (Film-Auftrag mit Lizenz und Untertitel-Adresse, Worker nutzt die Archivadresse, keine Ablauffrist, keine Verbund-/Mediathek-Markierung, Dubletten, Folge mit Nummern, Folge ohne Nummer nur mit Angabe, nur Manifest-Dateien, Liste je Eintrag, Untertitel neben dem Video ohne Überschreiben, Verdrahtung). Gesamtsuite siehe PR.
 - Nicht geprüft: echter Download von archive.org (aus der Bauumgebung gesperrt bzw. nicht getestet), Weiterleitung auf die ia*.archive.org-Spiegel bei Björn, Untertitel-Sprachkürzel bei ungewöhnlichen Dateinamen, NAS-Hardware.

@@ -9,6 +9,10 @@ Sources so far:
   in the catalogue database and play through /api/play?offer=<id> (HLS via ffmpeg/native HLS).
 - Pluto TV: live channels of the local Pluto catalogue (pluto.channels), played through
   /api/play?pluto=<id> (official stitcher stream incl. adverts).
+- Rakuten TV (0.5.51): free FAST channels, plain HLS via /api/play?rakuten=<id>.
+- Joyn (0.5.65): the live channels of joyn.de. Joyn plays them in its own player (Widevine as far
+  as known); until a recording shows an unprotected stream they only link to joyn.de ('link'
+  instead of 'play'). Joyn+ channels are marked.
 
 A new provider only needs a loader returning channel dicts (see _channel) and an entry in
 PROVIDERS. Live streams are never stored offline. Nothing here fetches from the network:
@@ -59,7 +63,7 @@ _KNOWN = {key: (name, group, pos) for pos, (key, name, group, _) in enumerate(ST
 # Regional windows keep their own entry ("BR Nord", "NDR Hamburg") but sort under the station.
 _REGIONAL_PREFIXES = sorted((k for k, (_, g, _) in _KNOWN.items() if g == REGIONAL), key=len, reverse=True)
 
-PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('rakuten', 'Rakuten TV'))
+PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
 PROVIDER_NAMES = dict(PROVIDERS)
 
 
@@ -96,14 +100,14 @@ def _station_info(key, name, fallback_group, regional=False):
 
 
 def _channel(provider, item_id, title, play, *, channel='', group='', logo='', number=None,
-             summary='', quality=''):
+             summary='', quality='', link=''):
     name = station_name(title, channel)
     key = station_key(name)
     display, group, pos = _station_info(key, name, group or PROVIDER_NAMES.get(provider, provider), provider == 'mediathek')
     return {'provider': provider, 'provider_name': PROVIDER_NAMES.get(provider, provider), 'id': item_id,
             'title': ' '.join(str(title or '').split())[:200], 'station': display, 'key': key, 'group': group,
             'position': pos, 'logo': logo or '', 'number': number, 'summary': (summary or '')[:400],
-            'quality': quality, 'play': play}
+            'quality': quality, 'play': play, 'link': link if str(link).startswith('https://') else ''}
 
 
 # ---------------------------------------------------------------- providers
@@ -157,11 +161,25 @@ def rakuten_channels(root):
             for row in rakuten.channels(root)]
 
 
+def joyn_channels(root):
+    """Joyn live channels (0.5.65): link to joyn.de only (no playback released, see joyn.py)."""
+    import joyn
+    out = []
+    for row in joyn.channels(root):
+        plus = row.get('offer') == 'plus'
+        out.append(_channel('joyn', row['id'], row['title'], None, group=row.get('genre') or 'Joyn',
+                            logo=row.get('poster') or '', summary=row.get('summary') or '',
+                            quality=' · '.join(x for x in ('Joyn+' if plus else 'kostenlos', row.get('quality') or '',
+                                                           'bei Joyn ansehen') if x),
+                            link=row.get('web_url') or ''))
+    return out
+
+
 def channels(c, root):
     """All live channels of all providers; a broken provider never hides the others."""
     found, errors = [], {}
     for key, loader in (('mediathek', lambda: mediathek_channels(c)), ('pluto', lambda: pluto_channels(root)),
-                        ('rakuten', lambda: rakuten_channels(root))):
+                        ('rakuten', lambda: rakuten_channels(root)), ('joyn', lambda: joyn_channels(root))):
         try:
             found.extend(loader())
         except Exception as exc:  # local database problems are reported per provider
@@ -191,7 +209,7 @@ def overview(c, root, query='', provider='', group=''):
         st['summary'] = st['summary'] or ch['summary']
         if st['number'] is None and ch['number'] is not None:
             st['number'] = ch['number']
-        st['sources'].append({k: ch[k] for k in ('provider', 'provider_name', 'id', 'title', 'quality', 'play')})
+        st['sources'].append({k: ch[k] for k in ('provider', 'provider_name', 'id', 'title', 'quality', 'play', 'link')})
     items = list(stations.values())
     q = _fold(query).strip()[:100]
     if q:

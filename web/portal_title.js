@@ -17,6 +17,8 @@
       action: 'offline-download-action', enrich: 'justwatch-enrich', external: 'Bei JustWatch ansehen'},
     rakuten: {play: () => window.playRakuten, jobs: id => 'rakuten-downloads?id=' + encodeURIComponent(id), add: 'rakuten-download-add',
       action: 'offline-download-action', enrich: 'rakuten-enrich', external: 'Bei Rakuten TV ansehen'},
+    joyn: {play: () => null, jobs: id => 'joyn-downloads?id=' + encodeURIComponent(id), add: '',
+      action: 'offline-download-action', enrich: 'joyn-enrich', external: 'Bei Joyn ansehen'},
     youtube: {play: () => window.playYouTube, jobs: id => 'youtube-downloads?id=' + encodeURIComponent(id), add: 'youtube-download-add',
       action: 'offline-download-action', enrich: 'youtube-enrich', external: 'Bei YouTube ansehen'}
   };
@@ -204,7 +206,7 @@
       const save = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night});
       if (save) actions.push(save);
     }
-    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
+    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : 'Nur beim Anbieter abspielbar') : ''];

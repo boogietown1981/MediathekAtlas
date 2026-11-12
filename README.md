@@ -1,4 +1,22 @@
-# MediathekAtlas · 0.5.61
+# MediathekAtlas · 0.5.66
+
+## Neu in 0.5.66: Wiedergabe, Download-Auswahl, Dubletten, Live-TV
+
+Enthält alles aus 0.5.61 (Archive.org-Downloads) und 0.5.65 (Joyn).
+
+- **Bild und Ton laufen zusammen:** Bei Streams, die MediathekAtlas für den Browser umwandelt (Chrome, Firefox, Edge; Live-TV und Filme von Pluto TV, Rakuten TV, JustWatch TV, Sender-Livestreams), ging bisher der Versatz zwischen Bild- und Tonspur verloren. Im Test lief der Ton dadurch 0,8 Sekunden zu früh, nach dem Spulen das Bild bis zu eine Sekunde. Der Versatz bleibt jetzt erhalten.
+- **Qualität im Player wählbar:** Oben im Player steht „Qualität“. „Automatisch“ lädt höchstens 720p und geht von selbst eine Stufe herunter, wenn der Stream innerhalb einer Minute länger als sechs Sekunden stockt. Feste Stufen (z. B. 480p) und „Beste“ sind wählbar; die Wahl wird auf diesem Gerät gemerkt. Bisher wurde immer die höchste Stufe geladen, egal wie schnell die Verbindung war, und vor dem Start jede Stufe einzeln geprüft.
+- **Safari und die macOS-App** spielen solche Streams selbst ab und passen die Qualität selbst an („Automatisch“). Wer dort eine feste Stufe wählt, bekommt den Stream über MediathekAtlas in genau dieser Stufe.
+- **Offline speichern mit Auswahl:** Vor jedem Offline-Speichern fragt ein kleiner Dialog nach der **Auflösung** (Beste verfügbare, höchstens 2160p, 1080p, 720p, 480p, 360p) und zeigt, welche Stufen der Anbieter für diesen Titel hat. Gibt es denselben Titel bei mehreren Anbietern, lässt sich dort auch der **Anbieter** wählen. Die Auflösung wird für das nächste Mal gemerkt.
+- **Dubletten:** „Ab ins Meer“ (YouTube) und „Ab ins Meer: Auf der Suche nach der verlorenen Perle“ (Netzkino) werden jetzt zusammengeführt, wenn Erscheinungsjahr (höchstens ein Jahr Abstand), Titel der Referenz, Laufzeit oder Beschreibung zusammenpassen. Ein fehlendes Jahr ist kein Widerspruch. Die gespeicherten Plattform-Ansichten werden nach dem Update einmal neu aufgebaut.
+- **Live-TV:** Ein fehlerhafter Sendereintrag leert nicht mehr den ganzen Reiter; der Grund wird angezeigt. Blendet eine Suche oder ein Filter alle Sender aus, steht das dabei, mit „Alle Sender zeigen“. Leere oder langsame Antworten landen im Protokoll.
+- **Nicht änderbar:** Live-Streams über das Internet laufen grundsätzlich 20 bis 40 Sekunden hinter Kabel und Satellit her; das liegt an der Technik der Anbieter.
+
+## Neu in 0.5.65: Joyn
+
+- **Joyn als Plattform:** Neuer Reiter „Joyn“ unter Plattformen und Quelle „Joyn“ im Dashboard. Geladen werden alle Filme und Serien der Joyn-Genreseiten – kostenlos (mit Werbung) und, getrennt gekennzeichnet, Joyn+. Die Kategorien „Joyn (kostenlos)“ und „Joyn+“ filtern danach. Bewertungen, Kategorien und Titelseite wie bei den anderen Plattformen.
+- **Live-TV:** Die rund 125 Joyn-Sender stehen im Reiter Live-TV; Sender, die es auch bei ARD, ZDF & Co. gibt, erscheinen einmal mit beiden Anbietern.
+- **Ansehen:** Joyn spielt nur im eigenen Player ab, in der Regel mit Kopierschutz. MediathekAtlas umgeht ihn nicht und meldet sich nicht bei Joyn an: „Bei Joyn ansehen“ öffnet joyn.de, wo du angemeldet bist. Kein Abspielen im MediathekAtlas-Player, kein Offline-Speichern. Folgenlisten einzelner Serien folgen, sobald ein Mitschnitt die Abfrage zeigt.
 
 ## Neu in 0.5.61: Archive.org-Filme und -Folgen herunterladen (wie in ArchiveMedia)
 
