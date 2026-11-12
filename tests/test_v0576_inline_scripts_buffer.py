@@ -34,6 +34,12 @@ class InlineScriptTests(unittest.TestCase):
         self.assertIn('<script src="/other.js"></script>', out)   # not one of the page's scripts
         self.assertIn('<script src="/player.js"></script>', out)  # unreadable: ordinary tag stays
 
+    def test_online_streams_collect_a_reserve_before_running(self):
+        js = (ROOT / 'web' / 'player.js').read_text(encoding='utf-8')
+        for part in ('const GATE={start:8,seek:4,stall:5,max:15};', 'function ahead()', 'function gate(need)', "S.info.origin!=='online'",
+                     'gate(GATE.stall)', "video.addEventListener('play',()=>{gateOff();});", 'Puffer wird gefüllt'):
+            self.assertIn(part, js)
+
     def test_missing_netzkino_script_gives_a_clear_message(self):
         self.assertIn("if(!window.AtlasNetzkinoDetail)throw new Error(", (ROOT / 'web' / 'unified_catalog.js').read_text(encoding='utf-8'))
 

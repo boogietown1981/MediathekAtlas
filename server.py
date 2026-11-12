@@ -1,5 +1,5 @@
 import subprocess,sys
-import json, os, re, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality
@@ -120,7 +120,8 @@ def film_platforms(offline):
          'playable':yt.get('playable',0),'sources':yt.get('sources',0),'last_success':yt.get('last_success',0),
          'last_result':yt.get('last_result'),'running':yt.get('running'),'reference':youtube_enrichment.metrics(ROOT),
          'offline':offline['youtube'],'offline_days':youtube_downloads.OFFLINE_DAYS,
-         'offline_note':yt.get('offline_note',''),'key_set':yt.get('key_set')}]
+         'offline_note':yt.get('offline_note',''),'key_set':yt.get('key_set'),
+         'music':yt.get('music',0),'tracks':yt.get('tracks',0),'progress':yt.get('progress','')}]
 
 # 0.5.55: Verwaltung → Aufgaben. One list of all background tasks with what they are doing.
 _PORTAL_MODULES={'netzkino':(netzkino,netzkino_enrichment),'pluto':(pluto,pluto_enrichment),'justwatch':(justwatch,justwatch_enrichment),'rakuten':(rakuten,rakuten_enrichment),'joyn':(joyn,joyn_enrichment),'youtube':(youtube,youtube_enrichment)}
@@ -816,7 +817,7 @@ class Handler(BaseHTTPRequestHandler):
                 # one line per stream for the diagnosis: how long until the first data, how much, at which level
                 diagnostics.event('playback_stream',origin=source['kind'],provider=source.get('provider','mediathek'),live=bool(source.get('live')),
                                   start_at=round(start,1),first_data_seconds=first_after,seconds=seconds,megabytes=round(sent/1048576,1),
-                                  kbit=round(sent*8/1000/seconds) if seconds>=1 else 0,picture=(level or {}).get('label',''),levels=(level or {}).get('levels',0))
+                                  kbit=round(sent*8/1000/seconds) if seconds>=1 else 0,quality_level=(level or {}).get('label',''),levels=(level or {}).get('levels',0))
     def do_HEAD(self):
         path=urllib.parse.urlsplit(self.path).path
         if path!='/api/download-file' or not self.valid_host() or not self.authorized():return self.send({'error':'Nicht gefunden'},404)
@@ -895,7 +896,10 @@ class Handler(BaseHTTPRequestHandler):
                 if action=='add':result=youtube.add_source(ROOT,d.get('url',''),str(d.get('kind','movies')),str(d.get('label',''))[:120],d.get('min_minutes'))
                 else:result=youtube.update_source(ROOT,d.get('id'),action)
                 diagnostics.event('youtube_sources_changed',action=action[:10],count=len(result))
-                return self.send({'sources':result,'status':youtube.state(ROOT)})
+                # 0.5.74 (Björn: added a playlist and nothing appeared): a new or re-enabled source is read
+                # right away when a key is set; a run already going picks it up next time.
+                started=action in ('add','enable') and bool(str(settings().get('youtube','')).strip()) and youtube.start_sync(ROOT,queue=True)
+                return self.send({'sources':result,'status':youtube.state(ROOT),'started':bool(started)})
             if path=='/api/youtube-key':
                 s=settings();key=str(d.get('key','')).strip()
                 if d.get('clear') is True:s['youtube']=''
@@ -1360,7 +1364,7 @@ class Handler(BaseHTTPRequestHandler):
                 if _PLAYBACK_STATS[0]<200:
                     _PLAYBACK_STATS[0]+=1
                     diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
-                                      wish=str(d.get('wish',''))[:6],picture=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
+                                      wish=str(d.get('wish',''))[:6],quality_level=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
                                       watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
                                       stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),agent=str(self.headers.get('User-Agent',''))[:160])
                 return self.send({'ok':True})

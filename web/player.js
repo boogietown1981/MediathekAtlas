@@ -144,9 +144,11 @@ const GATE={start:8,seek:4,stall:5,max:15};
 function ahead(){const b=video.buffered,t=video.currentTime;for(let i=0;i<b.length;i++)if(b.start(i)<=t+1&&b.end(i)>t)return b.end(i)-Math.max(t,b.start(i));return 0;}
 function gateOff(){if(S.gate){clearInterval(S.gate.timer);S.gate=null;}}
 function gate(need){if(S.gate||!S.info||S.info.origin!=='online'||S.mode==='embed'||!S.mode||ahead()>=need)return false;
- const g=S.gate={need,until:Date.now()+GATE.max*1000,timer:0};if(S.stats)S.stats.gates=(S.stats.gates||0)+1;
+ const g=S.gate={need,until:Date.now()+GATE.max*1000,timer:0,best:0,grew:Date.now()};if(S.stats)S.stats.gates=(S.stats.gates||0)+1;
  const tick=()=>{if(S.gate!==g)return;const have=ahead();
-  if(have>=need||Date.now()>g.until||video.ended){gateOff();g.own=true;video.play().catch(()=>{});return;}
+  if(have>g.best+0.2){g.best=have;g.grew=Date.now();}
+  // enough, waited long enough, or nothing more arrives (short file, stream at its end)
+  if(have>=need||Date.now()>g.until||Date.now()-g.grew>3000||video.ended){gateOff();g.own=true;video.play().catch(()=>{});return;}
   say('Puffer wird gefüllt … '+Math.floor(have)+' von '+need+' s');};
  g.pausing=true;video.pause();g.pausing=false;g.timer=setInterval(tick,250);tick();return true;}
 function stopVideo(){gateOff();stopHls();if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}

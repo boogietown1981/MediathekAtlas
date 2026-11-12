@@ -1,13 +1,19 @@
-# MediathekAtlas · 0.5.74
+# MediathekAtlas · 0.5.76
 
-## Neu in 0.5.74: Die Seite bringt alle ihre Teile selbst mit
+## Neu in 0.5.76: Die Seite bringt alle ihre Teile selbst mit, Streams sammeln erst Puffer
 
-Enthält alles bis 0.5.73.
+Enthält alles bis 0.5.75 (YouTube-Quellen sofort eingelesen).
 
 - **Nichts geht mehr verloren:** Die Seite lädt ihre rund zwanzig Skripte nicht mehr einzeln nach, sie stecken in der Seite selbst. Bisher konnte ein einzelnes Skript ausbleiben, dann fehlte der Player, die Netzkino-Wiedergabe („Cannot read properties of undefined (reading 'play')“) oder ein Plattform-Reiter. Das ist unabhängig vom Browser.
-- **Wiedergabe-Statistik:** Ein Fehler beim Schreiben der Statistik in die Diagnose ist behoben; seit 0.5.66 fehlten diese Zeilen.
+- **Flüssigere Wiedergabe:** Online-Streams sammeln erst einen Vorrat, bevor sie laufen: 8 Sekunden beim Start, 4 nach dem Spulen, 5 nach jedem Stocken. Der Player zeigt dabei „Puffer wird gefüllt … 3 von 8 s“. Länger als 15 Sekunden wartet er nie, ein Klick auf Wiedergabe startet sofort.
 
 
+## Neu in 0.5.75: YouTube-Quellen sofort eingelesen, mit Fortschritt
+
+- Eine neu eingetragene Playlist, ein Kanal oder ein Video wird sofort eingelesen. Läuft gerade ein Abruf, kommt sie direkt danach dran.
+- Während des Abrufs steht im YouTube-Bereich und auf der Plattformkarte, welche Quelle gerade dran ist und wie viele Videos geprüft werden.
+- Die Plattformkarte zeigt Musik-Playlists und Musikvideos in einer eigenen Kachel.
+- Behoben: Ein Protokollfehler konnte Wiedergabe-Statistik und Stream-Ende abbrechen.
 ## Neu in 0.5.73: Alle Teile der Seite kommen an
 
 Enthält alles bis 0.5.72.

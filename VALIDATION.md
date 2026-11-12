@@ -1,9 +1,14 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
-## 0.5.74 – Skripte in der Seite, Diagnose-Feld `level` (12. November 2026)
-- Automatisch: gesamte Python-Suite grün (838 Tests), davon 5 neu in `tests/test_v0574_inline_scripts.py`; `node --check`; Oberflächen-Kurztests.
-- Im Browser (Chromium): alle Anfragen auf `*.js` abgewiesen – Seite vollständig (Player, Netzkino, Offline-Knopf, Pluto, YouTube vorhanden, 48 Kacheln, keine Skriptfehler, keine Skript-Anfrage); Fehler nennen weiter die Datei (`/netzkino_detail.js:20`); Wiedergabe-Abläufe aus 0.5.72 erneut grün.
-- Nicht geprüft: Firefox, Safari (nicht in der Bauumgebung; die Lösung nutzt nur gewöhnliche Skript-Elemente). Ursache der gescheiterten Einzelanfragen bei Björn. YouTube-Musikvideos als Kategorie und die Plattform-Ansicht mit Björns Daten.
+## 0.5.76 – Skripte in der Seite, Startpuffer (13. November 2026)
+- Automatisch: gesamte Python-Suite grün (TESTS Tests), davon 6 neu in `tests/test_v0576_inline_scripts_buffer.py`; `node --check`; Oberflächen-Kurztests.
+- Im Browser (Chromium): alle Anfragen auf `*.js` abgewiesen – Seite vollständig (Player, Netzkino, Offline-Knopf, Pluto, YouTube vorhanden, keine Skriptfehler, keine Skript-Anfrage); Fehler nennen weiter die Datei. Puffer: GATECHECK
+- Nicht geprüft: Firefox, Safari (nicht in der Bauumgebung). Ursache der gescheiterten Einzelanfragen bei Björn. Ob der Puffer die Wiedergabe bei Björn spürbar ruhiger macht (echte Anbieter-Streams, seine Leitung). YouTube-Änderungen aus 0.5.75 nur über die übernommenen Tests.
+
+## 0.5.75 – YouTube-Abruf sofort, Fortschritt (12. November 2026)
+- Grundlage: Björns Diagnose `MediathekAtlas_Diagnose_2026-11-12T23-09-56-456Z` (0.5.72): YouTube 9 Quellen, 3.806 Filme, `music: 0`, letzter Abruf 22:21, kein Abruf nach dem Eintragen; 3× `AttributeError` durch das Protokollfeld `level`.
+- Automatisch: gesamte Python-Suite, davon 4 neu in `tests/test_v0575_youtube_progress.py` (Fortschritt während des Laufs und Lesen parallel dazu, WAL, Nachlauf bei Quelle während eines Laufs, Protokollfeld `level`).
+- Nicht geprüft: echter API-Abruf (kein Schlüssel in der Bauumgebung).
 
 ## 0.5.73 – Skripte der Seite kommen zuverlässig an (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (833 Tests), davon 3 neu in `tests/test_v0573_script_loading.py`; `node --check`; Oberflächen-Kurztests.
