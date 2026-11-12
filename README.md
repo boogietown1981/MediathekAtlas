@@ -1,4 +1,42 @@
-# MediathekAtlas · 0.5.25.1
+# MediathekAtlas · 0.5.40
+
+## Neu in 0.5.40: JustWatch TV
+
+- Plattformen → JustWatch TV: die kostenlosen eigenen Filme und Serien von JustWatch TV (ohne Plus, Leihtitel oder andere Dienste), mit Kategorien, Bewertung, Details, im Katalog unter „JustWatch TV“ und „Gesamt“.
+- Titel, die JustWatch für externe Player freigibt, laufen im MediathekAtlas-Player und lassen sich 30 Tage offline speichern. Alle anderen öffnen die offizielle JustWatch-Seite. Kopiergeschützte (DRM-)Streams werden weder abgespielt noch gespeichert.
+
+## Neu in 0.5.39: Genres und „Großes Kino“ wieder im Katalog
+
+- Über den Katalogkarten stehen wieder die Mediathek-Genres mit Anzahl (Filme bzw. Serien), für Netzkino und Pluto TV deren Kategorien in derselben Leiste.
+- „Entdecken“ mit „Großes Kino“ und „Serienfavoriten“ direkt im Katalog, für alle Quellen. Die klassische Ansicht mit Genre-Baum bleibt unter „Klassische Katalogansicht …“ erhalten.
+
+## Neu in 0.5.38: Kategorien, Bewertungen und Details für Netzkino und Pluto TV
+
+- Netzkino und Pluto TV zeigen Kategorien wie der Mediathek-Katalog (Genres aus IMDb, TVDB, TMDB; sonst die Angabe des Anbieters) mit Anzahl, dazu die IMDb-/TMDB-Bewertung und eine Sortierung nach Bewertung.
+- Pluto TV hat eine Detailansicht (Cover, Inhalt, Kategorien, Referenzen, Ansehen, Offline speichern) und steht im Katalog unter „Pluto TV“ sowie im „Gesamt“-Katalog. Die Plattformübersicht zeigt Netzkino und Pluto mit Katalog, Abgleich und Offline-Kopien.
+- Downloads von Netzkino und Pluto werden vor dem Einreihen mit IMDb/TVDB/TMDB abgeglichen und erhalten Genres, Besetzung, Cover/Hintergrund, IMDb-/TVDB-ID und Bewertung wie ARD-/ZDF-Downloads.
+- Pluto TV: Offline-Frist 30 Tage (statt 20).
+
+## Neu in 0.5.37: Pluto TV offline
+
+- Pluto-Filme und -Folgen lassen sich mit „⬇ Offline speichern“ herunterladen. Sie laufen durch dieselbe Download-Warteschlange wie Mediathek- und Netzkino-Videos (gleiche Ordner und Namen, MKV mit NFO und metadata.json) und werden nach Ablauf der Frist automatisch entfernt. Die Datei enthält die Werbung, die Pluto ausliefert. Live-Sender sind nicht speicherbar.
+
+## Neu in 0.5.36: Pluto TV
+
+- Plattformen → Pluto TV: Filme, Serien und Live-Sender von Pluto TV laden („↻ Katalog jetzt laden“) und direkt im MediathekAtlas-Player ansehen, mit Werbung wie beim Anbieter. Keine Anmeldung.
+
+
+## Neu in 0.5.34: Netzkino direkt abspielen
+
+- „▶ Ansehen“ spielt Netzkino-Filme im eingebauten MediathekAtlas-Player ab, genau wie Mediathek-Videos (auch auf Synology/QNAP). Eine Offlinekopie hat Vorrang, sonst ermittelt ytdl-nightly die MP4-Datei.
+- Netzkino bietet keine vollständige Titelliste an. Ab 0.5.35 liest der Katalogabgleich den Netzkino-Kategoriebaum (Genres, Themenkino, Partnerkataloge) mit vollständigen Kategorielisten statt nur der Startseiten-Auszüge. Zusätzlich lernt er Kategorien aus Filmdetails und optional aus einem Netzwerk-Mitschnitt (HAR): Plattformen → Netzkino → „Weitere Titel aus einem Netzkino-Mitschnitt übernehmen“.
+
+## 0.5.32: Netzkino offline ansehen
+
+- Netzkino-Titel lassen sich im Detailfenster mit **„Offline herunterladen (30 Tage)“** laden. Gespeichert wird genau wie bei Mediathek-Videos (gleiche Ordner, Dateinamen, MKV, NFO, Cover).
+- Nach 30 Tagen entfernt MediathekAtlas die Datei automatisch; die Restlaufzeit steht im Detailfenster und in der Downloadliste.
+- Die Dateiadresse ermittelt das mitgelieferte ytdl-nightly. Aktualisieren: `python3 tools/update_ytdl_nightly.py` (Entwickler) oder testweise `MEDIATHEKATLAS_YTDL_DIR=/pfad/zu/ytdl-nightly`.
+- DRM-geschützte Titel werden nicht geladen. Netzkino liefert nur innerhalb Deutschlands aus.
 
 ## 0.5.25.1 – Verbund wiederherstellen und IMDb-Offline-Download absichern
 

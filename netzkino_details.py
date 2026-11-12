@@ -176,8 +176,15 @@ def get(root,item_id,*,fetch=None,now=None):
                 if now-cached['checked']<TTL_SECONDS:
                     return {'details':fallback,'page_url':row['url'],'cached':True,'error_type':None}
         content_id=row['content_id']
-        if not content_id:return {'details':fallback,'page_url':row['url'],
-                                   'cached':bool(cached),'error_type':'no_provider_content_id'}
+        # Sitemap-only titles (0.5.32) have no GraphQL id yet: the website itself
+        # requests MovieDetails by the page slug, so use that and learn the id.
+        by_slug=False
+        if not content_id:
+            slug=urllib.parse.unquote(urllib.parse.urlsplit(row['url']).path.rsplit('/',1)[-1])
+            if not re.fullmatch(r'[A-Za-z0-9._~-]{2,150}',slug):
+                return {'details':fallback,'page_url':row['url'],
+                        'cached':bool(cached),'error_type':'no_provider_content_id'}
+            content_id=slug;by_slug=True
         delay=db.execute('SELECT next_attempt,reason FROM netzkino_detail_failures WHERE item_id=?',(item_id,)).fetchone()
         if delay and now<delay['next_attempt']:
             return {'details':fallback,'page_url':row['url'],'cached':bool(cached),
@@ -189,7 +196,7 @@ def get(root,item_id,*,fetch=None,now=None):
             if not isinstance(payload,dict):raise ValueError('Netzkino antwortet ohne Filmdetails')
             movie=payload.get('movie') or payload.get('series')
             detail=normalize(movie)
-            if detail['content_id']!=content_id:
+            if not by_slug and detail['content_id']!=content_id:
                 raise ValueError('Netzkino-Filmkennung stimmt nicht mit Katalog überein')
             # Preserve an existing known title when MovieDetails is absent/empty.
             detail['title']=detail['title'] or row['title']
@@ -199,6 +206,19 @@ def get(root,item_id,*,fetch=None,now=None):
                     payload=excluded.payload,checked=excluded.checked''',
                     (item_id,json.dumps(detail,ensure_ascii=False),now))
                 db.execute('DELETE FROM netzkino_detail_failures WHERE item_id=?',(item_id,))
+                # Related titles in the answer extend the catalogue beyond the frontpage
+                # categories (the automatic enrichment visits every title over time).
+                try:
+                    netzkino.add_discovered(db,payload,now)
+                    netzkino.remember_categories(db,payload)
+                except (sqlite3.Error,ValueError,TypeError):pass
+                if by_slug:
+                    db.execute("""UPDATE netzkino_catalog SET content_id=?,
+                        year=COALESCE(year,?),duration=COALESCE(duration,?),
+                        poster=CASE WHEN COALESCE(poster,'')='' THEN ? ELSE poster END,
+                        fsk=COALESCE(fsk,?) WHERE id=? AND COALESCE(content_id,'')=''""",
+                        (detail['content_id'],detail['year'],detail['duration_seconds'],
+                         detail['poster'] or '',detail['fsk'],item_id))
             return {'details':{**fallback,**detail},'page_url':row['url'],
                     'cached':False,'error_type':None}
         except Exception as exc:

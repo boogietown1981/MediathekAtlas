@@ -1,62 +1,81 @@
-/* Rights-first Netzkino download management. This does NOT extract Netzkino streams. */
+/* Netzkino offline downloads (0.5.32): one shared download queue with the
+   Mediathek videos; ytdl-nightly resolves the file, 30 days offline use. */
 (() => {
   'use strict';
   const $=id=>document.getElementById(id);
   const elt=(tag,label,cls)=>{const n=document.createElement(tag);if(label!==undefined)n.textContent=label;if(cls)n.className=cls;return n;};
-  const fmt=n=>Number.isFinite(Number(n))?(Number(n)/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB':'–';
-  const labels={queued:'Vorgemerkt',running:'Lädt',paused:'Pausiert',complete:'Fertig',error:'Fehler',cancelled:'Abgebrochen'};
+  const mib=n=>(Number(n||0)/1048576).toLocaleString('de-DE',{maximumFractionDigits:1})+' MiB';
+  const labels={queued:'Vorgemerkt',downloading:'Lädt',tagging:'MKV wird erstellt',done:'Offline verfügbar',error:'Fehler',
+    cancelled:'Abgebrochen',interrupted:'Unterbrochen',expired:'Abgelaufen und entfernt',removed:'Gelöscht'};
+  const date=ts=>new Date(ts*1000).toLocaleDateString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric'});
   let current=null,serial=0,timer=null;
+  const status=text=>{const s=$('atlas-nk-download-status');if(s)s.textContent=text;};
+  function actionButton(label,job,action,expected){
+    const b=elt('button',label);b.type='button';
+    b.onclick=async()=>{
+      b.disabled=true;
+      try{await window.api('netzkino-download-action',{id:job.id,action});await refresh(expected);}
+      catch(e){status(e.message);}
+      finally{b.disabled=false;}
+    };
+    return b;
+  }
   async function refresh(expected){
-    const result=await window.api('netzkino-downloads');
+    const result=await window.api('netzkino-downloads?id='+encodeURIComponent(expected));
     if(current!==expected)return;
     const host=$('atlas-nk-download-jobs');if(!host)return;
     host.replaceChildren();
-    const rows=(result.items||[]).filter(r=>r.netzkino_id===expected);
-    if(!rows.length){host.append(elt('p','Keine berechtigten Datei-Downloads für diesen Titel.','muted'));return;}
-    for(const r of rows){
-      const row=elt('div',undefined,'nk-licensed-job');
-      const title=elt('strong',(labels[r.state]||r.state)+' · '+r.target_name);
-      row.append(title);
-      row.append(elt('small',r.bytes_total?fmt(r.bytes_done)+' / '+fmt(r.bytes_total):fmt(r.bytes_done)));
-      if(r.bytes_total){const progress=elt('progress');progress.max=r.bytes_total;progress.value=r.bytes_done;row.append(progress);}
-      if(r.error_code)row.append(elt('small','Fehler: '+r.error_code,'nk-warning'));
-      const mode=r.state==='paused'||r.state==='error'?'resume':['running','queued'].includes(r.state)?'pause':null;
-      if(mode){
-        const btn=elt('button',mode==='pause'?'Pausieren':'Fortsetzen');btn.type='button';
-        btn.onclick=async()=>{
-          btn.disabled=true;
-          try{await window.api('netzkino-download-action',{id:r.id,action:mode});await refresh(expected);}
-          catch(e){$('atlas-nk-download-status').textContent=e.message;}
-          finally{btn.disabled=false;}
-        };
-        row.append(btn);
+    const add=$('atlas-nk-offline-add');
+    if(add){
+      const ytdl=result.ytdl||{};
+      const active=(result.items||[]).some(r=>['queued','downloading','tagging','done'].includes(r.state)&&r.license==='netzkino_offline');
+      add.disabled=active||ytdl.ok===false;
+      add.title=ytdl.ok===false?'ytdl-nightly fehlt in dieser Installation':active?'Bereits eingereiht oder offline verfügbar':'';
+    }
+    for(const r of result.items||[]){
+      const row=elt('div',undefined,'nk-licensed-job nk-offline-job nk-offline-'+r.state);
+      row.append(elt('strong',(labels[r.state]||r.state)+' · '+r.target_name));
+      if(r.state==='downloading'){
+        const p=elt('progress');p.max=r.total||1;if(r.total)p.value=r.received||0;row.append(p);
+        row.append(elt('small',mib(r.received)+(r.total?' / '+mib(r.total):'')));
       }
-      if(['queued','running','paused','error'].includes(r.state)) {
-        const cancel=elt('button','Abbrechen');cancel.type='button';
-        cancel.onclick=async()=>{
-          cancel.disabled=true;
-          try{await window.api('netzkino-download-action',{id:r.id,action:'cancel'});await refresh(expected);}
-          catch(e){$('atlas-nk-download-status').textContent=e.message;}
-          finally{cancel.disabled=false;}
-        };
-        row.append(cancel);
+      if(r.state==='done'&&r.offline_until)
+        row.append(elt('small','Offline nutzbar bis '+date(r.offline_until)+' · noch '+r.days_left+(r.days_left===1?' Tag':' Tage'),r.days_left<=3?'nk-warning':'muted'));
+      if(r.state==='done'&&r.license==='licensed_file')row.append(elt('small','Eigene Lizenzdatei · kein Ablauf','muted'));
+      if(r.error)row.append(elt('small','Fehler: '+r.error,'nk-warning'));
+      if(['queued','downloading','tagging'].includes(r.state))row.append(actionButton('Abbrechen',r,'cancel',expected));
+      if(['error','cancelled','interrupted'].includes(r.state)){
+        const retry=elt('button','Erneut versuchen');retry.type='button';
+        retry.onclick=async()=>{retry.disabled=true;try{await window.api('retry',{id:r.id});await refresh(expected);}catch(e){status(e.message);}finally{retry.disabled=false;}};
+        row.append(retry);
       }
+      if(r.state==='done')row.append(actionButton('Jetzt löschen',r,'delete',expected));
       host.append(row);
     }
   }
   async function mount(itemId){
     current=itemId;const call=++serial;
     if(timer)clearInterval(timer);
-    const panel=$('atlas-nk-downloads');const form=$('atlas-nk-download-form');
-    if(!panel||!form)return;
-    panel.open=false;
-    form.reset();
-    $('atlas-nk-download-status').textContent='Nur mit gesonderter Erlaubnis zum Datei-Download. Netzkino-Streaming/Plus allein berechtigt nicht dazu.';
-    form.onsubmit=async e=>{
+    const panel=$('atlas-nk-downloads');const form=$('atlas-nk-download-form');const add=$('atlas-nk-offline-add');
+    if(panel)panel.open=false;
+    if(form)form.reset();
+    status('Netzkino-Titel dürfen heruntergeladen und 30 Tage offline genutzt werden. Danach entfernt MediathekAtlas die Datei automatisch.');
+    if(add)add.onclick=async()=>{
+      if(current!==itemId)return;
+      add.disabled=true;status('Titel wird in die Download-Warteschlange aufgenommen …');
+      try{
+        const result=await window.api('netzkino-download-add',{id:itemId});
+        if(call!==serial)return;
+        status(result.created?'Eingereiht. Gespeichert wird wie bei Mediathek-Videos: '+String(result.target||'').split(/[\\/]/).slice(-2).join('/'):
+          'Dieser Titel ist bereits eingereiht oder offline verfügbar.');
+        await refresh(itemId);
+      }catch(e){if(call===serial){status('Kein Download gestartet: '+e.message);add.disabled=false;}}
+    };
+    if(form)form.onsubmit=async e=>{
       e.preventDefault();
       if(current!==itemId||!form.reportValidity())return;
       const submit=form.querySelector('button[type="submit"]');submit.disabled=true;
-      $('atlas-nk-download-status').textContent='Berechtigung und Datei-Link werden geprüft …';
+      status('Berechtigung und Datei-Link werden geprüft …');
       try{
         const result=await window.api('netzkino-download-add',{
           id:itemId,
@@ -66,16 +85,14 @@
           confirmed:$('atlas-nk-download-confirm').checked
         });
         if(call!==serial)return;
-        $('atlas-nk-download-status').textContent=result.created?
-          'Lizenzierte Datei in die separate Downloadwarteschlange aufgenommen.':'Diese Datei ist bereits vorgemerkt.';
+        status(result.created?'Lizenzierte Datei in die Download-Warteschlange aufgenommen.':'Diese Datei ist bereits vorgemerkt.');
         form.reset();await refresh(itemId);
-      }catch(e){if(call===serial)$('atlas-nk-download-status').textContent='Kein Download gestartet: '+e.message;}
+      }catch(e){if(call===serial)status('Kein Download gestartet: '+e.message);}
       finally{submit.disabled=false;}
     };
-    try{await refresh(itemId);}catch(e){if(call===serial)$('atlas-nk-download-status').textContent='Downloadstatus nicht verfügbar: '+e.message;}
+    try{await refresh(itemId);}catch(e){if(call===serial)status('Downloadstatus nicht verfügbar: '+e.message);}
     timer=setInterval(()=>{
-      if(current===itemId && $('atlas-netzkino-detail')?.open && panel.open)
-        refresh(itemId).catch(()=>{});
+      if(current===itemId && $('atlas-netzkino-detail')?.open)refresh(itemId).catch(()=>{});
     },3000);
   }
   $('atlas-nk-close')?.addEventListener('click',()=>{current=null;serial++;if(timer)clearInterval(timer);timer=null;});

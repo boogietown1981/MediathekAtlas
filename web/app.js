@@ -228,7 +228,7 @@ function catalogProgress(c){
      ['Fehler & Wiederholungen', ['retry']]
    ];
    for(const [name,kinds] of groupSpec){
-     const group=el('section',undefined,'atlas-worker-group');
+     const group=el('section',undefined,'atlas-worker-group');group.dataset.group=String(groupSpec.findIndex(g=>g[0]===name));
      group.append(el('h4',name));
      for(const [kind,label] of chips.filter(([id])=>kinds.includes(id))){
        const item=el('span',label,'atlas-worker-chip');
@@ -261,7 +261,7 @@ $('preview-button').onclick=e=>busy(e.target,async()=>{$('preview').textContent=
 $('metadata').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('download',{id:active.id,metadata:readMeta(),quality:$('quality').value,confirmed:$('confirmed').checked});$('editor').close();notice('Download hinzugefügt. Fortschritt unter Downloads.');await refresh();});};
 $('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked,metadata_workers:Number($('metadata_workers').value),episode_workers:Number($('episode_workers').value),sender_direct_lookup:$('sender_direct_lookup').checked,library_dirs:$('library_dirs').value});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value='';notice('Einstellungen gespeichert.');await refresh();});};
 $('clear-keys').onclick=e=>busy(e.target,async()=>{await api('settings',{clear_tmdb:true,clear_omdb:true,clear_tvdb:true,clear_tvdb_pin:true});await refresh();});
-const labels={queued:'Wartet',downloading:'Wird heruntergeladen',tagging:'Spuren prüfen & Metadaten einbetten',done:'Fertig',error:'Fehler',cancelled:'Abgebrochen',interrupted:'Durch Neustart unterbrochen',remote:'Auf anderem System'};
+const labels={queued:'Wartet',downloading:'Wird heruntergeladen',tagging:'Spuren prüfen & Metadaten einbetten',done:'Fertig',error:'Fehler',cancelled:'Abgebrochen',interrupted:'Durch Neustart unterbrochen',remote:'Auf anderem System',expired:'Offline-Zeitraum abgelaufen · Datei entfernt',removed:'Offline-Kopie gelöscht'};
 function renderRuntime(r){const host=$('runtime-details');host.replaceChildren();for(const k of ['python','ffmpeg','ffprobe']){const t=r[k],box=el('div',undefined,'runtime-item');box.append(el('strong',k+' · '+(t.ok?'Bereit':t.error)),el('p',t.path||'Kein verwendbarer Pfad'),el('small',t.version||''));if(t.failed_candidates?.length)box.append(el('p','Nicht startbar: '+t.failed_candidates.map(x=>x.path).join(', ')));host.append(box);}}
 $('recheck-tools').onclick=e=>busy(e.target,async()=>renderRuntime(await api('tools')));
 let refreshing=false,appStopped=false;
@@ -505,6 +505,7 @@ const body=el('div',undefined,'cardbody'),episode=m.kind==='series'&&Number.isIn
 const heading=el('h3',(m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;
 body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading);if(episode)body.append(el('p',episode,'episode-heading'));
 body.append(el('p',(j.state==='done'?(j.file_state==='missing'?'⚠ ':'✓ '):j.state==='error'?'⚠ ':'◌ ')+(j.state==='done'&&j.file_state==='missing'?'Datei verschoben / derzeit nicht erreichbar':(labels[j.state]||j.state))+(m.provider?' · '+m.provider:''),'badge'));
+if(j.state==='done'&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));body.append(el('small',({pluto:'Pluto TV',justwatch:'JustWatch TV'}[j.origin]||'Netzkino')+' offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage')+'; danach automatische Entfernung',left<=3?'atlas-current-warning':'muted'));}
 if(j.state==='downloading'){const p=el('progress');p.max=j.total||1;if(j.total)p.value=j.received||0;body.append(p,el('small',((j.received||0)/1048576).toFixed(1)+' MiB'+(j.total?' / '+(j.total/1048576).toFixed(1)+' MiB':'')+' · '+(Number(j.speed)>0?(j.speed/1048576).toFixed(1)+' MiB/s':'Geschwindigkeit wird ermittelt')+(Number.isFinite(j.eta)?' · ca. '+Math.ceil(j.eta/60)+' Min.':'')));}
 if(j.error||j.note)body.append(el('small',j.error||j.note,'job-note'));
 const details=el('details',undefined,'file-details');details.open=openJobDetails.has(j.id);details.ontoggle=()=>details.open?openJobDetails.add(j.id):openJobDetails.delete(j.id);details.append(el('summary',j.state==='done'&&j.size_bytes?'Datei & Qualität · '+(j.size_bytes/1048576).toFixed(0)+' MiB':'Datei & Speicherort'));
@@ -531,7 +532,7 @@ if(j.state==='done'&&j.file_state==='missing'){
  });
  actions.append(search,bind);missing.append(input,actions);body.append(missing);
 }
-if(j.state==='done'&&j.file_state!=='missing'){const save=el('a','Herunterladen','button-link primary');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Datei über den Browser auf dieses Gerät laden';body.append(save);
+if(j.state==='done'&&j.file_state!=='missing'){const save=el('a','Herunterladen','button-link primary');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Datei über den Browser auf dieses Gerät laden';body.append(save);if(j.license?.kind==='netzkino_offline')save.hidden=true;
  if(!server.network){const b=el('button','Filmdatei öffnen');b.onclick=()=>busy(b,async()=>{await api('open-download',{id:j.id});});body.append(b);}
  const play=el('button','▶ Abspielen','play-button');play.title='Im Browser abspielen';play.onclick=()=>playJob(j);body.insertBefore(play,save);}
 const action=['error','cancelled','interrupted','remote'].includes(j.state)?'retry':['queued','downloading','tagging'].includes(j.state)?'cancel':null;if(action){const b=el('button',action==='retry'?'Erneut versuchen':'Abbrechen');b.onclick=()=>busy(b,async()=>{await api(action,{id:j.id});await refresh();});body.append(b);}
@@ -738,6 +739,8 @@ function portalView(name){
   portalOffset=0;loadPortals();
   if(name==='archive')loadArchiveCompanion();
   if(name==='netzkino')window.MediathekAtlasNetzkino?.refresh?.();
+  if(name==='pluto')window.MediathekAtlasPluto?.refresh?.();
+  if(name==='justwatch')window.MediathekAtlasJustWatch?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);
@@ -752,13 +755,26 @@ function displayPortalControls(data){
   summary.append(el('strong','Aktive externe Scanner: '+(control.active_platforms||0)+' / maximal '+control.max_active_platforms));
   summary.append(el('small','Der deutsche Mediathek-Katalog ist unabhängig. Nur tatsächlich angeschlossene Plattformen zählen.'));
   cards.append(summary);
-  for(const p of control.platforms||[]){
+  // Netzkino/Pluto have their own cards below (catalogue, IMDb/TVDB check, offline copies).
+  for(const p of (control.platforms||[]).filter(x=>!(data.film_platforms||[]).some(f=>f.source===x.source))){
     const card=el('article',undefined,'platform-stat');
     card.append(el('strong',p.name+' · '+(p.enabled?'Aktiv':p.can_scan?'Pausiert':'Manuell')));
     card.append(el('small',p.can_scan?'Konfigurierte Metadaten-Worker: '+p.workers:'Externer Portal-Scanner nicht verfügbar; Netzkino-GraphQL-Abgleich über den Netzkino-Reiter'));
     const queues=p.queues||{};
     card.append(el('small','Scanbereiche · wartend: '+(queues.queued||0)+
       ' · laufend: '+(queues.running||0)+' · abgeschlossen: '+(queues.complete||0)));
+    cards.append(card);
+  }
+  for(const p of data.film_platforms||[]){
+    const card=el('article',undefined,'platform-stat platform-stat-'+p.source);
+    const phase=p.running?'Abgleich läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise':p.last_result==='failed'?'Fehlgeschlagen':'Noch nicht geladen';
+    card.append(el('strong',p.name+' · '+phase));
+    card.append(el('small',countLabel(p.titles||0)+' Filme & Serien'+(p.channels?' · '+p.channels+' Live-Sender':'')+(p.playable!==undefined?' · '+(p.playable||0)+' im Player abspielbar':'')+(p.last_success?' · Stand '+new Date(p.last_success*1000).toLocaleString('de-DE'):'')));
+    const ref=p.reference||{},by=ref.by_status||{};
+    card.append(el('small','IMDb/TVDB-Abgleich: '+(ref.checked||0)+' geprüft · '+(by.candidate||0)+' eindeutig · '+(by.review||0)+' zu prüfen'));
+    const off=p.offline||{};
+    card.append(el('small','Offline ('+p.offline_days+' Tage): '+(off.done||0)+' verfügbar · '+((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+off.error+' Fehler':'')));
+    const open=el('button','Öffnen');open.type='button';open.onclick=()=>portalView(p.source);card.append(open);
     cards.append(card);
   }
   const archive=(control.platforms||[]).find(p=>p.source==='internet_archive');

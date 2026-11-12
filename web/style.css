@@ -498,9 +498,11 @@ dialog.player::backdrop{background:#000c}
 #atlas-nk-evidence,#atlas-nk-validation {font-size:12px;color:#a3bbc6;line-height:1.5;margin:12px 0}
 #atlas-nk-validation .nk-warning {color:#ffb78e}
 @media(max-width:680px){.nk-detail-layout{grid-template-columns:1fr}.nk-detail-layout>img{max-height:220px}.nk-detail-field{grid-template-columns:1fr}}
-#portals #pluto-info {display:none}
-#portals[data-platform="pluto"] > :not(.platform-tabs):not(#pluto-info) {display:none!important}
-#portals[data-platform="pluto"] #pluto-info {display:block!important}
+#portals #pluto, #portals #justwatch {display:none}
+#portals[data-platform="justwatch"] > :not(.platform-tabs):not(#justwatch) {display:none!important}
+#portals[data-platform="justwatch"] > #justwatch {display:block!important}
+#portals[data-platform="pluto"] > :not(.platform-tabs):not(#pluto) {display:none!important}
+#portals[data-platform="pluto"] > #pluto {display:block!important}
 
 .atlas-cross-pager{display:flex;align-items:center;justify-content:flex-end;gap:11px;margin-top:12px}
 
@@ -633,3 +635,40 @@ dialog.player::backdrop{background:#000c}
 @media(max-width:900px){#atlas-main-dashboard .atlas-status-bottom{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:660px){#atlas-main-dashboard #metadata-workers-status{grid-template-columns:1fr}#atlas-main-dashboard .atlas-worker-group{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:440px){#atlas-main-dashboard .atlas-worker-group{grid-template-columns:1fr}}
+
+/* 0.5.32 Netzkino offline downloads */
+.nk-offline{border:1px solid #3b4b54;border-radius:10px;padding:12px;margin:12px 0;display:grid;gap:8px}
+.nk-offline-head{display:flex;flex-wrap:wrap;align-items:center;justify-content:space-between;gap:8px}
+.nk-offline-head h3{margin:0;font-size:1rem}
+#atlas-nk-download-jobs{display:grid;gap:8px}
+#atlas-nk-download-jobs .nk-offline-job button{justify-self:start}
+#atlas-nk-download-jobs .nk-warning{color:#ffb78e}
+
+/* 0.5.32 dashboard layout: groups sized by content, no stretched empty boxes */
+#atlas-main-dashboard .atlas-status-bottom{align-items:start}
+#atlas-main-dashboard .atlas-status-panel{min-height:0}
+#atlas-main-dashboard #metadata-workers-status{grid-template-columns:repeat(6,minmax(0,1fr));align-items:start}
+#atlas-main-dashboard .atlas-worker-group{grid-template-columns:minmax(0,1fr)}
+#atlas-main-dashboard .atlas-worker-group[data-group="2"]{grid-column:span 3;grid-template-columns:repeat(3,minmax(0,1fr))}
+#atlas-main-dashboard .atlas-worker-group .atlas-worker-chip{min-height:0}
+@media(max-width:1450px){#atlas-main-dashboard #metadata-workers-status{grid-template-columns:repeat(3,minmax(0,1fr))}#atlas-main-dashboard .atlas-worker-group[data-group="2"]{grid-column:1/-1;grid-template-columns:repeat(3,minmax(0,1fr))}}
+@media(max-width:900px){#atlas-main-dashboard #metadata-workers-status{grid-template-columns:repeat(2,minmax(0,1fr))}#atlas-main-dashboard .atlas-worker-group[data-group="2"]{grid-template-columns:repeat(2,minmax(0,1fr))}}
+@media(max-width:560px){#atlas-main-dashboard #metadata-workers-status{grid-template-columns:1fr}#atlas-main-dashboard .atlas-worker-group[data-group="2"]{grid-template-columns:1fr}}
+@media(max-width:1450px) and (min-width:1000px){#atlas-main-dashboard .atlas-status-grid{grid-template-columns:repeat(5,minmax(0,1fr))}}
+@media(max-width:1450px){#atlas-main-dashboard .atlas-status-bottom{grid-template-columns:minmax(0,1fr)}#atlas-main-dashboard .atlas-worker-group[data-group="2"]{order:1}#atlas-main-dashboard .atlas-worker-hint{order:2}}
+
+/* Pluto TV (0.5.36): own catalogue view inside "Plattformen" */
+.pluto-item .pluto-meta{display:block;color:var(--muted,#8a8f98);font-size:.85em}
+.pluto-item img.netzkino-poster.pluto-logo{object-fit:contain;background:#111;padding:8px}
+#justwatch-offline-jobs .nk-offline-job{display:grid;gap:4px;padding:8px 0;border-top:1px solid #2c3840}
+#justwatch-offline-jobs .nk-offline-job button{justify-self:start}
+.justwatch-panel a.button{display:inline-block;padding:6px 12px;border-radius:8px;border:1px solid #3a4a55;text-decoration:none;color:inherit}
+#pluto-offline-jobs .nk-offline-job{display:grid;gap:4px;padding:8px 0;border-top:1px solid #2c3840}
+#pluto-offline-jobs .nk-offline-job button{justify-self:start}
+.pluto-item .nk-warning,#pluto-offline-jobs .nk-warning{color:#ffb78e}
+.pluto-item .pluto-offline-state{display:block;font-size:.85em}
+.portal-categories{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px}
+.portal-categories strong{margin-right:4px}
+.portal-categories .portal-category{padding:4px 10px;font-size:.88em;border-radius:999px}
+.portal-rating{display:inline-block;font-weight:600;color:#f5c451;font-size:.9em}
+.portal-category-line{display:block;color:var(--muted,#8a8f98);font-size:.85em}

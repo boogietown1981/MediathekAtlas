@@ -24,19 +24,44 @@ from pathlib import Path
 _HOSTS = frozenset(('netzkino.de', 'www.netzkino.de'))
 _ID_RE = re.compile(r'^[a-f0-9]{32}$')
 _MAX_SITEMAP = 8 * 1024 * 1024
-_MAX_SITEMAPS = 4
+_MAX_SITEMAPS = 40
 _MAX_ITEMS = 12000
 _CATALOG_URL = 'https://www.netzkino.de/api/sitemap'
+# Full-catalogue completion: the GraphQL frontpage only lists curated rows
+# (~450 of 2.500+ titles). Standard Next.js sitemap locations, tried in order.
+_SITEMAP_CANDIDATES = ('https://www.netzkino.de/sitemap.xml',
+                       'https://www.netzkino.de/sitemap-index.xml',
+                       _CATALOG_URL)
 _GRAPHQL_URL = 'https://data.netzkino.de/netzkino/graphql'
 _QUERY_HASHES = {
     'AllContent':'51eb32b81108d564d20969692d53311885bc80b2d1a7041ce5cba1398923caa6',
     'CategoryDataBySlug':'5e84446505b1211c3d48d08b06685d4f081e984ec35d6dddde9a57183220fea8',
     'MovieDetails':'692ee5a44d28183d6e0bf48b40343c2d231a5d1fcce5483c81f146936f00bf97',
 }
-_MAX_CATEGORIES = 40
+_MAX_CATEGORIES = 40          # frontpage subcategories taken from AllContent
+_MAX_DISCOVERED = 400         # further categories (category tree, movie details, recordings)
+# Category tree roots observed in MovieDetails answers (HAR 12.11.2026): parent.slug of the
+# categories a film belongs to. Their subcategories list the full genre/partner catalogue;
+# the frontpage only shows curated excerpts ("…-frontpage").
+_TREE_ROOTS = (('netzkino-genre','Genres'),('themenkino-genre','Themenkino'),('actionkino','Action'),
+               ('thrillerkino','Thriller'),('dramakino','Drama'),('spasskino','Komödien'),
+               ('kinderkino','Kinder'),('starkino','Starkino'),('joyn','Partnerkatalog'),
+               ('waipu','Partnerkatalog'),('funke-fantasja','Partnerkatalog'))
+# Full category lists seen in the same recording (category pages are not paginated:
+# e.g. "starkino" answered with 214 titles, the frontpage excerpt with about 20).
+_KNOWN_LISTS = (('joyn-netzkino','Netzkino (Joyn)'),('waipu-netzkino','Netzkino (waipu)'),
+                ('western','Western'),('krimi','Krimi'),('drama-dramakino','Drama'),('sozialdrama','Sozialdrama'),
+                ('schwarze-komodien','Schwarze Komödien'),('familienfilme','Familienfilme'),('halloween','Halloween'),
+                ('themenkino-top-rated-imdb','Top Rated IMDb'),
+                ('themenkino-filme-nach-wahren-begebenheiten','Filme nach wahren Begebenheiten'),
+                ('themenkino-made-in-germany-filme-aus-deutschland','Made in Germany'),
+                ('joyn-moviedome-family','Moviedome Family'),('waipu-bronco','Bronco'),('ausgezeichnet-2','Ausgezeichnet'))
+_ROOT_SLUGS = frozenset(slug for slug,_ in _TREE_ROOTS)
+_SEED_CATEGORIES = _TREE_ROOTS + _KNOWN_LISTS
+_MAX_KNOWN = 800
 _GRAPHQL_LIMIT = 4 * 1024 * 1024
 _REQUEST_GAP_SECONDS = 0.7
-_SYNC_MAX_SECONDS = 180
+_SYNC_MAX_SECONDS = 900
 
 class GraphQLCatalogError(ValueError):
     """A provider's public catalog query failed without storing raw responses."""
@@ -277,8 +302,13 @@ def state(root):
             'categories_checked':int(_get(db,'categories_checked','0')),
             'category_errors':int(_get(db,'category_errors','0')),
             'last_http_status':int(_get(db,'last_http_status','0')),
-            'catalog_scope':'Kuratierte Startseiten-Kategorien, nicht der vollständige Netzkino-Katalog',
-            'coverage_status':'startpage_only',
+            'catalog_scope':('Startseiten-Kategorien plus Netzkino-Sitemap' if int(_get(db,'sitemap_entries','0'))
+                             else 'Kuratierte Startseiten-Kategorien, nicht der vollständige Netzkino-Katalog'),
+            'coverage_status':'startpage_plus_sitemap' if int(_get(db,'sitemap_entries','0')) else 'startpage_only',
+            'sitemap_entries':int(_get(db,'sitemap_entries','0')),
+            'sitemap_new':int(_get(db,'sitemap_new','0')),
+            'sitemap_checked':float(_get(db,'sitemap_checked','0')),
+            'sitemap_errors':json.loads(_get(db,'sitemap_errors','[]')),
             'category_cap_hits':int(_get(db,'category_cap_hits','0')),
             'category_over_20':int(_get(db,'category_over_20','0')),
             'category_max_items':int(_get(db,'category_max_items','0')),
@@ -287,6 +317,15 @@ def state(root):
             'last_result':_get(db,'last_result','never'),
             'last_complete_success':float(_get(db,'last_complete_success','0')),
             'time_budget_hit':_get(db,'time_budget_hit','0')=='1',
+            'categories_discovered':int(_get(db,'categories_discovered','0')),
+            'categories_known':len(json.loads(_get(db,'known_category_slugs','[]') or '[]')),
+            'category_pagination':json.loads(_get(db,'category_pagination','{}')),
+            'category_total_max':int(_get(db,'category_total_max','0')),
+            'related_new':int(_get(db,'graphql_related_new','0')),
+            'har_import_added':int(_get(db,'har_import_new','0')),
+            'har_import_checked':float(_get(db,'har_import_checked','0')),
+            'har_operations':json.loads(_get(db,'har_operations','{}')),
+            'source_counts':{r[0]:r[1] for r in db.execute('SELECT source,count(*) FROM netzkino_catalog GROUP BY source')},
         }
     finally: db.close()
 
@@ -344,7 +383,8 @@ def _movie_from_url(raw, title=''):
     if path_parts and path_parts[0].lower() in excluded: return None
     # The public site has changed routes over time; only explicitly movie-like
     # paths are considered a catalogue item, never a guessed generic page.
-    movie_roots = {'film', 'filme', 'movie', 'movies', 'video', 'videos', 'watch'}
+    # 'details' is the current public route (netzkino.de/details/<slug>).
+    movie_roots = {'details', 'film', 'filme', 'movie', 'movies', 'video', 'videos', 'watch'}
     if not (len(path_parts) >= 2 and path_parts[0].lower() in movie_roots):
         fragment = p.fragment.lstrip('!/')
         frag_parts = [x for x in fragment.split('/') if x]
@@ -357,6 +397,9 @@ def _movie_from_url(raw, title=''):
     label = ' '.join(str(title or '').split()).strip()[:180]
     if not label:
         label = re.sub(r'[-_]+', ' ', slug).strip().title()
+    if path_parts and path_parts[0].lower() == 'details':
+        # Canonical form identical to GraphQL entries, so both sources dedupe by id.
+        url = verified_url('https://www.netzkino.de/details/' + urllib.parse.quote(slug, safe='-._~'))
     if len(label) < 2: return None
     return {'id': _key(url), 'title': label, 'url': url}
 
@@ -540,6 +583,176 @@ def _collect_nodes(content, category, output):
     return seen
 
 
+_PAGINATION_KEYS=('pageInfo','totalCount','total','hasNextPage','endCursor','nextCursor','offset','count')
+_MOVIE_TYPES=('CmsMovie','CmsSeries','CmsEpisode','Movie','Series')
+
+
+def _walk_movies(obj, category, output, depth=0):
+    """Collect film objects anywhere in a GraphQL/Next.js answer (category lists, rows,
+    related titles). Only presentation fields are read; the same validation applies."""
+    if depth>12:return 0
+    seen=0
+    if isinstance(obj,list):
+        for x in obj[:3000]:seen+=_walk_movies(x,category,output,depth+1)
+        return seen
+    if not isinstance(obj,dict):return 0
+    for key,role in (('contentMovie','movie'),('contentSeries','series')):
+        if isinstance(obj.get(key),dict):seen+=_merge(_entry_from_node(obj[key],category,kind=role),output)
+    typename=str(obj.get('__typename') or '')
+    if typename in _MOVIE_TYPES and obj.get('slug'):
+        seen+=_merge(_entry_from_node(obj,category,kind='series' if 'Series' in typename else 'movie'),output)
+    for key,value in obj.items():
+        if key in ('contentMovie','contentSeries','videoSource','licenses'):continue
+        if isinstance(value,(dict,list)):seen+=_walk_movies(value,category,output,depth+1)
+    return seen
+
+
+def _merge(item, output):
+    if not item:return 0
+    old=output.get(item['id'])
+    if old:
+        for k in ('summary','duration','poster','year','genres','fsk'):
+            if item.get(k) and not old.get(k):old[k]=item[k]
+        if not old['category']:old['category']=item['category']
+    else:output[item['id']]=item
+    return 1
+
+
+def _discover_categories(obj, depth=0, out=None):
+    """Category slugs mentioned inside an answer (subcategories, category references)."""
+    out=[] if out is None else out
+    if depth>8 or len(out)>500:return out
+    if isinstance(obj,list):
+        for x in obj[:500]:_discover_categories(x,depth+1,out)
+        return out
+    if not isinstance(obj,dict):return out
+    subs=obj.get('subcategories')
+    nodes=subs.get('nodes') if isinstance(subs,dict) else subs if isinstance(subs,list) else []
+    for cat in nodes or []:
+        if isinstance(cat,dict):_add_slug(cat,out)
+    if 'Category' in str(obj.get('__typename') or ''):_add_slug(obj,out)
+    for key,value in obj.items():
+        if key in ('contentMovie','contentSeries'):continue
+        if isinstance(value,(dict,list)):_discover_categories(value,depth+1,out)
+    return out
+
+
+def _add_slug(cat, out):
+    slug=cat.get('slug')
+    if isinstance(slug,str) and 1<=len(slug)<=140 and re.fullmatch(r'[\w.\-]+',slug):
+        out.append((slug,str(cat.get('title') or '')[:120]))
+
+
+def _pagination(content):
+    """Pagination hints of a category list, to learn whether a category has more titles."""
+    if not isinstance(content,dict):return {}
+    hints={k:content[k] for k in _PAGINATION_KEYS if k in content}
+    info=hints.get('pageInfo')
+    if isinstance(info,dict):hints['pageInfo']={k:info[k] for k in ('hasNextPage','endCursor','totalCount') if k in info}
+    return hints
+
+
+def add_discovered(db, payload, now, source='graphql_related', category=''):
+    """Insert titles found in any public answer (related titles, imported recordings).
+
+    Only new rows are added; existing GraphQL rows keep their data. Returns the count.
+    The caller owns the transaction.
+    """
+    found={}
+    _walk_movies(payload,category,found)
+    added=0
+    for item in list(found.values())[:_MAX_ITEMS]:
+        cur=db.execute('''INSERT INTO netzkino_catalog
+                (id,title,url,source,confidence,created,updated,kind,year,duration,genres,summary,poster,access_hint,category,fsk,content_id)
+                VALUES(?,?,?,?,'public_catalog_unverified',?,?,?,?,?,?,?,?,?,?,?,?)
+                ON CONFLICT DO NOTHING''',(item['id'],item['title'],item['url'],source,now,now,*_fields(item)))
+        added+=cur.rowcount if cur.rowcount and cur.rowcount>0 else 0
+    if added:
+        key=source+'_new'
+        _set(db,key,int(_get(db,key,'0'))+added)
+    return added
+
+
+_RECORDING_HOSTS=('data.netzkino.de','www.netzkino.de','netzkino.de')
+_NEXT_DATA=re.compile(r'<script[^>]+id="__NEXT_DATA__"[^>]*>(.*?)</script>',re.S)
+
+
+def import_recording(root, entries, now=None):
+    """Add titles from a browser network recording (HAR) of netzkino.de.
+
+    The browser extracts only URL and answer text of netzkino.de requests; headers,
+    cookies and tokens never leave it. Here only public film fields are read and only
+    new titles are added. The observed query names show which catalogue requests the
+    website uses (for example for "Alle anzeigen"), without storing variables or values.
+    """
+    now=time.time() if now is None else float(now)
+    if not isinstance(entries,list) or len(entries)>20000:raise ValueError('Mitschnitt nicht lesbar')
+    operations={};answers=0;ignored=0
+    db=_connect(root)
+    try:
+        with db:
+            added=0
+            for entry in entries:
+                if not isinstance(entry,dict):ignored+=1;continue
+                url=str(entry.get('url') or '')[:4000];text=entry.get('text')
+                parts=urllib.parse.urlsplit(url)
+                if parts.scheme!='https' or parts.hostname not in _RECORDING_HOSTS or not isinstance(text,str):
+                    ignored+=1;continue
+                if len(text)>_GRAPHQL_LIMIT*2:ignored+=1;continue
+                q=urllib.parse.parse_qs(parts.query)
+                op=(q.get('operationName') or [''])[0]
+                if op and re.fullmatch(r'[A-Za-z0-9_]{1,80}',op):operations[op]=operations.get(op,0)+1
+                payload=None
+                stripped=text.lstrip()
+                if stripped[:1] in '{[':
+                    try:payload=json.loads(text)
+                    except ValueError:payload=None
+                else:
+                    m=_NEXT_DATA.search(text)
+                    if m:
+                        try:payload=json.loads(m.group(1))
+                        except ValueError:payload=None
+                if payload is None:ignored+=1;continue
+                answers+=1
+                added+=add_discovered(db,payload,now,source='har_import')
+                remember_categories(db,payload)
+            total=db.execute('SELECT COUNT(*) FROM netzkino_catalog').fetchone()[0]
+            for key,value in [('har_import_checked',now),('har_import_added',added),
+                              ('har_import_answers',answers),('har_operations',json.dumps(operations,sort_keys=True)),
+                              ('catalog_total',total)]:
+                _set(db,key,value)
+    finally:db.close()
+    _notify('netzkino_recording_import',answers=answers,added=added,ignored=ignored,operations=len(operations))
+    return {'ok':True,'answers':answers,'added':added,'ignored':ignored,'total':total,
+            'operations':sorted(operations)}
+
+
+def remember_categories(db, payload):
+    """Keep category slugs seen in any answer (film details, recordings) for the next sync."""
+    found=_discover_categories(payload)
+    if not found:return 0
+    try:known=json.loads(_get(db,'known_category_slugs','[]'))
+    except ValueError:known=[]
+    if not isinstance(known,list):known=[]
+    have={k[0] for k in known if isinstance(k,list) and k}
+    added=0
+    for slug,title in found:
+        if slug not in have and len(known)<_MAX_KNOWN:
+            known.append([slug,title]);have.add(slug);added+=1
+    if added:_set(db,'known_category_slugs',json.dumps(known,ensure_ascii=False))
+    return added
+
+
+def _known_categories(root):
+    db=_connect(root)
+    try:
+        try:known=json.loads(_get(db,'known_category_slugs','[]'))
+        except ValueError:known=[]
+    finally:db.close()
+    return [(k[0],str(k[1] if len(k)>1 else '')[:120]) for k in known if isinstance(k,list) and k
+            and isinstance(k[0],str) and re.fullmatch(r'[\w.\-]{1,140}',k[0])]
+
+
 def _collect_categories(root, output):
     if not isinstance(root,dict):raise ValueError('Netzkino-Kategoriestruktur fehlt.')
     category=root.get('parentCategory') or root.get('category')
@@ -571,7 +784,7 @@ def sync_graphql(root, fetch=None, now=None):
         with db:
             for key,value in [('last_attempt',now),('categories_checked',0),
                               ('categories_total',0),('category_errors',0),
-                              ('categories_empty',0),('category_cap_hits',0),('category_over_20',0),('category_max_items',0),('category_error_types','{}'),
+                              ('categories_empty',0),('categories_discovered',0),('category_pagination','{}'),('category_total_max',0),('category_cap_hits',0),('category_over_20',0),('category_max_items',0),('category_error_types','{}'),
                               ('last_http_status',0),('last_result','running')]:
                 _set(db,key,value)
     finally:db.close()
@@ -595,12 +808,29 @@ def sync_graphql(root, fetch=None, now=None):
         try:
             with db:_set(db,'categories_total',len(cats))
         finally:db.close()
-        for slug,name in cats:
+        known={slug for slug,_ in cats};discovered=0;pagination={};total_max=0
+        # Full category lists: tree roots and categories remembered from film details/recordings.
+        for more in list(_SEED_CATEGORIES)+_known_categories(root):
+            if more[0] not in known and discovered<_MAX_DISCOVERED:
+                known.add(more[0]);cats.append(more);discovered+=1
+        index=0
+        while index<len(cats):
+            slug,name=cats[index];index+=1
             if time.monotonic()-started_mono>_SYNC_MAX_SECONDS:
                 stopped_for_budget=True
                 break
             if fetch is _fetch_graphql:time.sleep(_REQUEST_GAP_SECONDS)
             try:
+                if slug in _ROOT_SLUGS:
+                    # The category page of a tree node lists its subcategories (AllContent).
+                    try:
+                        tree=fetch('AllContent',{'parentSlug':slug,'featuredSlug':'featured-'+slug})
+                        if isinstance(tree,dict) and isinstance(tree.get('data'),dict):tree=tree['data']
+                        for more in _discover_categories(tree):
+                            if more[0] not in known and discovered<_MAX_DISCOVERED:
+                                known.add(more[0]);cats.append(more);discovered+=1
+                    except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,OSError,ValueError):pass
+                    if fetch is _fetch_graphql:time.sleep(_REQUEST_GAP_SECONDS)
                 page=fetch('CategoryDataBySlug',{'slug':slug})
                 if 'data' in page and isinstance(page['data'],dict):page=page['data']
                 if not isinstance(page,dict):raise ValueError('Ungültige Kategorieantwort')
@@ -624,6 +854,16 @@ def sync_graphql(root, fetch=None, now=None):
                     else:
                         _collect_nodes(content,name,found)
                         successful+=1
+                    # Titles outside content.nodes (rows, related lists) and further categories.
+                    _walk_movies(category,name,found)
+                    hints=_pagination(content)
+                    for key in hints:pagination[key]=pagination.get(key,0)+1
+                    for key in ('totalCount','total'):
+                        value=hints.get(key) if key in hints else (hints.get('pageInfo') or {}).get(key)
+                        if isinstance(value,int):total_max=max(total_max,value)
+                    for more in _discover_categories(category):
+                        if more[0] not in known and discovered<_MAX_DISCOVERED:
+                            known.add(more[0]);cats.append(more);discovered+=1
             except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,OSError,ValueError) as exc:
                 failures+=1
                 kind=_category_failure_type(exc)
@@ -639,6 +879,8 @@ def sync_graphql(root, fetch=None, now=None):
             try:
                 with db:
                     for key,value in [('categories_checked',checked),('category_errors',failures),
+                                      ('categories_total',len(cats)),('categories_discovered',discovered),
+                                      ('category_pagination',json.dumps(pagination,sort_keys=True)),('category_total_max',total_max),
                                       ('categories_empty',empty),('category_cap_hits',cap_hits),('category_over_20',over_20),('category_max_items',category_max),('category_error_types',json.dumps(error_types,sort_keys=True)),
                                       ('last_http_status',last_http)]:
                         _set(db,key,value)
@@ -685,7 +927,8 @@ def sync_graphql(root, fetch=None, now=None):
                     unchanged=unchanged,categories=len(cats),categories_checked=checked,
                     categories_empty=empty,category_errors=failures,category_cap_hits=cap_hits,category_over_20=over_20,category_max_items=category_max,partial=partial,coverage_status='startpage_only')
             return {'new':new,'changed':changed,'unchanged':unchanged,'count':len(found),
-                    'categories':len(cats),'categories_checked':checked,
+                    'categories':len(cats),'categories_checked':checked,'categories_discovered':discovered,
+                    'category_pagination':pagination,'category_total_max':total_max,
                     'category_errors':failures,'categories_empty':empty,'category_cap_hits':cap_hits,
                     'category_over_20':over_20,'category_max_items':category_max,
                     'coverage_status':'startpage_only','error_types':error_types,'partial':partial,'ok':True}
@@ -706,13 +949,74 @@ def sync_graphql(root, fetch=None, now=None):
                 http_status=getattr(exc,'code',0),categories_checked=checked)
         return {'ok':False,'error':msg,'categories_checked':checked}
 
-def sync(root, fetcher=None, now=None, graphql_fetch=None):
+def _collect_sitemaps(fetcher):
+    """All movie routes of the first sitemap location that yields any."""
+    errors=[]
+    for start in _SITEMAP_CANDIDATES:
+        visited,pending,found=set(),[start],{}
+        try:
+            while pending and len(visited)<_MAX_SITEMAPS:
+                url=pending.pop(0)
+                if url in visited:continue
+                visited.add(url)
+                items,children,_kind=parse_sitemap(fetcher(url))
+                found.update((x['id'],x) for x in items)
+                if len(found)>_MAX_ITEMS:raise ValueError('Zu viele Katalogeinträge.')
+                pending.extend(c for c in children if c not in visited and c not in pending)
+        except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,OSError,ValueError) as exc:
+            errors.append(_category_failure_type(exc) if not isinstance(exc,urllib.error.HTTPError) else 'http_%d'%exc.code)
+            if not found:continue
+        if found:return list(found.values()),start,bool(pending),errors
+    return [],None,False,errors
+
+
+def complete_from_sitemap(root, fetcher=None, now=None):
+    """Add titles that the curated GraphQL frontpage does not list.
+
+    Only *new* rows are inserted (source 'sitemap'); GraphQL rows keep their
+    richer data. Nothing is deleted. Details (cover, year, description) are
+    loaded when a title is opened, exactly like for every other title.
+    """
+    now=time.time() if now is None else float(now)
+    items,used,truncated,errors=_collect_sitemaps(fetcher or _fetch_xml)
+    db=_connect(root)
+    try:
+        with db:
+            added=0
+            for item in items:
+                cur=db.execute("""INSERT INTO netzkino_catalog(id,title,url,source,confidence,created,updated,kind)
+                    VALUES(?,?,?,'sitemap','public_sitemap_unverified',?,?,'movie')
+                    ON CONFLICT DO NOTHING""",(item['id'],item['title'],item['url'],now,now))
+                added+=cur.rowcount if cur.rowcount and cur.rowcount>0 else 0
+            total=db.execute('SELECT COUNT(*) FROM netzkino_catalog').fetchone()[0]
+            for key,value in [('sitemap_entries',len(items)),('sitemap_new',added),
+                              ('sitemap_source',used or ''),('sitemap_truncated',int(truncated)),
+                              ('sitemap_errors',json.dumps(errors)),('sitemap_checked',now),
+                              ('catalog_total',total)]:
+                _set(db,key,value)
+    finally:db.close()
+    _notify('netzkino_sitemap_completion',entries=len(items),new=added,
+            found=bool(used),truncated=truncated,errors=len(errors))
+    return {'ok':bool(items),'entries':len(items),'new':added,'source':used,
+            'truncated':truncated,'errors':errors}
+
+
+def sync(root, fetcher=None, now=None, graphql_fetch=None, sitemap_fetch=None):
     """Atomic successful refresh. No deletion on empty, unavailable, invalid data.
 
     Tests inject `fetcher` for legacy sitemap parsing; production uses first-party catalogue GraphQL.
     """
     if fetcher is None:
-        return sync_graphql(root, fetch=graphql_fetch, now=now)
+        result=sync_graphql(root, fetch=graphql_fetch, now=now)
+        # Tests that inject only graphql_fetch must not reach the network.
+        if graphql_fetch is None or sitemap_fetch is not None:
+            try:
+                extra=complete_from_sitemap(root, fetcher=sitemap_fetch, now=now)
+            except Exception as exc:  # completion never breaks the GraphQL result
+                extra={'ok':False,'error':_category_failure_type(exc)}
+            result['sitemap']=extra
+            if extra.get('ok'):result['coverage_status']='startpage_plus_sitemap'
+        return result
     now = time.time() if now is None else float(now)
     db = _connect(root)
     try:
@@ -874,7 +1178,7 @@ def _view_rows(root, origin='all'):
     return out
 
 
-def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',limit=80,offset=0,genre='',sort='updated'):
+def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',limit=80,offset=0,genre='',sort='updated',collection=''):
     """Stable film/series/episode view; no changes to actual catalog or downloads.
 
     series_key is a deterministic ID derived from the normalized provider series
@@ -885,7 +1189,7 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
         raise ValueError('Ungültige Serienkennung')
     query=str(query or '').strip().casefold()[:180]
     genre=str(genre or '').strip().casefold()[:80]
-    sort=sort if sort in ('title','year','updated') else 'updated'
+    sort=sort if sort in ('title','year','updated','rating') else 'updated'
     def genre_tokens(row):
         value=row.get('genres') or ''
         if isinstance(value,str):
@@ -895,14 +1199,17 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
             if isinstance(value,str):value=re.split(r'[,;|·]',value)
         if not isinstance(value,(list,tuple)):return []
         return [str(v).strip().casefold() for v in value if str(v).strip()]
+    import portal_reference, netzkino_enrichment
+    reports=netzkino_enrichment.all_cached(root)
     def genre_match(row):
-        return not genre or genre in genre_tokens(row)
+        # Canonical categories (IMDb/TVDB/TMDB genres first) as in the Mediathek catalogue.
+        return portal_reference.matches(row,genre)
     limit=max(1,min(100,int(limit)))
     offset=max(0,min(1000000,int(offset)))
     movies=[];series={}
     for row in _view_rows(root,origin):
         classification=classify_media(row)
-        enriched={**row,**classification}
+        enriched={**row,**classification,**portal_reference.summary(row.get('genres'),reports.get(row['id']))}
         if classification['media_type']=='movie':
             movies.append(enriched)
             continue
@@ -923,10 +1230,14 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
             group['evidence']='provider_contentSeries'
         else:
             group['children'].append({**enriched,'series_key':key})
+            if not group.get('score') and enriched.get('score'):group['score']=enriched['score']
             if not group['poster']:group['poster']=row.get('poster') or ''
             if not group['genres']:group['genres']=row.get('genres') or ''
             if not group['year']:group['year']=row.get('year')
     for group in series.values():
+        cats=sorted({c for e in group['children'] for c in e['categories']}-{portal_reference.UNKNOWN},key=str.casefold)
+        group['categories']=cats or portal_reference.categories(group.get('genres'))
+        group.setdefault('score',None)
         group['children'].sort(key=lambda e:(e['season'] or 0,e['episode'] or 0,e['title'].casefold()))
         group['episode_count']=len(group['children'])
         group['seasons']=sorted({r['season'] for r in group['children'] if r['season'] is not None})
@@ -940,27 +1251,33 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
                 if missing:gaps.append({'season':season,'episodes':missing[:60]})
         group['numbering_gaps']=gaps
     if view=='movies':
-        rows=[r for r in movies if (not query or query in r['title'].casefold()) and genre_match(r)]
+        rows=[r for r in movies if (not query or query in r['title'].casefold()) and genre_match(r)
+              and portal_reference.in_collection(r,collection,'movie')]
         rows.sort(key=lambda r:(-float(r.get('updated',0)),r['title'].casefold()))
     elif view=='series':
         rows=[{k:v for k,v in group.items() if k!='children'} for group in series.values()
              if (not query or query in group['title'].casefold() or any(query in e['title'].casefold() for e in group['children']))
-             and (genre_match(group) or any(genre_match(e) for e in group['children']))]
+             and (genre_match(group) or any(genre_match(e) for e in group['children']))
+             and portal_reference.in_collection(group,collection,'series')]
         rows.sort(key=lambda r:(-float(r.get('updated',0)),r['title'].casefold()))
     else:
         group=series.get(series_key)
         rows=[] if group is None else [r for r in group['children'] if (not query or query in r['title'].casefold()) and genre_match(r)]
+    if sort=='rating' and view!='episodes':
+        rows.sort(key=lambda r:(-((r.get('score') or {}).get('value',-1)),r['title'].casefold()))
     if sort=='title' and view!='episodes':
         rows.sort(key=lambda r:r['title'].casefold())
     elif sort=='year' and view!='episodes':
         rows.sort(key=lambda r:(-int(r.get('year') or 0),r['title'].casefold()))
-    available_genres=sorted({g for r in movies for g in genre_tokens(r)} |
-        {g for group in series.values() for g in genre_tokens(group)} |
-        {g for group in series.values() for child in group['children'] for g in genre_tokens(child)})
+    pool=movies if view=='movies' else list(series.values()) if view=='series' else \
+        (series[series_key]['children'] if series_key in series else [])
+    genre_counts=portal_reference.facets(pool)
+    available_genres=[g['genre'] for g in genre_counts]
     counts={'movies':len(movies),'series':len(series),
             'episodes':sum(len(g['children']) for g in series.values())}
     group_header=None
     if view=='episodes' and series_key in series:
         group_header={k:v for k,v in series[series_key].items() if k!='children'}
     return {'items':rows[offset:offset+limit],'total':len(rows),'offset':offset,
-            'view':view,'counts':counts,'series':group_header,'genres':available_genres}
+            'view':view,'counts':counts,'series':group_header,'genres':available_genres,
+            'genre_counts':genre_counts}

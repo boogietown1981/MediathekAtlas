@@ -10,7 +10,7 @@ downloads and HLS streams are remuxed on the fly by ffmpeg into fragmented MP4
 plays. That costs little CPU and also works on older NAS models. Seeking in a
 remuxed stream restarts ffmpeg at the requested position (-ss before -i).
 """
-import json,re,subprocess,threading
+import json,re,subprocess,threading,time
 from pathlib import Path
 import catalog
 from runtime_tools import resolve as tool
@@ -34,8 +34,58 @@ def _title(meta,row):
     elif meta.get('year'):name+=' (%s)'%meta['year']
     return name
 
-def resolve(c,offer='',job=''):
+NETZKINO_TTL=900
+_NK_CACHE={}
+
+def _netzkino_local(c,item_id):
+    """Finished offline copy of a Netzkino title (shared download queue), if the file still exists."""
+    for (payload,) in c.execute("SELECT payload FROM jobs WHERE state='done' AND payload LIKE ?",('%'+item_id+'%',)):
+        try:j=json.loads(payload)
+        except ValueError:continue
+        if j.get('netzkino_id')!=item_id:continue
+        path=Path(j.get('path') or j.get('target') or '')
+        if path.is_file():return j,path
+    return None,None
+
+def resolve_netzkino(c,root,item_id,resolver=None,now=None):
+    """Netzkino film: the local offline copy wins, otherwise ytdl-nightly resolves the MP4 file.
+
+    The page address comes from the local Netzkino catalogue (never from the request). Resolved
+    file addresses are cached briefly so that seeking in a remuxed stream does not query Netzkino again.
+    """
+    import netzkino_details
+    item_id=str(item_id or '')
+    db=netzkino_details._connect(root)
+    try:row=netzkino_details._find(db,item_id)
+    finally:db.close()
+    title=row['title']+(' (%s)'%row['year'] if row.get('year') else '')
+    job,path=_netzkino_local(c,item_id)
+    if path:return {'kind':'file','path':str(path),'title':title,'duration':row.get('duration') or 0,'provider':'netzkino'}
+    now=time.time() if now is None else now
+    hit=_NK_CACHE.get(item_id)
+    if hit and hit[0]>now:found=hit[1]
+    else:
+        if resolver is None:
+            import ytdl_bridge;resolver=ytdl_bridge.resolve
+        try:found=resolver(row['url'])
+        except Exception as e:raise ValueError(str(e) or 'Netzkino-Adresse konnte nicht aufgelöst werden') from None
+        _NK_CACHE[item_id]=(now+NETZKINO_TTL,found)
+    return {'kind':'url','url':found['url'],'hls':False,'quality':'Netzkino MP4','title':title,
+            'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
+
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if justwatch:
+        if root is None:raise ValueError('JustWatch-Katalog nicht verfügbar')
+        import justwatch as justwatch_tv
+        return justwatch_tv.play_source(root,justwatch)
+    if pluto:
+        if root is None:raise ValueError('Pluto-Katalog nicht verfügbar')
+        import pluto as pluto_tv
+        return pluto_tv.play_source(root,pluto)
+    if netzkino:
+        if root is None:raise ValueError('Netzkino-Katalog nicht verfügbar')
+        return resolve_netzkino(c,root,netzkino,resolver)
     if job:
         r=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(job,)).fetchone()
         if not r:raise ValueError('Nur abgeschlossene Downloads können abgespielt werden')
@@ -73,6 +123,8 @@ def plan(source,info=None):
     out={'title':source['title'],'duration':float(source.get('duration') or 0)}
     if source['kind']=='url':
         out.update(mode='remux' if source['hls'] else 'direct',url=source['url'],hls=source['hls'],quality=source.get('quality'),origin='online')
+        if source.get('provider'):out['provider']=source['provider']
+        if source.get('live'):out['live']=True
         return out
     out['origin']='local';path=Path(source['path'])
     info=probe(path) if info is None else info

@@ -1,4 +1,4 @@
-/* On-demand Netzkino editorial metadata; official WKWebView, optional yt-dlp check. */
+/* On-demand Netzkino editorial metadata; playback in the in-app player, optional yt-dlp check. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -16,12 +16,11 @@
     host.append(row);
   };
   let currentId = null;
-  async function play(id) {
+  async function play(id, label) {
     if (!/^[a-f0-9]{32}$/.test(String(id || ''))) throw new Error('Ungültiger Film');
-    const result = await window.api('netzkino-watch', {id});
-    if (result.mode !== 'native_webkit')
-      throw new Error('Der native Netzkino-WebKit-Player ist auf diesem Mac nicht installiert. Die offizielle Filmseite kann weiterhin separat geöffnet werden.');
-    return result;
+    if (typeof window.playNetzkino !== 'function') throw new Error('Der Player ist nicht geladen; Seite neu laden.');
+    // Same in-app player as the Mediathek videos: offline copy first, otherwise the MP4 via ytdl-nightly.
+    return window.playNetzkino(id, label);
   }
   async function open(id) {
     if (!/^[a-f0-9]{32}$/.test(String(id || ''))) return;
@@ -122,10 +121,9 @@
       watch.onclick = async () => {
         watch.disabled = true;
         try {
-          await play(id);
-          $('atlas-nk-evidence').textContent = 'Der offizielle Netzkino-Player läuft im separaten macOS-WebKit-Fenster innerhalb von MediathekAtlas.';
+          await play(id, data.title);
         } catch (e) {
-          $('atlas-nk-evidence').textContent = 'Wiedergabefenster konnte nicht gestartet werden: ' + e.message;
+          $('atlas-nk-evidence').textContent = 'Wiedergabe konnte nicht gestartet werden: ' + e.message;
         } finally { watch.disabled = false; }
       };
       actions.append(watch);

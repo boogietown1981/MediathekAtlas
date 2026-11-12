@@ -55,7 +55,9 @@ def netzkino(root):
                   'unchanged','last_entries','snapshot_seed_count','categories_checked',
                   'categories_total','category_errors','last_http_status',
                   'categories_empty','category_cap_hits','category_over_20','category_max_items','category_error_types','last_result','last_complete_success',
-                  'time_budget_hit')
+                  'time_budget_hit','categories_discovered','category_pagination','category_total_max',
+                  'graphql_related_new','har_import_new','har_import_checked','har_operations',
+                  'sitemap_entries','sitemap_new','sitemap_truncated','sitemap_errors')
             values=_state(db,keys)
             result.update(available=True,offline=True,
                           catalog_count=int(db.execute('SELECT COUNT(*) FROM netzkino_catalog').fetchone()[0]),
@@ -76,8 +78,17 @@ def netzkino(root):
                           category_cap_hits=_int(values.get('category_cap_hits')),
                           category_over_20=_int(values.get('category_over_20')),
                           category_max_items=_int(values.get('category_max_items')),
-                          coverage_status='startpage_only',
+                          coverage_status='startpage_plus_sitemap' if _int(values.get('sitemap_entries')) else 'startpage_only',
+                          sitemap_entries=_int(values.get('sitemap_entries')),
+                          sitemap_new=_int(values.get('sitemap_new')),
+                          sitemap_truncated=values.get('sitemap_truncated')=='1',
+                          sitemap_errors=[str(x)[:40] for x in (json.loads(values.get('sitemap_errors') or '[]') if (values.get('sitemap_errors') or '').startswith('[') else [])][:6],
                           time_budget_hit=values.get('time_budget_hit')=='1',
+                          categories_discovered=_int(values.get('categories_discovered')),
+                          category_total_max=_int(values.get('category_total_max')),
+                          related_new=_int(values.get('graphql_related_new')),
+                          har_import_added=_int(values.get('har_import_new')),
+                          har_import_checked=_float(values.get('har_import_checked')),
                           last_complete_success=_float(values.get('last_complete_success')),
                           last_result=values.get('last_result','never') if values.get('last_result') in
                                       ('running','partial','complete','failed','never') else 'unknown')
@@ -86,6 +97,12 @@ def netzkino(root):
                 result['category_error_types']={str(k)[:50]:_int(v) for k,v in raw_types.items()
                                                 if re.fullmatch(r'[a-z_0-9]{1,50}',str(k))} if isinstance(raw_types,dict) else {}
             except (TypeError,ValueError):result['category_error_types']={}
+            for key in ('category_pagination','har_operations'):
+                try:
+                    raw=json.loads(values.get(key) or '{}')
+                    result[key]={str(k)[:80]:_int(v) for k,v in raw.items()
+                                 if re.fullmatch(r'[A-Za-z0-9_]{1,80}',str(k))} if isinstance(raw,dict) else {}
+                except (TypeError,ValueError):result[key]={}
             err=values.get('last_error','')
             # The error is diagnostic, never a source URL, JSON payload or token.
             result['last_error']=_SAFE_ERROR.sub('[REDACTED]',err)[:220]

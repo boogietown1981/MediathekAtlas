@@ -8,6 +8,8 @@
   <button type="button" data-catalog-source="all">Gesamt</button>
   <button type="button" data-catalog-source="mediatheken" class="primary">Mediatheken</button>
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
+  <button type="button" data-catalog-source="pluto">Pluto TV</button>
+  <button type="button" data-catalog-source="justwatch">JustWatch TV</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Katalog · Serien</h2>
@@ -15,6 +17,7 @@
   <form id="atlas-cross-search" aria-label="Katalogsuche und Filter">
     <label><span>Suche</span><input id="atlas-cross-query" aria-label="Film oder Serie suchen" placeholder="Titel oder Serie suchen" maxlength="180"></label>
     <label><span>Genre</span><select id="atlas-cross-genre" aria-label="Nach Genre filtern"><option value="">Alle Genres</option></select></label>
+    <label><span>Entdecken</span><select id="atlas-cross-collection" aria-label="Großes Kino oder Serienfavoriten" title="Mindestens 7,5 / 10; mindestens 10.000 IMDb- oder 1.000 TMDB-Stimmen. Automatische Auswahl, keine Kino-Umsatzwertung."><option value="">Alle Werke</option><option value="cinema">Großes Kino</option><option value="series">Serienfavoriten</option></select></label>
     <label><span>Sortierung</span><select id="atlas-cross-sort" aria-label="Katalog sortieren"><option value="title">Titel A–Z</option><option value="year">Neuere zuerst</option></select></label>
     <button type="submit" class="primary">Suchen</button>
     <button id="atlas-cross-reset" type="button">Filter zurücksetzen</button>
@@ -25,6 +28,7 @@
     <button type="button" id="atlas-cross-back-series" hidden>← Zurück zur Serienliste</button>
     <button type="button" id="atlas-cross-open-portal">Plattformverwaltung</button>
   </div>
+  <div id="atlas-cross-categories" class="portal-categories atlas-cross-categories" role="group" aria-label="Genres" hidden></div>
   <p id="atlas-cross-status" role="status"></p>
   <div id="atlas-cross-items" class="atlas-uc-grid" aria-label="Katalogtreffer" aria-live="polite"></div>
   <div class="atlas-cross-pager"><button type="button" id="atlas-cross-prev">← Zurück</button><span id="atlas-cross-page"></span><button type="button" id="atlas-cross-next">Weitere →</button></div>
@@ -39,14 +43,68 @@
     <button class="platform-tab active" type="button" data-platform="overview">Übersicht</button>
     <button class="platform-tab" type="button" data-platform="archive">Internet Archive</button>
     <button class="platform-tab" type="button" data-platform="netzkino">Netzkino</button>
-    <button class="platform-tab" type="button" data-platform="pluto">Pluto TV (Vorschau)</button>
+    <button class="platform-tab" type="button" data-platform="pluto">Pluto TV</button>
+    <button class="platform-tab" type="button" data-platform="justwatch">JustWatch TV</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
-<div id="pluto-info" class="panel">
-  <h2>Pluto TV · vorbereitet, noch nicht aktiviert</h2>
-  <p class="muted">Der bekannte yt-dlp-Pluto-Extractor ist derzeit als nicht funktionsfähig markiert. Für Pluto existiert noch kein geprüfter Katalogadapter und keine Downloadberechtigung. Die offizielle Wiedergabe und ein eigener Katalog werden erst nach unabhängiger Prüfung ergänzt.</p>
-  <p class="muted">Keine Anmeldung, keine DRM-Umgehung und kein Entfernen von Werbung. ArchiveMedia, Netzkino und die deutschen Mediatheken bleiben unabhängig.</p>
-</div>
+<section id="pluto" class="pluto-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Pluto TV · Filme, Serien und Live-Sender</h3>
+    <p class="muted">Kostenloses Angebot von Pluto TV mit Werbung wie beim Anbieter. Wiedergabe im MediathekAtlas-Player. Filme und Folgen dürfen 30 Tage offline gespeichert werden
+       (mit der Werbung, die Pluto ausliefert); danach entfernt MediathekAtlas die Datei automatisch. Live-Sender sind nicht speicherbar.
+       Welcher Länderkatalog geladen wird, entscheidet Pluto anhand der Internetverbindung. Keine Anmeldung, kein Entfernen von Werbung.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="pluto-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="pluto-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="pluto-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Pluto-Ansicht">
+    <button type="button" id="pluto-view-movies" class="primary">Filme</button>
+    <button type="button" id="pluto-view-series">Serien</button>
+    <button type="button" id="pluto-view-live">Live-TV</button>
+    <button type="button" id="pluto-back" hidden>← Zur Serienübersicht</button>
+    <span id="pluto-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Pluto-Titel suchen<input type="search" id="pluto-filter" placeholder="Titel, Genre oder Kategorie"></label>
+    <label>Sortierung<select id="pluto-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="pluto-categories" class="portal-categories" role="group" aria-label="Pluto-Kategorien" hidden></div>
+  <p id="pluto-status" class="muted" role="status"></p>
+  <details id="pluto-offline" class="nk-offline pluto-offline"><summary>Offline-Kopien von Pluto TV <span id="pluto-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="pluto-offline-jobs"></div></details>
+  <div id="pluto-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="pluto-prev">← Zurück</button>
+    <span id="pluto-page-label" class="muted"></span>
+    <button type="button" id="pluto-next">Weiter →</button></div>
+</section>
+<section id="justwatch" class="pluto-panel justwatch-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>JustWatch TV · eigene Filme und Serien</h3>
+    <p class="muted">Nur das kostenlose Angebot „JustWatch TV Free“ (mit Werbung); JustWatch Plus, Leihtitel und Angebote anderer Dienste werden nicht geladen.
+       Wiedergabe im MediathekAtlas-Player für Titel, die JustWatch für externe Player freigibt; die übrigen öffnen die offizielle JustWatch-Seite.
+       Abspielbare Filme und Folgen dürfen 30 Tage offline gespeichert werden (mit der Werbung, die JustWatch ausliefert); danach entfernt MediathekAtlas die Datei automatisch.
+       Kopiergeschützte (DRM-)Streams werden weder abgespielt noch gespeichert. Keine Anmeldung, kein Entfernen von Werbung.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="justwatch-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="justwatch-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="justwatch-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="JustWatch-Ansicht">
+    <button type="button" id="justwatch-view-movies" class="primary">Filme</button>
+    <button type="button" id="justwatch-view-series">Serien</button>
+    <button type="button" id="justwatch-back" hidden>← Zur Serienübersicht</button>
+    <span id="justwatch-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>JustWatch-Titel suchen<input type="search" id="justwatch-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="justwatch-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="justwatch-categories" class="portal-categories" role="group" aria-label="JustWatch-Kategorien" hidden></div>
+  <p id="justwatch-status" class="muted" role="status"></p>
+  <details id="justwatch-offline" class="nk-offline justwatch-offline"><summary>Offline-Kopien von JustWatch TV <span id="justwatch-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="justwatch-offline-jobs"></div></details>
+  <div id="justwatch-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="justwatch-prev">← Zurück</button>
+    <span id="justwatch-page-label" class="muted"></span>
+    <button type="button" id="justwatch-next">Weiter →</button></div>
+</section>
   <div id="portal-platform-overview" class="platform-summary">
     <div id="platform-dashboard" class="platform-stats-grid" aria-label="Status je Plattform"></div>
     <form id="platform-global-controls" class="panel platform-global">
@@ -112,7 +170,7 @@
   <div class="sectionhead"><h2>Netzkino · Streaming-Katalog</h2>
     <a href="https://www.netzkino.de/" target="_blank" rel="noopener noreferrer" class="netzkino-open">Netzkino öffnen</a>
   </div>
-  <p class="muted">Separate Streaming-Bibliothek: offizielle Filmseiten öffnen, ohne Video-Downloads.
+  <p class="muted">Netzkino-Filme direkt im MediathekAtlas-Player ansehen oder für 30 Tage offline speichern.
      Die Zuordnung im Netzkino-Katalog ist zunächst ein Hinweis, keine bestätigte Werkidentität.</p>
   <div class="panel netzkino-sync-panel">
     <h3>Öffentlichen Netzkino-Katalog prüfen</h3>
@@ -123,6 +181,14 @@
       <label class="check"><input type="checkbox" id="netzkino-auto"> Alle 24 Stunden automatisch nachprüfen (Opt-in)</label></div>
     <p id="netzkino-sync-summary" class="muted">Katalogstatus wird geladen …</p>
   </div>
+  <details class="panel netzkino-manual" id="netzkino-recording-panel"><summary>Weitere Titel aus einem Netzkino-Mitschnitt übernehmen</summary>
+    <p class="muted">Netzkino stellt keine vollständige Titelliste bereit (Sitemap ohne Filmseiten, Startseite mit rund 30 Kategorien).
+       So kommen weitere Titel hinzu: netzkino.de im Browser öffnen, Entwicklerwerkzeuge → Netzwerk, Kategorien mit „Alle anzeigen“ durchblättern,
+       suchen und scrollen, dann „Alle als HAR speichern“ und die Datei hier auswählen.</p>
+    <p class="muted">Die Datei wird in diesem Browser gelesen. Übertragen werden nur Antworten von netzkino.de – keine Cookies, Anmeldedaten oder Kopfzeilen.</p>
+    <label>HAR-Datei<input id="netzkino-recording-file" type="file" accept=".har,application/json"></label>
+    <p id="netzkino-recording-status" class="muted" role="status"></p>
+  </details>
   <details class="panel netzkino-manual"><summary>Einzelne Netzkino-Filmseite manuell hinzufügen</summary>
     <form id="netzkino-add" class="netzkino-form">
       <label>Filmtitel<input id="netzkino-title" type="text" minlength="2" maxlength="180" required placeholder="Filmtitel"></label>
@@ -139,7 +205,9 @@
   <div class="netzkino-toolbar"><label>Netzkino-Titel suchen
     <input type="search" id="netzkino-filter" placeholder="Titel suchen"></label>
     <label>Quelle<select id="netzkino-origin"><option value="all">Alle Netzkino-Einträge</option>
-    <option value="catalog">Katalog / HAR-Startbestand</option><option value="manual">Manuell gemerkt</option></select></label></div>
+    <option value="catalog">Katalog / HAR-Startbestand</option><option value="manual">Manuell gemerkt</option></select></label>
+    <label>Sortierung<select id="netzkino-sort"><option value="updated">Zuletzt aktualisiert</option><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="netzkino-categories" class="portal-categories" role="group" aria-label="Netzkino-Kategorien" hidden></div>
   <p id="netzkino-status" class="muted" role="status">Netzkino-Verknüpfungen werden geladen …</p>
   <div id="netzkino-items" class="netzkino-grid" aria-live="polite"></div>
   <div class="netzkino-pages"><button type="button" id="netzkino-prev">← Zurück</button>
@@ -209,10 +277,14 @@
   <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-nk-image" alt="Filmcover" hidden><dl id="atlas-nk-quickfacts" aria-label="Netzkino-Kurzdaten"></dl></div>
     <div class="nk-detail-main"><p id="atlas-nk-description"></p><dl id="atlas-nk-facts"></dl>
       <p id="atlas-nk-evidence" role="status"></p><div id="atlas-nk-reference" role="status"></div><dl id="atlas-nk-reference-facts"></dl><div id="atlas-nk-validation" role="status"></div>
+      <section id="atlas-nk-offline" class="nk-offline" aria-label="Netzkino offline">
+        <div class="nk-offline-head"><h3>Offline ansehen</h3><button type="button" id="atlas-nk-offline-add" class="primary">↓ Offline herunterladen (30 Tage)</button></div>
+        <p id="atlas-nk-download-status" class="muted" role="status">Netzkino-Titel dürfen heruntergeladen und 30 Tage offline genutzt werden. Danach entfernt MediathekAtlas die Datei automatisch.</p>
+        <div id="atlas-nk-download-jobs" aria-live="polite"></div>
+      </section>
       <details id="atlas-nk-downloads">
-          <summary>Expertenfunktion: separat lizenzierte Videodateien (kein Netzkino-Stream-Download)</summary>
-          <p>Die kostenlose Netzkino-Wiedergabe ist keine allgemeine Datei-Downloadfreigabe. Die vom Anbieter angebotene Offline-Funktion nutzt du über die <a href="https://play.google.com/store/apps/details?id=de.netzkino.android.ics" target="_blank" rel="noopener noreferrer">offizielle Android-App</a> (Geräteunterstützung beim Anbieter prüfen).</p>
-          <p>Ein eigener Datei-Download ist hier nur möglich, wenn du **zusätzlich** die entsprechende Berechtigung und eine vom Rechteinhaber bereitgestellte direkte Videodatei besitzt. Keine Streaming-/Player-URLs einfügen.</p>
+          <summary>Eigene, separat lizenzierte Videodatei hinzufügen (ohne Ablauf)</summary>
+          <p class="muted">Nur für Dateien eines anderen Rechteinhabers mit eigener, dauerhafter Freigabe. Für normale Netzkino-Titel oben „Offline herunterladen“ verwenden.</p>
           <form id="atlas-nk-download-form">
             <label class="nk-download-wide">Berechtigter direkter HTTPS-Dateilink (MP4, MKV, WebM, MOV)<input id="atlas-nk-download-url" type="url" required maxlength="1200" placeholder="https://rechteinhaber.example/film.mp4"></label>
             <label>Nachweisart<select id="atlas-nk-download-basis" required>
@@ -222,12 +294,30 @@
               <option value="public_domain">Nachweislich gemeinfreies Werk</option>
             </select></label>
             <label class="nk-download-wide">Quelle der Berechtigung / Freigabe (ohne Tokens)<textarea id="atlas-nk-download-note" required minlength="24" maxlength="600" rows="2"></textarea></label>
-            <label class="nk-download-wide nk-download-check"><input type="checkbox" id="atlas-nk-download-confirm" required> Ich habe das Recht, diese konkrete Datei unabhängig vom Netzkino-Stream lokal herunterzuladen.</label>
-            <button class="primary" type="submit">Berechtigten Datei-Download vormerken</button>
+            <label class="nk-download-wide nk-download-check"><input type="checkbox" id="atlas-nk-download-confirm" required> Ich habe das Recht, diese konkrete Datei dauerhaft lokal zu speichern.</label>
+            <button type="submit">Lizenzierte Datei einreihen</button>
           </form>
-          <p id="atlas-nk-download-status" role="status"></p>
-          <div id="atlas-nk-download-jobs" aria-live="polite"></div>
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>
+</dialog><dialog id="atlas-pluto-detail" class="atlas-pluto-detail" aria-label="Pluto TV Film- und Seriendetails">
+  <div class="nk-detail-heading"><h2 id="atlas-pl-title">Pluto-TV-Details</h2><button type="button" id="atlas-pl-close" aria-label="Schließen">✕</button></div>
+  <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-pl-image" alt="Cover" hidden><dl id="atlas-pl-quickfacts" aria-label="Pluto-Kurzdaten"></dl></div>
+    <div class="nk-detail-main"><p id="atlas-pl-description"></p><dl id="atlas-pl-facts"></dl>
+      <div id="atlas-pl-reference" role="status"></div><dl id="atlas-pl-reference-facts"></dl>
+      <section class="nk-offline" aria-label="Pluto offline">
+        <div class="nk-offline-head"><h3>Offline ansehen</h3><span id="atlas-pl-offline-slot"></span></div>
+        <p id="atlas-pl-offline-status" class="muted" role="status"></p>
+      </section>
+      <div id="atlas-pl-actions" class="netzkino-actions"></div></div></div>
+</dialog><dialog id="atlas-justwatch-detail" class="atlas-justwatch-detail" aria-label="JustWatch TV Film- und Seriendetails">
+  <div class="nk-detail-heading"><h2 id="atlas-jw-title">JustWatch-TV-Details</h2><button type="button" id="atlas-jw-close" aria-label="Schließen">✕</button></div>
+  <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-jw-image" alt="Cover" hidden><dl id="atlas-jw-quickfacts" aria-label="JustWatch-Kurzdaten"></dl></div>
+    <div class="nk-detail-main"><p id="atlas-jw-description"></p><dl id="atlas-jw-facts"></dl>
+      <div id="atlas-jw-reference" role="status"></div><dl id="atlas-jw-reference-facts"></dl>
+      <section class="nk-offline" aria-label="JustWatch offline">
+        <div class="nk-offline-head"><h3>Offline ansehen</h3><span id="atlas-jw-offline-slot"></span></div>
+        <p id="atlas-jw-offline-status" class="muted" role="status"></p>
+      </section>
+      <div id="atlas-jw-actions" class="netzkino-actions"></div></div></div>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>

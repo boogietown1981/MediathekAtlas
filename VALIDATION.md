@@ -1,5 +1,60 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.40 – JustWatch TV (12. November 2026)
+
+- Parser gegen Björns echten HAR-Mitschnitt geprüft (GetPopularTitles-Antwort): 22 von 40 Titeln als JustWatch-TV-Free erkannt (die übrigen gehörten zu Plus/Store), 1 mit Stream für externe Player, Cover- und Seitenadressen gültig.
+- Neue Tests `tests/test_v0540_justwatch.py` (20, Antworten im HAR-Format): nur Paket `jwt`, Paging per Cursor, Kategorien/Bewertung/Großes Kino, Bestandsschutz bei Fehlern, GraphQL-Fehlermeldung, Folgen nur von JustWatch TV, Adressprüfung (fremde Hosts, http, Benutzerdaten), frische Stream-Adresse mit DRM-Prüfung, Ablehnung kopiergeschützter Streams (auch in der Varianten-Playlist), Titel ohne externen Stream, Offline-Auftrag (Benennung, 30 Tage, IMDb-ID in der NFO, keine Stream-Adresse im Auftrag), **echter HLS-Download mit ffmpeg** gegen lokalen Server, Referenzabgleich über die gemeinsame Engine, Server-/UI-/Bundle-Einbindung.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem JustWatch-Katalog: Katalogquelle „JustWatch TV“ mit Kategorien und „Großes Kino“-Abzeichen, Dashboard-Karte, Plattform-Reiter mit Kategorien, „▶ Ansehen“/„⬇ Offline speichern (30 Tage)“ nur bei freigegebenen Titeln, sonst „Bei JustWatch ansehen“, Detailansicht, Serie → Folgen, Player und Download-Worker melden in der Cloud korrekt „JustWatch ist nicht erreichbar“; Pluto-Reiter funktioniert unverändert über das gemeinsame Panel; keine JavaScript-Fehler.
+- Volllauf `python3 -m unittest discover -s tests` → 578 Tests OK.
+- **Nicht geprüft:** echte Abfragen an apis.justwatch.com (aus der Build-Umgebung gesperrt) – insbesondere ob JustWatch die schlanken MediathekAtlas-Abfragen genauso beantwortet wie die der Website; ob die externen Streams Werbung/Kopierschutz enthalten (im HAR wurde keine Wiedergabe mitgeschnitten); Lauf auf macOS/NAS.
+
+## 0.5.39 – Mediathek-Genres und Entdecken im Katalog (12. November 2026)
+
+- Neue Tests `tests/test_v0539_catalog_genres.py` (5): Schwellen für Großes Kino/Serienfavoriten identisch zum Mediathek-Katalog (7,5; 10.000 IMDb / 1.000 TMDB), Filter `collection` für Pluto und Netzkino, UI-Einbindung, bestehender Smoke-Test des gemeinsamen Katalogs.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespielten Mediathek-Werken (2 Serien, 3 Filme mit Genres und Bewertungen) sowie Netzkino-/Pluto-Bestand: Genre-Leiste Serien „Drama · 1, Krimi · 2“, Filme inkl. „Unbekannt“, Filter „Komödie“, „Serienfavoriten“ → nur Babylon Berlin, „Großes Kino“ → nur Das Boot, Abzeichen und ★ auf den Karten, „Gesamt“ summiert die Kategorien aller Quellen; keine JavaScript-Fehler (nur in der Cloud gesperrte Coverbilder).
+- **Nicht geprüft:** mit Björns echtem Mediathek-Bestand.
+
+## 0.5.38 – Kategorien, Pluto-Details, Download-Metadaten (12. November 2026)
+
+- Neue Tests `tests/test_v0538_portal_categories.py` (10): Genre-Vereinheitlichung (Referenz vor Anbieter, „Unbekannt“), Kategorien-Zähler und Filter, Bewertung nur aus gültiger Referenz, Download-Metadaten wie ARD (NFO mit `uniqueid imdb`, Genres, Besetzung, Bewertung; mehrdeutige Treffer ohne ID; Seriensynopsis nicht als Folgeninhalt), Pluto-Abgleich über die Anbieterkette (Folge → Serie), Verwerfen bei Titeländerung, Netzkino-Katalog mit Referenzkategorien und Bewertungs-Sortierung, Server-/UI-Einbindung, 30 Tage.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem Pluto-Katalog, einer Pluto- und einer Netzkino-Referenz: Katalog → „Pluto TV“ und „Gesamt“, Plattformübersicht mit Netzkino-/Pluto-Karten, Pluto-Kategorienleiste und Filter, Detailansicht Film und Serie → Folgen, Netzkino-Kategorien (21 Genres aus dem HAR-Bestand); keine JavaScript-Fehler (nur in der Cloud gesperrte Coverbilder).
+- `node --check web/*.js`, `node tests/*.cjs` OK. Volllauf `python3 -m unittest discover -s tests` → 553 Tests OK.
+- **Nicht geprüft:** Abgleich mit echten IMDb/TVDB/TMDB-Zugängen für Pluto-/Netzkino-Titel (Anbieterkette in Tests simuliert), Pluto live.
+
+## 0.5.37 – Pluto TV offline, 20 Tage (12. November 2026)
+
+- Neue Tests `tests/test_v0537_pluto_offline.py` (12): Benennung identisch zu `core.target` (Film und Folge), 20-Tage-Frist, Ablauf und erneutes Speichern, „Jetzt löschen“, getrennte Netzkino-/Pluto-Listen, Ablehnung von Live-Sendern, ganzen Serien und unbekannten Kennungen, keine Stream-Adresse/Sitzungsschlüssel im Auftrag, Resolver mit frischer Sitzung, **echter HLS-Download mit ffmpeg** gegen einen lokalen HTTP-Server (MKV mit Video+Audio, NFO, metadata.json ohne Schlüssel, keine `.partial`-Reste), Abbruch beendet ffmpeg, zu kurzer Stream wird als unvollständig gemeldet.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem Katalog und laufendem Worker: „⬇ Offline speichern (20 Tage)“ nur bei Filmen und Folgen, nicht bei Live-Sendern und Serien; Auftrag erscheint in „Offline-Kopien von Pluto TV“; der Worker meldet in der Cloud korrekt „Pluto TV ist nicht erreichbar“ und bietet „Erneut versuchen“; keine JavaScript-Fehler.
+- `node --check web/*.js`, `node tests/*.cjs` OK. Volllauf `python3 -m unittest discover -s tests` → 543 Tests OK (nach Neubau des App-Bundles).
+- **Nicht geprüft:** echter Download von pluto.tv (aus der Build-Umgebung gesperrt), Verhalten des Pluto-Stitchers mit Werbeunterbrechungen in ffmpeg, Lauf auf macOS/NAS-Hardware.
+
+## 0.5.36 – Pluto TV (12. November 2026)
+
+- Neue Tests `tests/test_v0536_pluto.py` (8): Sitzung mit Installations-ID, Filme/Serien/Live aus synthetischen Antworten im Format der Pluto-Website-API, Rotation und Bestandsschutz bei Fehlern, Folgen auf Abruf mit Zwischenspeicher, Stitcher-Adresse mit Sitzung, Ablehnung fremder Hosts/Pfade, Einbindung in `/api/play`.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem Katalog: Reiter Pluto TV, Filme, Serie → Folgen, Live-TV, „▶ Live ansehen“ öffnet den Player (meldet in der Cloud korrekt „Pluto TV ist nicht erreichbar“), Wechsel zu Netzkino blendet Pluto aus; keine JavaScript-Fehler.
+- Volllauf `python3 -m unittest discover -s tests` → 531 Tests OK.
+- **Nicht geprüft:** echter Abruf von pluto.tv (aus der Build-Umgebung gesperrt). Die API-Formate folgen der öffentlichen Pluto-Website und sind tolerant ausgewertet, aber nicht live bestätigt.
+
+## 0.5.35 – Netzkino-Kategoriebaum (12. November 2026)
+
+- `python3 -m unittest discover -s tests` → 522 Tests OK. `test_launcher_with_python_outside_standard_paths` brach im Volllauf einmal mit einem Zeitlimit ab und läuft einzeln grün (bekannte Lastabhängigkeit). Neu: Kategorien aus Filmdetails werden gemerkt und beim nächsten Abgleich vollständig geladen (150 Titel aus einer Kategorie).
+- Abgleich gegen die echten Antworten aus Björns Mitschnitt (lokal ausgewertet, nicht ins Repository übernommen): Kategorie-Struktur, `CmsCategory.parent` und unbegrenzte Kategorielisten (214 Titel) werden erkannt; aus 3 Filmdetails ergeben sich 30 Kategorien.
+- **Nicht geprüft:** Abgleich gegen die Live-API (aus der Build-Umgebung gesperrt), insbesondere ob `AllContent` für die Baumwurzeln Unterkategorien liefert.
+
+## 0.5.34 – Netzkino-Wiedergabe und Katalogerweiterung (12. November 2026)
+
+- Ausgeführt (Linux, Python 3.13): `python3 -m unittest discover -s tests` → 521 Tests, alle grün nach Neubau des App-Bundles. Neu: 8 Wiedergabetests (Direktwiedergabe der MP4, Offlinekopie hat Vorrang, Zwischenspeicher fürs Spulen, ungültige Kennungen, DRM-Meldung über ytdl-nightly, ffmpeg-Fallback) und 6 Katalogtests (Kategorie-Entdeckung mit Obergrenze, Seitenhinweise, Titel aus Filmdetails, HAR-Import nur von netzkino.de, Diagnoseexport).
+- `node --check web/*.js`, `node tests/*.cjs` OK. Browser-Durchlauf (Playwright/Chromium): Netzkino → „▶ In MediathekAtlas ansehen“ öffnet den App-Player und meldet in der Cloud-Umgebung korrekt „Netzkino ist nicht erreichbar“; HAR-Import einer Testdatei übernimmt den Titel, ignoriert fremde Hosts, keine JavaScript-Fehler.
+- Netzkino-Sitemaps am 12.11.2026 geprüft: `/sitemap.xml` liefert die HTML-Startseite, `/api/sitemap` 4 Infoseiten ohne Filme.
+- **Nicht geprüft:** echte Netzkino-Wiedergabe und Kategorie-Entdeckung gegen die Live-API (aus der Build-Umgebung gesperrt), Wiedergabe auf macOS/NAS-Hardware.
+
+## 0.5.32 – Netzkino offline und Integrationsstand (11. November 2026)
+
+- Ausgeführt (Linux, Python 3.13): `python3 -m unittest discover -s tests` → 499 Tests OK (1 übersprungen), darunter 16 neue Netzkino-Offline-Tests (ytdl-nightly-Import, Extraktor gegen synthetische Next.js-Seite, DRM/HLS-Ablehnung, Benennung identisch zu `core.target`, Ende-zu-Ende-Download mit echtem FFmpeg-Remux, 30-Tage-Ablauf, Schutz fremder Dateien, Altauftrags-Übernahme, NAS-Dateirechte) und 29 aus dem Integrationspaket übernommene Netzkino-Tests.
+- UI-Smoke-Tests (`node tests/*.cjs`) und `node --check web/*.js` OK; Browser-Durchlauf (Playwright/Chromium) Detailfenster → Offline herunterladen → Auftrag sichtbar, ohne JavaScript-Fehler.
+- QNAP-Dienstlebenszyklus-Test (`test_qdk_project_and_service_lifecycle`) wieder grün; war im 0.5.31.11-Integrationsstand rot (Dateirechte 0600).
+- **Nicht geprüft:** echter Netzkino-Abruf (netzkino.de aus der Build-Umgebung nicht erreichbar), Wiedergabe auf macOS, Installation auf Synology/QNAP-Hardware.
+
 ## 0.5.25.1 – Release-Kandidatenprüfung (10. November 2026)
 
 - `tests/test_meshpeer.py`: Konfiguration der Verbundpartner sowie bewusst rotierte Schlüssel, Ablehnung alter Schlüssel, bestehende Partnerschaften und Reconnect.
