@@ -62,7 +62,7 @@ function stepDown(){const st=S.stats;if(!st||S.mode!=='remux'||wish()!=='auto'||
 function sendStats(){const st=S.stats,info=S.info;if(!st||st.sent||!info)return;stallEnd();if(st.playing)st.watched+=(Date.now()-st.playing)/1000;st.playing=0;
  if(st.watched<5&&!st.stalls)return;st.sent=true;
  api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String((S.mode==='hls'?S.hlsHeight:currentHeight())||''),native:!!(info.hls&&S.mode==='direct'),fallback:S.hlsFailed||'',switches:st.switches||0,watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
-function startRemux(t){if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
+function startRemux(t){gateOff();S.gated=false;if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
 // 0.5.68 (Björn, 12.11.2026: on the providers' own sites the stations run clearly smoother than in the
 // app): HLS is played by hls.js inside the browser, as those sites do - it loads the segments itself,
 // keeps a buffer ahead, adapts the quality to the connection and keeps picture and sound together.
@@ -82,7 +82,7 @@ function hlsLevel(w){const all=S.hls?S.hls.levels:[];if(!all.length||w==='auto')
 function stopHls(){if(S.hls){try{S.hls.destroy();}catch{}S.hls=null;}}
 // 0.5.72: /api/play no longer asks the provider for the levels when hls.js can read them; the ffmpeg path fetches them afterwards.
 function probeLevels(){const info=S.info;if(!info||!info.hls||(info.levels||[]).length)return;api('play?'+new URLSearchParams({...S.ref,quality:wish(),probe:'1'})).then(r=>{if(S.info===info&&r.levels?.length){info.levels=r.levels;renderQuality();}}).catch(()=>{});}
-function startHls(url,t){stopHls();S.fresh=true;S.mode='hls';video.controls=true;bar.hidden=true;say('Stream wird geladen …');
+function startHls(url,t){stopHls();gateOff();S.gated=false;S.fresh=true;S.mode='hls';video.controls=true;bar.hidden=true;say('Stream wird geladen …');
  const live=!!S.info.live,H=window.Hls,hls=new H({startPosition:live||!t?-1:t,maxBufferLength:30,maxMaxBufferLength:60,backBufferLength:30,liveSyncDurationCount:3,liveMaxLatencyDurationCount:10,
   manifestLoadingMaxRetry:1,levelLoadingMaxRetry:3,fragLoadingMaxRetry:4,capLevelToPlayerSize:false});
  S.hls=hls;let recovered=0;
@@ -98,7 +98,7 @@ function startHls(url,t){stopHls();S.fresh=true;S.mode='hls';video.controls=true
   if(d.type===H.ErrorTypes.MEDIA_ERROR&&recovered<2){recovered++;hls.recoverMediaError();return;}
   fallback(d.type===H.ErrorTypes.NETWORK_ERROR?'Anbieter nicht direkt erreichbar':String(d.details||d.type));});
  hls.loadSource(url);hls.attachMedia(video);}
-function startDirect(src,t){S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
+function startDirect(src,t){gateOff();S.gated=false;S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
 function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode==='direct'){video.currentTime=t;return;}
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.
  S.offset=t;slider.value=t;time.textContent=fmt(t)+' / '+fmt(d);clearTimeout(S.seekTimer);S.seekTimer=setTimeout(()=>startRemux(t),350);}
@@ -137,7 +137,19 @@ window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocooki
 // 0.5.68: only Safari (and other Apple WebKit browsers) plays HLS itself. Chrome reports a built-in
 // HLS player as well since late 2025, but it is new and plays live streams unevenly.
 function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayType('application/vnd.apple.mpegurl');}
-function stopVideo(){stopHls();if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
+// 0.5.76 (Björn, 13.11.2026: "nicht richtig smooth, vorher mehr buffern bis sich der Stream fängt"): online streams
+// collect a reserve before they run – 8 s at the start, 4 s after a seek, 5 s after every stall – instead of
+// starting with the first frame and stalling again at once. At most 15 s of waiting; a click on play ends it.
+const GATE={start:8,seek:4,stall:5,max:15};
+function ahead(){const b=video.buffered,t=video.currentTime;for(let i=0;i<b.length;i++)if(b.start(i)<=t+1&&b.end(i)>t)return b.end(i)-Math.max(t,b.start(i));return 0;}
+function gateOff(){if(S.gate){clearInterval(S.gate.timer);S.gate=null;}}
+function gate(need){if(S.gate||!S.info||S.info.origin!=='online'||S.mode==='embed'||!S.mode||ahead()>=need)return false;
+ const g=S.gate={need,until:Date.now()+GATE.max*1000,timer:0};if(S.stats)S.stats.gates=(S.stats.gates||0)+1;
+ const tick=()=>{if(S.gate!==g)return;const have=ahead();
+  if(have>=need||Date.now()>g.until||video.ended){gateOff();g.own=true;video.play().catch(()=>{});return;}
+  say('Puffer wird gefüllt … '+Math.floor(have)+' von '+need+' s');};
+ g.pausing=true;video.pause();g.pausing=false;g.timer=setInterval(tick,250);tick();return true;}
+function stopVideo(){gateOff();stopHls();if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
 function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n&&n.youtube){b.textContent='Nächstes Video ▸ '+String(n.label||'').slice(0,40);return;}if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
 function playIndex(i){S.index=i;const item=S.list[i];if(item.youtube)return open({youtube:item.youtube},item.label||'YouTube','youtube:'+item.youtube);return open({offer:item.id},episodeLabel(item),episodeKey(item));}
 function episodeLabel(item){const m=item.metadata||{};return (m.title||item.source?.title||'Video')+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?' · S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'')+(m.episode_title?' · '+m.episode_title:'');}
@@ -175,9 +187,10 @@ $('player-back').onclick=()=>seek(position()-10);$('player-fwd').onclick=()=>see
 slider.oninput=()=>{S.drag=true;time.textContent=fmt(Number(slider.value))+' / '+fmt(duration());};
 slider.onchange=()=>{S.drag=false;seek(Number(slider.value));};
 video.addEventListener('timeupdate',()=>{if(S.mode!=='remux'||S.drag)return;const p=position();slider.value=p;time.textContent=fmt(p)+' / '+fmt(duration());});
-video.addEventListener('playing',()=>{say('');toggle.textContent='❚❚';S.fresh=false;const st=S.stats;if(st){stallEnd();if(!st.first)st.first=(Date.now()-st.began)/1000;if(!st.playing)st.playing=Date.now();}});
-video.addEventListener('pause',()=>{toggle.textContent='▶';save();const st=S.stats;if(st&&st.playing){st.watched+=(Date.now()-st.playing)/1000;st.playing=0;}});
-video.addEventListener('waiting',()=>{say('Puffern …');const st=S.stats;if(st&&st.first&&!S.fresh&&!st.stallAt&&!video.seeking)st.stallAt=Date.now();});
+video.addEventListener('play',()=>{gateOff();});   // a click on play ends the waiting
+video.addEventListener('playing',()=>{if(S.fresh&&!S.gated){S.gated=true;if(gate(S.stats&&S.stats.first?GATE.seek:GATE.start))return;}say('');toggle.textContent='❚❚';S.fresh=false;const st=S.stats;if(st){stallEnd();if(!st.first)st.first=(Date.now()-st.began)/1000;if(!st.playing)st.playing=Date.now();}});
+video.addEventListener('pause',()=>{if(S.gate&&S.gate.pausing)return;toggle.textContent='▶';save();const st=S.stats;if(st&&st.playing){st.watched+=(Date.now()-st.playing)/1000;st.playing=0;}});
+video.addEventListener('waiting',()=>{say('Puffern …');const st=S.stats;if(st&&st.first&&!S.fresh&&!st.stallAt&&!video.seeking)st.stallAt=Date.now();if(!S.fresh&&!video.seeking&&!video.paused)gate(GATE.stall);});
 setInterval(()=>{if(dialog.open)stepDown();},2000);
 video.addEventListener('ended',()=>{save('ended');if(S.list[S.index+1])playIndex(S.index+1);else say('Ende');});
 video.addEventListener('error',()=>{if(!S.info||!video.getAttribute('src')||S.mode==='hls')return;

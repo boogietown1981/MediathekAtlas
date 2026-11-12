@@ -24,7 +24,10 @@ def setup(root):
     for h in list(logger.handlers):logger.removeHandler(h);h.close()
     h=logging.handlers.RotatingFileHandler(_root/'diagnostic.jsonl',maxBytes=2*1024*1024,backupCount=3,encoding='utf-8');logger.addHandler(h)
 def event(name,level='INFO',**fields):
-    with _lock:logger.log(getattr(logging,level),json.dumps(clean({'time':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'level':level,'event':name,**fields}),ensure_ascii=False))
+    # 0.5.74: an unknown level must never make the calling request fail (0.5.66–0.5.73: a field named 'level' did)
+    number=getattr(logging,str(level),None)
+    if not isinstance(number,int):fields['level_value']=level;level='INFO';number=logging.INFO
+    with _lock:logger.log(number,json.dumps(clean({'time':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'level':level,'event':name,**fields}),ensure_ascii=False))
 def error(name,exc,**fields):
     event(name,'ERROR',error_type=type(exc).__name__,error=str(exc),traceback=''.join(traceback.format_exception(type(exc),exc,exc.__traceback__)),**fields)
 def tail():

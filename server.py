@@ -1,9 +1,10 @@
 import subprocess,sys
-import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, re, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment
+import page_scripts
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -428,7 +429,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/':return self.send((Path(__file__).parent/'web'/'login.html').read_text().replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
             return self.send({'error':'Anmeldung erforderlich','login':True},401)
         if path=='/':
-            body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
+            body=page_scripts.inline_scripts((Path(__file__).parent/'web'/'index.html').read_text(encoding='utf-8'),Path(__file__).parent/'web',SCRIPTS).replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path in SCRIPTS:return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         # 0.5.68: hls.js (Apache-2.0, web/hls.LICENSE.txt) plays HLS in the browser the way the providers' own sites do
@@ -815,7 +816,7 @@ class Handler(BaseHTTPRequestHandler):
                 # one line per stream for the diagnosis: how long until the first data, how much, at which level
                 diagnostics.event('playback_stream',origin=source['kind'],provider=source.get('provider','mediathek'),live=bool(source.get('live')),
                                   start_at=round(start,1),first_data_seconds=first_after,seconds=seconds,megabytes=round(sent/1048576,1),
-                                  kbit=round(sent*8/1000/seconds) if seconds>=1 else 0,level=(level or {}).get('label',''),levels=(level or {}).get('levels',0))
+                                  kbit=round(sent*8/1000/seconds) if seconds>=1 else 0,picture=(level or {}).get('label',''),levels=(level or {}).get('levels',0))
     def do_HEAD(self):
         path=urllib.parse.urlsplit(self.path).path
         if path!='/api/download-file' or not self.valid_host() or not self.authorized():return self.send({'error':'Nicht gefunden'},404)
@@ -1359,7 +1360,7 @@ class Handler(BaseHTTPRequestHandler):
                 if _PLAYBACK_STATS[0]<200:
                     _PLAYBACK_STATS[0]+=1
                     diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
-                                      wish=str(d.get('wish',''))[:6],level=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
+                                      wish=str(d.get('wish',''))[:6],picture=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
                                       watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
                                       stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),agent=str(self.headers.get('User-Agent',''))[:160])
                 return self.send({'ok':True})

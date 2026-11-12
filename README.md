@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.5.73
+# MediathekAtlas · 0.5.74
+
+## Neu in 0.5.74: Die Seite bringt alle ihre Teile selbst mit
+
+Enthält alles bis 0.5.73.
+
+- **Nichts geht mehr verloren:** Die Seite lädt ihre rund zwanzig Skripte nicht mehr einzeln nach, sie stecken in der Seite selbst. Bisher konnte ein einzelnes Skript ausbleiben, dann fehlte der Player, die Netzkino-Wiedergabe („Cannot read properties of undefined (reading 'play')“) oder ein Plattform-Reiter. Das ist unabhängig vom Browser.
+- **Wiedergabe-Statistik:** Ein Fehler beim Schreiben der Statistik in die Diagnose ist behoben; seit 0.5.66 fehlten diese Zeilen.
+
 
 ## Neu in 0.5.73: Alle Teile der Seite kommen an
 
