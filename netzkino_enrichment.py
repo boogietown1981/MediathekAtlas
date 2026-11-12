@@ -239,6 +239,8 @@ def analyze(meta,editorial,results,*,match_issues=None):
         'provider_checks':checks[:25],
         'warnings':(['Mehrere widersprüchliche Referenzen; keine automatische Zuordnung.'] if ambiguous else [])+
             (['Einzelne Metadatenanbieter waren vorübergehend nicht verfügbar.'] if paused else []),
+        # Genres of the unique reference (IMDb/TVDB …): the catalogue categories use them first.
+        'reference_genres':list(selected['genres']) if selected else [],
         'identity_verified':False,
         'episode_verified':bool(selected and selected['episode_verified']),
         'download_authorized':False,
@@ -362,6 +364,21 @@ def enrich(root,item_id,settings,*,lookup=None,fetch=None,now=None,force=False):
     return report
 
 
+def all_cached(root):
+    """{item_id: report} of all stored checks, one read for catalogue views (no identity check)."""
+    path=Path(root)/'netzkino_links.sqlite3'
+    if not path.is_file():return {}
+    db=_conn(root)
+    try:
+        out={}
+        for item_id,payload in db.execute('SELECT item_id,payload FROM netzkino_reference_checks'):
+            try:report=json.loads(payload)
+            except (TypeError,ValueError):continue
+            if isinstance(report,dict):out[item_id]=report
+        return out
+    finally:db.close()
+
+
 def metrics(root):
     """Read-only aggregate counts suitable for privacy-preserving diagnostics."""
     path=Path(root)/'netzkino_links.sqlite3'
@@ -407,19 +424,20 @@ def pending(root, limit=10, now=None):
     return out
 
 
-def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None):
+def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None, pending_fn=None, name='netzkino'):
     """Low-priority worker: one title every `gap` seconds, never parallel to
     the user's own provider requests (shared `slots`), pauses when automatic
     metadata is switched off in the settings."""
     import diagnostics
     enrich_one=enrich_one or enrich
+    pending_fn=pending_fn or pending
     failed=set()
     while not stop.is_set():
         try:
             current=settings()
             if not current.get('auto_metadata',True):
                 stop.wait(300);continue
-            todo=[i for i in pending(root,limit=20) if i not in failed]
+            todo=[i for i in pending_fn(root,limit=20) if i not in failed]
             if not todo:
                 stop.wait(idle);failed.clear();continue
             done=0
@@ -430,9 +448,9 @@ def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None):
                     done+=1
                 except Exception as exc:  # one broken title must not stop the worker
                     failed.add(item_id)
-                    diagnostics.error('netzkino_auto_enrich_failed',exc)
+                    diagnostics.error(name+'_auto_enrich_failed',exc)
                 stop.wait(gap)
-            if done:diagnostics.event('netzkino_auto_enrich_batch',checked=done)
+            if done:diagnostics.event(name+'_auto_enrich_batch',checked=done)
         except Exception as exc:
-            diagnostics.error('netzkino_auto_enrich_loop',exc)
+            diagnostics.error(name+'_auto_enrich_loop',exc)
             stop.wait(300)

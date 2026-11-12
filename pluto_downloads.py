@@ -1,6 +1,6 @@
 """Pluto TV offline copies through the shared MediathekAtlas download queue (0.5.37).
 
-Björn (12.11.2026): Pluto titles may be stored offline for 20 days. As with Netzkino
+Björn (12.11.2026): Pluto titles may be stored offline for 30 days (first stated as 20, corrected the same day). As with Netzkino
 (netzkino_downloads) a Pluto film or episode becomes a regular job in the ``jobs`` table:
 same worker, same folders and names (core.target), MKV tagging, NFO, metadata.json and
 ``.partial`` staging. The life cycle (offline period, hourly expiry, delete now, no
@@ -18,7 +18,7 @@ import time
 
 import netzkino_downloads as offline
 
-OFFLINE_DAYS = 20
+OFFLINE_DAYS = 30
 LICENSE = offline.PORTAL_LICENSES['pluto']
 
 
@@ -67,7 +67,15 @@ def build_job(root, download_dir, item_id, now=None):
         row['poster'] = parent['poster']
     if parent and not row['genre']:
         row['genre'] = parent['genre']
-    meta = core.validate_meta(metadata(row, parent['title'] if parent else ''))
+    import pluto_enrichment, portal_reference
+    try:
+        report = pluto_enrichment.cached(root, item_id)
+    except Exception:
+        report = None
+    # Same classification and metadata as an ARD/ZDF download (canonical genres, cast, poster,
+    # NFO ids, rating) from the IMDb/TVDB/TMDB check; Pluto's own fields keep priority.
+    meta = core.validate_meta(portal_reference.apply(metadata(row, parent['title'] if parent else ''),
+                                                     report, 'Pluto TV', series_report=True))
     source_id = 'pluto:' + item_id
     target = str(core.target(download_dir, meta, source_id))
     source = {'_id': source_id, '_resolver': 'pluto', '_pluto_id': item_id, '_pluto_home': str(root),

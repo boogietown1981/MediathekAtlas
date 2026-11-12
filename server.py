@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -245,7 +245,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path in ('/app.js','/player.js','/pluto.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
@@ -260,13 +260,18 @@ class Handler(BaseHTTPRequestHandler):
             try:
                 if q.get('view',[''])[0]=='episodes':data=pluto.episodes(ROOT,q.get('series',[''])[0])
                 else:data=pluto.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
-                                        offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0])
+                                        offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
+                                        genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0])
             except ValueError as e:return self.send({'error':str(e)},404)
             data['status']=pluto.state(ROOT)
             return self.send(data)
         if path=='/api/netzkino-details':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
+        if path=='/api/pluto-details':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:return self.send(pluto.item(ROOT,q.get('id',[''])[0]))
+            except ValueError as e:return self.send({'error':str(e)},404)
         if path=='/api/pluto-downloads':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None,origin='pluto')
@@ -331,6 +336,17 @@ class Handler(BaseHTTPRequestHandler):
                 result=portal_sources.state(c)
                 result['platform_control']=portal_control.source_status(c)
                 result['archive_scopes']=portal_control.list_scopes(c)
+                offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto')}
+            # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
+            nk=netzkino.state(ROOT);pl=pluto.state(ROOT)
+            result['film_platforms']=[
+                {'source':'netzkino','name':'Netzkino','titles':nk.get('catalog_count',0),'last_success':nk.get('last_success',0),
+                 'last_result':nk.get('last_result'),'running':nk.get('running'),'reference':netzkino_enrichment.metrics(ROOT),
+                 'offline':offline['netzkino'],'offline_days':netzkino_downloads.OFFLINE_DAYS},
+                {'source':'pluto','name':'Pluto TV','titles':(pl.get('movies',0) or 0)+(pl.get('series',0) or 0),
+                 'channels':pl.get('channels',0),'last_success':pl.get('last_success',0),'last_result':pl.get('last_result'),
+                 'running':pl.get('running'),'reference':pluto_enrichment.metrics(ROOT),
+                 'offline':offline['pluto'],'offline_days':pluto_downloads.OFFLINE_DAYS}]
             return self.send(result)
         if path=='/api/portal-items':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -612,6 +628,12 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/netzkino-download-add':
                 # One queue for everything: same worker, folders and names as Mediathek videos.
                 item_id=str(d.get('id',''));root=settings()['download_dir']
+                if not d.get('file_url'):
+                    # Classification and metadata like an ARD/ZDF download: IMDb/TVDB/TMDB check first
+                    # (cached when fresh), outside any database connection. Failures never block.
+                    try:
+                        with SERVICE.provider_slots:netzkino_enrichment.enrich(ROOT,item_id,settings())
+                    except Exception as e:diagnostics.error('netzkino_download_enrich_failed',e)
                 with db() as c:
                     if d.get('file_url'):
                         result=netzkino_downloads.enqueue_file(c,ROOT,root,item_id,d.get('file_url',''),
@@ -619,8 +641,19 @@ class Handler(BaseHTTPRequestHandler):
                     else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id)
                 diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
                 return self.send(result)
+            if path=='/api/pluto-enrich':
+                with SERVICE.provider_slots:
+                    result=pluto_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+                diagnostics.event('pluto_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+                return self.send(result)
             if path=='/api/pluto-download-add':
-                with db() as c:result=pluto_downloads.enqueue(c,ROOT,settings()['download_dir'],str(d.get('id','')))
+                item_id=str(d.get('id',''))
+                # Classification and metadata like an ARD/ZDF download: IMDb/TVDB/TMDB check first
+                # (cached when fresh). A provider failure never blocks the download.
+                try:
+                    with SERVICE.provider_slots:pluto_enrichment.enrich(ROOT,item_id,settings())
+                except Exception as e:diagnostics.error('pluto_download_enrich_failed',e)
+                with db() as c:result=pluto_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
                 diagnostics.event('pluto_download_enqueued',created=result['created'])
                 return self.send(result)
             if path in ('/api/netzkino-download-action','/api/offline-download-action'):
@@ -911,6 +944,8 @@ if __name__=='__main__':
         # IMDb/TVDB/TMDB/OMDb/Wikidata for every Netzkino title, automatically and gently.
         threading.Thread(target=netzkino_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
                          daemon=True,name='netzkino_auto_enrichment').start()
+        threading.Thread(target=pluto_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
+                         daemon=True,name='pluto_auto_enrichment').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         threading.Thread(target=netzkino.loop,args=(ROOT,STOP),daemon=True,name='netzkino_catalog_scheduler').start()
         threading.Thread(target=pluto.loop,args=(ROOT,STOP),daemon=True,name='pluto_catalog_scheduler').start()

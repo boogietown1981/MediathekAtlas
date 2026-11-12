@@ -8,6 +8,7 @@
   <button type="button" data-catalog-source="all">Gesamt</button>
   <button type="button" data-catalog-source="mediatheken" class="primary">Mediatheken</button>
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
+  <button type="button" data-catalog-source="pluto">Pluto TV</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Katalog · Serien</h2>
@@ -45,7 +46,7 @@
 <section id="pluto" class="pluto-panel">
   <div class="panel netzkino-sync-panel">
     <h3>Pluto TV · Filme, Serien und Live-Sender</h3>
-    <p class="muted">Kostenloses Angebot von Pluto TV mit Werbung wie beim Anbieter. Wiedergabe im MediathekAtlas-Player. Filme und Folgen dürfen 20 Tage offline gespeichert werden
+    <p class="muted">Kostenloses Angebot von Pluto TV mit Werbung wie beim Anbieter. Wiedergabe im MediathekAtlas-Player. Filme und Folgen dürfen 30 Tage offline gespeichert werden
        (mit der Werbung, die Pluto ausliefert); danach entfernt MediathekAtlas die Datei automatisch. Live-Sender sind nicht speicherbar.
        Welcher Länderkatalog geladen wird, entscheidet Pluto anhand der Internetverbindung. Keine Anmeldung, kein Entfernen von Werbung.</p>
     <div class="netzkino-sync-actions"><button type="button" id="pluto-sync" class="primary">↻ Katalog jetzt laden</button>
@@ -59,7 +60,9 @@
     <button type="button" id="pluto-back" hidden>← Zur Serienübersicht</button>
     <span id="pluto-heading" role="status"></span>
   </div>
-  <div class="netzkino-toolbar"><label>Pluto-Titel suchen<input type="search" id="pluto-filter" placeholder="Titel, Genre oder Kategorie"></label></div>
+  <div class="netzkino-toolbar"><label>Pluto-Titel suchen<input type="search" id="pluto-filter" placeholder="Titel, Genre oder Kategorie"></label>
+    <label>Sortierung<select id="pluto-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="pluto-categories" class="portal-categories" role="group" aria-label="Pluto-Kategorien" hidden></div>
   <p id="pluto-status" class="muted" role="status"></p>
   <details id="pluto-offline" class="nk-offline pluto-offline"><summary>Offline-Kopien von Pluto TV <span id="pluto-offline-count" class="muted"></span></summary>
     <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
@@ -169,7 +172,9 @@
   <div class="netzkino-toolbar"><label>Netzkino-Titel suchen
     <input type="search" id="netzkino-filter" placeholder="Titel suchen"></label>
     <label>Quelle<select id="netzkino-origin"><option value="all">Alle Netzkino-Einträge</option>
-    <option value="catalog">Katalog / HAR-Startbestand</option><option value="manual">Manuell gemerkt</option></select></label></div>
+    <option value="catalog">Katalog / HAR-Startbestand</option><option value="manual">Manuell gemerkt</option></select></label>
+    <label>Sortierung<select id="netzkino-sort"><option value="updated">Zuletzt aktualisiert</option><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="netzkino-categories" class="portal-categories" role="group" aria-label="Netzkino-Kategorien" hidden></div>
   <p id="netzkino-status" class="muted" role="status">Netzkino-Verknüpfungen werden geladen …</p>
   <div id="netzkino-items" class="netzkino-grid" aria-live="polite"></div>
   <div class="netzkino-pages"><button type="button" id="netzkino-prev">← Zurück</button>
@@ -262,4 +267,14 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/pluto.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>
+</dialog><dialog id="atlas-pluto-detail" class="atlas-pluto-detail" aria-label="Pluto TV Film- und Seriendetails">
+  <div class="nk-detail-heading"><h2 id="atlas-pl-title">Pluto-TV-Details</h2><button type="button" id="atlas-pl-close" aria-label="Schließen">✕</button></div>
+  <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-pl-image" alt="Cover" hidden><dl id="atlas-pl-quickfacts" aria-label="Pluto-Kurzdaten"></dl></div>
+    <div class="nk-detail-main"><p id="atlas-pl-description"></p><dl id="atlas-pl-facts"></dl>
+      <div id="atlas-pl-reference" role="status"></div><dl id="atlas-pl-reference-facts"></dl>
+      <section class="nk-offline" aria-label="Pluto offline">
+        <div class="nk-offline-head"><h3>Offline ansehen</h3><span id="atlas-pl-offline-slot"></span></div>
+        <p id="atlas-pl-offline-status" class="muted" role="status"></p>
+      </section>
+      <div id="atlas-pl-actions" class="netzkino-actions"></div></div></div>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/pluto.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>

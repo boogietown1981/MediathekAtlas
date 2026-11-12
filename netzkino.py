@@ -1189,7 +1189,7 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
         raise ValueError('Ungültige Serienkennung')
     query=str(query or '').strip().casefold()[:180]
     genre=str(genre or '').strip().casefold()[:80]
-    sort=sort if sort in ('title','year','updated') else 'updated'
+    sort=sort if sort in ('title','year','updated','rating') else 'updated'
     def genre_tokens(row):
         value=row.get('genres') or ''
         if isinstance(value,str):
@@ -1199,14 +1199,17 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
             if isinstance(value,str):value=re.split(r'[,;|·]',value)
         if not isinstance(value,(list,tuple)):return []
         return [str(v).strip().casefold() for v in value if str(v).strip()]
+    import portal_reference, netzkino_enrichment
+    reports=netzkino_enrichment.all_cached(root)
     def genre_match(row):
-        return not genre or genre in genre_tokens(row)
+        # Canonical categories (IMDb/TVDB/TMDB genres first) as in the Mediathek catalogue.
+        return portal_reference.matches(row,genre)
     limit=max(1,min(100,int(limit)))
     offset=max(0,min(1000000,int(offset)))
     movies=[];series={}
     for row in _view_rows(root,origin):
         classification=classify_media(row)
-        enriched={**row,**classification}
+        enriched={**row,**classification,**portal_reference.summary(row.get('genres'),reports.get(row['id']))}
         if classification['media_type']=='movie':
             movies.append(enriched)
             continue
@@ -1227,10 +1230,14 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
             group['evidence']='provider_contentSeries'
         else:
             group['children'].append({**enriched,'series_key':key})
+            if not group.get('score') and enriched.get('score'):group['score']=enriched['score']
             if not group['poster']:group['poster']=row.get('poster') or ''
             if not group['genres']:group['genres']=row.get('genres') or ''
             if not group['year']:group['year']=row.get('year')
     for group in series.values():
+        cats=sorted({c for e in group['children'] for c in e['categories']}-{portal_reference.UNKNOWN},key=str.casefold)
+        group['categories']=cats or portal_reference.categories(group.get('genres'))
+        group.setdefault('score',None)
         group['children'].sort(key=lambda e:(e['season'] or 0,e['episode'] or 0,e['title'].casefold()))
         group['episode_count']=len(group['children'])
         group['seasons']=sorted({r['season'] for r in group['children'] if r['season'] is not None})
@@ -1254,17 +1261,21 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
     else:
         group=series.get(series_key)
         rows=[] if group is None else [r for r in group['children'] if (not query or query in r['title'].casefold()) and genre_match(r)]
+    if sort=='rating' and view!='episodes':
+        rows.sort(key=lambda r:(-((r.get('score') or {}).get('value',-1)),r['title'].casefold()))
     if sort=='title' and view!='episodes':
         rows.sort(key=lambda r:r['title'].casefold())
     elif sort=='year' and view!='episodes':
         rows.sort(key=lambda r:(-int(r.get('year') or 0),r['title'].casefold()))
-    available_genres=sorted({g for r in movies for g in genre_tokens(r)} |
-        {g for group in series.values() for g in genre_tokens(group)} |
-        {g for group in series.values() for child in group['children'] for g in genre_tokens(child)})
+    pool=movies if view=='movies' else list(series.values()) if view=='series' else \
+        (series[series_key]['children'] if series_key in series else [])
+    genre_counts=portal_reference.facets(pool)
+    available_genres=[g['genre'] for g in genre_counts]
     counts={'movies':len(movies),'series':len(series),
             'episodes':sum(len(g['children']) for g in series.values())}
     group_header=None
     if view=='episodes' and series_key in series:
         group_header={k:v for k,v in series[series_key].items() if k!='children'}
     return {'items':rows[offset:offset+limit],'total':len(rows),'offset':offset,
-            'view':view,'counts':counts,'series':group_header,'genres':available_genres}
+            'view':view,'counts':counts,'series':group_header,'genres':available_genres,
+            'genre_counts':genre_counts}

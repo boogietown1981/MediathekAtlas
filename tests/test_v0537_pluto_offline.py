@@ -49,14 +49,14 @@ class OfflineFixture(Fixture):
 
 
 class QueueTests(OfflineFixture):
-    def test_film_uses_mediathek_naming_and_twenty_day_licence(self):
+    def test_film_uses_mediathek_naming_and_thirty_day_licence(self):
         r, job = self.job()
         self.assertTrue(r['created'])
         self.assertEqual(job['target'], str(core.target(self.media, job['metadata'], 'pluto:' + MOVIE['_id'])))
         self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(),
                          'Filme/Arrival (2015)/Arrival (2015).mkv')
         self.assertEqual((job['origin'], job['pluto_id'], job['source']['_resolver']), ('pluto', MOVIE['_id'], 'pluto'))
-        self.assertEqual((job['license']['kind'], job['license']['days']), ('pluto_offline', 20))
+        self.assertEqual((job['license']['kind'], job['license']['days']), ('pluto_offline', 30))
         self.assertEqual(job['metadata']['provider'], 'Pluto TV')
         # No stream address (with session token) is stored in the queue.
         self.assertNotIn(TOKEN, json.dumps(job))
@@ -83,12 +83,12 @@ class QueueTests(OfflineFixture):
         first, job = self.job()
         self.assertFalse(pd.enqueue(self.c, self.root, self.media, MOVIE['_id'])['created'])
         self.publish(job)
-        self.assertEqual(job['offline_until'], 1000 + 20 * 86400)
-        self.assertEqual(nd.expire(self.c, now=1000 + 19 * 86400), [])
-        listing = nd.listing(self.c, MOVIE['_id'], now=1000 + 19 * 86400, origin='pluto')
-        self.assertEqual((listing['offline_days'], listing['items'][0]['days_left']), (20, 1))
+        self.assertEqual(job['offline_until'], 1000 + 30 * 86400)
+        self.assertEqual(nd.expire(self.c, now=1000 + 29 * 86400), [])
+        listing = nd.listing(self.c, MOVIE['_id'], now=1000 + 29 * 86400, origin='pluto')
+        self.assertEqual((listing['offline_days'], listing['items'][0]['days_left']), (30, 1))
         self.assertIn('Pluto-TV', listing['policy'])
-        self.assertEqual(nd.expire(self.c, now=1000 + 20 * 86400 + 1), [job['id']])
+        self.assertEqual(nd.expire(self.c, now=1000 + 30 * 86400 + 1), [job['id']])
         self.assertFalse(Path(job['target']).exists())
         self.assertTrue(pd.enqueue(self.c, self.root, self.media, MOVIE['_id'])['created'])
 

@@ -409,7 +409,7 @@ def episodes(root, series_id, fetch=None, now=None):
     now = time.time() if now is None else now
     db = _connect(root)
     try:
-        series = db.execute("SELECT title FROM pluto_items WHERE id=? AND kind='series'", (series_id,)).fetchone()
+        series = db.execute("SELECT title,genre FROM pluto_items WHERE id=? AND kind='series'", (series_id,)).fetchone()
         if not series:
             raise ValueError('Pluto-Serie nicht im Katalog; bitte Katalog neu laden')
         checked = float(_get(db, 'series_checked:' + series_id, '0') or 0)
@@ -427,12 +427,20 @@ def episodes(root, series_id, fetch=None, now=None):
         rows = [dict(r) for r in db.execute(
             "SELECT * FROM pluto_items WHERE kind='episode' AND series_id=? ORDER BY season,episode,title",
             (series_id,))]
-        return {'series': {'id': series_id, 'title': series['title']}, 'items': rows, 'error': error}
+        import portal_reference, pluto_enrichment
+        extra = portal_reference.summary(series['genre'],
+                                         pluto_enrichment.all_cached(root).get(series_id))
+        for row in rows:
+            row.update(extra)
+        return {'series': {'id': series_id, 'title': series['title'], **extra}, 'items': rows, 'error': error}
     finally:
         db.close()
 
 
-def listing(root, view='movies', query='', offset=0, limit=60, genre=''):
+def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title'):
+    """One page of films, series or live channels. Films and series carry the same canonical
+    categories and reference ratings as the Mediathek catalogue (portal_reference)."""
+    import portal_reference, pluto_enrichment
     kind = {'movies': 'movie', 'series': 'series', 'live': 'channel'}.get(view, 'movie')
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
     limit = max(1, min(_int(limit, 1) or 60, 200))
@@ -445,16 +453,47 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre=''):
             sql += ' AND (title LIKE ? OR genre LIKE ? OR category LIKE ?)'
             like = '%' + str(query)[:100] + '%'
             args += [like, like, like]
-        if genre:
-            sql += ' AND genre LIKE ?'
-            args.append('%' + str(genre)[:60] + '%')
-        total = db.execute('SELECT COUNT(*) ' + sql, args).fetchone()[0]
         order = 'number,title' if kind == 'channel' else 'title COLLATE NOCASE'
-        rows = [dict(r) for r in db.execute('SELECT * ' + sql + ' ORDER BY ' + order + ' LIMIT ? OFFSET ?',
-                                           (*args, limit, offset))]
-        return {'items': rows, 'total': total, 'offset': offset, 'view': view}
+        rows = [dict(r) for r in db.execute('SELECT * ' + sql + ' ORDER BY ' + order, args)]
     finally:
         db.close()
+    if kind == 'channel':
+        return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
+                'genre_counts': []}
+    reports = pluto_enrichment.all_cached(root)
+    for row in rows:
+        row.update(portal_reference.summary(row.get('genre'), reports.get(row['id'])))
+    counts = portal_reference.facets(rows)
+    rows = [r for r in rows if portal_reference.matches(r, genre)]
+    if sort == 'rating':
+        rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
+    elif sort == 'year':
+        rows.sort(key=lambda r: (-(r.get('year') or 0), r['title'].casefold()))
+    return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
+            'genre_counts': counts}
+
+
+def item(root, item_id):
+    """Detail view of one film, series or episode: catalogue row, series, reference report."""
+    import portal_reference, pluto_enrichment
+    if not VALID_ID.fullmatch(str(item_id or '')):
+        raise ValueError('Ungültiger Pluto-Titel')
+    db = _connect(root)
+    try:
+        row = db.execute('SELECT * FROM pluto_items WHERE id=?', (item_id,)).fetchone()
+        if not row:
+            raise ValueError('Pluto-Titel nicht im Katalog; bitte Katalog neu laden')
+        row = dict(row)
+        parent = db.execute('SELECT * FROM pluto_items WHERE id=?', (row['series_id'],)).fetchone() \
+            if row.get('series_id') else None
+        parent = dict(parent) if parent else None
+    finally:
+        db.close()
+    report = pluto_enrichment.cached(root, item_id) if row['kind'] != 'channel' else dict(pluto_enrichment.UNCHECKED)
+    genre = row.get('genre') or (parent or {}).get('genre')
+    return {'item': {**row, **portal_reference.summary(genre, report),
+                     'poster': row.get('poster') or (parent or {}).get('poster') or ''},
+            'series': parent, 'reference': report}
 
 
 def state(root):

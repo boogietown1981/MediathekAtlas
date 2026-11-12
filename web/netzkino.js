@@ -8,6 +8,8 @@
   let offset = 0;
   let view = 'movies';
   let seriesKey = '';
+  let genre = '';
+  const cats = () => window.AtlasPortalCategories;
   const pageSize = 80;
   const make = (tag, value, cls) => {
     const n = document.createElement(tag);
@@ -36,7 +38,7 @@
     const origin = $('netzkino-origin').value;
     try {
       const data = await endpoint('netzkino-grouped?' + new URLSearchParams({q, origin, offset,
-        view, series_key: seriesKey}));
+        view, series_key: seriesKey, genre, sort: $('netzkino-sort')?.value || 'updated'}));
       if (seq !== searchSeq) return;
       const status = data.status || {};
       $('netzkino-auto').checked = !!status.auto;
@@ -76,6 +78,7 @@
       $('netzkino-prev').disabled = offset === 0;
       $('netzkino-next').disabled = offset + pageSize >= total;
       $('netzkino-page-label').textContent = `${total ? offset+1 : 0}–${Math.min(offset+pageSize,total)} von ${total}`;
+      cats()?.render($('netzkino-categories'), data.genre_counts, genre, value => { genre = value; offset = 0; refresh(); });
       const host = $('netzkino-items'); host.replaceChildren();
       if (!data.items.length) host.append(make('p', q ? 'Keine passenden Einträge.' :
         'Noch keine Filmverknüpfungen. Du kannst einen Link speichern oder den Katalogabgleich starten.', 'empty'));
@@ -102,7 +105,8 @@
           'Nummerierungslücken im derzeitigen Katalog: ' + item.numbering_gaps.map(g =>
             'S' + g.season + ' E' + g.episodes.join(', E')).join('; ') +
           ' (keine Aussage zur Verfügbarkeit)', 'netzkino-gaps') : null;
-        const genres = item.genres ? make('small', item.genres, 'netzkino-genres') : null;
+        const genres = cats()?.categories(item.categories) || (item.genres ? make('small', item.genres, 'netzkino-genres') : null);
+        const rating = cats()?.rating(item.score);
         const summary = item.summary ? make('p', item.summary, 'netzkino-description') : null;
         const actions = make('div', undefined, 'netzkino-actions');
         const play = make('button', '▶ In MediathekAtlas ansehen', 'netzkino-open');
@@ -134,6 +138,7 @@
           actions.append(remove);
         }
         card.append(title, label, info);
+        if (rating) card.append(rating);
         if (gaps) card.append(gaps);
         if (genres) card.append(genres);
         if (summary) card.append(summary);
@@ -223,11 +228,12 @@
     try { await endpoint('netzkino-auto', {enabled: checked}); await refresh(); }
     catch (error) { $('netzkino-auto').checked = !checked; message(error.message, true); }
   };
-  $('netzkino-view-movies').onclick = () => { view='movies'; seriesKey=''; offset=0; refresh(); };
-  $('netzkino-view-series').onclick = () => { view='series'; seriesKey=''; offset=0; refresh(); };
+  $('netzkino-view-movies').onclick = () => { view='movies'; seriesKey=''; genre=''; offset=0; refresh(); };
+  $('netzkino-view-series').onclick = () => { view='series'; seriesKey=''; genre=''; offset=0; refresh(); };
   $('netzkino-back-series').onclick = () => { view='series'; seriesKey=''; offset=0; refresh(); };
   $('netzkino-filter').oninput = () => { offset = 0; clearTimeout(timer); timer = setTimeout(refresh, 250); };
   $('netzkino-origin').onchange = () => { offset = 0; refresh(); };
+  if ($('netzkino-sort')) $('netzkino-sort').onchange = () => { offset = 0; refresh(); };
   $('netzkino-prev').onclick = () => { offset = Math.max(0,offset-pageSize); refresh(); };
   $('netzkino-next').onclick = () => { offset += pageSize; refresh(); };
   const sidebar = document.querySelector('[data-view="netzkino"]');

@@ -119,18 +119,12 @@ def build_job(root, download_dir, item_id, *, details_get=None, now=None):
         db.close()
     page = ytdl_bridge.page_url(row['url'])
     details = (details_get or netzkino_details.get)(root, item_id).get('details') or {}
-    reference = _reference(root, item_id) if details_get is None else None
-    if reference:
-        # Automatic IMDb/TMDB/TVDB/OMDb/Wikidata check (netzkino_enrichment): only
-        # fills holes, Netzkino's own editorial fields keep priority.
-        details = {**details, **{k: v for k, v in reference['metadata'].items() if v and not details.get(k)}}
-    meta = metadata(row, details)
-    if reference and reference.get('selected'):
-        sel = reference['selected']
-        meta.update(provider=sel['provider'], reference_id=sel['reference_id'],
-                    source_provider='Netzkino')
-        if reference['metadata'].get('rating') is not None:
-            meta.update(rating=reference['metadata']['rating'], votes=reference['metadata'].get('votes'))
+    report = _report(root, item_id) if details_get is None else None
+    # IMDb/TVDB/TMDB/OMDb/Wikidata check (netzkino_enrichment, run right before enqueueing):
+    # same classification and metadata as an ARD/ZDF download (canonical genres, cast,
+    # poster, NFO ids, rating); Netzkino's own editorial fields keep priority.
+    import portal_reference
+    meta = portal_reference.apply(metadata(row, details), report, 'Netzkino')
     meta = core.validate_meta(meta)
     source_id = 'netzkino:' + item_id
     target = str(core.target(download_dir, meta, source_id))
@@ -146,20 +140,14 @@ def build_job(root, download_dir, item_id, *, details_get=None, now=None):
                         'note': 'Netzkino: Download erlaubt, Offline-Nutzung %d Tage' % OFFLINE_DAYS}}
 
 
-def _reference(root, item_id):
-    """Cached reference report; a unique eligible match also provides the NFO id."""
+def _report(root, item_id):
+    """Cached reference report, or None."""
     try:
         import netzkino_enrichment
         report = netzkino_enrichment.cached(root, item_id)
     except Exception:
         return None
-    if report.get('status') not in ('candidate', 'review', 'no_match', 'partial') or not report.get('metadata'):
-        return None
-    selected = None
-    if report.get('status') == 'candidate' and report.get('from_reference'):
-        selected = next((r for r in report.get('references') or [] if r.get('eligible')
-                         and r.get('provider') in ('IMDb Offline', 'TMDB', 'TVDB', 'OMDb')), None)
-    return {'metadata': report['metadata'], 'selected': selected}
+    return report if report.get('status') in ('candidate', 'review', 'no_match', 'partial') else None
 
 
 def _duplicate(c, job):

@@ -754,13 +754,26 @@ function displayPortalControls(data){
   summary.append(el('strong','Aktive externe Scanner: '+(control.active_platforms||0)+' / maximal '+control.max_active_platforms));
   summary.append(el('small','Der deutsche Mediathek-Katalog ist unabhängig. Nur tatsächlich angeschlossene Plattformen zählen.'));
   cards.append(summary);
-  for(const p of control.platforms||[]){
+  // Netzkino/Pluto have their own cards below (catalogue, IMDb/TVDB check, offline copies).
+  for(const p of (control.platforms||[]).filter(x=>!(data.film_platforms||[]).some(f=>f.source===x.source))){
     const card=el('article',undefined,'platform-stat');
     card.append(el('strong',p.name+' · '+(p.enabled?'Aktiv':p.can_scan?'Pausiert':'Manuell')));
     card.append(el('small',p.can_scan?'Konfigurierte Metadaten-Worker: '+p.workers:'Externer Portal-Scanner nicht verfügbar; Netzkino-GraphQL-Abgleich über den Netzkino-Reiter'));
     const queues=p.queues||{};
     card.append(el('small','Scanbereiche · wartend: '+(queues.queued||0)+
       ' · laufend: '+(queues.running||0)+' · abgeschlossen: '+(queues.complete||0)));
+    cards.append(card);
+  }
+  for(const p of data.film_platforms||[]){
+    const card=el('article',undefined,'platform-stat platform-stat-'+p.source);
+    const phase=p.running?'Abgleich läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise':p.last_result==='failed'?'Fehlgeschlagen':'Noch nicht geladen';
+    card.append(el('strong',p.name+' · '+phase));
+    card.append(el('small',countLabel(p.titles||0)+' Filme & Serien'+(p.channels?' · '+p.channels+' Live-Sender':'')+(p.last_success?' · Stand '+new Date(p.last_success*1000).toLocaleString('de-DE'):'')));
+    const ref=p.reference||{},by=ref.by_status||{};
+    card.append(el('small','IMDb/TVDB-Abgleich: '+(ref.checked||0)+' geprüft · '+(by.candidate||0)+' eindeutig · '+(by.review||0)+' zu prüfen'));
+    const off=p.offline||{};
+    card.append(el('small','Offline ('+p.offline_days+' Tage): '+(off.done||0)+' verfügbar · '+((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+off.error+' Fehler':'')));
+    const open=el('button','Öffnen');open.type='button';open.onclick=()=>portalView(p.source);card.append(open);
     cards.append(card);
   }
   const archive=(control.platforms||[]).find(p=>p.source==='internet_archive');

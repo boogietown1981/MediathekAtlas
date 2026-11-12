@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.38 – Kategorien, Pluto-Details, Download-Metadaten (12. November 2026)
+
+- Neue Tests `tests/test_v0538_portal_categories.py` (10): Genre-Vereinheitlichung (Referenz vor Anbieter, „Unbekannt“), Kategorien-Zähler und Filter, Bewertung nur aus gültiger Referenz, Download-Metadaten wie ARD (NFO mit `uniqueid imdb`, Genres, Besetzung, Bewertung; mehrdeutige Treffer ohne ID; Seriensynopsis nicht als Folgeninhalt), Pluto-Abgleich über die Anbieterkette (Folge → Serie), Verwerfen bei Titeländerung, Netzkino-Katalog mit Referenzkategorien und Bewertungs-Sortierung, Server-/UI-Einbindung, 30 Tage.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem Pluto-Katalog, einer Pluto- und einer Netzkino-Referenz: Katalog → „Pluto TV“ und „Gesamt“, Plattformübersicht mit Netzkino-/Pluto-Karten, Pluto-Kategorienleiste und Filter, Detailansicht Film und Serie → Folgen, Netzkino-Kategorien (21 Genres aus dem HAR-Bestand); keine JavaScript-Fehler (nur in der Cloud gesperrte Coverbilder).
+- `node --check web/*.js`, `node tests/*.cjs` OK. Volllauf `python3 -m unittest discover -s tests` → 553 Tests OK.
+- **Nicht geprüft:** Abgleich mit echten IMDb/TVDB/TMDB-Zugängen für Pluto-/Netzkino-Titel (Anbieterkette in Tests simuliert), Pluto live.
+
 ## 0.5.37 – Pluto TV offline, 20 Tage (12. November 2026)
 
 - Neue Tests `tests/test_v0537_pluto_offline.py` (12): Benennung identisch zu `core.target` (Film und Folge), 20-Tage-Frist, Ablauf und erneutes Speichern, „Jetzt löschen“, getrennte Netzkino-/Pluto-Listen, Ablehnung von Live-Sendern, ganzen Serien und unbekannten Kennungen, keine Stream-Adresse/Sitzungsschlüssel im Auftrag, Resolver mit frischer Sitzung, **echter HLS-Download mit ffmpeg** gegen einen lokalen HTTP-Server (MKV mit Video+Audio, NFO, metadata.json ohne Schlüssel, keine `.partial`-Reste), Abbruch beendet ffmpeg, zu kurzer Stream wird als unvollständig gemeldet.

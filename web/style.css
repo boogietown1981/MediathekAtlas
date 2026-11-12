@@ -662,3 +662,8 @@ dialog.player::backdrop{background:#000c}
 #pluto-offline-jobs .nk-offline-job button{justify-self:start}
 .pluto-item .nk-warning,#pluto-offline-jobs .nk-warning{color:#ffb78e}
 .pluto-item .pluto-offline-state{display:block;font-size:.85em}
+.portal-categories{display:flex;flex-wrap:wrap;align-items:center;gap:6px;margin:8px 0 12px}
+.portal-categories strong{margin-right:4px}
+.portal-categories .portal-category{padding:4px 10px;font-size:.88em;border-radius:999px}
+.portal-rating{display:inline-block;font-weight:600;color:#f5c451;font-size:.9em}
+.portal-category-line{display:block;color:var(--muted,#8a8f98);font-size:.85em}

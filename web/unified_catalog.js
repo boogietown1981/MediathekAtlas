@@ -8,12 +8,12 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino'];
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto'];
   const TYPES = ['movies','series'];
   let source='mediatheken',kind='series',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
   let medGenres=[];
-  const heading=() => ({all:'Gesamtkatalog',mediatheken:'Öffentlich-rechtliche Mediatheken',netzkino:'Netzkino'}[source]);
+  const heading=() => ({all:'Gesamtkatalog',mediatheken:'Öffentlich-rechtliche Mediatheken',netzkino:'Netzkino',pluto:'Pluto TV'}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
     const discover=$('discover');
@@ -77,7 +77,7 @@
     $('atlas-source-content').hidden=false;
     updateControls();refresh();
   }
-  function labelSource(item) {return item.source==='netzkino'?'Netzkino':'Mediathek';}
+  function labelSource(item) {return item.source==='netzkino'?'Netzkino':item.source==='pluto'?'Pluto TV':'Mediathek';}
   function medRow(item) {
     const m=item.metadata||{},r=item.source||{};
     return {source:'mediatheken',id:item.work_id||'',raw:item,kind:m.kind||'',
@@ -90,9 +90,16 @@
   function nkRow(item) {
     return {source:'netzkino',id:item.id||'',raw:item,kind:item.media_type||'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',
-      description:item.summary||'',genres:item.genres||'',duration:item.duration||null,
+      description:item.summary||'',genres:(item.categories||[]).filter(c=>c!=='Unbekannt').length?item.categories.filter(c=>c!=='Unbekannt'):item.genres||'',
+      score:item.score||null,duration:item.duration||null,
       episode_count:item.episode_count||0,access_hint:item.access_hint||'',
       season:item.season,episode:item.episode,series_key:item.series_key};
+  }
+  function plRow(item) {
+    return {source:'pluto',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
+      title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',description:item.summary||'',
+      genres:(item.categories||[]).filter(c=>c!=='Unbekannt'),score:item.score||null,duration:item.duration||null,
+      season:item.season,episode:item.episode};
   }
   function genreList(value) {
     if (Array.isArray(value)) return value.filter(v=>typeof v==='string');
@@ -119,9 +126,11 @@
       item.kind==='episode'&&item.episode?'S'+(item.season??'?')+' E'+item.episode:null,
       ...genreList(item.genres).slice(0,2)].filter(Boolean).join(' · ');
     text.append(el('small',facts,'atlas-uc-meta'));
+    const stars=window.AtlasPortalCategories?.rating(item.score);
+    if (stars) text.append(stars);
     if (item.description) text.append(el('p',item.description.slice(0,220),'atlas-uc-desc'));
     const actions=el('div',undefined,'atlas-uc-actions');
-    const details=el('button',item.kind==='series'&&item.source==='netzkino'?'Folgen anzeigen':'Details & Angebote','atlas-uc-details');
+    const details=el('button',item.kind==='series'&&item.source==='netzkino'?'Folgen anzeigen':item.source==='pluto'?'Details':'Details & Angebote','atlas-uc-details');
     details.type='button';
     details.onclick=()=>openItem(item);
     actions.append(details);
@@ -135,12 +144,18 @@
       };
       actions.append(watch);
     }
-    if (item.source==='netzkino') actions.append(el('small','Wiedergabe im MediathekAtlas-Player · 30 Tage offline speicherbar'));
+    if (item.source==='pluto' && item.kind!=='series') {
+      const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
+      watch.onclick=()=>window.playPluto?.(item.id,item.title);
+      actions.append(watch);
+    }
+    if (item.source==='netzkino'||item.source==='pluto') actions.append(el('small','Wiedergabe im MediathekAtlas-Player · 30 Tage offline speicherbar'));
     text.append(actions);card.append(art,text);
     return card;
   }
   function openItem(item) {
-    if (item.source==='netzkino') {
+    if (item.source==='pluto') window.MediathekAtlasPluto?.openDetail(item.id);
+    else if (item.source==='netzkino') {
       if (item.kind==='series') {
         // Retain the previous platform-level openSeries handler as a fallback.
         if (!$('atlas-cross-items') && window.MediathekAtlasNetzkino?.openSeries) {
@@ -187,8 +202,9 @@
     updateControls();
     $('atlas-cross-items').setAttribute('aria-busy','true');
     $('atlas-cross-status').textContent='Katalog wird gelesen …';
-    const nkNeeded=source!=='mediatheken';
-    const medNeeded=source!=='netzkino' && !seriesKey;
+    const nkNeeded=(source==='all'||source==='netzkino');
+    const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;
+    const plNeeded=(source==='all'||source==='pluto') && !seriesKey;
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -198,13 +214,16 @@
     if (nkNeeded)requests.push({source:'netzkino',req:window.api('netzkino-grouped?'+new URLSearchParams({
       view:nkView,series_key:seriesKey,q:search,genre,sort,offset:String(offset),limit:'48'
     }))});
+    if (plNeeded)requests.push({source:'pluto',req:window.api('pluto?'+new URLSearchParams({
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48'
+    }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));
     if (seq!==sequence) return;
     const rows=[],notes=[],totals=[],facets=[];
     for(let i=0;i<requests.length;i++) {
       const request=requests[i],result=responses[i];
       if(result.status!=='fulfilled') {
-        notes.push((request.source==='netzkino'?'Netzkino':'Mediatheken')+' nicht verfügbar: '+result.reason.message);
+        notes.push(({netzkino:'Netzkino',pluto:'Pluto TV'}[request.source]||'Mediatheken')+' nicht verfügbar: '+result.reason.message);
         continue;
       }
       const data=result.value;
@@ -215,9 +234,13 @@
         facets.push(...medGenres);
         for (const item of data.items||[]) facets.push(...genreList(item.metadata?.genres));
         notes.push('Mediatheken: '+data.total+' Treffer');
+      } else if (request.source==='pluto') {
+        rows.push(...(data.items||[]).map(plRow));
+        facets.push(...(data.genre_counts||[]).map(g=>g.genre).filter(g=>g!=='Unbekannt'));
+        notes.push('Pluto TV: '+data.total+' Treffer');
       } else {
         rows.push(...(data.items||[]).map(nkRow));
-        facets.push(...(data.genres||[]));
+        facets.push(...(data.genres||[]).filter(g=>g!=='Unbekannt'));
         notes.push('Netzkino: '+data.total+' Treffer · Startseitenindex, kein vollständiger Gesamtkatalog'+(seriesKey?' · '+seriesTitle:''));
       }
     }
@@ -241,12 +264,12 @@
   $('atlas-cross-next')?.addEventListener('click',()=>{offset+=48;refresh();});
   $('atlas-cross-open-portal')?.addEventListener('click',()=>{
     document.querySelector('[data-view="portals"]')?.click();
-    document.querySelector('.platform-tab[data-platform="netzkino"]')?.click();
+    document.querySelector('.platform-tab[data-platform="'+(source==='pluto'?'pluto':'netzkino')+'"]')?.click();
   });
   arrangeAdvanced();
   window.api('catalog-tree').then(data => {
     medGenres=(data.tree||[]).map(entry=>entry.genre).filter(Boolean);
-    if(source!=='netzkino') refresh();
+    if(source==='all'||source==='mediatheken') refresh();
   }).catch(()=>{});
   window.AtlasUnifiedCatalog={activate,refresh};
   activate('mediatheken');

@@ -1,8 +1,15 @@
-# MediathekAtlas · 0.5.37
+# MediathekAtlas · 0.5.38
 
-## Neu in 0.5.37: Pluto TV offline (20 Tage)
+## Neu in 0.5.38: Kategorien, Bewertungen und Details für Netzkino und Pluto TV
 
-- Pluto-Filme und -Folgen lassen sich mit „⬇ Offline speichern (20 Tage)“ herunterladen. Sie laufen durch dieselbe Download-Warteschlange wie Mediathek- und Netzkino-Videos (gleiche Ordner und Namen, MKV mit NFO und metadata.json) und werden nach 20 Tagen automatisch entfernt. Die Datei enthält die Werbung, die Pluto ausliefert. Live-Sender sind nicht speicherbar.
+- Netzkino und Pluto TV zeigen Kategorien wie der Mediathek-Katalog (Genres aus IMDb, TVDB, TMDB; sonst die Angabe des Anbieters) mit Anzahl, dazu die IMDb-/TMDB-Bewertung und eine Sortierung nach Bewertung.
+- Pluto TV hat eine Detailansicht (Cover, Inhalt, Kategorien, Referenzen, Ansehen, Offline speichern) und steht im Katalog unter „Pluto TV“ sowie im „Gesamt“-Katalog. Die Plattformübersicht zeigt Netzkino und Pluto mit Katalog, Abgleich und Offline-Kopien.
+- Downloads von Netzkino und Pluto werden vor dem Einreihen mit IMDb/TVDB/TMDB abgeglichen und erhalten Genres, Besetzung, Cover/Hintergrund, IMDb-/TVDB-ID und Bewertung wie ARD-/ZDF-Downloads.
+- Pluto TV: Offline-Frist 30 Tage (statt 20).
+
+## Neu in 0.5.37: Pluto TV offline
+
+- Pluto-Filme und -Folgen lassen sich mit „⬇ Offline speichern“ herunterladen. Sie laufen durch dieselbe Download-Warteschlange wie Mediathek- und Netzkino-Videos (gleiche Ordner und Namen, MKV mit NFO und metadata.json) und werden nach Ablauf der Frist automatisch entfernt. Die Datei enthält die Werbung, die Pluto ausliefert. Live-Sender sind nicht speicherbar.
 
 ## Neu in 0.5.36: Pluto TV
 
