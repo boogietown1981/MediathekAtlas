@@ -35,9 +35,10 @@ OFFLINE_DAYS = 30
 OFFLINE_SECONDS = OFFLINE_DAYS * 86400
 LICENSE_OFFLINE = 'netzkino_offline'
 # Streaming portals with time-limited offline copies in the shared queue (0.5.37: Pluto TV).
-PORTAL_LICENSES = {'netzkino': LICENSE_OFFLINE, 'pluto': 'pluto_offline', 'justwatch': 'justwatch_offline'}
+PORTAL_LICENSES = {'netzkino': LICENSE_OFFLINE, 'pluto': 'pluto_offline', 'justwatch': 'justwatch_offline',
+                   'rakuten': 'rakuten_offline'}
 # Display name and offline period module per portal (listing policy text).
-PORTAL_NAMES = {'netzkino': 'Netzkino', 'pluto': 'Pluto-TV', 'justwatch': 'JustWatch-TV'}
+PORTAL_NAMES = {'netzkino': 'Netzkino', 'pluto': 'Pluto-TV', 'justwatch': 'JustWatch-TV', 'rakuten': 'Rakuten-TV'}
 OFFLINE_KINDS = frozenset(PORTAL_LICENSES.values())
 LICENSE_FILE = 'licensed_file'
 ACTIVE = ('queued', 'downloading', 'tagging')
@@ -184,7 +185,7 @@ def _safe_host(host):
     h = (host or '').lower().rstrip('.')
     if not h or len(h) > 240 or '.' not in h or h.endswith(('.local', '.internal', '.test', '.localhost')):
         raise ValueError('Nur öffentliche HTTPS-Downloadserver sind erlaubt')
-    if any(h == n or h.endswith('.' + n) for n in ('netzkino.de', 'pluto.tv', 'tubitv.com', 'justwatch.com', 'dailymotion.com')):
+    if any(h == n or h.endswith('.' + n) for n in ('netzkino.de', 'pluto.tv', 'tubitv.com', 'justwatch.com', 'dailymotion.com', 'rakuten.tv')):
         raise ValueError('Für Netzkino-Titel „Offline herunterladen“ verwenden; dieses Feld ist für fremde Lizenzdateien')
     try:
         ipaddress.ip_address(h.strip('[]'))
@@ -389,7 +390,7 @@ def loop(db, stop, interval=3600):
 def _public(job, now):
     until = job.get('offline_until')
     return {'id': job['id'], 'netzkino_id': job.get('netzkino_id'), 'pluto_id': job.get('pluto_id'),
-            'justwatch_id': job.get('justwatch_id'),
+            'justwatch_id': job.get('justwatch_id'), 'rakuten_id': job.get('rakuten_id'),
             'origin': job.get('origin'), 'state': job.get('state'),
             'title': (job.get('metadata') or {}).get('title'),
             'target_name': Path(job.get('path') or job.get('target') or '').name,
@@ -429,6 +430,9 @@ def portal_days(origin):
     if origin == 'justwatch':
         import justwatch_downloads
         return justwatch_downloads.OFFLINE_DAYS
+    if origin == 'rakuten':
+        import rakuten_downloads
+        return rakuten_downloads.OFFLINE_DAYS
     return OFFLINE_DAYS
 
 

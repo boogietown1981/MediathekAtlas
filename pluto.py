@@ -480,6 +480,18 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
             'genre_counts': counts}
 
 
+def channels(root):
+    """All live channels of the latest successful catalogue run (for the Live-TV tab, 0.5.50)."""
+    db = _connect(root)
+    try:
+        last = float(_get(db, 'last_success', '0') or 0)
+        return [dict(r) for r in db.execute(
+            "SELECT id,title,number,genre,category,summary,poster FROM pluto_items "
+            "WHERE kind='channel' AND seen>=? ORDER BY number,title", (last,))]
+    finally:
+        db.close()
+
+
 def item(root, item_id):
     """Detail view of one film, series or episode: catalogue row, series, reference report."""
     import portal_reference, pluto_enrichment

@@ -68,7 +68,7 @@ def build_job(root, download_dir, item_id, now=None):
         raise ValueError('JustWatch-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':
         raise ValueError('Bitte eine einzelne Folge auswählen; Serien werden folgenweise geladen')
-    # 0.5.50: only titles with a real youth-protection window can wait for the night; the others
+    # 0.5.52: only titles with a real youth-protection window can wait for the night; the others
     # without a stream are copy protected (JustWatch player only) and are refused with that reason.
     if not row['playable'] and not row.get('night'):
         raise ValueError(justwatch.PROTECTED)

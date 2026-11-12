@@ -1,10 +1,23 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
-## 0.5.50 – JustWatch: Zeitfenster und Kopierschutz (12. November 2026)
-- Automatisch: 652 Python-Tests und alle `.cjs`-Tests grün, darunter 10 neue in `tests/test_v0550_justwatch_protected.py` (Zeitfenster aus `availableHours`, Rückfall auf die Altersfreigabe, Rückfall auf die Abfrage ohne das Feld, Migration alter Bestände, Ablehnung geschützter Titel, Titelseite, Kacheln).
+## 0.5.52 – JustWatch: Zeitfenster und Kopierschutz (12. November 2026)
+- Automatisch: 677 Python-Tests und alle `.cjs`-Tests grün, darunter 10 neue in `tests/test_v0552_justwatch_protected.py` (Zeitfenster aus `availableHours`, Rückfall auf die Altersfreigabe, Rückfall auf die Abfrage ohne das Feld, Migration alter Bestände, Ablehnung geschützter Titel, Titelseite, Kacheln).
 - Browser (Chromium, Testbestand): Titel ohne Stream und ohne Zeitfenster zeigt in Katalog und Plattform-Reiter „Bei JustWatch ansehen“ und den Kopierschutz-Hinweis, kein Offline-Knopf; keine Skriptfehler.
 - Grundlage: Björns Mitschnitt von justwatch.com/de/Serie/Andromeda (12.11.2026, 16:46 UTC), ausgewertet, nicht im Repository.
 - Nicht geprüft: Live-Abruf gegen JustWatch (aus der Bauumgebung nicht erreichbar), insbesondere ob das neue Abfragefeld angenommen wird und ob Titel mit Zeitfenster nachts einen Stream für externe Player bekommen.
+
+## 0.5.51 – Rakuten TV (12. November 2026)
+
+- HAR-Auswertung (Björn, 12.11.2026, 802 Anfragen): Katalog-, Serien- und Live-Formate übernommen; vier `avod/streamings`: Film „Meet Dave“ und Folge „Z Nation 1-1“ → `web:DASH-CENC:WVM` mit `license_url` (prod-widevine.rakuten.tv), MPD mit Widevine-`ContentProtection`; Live „Top Movies“ → `web:HLS-NONE:NONE`, AES-128/identity.
+- Neue Tests `tests/test_v0551_rakuten.py` (14): Gratislisten mit Seiten, Leihtitel verworfen, Live-Sender mit laufender Sendung, Fehlertexte, gespeicherter Bestand bleibt, Live-Fehler lässt Filme stehen, Adressprüfung; alle Staffeln einer Serie, Zwischenspeicher; Filme/Folgen ohne Netzanfrage abgelehnt; Live-Sender mit Prüfung, Lizenz bzw. geschützte Liste abgelehnt, AES-128/identity erlaubt; Offline-Ablehnungen und gemeinsame Warteschlange; gemeinsamer Abgleich, Titelseiten, Live-TV-Reiter; Verdrahtung. Gesamte Suite: 667 Tests grün.
+- Browser-Durchlauf (Playwright, Testbestand in HAR-Form): Katalog-Reiter, Plattform-Reiter mit Übersichtskarte, Filme nur „Details · Bei Rakuten TV ansehen“, Live-Sender „▶ Live ansehen“, Titelseite mit Kopierschutz-Hinweis, Reiter Live-TV mit Rakuten-Sendern; keine JavaScript-Fehler.
+- **Nicht geprüft:** echte Abrufe von rakuten.tv (aus der Cloud gesperrt), ob Rakuten die Live-Anfrage ohne die Werbe-/Einwilligungsfelder der Website annimmt, Wiedergabe der Live-Sender.
+
+## 0.5.50 – Live-TV nach Sendern (12. November 2026)
+
+- Neue Tests `tests/test_v0550_live_tv.py` (11): Sendernamen aus Filmlisten-Titeln, Schreibvarianten, Regionalfenster nur bei Sendern, Livestreams nicht im Werkabgleich (auch Bestandsdatenbanken, manuelle Entscheidungen bleiben), Reihenfolge und Gruppen, inaktive Angebote und Nicht-HTTP-Adressen ausgeschlossen, Wiedergabe als Live ohne Länge, normale Angebote nicht live, Pluto-Sender in der Übersicht, Diagnose nur Zähler. Gesamte Testsuite lokal grün (ein bekannt lastabhängiger Launcher-Test lief einzeln grün).
+- Browser-Durchlauf (Playwright, echter Server mit Testbestand: 5 Sender-Livestreams + 1 Pluto-Sender): Reiter Live-TV mit Gruppen Öffentlich-rechtlich (Das Erste, ZDF, 3sat) · Regional (BR Nord, WDR) · Pluto TV; Favorit springt nach oben; Anbieterfilter; „Live ansehen“ bei Das Erste → Player „Live-Stream des Senders“, ohne „Von vorn“; Plattformen → Pluto → Live-TV → Sprung in den Reiter; Live-Leiste im Katalog bei „ARD, ZDF & Co.“; keine JavaScript-Fehler.
+- **Nicht geprüft:** echte Filmliste (aus der Cloud gesperrt; Thema „Livestream“ aus dem MServer-Quellcode belegt, Titelform „<Sender> Livestream“ angenommen), echte Wiedergabe der Sender-Livestreams und der Pluto-Sender.
 
 ## 0.5.49 – Plattform-Ansicht, JustWatch-Folgen, geteilter Abgleich (12. November 2026)
 

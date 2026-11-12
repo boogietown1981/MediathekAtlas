@@ -16,7 +16,7 @@ detail sources into one model:
 """
 from __future__ import annotations
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -96,7 +96,7 @@ def _portal(root, source, item_id):
     elif m['kind'] != 'series':
         m['playable'] = it.get('playable') not in (0, False)
         # 0.5.48: JustWatch releases some titles only at night (youth protection): reserve the download.
-        # 0.5.50: only with a real time window; without one the title is copy protected (JustWatch player only).
+        # 0.5.52: only with a real time window; without one the title is copy protected (JustWatch player only).
         night = source == 'justwatch' and not m['playable'] and bool(it.get('night'))
         m['protected'] = source == 'justwatch' and not m['playable'] and not night
         m['offline'] = {'allowed': m['playable'] or night, 'days': OFFLINE_DAYS, 'night': night}
@@ -119,6 +119,11 @@ def _portal(root, source, item_id):
                       if m.get('protected') else 'Jugendschutz-Zeitfenster (nachts) – Offline-Kopie für die Nacht vormerkbar'])
     if source == 'pluto':
         facts.append(['Angebot', 'Pluto TV, kostenlos mit Werbung'])
+    if source == 'rakuten':
+        facts.append(['Angebot', 'Rakuten TV, kostenlos mit Werbung' + ('' if m['kind'] == 'channel' else ' (AVOD)')])
+        if it.get('drm'):
+            facts.append(['Stream', 'nur mit Kopierschutz (Widevine/PlayReady) – bei Rakuten TV ansehen, kein Offline-Speichern'])
+            m['notes'].append('Rakuten TV liefert kostenlose Filme und Folgen nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht.')
     _fill_from_reference(m, report)
     return m
 

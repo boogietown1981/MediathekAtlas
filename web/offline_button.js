@@ -7,7 +7,8 @@
   'use strict';
   const SOURCES = {netzkino: {name: 'Netzkino', action: 'netzkino-download-action'},
     pluto: {name: 'Pluto TV', action: 'offline-download-action'},
-    justwatch: {name: 'JustWatch TV', action: 'offline-download-action'}};
+    justwatch: {name: 'JustWatch TV', action: 'offline-download-action'},
+    rakuten: {name: 'Rakuten TV', action: 'offline-download-action'}};
   const ACTIVE = ['queued', 'downloading', 'tagging'], FAILED = ['error', 'cancelled', 'interrupted'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar',
     error: 'Fehlgeschlagen', cancelled: 'Abgebrochen', interrupted: 'Unterbrochen'};
@@ -105,7 +106,7 @@
     node.append(button, cancel, note); st.controls.add(ctl); paint(ctl); schedule(source);
     return node;
   }
-  /* 0.5.50: the same short reason wherever a title cannot be saved because it is copy protected. */
+  /* 0.5.52: the same short reason wherever a title cannot be saved because it is copy protected. */
   function protectedNote() { const n = make('small', '🔒 ' + PROTECTED, 'atlas-offline-note atlas-offline-protected muted'); n.title = 'JustWatch liefert diesen Titel nur verschlüsselt (Widevine/PlayReady/FairPlay) an den eigenen Player.'; return n; }
   window.AtlasOffline = {control, refresh, protectedNote, job: (source, id) => state[source]?.jobs.get(id),
     onChange: (source, fn) => state[source]?.listeners.add(fn)};

@@ -82,7 +82,7 @@ CATALOG_QUERY = '''query MediathekAtlasJustWatchTv($country: Country!, $language
         standardWebURL streamUrlExternalPlayer monetizationType package { shortName } } } }
     pageInfo { endCursor hasNextPage }
     totalCount } }'''
-# 0.5.50: JustWatch itself says when a title has a youth-protection time window (FSK 16: 22-6 h,
+# 0.5.52: JustWatch itself says when a title has a youth-protection time window (FSK 16: 22-6 h,
 # FSK 18: 23-6 h; empty list = no window). The basic query is the fallback if the field is refused.
 CATALOG_QUERY_BASIC = CATALOG_QUERY % ''
 CATALOG_QUERY = CATALOG_QUERY % ('\n        ageCertificationDetails(country: $country) '
@@ -141,7 +141,7 @@ def _connect(root):
     db.execute('PRAGMA busy_timeout=5000')
     db.executescript(SCHEMA)
     if 'night' not in {r[1] for r in db.execute('PRAGMA table_info(justwatch_items)')}:
-        # 0.5.50: older stock; until the next catalogue run the age rating decides (16/18 = time window).
+        # 0.5.52: older stock; until the next catalogue run the age rating decides (16/18 = time window).
         with db:
             db.execute('ALTER TABLE justwatch_items ADD COLUMN night INTEGER NOT NULL DEFAULT 0')
             db.execute("UPDATE justwatch_items SET night=1 WHERE CAST(rating AS INTEGER)>=16")
@@ -720,7 +720,7 @@ def night_start(now=None):
     return start.timestamp()
 
 
-# 0.5.50 (Björn's HAR of "Andromeda", FSK 12, 12.11.2026): titles without an address for external
+# 0.5.52 (Björn's HAR of "Andromeda", FSK 12, 12.11.2026): titles without an address for external
 # players run in JustWatch's own player only, Widevine/PlayReady/FairPlay protected (licence server,
 # SAMPLE-AES). That is copy protection, not a time window: no player here and no offline copy.
 PROTECTED = ('JustWatch spielt diesen Titel nur im eigenen, kopiergeschützten Player (DRM) ab. '

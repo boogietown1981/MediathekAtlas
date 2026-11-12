@@ -79,7 +79,7 @@ window.AtlasPortalPanel = function (cfg) {
     } else if (!playable(item)) {
       actions.append(externalLink(item));
       // 0.5.48: released by the provider only at night (youth protection) -> reserve the download.
-      // 0.5.50: only with a real time window (item.night); otherwise the title is copy protected.
+      // 0.5.52: only with a real time window (item.night); otherwise the title is copy protected.
       const night = cfg.nightOffline && item.kind !== 'channel' && (item.night ? window.AtlasOffline?.control(K, item.id, label, {night: true}) : window.AtlasOffline?.protectedNote());
       if (night) actions.append(night);
     } else {
@@ -142,7 +142,7 @@ window.AtlasPortalPanel = function (cfg) {
   }
 
   async function refresh() {
-    window.AtlasPlatformBoard?.mount(K);   // same overview as in the catalogue (0.5.49)
+    window.AtlasPlatformBoard?.mount(K);   // same overview as in the catalogue (0.5.50)
     refreshOffline();
     const call = ++seq;
     const q = $(P + '-filter').value.trim();
@@ -166,6 +166,7 @@ window.AtlasPortalPanel = function (cfg) {
     for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live']])
       if ($(id)) $(id).classList.toggle('primary', view === v || (view === 'episodes' && v === 'series'));
     $(P + '-back').hidden = view !== 'episodes';
+    if ($(P + '-live-all')) $(P + '-live-all').hidden = view !== 'live';  // 0.5.50: Live-TV tab by station
     $(P + '-heading').textContent = view === 'episodes' ? (data.series?.title || '') + ' · ' + (data.items || []).length + ' Folgen' : '';
     cats()?.render($(P + '-categories'), view === 'live' || view === 'episodes' ? [] : data.genre_counts, genre,
       value => { genre = value; offset = 0; refresh(); });

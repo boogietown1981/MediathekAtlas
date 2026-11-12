@@ -3,6 +3,7 @@
 //   playJob(job)            – a finished download
 //   playNetzkino(id[,label]) – a Netzkino film (offline copy or the MP4 resolved by ytdl-nightly)
 //   playPluto(id[,label])    – a Pluto TV film, episode or live channel (official HLS incl. adverts)
+//   playLive(ref[,label])    – a live channel from the Live-TV tab (broadcaster stream or Pluto TV)
 // The server decides per title whether the browser plays the source itself (MP4 from the broadcaster,
 // local MP4) or whether ffmpeg remuxes it into a stream (MKV downloads, HLS). Remuxed streams have no
 // seekable length in the browser, so this player brings its own timeline and restarts the stream at the
@@ -17,7 +18,7 @@ const position=()=>S.mode==='remux'?S.offset+(video.currentTime||0):video.curren
 const duration=()=>S.mode==='remux'?S.info?.duration||0:(Number.isFinite(video.duration)?video.duration:S.info?.duration||0);
 function episodeKey(item){return item.work_id||item.id;}
 function say(text){status.textContent=text||'';status.hidden=!text;}
-function save(final){if(!S.key)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});return;}if(p>20)remember(S.key,{pos:p,at:Date.now()});}
+function save(final){if(!S.key||S.info?.live)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});return;}if(p>20)remember(S.key,{pos:p,at:Date.now()});}
 function streamUrl(t){return S.info.remux+'&'+new URLSearchParams({t:t.toFixed(1),session:S.session,token});}
 function startRemux(t){S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
 function startDirect(src,t){S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
@@ -30,8 +31,8 @@ async function open(ref,label,key,start){
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
  let info;try{info=await api('play?'+new URLSearchParams(ref));}catch(e){say(e.message);return;}
  S.info=info;$('player-title').textContent=info.title||label||'Video';
- $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls())?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');
- const last=start===0?null:store(S.key);let t=last&&!last.done&&last.pos>20&&(!info.duration||last.pos<info.duration-45)?last.pos:0;
+ $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls())?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');
+ const last=start===0||info.live?null:store(S.key);let t=last&&!last.done&&last.pos>20&&(!info.duration||last.pos<info.duration-45)?last.pos:0;
  $('player-restart').hidden=!t;
  if(t)notice('Fortgesetzt bei '+fmt(t)+'. „Von vorn“ startet neu.');
  if(info.mode==='direct')startDirect(info.src,t);
@@ -55,7 +56,10 @@ window.playMedia=async function(item,list){
   return open({offer:item.id},episodeLabel(item),episodeKey(item));
  }catch(e){notice(e.message,'error');}};
 window.playPluto=function(id,label){S.list=[];S.index=-1;return open({pluto:id},label||'Pluto TV','pluto:'+id);};
+// Live-TV tab (0.5.50): ref is {offer:id} (broadcaster live stream) or {pluto:id}; live has no resume position.
+window.playLive=function(ref,label){S.list=[];S.index=-1;return open(ref,label||'Live-TV','live:'+Object.values(ref).join(':'),0);};
 window.playJustWatch=function(id,label){S.list=[];S.index=-1;return open({justwatch:id},label||'JustWatch TV','justwatch:'+id);};
+window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:id},label||'Rakuten TV','rakuten:'+id);};
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};
 window.playable=function(item){return !!(item&&(item.series_parent||item.downloaded||(item.links||[]).some(l=>/^https?:\/\//i.test(l.url)&&!/\.mpd(\?|$)/i.test(l.url))));};

@@ -89,3 +89,4 @@ def check(url, fetch=None):
     if reason:
         raise DrmProtected(DRM_MESSAGE)
     return {'variants': len(found), 'protected': False}
+

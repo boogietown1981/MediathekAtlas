@@ -1,9 +1,24 @@
-# MediathekAtlas · 0.5.50
+# MediathekAtlas · 0.5.52
 
-## Neu in 0.5.50: JustWatch – Nacht-Vormerkung nur bei echtem Zeitfenster, Hinweis bei Kopierschutz
+## Neu in 0.5.52: JustWatch – Nacht-Vormerkung nur bei echtem Zeitfenster, Hinweis bei Kopierschutz
 
 - „🌙 Heute Nacht offline speichern“ erscheint nur noch bei Titeln, für die JustWatch selbst ein Jugendschutz-Zeitfenster meldet (FSK 16/18).
 - Titel, die JustWatch nur im eigenen, kopiergeschützten Player (DRM) abspielt – z. B. die Folgen von „Andromeda“ –, zeigen „🔒 Kopiergeschützt (DRM): nur im JustWatch-Player“ und den Knopf „Bei JustWatch ansehen“. Wiedergabe und Offline-Kopie in MediathekAtlas sind dafür nicht möglich; der Kopierschutz wird nicht umgangen.
+- 0.5.52 enthält außerdem alles aus 0.5.50 (Live-TV nach Sendern) und 0.5.51 (Rakuten TV).
+
+## Neu in 0.5.51: Rakuten TV (kostenlose Filme, Serien und Live-Sender)
+
+- Neue Quelle Rakuten TV: Katalog-Reiter „Rakuten TV“ und Plattform-Reiter mit allen kostenlosen Filmen (ca. 1.900) und Serien (ca. 120), gleiche Kacheln, Kategorien, Bewertung, Titel- und Serienseite (alle Staffeln) wie Netzkino, Pluto TV und JustWatch TV.
+- **Wichtig:** Rakuten liefert kostenlose Filme und Folgen nur mit Kopierschutz (Widevine/PlayReady) aus – das zeigt der Mitschnitt von rakuten.tv eindeutig. MediathekAtlas umgeht das nicht. Diese Titel öffnen deshalb „Bei Rakuten TV ansehen“; Abspielen im MediathekAtlas-Player und „Offline speichern (30 Tage)“ gibt es für sie nicht.
+- Die rund 160 kostenlosen **Live-Sender** von Rakuten TV laufen ohne Kopierschutz im MediathekAtlas-Player: im Plattform-Reiter unter „Live-TV“ und im Reiter „Live-TV“ zusammen mit ARD/ZDF und Pluto TV (nur live, nicht speicherbar).
+- Der IMDb/TVDB/TMDB-Abgleich nutzt den gemeinsamen Abgleich: Filme, die schon auf einer anderen Plattform abgeglichen wurden, werden nicht erneut abgefragt.
+
+## Neu in 0.5.50: Live-TV nach Sendern
+
+- Neuer Reiter **„Live-TV“**: alle Live-Sender deiner Quellen an einem Ort, nach Sendern sortiert und gruppiert (Öffentlich-rechtlich, Regional (ARD), Pluto-Kategorien). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Suche, Filter nach Anbieter und Gruppe, Favoriten (★) oben.
+- **ARD, ZDF & Co. live:** die offiziellen Livestreams der Sender kommen aus der Filmliste (Thema „Livestream“). Sie werden nicht mehr als Werke abgeglichen.
+- **Beim Anbieter:** Im Katalog unter „ARD, ZDF & Co.“ und „Pluto TV“ gibt es eine aufklappbare Live-Leiste; unter Plattformen → Pluto TV → Live-TV führt „Alle Sender im Reiter Live-TV →“ in die Senderübersicht.
+- Der Player setzt Live-Sender nicht an einer gespeicherten Position fort. Live-Sender lassen sich nicht offline speichern.
 
 ## Neu in 0.5.49: Plattform-Ansicht wie der Katalog, JustWatch-Folgen, geteilter Abgleich
 

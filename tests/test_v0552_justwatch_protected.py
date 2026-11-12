@@ -1,4 +1,4 @@
-"""0.5.50: night reservation only with a real youth-protection window; other JustWatch titles without
+"""0.5.52: night reservation only with a real youth-protection window; other JustWatch titles without
 a stream for external players are copy protected (Björn: "Andromeda", FSK 12, was shown as night-only)."""
 import sys
 import tempfile

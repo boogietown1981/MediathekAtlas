@@ -74,8 +74,12 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if rakuten:
+        if root is None:raise ValueError('Rakuten-Katalog nicht verfügbar')
+        import rakuten as rakuten_tv
+        return rakuten_tv.play_source(root,rakuten)
     if justwatch:
         if root is None:raise ValueError('JustWatch-Katalog nicht verfügbar')
         import justwatch as justwatch_tv
@@ -109,7 +113,12 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
     # Prefer a direct file up to 1080p for smooth playback, then HLS.
     direct=[l for l in usable if l['supported']]
     best=(sorted(direct,key=lambda l:(0<(l['height_hint'] or 720)<=1080,l['score']),reverse=True) or usable)[0]
-    return {'kind':'url','url':best['url'],'hls':bool(HLS.search(best['url'])),'quality':best['quality'],'title':title,'duration':duration}
+    out={'kind':'url','url':best['url'],'hls':bool(HLS.search(best['url'])),'quality':best['quality'],'title':title,'duration':duration}
+    # Broadcaster live streams (0.5.50): no length, no resume position, title = station.
+    if str(row.get('topic') or '').strip() in catalog.LIVE_TOPICS:
+        import live_tv
+        out.update(live=True,duration=0,title=live_tv.station_name(row.get('title'),row.get('channel')),quality='Live · '+best['quality'],provider='mediathek')
+    return out
 
 def probe(path):
     binary=tool('ffprobe')

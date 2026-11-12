@@ -1,5 +1,5 @@
 <!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="atlas-token" content="__TOKEN__"><title>MediathekAtlas</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head><body>
-<aside><div class="brand"><img src="/icon.svg" width="34" height="34" alt=""> MediathekAtlas</div><span class="eyebrow">DEINE MEDIATHEKEN. GEORDNET.</span><nav><button class="nav active" data-view="discover">▤ &nbsp; Katalog</button><button class="nav" data-view="portals">◎ &nbsp; Plattformen</button><button class="nav" data-view="review">✓ &nbsp; Zuordnung</button><button class="nav" data-view="subscriptions">↻ &nbsp; Download-Abos</button><button class="nav" data-view="queue">↓ &nbsp; Downloads <span id="jobcount">0</span></button><button class="nav" data-view="logs">≡ &nbsp; Live-Protokoll</button><button class="nav" data-view="settings">⚙ &nbsp; Einstellungen</button></nav><div class="asidebottom">MEDIATHEKATLAS · LOKAL<br><small id="edition">v__VERSION__ · Lokale Bibliothek</small><button id="quit-app" type="button">App beenden</button><button id="logout" type="button" hidden>Abmelden</button><p id="tools">System wird geprüft …</p></div></aside>
+<aside><div class="brand"><img src="/icon.svg" width="34" height="34" alt=""> MediathekAtlas</div><span class="eyebrow">DEINE MEDIATHEKEN. GEORDNET.</span><nav><button class="nav active" data-view="discover">▤ &nbsp; Katalog</button><button class="nav" data-view="portals">◎ &nbsp; Plattformen</button><button class="nav" data-view="livetv">◉ &nbsp; Live-TV</button><button class="nav" data-view="review">✓ &nbsp; Zuordnung</button><button class="nav" data-view="subscriptions">↻ &nbsp; Download-Abos</button><button class="nav" data-view="queue">↓ &nbsp; Downloads <span id="jobcount">0</span></button><button class="nav" data-view="logs">≡ &nbsp; Live-Protokoll</button><button class="nav" data-view="settings">⚙ &nbsp; Einstellungen</button></nav><div class="asidebottom">MEDIATHEKATLAS · LOKAL<br><small id="edition">v__VERSION__ · Lokale Bibliothek</small><button id="quit-app" type="button">App beenden</button><button id="logout" type="button" hidden>Abmelden</button><p id="tools">System wird geprüft …</p></div></aside>
 <main><header><div><span class="eyebrow">MEDIATHEKVIEWWEB → DEINE BIBLIOTHEK</span><h1 id="heading">Serien entdecken. Sauber archivieren.</h1></div><span class="pill" id="location-pill">● Lokal auf deinem Rechner</span></header>
 <div id="connection-status" role="status" hidden></div>
 <div id="notice" role="status" hidden></div>
@@ -10,6 +10,7 @@
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
   <button type="button" data-catalog-source="pluto">Pluto TV</button>
   <button type="button" data-catalog-source="justwatch">JustWatch TV</button>
+  <button type="button" data-catalog-source="rakuten">Rakuten TV</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Katalog · Serien</h2>
@@ -45,6 +46,7 @@
     <button class="platform-tab" type="button" data-platform="netzkino">Netzkino</button>
     <button class="platform-tab" type="button" data-platform="pluto">Pluto TV</button>
     <button class="platform-tab" type="button" data-platform="justwatch">JustWatch TV</button>
+    <button class="platform-tab" type="button" data-platform="rakuten">Rakuten TV</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -62,6 +64,7 @@
     <button type="button" id="pluto-view-series">Serien</button>
     <button type="button" id="pluto-view-live">Live-TV</button>
     <button type="button" id="pluto-back" hidden>← Zur Serienübersicht</button>
+    <button type="button" id="pluto-live-all" class="livetv-jump" hidden>Alle Sender im Reiter Live-TV →</button>
     <span id="pluto-heading" role="status"></span>
   </div>
   <div class="netzkino-toolbar"><label>Pluto-Titel suchen<input type="search" id="pluto-filter" placeholder="Titel, Genre oder Kategorie"></label>
@@ -104,6 +107,35 @@
   <div class="netzkino-pages"><button type="button" id="justwatch-prev">← Zurück</button>
     <span id="justwatch-page-label" class="muted"></span>
     <button type="button" id="justwatch-next">Weiter →</button></div>
+</section>
+<section id="rakuten" class="pluto-panel rakuten-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Rakuten TV · kostenlose Filme, Serien und Live-Sender</h3>
+    <p class="muted">Nur das kostenlose Angebot von Rakuten TV (mit Werbung); Leih-, Kauf- und Abotitel werden nicht geladen.
+       Rakuten liefert kostenlose Filme und Folgen nur mit Kopierschutz (Widevine) aus. MediathekAtlas umgeht ihn nicht: Diese Titel haben Katalog, Bewertung und Titelseite und öffnen zum Ansehen die offizielle Rakuten-TV-Seite; Abspielen im MediathekAtlas-Player und Offline-Speichern sind dafür nicht möglich.
+       Die kostenlosen Live-Sender laufen ohne Kopierschutz im MediathekAtlas-Player (nur live, nicht speicherbar). Keine Anmeldung, kein Entfernen von Werbung.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="rakuten-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="rakuten-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="rakuten-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Rakuten-Ansicht">
+    <button type="button" id="rakuten-view-movies" class="primary">Filme</button>
+    <button type="button" id="rakuten-view-series">Serien</button>
+    <button type="button" id="rakuten-view-live">Live-TV</button>
+    <button type="button" id="rakuten-back" hidden>← Zur Serienübersicht</button>
+    <span id="rakuten-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Rakuten-Titel suchen<input type="search" id="rakuten-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="rakuten-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="rakuten-categories" class="portal-categories" role="group" aria-label="Rakuten-Kategorien" hidden></div>
+  <p id="rakuten-status" class="muted" role="status"></p>
+  <details id="rakuten-offline" class="nk-offline rakuten-offline"><summary>Offline-Kopien von Rakuten TV <span id="rakuten-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="rakuten-offline-jobs"></div></details>
+  <div id="rakuten-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="rakuten-prev">← Zurück</button>
+    <span id="rakuten-page-label" class="muted"></span>
+    <button type="button" id="rakuten-next">Weiter →</button></div>
 </section>
   <div id="portal-platform-overview" class="platform-summary">
     <div id="platform-dashboard" class="platform-stats-grid" aria-label="Status je Plattform"></div>
@@ -235,6 +267,16 @@
   <p class="muted portal-rights-note">Kostenlose Wiedergabe bedeutet nicht automatisch Downloadrecht. Externe Portalangebote werden weder in die Downloadwarteschlange übernommen noch als verifizierte vollständige Filme markiert. Ein exakter Titel-/Jahrestreffer im lokalen Katalog ist nur ein Hinweis.</p>
 </section>
 <section id="title-view" class="title-view" hidden aria-live="polite"></section>
+<section id="livetv" class="livetv" hidden aria-label="Live-TV nach Sendern">
+  <div class="sectionhead"><div><h2>Live-TV nach Sendern</h2>
+    <p class="muted">Alle Live-Sender deiner Quellen an einem Ort: die offiziellen Livestreams von ARD, ZDF &amp; Co. aus der Filmliste und die Live-Sender von Pluto TV (mit Werbung wie beim Anbieter). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Live-Sender lassen sich nicht offline speichern.</p></div>
+    <button type="button" id="livetv-reload">↻ Aktualisieren</button></div>
+  <div class="livetv-toolbar"><label>Sender suchen<input type="search" id="livetv-filter" placeholder="z. B. ZDF, arte, Krimi"></label></div>
+  <div id="livetv-providers" class="portal-categories" role="group" aria-label="Anbieter"></div>
+  <div id="livetv-groups" class="portal-categories" role="group" aria-label="Sendergruppen"></div>
+  <p id="livetv-status" class="muted" role="status">Live-Sender werden geladen …</p>
+  <div id="livetv-list" aria-live="polite"></div>
+</section>
 <section id="review" hidden><div class="panel atlas-video-audit" id="video-audit-panel">
   <div class="sectionhead"><h3>Altbestandsprüfung · Videoformate</h3><button type="button" id="video-audit-refresh">↻ Aktualisieren</button></div>
   <p class="muted">Prüft auch bereits erkannte Werke. Automatisch bestätigte Treffer bleiben erhalten und werden bei Laufzeitkonflikten markiert. Manuelle Zuordnungen werden nicht verändert.</p>
@@ -300,4 +342,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script></body></html>
