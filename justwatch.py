@@ -166,7 +166,8 @@ def _error(exc):
     if code:
         return 'JustWatch antwortet mit HTTP %d' % code
     if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
-        return 'JustWatch ist nicht erreichbar (Netzwerk/Proxy prüfen)'
+        import netcheck
+        return netcheck.with_cause('JustWatch ist nicht erreichbar', exc)
     if isinstance(exc, ValueError):
         return str(exc)[:200]
     return 'JustWatch-Katalog konnte nicht geladen werden'
@@ -395,7 +396,8 @@ def sync(root, post=None, now=None, gap=None):
                     _set(db, key, value)
         finally:
             db.close()
-        _notify('justwatch_sync_failed', http_status=getattr(exc, 'code', 0) or 0)
+        import netcheck
+        _notify('justwatch_sync_failed', http_status=getattr(exc, 'code', 0) or 0, error_type=netcheck.kind(exc))
         return {'ok': False, 'error': message}
 
 

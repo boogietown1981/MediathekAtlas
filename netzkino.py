@@ -935,7 +935,7 @@ def sync_graphql(root, fetch=None, now=None):
         finally:db.close()
     except Exception as exc:
         if isinstance(exc,urllib.error.HTTPError):msg='Netzkino-Katalog HTTP '+str(exc.code)
-        elif isinstance(exc,(urllib.error.URLError,TimeoutError,OSError)):msg='Netzkino-Katalogserver nicht erreichbar.'
+        elif isinstance(exc,(urllib.error.URLError,TimeoutError,OSError)):msg=__import__('netcheck').with_cause('Netzkino-Katalogserver nicht erreichbar',exc)
         elif isinstance(exc,ValueError):msg=str(exc)[:240]
         else:msg='GraphQL-Katalogabgleich konnte nicht abgeschlossen werden.'
         db=_connect(root)
@@ -945,7 +945,7 @@ def sync_graphql(root, fetch=None, now=None):
                                   ('last_http_status',getattr(exc,'code',0)),('next_attempt',now+3600)]:
                     _set(db,key,value)
         finally:db.close()
-        _notify('netzkino_sync_failed',error_type=_category_failure_type(exc),
+        _notify('netzkino_sync_failed',error_type=_category_failure_type(exc),network=__import__('netcheck').kind(exc),
                 http_status=getattr(exc,'code',0),categories_checked=checked)
         return {'ok':False,'error':msg,'categories_checked':checked}
 

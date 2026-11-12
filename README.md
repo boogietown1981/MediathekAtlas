@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.45
+# MediathekAtlas · 0.5.46
+
+## Neu in 0.5.46: Katalogfehler nennen die Ursache
+
+- Scheitert der Abruf von Netzkino, Pluto TV oder JustWatch TV, steht jetzt dabei, woran es liegt (Name nicht auflösbar/Filter, Zertifikat, Zeitüberschreitung, Proxy, abgelehnt). Der Diagnose-Export prüft zusätzlich jeden Katalogserver (DNS, Verbindung, TLS).
 
 ## Neu in 0.5.45: Serienseiten mit allen Folgen – für jeden Anbieter gleich
 

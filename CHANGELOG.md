@@ -1,3 +1,9 @@
+## 0.5.46 – Katalogfehler mit Ursache, Netzprüfung im Diagnose-Export
+- Björn (12.11.2026): „die Kataloge synchronisieren nicht mehr“ – Netzkino „Fehlgeschlagen · Netzkino-Katalogserver nicht erreichbar“, Pluto und JustWatch laden nicht. In der Testumgebung nicht nachstellbar (dort ist kein Anbieter erreichbar); die bisherige Meldung verriet die Ursache nicht.
+- Neu `netcheck.py`: Die Fehlermeldung aller drei Kataloge nennt die Ursache (Name nicht auflösbar – DNS/Werbefilter/kein Internet, Zertifikat nicht prüfbar, Zeitüberschreitung, Verbindung abgelehnt/abgebrochen, Proxy), ohne Adressen oder Schlüssel. Die Ereignisse `…_sync_failed` tragen die Fehlerart.
+- Diagnose-Export: Abschnitt `network` mit DNS-, Verbindungs- und TLS-Prüfung je Katalogserver (Netzkino, Pluto, JustWatch, zum Vergleich die Mediathek-Liste) und dem Stand des Zertifikatsspeichers.
+- Hat Python gar keine Stammzertifikate (python.org-Installation ohne „Install Certificates“), nutzt die App den Systemspeicher (`/etc/ssl/cert.pem`) – die Prüfung bleibt eingeschaltet.
+
 ## 0.5.45 – Serienseiten mit allen Folgen, für jeden Anbieter gleich
 - Björn (12.11.2026): „bei Serien sollen die Folgen dann auch unter der erkannten Serie dargestellt [werden] … unabhängig des Anbieters gleich“; bei Pluto führte „21 Jump Street“ auf eine schlecht dargestellte Seite und von dort in die Episodenliste unter „Plattformen“.
 - Die gemeinsame Titelseite (`portal_title.js`) zeigt bei Serien „Staffeln & Folgen · n“ wie die Mediathek-Serienseite: Staffel-Reiter (ab zwei Staffeln), je Folge Bild mit SxxEyy, Titel, Laufzeit, Inhalt, ▶ Abspielen bzw. „Beim Anbieter ansehen“, ⬇ Offline speichern direkt in der Zeile (Status „Vorgemerkt/Lädt/Offline verfügbar · noch n T.“) und Details.

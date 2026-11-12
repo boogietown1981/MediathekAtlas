@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.46 – Katalogfehler mit Ursache (12. November 2026)
+
+- Neue Tests `tests/test_v0546_network_cause.py` (6): Ursachen unterschieden (DNS, Zertifikat, Zeitüberschreitung, abgelehnt, Proxy), keine Adressen in der Meldung, Pluto-/JustWatch-Meldung mit Ursache, Netzprüfung meldet Fehler ohne Ausnahme, Verdrahtung.
+- Lokaler Lauf ohne Anbieterzugang: Abruf aller drei Kataloge → „… nicht erreichbar – <Ursache>“, gespeicherter Bestand bleibt.
+- **Nicht geprüft / Ursache offen:** Warum die Abrufe auf Björns Mac scheitern; dafür Diagnose-Export aus 0.5.46 nötig.
+
 ## 0.5.45 – Serienseiten mit allen Folgen (12. November 2026)
 
 - Neue Tests `tests/test_v0545_series_pages.py` (8): Pluto-Serienmodell mit sortierten Folgen (S1E1, S1E2, S2E1) und Serienbild als Ersatz, gleiche Folgenfelder für alle Anbieter, Netzkino-Serien-ID für Folge und Gruppe identisch, unbekannte Netzkino-Serie abgelehnt, Downloadstatus für mehrere Folgen-IDs, Verdrahtung (Reiter, Katalog, Netzkino-Reiter, Server).

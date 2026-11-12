@@ -2,7 +2,7 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment
 from version import VERSION
 from contextlib import contextmanager
@@ -371,7 +371,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot()}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()}}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -1005,6 +1005,10 @@ class Server(ThreadingHTTPServer):
 
 if __name__=='__main__':
     server=Server((LISTEN,PORT),Handler)
+    try:
+        trust=netcheck.ensure_trust_store()
+        if trust.get('source')!='system':diagnostics.event('tls_trust_store_fallback',source=trust.get('source'),ca_certs=trust.get('ca_certs'))
+    except Exception as e:diagnostics.error('tls_trust_store_check_failed',e)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
     try:
         with db() as c:removed=job_queue.dedupe(c)
