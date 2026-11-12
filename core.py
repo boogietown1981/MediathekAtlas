@@ -100,10 +100,62 @@ def validate_meta(m,require_episode=True):
     return m
 
 def target(root,meta,source_id):
+    """Planned destination of a download (before the file is measured).
+
+    0.5.42 (Björn's library layout): every title has its own folder (Filme/<Titel> (<Jahr>)/,
+    Serien/<Serie> (<Jahr>)/Season NN/), file names follow ``<Titel> - (<Jahr>)``; after the
+    download the measured resolution and codecs are appended (``final_target``):
+    ``Spellbound - (2024) - 1080p - H264 E-AC-3.mkv`` with ``-poster``/``-backdrop`` images and NFO."""
     m=validate_meta(dict(meta))
     g={**m,'match_state':'confirmed'}
     v={'filename':'video.mkv','item_id':source_id,'season':m['season'],'episode':m['episode']}
-    return canonical_target(root,g,v,{})[0]
+    dest=canonical_target(root,g,v,{})[0]
+    from package_media import clean_path_part
+    name=clean_path_part(m['title'])+(' - (%s)'%m['year'] if m.get('year') else '')
+    if m['kind']=='series':name+=' - S%02dE%02d'%(m['season'],m['episode'])
+    return dest.with_name(clean_path_part(name)+dest.suffix)
+
+VIDEO_CODECS={'h264':'H264','hevc':'HEVC','h265':'HEVC','av1':'AV1','vp9':'VP9','vp8':'VP8','mpeg2video':'MPEG2','mpeg4':'MPEG4','vc1':'VC-1'}
+AUDIO_CODECS={'aac':'AAC','ac3':'AC-3','eac3':'E-AC-3','mp2':'MP2','mp3':'MP3','opus':'Opus','vorbis':'Vorbis','flac':'FLAC',
+              'dts':'DTS','truehd':'TrueHD','pcm_s16le':'PCM','pcm_s24le':'PCM'}
+
+def resolution_band(width,height):
+    try:w=int(width or 0);h=int(height or 0)
+    except (TypeError,ValueError):return ''
+    if not w and not h:return ''
+    # Width first: cinemascope 1920x800 is still a 1080p file.
+    if w>=3200 or h>=1800:return '2160p'
+    if w>=1800 or h>=1000:return '1080p'
+    if w>=1200 or h>=700:return '720p'
+    return '%dp'%h if h else ''
+
+def quality_label(details):
+    """'1080p - H264 E-AC-3' from an ffprobe result (first video stream, default/first audio stream)."""
+    streams=[s for s in (details or {}).get('streams') or [] if isinstance(s,dict)]
+    video=next((s for s in streams if s.get('codec_type')=='video' and not (s.get('disposition') or {}).get('attached_pic')),None)
+    audios=[s for s in streams if s.get('codec_type')=='audio']
+    audio=next((s for s in audios if (s.get('disposition') or {}).get('default')),audios[0] if audios else None)
+    band=resolution_band((video or {}).get('width'),(video or {}).get('height'))
+    codec=lambda table,s:table.get(str((s or {}).get('codec_name') or '').lower()) or str((s or {}).get('codec_name') or '').upper()[:12]
+    codecs=' '.join(x for x in (codec(VIDEO_CODECS,video) if video else '',codec(AUDIO_CODECS,audio) if audio else '') if x)
+    return ' - '.join(x for x in (band,re.sub(r'[^A-Za-z0-9 .+-]','',codecs).strip()) if x)
+
+def final_target(planned,details):
+    planned=Path(planned);label=quality_label(details)
+    return planned.with_name(planned.stem+' - '+label+planned.suffix) if label else planned
+
+def existing_download(planned):
+    """A finished file for this planned target: exact name, the measured variant
+    ('<name> - 1080p - …') or the layout before 0.5.42 ('<Titel> (<Jahr>).mkv')."""
+    planned=Path(planned)
+    if planned.exists():return planned
+    folder=planned.parent
+    if not folder.is_dir():return None
+    legacy=planned.stem.replace(' - (',' (',1)
+    for f in folder.iterdir():
+        if f.suffix.lower() not in ('.mkv','.mp4') or f.name.endswith('.partial'):continue
+        if f.stem.startswith(planned.stem+' - ') or f.stem==legacy:return f
+    return None
 
 def nfo(meta,streams,duration):
     from xml.etree import ElementTree as ET

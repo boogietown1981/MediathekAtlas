@@ -95,5 +95,65 @@ class WiringTests(unittest.TestCase):
         self.assertIn('image||artImage', (ROOT / 'web' / 'titleview.js').read_text())
 
 
+class LibraryNamingTests(unittest.TestCase):
+    """Björn (12.11.2026): own folder, file name with resolution and codecs, images per file."""
+    def test_quality_label(self):
+        import core
+        probe = lambda w, h, v, a: {'streams': [{'codec_type': 'video', 'codec_name': v, 'width': w, 'height': h},
+                                                {'codec_type': 'audio', 'codec_name': a}]}
+        self.assertEqual(core.quality_label(probe(1920, 1080, 'h264', 'eac3')), '1080p - H264 E-AC-3')
+        self.assertEqual(core.quality_label(probe(1920, 800, 'hevc', 'aac')), '1080p - HEVC AAC')   # cinemascope
+        self.assertEqual(core.quality_label(probe(1280, 720, 'h264', 'ac3')), '720p - H264 AC-3')
+        self.assertEqual(core.quality_label(probe(960, 540, 'h264', 'aac')), '540p - H264 AAC')
+        self.assertEqual(core.quality_label(probe(3840, 2160, 'av1', 'opus')), '2160p - AV1 Opus')
+        self.assertEqual(core.quality_label({}), '')
+
+    def test_names_and_existing_files(self):
+        import core, tempfile
+        with tempfile.TemporaryDirectory() as tmp:
+            m = {'kind': 'movie', 'title': 'Spellbound', 'year': 2024}
+            planned = core.target(tmp, m, 'x')
+            self.assertEqual(planned.relative_to(tmp).as_posix(), 'Filme/Spellbound (2024)/Spellbound - (2024).mkv')
+            final = core.final_target(planned, {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'width': 1920, 'height': 1080},
+                                                            {'codec_type': 'audio', 'codec_name': 'eac3'}]})
+            self.assertEqual(final.name, 'Spellbound - (2024) - 1080p - H264 E-AC-3.mkv')
+            self.assertIsNone(core.existing_download(planned))
+            planned.parent.mkdir(parents=True)
+            final.write_bytes(b'x')
+            self.assertEqual(core.existing_download(planned), final)     # no second download
+            final.unlink()
+            legacy = planned.parent / 'Spellbound (2024).mkv'; legacy.write_bytes(b'x')
+            self.assertEqual(core.existing_download(planned), legacy)    # files from before 0.5.42
+            ep = core.target(tmp, {'kind': 'series', 'title': 'Tatort', 'year': 1970, 'season': 1, 'episode': 2}, 'y')
+            self.assertEqual(ep.relative_to(tmp).as_posix(), 'Serien/Tatort (1970)/Season 01/Tatort - (1970) - S01E02.mkv')
+
+    def test_images_with_dotted_names_and_expiry(self):
+        import artwork, tempfile, netzkino_downloads as nd
+        with tempfile.TemporaryDirectory() as tmp:
+            folder = Path(tmp) / 'Filme' / 'Mr. Robot (2015)'; folder.mkdir(parents=True)
+            video = folder / 'Mr. Robot - (2015) - 1080p - H264 AAC.mkv'; video.write_bytes(b'v')
+            class R:
+                def __init__(self, data): self.data = data
+                def read(self, n): return self.data
+                def __enter__(self): return self
+                def __exit__(self, *a): return False
+            from unittest import mock
+            with mock.patch('core.open_url', return_value=R(b'\xff\xd8\xff' + b'0' * 10)):
+                self.assertTrue(artwork.save_image('https://images.pluto.tv/p.jpg', video.with_name(video.stem + '-poster')))
+            poster = folder / 'Mr. Robot - (2015) - 1080p - H264 AAC-poster.jpg'
+            self.assertTrue(poster.is_file())
+            backdrop = folder / 'Mr. Robot - (2015) - 1080p - H264 AAC-backdrop.jpg'; backdrop.write_bytes(b'b')
+            removed = nd.remove_files({'path': str(video), 'root': tmp, 'metadata': {'kind': 'movie'}})
+            self.assertIn(str(poster), removed); self.assertIn(str(backdrop), removed)
+            self.assertFalse(folder.exists())
+
+    def test_portal_artwork_hosts(self):
+        import artwork
+        self.assertTrue(artwork.valid('https://images.pluto.tv/a.jpg'))
+        self.assertTrue(artwork.valid('https://d3owf1x34yi7gd.cloudfront.net/x.jpg'))
+        self.assertFalse(artwork.valid('https://pluto.tv.evil.example/a.jpg'))
+        self.assertFalse(artwork.valid('http://images.pluto.tv/a.jpg'))
+
+
 if __name__ == '__main__':
     unittest.main()

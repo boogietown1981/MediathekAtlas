@@ -130,7 +130,7 @@ class PlutoReferenceTests(Fixture):
         self.assertEqual(meta['genres'], ['Drama', 'Mystery', 'Science-Fiction'])
         self.assertEqual(meta['cast'], [{'name': 'Amy Adams'}, {'name': 'Jeremy Renner'}])
         self.assertEqual(job['license']['days'], 30)
-        self.assertEqual(Path(job['target']).relative_to(media.resolve()).as_posix(), 'Filme/Arrival (2015)/Arrival (2015).mkv')
+        self.assertEqual(Path(job['target']).relative_to(media.resolve()).as_posix(), 'Filme/Arrival (2015)/Arrival - (2015).mkv')
         nfo = core.nfo(meta, [], 6420).decode()
         self.assertIn('<uniqueid type="imdb" default="true">tt2543164</uniqueid>', nfo)
         self.assertIn('<genre>Science-Fiction</genre>', nfo)

@@ -117,7 +117,7 @@ class QueueTests(QueueFixture):
         expected = core.target(self.media, job['metadata'], 'netzkino:' + ITEM)
         self.assertEqual(job['target'], str(expected))
         self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(),
-                         'Filme/Hin und Weg (2014)/Hin und Weg (2014).mkv')
+                         'Filme/Hin und Weg (2014)/Hin und Weg - (2014).mkv')
         self.assertEqual(job['source']['_resolver'], 'netzkino')
         self.assertNotIn('_download_url', job['source'])
         self.assertEqual(job['license']['kind'], 'netzkino_offline')
@@ -233,8 +233,8 @@ class EndToEndTests(QueueFixture):
             downloads.run(job['source'], job['metadata'], job['root'], job['quality'],
                           lambda state, *a, **k: states.append((state, k)), lambda: False)
         self.assertEqual(opened, ['https://pmd.netzkino-seite.netzkino.de/f.mp4'])
-        target = Path(job['target'])
-        self.assertTrue(target.is_file())
+        target = core.existing_download(job['target'])   # 0.5.42: name + resolution/codec
+        self.assertTrue(target and target.is_file())
         self.assertTrue(target.with_suffix('.nfo').is_file())
         meta = json.loads(target.with_suffix('.metadata.json').read_text())
         self.assertEqual(meta['metadata']['provider'], 'Netzkino')

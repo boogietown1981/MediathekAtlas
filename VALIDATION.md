@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.43 – Dateinamen mit Auflösung und Codecs (12. November 2026)
+
+- `tests/test_v0542_portal_title.py` um 4 Tests erweitert (11): Qualitätskennung (1080p/Cinemascope/720p/540p/2160p, Codecnamen), geplante und gemessene Namen für Film und Folge, Erkennung vorhandener Dateien (neues und altes Schema), Bilder mit Punkt im Titel („Mr. Robot“), Ablauf löscht -poster/-backdrop und den leeren Ordner, Bild-Hosts von Pluto/Netzkino.
+- Bestehende Ende-zu-Ende-Downloads (echtes ffmpeg: Mediathek-MP4, Netzkino, Pluto-HLS, JustWatch-HLS) auf das neue Schema umgestellt und grün, z. B. `Test & Film - (2020) - 64p - MPEG4.mkv` mit `.nfo` und `.metadata.json`; MeshSync sieht vor der Veröffentlichung weiterhin nur `.partial`.
+- Volllauf `python3 -m unittest discover -s tests` → 596 Tests OK (nach Neubau des Bundles); alle `tests/*.cjs` OK.
+- **Nicht geprüft:** echte Downloads auf Björns Mac; Darstellung in Kodi/Jellyfin.
+
 ## 0.5.42 – Titelseite für alle Plattformen, Netzkino-Download (12. November 2026)
 
 - Neue Tests `tests/test_v0542_portal_title.py` (7): Leerzeichen in Netzkino-Adressen (auch über den ytdl-Resolver, Request-Zeile ohne Leerzeichen, vorhandene %-Kodierung bleibt), gleiche Modellfelder für Pluto und JustWatch mit getrennten Anbieterangaben, JustWatch-Titel ohne externen Stream (kein Player/Offline, offizielle Seite), Ablehnung unbekannter Quellen/Kennungen, Einbindung (keine alten Dialoge mehr, alle Wege öffnen die Titelseite).

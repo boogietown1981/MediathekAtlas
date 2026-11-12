@@ -1,12 +1,14 @@
 """Artwork enrichment independent of identity matching; never changes title IDs."""
-import json,time,urllib.parse,os
+import json,re,time,urllib.parse,os
 from pathlib import Path
 import core,diagnostics,metadata
 import broadcaster
 HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','images.justwatch.com'}|broadcaster.IMAGE_HOSTS
+# Portal artwork (0.5.42): Pluto TV and Netzkino deliver their covers from these hosts.
+PORTAL_HOST=re.compile(r'^(?:[a-z0-9-]+\.)*(?:pluto\.tv|netzkino\.de|cloudfront\.net)$')
 def valid(url):
     p=urllib.parse.urlsplit(str(url or ''))
-    return p.scheme=='https' and p.hostname in HOSTS and not p.username and p.port in (None,443)
+    return p.scheme=='https' and bool(p.hostname) and (p.hostname in HOSTS or bool(PORTAL_HOST.fullmatch(p.hostname))) and not p.username and p.port in (None,443)
 def compatible(m,h):
     title=h.get('title') or h.get('name') or ''
     date=str(h.get('release_date') or h.get('first_air_date') or h.get('year') or '')
@@ -69,13 +71,15 @@ def lookup(m,s):
 def save_image(url,stem):
     if not valid(url):return False
     stem=Path(stem)
-    if any(stem.with_suffix(ext).exists() for ext in ('.jpg','.png')):return True
+    # Names like 'Mr. Robot - (2015) - …-poster' contain dots: append, never replace a "suffix".
+    named=lambda ext:stem.with_name(stem.name+ext)
+    if any(named(ext).exists() for ext in ('.jpg','.png')):return True
     try:
         with core.open_url(url) as response:data=response.read(12*1024*1024+1)
         if len(data)>12*1024*1024:return False
         suffix='.jpg' if data.startswith(b'\xff\xd8\xff') else '.png' if data.startswith(b'\x89PNG\r\n\x1a\n') else None
         if not suffix:return False
-        temp=stem.with_suffix(suffix+'.part');dest=stem.with_suffix(suffix)
+        temp=named(suffix+'.part');dest=named(suffix)
         try:
             with temp.open('xb') as f:f.write(data)
             try:os.link(temp,dest)

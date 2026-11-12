@@ -69,7 +69,7 @@ class AutoEnrichTests(unittest.TestCase):
         self.assertEqual(m['genres'], ['Drama'])
         self.assertEqual(m['cast'], [{'name': 'Florian David Fitz'}])
         self.assertEqual((m['provider'], m['reference_id'], m['source_provider']), ('TMDB', '123', 'Netzkino'))
-        self.assertTrue(job['target'].endswith('Filme/Hin und Weg (2014)/Hin und Weg (2014).mkv'))
+        self.assertTrue(job['target'].endswith('Filme/Hin und Weg (2014)/Hin und Weg - (2014).mkv'))
 
 
 if __name__ == '__main__':

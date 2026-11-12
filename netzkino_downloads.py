@@ -310,7 +310,9 @@ def remove_files(job):
     if not target.name or not root or not _inside(target, root):
         return []
     removed = []
-    for p in (target, target.with_suffix('.nfo'), target.with_suffix('.metadata.json')):
+    # 0.5.42: films also carry '<Datei>-poster' / '<Datei>-backdrop' next to the video.
+    images = [target.with_name(target.stem + tag + ext) for tag in ('-poster', '-backdrop') for ext in IMAGE_EXT]
+    for p in (target, target.with_suffix('.nfo'), target.with_suffix('.metadata.json'), *images):
         if p.is_file() and not p.is_symlink():
             p.unlink()
             removed.append(str(p))

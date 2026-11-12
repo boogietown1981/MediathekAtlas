@@ -211,7 +211,7 @@ class OfflineTests(Fixture):
     def test_film_job_like_mediathek_with_thirty_days(self):
         r, job = self.job()
         self.assertTrue(r['created'])
-        self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(), 'Filme/Arrival (2016)/Arrival (2016).mkv')
+        self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(), 'Filme/Arrival (2016)/Arrival - (2016).mkv')
         self.assertEqual((job['origin'], job['justwatch_id'], job['source']['_resolver']), ('justwatch', 'tm100', 'justwatch'))
         self.assertEqual((job['license']['kind'], job['license']['days']), ('justwatch_offline', 30))
         meta = job['metadata']
@@ -266,8 +266,8 @@ class HlsDownloadTests(OfflineTests):
         url = 'http://127.0.0.1:%d/master.m3u8?sec=secret' % server.server_address[1]
         with mock.patch.object(jd, 'resolve', return_value=url), mock.patch('artwork.save_image', return_value=True):
             downloads.run(job['source'], job['metadata'], job['root'], job['quality'], lambda *a, **k: None, lambda: False)
-        target = Path(job['target'])
-        self.assertTrue(target.is_file())
+        target = core.existing_download(job['target'])   # 0.5.42: name + resolution/codec
+        self.assertTrue(target and target.is_file())
         self.assertIn(b'tt2543164', target.with_suffix('.nfo').read_bytes())
         self.assertNotIn('secret', target.with_suffix('.metadata.json').read_text())
 

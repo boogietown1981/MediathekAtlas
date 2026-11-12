@@ -54,7 +54,7 @@ class QueueTests(OfflineFixture):
         self.assertTrue(r['created'])
         self.assertEqual(job['target'], str(core.target(self.media, job['metadata'], 'pluto:' + MOVIE['_id'])))
         self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(),
-                         'Filme/Arrival (2015)/Arrival (2015).mkv')
+                         'Filme/Arrival (2015)/Arrival - (2015).mkv')
         self.assertEqual((job['origin'], job['pluto_id'], job['source']['_resolver']), ('pluto', MOVIE['_id'], 'pluto'))
         self.assertEqual((job['license']['kind'], job['license']['days']), ('pluto_offline', 30))
         self.assertEqual(job['metadata']['provider'], 'Pluto TV')
@@ -148,8 +148,8 @@ class HlsDownloadTests(OfflineFixture):
         with mock.patch.object(pd, 'resolve', return_value=url), mock.patch('artwork.save_image', return_value=True):
             downloads.run(job['source'], job['metadata'], job['root'], job['quality'],
                           lambda state, *a, **k: states.append(state), lambda: False)
-        target = Path(job['target'])
-        self.assertTrue(target.is_file())
+        target = core.existing_download(job['target'])   # 0.5.42: name + resolution/codec
+        self.assertTrue(target and target.is_file())
         self.assertTrue(target.with_suffix('.nfo').is_file())
         info = downloads.probe(target)
         self.assertEqual(sorted(s['codec_type'] for s in info['streams']), ['audio', 'video'])

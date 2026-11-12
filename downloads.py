@@ -170,7 +170,7 @@ def run(row,meta,root,quality,update,cancelled):
     if not hls and ('.m3u8' in url.lower() or '.mpd' in url.lower()):raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
     dest=core.target(root,meta,row['_id'])
     dest.parent.mkdir(parents=True,exist_ok=True)
-    if any(p.exists() for p in (dest,dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
+    if core.existing_download(dest) or any(p.exists() for p in (dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
     # Every staged name ends in .partial: MeshSync and similar tools skip these until publication.
     lock=dest.with_suffix('.lock.partial')
     fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)
@@ -211,6 +211,9 @@ def run(row,meta,root,quality,update,cancelled):
             details=remux(src,out,meta,original=original_probe)
             if cancelled():raise ValueError('Download abgebrochen')
             streams=core.parse_streams(details);duration=float(details.get('format',{}).get('duration') or 0)
+            # 0.5.42: the published name carries the measured resolution and codecs.
+            dest=core.final_target(dest,details)
+            if any(p.exists() for p in (dest,dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
             # Stage all mandatory sidecars before publishing any file.
             nfo=Path(work)/'video.nfo.partial';nfo.write_bytes(core.nfo(meta,streams,duration))
             metadata=Path(work)/'video.json.partial';metadata.write_text(json.dumps({'schema':'MediathekAtlas/1','metadata':meta,'source':row,'streams':streams,'duration':duration,'download_url':public_url(row,url)},ensure_ascii=False,indent=2))
@@ -227,8 +230,11 @@ def run(row,meta,root,quality,update,cancelled):
                     try:
                         with show.open('xb') as f:f.write(core.show_nfo(meta))
                     except FileExistsError:pass
-            image_root=dest.parent.parent if meta['kind']=='series' else dest.parent
-            missing=[field for field in ('poster','fanart') if meta.get(field) and not artwork.save_image(meta[field],image_root/field)]
+            # Films: '<Datei>-poster' / '<Datei>-backdrop' next to the video (Kodi, Jellyfin, Plex);
+            # series: poster/fanart once in the show folder for tvshow.nfo.
+            if meta['kind']=='series':images=[('poster',dest.parent.parent/'poster'),('fanart',dest.parent.parent/'fanart')]
+            else:images=[('poster',dest.with_name(dest.stem+'-poster')),('fanart',dest.with_name(dest.stem+'-backdrop'))]
+            missing=[field for field,stem in images if meta.get(field) and not artwork.save_image(meta[field],stem)]
             update('done',received,total,path=str(dest),measured=quality_summary(details),size_bytes=dest.stat().st_size,speed=0,eta=None,note='Video fertig; Bilder nicht abrufbar: '+', '.join(missing) if missing else '')
 
     finally:lock.unlink(missing_ok=True)
