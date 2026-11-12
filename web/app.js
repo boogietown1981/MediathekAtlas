@@ -739,6 +739,7 @@ function portalView(name){
   portalOffset=0;loadPortals();
   if(name==='archive')loadArchiveCompanion();
   if(name==='netzkino')window.MediathekAtlasNetzkino?.refresh?.();
+  if(name==='pluto')window.MediathekAtlasPluto?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);

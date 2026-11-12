@@ -87,8 +87,8 @@ class WiringTests(unittest.TestCase):
         player = (ROOT / 'web' / 'player.js').read_text('utf-8')
         self.assertIn('window.playNetzkino=function', player)
         server = (ROOT / 'server.py').read_text('utf-8')
-        self.assertIn("for k in ('offer','job','netzkino')", server)
-        self.assertIn("netzkino=q.get('netzkino',[''])[0],root=ROOT", server)
+        self.assertIn("for k in ('offer','job','netzkino'", server)
+        self.assertIn("netzkino=q.get('netzkino',[''])[0],", server)
 
 
 if __name__ == '__main__':

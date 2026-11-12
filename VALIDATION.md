@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.36 – Pluto TV (12. November 2026)
+
+- Neue Tests `tests/test_v0536_pluto.py` (8): Sitzung mit Installations-ID, Filme/Serien/Live aus synthetischen Antworten im Format der Pluto-Website-API, Rotation und Bestandsschutz bei Fehlern, Folgen auf Abruf mit Zwischenspeicher, Stitcher-Adresse mit Sitzung, Ablehnung fremder Hosts/Pfade, Einbindung in `/api/play`.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem Katalog: Reiter Pluto TV, Filme, Serie → Folgen, Live-TV, „▶ Live ansehen“ öffnet den Player (meldet in der Cloud korrekt „Pluto TV ist nicht erreichbar“), Wechsel zu Netzkino blendet Pluto aus; keine JavaScript-Fehler.
+- Volllauf `python3 -m unittest discover -s tests` → 531 Tests OK.
+- **Nicht geprüft:** echter Abruf von pluto.tv (aus der Build-Umgebung gesperrt). Die API-Formate folgen der öffentlichen Pluto-Website und sind tolerant ausgewertet, aber nicht live bestätigt.
+
 ## 0.5.35 – Netzkino-Kategoriebaum (12. November 2026)
 
 - `python3 -m unittest discover -s tests` → 522 Tests OK. `test_launcher_with_python_outside_standard_paths` brach im Volllauf einmal mit einem Zeitlimit ab und läuft einzeln grün (bekannte Lastabhängigkeit). Neu: Kategorien aus Filmdetails werden gemerkt und beim nächsten Abgleich vollständig geladen (150 Titel aus einer Kategorie).

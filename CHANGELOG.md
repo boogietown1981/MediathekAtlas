@@ -1,3 +1,10 @@
+## 0.5.36 – Pluto TV: Filme, Serien und Live-Sender
+- **Pluto TV ist jetzt eine aktive Quelle** (Plattformen → Pluto TV) statt des bisherigen Platzhalters: Filme, Serien mit Staffeln/Folgen und Live-Sender, durchsuchbar nach Titel, Genre und Kategorie.
+- **Wiedergabe im MediathekAtlas-Player**, wie bei Mediathek- und Netzkino-Titeln: „▶ Ansehen“ bzw. „▶ Live ansehen“. Gespielt wird der offizielle HLS-Stream von Pluto TV inklusive Werbung (nativ in Safari, sonst über ffmpeg). Live-Sender ohne Zeitleiste.
+- **Katalog:** anonyme Website-Sitzung von Pluto TV (keine Anmeldung, keine Cookies; Sitzungsschlüssel nur im Arbeitsspeicher). Abruf auf Knopfdruck oder optional alle 24 Stunden. Folgen einer Serie werden beim Öffnen geladen und sechs Stunden zwischengespeichert. Titel, die Pluto aus dem Angebot nimmt, verschwinden beim nächsten Abruf; ein fehlgeschlagener Abruf lässt den Bestand stehen.
+- **Grenzen:** Pluto TV sieht keine Downloads vor, daher keine Downloadfunktion. Den Länderkatalog bestimmt Pluto anhand der Internetverbindung; keine Geo-Umgehung, kein Entfernen von Werbung.
+- Diagnoseexport enthält Pluto-Zähler und letzten Fehler (ohne Sitzungsschlüssel und Adressen).
+
 ## 0.5.35 – Netzkino-Gesamtkatalog über den Kategoriebaum
 - **Auswertung deines Netzkino-Mitschnitts (12.11.2026):** Kategorieseiten sind nicht seitenweise begrenzt („Starkino“ lieferte 214 Titel, „Halloween“ 60), die Startseite zeigt nur Auszüge („…-frontpage“, rund 20 Titel). Jeder Film nennt in seinen Details seine vollständigen Kategorien samt Oberkategorie (z. B. `krimi` → `thrillerkino`, `sozialdrama` → `dramakino`, `joyn-netzkino` → `joyn`).
 - Der Katalogabgleich fragt deshalb zusätzlich den Kategoriebaum ab: Wurzeln `netzkino-genre`, `themenkino-genre`, Action, Thriller, Drama, Komödien, Kinder, Starkino und die Partnerkataloge (inkl. deren Unterkategorien), 15 im Mitschnitt gesehene Volllisten sowie alle Kategorien, die beim Laden von Filmdetails (automatische Anreicherung, Detailfenster, Mitschnitt-Import) auftauchen. Höchstens 400 zusätzliche Kategorien, 0,7 s Abstand, Zeitbudget 15 Minuten.

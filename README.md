@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.5.35
+# MediathekAtlas · 0.5.36
+
+## Neu in 0.5.36: Pluto TV
+
+- Plattformen → Pluto TV: Filme, Serien und Live-Sender von Pluto TV laden („↻ Katalog jetzt laden“) und direkt im MediathekAtlas-Player ansehen, mit Werbung wie beim Anbieter. Keine Downloads, keine Anmeldung.
+
 
 ## Neu in 0.5.34: Netzkino direkt abspielen
 

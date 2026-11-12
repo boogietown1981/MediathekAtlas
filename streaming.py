@@ -73,8 +73,12 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':found['url'],'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if pluto:
+        if root is None:raise ValueError('Pluto-Katalog nicht verfügbar')
+        import pluto as pluto_tv
+        return pluto_tv.play_source(root,pluto)
     if netzkino:
         if root is None:raise ValueError('Netzkino-Katalog nicht verfügbar')
         return resolve_netzkino(c,root,netzkino,resolver)
@@ -116,6 +120,7 @@ def plan(source,info=None):
     if source['kind']=='url':
         out.update(mode='remux' if source['hls'] else 'direct',url=source['url'],hls=source['hls'],quality=source.get('quality'),origin='online')
         if source.get('provider'):out['provider']=source['provider']
+        if source.get('live'):out['live']=True
         return out
     out['origin']='local';path=Path(source['path'])
     info=probe(path) if info is None else info
