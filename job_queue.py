@@ -14,6 +14,7 @@ earlier failed one. Now:
 from __future__ import annotations
 
 import json
+import time
 
 RETRYABLE = ('error', 'cancelled', 'interrupted', 'remote')
 _FAILED = "('error','cancelled','interrupted','remote')"
@@ -52,3 +53,14 @@ def remove(c, job_id):
     if not n:
         raise ValueError('Nur fehlgeschlagene, abgebrochene oder unterbrochene Aufträge können entfernt werden')
     return n
+
+
+def next_job(c, now=None):
+    """Oldest queued job that may start now. Jobs with ``not_before`` in the future (0.5.48:
+    JustWatch titles that the provider only releases at night) wait without blocking the others."""
+    now = time.time() if now is None else float(now)
+    for (payload,) in c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid"):
+        job = json.loads(payload)
+        if float(job.get('not_before') or 0) <= now:
+            return job
+    return None

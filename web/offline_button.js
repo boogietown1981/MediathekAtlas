@@ -13,6 +13,8 @@
     error: 'Fehlgeschlagen', cancelled: 'Abgebrochen', interrupted: 'Unterbrochen'};
   const make = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
   const day = ts => new Date(ts * 1000).toLocaleDateString('de-DE', {day: '2-digit', month: '2-digit', year: 'numeric'});
+  const clock = ts => new Date(ts * 1000).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'});
+  const NIGHT = 'Jugendschutz: JustWatch gibt diesen Titel nur von 0 bis 6 Uhr frei.';
   const mib = n => (Number(n || 0) / 1048576).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' MiB';
   // Per source: live controls, newest job per title, tool state, poll timer.
   const state = {};
@@ -23,7 +25,10 @@
     const s = job?.state;
     cancel.hidden = !ACTIVE.includes(s);
     note.className = 'atlas-offline-note muted'; button.classList.remove('atlas-offline-done');
-    if (ACTIVE.includes(s)) {
+    if (s === 'queued' && job.not_before) {
+      button.disabled = true; button.textContent = '🌙 Vorgemerkt für ' + clock(job.not_before) + ' Uhr';
+      note.textContent = NIGHT + ' Der Download startet dann von selbst, wenn MediathekAtlas läuft.';
+    } else if (ACTIVE.includes(s)) {
       button.disabled = true;
       button.textContent = s === 'downloading' ? '⬇ Lädt · ' + mib(job.received) + (job.total ? ' / ' + mib(job.total) : '') : '⬇ ' + LABELS[s];
       note.textContent = 'Wird gespeichert · ' + st.days + ' Tage offline nutzbar';
@@ -35,8 +40,9 @@
       button.disabled = !!st.tool; button.textContent = '↻ Erneut offline speichern';
       note.textContent = LABELS[s] + (job.error ? ': ' + job.error : ''); note.className = 'atlas-offline-note nk-warning';
     } else {
-      button.disabled = !!st.tool; button.textContent = '⬇ Offline speichern (' + st.days + ' Tage)';
-      note.textContent = ctl.message || '';
+      button.disabled = !!st.tool;
+      button.textContent = ctl.night ? '🌙 Heute Nacht offline speichern (' + st.days + ' Tage)' : '⬇ Offline speichern (' + st.days + ' Tage)';
+      note.textContent = ctl.message || (ctl.night ? NIGHT : '');
     }
     button.title = st.tool || (s === 'done' || ACTIVE.includes(s) ? 'Bereits eingereiht oder offline verfügbar' :
       SOURCES[ctl.source].name + ' erlaubt ' + st.days + ' Tage Offline-Nutzung; danach wird die Datei automatisch entfernt');
@@ -59,20 +65,23 @@
     // Newest job per title decides (listing is newest first); expired/removed copies can be saved again.
     for (const j of data.items || []) if (j[key] && !st.jobs.has(j[key]) && !['expired', 'removed'].includes(j.state)) st.jobs.set(j[key], j);
     for (const c of st.controls) paint(c);
-    for (const fn of st.listeners) { try { fn(); } catch (e) { /* listener errors never stop the status */ } }
-    if ([...st.jobs.values()].some(j => ACTIVE.includes(j.state))) st.timer = setTimeout(() => refresh(source), 3000);
+    // A listener that returns false (its view is gone) is dropped.
+    for (const fn of [...st.listeners]) { try { if (fn() === false) st.listeners.delete(fn); } catch (e) { /* listener errors never stop the status */ } }
+    const running = [...st.jobs.values()].filter(j => ACTIVE.includes(j.state));
+    // Reserved for the night: nothing changes for hours, so look once a minute only.
+    if (running.length) st.timer = setTimeout(() => refresh(source), running.every(j => j.not_before) ? 60000 : 3000);
   }
   const soon = {};
   function schedule(source) { clearTimeout(soon[source]); soon[source] = setTimeout(() => refresh(source), 60); }
 
   /* One control per tile or episode row; the node unregisters itself when it leaves the page. */
-  function control(source, id, title) {
+  function control(source, id, title, opts) {
     const st = state[source]; if (!st || !id) return null;
     const node = make('div', undefined, 'atlas-offline'); node.dataset.offlineSource = source; node.dataset.offlineId = id;
     const button = make('button', '⬇ Offline speichern (' + st.days + ' Tage)', 'atlas-offline-button'); button.type = 'button';
     const cancel = make('button', 'Abbrechen', 'atlas-offline-cancel'); cancel.type = 'button'; cancel.hidden = true;
     const note = make('small', '', 'atlas-offline-note muted');
-    const ctl = {source, id, node, button, cancel, note, message: ''};
+    const ctl = {source, id, node, button, cancel, note, message: '', night: !!opts?.night};
     button.onclick = async ev => {
       ev.stopPropagation(); button.disabled = true;
       const job = st.jobs.get(id);
@@ -81,7 +90,7 @@
         else {
           const r = await window.api(source + '-download-add', {id});
           ctl.message = r.created ? '' : 'Bereits eingereiht oder offline verfügbar';
-          if (r.created) window.notice?.('„' + (title || 'Titel') + '“ wird offline gespeichert (' + st.days + ' Tage).');
+          if (r.created) window.notice?.('„' + (title || 'Titel') + '“ ' + (ctl.night ? 'ist für heute Nacht vorgemerkt.' : 'wird offline gespeichert (' + st.days + ' Tage).'));
         }
       } catch (e) { ctl.message = 'Kein Download gestartet: ' + e.message; note.textContent = ctl.message; note.className = 'atlas-offline-note nk-warning'; button.disabled = false; return; }
       await refresh(source);

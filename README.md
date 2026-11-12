@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.47
+# MediathekAtlas · 0.5.48
+
+## Neu in 0.5.48: Geplanter Nacht-Download für JustWatch-Titel mit Jugendschutz-Zeitfenster
+
+- Manche kostenlosen JustWatch-Titel (ab 16/18) gibt JustWatch nur von 0 bis 6 Uhr frei. Solche Kacheln haben jetzt „🌙 Heute Nacht offline speichern (30 Tage)“: Der Auftrag wird vorgemerkt („Vorgemerkt für 00:10 Uhr“) und startet im Zeitfenster von selbst, wenn MediathekAtlas dann läuft. Andere Downloads laufen in der Zwischenzeit normal weiter.
 
 ## Neu in 0.5.47: „30 Tage offline speichern“ in jeder Kachel
 

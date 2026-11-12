@@ -113,9 +113,13 @@ def jobs():
 def worker():
     while not STOP.wait(.5):
         with db() as c:
-            r=c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
-            if not r:continue
-            j=json.loads(r[0])
+            j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
+            if not j:continue
+            if j.get('night'):
+                # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
+                later=justwatch.night_start()
+                if later>time.time():
+                    j['not_before']=later;c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
             # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
             local_only=netzkino_downloads.is_portal(j)
             o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()

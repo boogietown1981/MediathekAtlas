@@ -95,7 +95,9 @@ def _portal(root, source, item_id):
         m['playable'] = True
     elif m['kind'] != 'series':
         m['playable'] = it.get('playable') not in (0, False)
-        m['offline'] = {'allowed': m['playable'], 'days': OFFLINE_DAYS}
+        # 0.5.48: JustWatch releases some titles only at night (youth protection): reserve the download.
+        night = source == 'justwatch' and not m['playable']
+        m['offline'] = {'allowed': m['playable'] or night, 'days': OFFLINE_DAYS, 'night': night}
     m['web_url'] = _https(it.get('web_url'))
     facts = m['provider_facts']
     if it.get('genre'):
@@ -111,7 +113,7 @@ def _portal(root, source, item_id):
         facts.append(['IMDb-Bewertung laut JustWatch', ('%s / 10' % it['imdb_score']) + (' · %s Stimmen' % votes if votes else '')])
     if source == 'justwatch':
         facts.append(['Paket', 'JustWatch TV Free (mit Werbung)'])
-        facts.append(['Externer Player', 'freigegeben' if m['playable'] else 'nicht freigegeben – nur auf der JustWatch-Seite'])
+        facts.append(['Stream', 'freigegeben' if m['playable'] else 'derzeit nicht freigegeben (oft Jugendschutz: nur 0 bis 6 Uhr) – nachts offline speicherbar'])
     if source == 'pluto':
         facts.append(['Angebot', 'Pluto TV, kostenlos mit Werbung'])
     _fill_from_reference(m, report)
@@ -174,7 +176,8 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': playable, 'web_url': _https(e.get('web_url'))}
+            'offline': playable or source == 'justwatch', 'night': source == 'justwatch' and not playable,
+            'web_url': _https(e.get('web_url'))}
 
 
 def _sort_episodes(rows):

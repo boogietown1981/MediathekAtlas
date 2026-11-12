@@ -39,7 +39,7 @@ class SeriesModelTests(unittest.TestCase):
         self.assertEqual([(e['season'], e['episode']) for e in m['episodes']], [(1, 1), (1, 2), (2, 1)])
         first = m['episodes'][0]
         self.assertEqual(set(first), {'id', 'title', 'season', 'episode', 'duration', 'year', 'summary', 'poster',
-                                      'playable', 'offline', 'web_url'})
+                                      'playable', 'offline', 'night', 'web_url'})
         # Episodes without artwork use the series poster.
         self.assertEqual(first['poster'], 'https://images.pluto.tv/s.jpg')
         self.assertTrue(first['playable']); self.assertTrue(first['offline'])
@@ -50,7 +50,8 @@ class SeriesModelTests(unittest.TestCase):
         jw = portal_title._episode('justwatch', {'id': 'tse1', 'title': 'Folge 1', 'season': 1, 'episode': 1, 'playable': 0})
         self.assertEqual(set(nk), set(jw))
         self.assertEqual((nk['season'], nk['episode'], nk['title']), (1, 3, 'Einsatz'))
-        self.assertFalse(jw['playable']); self.assertFalse(jw['offline'])
+        self.assertFalse(jw['playable']); self.assertTrue(jw['offline']); self.assertTrue(jw['night'])
+        self.assertFalse(nk['night'])
         self.assertIsNone(portal_title._episode('pluto', {'id': 'x', 'season': -1})['season'])
 
 

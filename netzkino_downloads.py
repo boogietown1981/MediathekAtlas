@@ -396,6 +396,7 @@ def _public(job, now):
             'received': job.get('received', 0), 'total': job.get('total', 0),
             'error': '' if job.get('state') == 'done' else job.get('error', ''), 'license': (job.get('license') or {}).get('kind'),
             'offline_until': until,
+            'not_before': job.get('not_before') if job.get('state') == 'queued' and float(job.get('not_before') or 0) > now else None,
             'days_left': None if not until else max(0, int((until - now + 86399) // 86400))}
 
 

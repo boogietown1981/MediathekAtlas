@@ -160,7 +160,7 @@ class PlaybackTests(Fixture):
     def test_title_without_external_stream(self):
         self.sync()
         api = lambda q, v: {'data': {'urlV2': {'node': {'watchNowOffer': offer('jwt', None), 'offers': []}}}}
-        with self.assertRaisesRegex(ValueError, 'keinen Stream für externe Player'):
+        with self.assertRaisesRegex(ValueError, 'gerade keinen Stream frei'):
             jw.play_source(self.root, 'tm101', post=api, check=lambda u: None)
         with self.assertRaisesRegex(ValueError, 'Folge'):
             jw.play_source(self.root, 'ts200', post=self.api, check=lambda u: None)
@@ -229,8 +229,7 @@ class OfflineTests(Fixture):
         _, job = self.job('tse301')
         self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(), 'Serien/Spy City/Season 01/Spy City - S01E01.mkv')
         self.assertEqual(job['metadata']['show_imdb_id'], 'tt2543164')
-        for item, text in (('tm101', 'externe Player'), ('tse302', 'externe Player'), ('ts200', 'einzelne Folge'),
-                           ('tm999', 'nicht im Katalog'), ('../x', 'Ungültig')):
+        for item, text in (('ts200', 'einzelne Folge'), ('tm999', 'nicht im Katalog'), ('../x', 'Ungültig')):
             with self.assertRaisesRegex(ValueError, text):
                 jd.enqueue(self.c, self.root, self.media, item)
 

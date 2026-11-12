@@ -61,31 +61,23 @@
     const note = make('p', m.provider + ' erlaubt ' + m.offline.days + ' Tage Offline-Nutzung. Gespeichert wird wie bei Mediathek-Videos ' +
       '(gleicher Ordner, gleiche Benennung, MKV mit NFO); die Datei enthält die Werbung des Anbieters und wird danach automatisch entfernt.', 'muted');
     const list = make('div', undefined, 'portal-title-jobs');
-    const add = button('⬇ Offline speichern (' + m.offline.days + ' Tage)', 'primary', async () => {
-      add.disabled = true;
-      try {
-        const r = await window.api(src.add, {id: m.id});
-        note.textContent = r.created ? 'Eingereiht. Fortschritt erscheint hier und unter „Downloads“.' : 'Bereits eingereiht oder offline verfügbar.';
-        await paint();
-      } catch (e) { note.textContent = 'Kein Download gestartet: ' + e.message; add.disabled = false; }
-    });
+    const add = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night}) || make('span');
+    window.AtlasOffline?.onChange(m.source, () => sec.isConnected ? (paint(), true) : false);
     sec.append(note, add, list); host.append(sec);
     async function paint() {
       let data; try { data = await window.api(src.jobs(m.id)); } catch (e) { list.textContent = 'Downloadstatus nicht verfügbar: ' + e.message; return; }
       const jobs = (data.items || []).filter(j => !['expired', 'removed'].includes(j.state));
-      const busy = jobs.some(j => ACTIVE.includes(j.state) || (j.state === 'done' && j.license !== 'licensed_file'));
-      add.disabled = busy || data.ffmpeg === false || data.ytdl?.ok === false;
-      add.title = data.ffmpeg === false ? 'ffmpeg fehlt in dieser Installation' : data.ytdl?.ok === false ? 'ytdl-nightly fehlt in dieser Installation' : busy ? 'Bereits eingereiht oder offline verfügbar' : '';
       list.replaceChildren();
       for (const j of jobs) {
         const row = make('div', undefined, 'nk-offline-job nk-offline-' + j.state);
         row.append(make('strong', (LABELS[j.state] || j.state) + ' · ' + (j.target_name || j.title || '')));
+        if (j.state === 'queued' && j.not_before) row.append(make('small', 'Startet um ' + new Date(j.not_before * 1000).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) + ' Uhr (Jugendschutz-Zeitfenster von JustWatch)', 'muted'));
         if (j.state === 'downloading') row.append(make('small', mib(j.received) + (j.total ? ' / ca. ' + mib(j.total) : '')));
         if (j.state === 'done' && j.offline_until) row.append(make('small', 'Offline nutzbar bis ' + day(j.offline_until) + ' · noch ' + j.days_left + (j.days_left === 1 ? ' Tag' : ' Tage'), j.days_left <= 3 ? 'nk-warning' : 'muted'));
         if (j.error) row.append(make('small', 'Fehler: ' + j.error, 'nk-warning'));
         const act = (label, action) => button(label, '', async ev => {
           ev.target.disabled = true;
-          try { action === 'retry' ? await window.api('retry', {id: j.id}) : await window.api(src.action, {id: j.id, action}); await paint(); }
+          try { action === 'retry' ? await window.api('retry', {id: j.id}) : await window.api(src.action, {id: j.id, action}); await paint(); window.AtlasOffline?.refresh(m.source); }
           catch (e) { note.textContent = e.message; ev.target.disabled = false; }
         });
         if (ACTIVE.includes(j.state)) row.append(act('Abbrechen', 'cancel'));
@@ -93,9 +85,6 @@
         if (j.state === 'done') row.append(act('Jetzt löschen', 'delete'));
         list.append(row);
       }
-      clearTimeout(timer);
-      if (jobs.some(j => ACTIVE.includes(j.state)) && !$('title-view').hidden && $('title-view').dataset.portal === m.source + ':' + m.id)
-        timer = setTimeout(paint, 3000);
     }
     await paint();
   }
@@ -174,7 +163,7 @@
         const acts = make('div', undefined, 'tv-epactions');
         if (e.playable) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || ''))));
         else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
-        const off = e.offline && window.AtlasOffline?.control(m.source, e.id, m.title + (code ? ' · ' + code : ''));
+        const off = e.offline && window.AtlasOffline?.control(m.source, e.id, m.title + (code ? ' · ' + code : ''), {night: !!e.night});
         if (off) acts.append(off);
         acts.append(button('Details', '', () => open(m.source, e.id)));
         body.append(acts); row.append(body); list.append(row);
@@ -201,11 +190,11 @@
     const actions = [];
     if (m.kind === 'series') actions.push(button('Folgen anzeigen', 'primary', () => host.querySelector('.portal-title-episodes')?.scrollIntoView({behavior: 'smooth'})));
     else if (m.playable) actions.push(button(m.kind === 'channel' ? '▶ Live ansehen' : '▶ Abspielen', 'primary play-button', () => play(m, label)));
-    if (m.offline?.allowed) actions.push(button('⬇ Offline speichern (' + m.offline.days + ' Tage)', '', () => host.querySelector('.portal-title-jobs')?.parentElement?.scrollIntoView({behavior: 'smooth'})));
+    if (m.offline?.allowed) actions.push(button((m.offline.night ? '🌙 Heute Nacht offline speichern (' : '⬇ Offline speichern (') + m.offline.days + ' Tage)', '', () => host.querySelector('.portal-title-jobs')?.parentElement?.scrollIntoView({behavior: 'smooth'})));
     if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
-      !m.playable && m.kind !== 'series' ? 'Nur beim Anbieter abspielbar' : ''];
+      !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : 'Nur beim Anbieter abspielbar') : ''];
     const info = [['Kategorien', (m.categories || []).join(', ')], ['Regie', (m.directors || []).join(', ')], ['Drehbuch', (m.writers || []).join(', ')],
       ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Quelle', m.provider],
       ['Zuordnung', REF[m.reference?.status] ? (m.reference.status === 'candidate' ? '✓ ' : '◌ ') + REF[m.reference.status].split(';')[0] : '']];

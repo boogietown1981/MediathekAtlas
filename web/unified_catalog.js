@@ -243,8 +243,10 @@
       actions.append(link);
     }
     // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.
-    if (item.kind!=='series' && (item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&item.playable)) {
-      const off=window.AtlasOffline?.control(item.source,item.id,item.title);
+    // 0.5.48: JustWatch titles released only at night (youth protection) can be reserved.
+    const night=item.source==='justwatch'&&!item.playable;
+    if (item.kind!=='series' && (item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.playable||night))) {
+      const off=window.AtlasOffline?.control(item.source,item.id,item.title,{night});
       if (off) actions.append(off);
     }
     text.append(actions);card.append(art,text);

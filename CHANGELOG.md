@@ -1,3 +1,10 @@
+## 0.5.48 – Geplanter Nacht-Download (JustWatch, Jugendschutz-Zeitfenster)
+- Björn (12.11.2026): „Bad Lieutenant“ ist im Paket Free, hatte aber keinen Offline-Knopf. Grund (von Björn auf justwatch.com gefunden): „Ab 00:00 Uhr verfügbar (Jugendschutz) … von 00:00 Uhr bis 06:00 Uhr“. Tagsüber liefert JustWatch für solche Titel keinen Stream; der Katalog wird meist tagsüber geladen. Wunsch: geplanter Download mit Startzeit.
+- Warteschlange: Aufträge können eine Startzeit tragen (`not_before`); `job_queue.next_job` überspringt sie bis dahin, andere Downloads werden nicht blockiert.
+- JustWatch-Titel ohne Stream bekommen in Kachel (Katalog und Plattform), Folgenzeile und Titelseite „🌙 Heute Nacht offline speichern (30 Tage)“. Der Auftrag startet um 00:10 Uhr (Europe/Berlin; zwischen 00:10 und 05:00 Uhr sofort) und holt die Stream-Adresse dann frisch. Anzeige „Vorgemerkt für … Uhr“ mit „Abbrechen“, in „Downloads“ „Geplant für …“. Startet ein solcher Auftrag außerhalb des Fensters (Wiederholen, Rechner nachts aus), wartet er auf die nächste Nacht.
+- Es wird nichts umgangen: Geladen wird nur, wenn JustWatch den Stream freigibt; die Kopierschutz-Prüfung (`hls_guard`) bleibt. Liefert JustWatch auch nachts keinen Stream, endet der Auftrag mit einer klaren Meldung.
+- Titelseite: Der Abschnitt „Offline ansehen“ nutzt jetzt dasselbe Bedienelement wie die Kacheln.
+
 ## 0.5.47 – „30 Tage offline speichern“ einheitlich in jeder Kachel
 - Björn (12.11.2026): Der Download bei Pluto und JustWatch funktioniert nicht sauber und ist nicht einheitlich dargestellt; der 30-Tage-Offline-Speicher gehört schon in die Kachelansicht.
 - Befund: Den Knopf gab es nur in den Kacheln der Reiter Pluto TV und JustWatch TV. Katalog-Kacheln zeigten nur einen Hinweistext, Netzkino-Kacheln gar nichts; ein Fehler erschien in der Kachel ohne Grund und ohne Wiederholen.

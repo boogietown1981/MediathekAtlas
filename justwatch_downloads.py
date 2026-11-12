@@ -68,8 +68,9 @@ def build_job(root, download_dir, item_id, now=None):
         raise ValueError('JustWatch-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':
         raise ValueError('Bitte eine einzelne Folge auswählen; Serien werden folgenweise geladen')
-    if not row['playable']:
-        raise ValueError(justwatch.NOT_PLAYABLE)
+    # 0.5.48: no stream right now (youth protection by day) -> reserve for the night window.
+    start = time.time() if now is None else float(now)
+    not_before = 0 if row['playable'] else justwatch.night_start(start)
     try:
         report = justwatch_enrichment.cached(root, item_id)
     except Exception:
@@ -83,6 +84,7 @@ def build_job(root, download_dir, item_id, now=None):
     return {'id': secrets.token_hex(8), 'source': source, 'metadata': meta,
             'root': str(download_dir), 'quality': 'best', 'target': target,
             'state': 'queued', 'received': 0, 'total': 0,
+            **({'not_before': not_before, 'night': True, 'note': justwatch.NIGHT_NOTE} if not row['playable'] else {}),
             'origin': 'justwatch', 'justwatch_id': item_id,
             'license': {'kind': LICENSE, 'days': OFFLINE_DAYS,
                         'granted': time.time() if now is None else float(now),

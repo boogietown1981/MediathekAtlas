@@ -592,8 +592,35 @@ def loop(root, stop):
 
 # ---------------------------------------------------------------- playback
 
-NOT_PLAYABLE = ('JustWatch bietet für diesen Titel keinen Stream für externe Player an. '
-                'Bitte „Bei JustWatch ansehen“ verwenden.')
+# Youth protection (Björn, 12.11.2026, text on justwatch.com: "Ab 00:00 Uhr verfügbar (Jugendschutz)
+# … von 00:00 Uhr bis 06:00 Uhr"): by day JustWatch publishes no stream for such titles. Nothing is
+# circumvented; a download can be reserved and starts inside the window, when JustWatch releases it.
+NIGHT_START = (0, 10)     # local time Europe/Berlin, a little after midnight
+NIGHT_END = (5, 0)        # latest start, so the download ends before 06:00
+NIGHT_NOTE = 'Jugendschutz: JustWatch gibt diesen Titel nur von 0 bis 6 Uhr frei'
+
+
+def night_start(now=None):
+    """Unix time at which a night-only title may be fetched: now inside the window, else next 00:10."""
+    import datetime
+    now = time.time() if now is None else float(now)
+    try:
+        import zoneinfo
+        zone = zoneinfo.ZoneInfo('Europe/Berlin')
+    except Exception:
+        zone = None   # system without time zone data: local time of the device
+    local = datetime.datetime.fromtimestamp(now, zone)
+    start = local.replace(hour=NIGHT_START[0], minute=NIGHT_START[1], second=0, microsecond=0)
+    end = local.replace(hour=NIGHT_END[0], minute=NIGHT_END[1], second=0, microsecond=0)
+    if start <= local <= end:
+        return now
+    if local > end:
+        start += datetime.timedelta(days=1)
+    return start.timestamp()
+
+
+NOT_PLAYABLE = ('JustWatch gibt für diesen Titel gerade keinen Stream frei (oft Jugendschutz: nur 0 bis 6 Uhr). '
+                '„Heute Nacht offline speichern“ oder „Bei JustWatch ansehen“ verwenden.')
 
 
 def fresh_stream(root, row, post=None, now=None):

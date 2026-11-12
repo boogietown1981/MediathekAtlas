@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.48 – Geplanter Nacht-Download (12. November 2026)
+
+- Neue Tests `tests/test_v0548_night_download.py` (7): Zeitfenster (17:25 → 00:10, 01:30 → sofort, 05:30 → nächste Nacht), Titel ohne Stream wird vorgemerkt, Titel mit Stream nicht, vorgemerkter Auftrag blockiert die Warteschlange nicht und startet nach der Startzeit, Listing zeigt die Startzeit nur solange gewartet wird, Verdrahtung.
+- Browser-Durchlauf (Playwright, Testbestand): JustWatch-Kachel ohne Stream → „🌙 Heute Nacht offline speichern“ → „🌙 Vorgemerkt für … Uhr“ im Katalog und im Plattform-Reiter, „Geplant für …“ unter Downloads, „Abbrechen“ in der Kachel; keine JavaScript-Fehler.
+- **Nicht geprüft:** ob JustWatch den Stream nachts tatsächlich über dieselbe Abfrage liefert (kein Anbieterzugang in der Testumgebung, kein Nacht-Mitschnitt). Erst Björns erster Nachtlauf zeigt das.
+
 ## 0.5.47 – Offline speichern in jeder Kachel (12. November 2026)
 
 - Neue Tests `tests/test_v0547_offline_tiles.py` (4): ein Bedienelement für alle Anbieter, alle Kachelansichten nutzen es, keine zweite Umsetzung, Auslieferung und Ladereihenfolge.
