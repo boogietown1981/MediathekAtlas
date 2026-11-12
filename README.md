@@ -1,4 +1,14 @@
-# MediathekAtlas · 0.5.53
+# MediathekAtlas · 0.5.55
+
+## Neu in 0.5.55: Dashboard nur mit Filmen und Serien, Bereich „Verwaltung“, schnellere Oberfläche
+
+- **Dashboard:** Die Startseite zeigt nur noch Filme und Serien, standardmäßig aller Plattformen (ARD, ZDF & Co., Netzkino, Pluto TV, JustWatch TV, Rakuten TV, YouTube) in einer gemeinsamen, durchgehend sortierten Liste. Die Statuskarten oben sind in die Verwaltung umgezogen.
+- **Ein Titel, eine Kachel:** Bietet mehr als ein Anbieter denselben Film an, steht er einmal da, mit den Anbietern in der Kopfzeile und unter „Auch bei …“ einem Satz Knöpfe je Anbieter. Zusammengefasst wird vorsichtig (gleicher Titel, passendes Jahr, nie zwei Einträge desselben Anbieters) und nur in der Anzeige; abschaltbar unter Verwaltung → Darstellung.
+- **Verwaltung** (ein Menüpunkt mit Reitern): *Aufgaben* (jede Hintergrundaufgabe pausieren, fortsetzen, von Hand starten; Priorität für die Werkzuordnung je Plattform), *Status & Abgleich* (alle bisherigen Statuskarten), *Darstellung* (was Kacheln und Titelseite zeigen, Kachelgröße, Startansicht), *Zuordnung*, *Download-Abos*, *Werkkatalog* (die klassische Ansicht mit Genre-Baum), *Protokoll*, *Einstellungen*. Nichts wurde entfernt, nur verschoben.
+- **Downloads:** Wartende Aufträge lassen sich vorziehen („Als Nächstes laden“) oder zurückstellen; die ganze Warteschlange lässt sich unter Aufgaben anhalten. Nacht-Vormerkungen zeigen ihre Startzeit und lassen sich sofort versuchen.
+- **Plattform-Reiter:** Der Katalog steht jetzt oben, mit denselben Kacheln und Knöpfen wie im Dashboard. Katalogabruf, Bestand und Werkzuordnung der Plattform stehen eingeklappt darunter.
+- **Tempo:** Laut Diagnose vom 12.11.2026 brauchte jede Katalogabfrage 7 bis 31 Sekunden und lief praktisch ununterbrochen (239-mal in sechs Stunden), weil die alte Katalogansicht bei jeder Zähleränderung neu lud. Dadurch warteten auch Plattform-Reiter, Live-TV und der Start von Streams. Jetzt kommen Katalogseiten aus dem Speicher (mit neuem Datenbankindex), die alte Ansicht lädt nur noch, wenn sie geöffnet ist.
+- **Streams:** Online-Streams (HLS, z. B. Pluto TV und Live-Sender) werden gleichmäßiger an den Browser ausgeliefert (ein Abschnitt je Sekunde statt je Schlüsselbild-Intervall).
 
 ## Neu in 0.5.53: YouTube – kostenlose Filme und Serien offizieller Kanäle
 
