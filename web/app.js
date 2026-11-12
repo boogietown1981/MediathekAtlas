@@ -327,7 +327,7 @@ function renderMetadata(m={},settings={},pauses={}){
   ['TVDB',settings.tvdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tvdb_set],
   ['OMDb',pauses.omdb?.paused?'Pausiert: '+({key:'Schlüssel abgelehnt',inactive:'Schlüssel nicht aktiviert',auth:'Zugang abgelehnt',limit:'Anfragelimit',network:'Netzwerk',response:'Ungültige Antwort'}[pauses.omdb.reason]||'Anbieterfehler')+' · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
   ['Wikidata',pauses.wikidata?.paused?'Netzwerkpause · '+Math.ceil(pauses.wikidata.remaining_seconds/60)+' Min.':'Kostenlose Rückfallquelle',!pauses.wikidata?.paused],
-  ['IMDb Offline',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
+  ['IMDb',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
  ];
  for(const [label,status,good] of providers){
    const cell=el('span',undefined,'atlas-provider'+(good?' enabled':''));

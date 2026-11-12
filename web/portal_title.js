@@ -93,29 +93,38 @@
     await paint();
   }
 
+  // 0.5.60 (Björn, 12.11.2026): the title page names the sources of the data in one line. The
+  // candidate list ("… passt"), warnings and the manual re-check stay available in a closed block.
+  const refName = p => p === 'IMDb Offline' ? 'IMDb' : (p || '');
   function referenceSection(m, host) {
-    const sec = section('Werkzuordnung · IMDb / TVDB / TMDB / OMDb / Wikidata');
-    const body = make('div');
+    const sec = section('Quellen der Angaben');
+    const body = make('div'), more = make('details', undefined, 'portal-title-match'), detail = make('div');
+    more.append(make('summary', 'Abgleich im Detail'), detail);
     const paint = report => {
-      body.replaceChildren(make('p', REF[report.status] || 'Wird geprüft'));
       const meta = report.metadata || {}, src = report.field_sources || {}, dl = make('dl', undefined, 'tv-info');
       for (const [key, label] of [['genres', 'Genres'], ['rating', 'Bewertung'], ['directors', 'Regie'], ['writers', 'Drehbuch'], ['country', 'Land']]) {
         const v = meta[key]; if (v == null || v === '' || (Array.isArray(v) && !v.length) || !src[key] || src[key] === m.provider) continue;
-        dl.append(make('dt', label + ' · ' + src[key]), make('dd', key === 'rating' ? v + ' / 10' : Array.isArray(v) ? v.map(x => x.name || x).join(', ') : String(v)));
+        dl.append(make('dt', label + ' · ' + refName(src[key])), make('dd', key === 'rating' ? v + ' / 10' : Array.isArray(v) ? v.map(x => x.name || x).join(', ') : String(v)));
       }
+      const used = [...new Set(Object.values(src).map(refName).filter(Boolean))];
+      body.replaceChildren();
       if (dl.childElementCount) body.append(dl);
+      else body.append(make('p', used.length ? 'Angaben von ' + used.join(', ') + '.' :
+        report.status === 'candidate' ? 'Angaben von ' + m.provider + '.' : 'Nur Angaben von ' + m.provider + '; weitere Quellen werden im Hintergrund ergänzt.', 'muted'));
+      detail.replaceChildren(make('p', REF[report.status] || 'Wird geprüft', 'muted'));
       for (const r of (report.references || []).slice(0, 6))
-        body.append(make('small', [r.provider, r.title, r.year, r.reference_id, r.eligible ? 'passt' : (r.issues || []).join(' / ')].filter(Boolean).join(' · '), 'nk-ref-candidate'));
-      if (report.warnings?.length) body.append(make('p', report.warnings.join(' · '), 'nk-ref-warning'));
+        detail.append(make('small', [refName(r.provider), r.title, r.year, r.reference_id, r.eligible ? '' : (r.issues || []).join(' / ')].filter(Boolean).join(' · '), 'nk-ref-candidate'));
+      if (report.warnings?.length) detail.append(make('p', report.warnings.join(' · '), 'nk-ref-warning'));
     };
     paint(m.reference || {});
-    const check = button('↻ Jetzt mit IMDb, TVDB, TMDB und Co. abgleichen', '', async () => {
-      check.disabled = true; body.replaceChildren(make('p', 'Referenzen werden geprüft …'));
+    const check = button('↻ Erneut abgleichen', '', async () => {
+      check.disabled = true; detail.replaceChildren(make('p', 'Referenzen werden geprüft …'));
       try { paint(await window.api(SOURCES[m.source].enrich, {id: m.id, force: true})); }
-      catch (e) { body.replaceChildren(make('p', 'Abgleich nicht möglich: ' + e.message)); }
+      catch (e) { detail.replaceChildren(make('p', 'Abgleich nicht möglich: ' + e.message)); }
       finally { check.disabled = false; }
     });
-    sec.append(body, check); host.append(sec);
+    more.append(check);
+    sec.append(body, more); host.append(sec);
   }
 
   function providerSection(m, host) {

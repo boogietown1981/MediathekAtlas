@@ -152,7 +152,8 @@ class CatalogueTests(Fixture):
             rk._request('../../etc')
         for bad in ('x.film', 'm.', 'm.A', '../m.x'):
             self.assertFalse(rk.VALID_ID.fullmatch(bad))
-        self.assertEqual(rk.stream_info({'data': {'stream_infos': [{'url': 'https://evil.example/a.m3u8'}]}}), ('', ''))
+        self.assertEqual(rk.stream_info({'data': {'stream_infos': [{'url': 'http://x.rakuten.tv/a.m3u8'}]}}), ('', ''))
+        self.assertEqual(rk.stream_info({'data': {'stream_infos': [{'url': 'https://u:p@x.rakuten.tv/a.m3u8'}]}}), ('', ''))
 
     def test_series_all_seasons_on_demand(self):
         self.sync()
@@ -191,7 +192,9 @@ class PlaybackTests(Fixture):
         self.assertEqual(streaming.plan(src)['mode'], 'remux')
         body = [c[2] for c in self.api.calls if c[0] == 'avod/streamings'][0]
         self.assertEqual((body['content_id'], body['classification_id']), ('top-movies-rakuten-tv', '307'))
-        self.assertNotIn('gdpr_consent', body)
+        self.assertEqual((body['gdpr_consent'], body['gdpr_consent_opt_out']), ('', '1'))
+        for private in ('ip', 'ua', 'publisher_provided_id', 'gam_correlator', 'requestedContent'):
+            self.assertNotIn(private, body)
         self.assertNotIn('ads.did', (self.root / 'rakuten.sqlite3').read_bytes().decode('latin-1'))
 
     def test_live_with_licence_or_protected_playlist_refused(self):

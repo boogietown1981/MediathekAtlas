@@ -2,7 +2,7 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup
 from version import VERSION
 from contextlib import contextmanager
@@ -252,6 +252,34 @@ def _unified_built(key,index,seconds):
         diagnostics.event('unified_index_built',kind=key[1],search=bool(key[2]),seconds=round(seconds,2),sources=index.get('seconds'),
                           counts=index.get('counts'),pending=index.get('pending'),errors=index.get('errors'))
 unified_index.ON_BUILD=_unified_built
+portal_snapshot.configure(ROOT/'snapshots')
+def _snapshot_stamp(status):
+    # Changes when a catalogue run starts or ends; then the stored view is built anew.
+    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))
+def portal_page(source,module,q):
+    """One catalogue page of a platform from its stored view (0.5.60, portal_snapshot)."""
+    view=q.get('view',['movies'])[0][:20];args=dict(query=q.get('q',[''])[0],genre=q.get('genre',[''])[0][:80],
+        sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0][:20])
+    status=portal_snapshot.status(source,lambda:module.state(ROOT))
+    if view not in ('movies','series'):   # live channels and anything else: read directly
+        data=module.listing(ROOT,view=view,offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],**args)
+    else:
+        data=portal_snapshot.page(source,view,lambda:module.listing(ROOT,view=view,offset=0,limit='all',**args),
+            stamp=_snapshot_stamp(status),offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],**args)
+    data['status']=status
+    return data
+class _SnapshotSource:
+    """The merged dashboard index reads the platforms through their stored views as well."""
+    def __init__(self,source,module):self.source=source;self.module=module
+    def _stamp(self):
+        try:return _snapshot_stamp(portal_snapshot.status(self.source,lambda:self.module.state(ROOT)))
+        except Exception:return ''
+    def listing(self,root,view='movies',query='',offset=0,limit='all',genre='',sort='title',collection=''):
+        return portal_snapshot.page(self.source,view,lambda:self.module.listing(ROOT,view=view,query=query,offset=0,limit='all',genre=genre,sort=sort,collection=collection),
+            stamp=self._stamp(),query=query,genre=genre,sort=sort,collection=collection,offset=0,limit='all')
+    def grouped_catalog(self,root,view='movies',series_key='',query='',origin='all',offset=0,limit='all',genre='',sort='title',collection=''):
+        return portal_snapshot.page(self.source,view,lambda:self.module.grouped_catalog(ROOT,view=view,series_key='',query=query,origin='all',offset=0,limit='all',genre=genre,sort=sort,collection=collection),
+            stamp=self._stamp(),query=query,genre=genre,sort=sort,collection=collection,offset=0,limit='all')
 _CLIENT_ERRORS=[0]
 task_control.configure(ROOT/'task-control.json')
 def imdb_updated():
@@ -261,6 +289,7 @@ def imdb_updated():
     SERVICE.metadata_wake.set()
 IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
 imdb_archive.ACTIVE=IMDB
+_UNIFIED_SOURCES={k:_SnapshotSource(k,m[0]) for k,m in _PORTAL_MODULES.items()}
 _STATUS_CACHE=(0,{})
 _TREE_CACHE=(float('-inf'),[])
 _TREE_TTL=60
@@ -400,12 +429,9 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
                 if q.get('view',[''])[0]=='episodes':data=pluto.episodes(ROOT,q.get('series',[''])[0])
-                else:data=pluto.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
-                                        offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
-                                        genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
-                                        collection=q.get('collection',[''])[0][:20])
+                else:return self.send(portal_page('pluto',pluto,q))
             except ValueError as e:return self.send({'error':str(e)},404)
-            data['status']=pluto.state(ROOT)
+            data['status']=portal_snapshot.status('pluto',lambda:pluto.state(ROOT))
             return self.send(data)
         if path=='/api/netzkino-details':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -414,34 +440,25 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
                 if q.get('view',[''])[0]=='episodes':data=justwatch.episodes(ROOT,q.get('series',[''])[0])
-                else:data=justwatch.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
-                                            offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
-                                            genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
-                                            collection=q.get('collection',[''])[0][:20])
+                else:return self.send(portal_page('justwatch',justwatch,q))
             except ValueError as e:return self.send({'error':str(e)},404)
-            data['status']=justwatch.state(ROOT)
+            data['status']=portal_snapshot.status('justwatch',lambda:justwatch.state(ROOT))
             return self.send(data)
         if path=='/api/rakuten':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
                 if q.get('view',[''])[0]=='episodes':data=rakuten.episodes(ROOT,q.get('series',[''])[0])
-                else:data=rakuten.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
-                                          offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
-                                          genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
-                                          collection=q.get('collection',[''])[0][:20])
+                else:return self.send(portal_page('rakuten',rakuten,q))
             except ValueError as e:return self.send({'error':str(e)},404)
-            data['status']=rakuten.state(ROOT)
+            data['status']=portal_snapshot.status('rakuten',lambda:rakuten.state(ROOT))
             return self.send(data)
         if path=='/api/youtube':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
                 if q.get('view',[''])[0]=='episodes':data=youtube.episodes(ROOT,q.get('series',[''])[0])
-                else:data=youtube.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
-                                          offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
-                                          genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
-                                          collection=q.get('collection',[''])[0][:20])
+                else:return self.send(portal_page('youtube',youtube,q))
             except ValueError as e:return self.send({'error':str(e)},404)
-            data['status']=youtube.state(ROOT)
+            data['status']=portal_snapshot.status('youtube',lambda:youtube.state(ROOT))
             return self.send(data)
         if path=='/api/youtube-details':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -498,13 +515,21 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(netzkino_enrichment.cached(ROOT,q.get('id',[''])[0]))
         if path=='/api/netzkino-grouped':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            data=netzkino.grouped_catalog(ROOT,view=q.get('view',['movies'])[0],
-                series_key=q.get('series_key',[''])[0],
-                query=q.get('q',[''])[0],origin=q.get('origin',['all'])[0],
-                offset=q.get('offset',['0'])[0],limit=q.get('limit',['80'])[0],
-                genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0],
-                collection=q.get('collection',[''])[0][:20])
-            data['status']=netzkino.state(ROOT)
+            view=q.get('view',['movies'])[0];series_key=q.get('series_key',[''])[0];origin=q.get('origin',['all'])[0]
+            args=dict(query=q.get('q',[''])[0],genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0],collection=q.get('collection',[''])[0][:20])
+            if series_key or origin!='all' or view not in ('movies','series'):
+                data=netzkino.grouped_catalog(ROOT,view=view,series_key=series_key,origin=origin,
+                    offset=q.get('offset',['0'])[0],limit=q.get('limit',['80'])[0],**args)
+                data['status']=portal_snapshot.status('netzkino',lambda:netzkino.state(ROOT))
+                return self.send(data)
+            # 0.5.60: films and series come from the stored view (portal_snapshot).
+            status=portal_snapshot.status('netzkino',lambda:netzkino.state(ROOT))
+            try:limit=max(1,min(100,int(q.get('limit',['80'])[0])))
+            except ValueError:limit=80
+            data=portal_snapshot.page('netzkino',view,lambda:netzkino.grouped_catalog(ROOT,view=view,series_key='',origin='all',offset=0,limit='all',**args),
+                stamp=_snapshot_stamp(status),offset=q.get('offset',['0'])[0],limit=limit,**args)
+            data['limit']=limit
+            data['status']=status
             return self.send(data)
         if path=='/api/netzkino':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -560,7 +585,7 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
                 genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
-                offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates']))
+                offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES))
         if path=='/api/display':return self.send({'display':ui_prefs.load(ROOT),**ui_prefs.describe()})
         if path=='/api/film-platforms':
             # Light endpoint for the catalogue header (per-source overview), no portal_sources scan.
@@ -761,6 +786,9 @@ class Handler(BaseHTTPRequestHandler):
             # Netzkino recordings arrive in parts of a few MB (answer texts only, no headers).
             if not 0<length<=(8*1024*1024 if self.path=='/api/netzkino-recording' else 100000):raise ValueError('Ungültige Anfragegröße')
             d=json.loads(self.rfile.read(length));path=self.path
+            for source in ('pluto','justwatch','rakuten','youtube','netzkino'):
+                # 0.5.60: a change of the user is visible at once; otherwise the stored view answers.
+                if path.startswith('/api/'+source+'-'):portal_snapshot.invalidate(source);break
             if path in ('/api/save-metadata','/api/review','/api/search'):
                 # 0.5.55: manual changes must show at once; grouped pages are otherwise served from memory.
                 catalog.invalidate_listings(drop=True);unified_index.invalidate()

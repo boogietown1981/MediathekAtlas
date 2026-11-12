@@ -811,3 +811,11 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .backup-row code{overflow:hidden;text-overflow:ellipsis;white-space:nowrap;color:#9fb3c2}
 .backup-kind{font-size:11px;border-radius:999px;padding:2px 8px;border:1px solid #3a4c5a;color:#b5c9d3;text-align:center}
 .backup-kind.own{border-color:#6cbaa5;color:#d8ffea}
+
+/* 0.5.60: one status line above every platform catalogue */
+.platform-brief{display:flex;align-items:center;gap:12px;flex-wrap:wrap;margin:0 0 14px;padding:9px 13px;border:1px solid #2c4750;border-radius:10px;background:#10242c;color:#b9ccd6;font-size:12.5px;line-height:1.45}
+.platform-brief span{flex:1 1 320px;min-width:0}
+.platform-brief button{padding:5px 11px;font-size:12px}
+.portal-title-match{margin-top:10px;color:#9aafc0;font-size:12.5px}
+.portal-title-match>summary{cursor:pointer;padding:4px 0}
+.portal-title-match>button{margin-top:8px}

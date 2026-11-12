@@ -43,7 +43,7 @@
         view, series_key: seriesKey, genre, sort: $('netzkino-sort')?.value || 'updated'})).finally(() => waiting?.());
       if (seq !== searchSeq) return;
       const status = data.status || {};
-      $('netzkino-auto').checked = !!status.auto;
+      if (Date.now() > autoHold) $('netzkino-auto').checked = !!status.auto;   // 0.5.60: keep a click that is being saved
       $('netzkino-sync').disabled = !!status.running;
       $('netzkino-sync').textContent = status.running ? 'Abgleich läuft …' : '↻ Katalog jetzt prüfen';
       const phase = status.running ? 'Läuft' : status.last_result === 'partial' ? 'Teilabgleich' :
@@ -236,10 +236,14 @@
       await refresh();
     } catch (error) { message(error.message, true); }
   };
+  var autoHold = 0;
   $('netzkino-auto').onchange = async () => {
     const checked = $('netzkino-auto').checked;
-    try { await endpoint('netzkino-auto', {enabled: checked}); await refresh(); }
-    catch (error) { $('netzkino-auto').checked = !checked; message(error.message, true); }
+    autoHold = Date.now() + 60000;
+    try {
+      await endpoint('netzkino-auto', {enabled: checked}); autoHold = 0; await refresh();
+      message(checked ? 'Gespeichert: Netzkino wird alle 24 Stunden automatisch nachgeprüft.' : 'Gespeichert: Netzkino wird nur noch auf Knopfdruck geprüft.');
+    } catch (error) { autoHold = 0; $('netzkino-auto').checked = !checked; message('Nicht gespeichert: ' + error.message, true); }
   };
   $('netzkino-view-movies').onclick = () => { view='movies'; seriesKey=''; genre=''; offset=0; refresh(); };
   $('netzkino-view-series').onclick = () => { view='series'; seriesKey=''; genre=''; offset=0; refresh(); };

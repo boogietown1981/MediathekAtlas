@@ -74,30 +74,101 @@ def _sort_title(title):
     return re.sub(r'^[^a-z0-9]+', '', text) or text
 
 
-def merge(offers, enabled=True):
+_SUBTITLE = re.compile(r'\s*(?::|\s[-–—]\s).*$')
+
+
+def _keys(offer):
+    """Comparison keys of one offer, strongest first.
+
+    Free-text upload titles (YouTube) get two: the short one without the advertising tail and the
+    full one from the original title, because the tail after " - " is often the subtitle of the
+    film ("Ab ins Meer - Auf der Suche nach der verlorenen Perle (Ganzer Film …)")."""
+    title = offer['title']
+    if offer['source'] not in LOOSE_YEAR:
+        return [k for k in (title_key(title),) if k]
+    keys = [title_key(title, True) or title_key(title)]
+    raw = str((offer.get('item') or {}).get('raw_title') or title)
+    full = title_key(_NOISE.sub('', _BRACKETS.sub('', raw)))
+    if full and full not in keys:
+        keys.append(full)
+    return [k for k in keys if k]
+
+
+def _evidence(offer):
+    item = offer.get('item') or {}
+    ref = item.get('reference') if isinstance(item.get('reference'), dict) else {}
+    ids = set()
+    if ref.get('provider') and ref.get('id'):
+        ids.add(('IMDb' if ref['provider'] in ('IMDb Offline', 'OMDb') else ref['provider'], str(ref['id'])))
+    if item.get('imdb_id'):
+        ids.add(('IMDb', str(item['imdb_id'])))
+    try:
+        duration = float(item.get('duration') or 0)
+    except (TypeError, ValueError):
+        duration = 0.0
+    return ids, duration
+
+
+def _same_work(a, b):
+    """Extra proof for "title" against "title: subtitle": the same reference ID, or running times
+    of feature length that differ by two minutes at most. "Alien" never joins "Alien: Covenant"."""
+    ids_a, dur_a = _evidence(a)
+    ids_b, dur_b = _evidence(b)
+    if ids_a & ids_b:
+        return True
+    if {p for p, _ in ids_a} & {p for p, _ in ids_b}:
+        return False   # both checked against the same database with different results
+    return dur_a >= 2400 and dur_b >= 2400 and abs(dur_a - dur_b) <= 120
+
+
+def merge(offers, enabled=True, subtitles=True):
     """offers: dicts with source, title, year (+ payload). Returns entries {title, year, offers}.
 
     Conservative rules: same title key; years equal, one apart (cinema vs. broadcast year) or
     unknown; never two offers of the same source in one entry (remakes, parts, duplicates of one
-    provider stay separate tiles)."""
-    entries, by_key = [], {}
+    provider stay separate tiles).
+
+    0.5.60 (Björn, 12.11.2026: "Ab ins Meer" from YouTube next to "Ab ins Meer: Auf der Suche nach
+    der verlorenen Perle" from Netzkino): an upload title is also compared with its full original
+    title, and with ``subtitles`` a title joins "title: subtitle" when a reference ID or the
+    running time proves the same work."""
+    entries, by_key, by_main = [], {}, {}
+
+    def fits(entry, offer, year):
+        if offer['source'] in entry['sources']:
+            return False
+        return year is None or entry['year'] is None or abs(year - entry['year']) <= 1
+
     for offer in offers:
         loose = offer['source'] in LOOSE_YEAR
-        key = title_key(offer['title'], loose) or title_key(offer['title'])
+        keys = _keys(offer)
         year = None if loose else _year(offer.get('year'))
+        mains = []
+        for key in keys:
+            main = title_key(_SUBTITLE.sub('', str(offer['title'])))
+            if main and main != key and main not in mains:
+                mains.append(main)
         target = None
-        if enabled and key:
-            for entry in by_key.get(key, ()):
-                if offer['source'] in entry['sources']:
-                    continue
-                if year is None or entry['year'] is None or abs(year - entry['year']) <= 1:
-                    target = entry
+        if enabled:
+            for key in keys:
+                target = next((e for e in by_key.get(key, ()) if fits(e, offer, year)), None)
+                if target:
                     break
+            if target is None and subtitles:
+                # this offer is the long title, an entry carries the short one - or the other way round
+                candidates = [e for main in mains for e in by_key.get(main, ())]
+                candidates += [e for key in keys for e in by_main.get(key, ())]
+                target = next((e for e in candidates if fits(e, offer, year)
+                               and any(_same_work(offer, other) for other in e['offers'])), None)
         if target is None:
-            target = {'key': key, 'year': year, 'sources': set(), 'offers': []}
+            target = {'key': keys[0] if keys else '', 'year': year, 'sources': set(), 'offers': []}
             entries.append(target)
-            if key:
-                by_key.setdefault(key, []).append(target)
+        for key in keys:
+            if target not in by_key.setdefault(key, []):
+                by_key[key].append(target)
+        for main in mains:
+            if target not in by_main.setdefault(main, []):
+                by_main[main].append(target)
         target['offers'].append(offer)
         target['sources'].add(offer['source'])
         if target['year'] is None:
@@ -180,7 +251,7 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
             errors[source] = str(exc)[:160] or exc.__class__.__name__
         seconds[source] = round(time.monotonic() - started, 2)
     started = time.monotonic()
-    entries = merge(offers, merge_duplicates)
+    entries = merge(offers, merge_duplicates, subtitles=view == 'movies')   # series: 'Star Trek' is not 'Star Trek: Voyager'
     if sort == 'year':
         entries.sort(key=lambda e: (-(e['year'] or 0), _sort_title(e['title'])))
     else:

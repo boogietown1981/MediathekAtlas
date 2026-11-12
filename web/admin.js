@@ -28,6 +28,22 @@
     for (const child of [...section.children])
       if (child.classList.contains('panel') || (key === 'netzkino' && child.matches('p.muted'))) admin.append(child);
     section.append(admin);
+    // 0.5.60 (Björn, 12.11.2026): the daily refresh looked "not saved" because its switch sits in
+    // the closed block. One line above the catalogue says whether it is on and when the
+    // catalogue was loaded; "Verwalten" opens the block.
+    const brief = make('p', undefined, 'platform-brief'), text = make('span'), open = make('button', 'Verwalten');
+    brief.id = key + '-brief'; open.type = 'button';
+    open.onclick = () => { admin.open = true; admin.scrollIntoView({behavior: 'smooth', block: 'start'}); };
+    brief.append(text, open);
+    section.prepend(brief);
+    const source = $(key === 'netzkino' ? 'netzkino-sync-summary' : key + '-summary'), auto = $(key + '-auto');
+    const paint = () => {
+      const state = (source?.textContent || '').trim();
+      text.textContent = 'Automatische Aktualisierung alle 24 Stunden: ' + (auto?.checked ? 'an' : 'aus') + (state ? ' · ' + state : '');
+    };
+    if (source) new MutationObserver(paint).observe(source, {childList: true, characterData: true, subtree: true});
+    auto?.addEventListener('change', paint);
+    paint();
     // YouTube without a key or a source: the setup is the first thing to do, so it stays open.
     admin.addEventListener('toggle', () => { if (admin.open) window.AtlasPlatformBoard?.mount(key); });
   }

@@ -27,8 +27,10 @@ window.AtlasPortalPanel = function (cfg) {
   const visible = () => !$('portals').hidden && $('portals').dataset.platform === K;
   const say = (text, error) => { $(P + '-status').textContent = text || ''; $(P + '-status').classList.toggle('netzkino-error', !!error); };
 
+  let autoHold = 0;
   function summary(st) {
-    $(P + '-auto').checked = !!st.auto;
+    // 0.5.60: an answer that was requested before the click must not undo the switch on screen.
+    if (Date.now() > autoHold) $(P + '-auto').checked = !!st.auto;
     $(P + '-sync').disabled = !!st.running;
     $(P + '-sync').textContent = st.running ? 'Katalog wird geladen …' : '↻ Katalog jetzt laden';
     // The catalogue is stored locally and survives restarts; only a new run replaces it.
@@ -205,8 +207,16 @@ window.AtlasPortalPanel = function (cfg) {
     catch (e) { say('Abruf nicht gestartet: ' + e.message, true); $(P + '-sync').disabled = false; }
   };
   $(P + '-auto').onchange = async () => {
-    try { summary((await window.api(K + '-auto', {enabled: $(P + '-auto').checked})).status || {}); }
-    catch (e) { say(e.message, true); }
+    const box = $(P + '-auto'), wanted = box.checked;
+    autoHold = Date.now() + 60000; box.disabled = true;
+    try {
+      const st = (await window.api(K + '-auto', {enabled: wanted})).status || {};
+      autoHold = 0; summary(st);
+      if (!!st.auto !== wanted) throw Error('Die Einstellung wurde nicht übernommen.');
+      say(wanted ? 'Gespeichert: Der Katalog wird alle 24 Stunden automatisch aktualisiert.'
+                 : 'Gespeichert: Der Katalog wird nur noch auf Knopfdruck aktualisiert.');
+    } catch (e) { autoHold = 0; box.checked = !wanted; say('Nicht gespeichert: ' + e.message, true); }
+    finally { box.disabled = false; }
   };
   // Details (0.5.42): the shared title page (web/portal_title.js), same as in the catalogue.
   // A tile started or finished a copy: keep the list "Offline gespeichert" in step.
