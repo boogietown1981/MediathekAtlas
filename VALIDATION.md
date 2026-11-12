@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.39 – Mediathek-Genres und Entdecken im Katalog (12. November 2026)
+
+- Neue Tests `tests/test_v0539_catalog_genres.py` (5): Schwellen für Großes Kino/Serienfavoriten identisch zum Mediathek-Katalog (7,5; 10.000 IMDb / 1.000 TMDB), Filter `collection` für Pluto und Netzkino, UI-Einbindung, bestehender Smoke-Test des gemeinsamen Katalogs.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespielten Mediathek-Werken (2 Serien, 3 Filme mit Genres und Bewertungen) sowie Netzkino-/Pluto-Bestand: Genre-Leiste Serien „Drama · 1, Krimi · 2“, Filme inkl. „Unbekannt“, Filter „Komödie“, „Serienfavoriten“ → nur Babylon Berlin, „Großes Kino“ → nur Das Boot, Abzeichen und ★ auf den Karten, „Gesamt“ summiert die Kategorien aller Quellen; keine JavaScript-Fehler (nur in der Cloud gesperrte Coverbilder).
+- **Nicht geprüft:** mit Björns echtem Mediathek-Bestand.
+
 ## 0.5.38 – Kategorien, Pluto-Details, Download-Metadaten (12. November 2026)
 
 - Neue Tests `tests/test_v0538_portal_categories.py` (10): Genre-Vereinheitlichung (Referenz vor Anbieter, „Unbekannt“), Kategorien-Zähler und Filter, Bewertung nur aus gültiger Referenz, Download-Metadaten wie ARD (NFO mit `uniqueid imdb`, Genres, Besetzung, Bewertung; mehrdeutige Treffer ohne ID; Seriensynopsis nicht als Folgeninhalt), Pluto-Abgleich über die Anbieterkette (Folge → Serie), Verwerfen bei Titeländerung, Netzkino-Katalog mit Referenzkategorien und Bewertungs-Sortierung, Server-/UI-Einbindung, 30 Tage.

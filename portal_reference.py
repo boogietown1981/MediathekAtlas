@@ -81,6 +81,32 @@ def summary(provider_genres, report):
     return out
 
 
+# "Entdecken" like the Mediathek catalogue (catalog.listing collection / app.js pickLabel):
+# at least 7.5/10 with 10,000 IMDb or 1,000 TMDB votes; films -> 'Großes Kino', series -> 'Serienfavoriten'.
+COLLECTIONS = {'cinema': 'movie', 'series': 'series'}
+
+
+def is_pick(score):
+    if not isinstance(score, dict):
+        return False
+    value, votes = score.get('value'), score.get('votes')
+    if not isinstance(value, (int, float)) or isinstance(value, bool) or not 7.5 <= value <= 10:
+        return False
+    try:
+        votes = int(votes or 0)
+    except (TypeError, ValueError):
+        return False
+    need = {'IMDb': 10000, 'TMDB': 1000}.get(score.get('source'))
+    return need is not None and votes >= need
+
+
+def in_collection(row, collection, kind):
+    """kind: 'movie' or 'series' of the row; empty collection keeps everything."""
+    if not collection:
+        return True
+    return COLLECTIONS.get(collection) == kind and is_pick(row.get('score'))
+
+
 def matches(row, genre):
     if not genre:
         return True

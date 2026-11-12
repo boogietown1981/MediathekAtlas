@@ -261,7 +261,8 @@ class Handler(BaseHTTPRequestHandler):
                 if q.get('view',[''])[0]=='episodes':data=pluto.episodes(ROOT,q.get('series',[''])[0])
                 else:data=pluto.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
                                         offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
-                                        genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0])
+                                        genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
+                                        collection=q.get('collection',[''])[0][:20])
             except ValueError as e:return self.send({'error':str(e)},404)
             data['status']=pluto.state(ROOT)
             return self.send(data)
@@ -291,7 +292,8 @@ class Handler(BaseHTTPRequestHandler):
                 series_key=q.get('series_key',[''])[0],
                 query=q.get('q',[''])[0],origin=q.get('origin',['all'])[0],
                 offset=q.get('offset',['0'])[0],limit=q.get('limit',['80'])[0],
-                genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0])
+                genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0],
+                collection=q.get('collection',[''])[0][:20])
             data['status']=netzkino.state(ROOT)
             return self.send(data)
         if path=='/api/netzkino':

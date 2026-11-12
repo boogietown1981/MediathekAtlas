@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.5.38
+# MediathekAtlas · 0.5.39
+
+## Neu in 0.5.39: Genres und „Großes Kino“ wieder im Katalog
+
+- Über den Katalogkarten stehen wieder die Mediathek-Genres mit Anzahl (Filme bzw. Serien), für Netzkino und Pluto TV deren Kategorien in derselben Leiste.
+- „Entdecken“ mit „Großes Kino“ und „Serienfavoriten“ direkt im Katalog, für alle Quellen. Die klassische Ansicht mit Genre-Baum bleibt unter „Klassische Katalogansicht …“ erhalten.
 
 ## Neu in 0.5.38: Kategorien, Bewertungen und Details für Netzkino und Pluto TV
 

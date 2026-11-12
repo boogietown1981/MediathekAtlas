@@ -1178,7 +1178,7 @@ def _view_rows(root, origin='all'):
     return out
 
 
-def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',limit=80,offset=0,genre='',sort='updated'):
+def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',limit=80,offset=0,genre='',sort='updated',collection=''):
     """Stable film/series/episode view; no changes to actual catalog or downloads.
 
     series_key is a deterministic ID derived from the normalized provider series
@@ -1251,12 +1251,14 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
                 if missing:gaps.append({'season':season,'episodes':missing[:60]})
         group['numbering_gaps']=gaps
     if view=='movies':
-        rows=[r for r in movies if (not query or query in r['title'].casefold()) and genre_match(r)]
+        rows=[r for r in movies if (not query or query in r['title'].casefold()) and genre_match(r)
+              and portal_reference.in_collection(r,collection,'movie')]
         rows.sort(key=lambda r:(-float(r.get('updated',0)),r['title'].casefold()))
     elif view=='series':
         rows=[{k:v for k,v in group.items() if k!='children'} for group in series.values()
              if (not query or query in group['title'].casefold() or any(query in e['title'].casefold() for e in group['children']))
-             and (genre_match(group) or any(genre_match(e) for e in group['children']))]
+             and (genre_match(group) or any(genre_match(e) for e in group['children']))
+             and portal_reference.in_collection(group,collection,'series')]
         rows.sort(key=lambda r:(-float(r.get('updated',0)),r['title'].casefold()))
     else:
         group=series.get(series_key)

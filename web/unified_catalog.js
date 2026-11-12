@@ -12,7 +12,7 @@
   const TYPES = ['movies','series'];
   let source='mediatheken',kind='series',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
-  let medGenres=[];
+  let medGenres=[],medTree=[],collection='';
   const heading=() => ({all:'Gesamtkatalog',mediatheken:'Öffentlich-rechtliche Mediatheken',netzkino:'Netzkino',pluto:'Pluto TV'}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
@@ -22,7 +22,7 @@
     if (!discover || !switcher || !body || $('atlas-catalog-advanced')) return;
     const advanced=el('details',undefined,'atlas-catalog-advanced');
     advanced.id='atlas-catalog-advanced';
-    const summary=el('summary','Erweiterter Mediatheken-Katalog, Scanner und Diagnose');
+    const summary=el('summary','Klassische Katalogansicht (Genre-Baum, Zuordnung, Großes Kino), Scanner und Diagnose');
     advanced.append(summary);
     // Move existing nodes, never clone/remove listeners or rewrite historic functions.
     for (const child of [...discover.children]) {
@@ -84,8 +84,23 @@
       title:m.title||r.title||'Ohne Titel',year:m.year||null,
       poster:m.poster||'',description:m.description||m.show_description||r.description||'',
       genres:m.genres||[],duration:m.source_duration_seconds||r.duration||null,
+      score:medScore(m),pick:['matched','manual','identified'].includes(item.state),
       state:item.state,series_parent:!!item.series_parent,
       episode_count:item.episodes||0,available:!!item.available};
+  }
+  // Mediathek rating in the same shape as the portal score (portal_reference.rating).
+  function medScore(m) {
+    const value=Number(m.rating);
+    if (m.rating==null || !Number.isFinite(value) || value<0 || value>10) return null;
+    const src=m.rating_source||(['OMDb','IMDb Offline'].includes(m.provider)?'IMDb':m.provider||'');
+    return {value:Math.round(value*10)/10,source:src==='IMDb Offline'||src==='OMDb'?'IMDb':src,votes:m.votes||null};
+  }
+  // Same rule as the Mediathek catalogue ("Entdecken"): ≥ 7.5 with 10,000 IMDb or 1,000 TMDB votes.
+  function pickLabel(item) {
+    const s=item.score;if (!s || item.pick===false) return '';
+    const need={IMDb:10000,TMDB:1000}[s.source];
+    if (!need || !(s.value>=7.5 && s.value<=10) || !(Number(s.votes)>=need)) return '';
+    return item.kind==='movie'?'Großes Kino':item.kind==='series'?'Serienfavorit':'';
   }
   function nkRow(item) {
     return {source:'netzkino',id:item.id||'',raw:item,kind:item.media_type||'movie',
@@ -128,6 +143,8 @@
     text.append(el('small',facts,'atlas-uc-meta'));
     const stars=window.AtlasPortalCategories?.rating(item.score);
     if (stars) text.append(stars);
+    const pick=pickLabel(item);
+    if (pick) text.append(el('div',pick,'pick-badge'));
     if (item.description) text.append(el('p',item.description.slice(0,220),'atlas-uc-desc'));
     const actions=el('div',undefined,'atlas-uc-actions');
     const details=el('button',item.kind==='series'&&item.source==='netzkino'?'Folgen anzeigen':item.source==='pluto'?'Details':'Details & Angebote','atlas-uc-details');
@@ -171,6 +188,19 @@
     rows.sort((a,b)=>sort==='year' ? ((Number(b.year)||0)-(Number(a.year)||0) || a.title.localeCompare(b.title,'de')):
       a.title.localeCompare(b.title,'de'));
   }
+  // Genre bar with counts like the original "Filme, Serien & Genres" tree: Mediatheken from
+  // the catalogue tree (per media kind), portals from their canonical categories.
+  function paintCategories(counts) {
+    const merged=new Map();
+    for (const c of counts) {
+      const name=String(c.genre||'').trim();if(!name) continue;
+      merged.set(name,(merged.get(name)||0)+(Number(c.n)||0));
+    }
+    const list=[...merged].map(([g,n])=>({genre:g,n})).sort((a,b)=>(a.genre==='Unbekannt')-(b.genre==='Unbekannt')||a.genre.localeCompare(b.genre,'de'));
+    window.AtlasPortalCategories?.render($('atlas-cross-categories'),seriesKey?[]:list,genre,value=>{
+      genre=value;offset=0;$('atlas-cross-genre').value=value;refresh();
+    });
+  }
   function paint(rows,notes,totals,facets) {
     const host=$('atlas-cross-items');host.replaceChildren();
     sortRows(rows);
@@ -209,17 +239,17 @@
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
       query:search,kind:kind==='movies'?'movie':'series',genre,sort,
-      downloaded:'all',offset:String(offset)
+      downloaded:'all',offset:String(offset),collection
     }))});
     if (nkNeeded)requests.push({source:'netzkino',req:window.api('netzkino-grouped?'+new URLSearchParams({
-      view:nkView,series_key:seriesKey,q:search,genre,sort,offset:String(offset),limit:'48'
+      view:nkView,series_key:seriesKey,q:search,genre,sort,offset:String(offset),limit:'48',collection:seriesKey?'':collection
     }))});
     if (plNeeded)requests.push({source:'pluto',req:window.api('pluto?'+new URLSearchParams({
-      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48'
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));
     if (seq!==sequence) return;
-    const rows=[],notes=[],totals=[],facets=[];
+    const rows=[],notes=[],totals=[],facets=[],counts=[];
     for(let i=0;i<requests.length;i++) {
       const request=requests[i],result=responses[i];
       if(result.status!=='fulfilled') {
@@ -232,31 +262,43 @@
         rows.push(...(data.items||[]).map(medRow));
         // Existing Mediathek genre tree is reused, not rebuilt by the external source.
         facets.push(...medGenres);
+        counts.push(...medTree.filter(r=>r.kind===(kind==='movies'?'movie':'series')));
         for (const item of data.items||[]) facets.push(...genreList(item.metadata?.genres));
         notes.push('Mediatheken: '+data.total+' Treffer');
       } else if (request.source==='pluto') {
         rows.push(...(data.items||[]).map(plRow));
         facets.push(...(data.genre_counts||[]).map(g=>g.genre).filter(g=>g!=='Unbekannt'));
+        counts.push(...(data.genre_counts||[]));
         notes.push('Pluto TV: '+data.total+' Treffer');
       } else {
         rows.push(...(data.items||[]).map(nkRow));
         facets.push(...(data.genres||[]).filter(g=>g!=='Unbekannt'));
+        counts.push(...(data.genre_counts||[]));
         notes.push('Netzkino: '+data.total+' Treffer · Startseitenindex, kein vollständiger Gesamtkatalog'+(seriesKey?' · '+seriesTitle:''));
       }
     }
-    if(seq===sequence)paint(rows,notes,totals,facets);
+    if(seq===sequence){paint(rows,notes,totals,facets);paintCategories(counts);}
   }
   for (const b of document.querySelectorAll('[data-catalog-source]')) b.onclick=()=>activate(b.dataset.catalogSource);
   for (const b of document.querySelectorAll('[data-cross-kind]')) b.onclick=()=>{
-    kind=b.dataset.crossKind;seriesKey='';seriesTitle='';offset=0;refresh();
+    kind=b.dataset.crossKind;seriesKey='';seriesTitle='';offset=0;
+    if (collection && (collection==='cinema')!==(kind==='movies')) {collection='';$('atlas-cross-collection').value='';}
+    refresh();
   };
   $('atlas-cross-search')?.addEventListener('submit',event=>{
     event.preventDefault();search=$('atlas-cross-query').value.trim().slice(0,180);offset=0;refresh();
   });
   $('atlas-cross-genre')?.addEventListener('change',event=>{genre=event.target.value;offset=0;refresh();});
+  $('atlas-cross-collection')?.addEventListener('change',event=>{
+    collection=event.target.value;
+    // Großes Kino = films, Serienfavoriten = series (as in the Mediathek catalogue).
+    if (collection) kind=collection==='cinema'?'movies':'series';
+    seriesKey='';seriesTitle='';offset=0;refresh();
+  });
   $('atlas-cross-sort')?.addEventListener('change',event=>{sort=event.target.value;offset=0;refresh();});
   $('atlas-cross-reset')?.addEventListener('click',()=>{
-    search='';genre='';sort='title';offset=0;seriesKey='';seriesTitle='';
+    search='';genre='';sort='title';offset=0;seriesKey='';seriesTitle='';collection='';
+    if ($('atlas-cross-collection')) $('atlas-cross-collection').value='';
     $('atlas-cross-query').value='';$('atlas-cross-genre').value='';$('atlas-cross-sort').value='title';refresh();
   });
   $('atlas-cross-back-series')?.addEventListener('click',()=>{seriesKey='';seriesTitle='';offset=0;refresh();});
@@ -267,10 +309,16 @@
     document.querySelector('.platform-tab[data-platform="'+(source==='pluto'?'pluto':'netzkino')+'"]')?.click();
   });
   arrangeAdvanced();
-  window.api('catalog-tree').then(data => {
-    medGenres=(data.tree||[]).map(entry=>entry.genre).filter(Boolean);
-    if(source==='all'||source==='mediatheken') refresh();
-  }).catch(()=>{});
+  // The category tree is computed in the background after start; ask again until it is there.
+  function loadTree(attempt=0) {
+    window.api('catalog-tree').then(data => {
+      medTree=(data.tree||[]).filter(entry=>entry&&entry.genre);
+      medGenres=medTree.map(entry=>entry.genre);
+      if(source==='all'||source==='mediatheken') refresh();
+      if((data.loading||!medTree.length) && attempt<20) setTimeout(()=>loadTree(attempt+1),3000);
+    }).catch(()=>{if(attempt<20)setTimeout(()=>loadTree(attempt+1),5000);});
+  }
+  loadTree();
   window.AtlasUnifiedCatalog={activate,refresh};
   activate('mediatheken');
 })();

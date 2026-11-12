@@ -16,6 +16,7 @@
   <form id="atlas-cross-search" aria-label="Katalogsuche und Filter">
     <label><span>Suche</span><input id="atlas-cross-query" aria-label="Film oder Serie suchen" placeholder="Titel oder Serie suchen" maxlength="180"></label>
     <label><span>Genre</span><select id="atlas-cross-genre" aria-label="Nach Genre filtern"><option value="">Alle Genres</option></select></label>
+    <label><span>Entdecken</span><select id="atlas-cross-collection" aria-label="Großes Kino oder Serienfavoriten" title="Mindestens 7,5 / 10; mindestens 10.000 IMDb- oder 1.000 TMDB-Stimmen. Automatische Auswahl, keine Kino-Umsatzwertung."><option value="">Alle Werke</option><option value="cinema">Großes Kino</option><option value="series">Serienfavoriten</option></select></label>
     <label><span>Sortierung</span><select id="atlas-cross-sort" aria-label="Katalog sortieren"><option value="title">Titel A–Z</option><option value="year">Neuere zuerst</option></select></label>
     <button type="submit" class="primary">Suchen</button>
     <button id="atlas-cross-reset" type="button">Filter zurücksetzen</button>
@@ -26,6 +27,7 @@
     <button type="button" id="atlas-cross-back-series" hidden>← Zurück zur Serienliste</button>
     <button type="button" id="atlas-cross-open-portal">Plattformverwaltung</button>
   </div>
+  <div id="atlas-cross-categories" class="portal-categories atlas-cross-categories" role="group" aria-label="Genres" hidden></div>
   <p id="atlas-cross-status" role="status"></p>
   <div id="atlas-cross-items" class="atlas-uc-grid" aria-label="Katalogtreffer" aria-live="polite"></div>
   <div class="atlas-cross-pager"><button type="button" id="atlas-cross-prev">← Zurück</button><span id="atlas-cross-page"></span><button type="button" id="atlas-cross-next">Weitere →</button></div>

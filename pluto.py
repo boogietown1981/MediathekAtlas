@@ -437,7 +437,7 @@ def episodes(root, series_id, fetch=None, now=None):
         db.close()
 
 
-def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title'):
+def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection=''):
     """One page of films, series or live channels. Films and series carry the same canonical
     categories and reference ratings as the Mediathek catalogue (portal_reference)."""
     import portal_reference, pluto_enrichment
@@ -464,7 +464,8 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     for row in rows:
         row.update(portal_reference.summary(row.get('genre'), reports.get(row['id'])))
     counts = portal_reference.facets(rows)
-    rows = [r for r in rows if portal_reference.matches(r, genre)]
+    rows = [r for r in rows if portal_reference.matches(r, genre)
+            and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
         rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
     elif sort == 'year':
