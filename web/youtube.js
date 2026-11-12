@@ -79,6 +79,9 @@
       say('Hinzugefügt. „↻ Katalog jetzt laden“ liest den Kanal ein.');
     } catch (e) { say(e.message, true); }
   };
+  // Series episodes are shorter than films: the suggested minimum follows the kind (films 60, series 10 min).
+  const minHint = () => { $('youtube-source-min').placeholder = $('youtube-source-kind').value === 'series' ? '10' : '60'; };
+  $('youtube-source-kind').onchange = minHint; minHint();
   $('youtube-offline-switch').onchange = async ev => {
     const on = ev.target.checked;
     // Switching on needs an explicit confirmation of the terms (stored with its time).
