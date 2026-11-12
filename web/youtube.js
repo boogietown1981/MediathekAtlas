@@ -61,7 +61,9 @@
       const st = d.status || {};
       $('youtube-setup-state').textContent = '· ' + (st.key_set ? 'Schlüssel hinterlegt' : 'Schlüssel fehlt') + ' · ' + (st.sources || 0) + ' aktive Quellen' +
         (st.sources_failed ? ' · ' + st.sources_failed + ' mit Fehler' : '') + ' · Offline ' + (st.offline_enabled ? 'an' : 'aus');
-      if (!st.key_set) $('youtube-setup').open = true;
+      // 0.5.62: since 0.5.55 the setup sits in the collapsed "YouTube verwalten" block; without a key,
+      // a source or a catalogue it opens by itself so channels and key are never out of sight.
+      if (!st.key_set || !st.sources || !(st.movies || st.series)) { window.AtlasPlatformLayout?.open('youtube'); $('youtube-setup').open = true; }
     } catch (e) { say(e.message, true); }
   }
 
