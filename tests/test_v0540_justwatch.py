@@ -301,7 +301,7 @@ class WiringTests(unittest.TestCase):
             self.assertIn(needle, s)
         html = (ROOT / 'web' / 'index.html').read_text()
         for needle in ('id="justwatch"', 'data-platform="justwatch"', 'data-catalog-source="justwatch"',
-                       'id="atlas-justwatch-detail"', 'id="justwatch-offline-jobs"', '<script src="/justwatch.js"></script>'):
+                       '<script src="/portal_title.js"></script>', 'id="justwatch-offline-jobs"', '<script src="/justwatch.js"></script>'):
             self.assertIn(needle, html)
         self.assertNotIn('id="justwatch-view-live"', html)
         build = (ROOT / 'build_macos.py').read_text()

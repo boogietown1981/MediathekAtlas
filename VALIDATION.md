@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.42 – Titelseite für alle Plattformen, Netzkino-Download (12. November 2026)
+
+- Neue Tests `tests/test_v0542_portal_title.py` (7): Leerzeichen in Netzkino-Adressen (auch über den ytdl-Resolver, Request-Zeile ohne Leerzeichen, vorhandene %-Kodierung bleibt), gleiche Modellfelder für Pluto und JustWatch mit getrennten Anbieterangaben, JustWatch-Titel ohne externen Stream (kein Player/Offline, offizielle Seite), Ablehnung unbekannter Quellen/Kennungen, Einbindung (keine alten Dialoge mehr, alle Wege öffnen die Titelseite).
+- Browser-Durchlauf (Playwright/Chromium, eingespielter Bestand): Katalog → JustWatch-Serie → Titelseite mit Folgen, Werkzuordnung, Anbieterangaben, „Zurück zum Katalog“; Plattformen → Pluto-Film → gleiche Titelseite mit Abspielen/Offline, „Zurück zur Plattform“ landet wieder im Pluto-Reiter; JustWatch-Reiter → Serie → gleiche Seite; Netzkino → Titelseite (Detailabruf in der Cloud gesperrt → gespeicherte Angaben). Keine JavaScript-Fehler (nur gesperrte Bildadressen in der Cloud).
+- Volllauf `python3 -m unittest discover -s tests` → 592 Tests OK (nach Neubau des Bundles); alle `tests/*.cjs` OK.
+- **Nicht geprüft:** echter Netzkino-Download auf Björns Mac (CDN aus der Cloud gesperrt); Darstellung mit echten Covern.
+
 ## 0.5.41 – Kataloge nach Neustart (12. November 2026)
 
 - Neustart-Test: Server mit eingespieltem Bestand zweimal gestartet und beendet; `/api/pluto`, `/api/justwatch`, `/api/netzkino-grouped` liefern jeweils denselben Bestand (1 / 2 / 420 Filme), ohne neuen Abruf.

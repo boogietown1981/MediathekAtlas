@@ -12,8 +12,10 @@ function stateLabel(state){return ({identified:'◐ Werk erkannt · Folge offen'
 function playButton(item,label,primary,list){const b=el('button','▶ '+(label||'Abspielen'),(primary?'primary ':'')+'play-button');b.title='Im Browser abspielen';b.onclick=e=>{e.stopPropagation();list?playMedia(item,list):playMedia(item);};return b;}
 function artImage(url,alt,cls){if(!safeArt(url))return null;const img=el('img',undefined,cls);img.src=url;img.alt=alt||'';img.loading='lazy';img.decoding='async';img.onerror=()=>img.remove();return img;}
 
-function showTitleView(){titleScroll=window.scrollY;$('discover').hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
-function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');$('discover').hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
+let titleReturn='discover';
+// Title pages open from the catalogue or from a platform tab (0.5.42) and return there.
+function showTitleView(){if($('title-view').hidden){titleReturn=$('portals')&&!$('portals').hidden?'portals':'discover';titleScroll=window.scrollY;}$('discover').hidden=true;if($('portals'))$('portals').hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
+function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');$(titleReturn==='portals'?'portals':'discover').hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
 window.addEventListener('popstate',()=>{if(!$('title-view').hidden)closeTitleView(true);});
 function pushTitle(){if(!(history.state&&history.state.atlasTitle))history.pushState({atlasTitle:1},'');}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('title-view').hidden&&!document.querySelector('dialog[open]'))closeTitleView();});
@@ -21,11 +23,13 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('title-view').hi
 // Entry point from catalogue cards: series (or one of its episodes) open the series page, everything else the film page.
 function openTitle(item){if(item.series_parent||(item.metadata?.kind==='series'&&item.show_key))return openShow(item.show_key,item.series_parent?null:item.work_id);return openMovie(item);}
 
-function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast}){
- const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=artImage(meta.fanart||meta.poster,'');
+// image: optional loader for portal artwork (Netzkino/Pluto/JustWatch hosts, 0.5.42).
+function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,image}){
+ const art=image||artImage;
+ const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=art(meta.fanart||meta.poster,'');
  if(bg){if(!meta.fanart)back.classList.add('blurred');back.append(bg);}wrap.append(back);
- const top=el('div',undefined,'tv-topbar'),close=el('button','← Zurück zum Katalog','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
- const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=artImage(poster||meta.poster,'Poster: '+(meta.title||''));
+ const top=el('div',undefined,'tv-topbar'),close=el('button',titleReturn==='portals'?'← Zurück zur Plattform':'← Zurück zum Katalog','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
+ const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=art(poster||meta.poster,'Poster: '+(meta.title||''));
  if(img)cover.append(img);else cover.append(el('span',type==='Serie'?'SERIE':'FILM'));
  const text=el('div',undefined,'tv-herotext');text.append(el('p',type,'eyebrow'),el('h1',meta.title||'Ohne Titel'));
  const line=el('div',undefined,'tv-facts');for(const f of facts.filter(Boolean)){line.append(typeof f==='string'?el('span',f):f);}text.append(line);

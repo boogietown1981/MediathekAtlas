@@ -1,9 +1,9 @@
 /* Shared platform panel for film portals with own catalogue (0.5.40): Pluto TV (0.5.36–0.5.38) and
    JustWatch TV use the same cards, categories, ratings, detail dialog, playback and offline list.
-   cfg: {key, name, idPrefix, dialogPrefix, dialogId, live, play(id,label), externalLink, offlineNote, summary(st)} */
+   cfg: {key, name, short, idPrefix, live, play(), externalLink, notPlayable, offlineNote}. Details: web/portal_title.js (0.5.42). */
 window.AtlasPortalPanel = function (cfg) {
   'use strict';
-  const K = cfg.key, P = cfg.idPrefix || K, D = cfg.dialogPrefix, NAME = cfg.name, SHORT = cfg.short || cfg.name;
+  const K = cfg.key, P = cfg.idPrefix || K, NAME = cfg.name, SHORT = cfg.short || cfg.name;
   const $ = id => document.getElementById(id);
   const make = (tag, value, cls) => {
     const n = document.createElement(tag);
@@ -233,91 +233,7 @@ window.AtlasPortalPanel = function (cfg) {
     try { summary((await window.api(K + '-auto', {enabled: $(P + '-auto').checked})).status || {}); }
     catch (e) { say(e.message, true); }
   };
-  // Detail view (0.5.38): same layout as the Netzkino details, reference check, playback, offline copy.
-  let detailId = null;
-  const field = (host, name, value) => {
-    if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return;
-    const row = make('div', undefined, 'nk-detail-field');
-    row.append(make('dt', name), make('dd', Array.isArray(value) ? value.join(' · ') : String(value)));
-    host.append(row);
-  };
-  const refLabels = {unchecked: 'Noch nicht abgeglichen; der Abgleich läuft automatisch im Hintergrund.',
-    candidate: 'Eindeutige Referenz gefunden', review: 'Widersprüchliche Referenzen · keine automatische Zuordnung',
-    no_match: 'Keine ausreichend eindeutige Referenz gefunden', partial: 'Einige Anbieter waren nicht erreichbar; später erneut prüfen'};
-  function paintReference(report) {
-    const area = $(D + '-reference'), facts = $(D + '-reference-facts');
-    area.replaceChildren(); facts.replaceChildren();
-    area.append(make('h3', 'IMDb / TVDB / TMDB / OMDb / Wikidata'), make('p', refLabels[report.status] || 'Wird geprüft'));
-    const m = report.metadata || {}, src = report.field_sources || {};
-    for (const [key, label] of [['genres', 'Genres'], ['cast', 'Besetzung'], ['directors', 'Regie'], ['writers', 'Drehbuch'], ['rating', 'Bewertung']]) {
-      if (!m[key] || src[key] === NAME) continue;
-      field(facts, label + ' · ' + src[key], key === 'rating' ? m[key] + ' / 10' : m[key]);
-    }
-    for (const r of (report.references || []).slice(0, 6))
-      area.append(make('small', [r.provider, r.title, r.year, r.reference_id, r.eligible ? 'passt' : (r.issues || []).join(' / ')].filter(Boolean).join(' · '), 'nk-ref-candidate'));
-  }
-  async function openDetail(id) {
-    const dialog = $(cfg.dialogId); if (!dialog) return;
-    detailId = id;
-    $(D + '-title').textContent = NAME + ' · Details werden geladen …';
-    for (const host of ['-quickfacts', '-facts', '-actions', '-reference', '-reference-facts', '-offline-slot'].map(x => D + x))
-      $(host).replaceChildren();
-    $(D + '-description').textContent = ''; $(D + '-offline-status').textContent = ''; $(D + '-image').hidden = true;
-    if (!dialog.open) dialog.showModal();
-    let data;
-    try { data = await window.api(K + '-details?id=' + encodeURIComponent(id)); }
-    catch (e) { $(D + '-title').textContent = 'Details nicht verfügbar'; $(D + '-description').textContent = e.message; return; }
-    if (detailId !== id) return;
-    const it = data.item || {}, parent = data.series, report = data.reference || {};
-    const label = it.kind === 'episode' && it.season !== null && it.episode !== null ?
-      `S${String(it.season).padStart(2, '0')}E${String(it.episode).padStart(2, '0')} · ${it.title}` : it.title;
-    $(D + '-title').textContent = parent ? parent.title + ' · ' + label : label;
-    const ref = report.metadata || {};
-    $(D + '-description').textContent = it.summary || (it.kind !== 'episode' && ref.description) || 'Keine Inhaltsangabe veröffentlicht.';
-    const poster = it.poster || ref.poster;
-    if (poster && /^https:\/\//.test(poster)) { const img = $(D + '-image'); img.onerror = () => { img.hidden = true; }; img.referrerPolicy = 'no-referrer'; img.src = poster; img.hidden = false; }
-    const q = $(D + '-quickfacts');
-    field(q, 'Art', {movie: 'Film', series: 'Serie', episode: 'Folge'}[it.kind] || it.kind);
-    field(q, 'Jahr', it.year); field(q, 'Laufzeit', minutes(it.duration)); field(q, 'Altersfreigabe', it.rating);
-    if (it.score) field(q, 'Bewertung', it.score.value.toLocaleString('de-DE') + ' / 10 · ' + it.score.source);
-    const f = $(D + '-facts');
-    field(f, 'Kategorien', (it.categories || []).filter(c => c !== 'Unbekannt'));
-    field(f, SHORT + '-Genre', it.genre); field(f, SHORT + '-Kategorie', it.category);
-    paintReference(report);
-    const actions = $(D + '-actions');
-    if (it.kind === 'series') {
-      const open = make('button', 'Folgen anzeigen', 'primary'); open.type = 'button';
-      open.onclick = () => {
-        dialog.close(); series = it; view = 'episodes'; offset = 0;
-        if (!visible()) { document.querySelector('button.nav[data-view="portals"]')?.click(); document.querySelector('' + '.platform-tab[data-platform="' + K + '"]' + '')?.click(); }
-        refresh();
-      };
-      actions.append(open);
-      $(D + '-offline-status').textContent = `Folgen einzeln speichern (je ${offlineDays} Tage offline).`;
-    } else if (!playable(it)) {
-      actions.append(externalLink(it));
-      $(D + '-offline-status').textContent = cfg.notPlayable || 'Für diesen Titel gibt es keinen Stream für externe Player.';
-    } else {
-      const play = make('button', '▶ Ansehen', 'primary'); play.type = 'button';
-      play.onclick = () => { dialog.close(); cfg.play()?.(it.id, $(D + '-title').textContent); };
-      actions.append(play);
-      $(D + '-offline-slot').append(offlineButton(it));
-      if (cfg.externalLink && it.web_url) actions.append(externalLink(it));
-      const job = offline.get(it.id);
-      $(D + '-offline-status').textContent = job && job.state === 'done' && job.offline_until ?
-        `Offline verfügbar bis ${day(job.offline_until)} · ${daysText(job.days_left)}` :
-        job && ACTIVE.includes(job.state) ? LABELS[job.state] :
-        cfg.offlineNote(offlineDays);
-    }
-    const check = make('button', 'Mit IMDb, TVDB, TMDB und Co. abgleichen'); check.type = 'button';
-    check.onclick = async () => {
-      check.disabled = true; $(D + '-reference').textContent = 'Referenzen werden geprüft …';
-      try { const r = await window.api(K + '-enrich', {id: it.id, force: true}); if (detailId === id) { paintReference(r); refresh(); } }
-      catch (e) { if (detailId === id) $(D + '-reference').textContent = 'Abgleich nicht möglich: ' + e.message; }
-      finally { check.disabled = false; }
-    };
-    actions.append(check);
-  }
-  $(D + '-close')?.addEventListener('click', () => { detailId = null; $(cfg.dialogId).close(); });
+  // Details (0.5.42): the shared title page (web/portal_title.js), same as in the catalogue.
+  const openDetail = id => window.AtlasPortalTitle?.open(K, id);
   return {refresh, openDetail};
 };

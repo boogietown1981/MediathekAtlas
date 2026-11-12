@@ -70,7 +70,8 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
         try:found=resolver(row['url'])
         except Exception as e:raise ValueError(str(e) or 'Netzkino-Adresse konnte nicht aufgelöst werden') from None
         _NK_CACHE[item_id]=(now+NETZKINO_TTL,found)
-    return {'kind':'url','url':found['url'],'hls':False,'quality':'Netzkino MP4','title':title,
+    import downloads
+    return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
 def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch=''):

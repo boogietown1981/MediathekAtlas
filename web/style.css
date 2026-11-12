@@ -684,3 +684,8 @@ dialog.player::backdrop{background:#000c}
 .atlas-portal-progress{height:6px;border-radius:3px;background:#24313a;overflow:hidden}
 .atlas-portal-progress span{display:block;height:100%;background:#5fe0b7}
 .atlas-portal-actions{display:flex;gap:8px;flex-wrap:wrap}
+/* 0.5.42: shared title page sections for Netzkino, Pluto TV and JustWatch TV */
+.portal-title-section .nk-ref-candidate{display:block;margin:4px 0}
+.portal-title-section>button,.portal-title-section>div>button{margin-top:12px}
+.portal-title-section .tv-info{margin:8px 0 4px}
+.portal-title-jobs{display:grid;gap:8px;margin-top:12px}

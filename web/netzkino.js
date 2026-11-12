@@ -147,7 +147,7 @@
         if (!isGroup && /^[a-f0-9]{32}$/.test(item.id || '')) {
           const detail = make('button', 'Details & Ansehen');
           detail.type = 'button';
-          detail.onclick = () => window.AtlasNetzkinoDetail?.open(item.id);
+          detail.onclick = () => (window.AtlasPortalTitle?.open('netzkino', item.id) || window.AtlasNetzkinoDetail?.open(item.id));
           actions.prepend(detail);
         }
         card.append(actions); host.append(card);

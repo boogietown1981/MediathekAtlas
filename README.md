@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.5.41
+# MediathekAtlas · 0.5.42
+
+## Neu in 0.5.42: Eine Detailansicht für alle Plattformen
+
+- Netzkino, Pluto TV und JustWatch TV öffnen dieselbe Titelseite wie die ARD/ZDF-Werke (Cover, Jahr, Laufzeit, ★ Bewertung, Kategorien, Inhalt, Besetzung), egal ob aus dem Katalog oder unter Plattformen. Darunter für jede Plattform gleich: Folgen (Serien), Offline ansehen (30 Tage), Werkzuordnung (IMDb/TVDB/TMDB/OMDb/Wikidata) und „Angaben von <Anbieter>“ mit allem, was nur dieser Anbieter liefert.
+- Netzkino-Offline-Download: Dateiadressen mit Leerzeichen („…Teil 1.mp4“) funktionieren wieder; fehlgeschlagene Aufträge mit „Erneut versuchen“ neu starten.
 
 ## Neu in 0.5.41: Kataloge bleiben gespeichert
 

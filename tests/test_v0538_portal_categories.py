@@ -171,7 +171,8 @@ class WiringTests(unittest.TestCase):
                        "pluto_enrichment.enrich(ROOT,item_id,settings())", "netzkino_enrichment.enrich(ROOT,item_id,settings())"):
             self.assertIn(needle, s)
         html = (ROOT / 'web' / 'index.html').read_text()
-        for needle in ('id="atlas-pluto-detail"', 'id="pluto-categories"', 'id="netzkino-categories"',
+        # 0.5.42: details on the shared title page (portal_title.js) instead of a Pluto dialog.
+        for needle in ('<script src="/portal_title.js"></script>', 'id="pluto-categories"', 'id="netzkino-categories"',
                        'data-catalog-source="pluto"', '/portal_categories.js'):
             self.assertIn(needle, html)
         self.assertIn("'pluto'", (ROOT / 'web' / 'unified_catalog.js').read_text())

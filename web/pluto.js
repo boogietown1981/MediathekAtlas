@@ -4,7 +4,7 @@
 (() => {
   'use strict';
   window.MediathekAtlasPluto = window.AtlasPortalPanel?.({
-    key: 'pluto', name: 'Pluto TV', dialogPrefix: 'atlas-pl', dialogId: 'atlas-pluto-detail', short: 'Pluto', live: true,
+    key: 'pluto', name: 'Pluto TV', short: 'Pluto', live: true,
     play: () => window.playPluto,
     offlineNote: days => `Pluto TV erlaubt ${days} Tage Offline-Nutzung. Die Datei enthält die Werbung, die Pluto ausliefert.`
   }) || undefined;

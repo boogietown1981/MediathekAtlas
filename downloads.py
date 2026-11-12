@@ -68,7 +68,21 @@ def quality_summary(details):
 
 QUALITY_KEYS={'hd':['url_video_hd','url_video','url_video_low'],'standard':['url_video','url_video_hd','url_video_low'],'low':['url_video_low','url_video','url_video_hd']}
 
+def safe_url(url):
+    """Percent-encode characters an HTTP request line cannot carry (spaces, control characters).
+    Netzkino's CDN delivers paths like '/YFEN/Die_verwegenen_Vier_reissen_aus_-_Teil 1.mp4' (0.5.42);
+    existing %-escapes and reserved characters stay as they are."""
+    if not url:return url
+    import urllib.parse
+    parts=urllib.parse.urlsplit(str(url).strip())
+    keep="/%:@!$&'()*+,;=-._~"
+    return urllib.parse.urlunsplit((parts.scheme,parts.netloc,urllib.parse.quote(parts.path,safe=keep),
+                                    urllib.parse.quote(parts.query,safe=keep+'?'),urllib.parse.quote(parts.fragment,safe=keep+'?')))
+
 def source_url(row,quality='best'):
+    return safe_url(_source_url(row,quality))
+
+def _source_url(row,quality='best'):
     """Direct file address for one job. Sources without a stable file address
     (Netzkino pages) carry a resolver and are resolved right before download,
     so the rest of the pipeline (MKV, NFO, naming, .partial staging) is shared."""
