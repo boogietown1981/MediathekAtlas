@@ -84,7 +84,7 @@
       b.type = 'button';
       b.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
       b.onclick = () => {
-        if (typeof window.playLive !== 'function') { say('Der Player ist nicht geladen; Seite neu laden.', true); return; }
+        if (typeof window.playLive !== 'function') { say(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', true); return; }
         window.playLive(src.play, station.name + ' · ' + src.provider_name);
       };
       actions.append(b);

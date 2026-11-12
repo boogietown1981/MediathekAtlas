@@ -51,7 +51,7 @@
   function section(title, cls) { const s = make('section', undefined, 'tv-section portal-title-section' + (cls ? ' ' + cls : '')); s.append(make('h2', title)); return s; }
   function play(m, label) {
     const fn = SOURCES[m.source].play();
-    if (typeof fn !== 'function') { window.notice?.('Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
+    if (typeof fn !== 'function') { window.notice?.(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
     fn(m.id, label || m.title);
   }
 

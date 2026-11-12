@@ -117,7 +117,7 @@ window.AtlasPortalPanel = function (cfg) {
     } else {
       const play = make('button', item.kind === 'channel' ? '▶ Live ansehen' : '▶ Ansehen', 'primary'); play.type = 'button';
       play.onclick = () => {
-        if (typeof cfg.play() !== 'function') { say('Der Player ist nicht geladen; Seite neu laden.', true); return; }
+        if (typeof cfg.play() !== 'function') { say(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', true); return; }
         if (item.kind === 'track' && view === 'tracks' && window.playYouTubeList) {
           const list = lastTracks.filter(playable), at = list.findIndex(t => t.id === item.id);
           window.playYouTubeList(list.map(t => ({id: t.id, label: t.title})), Math.max(0, at));

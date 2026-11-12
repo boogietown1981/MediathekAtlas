@@ -174,7 +174,7 @@ def probe(path):
         return json.loads(r.stdout) if not r.returncode else {}
     except (OSError,ValueError,subprocess.TimeoutExpired):return {}
 
-def plan(source,info=None):
+def plan(source,info=None,levels=True):
     """What the browser should do: 'direct' (play the source itself) or 'remux' (via /api/stream)."""
     out={'title':source['title'],'duration':float(source.get('duration') or 0)}
     if source['kind']=='url':
@@ -182,7 +182,8 @@ def plan(source,info=None):
         if source.get('provider'):out['provider']=source['provider']
         if source.get('live'):out['live']=True
         # 0.5.63: what the player can offer under "Qualität" (HLS levels or the broadcaster's files)
-        out['levels']=hls_levels(source) if source['hls'] else [{'id':str(h),'label':'%dp'%h,'height':h,'bandwidth':0} for h in source.get('files') or []]
+        # 0.5.72: levels=False skips the provider request; the browser reads the levels itself (hls.js)
+        out['levels']=(hls_levels(source) if levels else []) if source['hls'] else [{'id':str(h),'label':'%dp'%h,'height':h,'bandwidth':0} for h in source.get('files') or []]
         return out
     out['origin']='local';path=Path(source['path'])
     info=probe(path) if info is None else info

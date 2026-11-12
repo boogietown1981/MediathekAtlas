@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.72 – Player startet zuverlässig, letzter Klick gewinnt (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (830 Tests), davon 4 neu in `tests/test_v0572_player_start.py`; `node --check` für alle eigenen Skripte; die sechs Oberflächen-Kurztests (`*.cjs`).
+- Im Browser (Chromium, Test-Streams): zwei Klicks kurz nacheinander (erste Antwort 1,5 s verzögert) – es läuft der zuletzt gewählte Titel; `/hls.min.js` gesperrt – Wiedergabe läuft über ffmpeg, Stufen kommen über `probe=1`; Seite ohne Qualitätsfeld – Player startet; hls.js-Weg wie in 0.5.70 (drei Stufen, Umschalten auf 480p, Blitz/Piepton höchstens rund 100 ms, ohne CORS Rückfall auf ffmpeg), keine Skriptfehler.
+- Nicht geprüft: Die Meldung „Der Player ist nicht geladen“ aus 0.5.70 ließ sich hier nicht nachstellen; ob 0.5.72 sie bei Björn behebt, ist offen. Safari, Firefox, echte Anbieter-Streams, Björns Rechner. YouTube-Musikvideos aus 0.5.71 nur über die übernommenen Tests.
+
 ## 0.5.71 – YouTube-Musikvideos (12. November 2026)
 - Automatisch: gesamte Python-Suite (826 Tests), davon 5 neu in `tests/test_v0571_youtube_music.py`: Adressen, keine Längen- und Werbefilter, Filme unberührt, Wiedergabe, ganze Playlist und Auswahl offline, Ablagepfade, Schalter aus. `node --check` für die geänderten Skripte.
 - Im Browser (Chromium, Testdaten): Reiter „Musikvideos“, Playlist öffnen, ein Video auswählen und speichern, ganze Playlist speichern (bereits eingereihte werden nicht doppelt angelegt), „▶ Playlist abspielen“ öffnet das erste Video mit „Nächstes Video“, keine Skriptfehler.

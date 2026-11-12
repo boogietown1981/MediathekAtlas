@@ -305,7 +305,7 @@
     }
     if (PORTALS[item.source] && item.kind!=='series' && item.playable) {
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
-      watch.onclick=()=>PLAY[item.source]?.()?.(item.id,item.title);
+      watch.onclick=()=>{const fn=PLAY[item.source]?.();if(typeof fn==='function')fn(item.id,item.title);else window.notice?.(window.atlasPlayerMissing?.()||'Der Player ist nicht geladen; Seite neu laden.','error');};
       nodes.push(watch);
     }
     if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {

@@ -1,6 +1,10 @@
 // 0.5.57: script errors are sent to the local diagnosis, so a view that stays empty can be explained.
 (()=>{let sent=0;const report=(message,source,line)=>{if(sent>=5)return;sent+=1;try{fetch('/api/client-error',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Token':document.querySelector('meta[name=atlas-token]')?.content||''},body:JSON.stringify({message:String(message||''),source:String(source||'').split('/').pop(),line:String(line||''),view:String(window.atlasCurrentView?.()||'')})}).catch(()=>{});}catch(e){}};
 window.atlasReportError=m=>report(m,'','');
+// 0.5.72: the first script error is kept, so a message such as "Der Player ist nicht geladen" can name its cause.
+window.atlasScriptErrors=[];const keep=(m,f,l)=>{if(window.atlasScriptErrors.length<5)window.atlasScriptErrors.push(String(m||'')+(f?' ('+String(f).split('/').pop()+(l?':'+l:'')+')':''));};
+window.addEventListener('error',e=>{if(e.message)keep(e.message,e.filename,e.lineno);else if(e.target&&e.target.tagName==='SCRIPT')keep('Skript nicht ladbar',e.target.src,'');},true);
+window.atlasPlayerMissing=()=>'Der Player ist nicht geladen'+(window.atlasScriptErrors.length?' (Ursache: '+window.atlasScriptErrors[0]+')':'')+'. Bitte die Seite neu laden; bleibt es dabei, Diagnose senden.';
 window.addEventListener('error',e=>report(e.message,e.filename,e.lineno));
 window.addEventListener('unhandledrejection',e=>report('Promise: '+(e.reason?.message||e.reason),'',''));})();
 let providerPauses={},lastArtwork=-1;const artworkRequested=new Set();

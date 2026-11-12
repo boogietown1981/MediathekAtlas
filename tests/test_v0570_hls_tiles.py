@@ -16,12 +16,13 @@ class HlsTests(unittest.TestCase):
         self.assertEqual(hashlib.sha256(data).hexdigest(), 'cfc70cc9e9fc63d071919e087670abc760c8fd1bc889b88588026e4d22193bbe')
         self.assertIn('Apache License', text('web/hls.LICENSE.txt'))
         self.assertIn("if path=='/hls.min.js'", text('server.py'))
-        html = text('web/index.html')
-        self.assertLess(html.index('/hls.min.js'), html.index('/player.js'))
+        # 0.5.72: loaded on demand by the player, no longer a blocking tag in the page
+        self.assertNotIn('/hls.min.js', text('web/index.html'))
+        self.assertIn("tag.src='/hls.min.js'", text('web/player.js'))
 
     def test_player_prefers_hls_js_and_falls_back_to_ffmpeg(self):
         js = text('web/player.js')
-        for part in ("function hlsJs()", "function startHls(url,t)", "if(S.info.ffmpeg)startRemux(at)", "hls.recoverMediaError()",
+        for part in ("function hlsJs()", "function startHls(url,t)", "if(S.info.ffmpeg){startRemux(at)", "hls.recoverMediaError()",
                      "else if(info.hls&&info.url&&hlsJs())startHls(info.url,t);", "S.hls.currentLevel=hlsLevel(wish())",
                      "function stopVideo(){stopHls();"):
             self.assertIn(part, js)

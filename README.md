@@ -1,4 +1,14 @@
-# MediathekAtlas · 0.5.71
+# MediathekAtlas · 0.5.72
+
+## Neu in 0.5.72: Player startet zuverlässig, der letzte Klick gewinnt
+
+Enthält alles bis 0.5.71 (YouTube-Musikvideos).
+
+- **Player:** Die Wiedergabe-Bibliothek hls.js wird erst geladen, wenn ein Stream sie braucht. Fehlt sie oder lädt sie nicht, läuft der Stream über ffmpeg weiter. Der Player startet auch dann, wenn ein Teil der Seite fehlt.
+- **Richtiger Sender:** Wer kurz nacheinander zwei Sender oder Titel anklickt, bekommt den zuletzt gewählten. Vorher konnte der zuerst gewählte unter dem Namen des zweiten starten.
+- **Schnellerer Start:** MediathekAtlas fragt den Anbieter vor dem Start nicht mehr zusätzlich nach den Qualitätsstufen, wenn der Browser sie selbst liest.
+- **Klare Meldung:** Lädt der Player trotzdem nicht, nennt die Meldung die Ursache, und sie steht in der Diagnose. „▶ Ansehen“ im Katalog zeigt die Meldung jetzt auch, statt nichts zu tun.
+
 
 ## Neu in 0.5.71: YouTube-Musikvideos
 

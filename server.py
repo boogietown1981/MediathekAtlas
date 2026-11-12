@@ -612,8 +612,9 @@ class Handler(BaseHTTPRequestHandler):
             quality=_play_quality(q)
             try:
                 with db() as c:source=streaming.resolve(c,root=ROOT,quality=quality,**ref)
-                info=streaming.plan(source)
+                info=streaming.plan(source,levels=q.get('levels',[''])[0]!='0')
             except ValueError as e:return self.send({'error':str(e)},404)
+            if q.get('probe',[''])[0]=='1':return self.send({'levels':info.get('levels') or []})  # 0.5.72: levels only, for the ffmpeg fallback
             base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
             if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
             else:info['src']=info.pop('url') if info['mode']=='direct' else base

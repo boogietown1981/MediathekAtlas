@@ -18,7 +18,7 @@
   let currentId = null;
   async function play(id, label) {
     if (!/^[a-f0-9]{32}$/.test(String(id || ''))) throw new Error('Ungültiger Film');
-    if (typeof window.playNetzkino !== 'function') throw new Error('Der Player ist nicht geladen; Seite neu laden.');
+    if (typeof window.playNetzkino !== 'function') throw new Error(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.');
     // Same in-app player as the Mediathek videos: offline copy first, otherwise the MP4 via ytdl-nightly.
     return window.playNetzkino(id, label);
   }
