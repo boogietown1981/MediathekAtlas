@@ -2,8 +2,8 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -63,8 +63,8 @@ with db() as c:
 def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
-    diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('youtube'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
-    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','youtube':'','tvdb':'','tvdb_pin':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'episode_workers':2,'sender_direct_lookup':False,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('youtube'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('fanart'),stored.get('fanart_personal'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','youtube':'','tvdb':'','tvdb_pin':'','fanart':'','fanart_personal':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'episode_workers':2,'sender_direct_lookup':False,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 # 0.5.53: the YouTube catalogue reads the API key from the settings on each run (never cached on disk elsewhere).
 youtube.configure(lambda:settings().get('youtube',''))
@@ -109,6 +109,77 @@ def film_platforms(offline):
          'offline':offline['youtube'],'offline_days':youtube_downloads.OFFLINE_DAYS,
          'offline_note':yt.get('offline_note',''),'key_set':yt.get('key_set')}]
 
+# 0.5.55: Verwaltung → Aufgaben. One list of all background tasks with what they are doing.
+_PORTAL_MODULES={'netzkino':(netzkino,netzkino_enrichment),'pluto':(pluto,pluto_enrichment),'justwatch':(justwatch,justwatch_enrichment),'rakuten':(rakuten,rakuten_enrichment),'youtube':(youtube,youtube_enrichment)}
+_TASKS_CACHE=(float('-inf'),{})
+def _portal_titles(key,state):
+    if key=='netzkino':return int(state.get('catalog_count') or 0)
+    return int(state.get('movies') or 0)+int(state.get('series') or 0)
+def task_details():
+    """Slow-ish numbers (one SQLite read per platform), cached for a few seconds."""
+    global _TASKS_CACHE
+    if time.monotonic()-_TASKS_CACHE[0]<4:return _TASKS_CACHE[1]
+    out={}
+    for key,(module,enrichment) in _PORTAL_MODULES.items():
+        try:
+            st=module.state(ROOT);titles=_portal_titles(key,st)
+            out['catalog:'+key]={'running':bool(st.get('running')),'auto':bool(st.get('auto')),'titles':titles,
+                'last_success':st.get('last_success') or 0,'next_attempt':st.get('next_attempt') or 0,
+                'last_result':st.get('last_result') or '','last_error':st.get('last_error') or ''}
+            checked=int((enrichment.metrics(ROOT) or {}).get('checked') or 0)
+            out['enrich:'+key]={'checked':min(checked,titles) if titles else checked,'total':titles}
+        except Exception as e:
+            out['catalog:'+key]={'error':core.safe_error(e)}
+    try:
+        with db() as c:
+            out['downloads']=job_queue.summary(c)
+            out['filmlist']={'last_complete':catalog.get_state(c,'last_complete',0)}
+    except Exception as e:out['downloads']={'error':core.safe_error(e)}
+    _TASKS_CACHE=(time.monotonic(),out)
+    return out
+def tasks_overview():
+    details=task_details();s=settings();current=SERVICE.current or {};rows=[]
+    recognition=SERVICE.metadata_status or {}
+    for row in task_control.overview():
+        key=row['id'];d=dict(details.get(key) or {})
+        if key=='filmlist':
+            d.update(phase=current.get('phase') or 'waiting',auto=bool(s.get('auto_catalog',True)),
+                     running=current.get('phase') in ('downloading','importing','reading','comparing'))
+        elif key=='recognition':
+            d.update(auto=bool(s.get('auto_metadata',True)),workers=int(s.get('metadata_workers',2) or 0),
+                     last_title=recognition.get('title') or '',checked_session=recognition.get('checked_session') or 0)
+        elif key=='episodes':
+            d.update(auto=bool(s.get('auto_metadata',True)),workers=int(s.get('episode_workers',2) or 0))
+        elif key=='imdb':
+            st=IMDB.status();d.update(phase=st.get('phase') or '',updated=st.get('updated') or 0,next_update=st.get('next_update') or 0,
+                                      running=st.get('phase') in ('downloading','importing','indexing'))
+        elif key.startswith('enrich:'):
+            d['auto']=bool(s.get('auto_metadata',True))
+        row['detail']=d;rows.append(row)
+    return {'tasks':rows,'priorities':[{'key':k,'label':task_control.PRIORITY_LABEL[k]} for k in task_control.PRIORITIES],
+            'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND')}
+def task_action(task,action,value=None):
+    global _TASKS_CACHE
+    if action in ('pause_all','resume_all'):
+        task_control.pause_all(action=='pause_all',str(value or '')[:40])
+    elif action=='pause':task_control.set_paused(task,True)
+    elif action=='resume':task_control.set_paused(task,False)
+    elif action=='priority':task_control.set_priority(task,str(value or ''))
+    elif action=='start':
+        spec=task_control.TASKS.get(task)
+        if not spec or 'start' not in spec['can']:raise ValueError('Diese Aufgabe lässt sich nicht von Hand starten')
+        task_control.set_paused(task,False)   # an explicit start lifts the pause
+        if task=='filmlist':SERVICE.restart.set();SERVICE.wake.set()
+        elif task=='imdb':IMDB.request()
+        else:_PORTAL_MODULES[spec['portal']][0].start_sync(ROOT)
+    else:raise ValueError('Unbekannte Aktion')
+    if action in ('resume','resume_all','start'):
+        for wake in ('metadata_wake','subscription_wake'):
+            event=getattr(SERVICE,wake,None)
+            if event is not None:event.set()
+    _TASKS_CACHE=(float('-inf'),{})
+    diagnostics.event('task_control',task=task if task in task_control.TASKS else '',action=action,value=str(value or '')[:20])
+    return tasks_overview()
 def live_tv_summary():
     try:
         with db() as c:return live_tv.summary(c,ROOT)
@@ -129,6 +200,8 @@ def jobs():
 
 def worker():
     while not STOP.wait(.5):
+        # 0.5.55: Verwaltung → Aufgaben can hold the queue; a running download is finished first.
+        if task_control.paused('downloads'):continue
         with db() as c:
             j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
             if not j:continue
@@ -171,6 +244,16 @@ def worker():
         elif claimed[0]:SERVICE.mesh_release(j)
 
 SERVICE=catalog_service.Service(db,settings,STOP,ROOT)
+catalog.LISTING_DB=db
+catalog.load_listings(ROOT/'listing-cache.json')   # 0.5.57: grouped lists of the last run, shown at once after a start
+def _unified_built(key,index,seconds):
+    # Only slow builds are worth a line; the per-source seconds show which source held it up.
+    if seconds>=1.0 or index.get('errors'):
+        diagnostics.event('unified_index_built',kind=key[1],search=bool(key[2]),seconds=round(seconds,2),sources=index.get('seconds'),
+                          counts=index.get('counts'),pending=index.get('pending'),errors=index.get('errors'))
+unified_index.ON_BUILD=_unified_built
+_CLIENT_ERRORS=[0]
+task_control.configure(ROOT/'task-control.json')
 def imdb_updated():
     with db() as c:
         c.execute("UPDATE works SET next_try=0,state=CASE WHEN state='review' THEN 'retry' ELSE state END WHERE state IN ('pending','retry','identified','review')")
@@ -296,7 +379,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/justwatch.js','/rakuten.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
@@ -461,6 +544,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/review':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
+        if path=='/api/backups':return self.send(db_backup.listing(ROOT))
         if path=='/api/archive-companion':
             status=archive_companion.read_status()
             if NETWORK:status['ui_url']=None
@@ -470,6 +554,14 @@ class Handler(BaseHTTPRequestHandler):
                           for k in portal_metadata_policy.PROVENANCE},
                           'filename':portal_metadata_policy.filename_rules(),
                           'reference_order':portal_metadata_policy.PRIORITY})
+        if path=='/api/tasks':return self.send(tasks_overview())
+        if path=='/api/unified':
+            # 0.5.55: dashboard "Alle" – one merged, globally sorted index of all sources.
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
+                genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
+                offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates']))
+        if path=='/api/display':return self.send({'display':ui_prefs.load(ROOT),**ui_prefs.describe()})
         if path=='/api/film-platforms':
             # Light endpoint for the catalogue header (per-source overview), no portal_sources scan.
             with db() as c:offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch','rakuten','youtube')}
@@ -538,7 +630,7 @@ class Handler(BaseHTTPRequestHandler):
             return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
                               'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
         if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
+            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
                     'tmdb':metadata.network_provider_status('TMDB'),
                     'wikidata':metadata.network_provider_status('Wikidata')},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
@@ -669,6 +761,9 @@ class Handler(BaseHTTPRequestHandler):
             # Netzkino recordings arrive in parts of a few MB (answer texts only, no headers).
             if not 0<length<=(8*1024*1024 if self.path=='/api/netzkino-recording' else 100000):raise ValueError('Ungültige Anfragegröße')
             d=json.loads(self.rfile.read(length));path=self.path
+            if path in ('/api/save-metadata','/api/review','/api/search'):
+                # 0.5.55: manual changes must show at once; grouped pages are otherwise served from memory.
+                catalog.invalidate_listings(drop=True);unified_index.invalidate()
             if NETWORK and path=='/api/logout':
                 ACCESS.logout(self.session());return self.send({'ok':True},cookies=[self.session_cookie('',0)])
             if NETWORK and path=='/api/password':
@@ -755,6 +850,8 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/test-tvdb':
                 import tvdb
                 return self.send(tvdb.test_access(settings().get('tvdb',''),settings().get('tvdb_pin','')))
+            if path=='/api/backup-create':return self.send(db_backup.start(ROOT,diagnostics.event,diagnostics.error))
+            if path=='/api/backup-delete':return self.send(db_backup.delete(ROOT,d.get('backups'),d.get('confirm')))
             if path=='/api/test-omdb':return self.send(metadata.test_omdb(settings().get('omdb','')))
             if path=='/api/portal-controls':
                 source=d.get('source')
@@ -994,8 +1091,8 @@ class Handler(BaseHTTPRequestHandler):
                     p=Path(d['download_dir']).expanduser()
                     if not p.is_absolute():raise ValueError('Bitte absoluten Zielpfad angeben')
                     s['download_dir']=str(p)
-                for k in ('tmdb','omdb','tvdb','tvdb_pin','youtube'):
-                    if k in d and d[k].strip():s[k]=d[k].strip()
+                for k in ('tmdb','omdb','tvdb','tvdb_pin','youtube','fanart','fanart_personal'):
+                    if k in d and str(d[k] or '').strip():s[k]=str(d[k]).strip()
                     if d.get('clear_'+k):s[k]=''
                 for k in ('auto_catalog','auto_metadata','complete_series','sender_direct_lookup'):
                     if k in d:s[k]=bool(d[k])
@@ -1108,6 +1205,22 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/cancel':
                 with db() as c:c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(d['id'],))
                 return self.send({'ok':True})
+            if path=='/api/task-action':
+                return self.send(task_action(str(d.get('task',''))[:40],str(d.get('action',''))[:20],d.get('value')))
+            if path=='/api/client-error':
+                # 0.5.57: script errors of the web interface reach the diagnosis (at most 40 per run).
+                if _CLIENT_ERRORS[0]<40:
+                    _CLIENT_ERRORS[0]+=1
+                    diagnostics.event('client_error',message=str(d.get('message',''))[:300],source=str(d.get('source',''))[:120],
+                                      line=str(d.get('line',''))[:12],view=str(d.get('view',''))[:30],agent=str(self.headers.get('User-Agent',''))[:160])
+                return self.send({'ok':True})
+            if path=='/api/display':
+                value=ui_prefs.save(ROOT,d.get('display'));unified_index.invalidate();diagnostics.event('display_settings_changed')
+                return self.send({'display':value})
+            if path=='/api/job-control':
+                with db() as c:job=job_queue.control(c,str(d.get('id',''))[:128],str(d.get('action',''))[:20])
+                diagnostics.event('download_queue_control',action=str(d.get('action',''))[:20])
+                return self.send({'ok':True,'priority':job.get('priority',0),'hold':bool(job.get('hold'))})
             if path=='/api/retry':
                 # 0.5.43: same job again (one card), earlier failed twins disappear.
                 with db() as c:job_queue.retry(c,str(d.get('id','')))
@@ -1177,7 +1290,18 @@ if __name__=='__main__':
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
         SERVICE.start()
+        def prewarm_listing():
+            # 0.5.55: the first dashboard page must not wait for the grouping of the whole catalogue.
+            for kind in ('movie','series'):
+                try:
+                    started=time.monotonic()
+                    with db() as c:catalog.listing(c,kind=kind,downloaded='all')
+                    diagnostics.event('catalog_listing_prewarmed',kind=kind,seconds=round(time.monotonic()-started,2))
+                except Exception as e:diagnostics.error('catalog_listing_prewarm_failed',e)
+        threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
+        # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
+        threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)

@@ -1096,7 +1096,10 @@ def start_sync(root):
 
 def loop(root, stop):
     """Runs only while the main MediathekAtlas process is alive."""
+    import task_control
     while not stop.wait(60):
+        if task_control.paused('catalog:netzkino'):
+            continue
         current = state(root)
         import portal_reference
         if portal_reference.first_load_due(current) or (
@@ -1212,7 +1215,7 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
     def genre_match(row):
         # Canonical categories (IMDb/TVDB/TMDB genres first) as in the Mediathek catalogue.
         return portal_reference.matches(row,genre)
-    limit=max(1,min(100,int(limit)))
+    limit=1000000 if limit=='all' else max(1,min(100,int(limit)))
     offset=max(0,min(1000000,int(offset)))
     movies=[];series={}
     for row in _view_rows(root,origin):

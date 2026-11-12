@@ -461,7 +461,8 @@ def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None, 
     """Low-priority worker: one title every `gap` seconds, never parallel to
     the user's own provider requests (shared `slots`), pauses when automatic
     metadata is switched off in the settings."""
-    import diagnostics
+    import diagnostics,task_control
+    task='enrich:'+name
     enrich_one=enrich_one or enrich
     pending_fn=pending_fn or pending
     failed=set()
@@ -469,20 +470,30 @@ def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None, 
         try:
             current=settings()
             if not current.get('auto_metadata',True):
+                task_control.note(task,'Automatischer Abgleich ist in den Einstellungen ausgeschaltet')
                 stop.wait(300);continue
+            if not task_control.wait_if_paused(task,stop):return
             todo=[i for i in pending_fn(root,limit=20) if i not in failed]
             if not todo:
-                stop.wait(idle);failed.clear();continue
+                task_control.note(task,'Alle Titel geprüft')
+                # Short steps so that a pause or a new catalogue is noticed without waiting half an hour.
+                waited=0.0
+                while waited<idle and not stop.wait(30):
+                    waited+=30
+                    if task_control.paused(task) or pending_fn(root,limit=1):break
+                failed.clear();continue
             done=0
             for item_id in todo:
                 if stop.is_set():return
+                if task_control.paused(task):break
+                task_control.note(task,'Prüft Titel')
                 try:
                     with slots:enrich_one(root,item_id,current)
                     done+=1
                 except Exception as exc:  # one broken title must not stop the worker
                     failed.add(item_id)
                     diagnostics.error(name+'_auto_enrich_failed',exc)
-                stop.wait(gap)
+                stop.wait(gap*task_control.factor(task))
             if done:diagnostics.event(name+'_auto_enrich_batch',checked=done)
         except Exception as exc:
             diagnostics.error(name+'_auto_enrich_loop',exc)

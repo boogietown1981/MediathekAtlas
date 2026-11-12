@@ -173,6 +173,9 @@ class Archive:
     def loop(self):
         while not self.stop.is_set():
             requested=self.wake.is_set();self.wake.clear()
+            import task_control
+            if task_control.paused('imdb'):
+                self.wake.wait(30);continue
             if requested or self.due():self.update()
             self.wake.wait(30)
     def fetch(self,kind,path):

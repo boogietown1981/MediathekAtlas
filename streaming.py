@@ -162,7 +162,12 @@ def command(source,start=0.0,audio_copy=True):
     # Broadcaster HLS carries ADTS AAC in MPEG-TS; MP4 needs it converted (older ffmpeg does not do this itself).
     audio=['-c:a','copy','-bsf:a','aac_adtstoasc'] if audio_copy=='aac' else ['-c:a','copy'] if audio_copy else ['-c:a','aac','-b:a','192k','-ac','2']
     args+=['-sn','-dn','-c:v','copy']+audio
-    args+=['-movflags','frag_keyframe+empty_moov+default_base_moof','-f','mp4','pipe:1']
+    args+=['-movflags','frag_keyframe+empty_moov+default_base_moof']
+    # 0.5.55: online streams arrive in real time. With one fragment per keyframe interval (often 6-10 s
+    # for Pluto TV and other HLS sources) the browser got the picture in bursts and ran dry in between
+    # (Björn, 12.11.2026: streams stutter). One fragment per second keeps the delivery even.
+    if source['kind']=='url':args+=['-frag_duration','1000000','-flush_packets','1']
+    args+=['-f','mp4','pipe:1']
     return args
 
 def audio_copy(source,info=None):

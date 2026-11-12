@@ -176,7 +176,12 @@ window.AtlasPortalPanel = function (cfg) {
     let items = data.items || [];
     if (view === 'episodes' && q) items = items.filter(i => i.title.toLowerCase().includes(q.toLowerCase()));
     const host = $(P + '-items'); host.replaceChildren();
-    for (const item of items) host.append(card(item));
+    // 0.5.55: films and series use the same tile as the dashboard (web/unified_catalog.js), so
+    // presentation and buttons are identical everywhere. Live channels and the episode list of the
+    // tab keep their compact cards.
+    const shared = (view === 'movies' || view === 'series') && window.AtlasCards;
+    host.classList.toggle('atlas-uc-grid', !!shared);
+    for (const item of items) host.append(shared ? shared.card(shared.portalRow(item, K)) : card(item));
     const total = view === 'episodes' ? items.length : Number(data.total || 0);
     $(P + '-prev').disabled = view === 'episodes' || offset === 0;
     $(P + '-next').disabled = view === 'episodes' || offset + pageSize >= total;

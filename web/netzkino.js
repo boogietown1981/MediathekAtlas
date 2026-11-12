@@ -85,7 +85,12 @@
       const host = $('netzkino-items'); host.replaceChildren();
       if (!data.items.length) host.append(make('p', q ? 'Keine passenden Einträge.' :
         'Noch keine Filmverknüpfungen. Du kannst einen Link speichern oder den Katalogabgleich starten.', 'empty'));
+      // 0.5.55: the same tile as in the dashboard for every catalogue title; only links the user
+      // saved by hand keep the simple card (they have no catalogue data).
+      const shared = window.AtlasCards;
+      host.classList.toggle('atlas-uc-grid', !!shared && data.items.some(i => i.origin !== 'manual'));
       for (const item of data.items) {
+        if (shared && item.origin !== 'manual') { host.append(shared.card(shared.netzkinoRow(item))); continue; }
         const isGroup = view === 'series' && item.media_type === 'series';
         const card = make('article', undefined, 'netzkino-item');
         const title = make('h3', item.title);

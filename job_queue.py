@@ -56,11 +56,74 @@ def remove(c, job_id):
 
 
 def next_job(c, now=None):
-    """Oldest queued job that may start now. Jobs with ``not_before`` in the future (0.5.48:
-    JustWatch titles that the provider only releases at night) wait without blocking the others."""
+    """Next queued job that may start now: highest priority first, then the oldest. Jobs with
+    ``not_before`` in the future (0.5.48: JustWatch titles that the provider only releases at
+    night) and jobs put on hold (0.5.55) wait without blocking the others."""
     now = time.time() if now is None else float(now)
-    for (payload,) in c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid"):
+    best = None
+    for rowid, payload in c.execute("SELECT rowid,payload FROM jobs WHERE state='queued' ORDER BY rowid"):
         job = json.loads(payload)
-        if float(job.get('not_before') or 0) <= now:
-            return job
-    return None
+        if job.get('hold') or float(job.get('not_before') or 0) > now:
+            continue
+        rank = (-_priority(job), rowid)
+        if best is None or rank < best[0]:
+            best = (rank, job)
+    return best[1] if best else None
+
+
+def _priority(job):
+    try:
+        return max(-1, min(2, int(job.get('priority') or 0)))
+    except (TypeError, ValueError):
+        return 0
+
+
+def control(c, job_id, action):
+    """Queue control for one waiting job (0.5.55): ``first`` (start next), ``raise``/``lower``
+    (priority), ``hold`` (wait until released), ``release``."""
+    row = c.execute("SELECT payload FROM jobs WHERE id=? AND state='queued'", (job_id,)).fetchone()
+    if not row:
+        raise ValueError('Nur wartende Aufträge lassen sich umsortieren')
+    job = json.loads(row[0])
+    if action == 'first':
+        job['priority'] = 2
+        job.pop('hold', None)
+    elif action == 'raise':
+        job['priority'] = min(2, _priority(job) + 1)
+    elif action == 'lower':
+        job['priority'] = max(-1, _priority(job) - 1)
+    elif action == 'normal':
+        job['priority'] = 0
+    elif action == 'hold':
+        job['hold'] = True
+    elif action == 'release':
+        job.pop('hold', None)
+    elif action == 'now':
+        # Night reservation (JustWatch): try at once instead of waiting for the time window.
+        job.pop('not_before', None)
+        job.pop('night', None)
+        job.pop('hold', None)
+    else:
+        raise ValueError('Unbekannte Aktion')
+    c.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(job), job_id))
+    return job
+
+
+def summary(c, now=None):
+    """Counters for the task list: no titles, only the state of the queue."""
+    now = time.time() if now is None else float(now)
+    out = {'queued': 0, 'held': 0, 'night': 0, 'active': 0, 'failed': 0}
+    for state, payload in c.execute("SELECT state,payload FROM jobs WHERE state NOT IN ('done','expired','removed')"):
+        if state in ('downloading', 'tagging'):
+            out['active'] += 1
+        elif state == 'queued':
+            job = json.loads(payload)
+            if job.get('hold'):
+                out['held'] += 1
+            elif float(job.get('not_before') or 0) > now:
+                out['night'] += 1
+            else:
+                out['queued'] += 1
+        elif state in RETRYABLE:
+            out['failed'] += 1
+    return out

@@ -853,7 +853,8 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     import youtube_enrichment
     kind = {'movies': 'movie', 'series': 'series'}.get(view, 'movie')
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
-    limit = max(1, min(_int(limit, 1) or 60, 200))
+    # 'all': the merged dashboard index (unified_index.py) reads every row once and pages itself.
+    limit = 1000000 if limit == 'all' else max(1, min(_int(limit, 1) or 60, 200))
     db = _connect(root)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
@@ -991,7 +992,10 @@ def start_sync(root):
 def loop(root, stop):
     """Daily refresh (on by default: the API is quota-limited, not the user's bandwidth). Without a
     key nothing is requested."""
+    import task_control
     while not stop.wait(60):
+        if task_control.paused('catalog:youtube'):
+            continue
         current = state(root)
         if not current['key_set'] or current['running']:
             continue
