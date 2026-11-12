@@ -431,6 +431,8 @@ class Handler(BaseHTTPRequestHandler):
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
         if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        # 0.5.68: hls.js (Apache-2.0, web/hls.LICENSE.txt) plays HLS in the browser the way the providers' own sites do
+        if path=='/hls.min.js':return self.send((Path(__file__).parent/'web'/'hls.min.js').read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
@@ -1351,7 +1353,7 @@ class Handler(BaseHTTPRequestHandler):
                 if _PLAYBACK_STATS[0]<200:
                     _PLAYBACK_STATS[0]+=1
                     diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
-                                      wish=str(d.get('wish',''))[:6],level=str(d.get('level',''))[:6],native=bool(d.get('native')),
+                                      wish=str(d.get('wish',''))[:6],level=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
                                       watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
                                       stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),agent=str(self.headers.get('User-Agent',''))[:160])
                 return self.send({'ok':True})

@@ -309,14 +309,21 @@
       nodes.push(watch);
     }
     if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {
-      const link=el('a',EXTERNAL[item.source]||'Beim Anbieter ansehen','button atlas-uc-external');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
+      // 0.5.70: the same button shape as "Ansehen" on every tile
+      const link=el('a','↗ '+(EXTERNAL[item.source]||'Beim Anbieter ansehen'),'button atlas-uc-external');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
       nodes.push(link);
     }
     // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.
     // 0.5.48: JustWatch titles released only at night (youth protection) can be reserved.
     // 0.5.52: only with a real time window; other titles without a stream are copy protected.
     const night=item.source==='justwatch'&&!item.playable&&!!item.night;
-    if (item.source==='justwatch'&&item.kind!=='series'&&!item.playable&&!night) { const lock=window.AtlasOffline?.protectedNote(); if (lock) nodes.push(lock); }
+    // 0.5.70 (Björn, 12.11.2026): a download button wherever a download is possible, otherwise nothing
+    // (the copy-protection note stays on the title page).
+    if (item.source==='mediatheken' && !item.series_parent && item.raw && typeof edit==='function') {
+      const files=(item.raw.links||[]).some(l=>l.supported&&/^https?:\/\//i.test(l.url));
+      if (item.raw.downloaded) { const done=el('button','✓ Heruntergeladen','atlas-uc-download atlas-offline-done');done.type='button';done.disabled=true;nodes.push(done); }
+      else if (files) { const load=el('button','⬇ Herunterladen','atlas-uc-download');load.type='button';load.title='Fassung wählen, Angaben prüfen und herunterladen';load.onclick=()=>edit(item.raw);nodes.push(load); }
+    }
     if (canOffline(item)) {
       // 0.5.63: the other providers of the same title can be chosen in the dialogue before the download
       const alternatives=(siblings||[]).filter(o=>o!==item&&canOffline(o)).map(o=>({source:o.source,id:o.id}));

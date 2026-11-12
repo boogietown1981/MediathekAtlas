@@ -62,6 +62,11 @@
     return s;
   }
 
+  // 0.5.70: the versions that can be saved, one click each (resolution levels of the provider).
+  function versionSection(m, host) {
+    const node = window.AtlasOffline?.versions(m.source, m.id, m.title); if (!node) return;
+    const sec = section('Fassungen zum Herunterladen'); sec.classList.add('portal-title-versions'); sec.append(node); host.append(sec);
+  }
   async function offlineSection(m, host) {
     const src = SOURCES[m.source], sec = section('Offline ansehen · ' + m.offline.days + ' Tage');
     const note = make('p', m.provider + ' erlaubt ' + m.offline.days + ' Tage Offline-Nutzung. Gespeichert wird wie bei Mediathek-Videos ' +
@@ -216,6 +221,7 @@
       overview: m.description, overviewHint: 'Keine Inhaltsangabe veröffentlicht.', actions, info,
       cast: (m.cast || []).map(name => ({name})), image}));
     if (m.kind === 'series') episodesSection(m, host);
+    if (m.offline?.allowed && m.kind !== 'series' && !m.offline.night) versionSection(m, host);
     if (m.offline?.allowed) offlineSection(m, host).catch(() => {});
     const expert = make('details', undefined, 'tv-section portal-title-expert');
     expert.append(make('summary', 'Technische Angaben · Abgleich und Anbieterdaten'));

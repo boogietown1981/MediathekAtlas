@@ -135,6 +135,12 @@ function availabilityLabel(source){
  return (date.getTime()-Date.now()<=3*86400000?'Bald nicht mehr verfügbar · bis ':'Verfügbar bis ')+label+provenance;
 }
 function linkQuality(link){return link.quality+' (Senderangabe)'+(link.height_hint?' · '+link.height_hint+'p laut Dateiname':' · Pixelauflösung nicht angegeben');}
+// 0.5.70 (Björn, 12.11.2026): the versions of a broadcaster title as buttons - one click opens the
+// download dialogue with this version chosen. Files only; streams cannot be saved by the app.
+function downloadVersions(item){const box=el('div',undefined,'download-versions');const KEY={HD:'hd',Standard:'standard',Klein:'low'};
+ const usable=(item.links||[]).filter(l=>l.supported&&/^https?:\/\//.test(l.url));
+ usable.forEach((l,i)=>{const b=el('button','⬇ '+linkQuality(l));b.type='button';b.title='Diese Fassung prüfen und herunterladen';b.onclick=()=>edit(item,i===0?'best':KEY[l.quality]||'best');box.append(b);});
+ return usable.length?box:null;}
 function sourceLinks(links){const box=el('div',undefined,'source-links');box.append(el('strong','Verfügbare Dateien'));
  for(const link of links||[]){if(!/^https?:\/\//.test(link.url))continue;
  const row=el('div',undefined,'source-link'),a=el('a',linkQuality(link));a.href=link.url;a.target='_blank';a.rel='noopener noreferrer';a.title=link.url;
@@ -283,7 +289,7 @@ function catalogProgress(c){
 const fields=['title','kind','year','season','episode','episode_title','description'];
 function fill(){$('genres').value=(meta.genres||[]).join(', ');for(const f of fields)$(f).value=meta[f]??'';$('confirmed').checked=false;$('preview').textContent='Bitte Zielnamen prüfen.';}
 function readMeta(){const out={...meta};for(const f of fields)out[f]=$(f).value;for(const f of ['year','season','episode'])out[f]=out[f]===''?null:Number(out[f]);out.genres=$('genres').value.split(',').map(x=>x.trim()).filter(Boolean);return out;}
-function edit(item){active=item;meta={...item.metadata};fill();$('source').textContent=[item.source.channel,item.source.topic,item.source.title,item.source.description].filter(Boolean).join(' · ');
+function edit(item,quality){active=item;meta={...item.metadata};fill();if($('quality'))$('quality').value=['best','hd','standard','low'].includes(quality)?quality:'best';$('source').textContent=[item.source.channel,item.source.topic,item.source.title,item.source.description].filter(Boolean).join(' · ');
  const expire=$('availability-before-download');expire.textContent='Ablaufdatum wird, soweit verfügbar, beim Sender geprüft …';
  api('availability?id='+encodeURIComponent(item.id)).then(d=>{
    if(active!==item||!$('editor').open)return;

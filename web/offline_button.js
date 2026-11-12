@@ -172,8 +172,41 @@
     node.append(button, cancel, note); st.controls.add(ctl); paint(ctl); schedule(source);
     return node;
   }
+  /* 0.5.70 (Björn, 12.11.2026): on the page of a film the possible versions are offered directly,
+     one click each. The provider's own levels when it names them, otherwise the usual limits. */
+  function versions(source, id, title) {
+    const st = state[source]; if (!st || !id) return null;
+    const box = make('div', undefined, 'atlas-offline-versions'), row = make('div', undefined, 'atlas-offline-version-row'), note = make('small', 'Fassungen werden abgefragt …', 'muted');
+    box.append(row, note);
+    const add = (label, quality, hint) => {
+      const b = make('button', '⬇ ' + label, 'atlas-offline-version'); b.type = 'button'; if (hint) b.title = hint;
+      b.onclick = async () => {
+        for (const x of row.querySelectorAll('button')) x.disabled = true;
+        try {
+          const r = await window.api(source + '-download-add', {id, quality});
+          note.textContent = r.created ? '„' + label + '“ wird gespeichert (' + st.days + ' Tage offline nutzbar).' : 'Dieser Titel ist bereits eingereiht oder offline verfügbar.';
+          if (r.created) window.notice?.('„' + (title || 'Titel') + '“ wird offline gespeichert (' + SOURCES[source].name + ', ' + label + ').');
+          refresh(source);
+        } catch (e) { note.textContent = 'Kein Download gestartet: ' + e.message; note.className = 'nk-warning'; for (const x of row.querySelectorAll('button')) x.disabled = false; }
+      };
+      row.append(b);
+    };
+    const fill = (levels, text) => {
+      row.replaceChildren(); add('Beste verfügbare', 'best');
+      if (levels.length) for (const l of levels) add(l.height + 'p' + (l.bandwidth ? ' · ' + (l.bandwidth / 1e6).toFixed(1).replace('.', ',') + ' Mbit/s' : ''), String(l.height), HEIGHT_HINT[l.height] || '');
+      else for (const h of [1080, 720, 480, 360]) add('höchstens ' + h + 'p', String(h), HEIGHT_HINT[h]);
+      note.textContent = text;
+      const job = st.jobs.get(id);
+      if (st.tool || (job && (ACTIVE.includes(job.state) || job.state === 'done'))) { for (const x of row.querySelectorAll('button')) x.disabled = true; note.textContent = st.tool || 'Bereits eingereiht oder offline verfügbar.'; }
+    };
+    fill([], 'Fassungen werden abgefragt …');
+    window.api('download-options?' + new URLSearchParams({source, id})).then(d => { if (!box.isConnected) return; const levels = (d.levels || []).filter(l => l.height > 0);
+      fill(levels, levels.length ? 'Fassungen von ' + SOURCES[source].name + '. Ein Klick speichert die Fassung ' + st.days + ' Tage offline.' : (d.note || '')); })
+      .catch(e => { if (box.isConnected) note.textContent = 'Fassungen nicht abfragbar: ' + e.message; });
+    return box;
+  }
   /* 0.5.52: the same short reason wherever a title cannot be saved because it is copy protected. */
   function protectedNote() { const n = make('small', '🔒 ' + PROTECTED, 'atlas-offline-note atlas-offline-protected muted'); n.title = 'JustWatch liefert diesen Titel nur verschlüsselt (Widevine/PlayReady/FairPlay) an den eigenen Player.'; return n; }
-  window.AtlasOffline = {control, refresh, protectedNote, job: (source, id) => state[source]?.jobs.get(id),
+  window.AtlasOffline = {control, refresh, protectedNote, versions, job: (source, id) => state[source]?.jobs.get(id),
     onChange: (source, fn) => state[source]?.listeners.add(fn)};
 })();

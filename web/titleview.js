@@ -133,6 +133,7 @@ function renderMovie(){
  const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],matchInfo(item.state,m.provider,m.reference_id)];
  host.replaceChildren(...hero({meta:m,type:'Film',facts,overview:m.description||r.description||'',overviewHint:hint,actions,info,cast:m.cast}));
  const sec=el('section',undefined,'tv-section');sec.append(el('h2','Fassungen & Dateien'));
+ if(selected.available!==false){const quick=downloadVersions({...item,...selected,metadata:m});if(quick)sec.append(quick);}
  if(versions){const list=el('div',undefined,'tv-versionlist');for(const a of versions)list.append(versionRow(a,a.id===selected.id?null:x=>{titleState.selected=x;renderMovie();window.scrollTo(0,0);}));sec.append(list);}
  else sec.append(sourceLinks(selected.links||item.links),el('p',(item.offer_count||1)>1?'Weitere Fassungen werden geladen …':'Nur eine Fassung im Katalog.','muted'));
  sec.append(el('p','Quelllinks öffnen die Originaldatei. Für saubere Dateinamen, NFO und eingebettete Metadaten den Download über die App starten.','muted'));
