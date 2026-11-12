@@ -19,6 +19,7 @@ const sourceTabs=['all','mediatheken','netzkino'].map(value=>{const x=new Elemen
 const kindTabs=['movies','series'].map(value=>{const x=new Element('button');x.dataset.crossKind=value;return x;});
 let requests=[];let details=[];
 const fakeApi=async url=>{
+ if(url==='film-platforms')return {film_platforms:[]};
  requests.push(url);
  if(url==='catalog-tree')return{tree:[{genre:'Drama'},{genre:'Action'}]};
  if(url.startsWith('catalog?'))return {total:1,items:[{work_id:'m1',metadata:{title:'ARD Beitrag',kind:'movie',year:2019,genres:['Drama']},source:{title:'ARD Beitrag'},available:true}]};
@@ -31,7 +32,9 @@ const fakeApi=async url=>{
  throw new Error('Unexpected request: '+url);
 };
 const document={getElementById:id=>elements[id]||null,createElement:tag=>new Element(tag),querySelectorAll:selector=>selector==='[data-catalog-source]'?sourceTabs:selector==='[data-cross-kind]'?kindTabs:[],querySelector:()=>null};
-const context={document,window:{api:fakeApi,AtlasNetzkinoDetail:{open:id=>details.push(id)}},URLSearchParams,console};
+// Long polling timers (portal overview) must not keep the test process alive.
+const shortTimeout=(fn,ms)=>ms>1000?0:setTimeout(fn,ms);
+const context={setTimeout:shortTimeout,clearTimeout:id=>id&&clearTimeout(id),document,window:{api:fakeApi,AtlasNetzkinoDetail:{open:id=>details.push(id)}},URLSearchParams,console};
 vm.runInNewContext(fs.readFileSync(path.join(__dirname,'../web/unified_catalog.js'),'utf8'),context);
 const settle=()=>new Promise(resolve=>setTimeout(resolve,20));
 (async()=>{

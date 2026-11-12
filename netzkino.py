@@ -314,7 +314,7 @@ def state(root):
             'category_max_items':int(_get(db,'category_max_items','0')),
             'categories_empty':int(_get(db,'categories_empty','0')),
             'category_error_types':json.loads(_get(db,'category_error_types','{}')),
-            'last_result':_get(db,'last_result','never'),
+            'last_result':__import__('portal_reference').stored_result(_get(db,'last_result','never'),_ACTIVE),
             'last_complete_success':float(_get(db,'last_complete_success','0')),
             'time_budget_hit':_get(db,'time_budget_hit','0')=='1',
             'categories_discovered':int(_get(db,'categories_discovered','0')),
@@ -1098,7 +1098,9 @@ def loop(root, stop):
     """Runs only while the main MediathekAtlas process is alive."""
     while not stop.wait(60):
         current = state(root)
-        if current['auto'] and not current['running'] and time.time() >= current['next_attempt']:
+        import portal_reference
+        if portal_reference.first_load_due(current) or (
+                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 
 

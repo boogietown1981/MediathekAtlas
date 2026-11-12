@@ -672,3 +672,15 @@ dialog.player::backdrop{background:#000c}
 .portal-categories .portal-category{padding:4px 10px;font-size:.88em;border-radius:999px}
 .portal-rating{display:inline-block;font-weight:600;color:#f5c451;font-size:.9em}
 .portal-category-line{display:block;color:var(--muted,#8a8f98);font-size:.85em}
+
+/* 0.5.41: per-source catalogue overview */
+.atlas-portal-dashboard{margin-bottom:16px}
+.atlas-portal-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(320px,1fr));gap:12px}
+.atlas-portal-card{display:grid;gap:8px;padding:12px;border:1px solid #2c3840;border-radius:12px}
+.atlas-portal-card h3{margin:0}
+.atlas-portal-card .atlas-status-grid{grid-template-columns:repeat(auto-fit,minmax(120px,1fr));grid-auto-rows:auto}
+.atlas-portal-tile{display:flex;flex-direction:column;gap:4px;padding:10px 12px;border:1px solid var(--line,#26324a);border-radius:10px}
+.atlas-portal-tile strong{font-size:1.15em}
+.atlas-portal-progress{height:6px;border-radius:3px;background:#24313a;overflow:hidden}
+.atlas-portal-progress span{display:block;height:100%;background:#5fe0b7}
+.atlas-portal-actions{display:flex;gap:8px;flex-wrap:wrap}

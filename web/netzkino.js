@@ -36,17 +36,19 @@
     const seq = ++searchSeq;
     const q = $('netzkino-filter').value.trim();
     const origin = $('netzkino-origin').value;
+    const waiting = window.atlasWaiting?.($('netzkino-sync-summary'), 'Katalogstatus wird geladen');
     try {
       const data = await endpoint('netzkino-grouped?' + new URLSearchParams({q, origin, offset,
-        view, series_key: seriesKey, genre, sort: $('netzkino-sort')?.value || 'updated'}));
+        view, series_key: seriesKey, genre, sort: $('netzkino-sort')?.value || 'updated'})).finally(() => waiting?.());
       if (seq !== searchSeq) return;
       const status = data.status || {};
       $('netzkino-auto').checked = !!status.auto;
       $('netzkino-sync').disabled = !!status.running;
       $('netzkino-sync').textContent = status.running ? 'Abgleich läuft …' : '↻ Katalog jetzt prüfen';
       const phase = status.running ? 'Läuft' : status.last_result === 'partial' ? 'Teilabgleich' :
-        status.last_result === 'complete' ? 'Abgleich erfolgreich' : status.last_result === 'failed' ? 'Fehlgeschlagen' :
-        'HAR-Startbestand, nicht live bestätigt';
+        status.last_result === 'complete' ? 'Abgleich erfolgreich' : status.last_result === 'failed' ? 'Fehlgeschlagen · gespeicherter Bestand bleibt' :
+        status.last_result === 'interrupted' ? 'Abgleich unterbrochen · gespeicherter Bestand bleibt' :
+        status.last_success ? 'Gespeicherter Bestand' : 'HAR-Startbestand, nicht live bestätigt';
       const categoryDetail = status.categories_total ?
         ` · Kategorien ${status.categories_checked || 0}/${status.categories_total}` +
         ` · Fehler ${status.category_errors || 0} · Leer ${status.categories_empty || 0}` +

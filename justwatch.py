@@ -29,6 +29,8 @@ import urllib.parse
 import urllib.request
 from pathlib import Path
 
+import portal_reference
+
 API_URL = 'https://apis.justwatch.com/graphql'
 SITE = 'https://www.justwatch.com'
 IMAGES = 'https://images.justwatch.com'
@@ -371,7 +373,10 @@ def sync(root, post=None, now=None, gap=None):
         try:
             with db:
                 _store(db, items, now)
-                for key, value in [('last_success', now), ('last_result', 'partial' if partial else 'complete'),
+                # A partial run keeps the previous stock visible (only a complete run retires titles).
+                previous = float(_get(db, 'last_success', '0') or 0)
+                visible_since = previous if partial and previous else now
+                for key, value in [('last_success', visible_since), ('last_loaded', now), ('last_result', 'partial' if partial else 'complete'),
                                    ('last_error', 'Katalog nur teilweise geladen' if partial else ''),
                                    ('total_reported', total or 0), ('next_attempt', now + 24 * 3600),
                                    *counts.items()]:
@@ -534,7 +539,8 @@ def state(root):
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0),
             'last_success': float(_get(db, 'last_success', '0') or 0),
             'next_attempt': float(_get(db, 'next_attempt', '0') or 0),
-            'last_result': _get(db, 'last_result', 'never'), 'last_error': _get(db, 'last_error'),
+            'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _ACTIVE),
+            'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'playable': _int(_get(db, 'playable', '0')) or 0,
@@ -577,7 +583,8 @@ def start_sync(root):
 def loop(root, stop):
     while not stop.wait(60):
         current = state(root)
-        if current['auto'] and not current['running'] and time.time() >= current['next_attempt']:
+        if portal_reference.first_load_due(current) or (
+                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 
 

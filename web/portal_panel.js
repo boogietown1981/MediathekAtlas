@@ -31,12 +31,17 @@ window.AtlasPortalPanel = function (cfg) {
     $(P + '-auto').checked = !!st.auto;
     $(P + '-sync').disabled = !!st.running;
     $(P + '-sync').textContent = st.running ? 'Katalog wird geladen …' : '↻ Katalog jetzt laden';
+    // The catalogue is stored locally and survives restarts; only a new run replaces it.
+    const stored = (st.movies || 0) + (st.series || 0) + (st.channels || 0) > 0;
     const phase = st.running ? 'Läuft' : st.last_result === 'complete' ? 'Aktuell' : st.last_result === 'partial' ? 'Teilweise geladen' :
-      st.last_result === 'failed' ? 'Fehlgeschlagen' : 'Noch nicht geladen';
+      st.last_result === 'interrupted' ? (stored ? 'Abruf unterbrochen · gespeicherter Bestand' : 'Abruf unterbrochen') :
+      st.last_result === 'failed' ? (stored ? 'Abruf fehlgeschlagen · gespeicherter Bestand' : 'Fehlgeschlagen') :
+      stored ? 'Gespeicherter Bestand' : 'Noch nicht geladen';
     $(P + '-summary').textContent = `${st.movies || 0} Filme · ${st.series || 0} Serien · ` +
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +
-      `Letzter Abruf: ${date(st.last_success)}` + (st.last_error ? ` · Hinweis: ${st.last_error}` : '');
+      `Stand: ${date(st.last_success)}` + (stored ? ' · bleibt nach Neustart erhalten' : '') +
+      (st.last_error ? ` · Hinweis: ${st.last_error}` : '');
     $(P + '-summary').dataset.phase = st.last_result || 'never';
     clearTimeout(poll);
     if (st.running && visible()) poll = setTimeout(refresh, 4000);
@@ -178,8 +183,18 @@ window.AtlasPortalPanel = function (cfg) {
     const params = view === 'episodes' ? {view, series: series?.id || ''} :
       {view, q, offset, limit: pageSize, genre: view === 'live' ? '' : genre, sort: $(P + '-sort')?.value || 'title'};
     let data;
+    // 0.5.41: a slow answer is shown with its waiting time; an error also replaces the status line.
+    const waiting = window.atlasWaiting?.($(P + '-summary'), 'Katalogstatus wird geladen');
     try { data = await window.api(K + '?' + new URLSearchParams(params)); }
-    catch (e) { if (call === seq) say(SHORT + '-Katalog nicht verfügbar: ' + e.message, true); return; }
+    catch (e) {
+      waiting?.();
+      if (call !== seq) return;
+      const text = SHORT + '-Katalog nicht verfügbar: ' + e.message;
+      say(text, true); $(P + '-summary').textContent = text + ' · neuer Versuch in 15 s'; $(P + '-summary').dataset.phase = 'ui-error';
+      clearTimeout(poll); poll = setTimeout(() => { if (visible()) refresh(); }, 15000);
+      return;
+    }
+    waiting?.();
     if (call !== seq) return;
     summary(data.status || {});
     for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live']])

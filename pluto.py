@@ -22,6 +22,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+import portal_reference
+
 BOOT_URL = 'https://boot.pluto.tv/v4/start'
 VOD_URL = 'https://service-vod.clusters.pluto.tv/v4/vod'
 CHANNELS_URL = 'https://service-channels.clusters.pluto.tv/v2/guide/channels'
@@ -365,7 +367,9 @@ def sync(root, fetch=None, now=None, gap=None):
             with db:
                 _store(db, vod + channels, now)
                 counts = {k: sum(1 for i in vod + channels if i['kind'] == k) for k in ('movie', 'series', 'channel')}
-                for key, value in [('last_success', now), ('last_result', 'partial' if channel_error else 'complete'),
+                # Live channels failed: keep the previous stock (incl. channels) visible.
+                previous = float(_get(db, 'last_success', '0') or 0)
+                for key, value in [('last_success', previous if channel_error and previous else now), ('last_loaded', now), ('last_result', 'partial' if channel_error else 'complete'),
                                    ('last_error', channel_error), ('movies', counts['movie']),
                                    ('series', counts['series']), ('channels', counts['channel']),
                                    ('next_attempt', now + 24 * 3600)]:
@@ -505,7 +509,8 @@ def state(root):
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0),
             'last_success': float(_get(db, 'last_success', '0') or 0),
             'next_attempt': float(_get(db, 'next_attempt', '0') or 0),
-            'last_result': _get(db, 'last_result', 'never'), 'last_error': _get(db, 'last_error'),
+            'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _ACTIVE),
+            'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'channels': _int(_get(db, 'channels', '0')) or 0,
@@ -548,7 +553,8 @@ def start_sync(root):
 def loop(root, stop):
     while not stop.wait(60):
         current = state(root)
-        if current['auto'] and not current['running'] and time.time() >= current['next_attempt']:
+        if portal_reference.first_load_due(current) or (
+                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 
 

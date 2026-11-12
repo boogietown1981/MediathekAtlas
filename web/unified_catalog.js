@@ -58,6 +58,74 @@
       if(title)title.textContent='Letzte Erkennung';
     }
   }
+  // Per-source overview in the catalogue header (0.5.41): Mediatheken keep the ARD/ZDF scan and
+  // recognition board; Netzkino, Pluto TV and JustWatch TV get their own catalogue, scan and
+  // work-assignment progress; "Gesamt" shows the ARD/ZDF board plus all portal catalogues.
+  let portalTimer=0,portalSeq=0;
+  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync'};
+  const num=n=>Number(n||0).toLocaleString('de-DE');
+  const when=t=>t?new Date(t*1000).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'noch nie';
+  function portalBoard() {
+    let board=$('atlas-portal-dashboard');
+    if (!board) {
+      board=el('section',undefined,'background-status atlas-portal-dashboard');
+      board.id='atlas-portal-dashboard';board.setAttribute('aria-label','Katalog-Übersicht je Plattform');board.hidden=true;
+      const body=$('atlas-source-content');
+      if (typeof body?.parentElement?.insertBefore==='function') body.parentElement.insertBefore(board,body);
+    }
+    return board;
+  }
+  function portalCard(p) {
+    const card=el('article',undefined,'atlas-portal-card');
+    const phase=p.running?'Abruf läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise geladen':
+      p.last_result==='interrupted'?(p.titles?'Abruf unterbrochen · gespeicherter Bestand':'Abruf unterbrochen'):
+      p.last_result==='failed'?(p.titles?'Abruf fehlgeschlagen · gespeicherter Bestand':'Abruf fehlgeschlagen'):
+      p.titles?'Gespeicherter Bestand':'Noch nicht geladen';
+    card.append(el('h3',p.name+' · '+phase));
+    const tiles=el('div',undefined,'atlas-status-grid');
+    const tile=(label,value,hint)=>{const t=el('div',undefined,'atlas-portal-tile');t.append(el('strong',value),el('small',label));if(hint)t.title=hint;tiles.append(t);};
+    const ref=p.reference||{},by=ref.by_status||{},checked=Number(ref.checked||0),titles=Number(p.titles||0);
+    tile('Filme & Serien im Katalog',num(titles));
+    if (p.channels) tile('Live-Sender',num(p.channels));
+    if (p.playable!==undefined) tile('im Player abspielbar',num(p.playable));
+    tile('Stand des Katalogs',when(p.last_success));
+    tile('eindeutig zugeordnet',num(by.candidate),'Eindeutige IMDb-/TVDB-/TMDB-Referenz');
+    tile('zu prüfen',num(by.review),'Widersprüchliche Referenzen, keine automatische Zuordnung');
+    tile('ohne Treffer',num(by.no_match));
+    if (by.partial) tile('Anbieter nicht erreichbar',num(by.partial),'Wird später automatisch erneut geprüft');
+    tile('noch offen',num(Math.max(0,titles-checked)),'Wird im Hintergrund abgeglichen (ein Titel alle 6 s)');
+    card.append(tiles);
+    const share=titles?Math.min(100,Math.round(checked*100/titles)):0;
+    const bar=el('div',undefined,'atlas-portal-progress');const fill=el('span');fill.style.width=share+'%';bar.append(fill);
+    bar.setAttribute('role','progressbar');bar.setAttribute('aria-valuenow',String(share));bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
+    card.append(el('small','Werkzuordnung (IMDb/TVDB/TMDB): '+num(checked)+' von '+num(titles)+' geprüft · '+share+' %'),bar);
+    const off=p.offline||{};
+    card.append(el('small','Offline ('+p.offline_days+' Tage): '+num(off.done)+' verfügbar · '+num((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+num(off.error)+' Fehler':''),'muted'));
+    const actions=el('div',undefined,'atlas-portal-actions');
+    const load=el('button',p.running?'Katalog wird geladen …':'↻ Katalog jetzt laden');load.type='button';load.disabled=!!p.running;
+    load.onclick=async()=>{load.disabled=true;try{await window.api(SYNC[p.source],{});}catch(e){load.textContent=e.message;}setTimeout(refreshPortalBoard,1500);};
+    const open=el('button','Plattform öffnen');open.type='button';
+    open.onclick=()=>{document.querySelector('[data-view="portals"]')?.click();document.querySelector('.platform-tab[data-platform="'+p.source+'"]')?.click();};
+    actions.append(load,open);card.append(actions);
+    return card;
+  }
+  // Returning to the catalogue restarts the overview polling (it pauses while the view is hidden).
+  document.querySelector('[data-view="discover"]')?.addEventListener?.('click', () => setTimeout(() => refreshPortalBoard().catch(() => {}), 0));
+  async function refreshPortalBoard() {
+    clearTimeout(portalTimer);
+    const board=portalBoard(),main=$('atlas-main-dashboard');
+    if (main) main.hidden=!(source==='mediatheken'||source==='all');
+    if (!board) return;
+    if (source==='mediatheken' || $('discover')?.hidden) {board.hidden=true;return;}
+    const seq=++portalSeq;let data;
+    try {data=await window.api('film-platforms');}catch(e){if(seq===portalSeq){board.hidden=false;board.replaceChildren(el('p','Katalog-Übersicht nicht verfügbar: '+e.message,'muted'));}return;}
+    if (seq!==portalSeq||source==='mediatheken') return;
+    const list=(data.film_platforms||[]).filter(p=>source==='all'||p.source===source);
+    board.replaceChildren(el('h2',source==='all'?'Weitere Kataloge · Bestand & Werkzuordnung':(list[0]?.name||'Katalog')+' · Bestand & Werkzuordnung','atlas-dashboard-heading'));
+    const grid=el('div',undefined,'atlas-portal-grid');for(const p of list)grid.append(portalCard(p));board.append(grid);
+    board.hidden=false;
+    portalTimer=setTimeout(refreshPortalBoard,list.some(p=>p.running)?4000:15000);
+  }
   function updateControls() {
     for (const b of document.querySelectorAll('[data-catalog-source]')) {
       const active=b.dataset.catalogSource===source;
@@ -77,6 +145,8 @@
     $('discover').dataset.source=name;
     $('atlas-source-content').hidden=false;
     updateControls();refresh();
+    // The overview must never block the catalogue itself.
+    refreshPortalBoard().catch(e=>console.warn('MediathekAtlas: Katalog-Übersicht',e));
   }
   function labelSource(item) {return item.source==='netzkino'?'Netzkino':PORTALS[item.source]||'Mediathek';}
   function medRow(item) {

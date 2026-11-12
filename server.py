@@ -2,7 +2,7 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment
 from version import VERSION
 from contextlib import contextmanager
@@ -73,6 +73,22 @@ def put_job(j):
     with db() as c:
         c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
         if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
+
+def film_platforms(offline):
+    # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
+    nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT)
+    return [
+        {'source':'netzkino','name':'Netzkino','titles':nk.get('catalog_count',0),'last_success':nk.get('last_success',0),
+         'last_result':nk.get('last_result'),'running':nk.get('running'),'reference':netzkino_enrichment.metrics(ROOT),
+         'offline':offline['netzkino'],'offline_days':netzkino_downloads.OFFLINE_DAYS},
+        {'source':'pluto','name':'Pluto TV','titles':(pl.get('movies',0) or 0)+(pl.get('series',0) or 0),
+         'channels':pl.get('channels',0),'last_success':pl.get('last_success',0),'last_result':pl.get('last_result'),
+         'running':pl.get('running'),'reference':pluto_enrichment.metrics(ROOT),
+         'offline':offline['pluto'],'offline_days':pluto_downloads.OFFLINE_DAYS},
+        {'source':'justwatch','name':'JustWatch TV','titles':(jw.get('movies',0) or 0)+(jw.get('series',0) or 0),
+         'playable':jw.get('playable',0),'last_success':jw.get('last_success',0),'last_result':jw.get('last_result'),
+         'running':jw.get('running'),'reference':justwatch_enrichment.metrics(ROOT),
+         'offline':offline['justwatch'],'offline_days':justwatch_downloads.OFFLINE_DAYS}]
 
 def netzkino_download_summary():
     with db() as c:return {**netzkino_downloads.summary(c),'pluto':netzkino_downloads.summary(c,'pluto'),'justwatch':netzkino_downloads.summary(c,'justwatch')}
@@ -222,7 +238,14 @@ class Handler(BaseHTTPRequestHandler):
     def authorized(self):return not NETWORK or ACCESS.valid(self.session())
     def session_cookie(self,token,seconds=access.SESSION_SECONDS):
         return f'{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={seconds}'
-    def do_GET(self):
+    def timed(self,method,run):
+        # 0.5.41: running and slow requests become visible in the diagnostics export.
+        key=http_timing.start(method,self.path)
+        try:return run()
+        finally:http_timing.finish(key,log=lambda path,seconds,m:diagnostics.event('http_slow_request',endpoint=path,seconds=seconds,method=m))
+    def do_GET(self):return self.timed('GET',self.get_guarded)
+    def do_POST(self):return self.timed('POST',self.post)
+    def get_guarded(self):
         try:self.get()
         except (BrokenPipeError,ConnectionResetError):pass
         except Exception as e:
@@ -336,7 +359,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'threads':[t.name for t in threading.enumerate()]}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot()}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -353,26 +376,17 @@ class Handler(BaseHTTPRequestHandler):
                           for k in portal_metadata_policy.PROVENANCE},
                           'filename':portal_metadata_policy.filename_rules(),
                           'reference_order':portal_metadata_policy.PRIORITY})
+        if path=='/api/film-platforms':
+            # Light endpoint for the catalogue header (per-source overview), no portal_sources scan.
+            with db() as c:offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch')}
+            return self.send({'film_platforms':film_platforms(offline)})
         if path=='/api/portals':
             with db() as c:
                 result=portal_sources.state(c)
                 result['platform_control']=portal_control.source_status(c)
                 result['archive_scopes']=portal_control.list_scopes(c)
                 offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch')}
-            # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
-            nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT)
-            result['film_platforms']=[
-                {'source':'netzkino','name':'Netzkino','titles':nk.get('catalog_count',0),'last_success':nk.get('last_success',0),
-                 'last_result':nk.get('last_result'),'running':nk.get('running'),'reference':netzkino_enrichment.metrics(ROOT),
-                 'offline':offline['netzkino'],'offline_days':netzkino_downloads.OFFLINE_DAYS},
-                {'source':'pluto','name':'Pluto TV','titles':(pl.get('movies',0) or 0)+(pl.get('series',0) or 0),
-                 'channels':pl.get('channels',0),'last_success':pl.get('last_success',0),'last_result':pl.get('last_result'),
-                 'running':pl.get('running'),'reference':pluto_enrichment.metrics(ROOT),
-                 'offline':offline['pluto'],'offline_days':pluto_downloads.OFFLINE_DAYS},
-                {'source':'justwatch','name':'JustWatch TV','titles':(jw.get('movies',0) or 0)+(jw.get('series',0) or 0),
-                 'playable':jw.get('playable',0),'last_success':jw.get('last_success',0),'last_result':jw.get('last_result'),
-                 'running':jw.get('running'),'reference':justwatch_enrichment.metrics(ROOT),
-                 'offline':offline['justwatch'],'offline_days':justwatch_downloads.OFFLINE_DAYS}]
+            result['film_platforms']=film_platforms(offline)
             return self.send(result)
         if path=='/api/portal-items':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -550,7 +564,7 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.error('peer_put_failed',e)
             try:self.send({'error':core.safe_error(e)},500)
             except (BrokenPipeError,ConnectionResetError):pass
-    def do_POST(self):
+    def post(self):
         global _TREE_CACHE,_STATUS_CACHE
         if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
         if NETWORK and self.path=='/api/login':return self.login()

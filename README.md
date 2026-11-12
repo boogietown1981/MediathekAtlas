@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.40
+# MediathekAtlas · 0.5.41
+
+## Neu in 0.5.41: Kataloge bleiben gespeichert
+
+- Netzkino-, Pluto- und JustWatch-Kataloge bleiben nach einem Neustart erhalten und werden als „Gespeicherter Bestand“ angezeigt; ein unterbrochener Abruf wird als solcher gemeldet. Beim allerersten Start werden sie einmal automatisch geladen.
 
 ## Neu in 0.5.40: JustWatch TV
 

@@ -1,5 +1,14 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.41 – Kataloge nach Neustart (12. November 2026)
+
+- Neustart-Test: Server mit eingespieltem Bestand zweimal gestartet und beendet; `/api/pluto`, `/api/justwatch`, `/api/netzkino-grouped` liefern jeweils denselben Bestand (1 / 2 / 420 Filme), ohne neuen Abruf.
+- Neue Tests `tests/test_v0541_catalog_persistence.py` (5): unterbrochener Abruf → „interrupted“ mit erhaltenem Bestand (JustWatch, Pluto), Teilabruf blendet ältere Titel nicht aus, Regel für den einmaligen Erstabruf, UI-Texte.
+- Tests ergänzt auf 7: Anfrage-Messung (laufend/langsam, keine Suchbegriffe, Protokoll-Drosselung, Streams ausgenommen) und Einbindung in Server/Oberfläche/Bundle.
+- Browser-Durchlauf (Playwright/Chromium, eingespielter Bestand): Plattform-Reiter Pluto/JustWatch/Netzkino zeigen Bestand und Stand; künstlich um 9 s verzögerte Pluto-Antwort → Statuszeile „wartet seit 6 s auf den lokalen Dienst · noch offen: pluto 6 s“, danach regulärer Stand. Katalog: Pluto/JustWatch je eigene Karte ohne ARD/ZDF-Übersicht, „Gesamt“ mit allen Karten und ARD/ZDF-Übersicht, „Mediatheken“ nur ARD/ZDF; keine JavaScript-Fehler.
+- Volllauf `python3 -m unittest discover -s tests` → 585 Tests OK; alle `tests/*.cjs` OK.
+- **Nicht geprüft:** auf Björns Mac/NAS; die eigentliche Ursache des Hängens bei Björn ist nicht nachgestellt (mit eingespieltem Bestand antworten alle Endpunkte in unter 0,1 s) – die neue Wartezeit-Anzeige und der Diagnose-Abschnitt `http` sollen sie beim nächsten Auftreten zeigen.
+
 ## 0.5.40 – JustWatch TV (12. November 2026)
 
 - Parser gegen Björns echten HAR-Mitschnitt geprüft (GetPopularTitles-Antwort): 22 von 40 Titeln als JustWatch-TV-Free erkannt (die übrigen gehörten zu Plus/Store), 1 mit Stream für externe Player, Cover- und Seitenadressen gültig.

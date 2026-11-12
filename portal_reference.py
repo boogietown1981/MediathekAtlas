@@ -156,3 +156,15 @@ def apply(meta, report, own_provider, *, series_report=False):
     if rate and meta.get('rating') is None:
         meta.update(rating=rate['value'], votes=ref.get('votes'), rating_source=rate['source'])
     return meta
+
+
+def stored_result(last_result, active):
+    """'running' left behind by an app restart during a catalogue run is reported as
+    'interrupted'; the stored catalogue stays usable (0.5.41)."""
+    return 'interrupted' if last_result == 'running' and not active else last_result
+
+
+def first_load_due(current):
+    """One automatic catalogue load on the very first start (never attempted), so nobody has to
+    press "load" after installing; afterwards only the 24-hour automatic setting reloads."""
+    return not current.get('running') and not current.get('last_success') and not current.get('last_attempt')
