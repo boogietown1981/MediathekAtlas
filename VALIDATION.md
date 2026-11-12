@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.50 – Live-TV nach Sendern (12. November 2026)
+
+- Neue Tests `tests/test_v0550_live_tv.py` (11): Sendernamen aus Filmlisten-Titeln, Schreibvarianten, Regionalfenster nur bei Sendern, Livestreams nicht im Werkabgleich (auch Bestandsdatenbanken, manuelle Entscheidungen bleiben), Reihenfolge und Gruppen, inaktive Angebote und Nicht-HTTP-Adressen ausgeschlossen, Wiedergabe als Live ohne Länge, normale Angebote nicht live, Pluto-Sender in der Übersicht, Diagnose nur Zähler. Gesamte Testsuite lokal grün (ein bekannt lastabhängiger Launcher-Test lief einzeln grün).
+- Browser-Durchlauf (Playwright, echter Server mit Testbestand: 5 Sender-Livestreams + 1 Pluto-Sender): Reiter Live-TV mit Gruppen Öffentlich-rechtlich (Das Erste, ZDF, 3sat) · Regional (BR Nord, WDR) · Pluto TV; Favorit springt nach oben; Anbieterfilter; „Live ansehen“ bei Das Erste → Player „Live-Stream des Senders“, ohne „Von vorn“; Plattformen → Pluto → Live-TV → Sprung in den Reiter; Live-Leiste im Katalog bei „ARD, ZDF & Co.“; keine JavaScript-Fehler.
+- **Nicht geprüft:** echte Filmliste (aus der Cloud gesperrt; Thema „Livestream“ aus dem MServer-Quellcode belegt, Titelform „<Sender> Livestream“ angenommen), echte Wiedergabe der Sender-Livestreams und der Pluto-Sender.
+
 ## 0.5.49 – Plattform-Ansicht, JustWatch-Folgen, geteilter Abgleich (12. November 2026)
 
 - Neue Tests `tests/test_v0549_platform_view.py` (9): zweite Plattform fragt nicht erneut (auch bei anderer Schreibweise), kein Teilen ohne Jahr / bei anderem Jahr / anderer Art, unvollständige Antworten werden nicht gespeichert, Ablauf, „Jetzt abgleichen“ fragt neu; JustWatch-Folgen: abgelehnte und leere Sammelabfrage → Staffelseiten (mit Rückfall auf 20 Folgen je Abfrage, fremde Pfade verworfen), Netzausfall nur eine Anfrage; Übersicht in den Plattform-Reitern, Reitername.

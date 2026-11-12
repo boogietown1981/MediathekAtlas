@@ -221,8 +221,21 @@ def ingest(c,rows,seen=None):
                 c.execute("UPDATE works SET state='format' WHERE id=?",(wid,))
             elif template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
             for genre in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,genre))
+        if str(row.get('topic') or '').strip() in LIVE_TOPICS:mark_live(c,wid)
         c.execute('INSERT INTO offers VALUES(?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,special=excluded.special,rank=excluded.rank,seen=excluded.seen,active=1',(oid,wid,json.dumps(row),special(row),ranking(row),seen));ids.append(oid)
     return ids
+
+LIVE_TOPICS=('Livestream','Livestreams','livestream','LIVESTREAM','Live-Stream')
+
+def mark_live(c,wid=None):
+    """Broadcaster live streams (topic "Livestream", 0.5.50) are no works: shown in the Live-TV tab,
+    never sent to TMDB/TVDB/IMDb. Manual and confirmed decisions stay untouched."""
+    sql=("UPDATE works SET kind='other',state='format',next_try=0,meta=json_set(COALESCE(NULLIF(meta,''),'{}'),"
+         "'$.kind','other','$.live',json('true'),'$.reason','Livestream des Senders; erscheint im Reiter Live-TV und wird nicht abgeglichen.') "
+         "WHERE topic IN (%s) AND state NOT IN ('manual','matched','format')"%','.join('?'*len(LIVE_TOPICS)))
+    args=list(LIVE_TOPICS)
+    if wid is not None:sql+=' AND id=?';args.append(wid)
+    return c.execute(sql,args).rowcount
 
 def begin_snapshot(c):
     """Collect feed IDs separately: an interrupted import must never retire existing offers."""
@@ -953,6 +966,7 @@ def initialize(c):
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
     c.execute('CREATE INDEX IF NOT EXISTS work_topic ON works(topic)')
+    mark_live(c)
     if not get_state(c,'genre_spellings_v053',False):merge_genre_spellings(c);set_state(c,'genre_spellings_v053',True)
     # One-time migration of existing identified episodes; no destructive resets.
     if not get_state(c,'episode_queue_migrated_v0528',False):

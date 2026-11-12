@@ -695,3 +695,25 @@ dialog.player::backdrop{background:#000c}
 .atlas-offline-note:empty{display:none}
 .atlas-offline-button.atlas-offline-done{background:#21372f;color:#8af1d1;border-color:#3d6b5a;opacity:1}
 .tv-epactions .atlas-offline{flex-basis:auto}
+/* 0.5.50: Live-TV by station */
+.livetv-toolbar{max-width:460px}
+.livetv-group{margin:18px 0 8px}
+.livetv-group-title{font-size:15px;color:#b9d6da;margin:0 0 10px;letter-spacing:-.2px}
+.livetv-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:12px}
+.livetv-station{border:1px solid #2b3948;border-radius:12px;background:#131d2a;padding:14px;display:flex;flex-direction:column;gap:8px}
+.livetv-head{display:flex;align-items:center;gap:12px}
+.livetv-name{flex:1;min-width:0}
+.livetv-name h3{font-size:15px;margin:0 0 2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.livetv-logo{width:64px;height:40px;flex:none;border-radius:8px;object-fit:contain;background:#0e151f;padding:4px}
+.livetv-initials{display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#8af1d1;background:#1d3330;border:1px solid #31564c}
+.livetv-fav{padding:4px 9px;border-radius:999px;background:transparent;color:#f1cd8d;border-color:#3b4756}
+.livetv-summary{color:#9caec1;font-size:12px;line-height:1.5;margin:0}
+.livetv-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:auto}
+.livetv-actions button{padding:8px 12px}
+.livetv-source{font-size:11px}
+.livetv-jump{margin-left:8px}
+@media(max-width:650px){.livetv-grid{grid-template-columns:minmax(0,1fr)}}
+.livetv-strip{margin:0 0 14px;border:1px solid #2b3948;border-radius:12px;background:#131d2a;padding:10px 14px}
+.livetv-strip summary{cursor:pointer;color:#8af1d1;font-weight:600}
+.livetv-strip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
+.livetv-strip-row button{padding:6px 11px;border-radius:999px;font-size:12px}

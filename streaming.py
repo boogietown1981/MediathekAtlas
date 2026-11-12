@@ -109,7 +109,12 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
     # Prefer a direct file up to 1080p for smooth playback, then HLS.
     direct=[l for l in usable if l['supported']]
     best=(sorted(direct,key=lambda l:(0<(l['height_hint'] or 720)<=1080,l['score']),reverse=True) or usable)[0]
-    return {'kind':'url','url':best['url'],'hls':bool(HLS.search(best['url'])),'quality':best['quality'],'title':title,'duration':duration}
+    out={'kind':'url','url':best['url'],'hls':bool(HLS.search(best['url'])),'quality':best['quality'],'title':title,'duration':duration}
+    # Broadcaster live streams (0.5.50): no length, no resume position, title = station.
+    if str(row.get('topic') or '').strip() in catalog.LIVE_TOPICS:
+        import live_tv
+        out.update(live=True,duration=0,title=live_tv.station_name(row.get('title'),row.get('channel')),quality='Live · '+best['quality'],provider='mediathek')
+    return out
 
 def probe(path):
     binary=tool('ffprobe')

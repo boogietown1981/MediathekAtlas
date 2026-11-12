@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.49
+# MediathekAtlas · 0.5.50
+
+## Neu in 0.5.50: Live-TV nach Sendern
+
+- Neuer Reiter **„Live-TV“**: alle Live-Sender deiner Quellen an einem Ort, nach Sendern sortiert und gruppiert (Öffentlich-rechtlich, Regional (ARD), Pluto-Kategorien). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Suche, Filter nach Anbieter und Gruppe, Favoriten (★) oben.
+- **ARD, ZDF & Co. live:** die offiziellen Livestreams der Sender kommen aus der Filmliste (Thema „Livestream“). Sie werden nicht mehr als Werke abgeglichen.
+- **Beim Anbieter:** Im Katalog unter „ARD, ZDF & Co.“ und „Pluto TV“ gibt es eine aufklappbare Live-Leiste; unter Plattformen → Pluto TV → Live-TV führt „Alle Sender im Reiter Live-TV →“ in die Senderübersicht.
+- Der Player setzt Live-Sender nicht an einer gespeicherten Position fort. Live-Sender lassen sich nicht offline speichern.
 
 ## Neu in 0.5.49: Plattform-Ansicht wie der Katalog, JustWatch-Folgen, geteilter Abgleich
 

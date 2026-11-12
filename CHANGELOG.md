@@ -1,3 +1,10 @@
+## 0.5.50 – Live-TV nach Sendern
+- Björn (12.11.2026): Live-TV der Anbieter, wenn sie es anbieten, einmal beim Anbieter und einmal in einem neuen Reiter „Live-TV“ nach Sendern.
+- Neues Modul `live_tv.py`: sammelt die Live-Sender aller Quellen aus den lokal gespeicherten Katalogen (kein zusätzlicher Netzabruf) und führt sie nach Sender zusammen (`station_name`, `station_key` mit Schreibvarianten wie ARD/Das Erste, ARTE.DE/arte). Quellen: ARD, ZDF & Co. (Filmliste, Thema „Livestream“ wie `ListeFilme.THEMA_LIVE` in MServer) und Pluto TV (`pluto.channels`). Weitere Anbieter (z. B. Rakuten-FAST-Kanäle) binden sich mit einer Ladefunktion in `live_tv.channels` an. Endpunkt `/api/live-tv?q=&provider=&group=`, Zähler im Diagnose-Export (`live_tv`, ohne Titel/Adressen).
+- `catalog.mark_live`: Livestream-Einträge werden beim Import und einmal beim Start als `format` markiert, also nicht an TMDB/TVDB/IMDb geschickt; manuelle und bestätigte Zuordnungen bleiben.
+- Wiedergabe: Livestreams der Sender liefern `live` (Titel = Sender, keine Länge); der Player speichert und nutzt für Live-Sender keine Fortsetzungsposition (`playLive`).
+- Oberfläche: Reiter „Live-TV“ (`web/live_tv.js`), Live-Leiste im Katalog bei „ARD, ZDF & Co.“ und „Pluto TV“, Sprung aus Plattformen → Pluto TV → Live-TV.
+
 ## 0.5.49 – Plattform-Ansicht wie der Katalog, JustWatch-Folgen je Staffel, geteilter Abgleich
 - **Plattform-Reiter** (Björn, 12.11.2026: der Katalog im Dashboard bleibt, unter „Plattformen“ wirkt es nicht so; Ansicht normalisieren, erkannte und gescannte Titel wie bei den Mediatheken): Netzkino, Pluto TV und JustWatch TV zeigen oben dieselbe Karte „Bestand & Werkzuordnung“ wie der Katalog (eine Umsetzung, `AtlasPlatformBoard.mount`), mit „↻ Katalog jetzt laden“ und „Im Katalog anzeigen“. Der gespeicherte Bestand ist damit auch dort sofort sichtbar.
 - **Reiter umbenannt:** „Mediatheken“ → „ARD, ZDF & Co.“ (Katalog-Reiter, Überschriften, Statuszeile).
