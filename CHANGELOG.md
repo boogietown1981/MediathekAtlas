@@ -1,8 +1,16 @@
+## 0.5.37 – Pluto TV offline speichern (20 Tage)
+- **Freigabe von Pluto TV (Björn, 12.11.2026): 20 Tage Offline-Nutzung.** Pluto-Filme und einzelne Folgen haben jetzt „⬇ Offline speichern (20 Tage)“. Umgesetzt wie bei Netzkino: Der Titel wird ein normaler Auftrag in der gemeinsamen Download-Warteschlange (gleicher Worker, gleiche Ordner und Namen `Filme/Titel (Jahr)/…` bzw. `Serien/Serie/Season NN/Serie - SxxEyy.mkv`, MKV mit eingebetteten Metadaten, NFO, metadata.json, Cover, `.partial`-Zwischenstände). Folgen ohne Staffel-/Folgennummer landen als „Serie - Folgentitel“ unter Filme, es wird keine Staffel erfunden.
+- **Ablauf:** 20 Tage nach Fertigstellung entfernt die stündliche Prüfung Datei, NFO und metadata.json (nur eigene Dateien, nie außerhalb des Downloadordners). „Jetzt löschen“ entfernt früher. Offline-Kopien werden nicht im Verbund geteilt, nicht als Mediathek-Werk markiert und lassen sich nur in MediathekAtlas abspielen. Danach kann der Titel erneut gespeichert werden.
+- **Technik:** Unmittelbar vor dem Download holt MediathekAtlas die offizielle HLS-Adresse mit frischer Sitzung; ffmpeg kopiert die beste Variante ohne Neukodierung. Die Adresse mit Sitzungsschlüssel wird nirgends gespeichert (metadata.json enthält nur Host und Pfad). Abbrechen beendet ffmpeg sofort, auch bei stehender Verbindung. Ist der Stream deutlich kürzer als die Katalog-Laufzeit, gilt der Download als unvollständig.
+- Die Datei enthält, was Pluto ausliefert, inklusive Werbung; es wird nichts herausgeschnitten. Live-Sender und ganze Serien (statt einzelner Folgen) werden abgelehnt.
+- Pluto-Bereich: neue aufklappbare Liste „Offline-Kopien von Pluto TV“ mit Fortschritt, Resttagen, Abbrechen, Erneut versuchen und Jetzt löschen; Karten zeigen den Offline-Stand. Downloadkarten unterscheiden „Netzkino offline bis …“ und „Pluto TV offline bis …“.
+- Intern: Die Offline-Verwaltung (`netzkino_downloads`) kennt mehrere Portale mit eigener Frist; neue Endpunkte `/api/pluto-download-add`, `/api/pluto-downloads`, gemeinsamer `/api/offline-download-action` (der Netzkino-Endpunkt bleibt).
+
 ## 0.5.36 – Pluto TV: Filme, Serien und Live-Sender
 - **Pluto TV ist jetzt eine aktive Quelle** (Plattformen → Pluto TV) statt des bisherigen Platzhalters: Filme, Serien mit Staffeln/Folgen und Live-Sender, durchsuchbar nach Titel, Genre und Kategorie.
 - **Wiedergabe im MediathekAtlas-Player**, wie bei Mediathek- und Netzkino-Titeln: „▶ Ansehen“ bzw. „▶ Live ansehen“. Gespielt wird der offizielle HLS-Stream von Pluto TV inklusive Werbung (nativ in Safari, sonst über ffmpeg). Live-Sender ohne Zeitleiste.
 - **Katalog:** anonyme Website-Sitzung von Pluto TV (keine Anmeldung, keine Cookies; Sitzungsschlüssel nur im Arbeitsspeicher). Abruf auf Knopfdruck oder optional alle 24 Stunden. Folgen einer Serie werden beim Öffnen geladen und sechs Stunden zwischengespeichert. Titel, die Pluto aus dem Angebot nimmt, verschwinden beim nächsten Abruf; ein fehlgeschlagener Abruf lässt den Bestand stehen.
-- **Grenzen:** Pluto TV sieht keine Downloads vor, daher keine Downloadfunktion. Den Länderkatalog bestimmt Pluto anhand der Internetverbindung; keine Geo-Umgehung, kein Entfernen von Werbung.
+- **Grenzen:** Downloads siehe 0.5.37. Den Länderkatalog bestimmt Pluto anhand der Internetverbindung; keine Geo-Umgehung, kein Entfernen von Werbung.
 - Diagnoseexport enthält Pluto-Zähler und letzten Fehler (ohne Sitzungsschlüssel und Adressen).
 
 ## 0.5.35 – Netzkino-Gesamtkatalog über den Kategoriebaum

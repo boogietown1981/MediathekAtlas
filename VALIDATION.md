@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.37 – Pluto TV offline, 20 Tage (12. November 2026)
+
+- Neue Tests `tests/test_v0537_pluto_offline.py` (12): Benennung identisch zu `core.target` (Film und Folge), 20-Tage-Frist, Ablauf und erneutes Speichern, „Jetzt löschen“, getrennte Netzkino-/Pluto-Listen, Ablehnung von Live-Sendern, ganzen Serien und unbekannten Kennungen, keine Stream-Adresse/Sitzungsschlüssel im Auftrag, Resolver mit frischer Sitzung, **echter HLS-Download mit ffmpeg** gegen einen lokalen HTTP-Server (MKV mit Video+Audio, NFO, metadata.json ohne Schlüssel, keine `.partial`-Reste), Abbruch beendet ffmpeg, zu kurzer Stream wird als unvollständig gemeldet.
+- Browser-Durchlauf (Playwright/Chromium) mit eingespieltem Katalog und laufendem Worker: „⬇ Offline speichern (20 Tage)“ nur bei Filmen und Folgen, nicht bei Live-Sendern und Serien; Auftrag erscheint in „Offline-Kopien von Pluto TV“; der Worker meldet in der Cloud korrekt „Pluto TV ist nicht erreichbar“ und bietet „Erneut versuchen“; keine JavaScript-Fehler.
+- `node --check web/*.js`, `node tests/*.cjs` OK. Volllauf `python3 -m unittest discover -s tests` → 543 Tests OK (nach Neubau des App-Bundles).
+- **Nicht geprüft:** echter Download von pluto.tv (aus der Build-Umgebung gesperrt), Verhalten des Pluto-Stitchers mit Werbeunterbrechungen in ffmpeg, Lauf auf macOS/NAS-Hardware.
+
 ## 0.5.36 – Pluto TV (12. November 2026)
 
 - Neue Tests `tests/test_v0536_pluto.py` (8): Sitzung mit Installations-ID, Filme/Serien/Live aus synthetischen Antworten im Format der Pluto-Website-API, Rotation und Bestandsschutz bei Fehlern, Folgen auf Abruf mit Zwischenspeicher, Stitcher-Adresse mit Sitzung, Ablehnung fremder Hosts/Pfade, Einbindung in `/api/play`.

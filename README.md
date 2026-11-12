@@ -1,8 +1,12 @@
-# MediathekAtlas · 0.5.36
+# MediathekAtlas · 0.5.37
+
+## Neu in 0.5.37: Pluto TV offline (20 Tage)
+
+- Pluto-Filme und -Folgen lassen sich mit „⬇ Offline speichern (20 Tage)“ herunterladen. Sie laufen durch dieselbe Download-Warteschlange wie Mediathek- und Netzkino-Videos (gleiche Ordner und Namen, MKV mit NFO und metadata.json) und werden nach 20 Tagen automatisch entfernt. Die Datei enthält die Werbung, die Pluto ausliefert. Live-Sender sind nicht speicherbar.
 
 ## Neu in 0.5.36: Pluto TV
 
-- Plattformen → Pluto TV: Filme, Serien und Live-Sender von Pluto TV laden („↻ Katalog jetzt laden“) und direkt im MediathekAtlas-Player ansehen, mit Werbung wie beim Anbieter. Keine Downloads, keine Anmeldung.
+- Plattformen → Pluto TV: Filme, Serien und Live-Sender von Pluto TV laden („↻ Katalog jetzt laden“) und direkt im MediathekAtlas-Player ansehen, mit Werbung wie beim Anbieter. Keine Anmeldung.
 
 
 ## Neu in 0.5.34: Netzkino direkt abspielen

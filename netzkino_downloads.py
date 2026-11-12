@@ -34,6 +34,9 @@ from pathlib import Path
 OFFLINE_DAYS = 30
 OFFLINE_SECONDS = OFFLINE_DAYS * 86400
 LICENSE_OFFLINE = 'netzkino_offline'
+# Streaming portals with time-limited offline copies in the shared queue (0.5.37: Pluto TV).
+PORTAL_LICENSES = {'netzkino': LICENSE_OFFLINE, 'pluto': 'pluto_offline'}
+OFFLINE_KINDS = frozenset(PORTAL_LICENSES.values())
 LICENSE_FILE = 'licensed_file'
 ACTIVE = ('queued', 'downloading', 'tagging')
 ID_RE = re.compile(r'^[0-9a-f]{32}$')
@@ -49,8 +52,21 @@ def is_netzkino(job):
     return (job or {}).get('origin') == 'netzkino'
 
 
+def is_portal(job):
+    """Netzkino or Pluto job: per-device copy, never shared in the Verbund, no Mediathek work."""
+    return (job or {}).get('origin') in PORTAL_LICENSES
+
+
 def is_offline(job):
-    return ((job or {}).get('license') or {}).get('kind') == LICENSE_OFFLINE
+    return ((job or {}).get('license') or {}).get('kind') in OFFLINE_KINDS
+
+
+def offline_seconds(job):
+    try:
+        days = int(((job or {}).get('license') or {}).get('days') or OFFLINE_DAYS)
+    except (TypeError, ValueError):
+        days = OFFLINE_DAYS
+    return max(1, min(days, 366)) * 86400
 
 
 def _people(values):
@@ -260,7 +276,7 @@ def stamp(job, now=None):
     if is_offline(job) and not job.get('offline_until'):
         now = time.time() if now is None else float(now)
         job['downloaded_at'] = now
-        job['offline_until'] = now + OFFLINE_SECONDS
+        job['offline_until'] = now + offline_seconds(job)
     return job
 
 
@@ -352,10 +368,10 @@ def delete_now(c, job_id, now=None):
     """User removes an offline copy before the period ends."""
     r = c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'", (str(job_id),)).fetchone()
     if not r:
-        raise ValueError('Nur fertige Netzkino-Downloads können gelöscht werden')
+        raise ValueError('Nur fertige Offline-Downloads können gelöscht werden')
     job = json.loads(r[0])
-    if not is_netzkino(job):
-        raise ValueError('Kein Netzkino-Download')
+    if not is_portal(job):
+        raise ValueError('Kein Netzkino- oder Pluto-Download')
     remove_files(job)
     _finish(c, job, 'removed', time.time() if now is None else float(now))
     return {'ok': True, 'state': 'removed'}
@@ -379,7 +395,8 @@ def loop(db, stop, interval=3600):
 # ------------------------------------------------------------- read models
 def _public(job, now):
     until = job.get('offline_until')
-    return {'id': job['id'], 'netzkino_id': job.get('netzkino_id'), 'state': job.get('state'),
+    return {'id': job['id'], 'netzkino_id': job.get('netzkino_id'), 'pluto_id': job.get('pluto_id'),
+            'origin': job.get('origin'), 'state': job.get('state'),
             'title': (job.get('metadata') or {}).get('title'),
             'target_name': Path(job.get('path') or job.get('target') or '').name,
             'received': job.get('received', 0), 'total': job.get('total', 0),
@@ -388,26 +405,32 @@ def _public(job, now):
             'days_left': None if not until else max(0, int((until - now + 86399) // 86400))}
 
 
-def listing(c, item_id=None, limit=50, now=None):
+def listing(c, item_id=None, limit=50, now=None, origin='netzkino'):
     now = time.time() if now is None else float(now)
     items = []
+    key = origin + '_id'
     for payload, state in c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC'):
         job = json.loads(payload)
-        if not is_netzkino(job) or (item_id and job.get('netzkino_id') != item_id):
+        if job.get('origin') != origin or (item_id and job.get(key) != item_id):
             continue
         job['state'] = state
         items.append(_public(job, now))
         if len(items) >= limit:
             break
-    return {'items': items, 'offline_days': OFFLINE_DAYS,
-            'policy': 'Netzkino-Titel dürfen heruntergeladen und %d Tage offline genutzt werden; '
-                      'danach entfernt MediathekAtlas die Datei automatisch.' % OFFLINE_DAYS}
+    if origin == 'pluto':
+        import pluto_downloads
+        days, name = pluto_downloads.OFFLINE_DAYS, 'Pluto-TV'
+    else:
+        days, name = OFFLINE_DAYS, 'Netzkino'
+    return {'items': items, 'offline_days': days,
+            'policy': '%s-Titel dürfen heruntergeladen und %d Tage offline genutzt werden; '
+                      'danach entfernt MediathekAtlas die Datei automatisch.' % (name, days)}
 
 
-def summary(c):
+def summary(c, origin='netzkino'):
     counts = {}
     for payload, state in c.execute('SELECT payload,state FROM jobs'):
-        if is_netzkino(json.loads(payload)):
+        if json.loads(payload).get('origin') == origin:
             counts[state] = counts.get(state, 0) + 1
     return {k: counts.get(k, 0) for k in ('queued', 'downloading', 'tagging', 'done', 'error',
                                          'cancelled', 'expired', 'removed')}

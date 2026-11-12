@@ -75,9 +75,72 @@ def source_url(row,quality='best'):
     if row.get('_resolver')=='netzkino':
         import ytdl_bridge
         return ytdl_bridge.resolve(row.get('_page_url'))['url']
+    if row.get('_resolver')=='pluto':
+        import pluto_downloads
+        return pluto_downloads.resolve(row)
     if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
     keys=QUALITY_KEYS
     return row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
+
+HLS_RESOLVERS={'pluto'}
+
+def public_url(row,url):
+    """Address written to metadata.json. Session-bound HLS addresses carry a token in the
+    query string; only scheme, host and path are kept so no token ends up on disk."""
+    if row.get('_resolver') in HLS_RESOLVERS:return str(url).split('?',1)[0]
+    return url
+
+def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024):
+    """Copy an HLS stream (best variant, ffmpeg default selection) into a staged Matroska file.
+    Progress comes from ffmpeg's -progress output; a cancel stops ffmpeg at once."""
+    ffmpeg=tool('ffmpeg')
+    args=[ffmpeg,'-nostdin','-v','error','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5',
+          '-i',url,'-sn','-dn','-c','copy','-bsf:a','aac_adtstoasc','-f','matroska','-progress','pipe:1','-nostats','-y',str(src)]
+    require_space(directory,reserve)
+    update('downloading',0,0,speed=0,eta=None)
+    import threading
+    log=tempfile.TemporaryFile(mode='w+',encoding='utf-8',errors='replace')
+    proc=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=log,stdin=subprocess.DEVNULL,text=True)
+    started=time.monotonic();last=0;position=0.0;received=0;stop=threading.Event()
+    def watch():
+        # A stalled network leaves ffmpeg silent; cancelling must still end it promptly.
+        while not stop.wait(1):
+            if cancelled():
+                proc.kill();return
+    threading.Thread(target=watch,name='hls-cancel',daemon=True).start()
+    try:
+        for line in proc.stdout:
+            if cancelled():raise ValueError('Download abgebrochen')
+            key,_,value=line.strip().partition('=')
+            if key in ('out_time_us','out_time_ms'):
+                try:position=max(position,int(value)/1e6)
+                except ValueError:pass
+            elif key=='total_size':
+                try:received=max(received,int(value))
+                except ValueError:pass
+            if key=='progress' and time.monotonic()-last>.5:
+                elapsed=max(.001,time.monotonic()-started);speed=received/elapsed
+                rate=position/elapsed
+                total=int(received*expected/position) if expected and position>5 else 0
+                require_space(directory,max(0,2*total-received)+reserve if total else received+reserve)
+                update('downloading',received,total,speed=speed,eta=max(0,(expected-position)/rate) if expected and rate>0 else None)
+                last=time.monotonic()
+        code=proc.wait()
+        if cancelled():raise ValueError('Download abgebrochen')
+        log.seek(0);error=log.read()[-4000:]
+        if code!=0:
+            detail=' '.join(error.split())[-300:]
+            raise ValueError('HLS-Download fehlgeschlagen'+(': '+detail.split('?',1)[0] if detail else ''))
+    finally:
+        stop.set()
+        if proc.poll() is None:
+            proc.kill();proc.wait()
+        proc.stdout.close();log.close()
+    received=src.stat().st_size if src.exists() else 0
+    if not received:raise ValueError('HLS-Download lieferte keine Daten')
+    if expected and position and position<expected*.9:
+        raise ValueError('Download unvollständig: %d von %d Minuten'%(position//60,expected//60))
+    return received
 
 def run(row,meta,root,quality,update,cancelled):
     # The catalogue already records most offer runtimes. Reject obvious extras
@@ -86,7 +149,8 @@ def run(row,meta,root,quality,update,cancelled):
     if not tool('ffmpeg') or not tool('ffprobe'):raise ValueError('ffmpeg oder ffprobe ist nicht startbar. Unter Einstellungen die gefundenen Pfade prüfen.')
     url=source_url(row,quality)
     if not url:raise ValueError('Keine Downloadadresse vorhanden')
-    if '.m3u8' in url.lower() or '.mpd' in url.lower():raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
+    hls=row.get('_resolver') in HLS_RESOLVERS
+    if not hls and ('.m3u8' in url.lower() or '.mpd' in url.lower()):raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
     dest=core.target(root,meta,row['_id'])
     dest.parent.mkdir(parents=True,exist_ok=True)
     if any(p.exists() for p in (dest,dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
@@ -96,23 +160,29 @@ def run(row,meta,root,quality,update,cancelled):
     try:
         with tempfile.TemporaryDirectory(prefix='.mediathekatlas-',suffix='.partial',dir=dest.parent) as work:
             src=Path(work)/'original.bin.partial';out=Path(work)/'tagged.mkv.partial'
-            with core.open_url(url) as response,src.open('wb') as f:
-                ctype=response.headers.get('Content-Type','').lower()
-                if any(x in ctype for x in ('text/html','mpegurl','dash+xml')):raise ValueError('Server liefert keine direkte Videodatei')
-                total=max(0,int(response.headers.get('Content-Length') or 0));received=0;last=0
-                started=time.monotonic();reserve=256*1024*1024
-                require_space(dest.parent,2*total+reserve)
-                update('downloading',0,total,speed=0,eta=None)
-                while True:
-                    if cancelled():raise ValueError('Download abgebrochen')
-                    chunk=response.read(1024*1024)
-                    if not chunk:break
-                    f.write(chunk);received+=len(chunk)
-                    if time.monotonic()-last>.5:
-                        speed=received/max(.001,time.monotonic()-started)
-                        require_space(dest.parent,max(0,2*total-received)+reserve if total else received+reserve)
-                        update('downloading',received,total,speed=speed,eta=max(0,(total-received)/speed) if total and speed else None);last=time.monotonic()
-                if total and received!=total:raise ValueError('Download unvollständig')
+            reserve=256*1024*1024
+            if hls:
+                try:expected=float(row.get('duration') or 0)
+                except (TypeError,ValueError):expected=0
+                received=fetch_hls(url,src,dest.parent,expected,update,cancelled,reserve);total=0
+            else:
+                with core.open_url(url) as response,src.open('wb') as f:
+                    ctype=response.headers.get('Content-Type','').lower()
+                    if any(x in ctype for x in ('text/html','mpegurl','dash+xml')):raise ValueError('Server liefert keine direkte Videodatei')
+                    total=max(0,int(response.headers.get('Content-Length') or 0));received=0;last=0
+                    started=time.monotonic();reserve=256*1024*1024
+                    require_space(dest.parent,2*total+reserve)
+                    update('downloading',0,total,speed=0,eta=None)
+                    while True:
+                        if cancelled():raise ValueError('Download abgebrochen')
+                        chunk=response.read(1024*1024)
+                        if not chunk:break
+                        f.write(chunk);received+=len(chunk)
+                        if time.monotonic()-last>.5:
+                            speed=received/max(.001,time.monotonic()-started)
+                            require_space(dest.parent,max(0,2*total-received)+reserve if total else received+reserve)
+                            update('downloading',received,total,speed=speed,eta=max(0,(total-received)/speed) if total and speed else None);last=time.monotonic()
+                    if total and received!=total:raise ValueError('Download unvollständig')
             require_space(dest.parent,int(received*1.05)+reserve)
             update('tagging',received,total,speed=0,eta=None)
             if cancelled():raise ValueError('Download abgebrochen')
@@ -126,7 +196,7 @@ def run(row,meta,root,quality,update,cancelled):
             streams=core.parse_streams(details);duration=float(details.get('format',{}).get('duration') or 0)
             # Stage all mandatory sidecars before publishing any file.
             nfo=Path(work)/'video.nfo.partial';nfo.write_bytes(core.nfo(meta,streams,duration))
-            metadata=Path(work)/'video.json.partial';metadata.write_text(json.dumps({'schema':'MediathekAtlas/1','metadata':meta,'source':row,'streams':streams,'duration':duration,'download_url':url},ensure_ascii=False,indent=2))
+            metadata=Path(work)/'video.json.partial';metadata.write_text(json.dumps({'schema':'MediathekAtlas/1','metadata':meta,'source':row,'streams':streams,'duration':duration,'download_url':public_url(row,url)},ensure_ascii=False,indent=2))
             published=[]
             try:
                 for a,b in [(nfo,dest.with_suffix('.nfo')),(metadata,dest.with_suffix('.metadata.json')),(out,dest)]:

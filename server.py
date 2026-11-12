@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -51,7 +51,7 @@ with db() as c:
     for completed in c.execute("SELECT payload FROM jobs WHERE state='done'").fetchall():
         done_job=json.loads(completed[0])
         # Time-limited Netzkino copies never mark Mediathek works as downloaded.
-        if not netzkino_downloads.is_netzkino(done_job):catalog.mark_downloaded(c,done_job)
+        if not netzkino_downloads.is_portal(done_job):catalog.mark_downloaded(c,done_job)
     catalog.recover_download_queue(c)
 
 def settings():
@@ -72,10 +72,10 @@ def put_job(j):
     if j['state']=='done':netzkino_downloads.stamp(j)
     with db() as c:
         c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
-        if j['state']=='done' and not netzkino_downloads.is_netzkino(j):catalog.mark_downloaded(c,j)
+        if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
 
 def netzkino_download_summary():
-    with db() as c:return netzkino_downloads.summary(c)
+    with db() as c:return {**netzkino_downloads.summary(c),'pluto':netzkino_downloads.summary(c,'pluto')}
 
 def jobs():
     with db() as c:rows=c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC LIMIT 100').fetchall()
@@ -93,8 +93,8 @@ def worker():
             r=c.execute("SELECT payload FROM jobs WHERE state='queued' ORDER BY rowid LIMIT 1").fetchone()
             if not r:continue
             j=json.loads(r[0])
-            # Netzkino offline copies are per device (30-day licence): no Verbund claim/sharing.
-            local_only=netzkino_downloads.is_netzkino(j)
+            # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
+            local_only=netzkino_downloads.is_portal(j)
             o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
             blocked=None if local_only else SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
             if blocked:
@@ -267,6 +267,11 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/netzkino-details':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
+        if path=='/api/pluto-downloads':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None,origin='pluto')
+            result['ffmpeg']=bool(downloads.tool('ffmpeg'))
+            return self.send(result)
         if path=='/api/netzkino-downloads':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:result=netzkino_downloads.listing(c,item_id=q.get('id',[''])[0] or None)
@@ -398,7 +403,7 @@ class Handler(BaseHTTPRequestHandler):
         if not target.is_file():return self.send({'error':'Datei wurde verschoben oder ist nicht verfügbar'},404)
         inline=q.get('inline',['0'])[0]=='1'
         # 30-day Netzkino copies: playback yes, copying to other devices no (expiry could not follow).
-        if not inline and netzkino_downloads.is_offline(job):return self.send({'error':'Netzkino-Offlinekopien können nur in MediathekAtlas abgespielt werden'},403)
+        if not inline and netzkino_downloads.is_offline(job):return self.send({'error':'Netzkino- und Pluto-Offlinekopien können nur in MediathekAtlas abgespielt werden'},403)
         self.send_file(target,inline)
     def send_file(self,target,inline):
         size=target.stat().st_size;start,end=0,size-1;status=200
@@ -614,11 +619,15 @@ class Handler(BaseHTTPRequestHandler):
                     else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id)
                 diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
                 return self.send(result)
-            if path=='/api/netzkino-download-action':
+            if path=='/api/pluto-download-add':
+                with db() as c:result=pluto_downloads.enqueue(c,ROOT,settings()['download_dir'],str(d.get('id','')))
+                diagnostics.event('pluto_download_enqueued',created=result['created'])
+                return self.send(result)
+            if path in ('/api/netzkino-download-action','/api/offline-download-action'):
                 action=d.get('action','');job_id=str(d.get('id',''))
                 with db() as c:
                     row=c.execute('SELECT payload FROM jobs WHERE id=?',(job_id,)).fetchone()
-                    if not row or not netzkino_downloads.is_netzkino(json.loads(row[0])):raise ValueError('Netzkino-Download nicht gefunden')
+                    if not row or not netzkino_downloads.is_portal(json.loads(row[0])):raise ValueError('Offline-Download nicht gefunden')
                     if action=='cancel':
                         c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(job_id,));result={'ok':True,'state':'cancelled'}
                     elif action=='delete':result=netzkino_downloads.delete_now(c,job_id)

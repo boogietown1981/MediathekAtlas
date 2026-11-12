@@ -2,8 +2,8 @@
 
 Pluto TV is free and ad-supported. MediathekAtlas uses the same anonymous session the
 website starts for every visitor (boot.pluto.tv, no account, no cookies) and plays the
-official HLS streams in its own player, adverts included. There are no downloads, no
-ad removal and no geo workaround: Pluto decides by IP which country catalogue is served.
+official HLS streams in its own player, adverts included. Films and episodes may be kept
+offline for 20 days (pluto_downloads, shared download queue); there is no ad removal and no geo workaround: Pluto decides by IP which country catalogue is served.
 
 Endpoints are hard-coded and every answer is size-limited. Session tokens are kept in
 memory only and never written to the database, logs or the diagnosis export.

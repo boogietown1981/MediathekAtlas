@@ -1,4 +1,5 @@
-/* Pluto TV (0.5.36): public catalogue (films, series, live channels), playback in the in-app player. */
+/* Pluto TV (0.5.36): public catalogue (films, series, live channels), playback in the in-app player.
+   0.5.37: films and episodes can be stored offline for 20 days through the shared download queue. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -10,7 +11,14 @@
   };
   if (!$('pluto')) return;
   const pageSize = 60;
-  let view = 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0;
+  let view = 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
+  let offline = new Map(), offlineDays = 20, ffmpeg = true;
+  const ACTIVE = ['queued', 'downloading', 'tagging'];
+  const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar', error: 'Fehler',
+    cancelled: 'Abgebrochen', interrupted: 'Unterbrochen', expired: 'Abgelaufen und entfernt', removed: 'Gelöscht'};
+  const day = ts => new Date(ts * 1000).toLocaleDateString('de-DE', {day: '2-digit', month: '2-digit', year: 'numeric'});
+  const mib = n => (Number(n || 0) / 1048576).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' MiB';
+  const daysText = n => 'noch ' + n + (n === 1 ? ' Tag' : ' Tage');
   const date = v => v ? new Date(v * 1000).toLocaleString('de-DE') : 'noch nie';
   const minutes = s => s ? Math.round(s / 60) + ' min' : '';
   const visible = () => !$('portals').hidden && $('portals').dataset.platform === 'pluto';
@@ -54,12 +62,90 @@
         window.playPluto(item.id, item.kind === 'episode' && series ? series.title + ' · ' + label : label);
       };
       actions.append(play);
+      if (item.kind !== 'channel') actions.append(offlineButton(item));
     }
     box.append(actions);
+    if (item.kind !== 'channel' && item.kind !== 'series') {
+      const state = make('small', '', 'pluto-offline-state'); state.dataset.plutoId = item.id;
+      box.append(state); paintState(state, offline.get(item.id));
+    }
     return box;
   }
 
+  function offlineButton(item) {
+    const b = make('button', `⬇ Offline speichern (${offlineDays} Tage)`); b.type = 'button'; b.dataset.plutoOffline = item.id;
+    paintButton(b, offline.get(item.id));
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        const r = await window.api('pluto-download-add', {id: item.id});
+        say(r.created ? `„${item.title}“ ist eingereiht. Gespeichert wird wie bei Mediathek-Videos; nach ${offlineDays} Tagen wird die Datei entfernt.` :
+          `„${item.title}“ ist bereits eingereiht oder offline verfügbar.`);
+        await refreshOffline();
+      } catch (e) { say('Kein Download gestartet: ' + e.message, true); b.disabled = false; }
+    };
+    return b;
+  }
+  function paintButton(b, job) {
+    const busy = job && (ACTIVE.includes(job.state) || job.state === 'done');
+    b.disabled = !!busy || !ffmpeg;
+    b.title = !ffmpeg ? 'ffmpeg fehlt in dieser Installation' : busy ? 'Bereits eingereiht oder offline verfügbar' :
+      `Pluto TV erlaubt ${offlineDays} Tage Offline-Nutzung; Werbung bleibt enthalten`;
+  }
+  function paintState(node, job) {
+    node.className = 'pluto-offline-state muted';
+    if (!job) { node.textContent = ''; return; }
+    if (job.state === 'done' && job.offline_until) {
+      node.textContent = `Offline bis ${day(job.offline_until)} · ${daysText(job.days_left)}`;
+      if (job.days_left <= 3) node.className = 'pluto-offline-state nk-warning';
+    } else if (job.state === 'downloading') node.textContent = 'Lädt · ' + mib(job.received);
+    else if (ACTIVE.includes(job.state)) node.textContent = LABELS[job.state];
+    else if (job.state === 'error') { node.textContent = 'Offline-Speicherung fehlgeschlagen'; node.className = 'pluto-offline-state nk-warning'; }
+    else node.textContent = '';
+  }
+  function jobAction(label, job, action) {
+    const b = make('button', label); b.type = 'button';
+    b.onclick = async () => {
+      b.disabled = true;
+      try {
+        if (action === 'retry') await window.api('retry', {id: job.id});
+        else await window.api('offline-download-action', {id: job.id, action});
+        await refreshOffline();
+      } catch (e) { say(e.message, true); b.disabled = false; }
+    };
+    return b;
+  }
+  async function refreshOffline() {
+    let data;
+    try { data = await window.api('pluto-downloads'); } catch (e) { return; }
+    offlineDays = data.offline_days || offlineDays; ffmpeg = data.ffmpeg !== false;
+    const items = data.items || [];
+    // Newest job per title decides the card state (listing is newest first).
+    offline = new Map();
+    for (const job of items) if (job.pluto_id && !offline.has(job.pluto_id)) offline.set(job.pluto_id, job);
+    for (const node of document.querySelectorAll('#pluto-items [data-pluto-id]')) paintState(node, offline.get(node.dataset.plutoId));
+    for (const b of document.querySelectorAll('#pluto-items [data-pluto-offline]')) paintButton(b, offline.get(b.dataset.plutoOffline));
+    const shown = items.filter(j => !['expired', 'removed'].includes(j.state));
+    $('pluto-offline-count').textContent = shown.length ? `· ${shown.filter(j => j.state === 'done').length} verfügbar, ${shown.filter(j => ACTIVE.includes(j.state)).length} in Arbeit` : '· keine';
+    const host = $('pluto-offline-jobs'); host.replaceChildren();
+    for (const job of shown) {
+      const row = make('div', undefined, 'nk-offline-job nk-offline-' + job.state);
+      row.append(make('strong', (LABELS[job.state] || job.state) + ' · ' + (job.target_name || job.title || '')));
+      if (job.state === 'downloading') row.append(make('small', mib(job.received) + (job.total ? ' / ca. ' + mib(job.total) : '')));
+      if (job.state === 'done' && job.offline_until)
+        row.append(make('small', `Offline nutzbar bis ${day(job.offline_until)} · ${daysText(job.days_left)}`, job.days_left <= 3 ? 'nk-warning' : 'muted'));
+      if (job.error) row.append(make('small', 'Fehler: ' + job.error, 'nk-warning'));
+      if (ACTIVE.includes(job.state)) row.append(jobAction('Abbrechen', job, 'cancel'));
+      if (['error', 'cancelled', 'interrupted'].includes(job.state)) row.append(jobAction('Erneut versuchen', job, 'retry'));
+      if (job.state === 'done') row.append(jobAction('Jetzt löschen', job, 'delete'));
+      host.append(row);
+    }
+    clearTimeout(offlinePoll);
+    if (items.some(j => ACTIVE.includes(j.state)) && visible()) offlinePoll = setTimeout(refreshOffline, 3000);
+  }
+
   async function refresh() {
+    refreshOffline();
     const call = ++seq;
     const q = $('pluto-filter').value.trim();
     const params = view === 'episodes' ? {view, series: series?.id || ''} : {view, q, offset, limit: pageSize};

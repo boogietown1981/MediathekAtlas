@@ -658,3 +658,7 @@ dialog.player::backdrop{background:#000c}
 /* Pluto TV (0.5.36): own catalogue view inside "Plattformen" */
 .pluto-item .pluto-meta{display:block;color:var(--muted,#8a8f98);font-size:.85em}
 .pluto-item img.netzkino-poster.pluto-logo{object-fit:contain;background:#111;padding:8px}
+#pluto-offline-jobs .nk-offline-job{display:grid;gap:4px;padding:8px 0;border-top:1px solid #2c3840}
+#pluto-offline-jobs .nk-offline-job button{justify-self:start}
+.pluto-item .nk-warning,#pluto-offline-jobs .nk-warning{color:#ffb78e}
+.pluto-item .pluto-offline-state{display:block;font-size:.85em}

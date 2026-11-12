@@ -45,7 +45,8 @@
 <section id="pluto" class="pluto-panel">
   <div class="panel netzkino-sync-panel">
     <h3>Pluto TV · Filme, Serien und Live-Sender</h3>
-    <p class="muted">Kostenloses Angebot von Pluto TV mit Werbung wie beim Anbieter. Wiedergabe im MediathekAtlas-Player; Pluto TV sieht keine Downloads vor.
+    <p class="muted">Kostenloses Angebot von Pluto TV mit Werbung wie beim Anbieter. Wiedergabe im MediathekAtlas-Player. Filme und Folgen dürfen 20 Tage offline gespeichert werden
+       (mit der Werbung, die Pluto ausliefert); danach entfernt MediathekAtlas die Datei automatisch. Live-Sender sind nicht speicherbar.
        Welcher Länderkatalog geladen wird, entscheidet Pluto anhand der Internetverbindung. Keine Anmeldung, kein Entfernen von Werbung.</p>
     <div class="netzkino-sync-actions"><button type="button" id="pluto-sync" class="primary">↻ Katalog jetzt laden</button>
       <label class="check"><input type="checkbox" id="pluto-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
@@ -60,6 +61,9 @@
   </div>
   <div class="netzkino-toolbar"><label>Pluto-Titel suchen<input type="search" id="pluto-filter" placeholder="Titel, Genre oder Kategorie"></label></div>
   <p id="pluto-status" class="muted" role="status"></p>
+  <details id="pluto-offline" class="nk-offline pluto-offline"><summary>Offline-Kopien von Pluto TV <span id="pluto-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="pluto-offline-jobs"></div></details>
   <div id="pluto-items" class="netzkino-grid" aria-live="polite"></div>
   <div class="netzkino-pages"><button type="button" id="pluto-prev">← Zurück</button>
     <span id="pluto-page-label" class="muted"></span>
