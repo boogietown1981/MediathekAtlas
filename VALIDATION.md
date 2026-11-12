@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.44 – IMDb-Zuordnung mit Erscheinungsjahr (12. November 2026)
+
+- Neue Tests `tests/test_v0543_reference_year.py` (7): Björns „#Roxy“-Fall mit den sechs IMDb-IDs aus dem Screenshot → genau tt5646082 (2018), ±1 Jahr kein Widerspruch, zwei Treffer gleichen Jahres bleiben „zu prüfen“, ±1 schlägt „ohne Jahr“, ohne Plattformjahr unverändert, alte „zu prüfen“-Berichte werden erneut eingeplant (auch per SQL-Auswahl).
+- Volllauf `python3 -m unittest discover -s tests` → 608 Tests OK (nach Neubau des Bundles); alle `tests/*.cjs` OK.
+- **Nicht geprüft:** Neuabgleich mit Björns echtem Bestand (IMDb-Datensatz liegt nur auf seinem Mac).
+
 ## 0.5.43 – Dateinamen mit Auflösung und Codecs (12. November 2026)
 
 - `tests/test_v0542_portal_title.py` um 4 Tests erweitert (11): Qualitätskennung (1080p/Cinemascope/720p/540p/2160p, Codecnamen), geplante und gemessene Namen für Film und Folge, Erkennung vorhandener Dateien (neues und altes Schema), Bilder mit Punkt im Titel („Mr. Robot“), Ablauf löscht -poster/-backdrop und den leeren Ordner, Bild-Hosts von Pluto/Netzkino.

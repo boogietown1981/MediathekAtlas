@@ -1,3 +1,8 @@
+## 0.5.44 – IMDb-Zuordnung nutzt das Erscheinungsjahr der Plattform
+- Björn (12.11.2026, „#Roxy“ bei Netzkino): Die Plattform liefert das Filmjahr (2018), trotzdem blieb der Titel „widersprüchlich“, weil IMDb sechs Filme dieses Namens kennt – einer davon (tt12786268) ohne Jahr, dadurch zwei „passende“ IMDb-IDs.
+- Regel jetzt (`netzkino_enrichment.analyze`, gilt für Netzkino, Pluto TV und JustWatch TV): Ist das Jahr bekannt, gewinnt je Datenbank der Treffer mit genau diesem Jahr, dann ±1 Jahr, erst dann Treffer ohne Jahr. ±1 Jahr (Festival-/Kinostart, deutscher Start) ist kein Widerspruch mehr. Zwei Treffer mit demselben Jahr bleiben „zu prüfen“; ohne Jahr der Plattform ändert sich nichts.
+- Vorhandene Berichte im Status „zu prüfen“ aus älteren Regeln werden vom Hintergrundabgleich automatisch erneut geprüft (`analysis`-Version im Bericht), vor anderen Titeln.
+
 ## 0.5.43 – Dateinamen mit Auflösung und Codecs, Bilder je Datei (alle Quellen); Warteschlange aufgeräumt
 - Björn (12.11.2026, Screenshot seiner Bibliothek): Dateiname mit Auflösung und Metadaten in einem eigenen Ordner, „genauso wie beim Mediathek-Download“ – dort war es auch noch nicht so. Jetzt für **alle** Downloads gleich (eine Pipeline: `core.target` → `downloads.run`):
   - Ordner wie bisher: `Filme/<Titel> (<Jahr>)/`, `Serien/<Serie> (<Jahr>)/Season NN/`.

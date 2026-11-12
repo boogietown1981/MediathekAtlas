@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.5.43
+# MediathekAtlas · 0.5.44
+
+## Neu in 0.5.44: Bessere IMDb-Zuordnung bei gleichnamigen Filmen
+
+- Netzkino, Pluto TV und JustWatch TV liefern meist das Erscheinungsjahr mit. Gibt es mehrere Filme gleichen Namens (z. B. sechs IMDb-Treffer für „#Roxy“), gewinnt jetzt der Treffer mit genau diesem Jahr; ein Jahr Abweichung gilt nicht mehr als Widerspruch. Bisher „widersprüchliche“ Titel werden im Hintergrund automatisch neu geprüft.
 
 ## Neu in 0.5.43: Dateinamen mit Auflösung und Codecs
 

@@ -132,7 +132,7 @@ def enrich(spec, root, item_id, settings, *, lookup=None, now=None, force=False)
             prev = json.loads(found['payload'])
         except ValueError:
             prev = {}
-        if isinstance(prev, dict) and now - found['checked'] < (RETRY_TTL if prev.get('status') == 'partial' else GOOD_TTL):
+        if isinstance(prev, dict) and not shared.stale_review(prev) and now - found['checked'] < (RETRY_TTL if prev.get('status') == 'partial' else GOOD_TTL):
             return {**prev, 'cached': True, 'checked_at': found['checked']}
     if not meta['title']:
         raise ValueError('%s-Titel ohne Namen' % spec.name)
@@ -173,8 +173,8 @@ def pending(spec, root, limit=10, now=None):
         last = float(spec.last_success(db) or 0)
         rows = db.execute('''SELECT i.id, r.checked, r.payload FROM %s i
             LEFT JOIN %s r ON r.item_id=i.id
-            WHERE i.kind IN ('movie','series') AND i.seen>=? AND (r.item_id IS NULL OR r.checked<?)
-            ORDER BY (r.item_id IS NOT NULL), i.title LIMIT ?''' % (spec.items, spec.checks),
+            WHERE i.kind IN ('movie','series') AND i.seen>=? AND (r.item_id IS NULL OR r.checked<? OR %s)
+            ORDER BY (r.item_id IS NOT NULL), NOT IFNULL(%s,0), i.title LIMIT ?''' % (spec.items, spec.checks, shared.STALE_REVIEW, shared.STALE_REVIEW),
                           (last, now - RETRY_TTL, max(1, int(limit)) * 4)).fetchall()
     finally:
         db.close()
@@ -185,7 +185,7 @@ def pending(spec, root, limit=10, now=None):
                 status = json.loads(payload).get('status')
             except (ValueError, AttributeError):
                 status = None
-            if status != 'partial' and now - checked < GOOD_TTL:
+            if status != 'partial' and now - checked < GOOD_TTL and not shared.stale_review(payload):
                 continue
         out.append(item_id)
         if len(out) >= limit:
