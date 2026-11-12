@@ -208,7 +208,9 @@ def get(root,item_id,*,fetch=None,now=None):
                 db.execute('DELETE FROM netzkino_detail_failures WHERE item_id=?',(item_id,))
                 # Related titles in the answer extend the catalogue beyond the frontpage
                 # categories (the automatic enrichment visits every title over time).
-                try:netzkino.add_discovered(db,payload,now)
+                try:
+                    netzkino.add_discovered(db,payload,now)
+                    netzkino.remember_categories(db,payload)
                 except (sqlite3.Error,ValueError,TypeError):pass
                 if by_slug:
                     db.execute("""UPDATE netzkino_catalog SET content_id=?,

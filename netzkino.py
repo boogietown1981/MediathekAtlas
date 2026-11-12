@@ -39,10 +39,29 @@ _QUERY_HASHES = {
     'MovieDetails':'692ee5a44d28183d6e0bf48b40343c2d231a5d1fcce5483c81f146936f00bf97',
 }
 _MAX_CATEGORIES = 40          # frontpage subcategories taken from AllContent
-_MAX_DISCOVERED = 160         # further categories found inside category answers
+_MAX_DISCOVERED = 400         # further categories (category tree, movie details, recordings)
+# Category tree roots observed in MovieDetails answers (HAR 12.11.2026): parent.slug of the
+# categories a film belongs to. Their subcategories list the full genre/partner catalogue;
+# the frontpage only shows curated excerpts ("…-frontpage").
+_TREE_ROOTS = (('netzkino-genre','Genres'),('themenkino-genre','Themenkino'),('actionkino','Action'),
+               ('thrillerkino','Thriller'),('dramakino','Drama'),('spasskino','Komödien'),
+               ('kinderkino','Kinder'),('starkino','Starkino'),('joyn','Partnerkatalog'),
+               ('waipu','Partnerkatalog'),('funke-fantasja','Partnerkatalog'))
+# Full category lists seen in the same recording (category pages are not paginated:
+# e.g. "starkino" answered with 214 titles, the frontpage excerpt with about 20).
+_KNOWN_LISTS = (('joyn-netzkino','Netzkino (Joyn)'),('waipu-netzkino','Netzkino (waipu)'),
+                ('western','Western'),('krimi','Krimi'),('drama-dramakino','Drama'),('sozialdrama','Sozialdrama'),
+                ('schwarze-komodien','Schwarze Komödien'),('familienfilme','Familienfilme'),('halloween','Halloween'),
+                ('themenkino-top-rated-imdb','Top Rated IMDb'),
+                ('themenkino-filme-nach-wahren-begebenheiten','Filme nach wahren Begebenheiten'),
+                ('themenkino-made-in-germany-filme-aus-deutschland','Made in Germany'),
+                ('joyn-moviedome-family','Moviedome Family'),('waipu-bronco','Bronco'),('ausgezeichnet-2','Ausgezeichnet'))
+_ROOT_SLUGS = frozenset(slug for slug,_ in _TREE_ROOTS)
+_SEED_CATEGORIES = _TREE_ROOTS + _KNOWN_LISTS
+_MAX_KNOWN = 800
 _GRAPHQL_LIMIT = 4 * 1024 * 1024
 _REQUEST_GAP_SECONDS = 0.7
-_SYNC_MAX_SECONDS = 420
+_SYNC_MAX_SECONDS = 900
 
 class GraphQLCatalogError(ValueError):
     """A provider's public catalog query failed without storing raw responses."""
@@ -299,6 +318,7 @@ def state(root):
             'last_complete_success':float(_get(db,'last_complete_success','0')),
             'time_budget_hit':_get(db,'time_budget_hit','0')=='1',
             'categories_discovered':int(_get(db,'categories_discovered','0')),
+            'categories_known':len(json.loads(_get(db,'known_category_slugs','[]') or '[]')),
             'category_pagination':json.loads(_get(db,'category_pagination','{}')),
             'category_total_max':int(_get(db,'category_total_max','0')),
             'related_new':int(_get(db,'graphql_related_new','0')),
@@ -695,6 +715,7 @@ def import_recording(root, entries, now=None):
                 if payload is None:ignored+=1;continue
                 answers+=1
                 added+=add_discovered(db,payload,now,source='har_import')
+                remember_categories(db,payload)
             total=db.execute('SELECT COUNT(*) FROM netzkino_catalog').fetchone()[0]
             for key,value in [('har_import_checked',now),('har_import_added',added),
                               ('har_import_answers',answers),('har_operations',json.dumps(operations,sort_keys=True)),
@@ -704,6 +725,32 @@ def import_recording(root, entries, now=None):
     _notify('netzkino_recording_import',answers=answers,added=added,ignored=ignored,operations=len(operations))
     return {'ok':True,'answers':answers,'added':added,'ignored':ignored,'total':total,
             'operations':sorted(operations)}
+
+
+def remember_categories(db, payload):
+    """Keep category slugs seen in any answer (film details, recordings) for the next sync."""
+    found=_discover_categories(payload)
+    if not found:return 0
+    try:known=json.loads(_get(db,'known_category_slugs','[]'))
+    except ValueError:known=[]
+    if not isinstance(known,list):known=[]
+    have={k[0] for k in known if isinstance(k,list) and k}
+    added=0
+    for slug,title in found:
+        if slug not in have and len(known)<_MAX_KNOWN:
+            known.append([slug,title]);have.add(slug);added+=1
+    if added:_set(db,'known_category_slugs',json.dumps(known,ensure_ascii=False))
+    return added
+
+
+def _known_categories(root):
+    db=_connect(root)
+    try:
+        try:known=json.loads(_get(db,'known_category_slugs','[]'))
+        except ValueError:known=[]
+    finally:db.close()
+    return [(k[0],str(k[1] if len(k)>1 else '')[:120]) for k in known if isinstance(k,list) and k
+            and isinstance(k[0],str) and re.fullmatch(r'[\w.\-]{1,140}',k[0])]
 
 
 def _collect_categories(root, output):
@@ -762,6 +809,10 @@ def sync_graphql(root, fetch=None, now=None):
             with db:_set(db,'categories_total',len(cats))
         finally:db.close()
         known={slug for slug,_ in cats};discovered=0;pagination={};total_max=0
+        # Full category lists: tree roots and categories remembered from film details/recordings.
+        for more in list(_SEED_CATEGORIES)+_known_categories(root):
+            if more[0] not in known and discovered<_MAX_DISCOVERED:
+                known.add(more[0]);cats.append(more);discovered+=1
         index=0
         while index<len(cats):
             slug,name=cats[index];index+=1
@@ -770,6 +821,16 @@ def sync_graphql(root, fetch=None, now=None):
                 break
             if fetch is _fetch_graphql:time.sleep(_REQUEST_GAP_SECONDS)
             try:
+                if slug in _ROOT_SLUGS:
+                    # The category page of a tree node lists its subcategories (AllContent).
+                    try:
+                        tree=fetch('AllContent',{'parentSlug':slug,'featuredSlug':'featured-'+slug})
+                        if isinstance(tree,dict) and isinstance(tree.get('data'),dict):tree=tree['data']
+                        for more in _discover_categories(tree):
+                            if more[0] not in known and discovered<_MAX_DISCOVERED:
+                                known.add(more[0]);cats.append(more);discovered+=1
+                    except (urllib.error.HTTPError,urllib.error.URLError,TimeoutError,OSError,ValueError):pass
+                    if fetch is _fetch_graphql:time.sleep(_REQUEST_GAP_SECONDS)
                 page=fetch('CategoryDataBySlug',{'slug':slug})
                 if 'data' in page and isinstance(page['data'],dict):page=page['data']
                 if not isinstance(page,dict):raise ValueError('Ungültige Kategorieantwort')

@@ -43,7 +43,7 @@ class GraphQLCatalogTests(unittest.TestCase):
         result=netzkino.sync(self.root,graphql_fetch=fetch,now=120000)
         self.assertTrue(result['ok'],result)
         self.assertEqual(result['new'],2)
-        self.assertEqual(result['categories'],1)
+        self.assertEqual(result['categories'],1+len(netzkino._SEED_CATEGORIES))  # 0.5.34: category tree roots + known full lists
         self.assertEqual(netzkino.count_links(self.root),2)
         films=netzkino.list_links(self.root,query='Ein Filmtitel')
         self.assertEqual(films[0]['url'],'https://www.netzkino.de/details/film-a')
@@ -52,7 +52,7 @@ class GraphQLCatalogTests(unittest.TestCase):
         self.assertEqual(films[0]['access_hint'],'AVOD (Hinweis)')
         self.assertEqual(netzkino.list_links(self.root,query='Eine Serie')[0]['kind'],'series')
         self.assertNotIn('hls',json.dumps(films))
-        self.assertEqual(netzkino.state(self.root)['categories_checked'],1)
+        self.assertEqual(netzkino.state(self.root)['categories_checked'],1+len(netzkino._SEED_CATEGORIES))
         again=netzkino.sync(self.root,graphql_fetch=fetch,now=130000)
         self.assertTrue(again['ok'],again)
         self.assertEqual(again['new'],0)

@@ -52,7 +52,8 @@
         ` · über 20 Titel ${status.category_over_20 || 0}` +
         ` · größte Kategorie ${status.category_max_items || 0}` : '';
       const sitemapDetail = (status.sitemap_entries ? ` · Sitemap ${status.sitemap_entries} Titel (${status.sitemap_new || 0} neu)` : '') +
-        (status.categories_discovered ? ` · ${status.categories_discovered} weitere Kategorien entdeckt` : '') +
+        (status.categories_discovered ? ` · ${status.categories_discovered} weitere Kategorien abgefragt` : '') +
+        (status.categories_known ? ` · ${status.categories_known} Kategorien aus Filmdetails gemerkt` : '') +
         (status.related_new ? ` · ${status.related_new} Titel über Filmdetails ergänzt` : '') +
         (status.har_import_added ? ` · ${status.har_import_added} Titel aus Mitschnitt` : '');
       $('netzkino-sync-summary').textContent =

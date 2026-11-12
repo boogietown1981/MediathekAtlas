@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.35 – Netzkino-Kategoriebaum (12. November 2026)
+
+- `python3 -m unittest discover -s tests` → 522 Tests OK. `test_launcher_with_python_outside_standard_paths` brach im Volllauf einmal mit einem Zeitlimit ab und läuft einzeln grün (bekannte Lastabhängigkeit). Neu: Kategorien aus Filmdetails werden gemerkt und beim nächsten Abgleich vollständig geladen (150 Titel aus einer Kategorie).
+- Abgleich gegen die echten Antworten aus Björns Mitschnitt (lokal ausgewertet, nicht ins Repository übernommen): Kategorie-Struktur, `CmsCategory.parent` und unbegrenzte Kategorielisten (214 Titel) werden erkannt; aus 3 Filmdetails ergeben sich 30 Kategorien.
+- **Nicht geprüft:** Abgleich gegen die Live-API (aus der Build-Umgebung gesperrt), insbesondere ob `AllContent` für die Baumwurzeln Unterkategorien liefert.
+
 ## 0.5.34 – Netzkino-Wiedergabe und Katalogerweiterung (12. November 2026)
 
 - Ausgeführt (Linux, Python 3.13): `python3 -m unittest discover -s tests` → 521 Tests, alle grün nach Neubau des App-Bundles. Neu: 8 Wiedergabetests (Direktwiedergabe der MP4, Offlinekopie hat Vorrang, Zwischenspeicher fürs Spulen, ungültige Kennungen, DRM-Meldung über ytdl-nightly, ffmpeg-Fallback) und 6 Katalogtests (Kategorie-Entdeckung mit Obergrenze, Seitenhinweise, Titel aus Filmdetails, HAR-Import nur von netzkino.de, Diagnoseexport).
