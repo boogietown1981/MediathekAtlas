@@ -106,7 +106,7 @@ async function open(ref,label,key,start){
  const call=++S.call;save();sendStats();S.retried=false;S.embedAlt=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;S.hlsFailed='';S.hlsHeight=0;renderQuality();
  $('player-title').textContent=label||'Wird geladen …';$('player-meta').textContent='';$('player-restart').hidden=true;
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
- let info;try{info=await api('play?'+new URLSearchParams({...ref,quality:wish(),...(hlsWanted()?{levels:'0'}:{})}));}catch(e){if(call===S.call)say(e.message);return;}
+ let info;try{info=await api('play?'+new URLSearchParams({...ref,quality:wish(),...(hlsWanted()?{levels:'0'}:{})}));}catch(e){if(call===S.call)say(e.message+(ref.direct?' Auf youtube.com lässt sich das Video weiterhin ansehen.':''));return;}
  // 0.5.72: a title chosen meanwhile wins; the answer for the earlier one must not start under its name
  // (Björn, 12.11.2026: arte started although another station had been clicked).
  if(call!==S.call)return;
