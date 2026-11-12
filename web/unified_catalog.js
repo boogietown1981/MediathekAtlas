@@ -276,7 +276,11 @@
   }
   // 0.5.55: one tile for every source. The buttons of one offer come from actionNodes(), so a
   // title that several providers offer gets the same buttons per provider inside one tile.
-  function actionNodes(item, withDetails=true) {
+  function canOffline(item) {
+    const night=item.source==='justwatch'&&!item.playable&&!!item.night;
+    return item.kind!=='series' && !!(item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.source==='youtube'?item.offline:(item.playable||night)));
+  }
+  function actionNodes(item, withDetails=true, siblings=null) {
     const nodes=[];
     if (withDetails) {
       const details=el('button',item.kind==='series'?'Folgen & Details':'Details','atlas-uc-details');
@@ -313,8 +317,10 @@
     // 0.5.52: only with a real time window; other titles without a stream are copy protected.
     const night=item.source==='justwatch'&&!item.playable&&!!item.night;
     if (item.source==='justwatch'&&item.kind!=='series'&&!item.playable&&!night) { const lock=window.AtlasOffline?.protectedNote(); if (lock) nodes.push(lock); }
-    if (item.kind!=='series' && (item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.source==='youtube'?item.offline:(item.playable||night)))) {
-      const off=window.AtlasOffline?.control(item.source,item.id,item.title,{night});
+    if (canOffline(item)) {
+      // 0.5.63: the other providers of the same title can be chosen in the dialogue before the download
+      const alternatives=(siblings||[]).filter(o=>o!==item&&canOffline(o)).map(o=>({source:o.source,id:o.id}));
+      const off=window.AtlasOffline?.control(item.source,item.id,item.title,{night,alternatives});
       if (off) nodes.push(off);
     }
     return nodes;
@@ -351,7 +357,7 @@
     const description=pickFrom('description',d=>!!d);
     if (description) text.append(el('p',description.slice(0,220),'atlas-uc-desc'));
     const actions=el('div',undefined,'atlas-uc-actions');
-    actions.append(...actionNodes(main));
+    actions.append(...actionNodes(main,true,offers));
     text.append(actions);
     if (offers.length>1) {
       const more=el('details',undefined,'atlas-uc-more');
@@ -360,7 +366,7 @@
         const row=el('div',undefined,'atlas-uc-alt');
         const name=el('button',labelSource(other),'atlas-uc-alt-name');name.type='button';name.title='Titelseite bei '+labelSource(other)+' öffnen';
         name.onclick=()=>openItem(other);
-        const alt=el('div',undefined,'atlas-uc-actions');alt.append(...actionNodes(other,false));
+        const alt=el('div',undefined,'atlas-uc-actions');alt.append(...actionNodes(other,false,offers));
         row.append(name,alt);more.append(row);
       }
       text.append(more);

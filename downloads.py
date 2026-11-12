@@ -88,7 +88,10 @@ def _source_url(row,quality='best'):
     so the rest of the pipeline (MKV, NFO, naming, .partial staging) is shared."""
     if row.get('_resolver')=='netzkino':
         import ytdl_bridge
-        return ytdl_bridge.resolve(row.get('_page_url'))['url']
+        import download_quality
+        # 0.5.63: only a chosen picture height is passed on; "best" resolves exactly as before
+        wish=download_quality.normalize(quality)
+        return (ytdl_bridge.resolve(row.get('_page_url'),quality=wish) if wish.isdigit() else ytdl_bridge.resolve(row.get('_page_url')))['url']
     if row.get('_resolver')=='pluto':
         import pluto_downloads
         return pluto_downloads.resolve(row)
@@ -101,7 +104,8 @@ def _source_url(row,quality='best'):
     if row.get('_resolver')=='youtube':return row.get('url')
     if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
     keys=QUALITY_KEYS
-    return row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
+    import download_quality
+    return row.get('_download_url') or next((row.get(k) for k in keys.get(download_quality.mediathek_key(quality),keys['hd']) if row.get(k)),None)
 
 HLS_RESOLVERS={'pluto','justwatch','rakuten'}
 
@@ -111,12 +115,13 @@ def public_url(row,url):
     if row.get('_resolver') in HLS_RESOLVERS:return str(url).split('?',1)[0]
     return url
 
-def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024,min_share=.85):
+def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024,min_share=.85,playlist=None):
     """Copy an HLS stream (best variant, ffmpeg default selection) into a staged Matroska file.
     Progress comes from ffmpeg's -progress output; a cancel stops ffmpeg at once."""
     ffmpeg=tool('ffmpeg')
-    args=[ffmpeg,'-nostdin','-v','error','-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5',
-          '-i',url,'-sn','-dn','-c','copy','-bsf:a','aac_adtstoasc','-f','matroska','-progress','pipe:1','-nostats','-y',str(src)]
+    # 0.5.63: with a chosen resolution ffmpeg reads a local list that holds this one level (download_quality)
+    args=[ffmpeg,'-nostdin','-v','error']+(['-protocol_whitelist','file,http,https,tcp,tls,crypto','-i',str(playlist)] if playlist else
+          ['-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5','-i',url])+['-sn','-dn','-c','copy','-bsf:a','aac_adtstoasc','-f','matroska','-progress','pipe:1','-nostats','-y',str(src)]
     require_space(directory,reserve)
     update('downloading',0,0,speed=0,eta=None)
     import threading
@@ -188,11 +193,14 @@ def run(row,meta,root,quality,update,cancelled):
             reserve=256*1024*1024
             if fetcher:
                 import youtube_downloads
-                received=youtube_downloads.fetch(row,src,dest.parent,update,cancelled);total=0
+                received=youtube_downloads.fetch({**row,'_quality':quality},src,dest.parent,update,cancelled);total=0
             elif hls:
                 try:expected=float(row.get('duration') or 0)
                 except (TypeError,ValueError):expected=0
-                received=fetch_hls(url,src,dest.parent,expected,update,cancelled,reserve);total=0
+                import download_quality
+                try:playlist,level=download_quality.hls_playlist(url,quality,work)
+                except Exception:playlist,level=None,None   # no levels readable: best level as before
+                received=fetch_hls(url,src,dest.parent,expected,update,cancelled,reserve,playlist=playlist);total=0
             else:
                 with core.open_url(url) as response,src.open('wb') as f:
                     ctype=response.headers.get('Content-Type','').lower()

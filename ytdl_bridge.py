@@ -195,7 +195,7 @@ def _error(exc):
     return ResolveError('Netzkino-Adresse konnte nicht aufgelöst werden')
 
 
-def resolve(url, *, ytdl=None):
+def resolve(url, *, ytdl=None, quality='best'):
     """Return {'url','title','duration',...} for one Netzkino details page."""
     page = page_url(url)
     ytdl = ytdl or load()
@@ -216,6 +216,12 @@ def resolve(url, *, ytdl=None):
     except Exception as exc:  # youtube_dl wraps extractor errors in DownloadError
         raise _error(exc) from None
     media = info.get('url') or ((info.get('formats') or [{}])[-1]).get('url')
+    if quality and quality != 'best':
+        # 0.5.63: a resolution chosen before the download, when Netzkino publishes several MP4 files
+        import download_quality
+        chosen = download_quality.pick_format(info.get('formats'), quality)
+        if chosen:
+            media = chosen['url']
     if not isinstance(media, str) or not media.lower().split('?', 1)[0].endswith('.mp4'):
         raise ResolveError('Netzkino veröffentlicht für diesen Titel keine direkte MP4-Datei')
     return {'url': media, 'page_url': page, 'title': info.get('title') or '',

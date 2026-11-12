@@ -9,7 +9,7 @@
 // seekable length in the browser, so this player brings its own timeline and restarts the stream at the
 // chosen position. Playback positions are remembered per title on this device.
 (()=>{
-const S={info:null,offset:0,session:'',list:[],index:-1,key:'',mode:'',saved:0,retried:false,drag:false,seekTimer:0};
+const S={info:null,offset:0,session:'',list:[],index:-1,key:'',mode:'',saved:0,retried:false,drag:false,seekTimer:0,ref:null,level:'',stats:null};
 const video=$('player-video'),bar=$('player-bar'),slider=$('player-seek'),time=$('player-time'),status=$('player-status'),toggle=$('player-toggle'),dialog=$('player');
 const fmt=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=String(s%60).padStart(2,'0');return h?h+':'+String(m).padStart(2,'0')+':'+x:m+':'+x;};
 const store=k=>{try{return JSON.parse(localStorage.getItem('atlas-play:'+k)||'null');}catch{return null;}};
@@ -20,27 +20,63 @@ const duration=()=>S.mode==='embed'?S.info?.duration||0:S.mode==='remux'?S.info?
 function episodeKey(item){return item.work_id||item.id;}
 function say(text){status.textContent=text||'';status.hidden=!text;}
 function save(final){if(!S.key||S.info?.live)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});return;}if(p>20)remember(S.key,{pos:p,at:Date.now()});}
-function streamUrl(t){return S.info.remux+'&'+new URLSearchParams({t:t.toFixed(1),session:S.session,token});}
-function startRemux(t){S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
-function startDirect(src,t){S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
+function streamUrl(t){return S.info.remux+'&'+new URLSearchParams({t:t.toFixed(1),session:S.session,token,quality:S.level||wish()});}
+// 0.5.63: quality of the playback. The wish ('auto', 'max' or a picture height) is remembered on this
+// device. "Automatisch" loads at most 720p and steps down one level when the stream keeps waiting.
+const qualityBox=$('player-quality-box'),qualitySelect=$('player-quality'),AUTO_HEIGHT=720;
+function wish(){try{const v=localStorage.getItem('atlas-play-quality')||'auto';return /^(auto|max|\d{3,4})$/.test(v)?v:'auto';}catch{return 'auto';}}
+function levels(){return (S.info?.levels||[]).filter(l=>l.height>0).sort((a,b)=>b.height-a.height);}
+// Height the server plays for a wish (same rule as hls_variants.choose): largest level that fits, else the smallest.
+function heightFor(w){const all=levels();if(!all.length)return 0;if(w==='max')return (S.info.hls?all[0]:all.find(l=>l.height<=1080)||all[all.length-1]).height;const top=w==='auto'?AUTO_HEIGHT:Number(w)||AUTO_HEIGHT;return (all.find(l=>l.height<=top)||all[all.length-1]).height;}
+function currentHeight(){return heightFor(S.level||wish());}
+function renderQuality(){const all=levels(),info=S.info;
+ // Nothing to choose: one level only, local files, YouTube.
+ const show=!!info&&info.origin==='online'&&info.mode!=='embed'&&all.length>1,own=info&&info.hls&&nativeHls();
+ qualityBox.hidden=!show;if(!show)return;
+ const w=wish(),auto=heightFor('auto');
+ qualitySelect.replaceChildren(new Option(own?'Automatisch (Browser passt an)':'Automatisch ('+(S.level?'jetzt '+currentHeight():'bis '+auto)+'p)','auto'),new Option('Beste ('+heightFor('max')+'p)','max'),...all.map(l=>new Option(l.height+'p'+(l.bandwidth?' · '+(l.bandwidth/1e6).toFixed(1).replace('.',',')+' Mbit/s':''),String(l.height))));
+ qualitySelect.value=[...qualitySelect.options].some(o=>o.value===w)?w:'auto';}
+qualitySelect.onchange=async()=>{try{localStorage.setItem('atlas-play-quality',qualitySelect.value);}catch{}
+ S.level='';S.retried=false;const info=S.info;if(!info)return;const t=info.live?0:position();
+ // Safari and the macOS app play HLS themselves and adapt on their own ("Automatisch"); a fixed level
+ // comes through MediathekAtlas (ffmpeg) because the browser offers no choice of its own.
+ if(info.hls){renderQuality();describe(info);if(nativeHls()&&wish()==='auto'&&info.url)startDirect(info.url,t);else if(info.ffmpeg)startRemux(t);else say('Für eine feste Qualitätsstufe wird ffmpeg benötigt.');return;}
+ if(S.mode==='remux'){renderQuality();startRemux(t);return;}
+ // Broadcaster files: every resolution is its own file, so the address is looked up again.
+ try{const next=await api('play?'+new URLSearchParams({...S.ref,quality:wish()}));S.info=next;renderQuality();describe(next);if(next.mode==='direct')startDirect(next.src,t);else startRemux(t);}catch(e){say(e.message);}};
+// Waiting pauses of the running stream: for the automatic step-down and for the diagnosis.
+function newStats(){return {began:Date.now(),first:0,playing:0,watched:0,stalls:0,stallSeconds:0,stallAt:0,recent:[],reduced:0,reducedAt:0,sent:false};}
+function stallEnd(){const st=S.stats;if(!st||!st.stallAt)return;const d=(Date.now()-st.stallAt)/1000;st.stallAt=0;if(d<0.3)return;st.stalls++;st.stallSeconds+=d;st.recent.push([Date.now(),d]);}
+function stallLoad(){const st=S.stats;if(!st)return 0;const now=Date.now();st.recent=st.recent.filter(x=>now-x[0]<60000);return st.recent.reduce((a,x)=>a+x[1],0)+(st.stallAt?(now-st.stallAt)/1000:0);}
+function stepDown(){const st=S.stats;if(!st||S.mode!=='remux'||wish()!=='auto'||!st.first||Date.now()-st.reducedAt<30000)return;
+ if(stallLoad()<6)return;const lower=levels().find(l=>l.height<currentHeight());if(!lower)return;
+ stallEnd();st.recent=[];st.reduced++;st.reducedAt=Date.now();S.level=String(lower.height);renderQuality();
+ notice('Die Verbindung reicht für diese Qualität nicht. Wiedergabe läuft mit '+lower.height+'p weiter; unter „Qualität“ lässt sich eine feste Stufe wählen.');
+ startRemux(S.info.live?0:position());}
+function sendStats(){const st=S.stats,info=S.info;if(!st||st.sent||!info)return;stallEnd();if(st.playing)st.watched+=(Date.now()-st.playing)/1000;st.playing=0;
+ if(st.watched<5&&!st.stalls)return;st.sent=true;
+ api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String(currentHeight()||''),native:!!(info.hls&&S.mode==='direct'),watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
+function startRemux(t){if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
+function startDirect(src,t){S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
 function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode==='direct'){video.currentTime=t;return;}
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.
  S.offset=t;slider.value=t;time.textContent=fmt(t)+' / '+fmt(d);clearTimeout(S.seekTimer);S.seekTimer=setTimeout(()=>startRemux(t),350);}
 async function open(ref,label,key,start){
- save();S.retried=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();
+ save();sendStats();S.retried=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;renderQuality();
  $('player-title').textContent=label||'Wird geladen …';$('player-meta').textContent='';$('player-restart').hidden=true;
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
- let info;try{info=await api('play?'+new URLSearchParams(ref));}catch(e){say(e.message);return;}
- S.info=info;$('player-title').textContent=info.title||label||'Video';
- $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls())?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');
+ let info;try{info=await api('play?'+new URLSearchParams({...ref,quality:wish()}));}catch(e){say(e.message);return;}
+ S.info=info;S.stats=newStats();$('player-title').textContent=info.title||label||'Video';describe(info);renderQuality();
  const last=start===0||info.live?null:store(S.key);let t=last&&!last.done&&last.pos>20&&(!info.duration||last.pos<info.duration-45)?last.pos:0;
  $('player-restart').hidden=!t;
  if(t)notice('Fortgesetzt bei '+fmt(t)+'. „Von vorn“ startet neu.');
  if(info.mode==='embed'){startEmbed(info,t);return;}
  if(info.mode==='direct')startDirect(info.src,t);
- else if(info.hls&&info.url&&nativeHls())startDirect(info.url,t);
+ else if(info.hls&&info.url&&nativeHls()&&(wish()==='auto'||!info.ffmpeg))startDirect(info.url,t);
  else if(!info.ffmpeg)say('Für diesen Stream wird ffmpeg benötigt. Unter Einstellungen die Werkzeugprüfung öffnen.');
  else startRemux(t);}
+function describe(info){
+ $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls()&&wish()==='auto')?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');}
 // 0.5.53: YouTube – the official embedded player (youtube-nocookie.com). Its IFrame API reports the
 // position via postMessage, so "Weiterschauen" works as for every other title.
 function startEmbed(info,t){S.mode='embed';S.embedPos=t||0;stage.classList.add('embed');embed.hidden=false;
@@ -78,7 +114,7 @@ window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};
 window.playable=function(item){return !!(item&&(item.series_parent||item.downloaded||(item.links||[]).some(l=>/^https?:\/\//i.test(l.url)&&!/\.mpd(\?|$)/i.test(l.url))));};
-function close(){save();stopVideo();S.key='';if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(dialog.open)dialog.close();}
+function close(){save();sendStats();stopVideo();qualityBox.hidden=true;S.key='';if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(dialog.open)dialog.close();}
 $('player-close').onclick=close;dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
 $('player-next').onclick=()=>{save('ended');playIndex(S.index+1);};
 $('player-restart').onclick=()=>{remember(S.key,null);$('player-restart').hidden=true;if(S.mode==='embed'){startEmbed(S.info,0);return;}S.mode==='remux'?startRemux(0):seek(0);};
@@ -89,9 +125,10 @@ $('player-back').onclick=()=>seek(position()-10);$('player-fwd').onclick=()=>see
 slider.oninput=()=>{S.drag=true;time.textContent=fmt(Number(slider.value))+' / '+fmt(duration());};
 slider.onchange=()=>{S.drag=false;seek(Number(slider.value));};
 video.addEventListener('timeupdate',()=>{if(S.mode!=='remux'||S.drag)return;const p=position();slider.value=p;time.textContent=fmt(p)+' / '+fmt(duration());});
-video.addEventListener('playing',()=>{say('');toggle.textContent='❚❚';});
-video.addEventListener('pause',()=>{toggle.textContent='▶';save();});
-video.addEventListener('waiting',()=>say('Puffern …'));
+video.addEventListener('playing',()=>{say('');toggle.textContent='❚❚';S.fresh=false;const st=S.stats;if(st){stallEnd();if(!st.first)st.first=(Date.now()-st.began)/1000;if(!st.playing)st.playing=Date.now();}});
+video.addEventListener('pause',()=>{toggle.textContent='▶';save();const st=S.stats;if(st&&st.playing){st.watched+=(Date.now()-st.playing)/1000;st.playing=0;}});
+video.addEventListener('waiting',()=>{say('Puffern …');const st=S.stats;if(st&&st.first&&!S.fresh&&!st.stallAt&&!video.seeking)st.stallAt=Date.now();});
+setInterval(()=>{if(dialog.open)stepDown();},2000);
 video.addEventListener('ended',()=>{save('ended');if(S.list[S.index+1])playIndex(S.index+1);else say('Ende');});
 video.addEventListener('error',()=>{if(!S.info||!video.getAttribute('src'))return;
  // A browser that cannot decode the broadcaster's file (or an unsupported container) gets the ffmpeg stream instead.
@@ -99,5 +136,5 @@ video.addEventListener('error',()=>{if(!S.info||!video.getAttribute('src'))retur
  say(S.mode==='remux'?'Wiedergabe fehlgeschlagen. Details im Live-Protokoll; häufige Ursache: Stream nicht mehr verfügbar oder Geosperre.':'Diese Datei kann der Browser nicht abspielen.');});
 setInterval(()=>{if(dialog.open&&!video.paused)save();},10000);
 dialog.addEventListener('keydown',e=>{if(e.target.tagName==='INPUT'&&e.target!==slider)return;if(e.key===' '||e.key==='k'){e.preventDefault();toggle.click();}else if(e.key==='ArrowLeft'&&e.target!==slider){e.preventDefault();seek(position()-10);}else if(e.key==='ArrowRight'&&e.target!==slider){e.preventDefault();seek(position()+10);}else if(e.key==='f'){$('player-full').click();}});
-window.addEventListener('pagehide',()=>save());
+window.addEventListener('pagehide',()=>{save();sendStats();});
 })();

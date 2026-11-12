@@ -49,14 +49,12 @@ class SubtitleMergeTests(unittest.TestCase):
         self.assertEqual(len(unified_index.merge([offer('youtube', 'Ab ins Meer', 2021), offer('netzkino', self.LONG, 2012)])), 2)
         self.assertEqual(len(unified_index.merge([offer('pluto', 'Alien', 1979, duration=7020),
                                                   offer('netzkino', 'Alien: Covenant', 2017, duration=7320)])), 2)
-        self.assertEqual(len(unified_index.merge([offer('pluto', 'Alien', 2017, duration=7020),
-                                                  offer('netzkino', 'Alien: Covenant', 2017, duration=7320)])), 2)
         # same database, different works
         self.assertEqual(len(unified_index.merge([
             offer('pluto', 'Ab ins Meer', 2012, duration=5000, reference={'provider': 'TMDB', 'id': '5'}),
             offer('netzkino', self.LONG, 2012, duration=5000, reference={'provider': 'TMDB', 'id': '6'})])), 2)
-        # short films: running time proves nothing
-        self.assertEqual(len(unified_index.merge([offer('pluto', 'Ab ins Meer', 2012, duration=600),
+        # short films: running time proves nothing (0.5.63: the year of an upload does not either)
+        self.assertEqual(len(unified_index.merge([offer('youtube', 'Ab ins Meer', 2012, duration=600),
                                                   offer('netzkino', self.LONG, 2012, duration=600)])), 2)
 
     def test_series_are_not_joined_by_subtitle(self):

@@ -30,6 +30,7 @@ from pathlib import Path
 
 TTL = 60.0
 _MAX = 40
+FORMAT = 2           # 2 (0.5.63): rows carry reference year and title for the merged catalogue
 _MEM = {}            # key -> {'data': dict, 'stamp': str, 'built': monotonic, 'used': monotonic}
 _LOCK = threading.Lock()
 _BUILD = {}          # source -> Lock, one build per platform at a time
@@ -66,7 +67,7 @@ def _write(key, data, stamp):
     try:
         path.parent.mkdir(parents=True, exist_ok=True)
         tmp = path.with_suffix('.tmp')
-        tmp.write_text(json.dumps({'version': 1, 'key': list(key), 'stamp': stamp, 'saved': time.time(), 'data': data},
+        tmp.write_text(json.dumps({'version': FORMAT, 'key': list(key), 'stamp': stamp, 'saved': time.time(), 'data': data},
                                   separators=(',', ':')), encoding='utf-8')
         tmp.replace(path)
     except (OSError, TypeError, ValueError):
@@ -79,7 +80,7 @@ def _read(key):
         return None
     try:
         stored = json.loads(path.read_text(encoding='utf-8'))
-        if stored.get('version') != 1 or stored.get('key') != list(key) or not isinstance(stored['data'].get('items'), list):
+        if stored.get('version') != FORMAT or stored.get('key') != list(key) or not isinstance(stored['data'].get('items'), list):
             return None
     except (OSError, ValueError, AttributeError, KeyError, TypeError):
         return None

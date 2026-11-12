@@ -88,7 +88,10 @@
     const wrap = make('section', undefined, 'livetv-group');
     wrap.append(make('h3', title + ' · ' + stations.length, 'livetv-group-title'));
     const grid = make('div', undefined, 'livetv-grid');
-    for (const s of stations) grid.append(tile(s, favs));
+    for (const s of stations) {
+      try { grid.append(tile(s, favs)); }
+      catch (e) { window.atlasReportError?.('live-tv Sender: ' + e.message); }   // 0.5.63: the other stations stay
+    }
     wrap.append(grid);
     return wrap;
   }
@@ -129,11 +132,16 @@
     waiting?.();
     if (call !== seq) return;
     data = d;
-    filters(d);
-    render();
+    // 0.5.63: one faulty station entry must not empty the whole tab; the reason is shown and reported.
+    try { filters(d); render(); }
+    catch (e) { say('Live-Sender konnten nicht dargestellt werden: ' + e.message, true); window.atlasReportError?.('live-tv: ' + e.message); return; }
     const extra = hints(d);
-    say((d.total ? d.total + ' Sender' : 'Keine passenden Sender.') + (extra.length ? ' · ' + extra.join(' · ') : ''),
+    const all = (d.providers || []).reduce((n, p) => n + (p.channels || 0), 0);
+    // A filter that hides everything is named, with one click back to all stations.
+    const narrowed = !d.total && all > 0 && (params.q || provider || group);
+    say((d.total ? d.total + ' Sender' : narrowed ? 'Keine Sender für diese Auswahl (' + [params.q && 'Suche „' + params.q + '“', provider && 'Anbieter', group && 'Gruppe „' + group + '“'].filter(Boolean).join(', ') + ').' : 'Keine Sender gefunden.') + (extra.length ? ' · ' + extra.join(' · ') : ''),
       (d.providers || []).some(p => p.error));
+    if (narrowed) { const reset = make('button', 'Alle Sender zeigen'); reset.type = 'button'; reset.onclick = () => { $('livetv-filter').value = ''; provider = ''; group = ''; refresh(); }; $('livetv-status').append(' ', reset); }
   }
 
   $('livetv-filter').oninput = () => { clearTimeout(timer); timer = setTimeout(refresh, 250); };

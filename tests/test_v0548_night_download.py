@@ -89,7 +89,7 @@ class WiringTests(unittest.TestCase):
         self.assertIn('Heute Nacht offline speichern', button)
         self.assertIn('Vorgemerkt für', button)
         self.assertIn('nightOffline: true', (web / 'justwatch.js').read_text(encoding='utf-8'))
-        self.assertIn('{night}', (web / 'unified_catalog.js').read_text(encoding='utf-8'))
+        self.assertIn('{night,alternatives}', (web / 'unified_catalog.js').read_text(encoding='utf-8'))
         self.assertIn('Geplant für', (web / 'app.js').read_text(encoding='utf-8'))
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
         self.assertIn('job_queue.next_job(c)', server)

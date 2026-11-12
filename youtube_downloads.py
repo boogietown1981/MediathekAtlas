@@ -158,6 +158,15 @@ def _progress(line):
     return d, t
 
 
+def _format(row):
+    """0.5.63: the resolution chosen before the download ('best' = up to 1080p as before)."""
+    wish = row.get('_quality')
+    if not wish or wish == 'best':
+        return FORMAT
+    import download_quality
+    return download_quality.youtube_format(wish)
+
+
 def fetch(row, src, directory, update, cancelled, runner=None):
     """Download one video with yt-dlp into ``src`` (merged by ffmpeg). Returns the size."""
     import downloads, youtube
@@ -174,7 +183,7 @@ def fetch(row, src, directory, update, cancelled, runner=None):
     work = Path(tempfile.mkdtemp(prefix='.yt-', suffix='.partial', dir=str(Path(src).parent)))
     ffmpeg = downloads.tool('ffmpeg')
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
-            '--no-mtime', '--no-part', '--newline', '--no-warnings', '-f', FORMAT,
+            '--no-mtime', '--no-part', '--newline', '--no-warnings', '-f', _format(row),
             '--merge-output-format', 'mkv', '--progress-template', 'download:MAP %(progress.downloaded_bytes)s %(progress.total_bytes)s',
             '-o', str(work / 'video.%(ext)s')]
     if ffmpeg:

@@ -78,6 +78,12 @@ def summary(provider_genres, report):
     sel = selected(report)
     if sel:
         out['reference'] = {'provider': sel['provider'], 'id': sel['reference_id']}
+        # 0.5.63: year and title of the reference prove in the merged catalogue that "Ab ins Meer"
+        # (upload without a year) and "Ab ins Meer: Auf der Suche …" (2012) are one film.
+        if isinstance(sel.get('year'), int) and not isinstance(sel.get('year'), bool):
+            out['reference']['year'] = sel['year']
+        if sel.get('title'):
+            out['reference']['title'] = str(sel['title'])[:240]
     return out
 
 

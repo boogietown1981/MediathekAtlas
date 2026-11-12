@@ -77,6 +77,67 @@
   const soon = {};
   function schedule(source) { clearTimeout(soon[source]); soon[source] = setTimeout(() => refresh(source), 60); }
 
+  /* 0.5.63 (Björn, 12.11.2026): before an offline copy the resolution and - when a title is offered
+     by several providers - the provider can be chosen. One small dialogue for every platform; the
+     last resolution is remembered on this device. Resolves to {source, id, quality} or null. */
+  const HEIGHT_HINT = {2160: '4K, sehr große Datei', 1080: 'Full HD', 720: 'HD', 480: 'kleine Datei, für langsames Internet', 360: 'sehr kleine Datei'};
+  function lastQuality() { try { const v = localStorage.getItem('atlas-download-quality') || 'best'; return /^(best|\d{3,4})$/.test(v) ? v : 'best'; } catch (e) { return 'best'; } }
+  function choose(ctl, title, alternatives) {
+    return new Promise(done => {
+      const offers = [{source: ctl.source, id: ctl.id}, ...(alternatives || []).filter(o => state[o.source] && o.id && !(o.source === ctl.source && o.id === ctl.id))];
+      const box = make('dialog', undefined, 'atlas-offline-choice'); box.setAttribute('aria-label', 'Offline speichern: Auflösung und Anbieter');
+      const form = make('form'); form.method = 'dialog';
+      form.append(make('h3', 'Offline speichern'), make('p', title || 'Titel', 'atlas-offline-choice-title'));
+      let chosen = offers[0];
+      const info = make('small', '', 'muted atlas-offline-choice-info');
+      const select = make('select'); select.setAttribute('aria-label', 'Auflösung');
+      const fill = heights => {
+        const keep = select.value || lastQuality();
+        select.replaceChildren(new Option('Beste verfügbare', 'best'), ...heights.map(h => new Option('höchstens ' + h + 'p' + (HEIGHT_HINT[h] ? ' (' + HEIGHT_HINT[h] + ')' : ''), String(h))));
+        select.value = [...select.options].some(o => o.value === keep) ? keep : 'best';
+      };
+      fill([2160, 1080, 720, 480, 360]);
+      let asked = 0;
+      const loadLevels = async () => {
+        const mine = ++asked; info.textContent = 'Verfügbare Stufen bei ' + SOURCES[chosen.source].name + ' werden abgefragt …';
+        try {
+          const d = await window.api('download-options?' + new URLSearchParams({source: chosen.source, id: chosen.id}));
+          if (mine !== asked || !box.isConnected) return;
+          const levels = (d.levels || []).filter(l => l.height > 0);
+          info.textContent = levels.length ? 'Bei ' + SOURCES[chosen.source].name + ' verfügbar: ' + levels.map(l => l.height + 'p' + (l.bandwidth ? ' (' + (l.bandwidth / 1e6).toFixed(1).replace('.', ',') + ' Mbit/s)' : '')).join(' · ') + '. Gibt es die gewählte Stufe nicht, wird die nächstkleinere geladen.' : (d.note || '');
+        } catch (e) { if (mine === asked) info.textContent = 'Stufen nicht abfragbar: ' + e.message; }
+      };
+      if (offers.length > 1) {
+        const group = make('fieldset', undefined, 'atlas-offline-choice-providers'); group.append(make('legend', 'Anbieter'));
+        offers.forEach((o, i) => {
+          const label = make('label'), radio = make('input'); radio.type = 'radio'; radio.name = 'atlas-offline-provider'; radio.checked = i === 0;
+          const job = state[o.source].jobs.get(o.id), busy = job && (ACTIVE.includes(job.state) || job.state === 'done');
+          radio.disabled = !!busy || !!state[o.source].tool;
+          radio.onchange = () => { chosen = o; loadLevels(); };
+          label.append(radio, ' ' + SOURCES[o.source].name + (busy ? ' · ' + LABELS[job.state] : state[o.source].tool ? ' · ' + state[o.source].tool : ''));
+          group.append(label);
+        });
+        form.append(group);
+      }
+      const row = make('label', 'Auflösung ', 'atlas-offline-choice-quality'); row.append(select);
+      const buttons = make('div', undefined, 'atlas-offline-choice-buttons');
+      const ok = make('button', '⬇ Speichern', 'primary'); ok.type = 'submit'; ok.value = 'ok';
+      const no = make('button', 'Abbrechen'); no.type = 'button'; no.onclick = () => box.close('');
+      buttons.append(ok, no);
+      form.append(row, info, make('small', 'Die Kopie ist ' + state[chosen.source].days + ' Tage offline nutzbar. Die Auswahl gilt für diesen Titel; die Auflösung wird für das nächste Mal gemerkt.', 'muted'), buttons);
+      box.append(form);
+      box.addEventListener('click', ev => ev.stopPropagation());
+      box.addEventListener('close', () => {
+        const result = box.returnValue === 'ok' ? {source: chosen.source, id: chosen.id, quality: select.value} : null;
+        if (result) { try { localStorage.setItem('atlas-download-quality', result.quality); } catch (e) { /* private mode */ } }
+        box.remove(); done(result);
+      });
+      // Inside an open dialogue (title page) the new one must be its child to lie on top in every browser.
+      (ctl.node.closest('dialog[open]') || document.body).append(box);
+      box.showModal(); ok.focus(); loadLevels();
+    });
+  }
+
   /* One control per tile or episode row; the node unregisters itself when it leaves the page. */
   function control(source, id, title, opts) {
     const st = state[source]; if (!st || !id) return null;
@@ -91,9 +152,13 @@
       try {
         if (job && FAILED.includes(job.state)) await window.api('retry', {id: job.id});
         else {
-          const r = await window.api(source + '-download-add', {id});
-          ctl.message = r.created ? '' : 'Bereits eingereiht oder offline verfügbar';
-          if (r.created) window.notice?.('„' + (title || 'Titel') + '“ ' + (ctl.night ? 'ist für heute Nacht vorgemerkt.' : 'wird offline gespeichert (' + st.days + ' Tage).'));
+          const pick = await choose(ctl, title, typeof opts?.alternatives === 'function' ? opts.alternatives() : opts?.alternatives);
+          if (!pick) { button.disabled = false; paint(ctl); return; }
+          const r = await window.api(pick.source + '-download-add', {id: pick.id, quality: pick.quality});
+          const other = pick.source !== source || pick.id !== id, how = pick.quality === 'best' ? 'beste verfügbare Auflösung' : 'höchstens ' + pick.quality + 'p';
+          ctl.message = r.created ? (other ? 'Wird von ' + SOURCES[pick.source].name + ' gespeichert.' : '') : 'Bereits eingereiht oder offline verfügbar';
+          if (r.created) window.notice?.('„' + (title || 'Titel') + '“ ' + (ctl.night && !other ? 'ist für heute Nacht vorgemerkt' : 'wird offline gespeichert') + ' (' + SOURCES[pick.source].name + ', ' + how + ', ' + state[pick.source].days + ' Tage).');
+          if (other) refresh(pick.source);
         }
       } catch (e) { ctl.message = 'Kein Download gestartet: ' + e.message; note.textContent = ctl.message; note.className = 'atlas-offline-note nk-warning'; button.disabled = false; return; }
       await refresh(source);

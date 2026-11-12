@@ -1,5 +1,6 @@
 // 0.5.57: script errors are sent to the local diagnosis, so a view that stays empty can be explained.
 (()=>{let sent=0;const report=(message,source,line)=>{if(sent>=5)return;sent+=1;try{fetch('/api/client-error',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Token':document.querySelector('meta[name=atlas-token]')?.content||''},body:JSON.stringify({message:String(message||''),source:String(source||'').split('/').pop(),line:String(line||''),view:String(window.atlasCurrentView?.()||'')})}).catch(()=>{});}catch(e){}};
+window.atlasReportError=m=>report(m,'','');
 window.addEventListener('error',e=>report(e.message,e.filename,e.lineno));
 window.addEventListener('unhandledrejection',e=>report('Promise: '+(e.reason?.message||e.reason),'',''));})();
 let providerPauses={},lastArtwork=-1;const artworkRequested=new Set();

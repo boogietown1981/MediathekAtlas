@@ -106,19 +106,48 @@ def _evidence(offer):
         duration = float(item.get('duration') or 0)
     except (TypeError, ValueError):
         duration = 0.0
-    return ids, duration
+    # year: the one of the reference; the provider's own only where it is the film's year (not an upload date)
+    year = _year(ref.get('year')) or (None if offer['source'] in LOOSE_YEAR else _year(offer.get('year')))
+    titles = {k for k in _keys(offer) if k}
+    if ref.get('title'):
+        titles.add(title_key(ref['title']))
+    words = _words(item.get('summary') or item.get('description') or '')
+    return {'ids': ids, 'duration': duration, 'year': year, 'titles': titles - {''}, 'words': words}
+
+
+def _words(text):
+    text = unicodedata.normalize('NFKD', str(text or '').replace('ß', 'ss')).casefold()
+    return {w for w in re.findall(r'[a-z0-9]{5,}', text)}
 
 
 def _same_work(a, b):
-    """Extra proof for "title" against "title: subtitle": the same reference ID, or running times
-    of feature length that differ by two minutes at most. "Alien" never joins "Alien: Covenant"."""
-    ids_a, dur_a = _evidence(a)
-    ids_b, dur_b = _evidence(b)
-    if ids_a & ids_b:
+    """Extra proof for "title" against "title: subtitle" from two providers. "Alien" (1979) never
+    joins "Alien: Covenant" (2017).
+
+    Against: both were matched to the same database with different entries, the years of the films
+    lie more than one apart, or the running times differ by more than 15 %.
+    For (0.5.63, more generous - Björn, 12.11.2026: "Ab ins Meer" still twice with 0.5.61): the same
+    reference ID, the full title of one is a known title of the other (reference title), the same
+    year (one apart at most), running times of feature length within two minutes, or descriptions
+    that largely use the same words. A missing year is no contradiction, but no proof either."""
+    ea, eb = _evidence(a), _evidence(b)
+    if ea['ids'] & eb['ids']:
         return True
-    if {p for p, _ in ids_a} & {p for p, _ in ids_b}:
+    if {p for p, _ in ea['ids']} & {p for p, _ in eb['ids']}:
         return False   # both checked against the same database with different results
-    return dur_a >= 2400 and dur_b >= 2400 and abs(dur_a - dur_b) <= 120
+    if ea['year'] and eb['year'] and abs(ea['year'] - eb['year']) > 1:
+        return False
+    da, db = ea['duration'], eb['duration']
+    if da >= 600 and db >= 600 and abs(da - db) > 0.15 * max(da, db):
+        return False
+    if ea['titles'] & eb['titles']:
+        return True
+    if ea['year'] and eb['year']:
+        return True
+    if da >= 2400 and db >= 2400 and abs(da - db) <= 120:
+        return True
+    wa, wb = ea['words'], eb['words']
+    return len(wa) >= 8 and len(wb) >= 8 and len(wa & wb) >= 0.5 * min(len(wa), len(wb))
 
 
 def merge(offers, enabled=True, subtitles=True):

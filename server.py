@@ -2,7 +2,7 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads
 from version import VERSION
 from contextlib import contextmanager
@@ -289,6 +289,7 @@ class _SnapshotSource:
         return portal_snapshot.page(self.source,view,lambda:self.module.grouped_catalog(ROOT,view=view,series_key='',query=query,origin='all',offset=0,limit='all',genre=genre,sort=sort,collection=collection),
             stamp=self._stamp(),query=query,genre=genre,sort=sort,collection=collection,offset=0,limit='all')
 _CLIENT_ERRORS=[0]
+_PLAYBACK_STATS=[0]
 task_control.configure(ROOT/'task-control.json')
 def imdb_updated():
     with db() as c:
@@ -372,6 +373,15 @@ def downloads_range(header,size):
     if start>=size or end<start:return 'invalid'
     return (start,min(end,size-1))
 
+def _play_quality(q):
+    """Quality wish of the player from the query: 'auto', 'max' or a picture height."""
+    wish=str((q.get('q') or q.get('quality') or ['auto'])[0] or 'auto').strip().lower()
+    return wish if wish in ('auto','max') or (wish.isdigit() and len(wish)<=4) else 'auto'
+def _unlink(path):
+    if path:
+        try:Path(path).unlink()
+        except OSError:pass
+
 class Handler(BaseHTTPRequestHandler):
     def log_message(self,*a):pass
     def send(self,data,status=200,ctype='application/json',cookies=()):
@@ -429,9 +439,16 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/live-tv':
             # 0.5.50: live channels of all sources, merged by station (web/live_tv.js).
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            began=time.monotonic()
             with db() as c:data=live_tv.overview(c,ROOT,query=q.get('q',[''])[0][:100],
                                                  provider=q.get('provider',[''])[0][:20],group=q.get('group',[''])[0][:120])
             data['pluto']=pluto.state(ROOT)
+            # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
+            # platforms still played them): an empty or slow answer leaves a line in the diagnosis.
+            took=round(time.monotonic()-began,2)
+            if not data['total'] or took>3 or any(p['error'] for p in data['providers']):
+                diagnostics.event('live_tv_overview',level='WARNING',total=data['total'],seconds=took,filtered=bool(q.get('q',[''])[0] or q.get('provider',[''])[0] or q.get('group',[''])[0]),
+                                  providers={p['key']:p['channels'] for p in data['providers']},errors={p['key']:p['error'] for p in data['providers'] if p['error']})
             return self.send(data)
         if path=='/api/pluto':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -548,6 +565,11 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/netzkino':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
+        if path=='/api/download-options':
+            # 0.5.63: quality levels of one offer for the dialogue before an offline copy
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);source=q.get('source',[''])[0][:20];item=q.get('id',[''])[0][:80]
+            module={'pluto':pluto,'justwatch':justwatch,'rakuten':rakuten}.get(source)
+            return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
         if path=='/api/play':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten')}
             yt_id=q.get('youtube',[''])[0]
@@ -560,15 +582,19 @@ class Handler(BaseHTTPRequestHandler):
                     diagnostics.event('playback_start',mode='embed',origin='online',hls=False,provider='youtube')
                     return self.send(info)
                 ref['job']=done[0]['id']
+            # 0.5.63: the player's wish for the picture size ('auto', 'max' or a height such as '480')
+            quality=_play_quality(q)
             try:
-                with db() as c:source=streaming.resolve(c,root=ROOT,**ref)
+                with db() as c:source=streaming.resolve(c,root=ROOT,quality=quality,**ref)
                 info=streaming.plan(source)
             except ValueError as e:return self.send({'error':str(e)},404)
             base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
             if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
             else:info['src']=info.pop('url') if info['mode']=='direct' else base
             info['remux']=base;info['ffmpeg']=bool(downloads.tool('ffmpeg'))
-            diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False),provider=info.get('provider','mediathek'))
+            info['wish']=quality
+            diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False),provider=info.get('provider','mediathek'),
+                              live=bool(info.get('live')),wish=quality,levels=[l['id'] for l in info.get('levels') or []])
             return self.send(info)
         if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
         if path=='/api/diagnostics':
@@ -715,7 +741,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],root=ROOT)
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],root=ROOT,quality=_play_quality(q))
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
@@ -723,17 +749,23 @@ class Handler(BaseHTTPRequestHandler):
         if self.command=='HEAD':return self.send(b'',ctype='video/mp4')
         try:start=max(0.0,float(q.get('t',['0'])[0] or 0))
         except ValueError:start=0.0
+        # 0.5.63: ffmpeg gets one quality level instead of the whole master playlist (starts sooner,
+        # loads what the connection carries). Without a list (no levels, provider not reachable) as before.
+        began=time.monotonic();playlist,level=streaming.prepare(source,_play_quality(q),ROOT/'runtime'/'streams')
         try:
-            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source)),q.get('session',[''])[0][:64])
-        except RuntimeError as e:return self.send({'error':str(e)},429)
-        except (ValueError,OSError) as e:return self.send({'error':core.safe_error(e)},503)
-        sent=0
+            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist),q.get('session',[''])[0][:64],cleanup=playlist)
+        except RuntimeError as e:
+            _unlink(playlist);return self.send({'error':str(e)},429)
+        except (ValueError,OSError) as e:
+            _unlink(playlist);return self.send({'error':core.safe_error(e)},503)
+        sent=0;first_after=None
         try:
             first=proc.stdout.read1(65536) if hasattr(proc.stdout,'read1') else proc.stdout.read(65536)
             if not first:
                 code,err=streaming.finish(proc)
                 diagnostics.event('playback_failed',level='ERROR',origin=source['kind'],code=code,detail=err)
                 return self.send({'error':'Wiedergabe konnte nicht gestartet werden. Details im Live-Protokoll.'},502)
+            first_after=round(time.monotonic()-began,2)
             self.send_response(200);self.send_header('Content-Type','video/mp4');self.send_header('Cache-Control','no-store')
             self.send_header('X-Content-Type-Options','nosniff');self.send_header('Connection','close');self.end_headers()
             chunk=first
@@ -746,6 +778,12 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 code,err=streaming.finish(proc)
                 if code:diagnostics.event('playback_interrupted',level='WARNING',origin=source['kind'],code=code,sent=sent,detail=err)
+            if first_after is not None:
+                seconds=round(time.monotonic()-began,1)
+                # one line per stream for the diagnosis: how long until the first data, how much, at which level
+                diagnostics.event('playback_stream',origin=source['kind'],provider=source.get('provider','mediathek'),live=bool(source.get('live')),
+                                  start_at=round(start,1),first_data_seconds=first_after,seconds=seconds,megabytes=round(sent/1048576,1),
+                                  kbit=round(sent*8/1000/seconds) if seconds>=1 else 0,level=(level or {}).get('label',''),levels=(level or {}).get('levels',0))
     def do_HEAD(self):
         path=urllib.parse.urlsplit(self.path).path
         if path!='/api/download-file' or not self.valid_host() or not self.authorized():return self.send({'error':'Nicht gefunden'},404)
@@ -849,7 +887,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     with SERVICE.provider_slots:youtube_enrichment.enrich(ROOT,item_id,settings())
                 except Exception as e:diagnostics.error('youtube_download_enrich_failed',e)
-                with db() as c:result=youtube_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
+                with db() as c:result=youtube_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('youtube_download_enqueued',created=result['created'])
                 return self.send(result)
             if path=='/api/rakuten-sync':
@@ -866,7 +904,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     with SERVICE.provider_slots:rakuten_enrichment.enrich(ROOT,item_id,settings())
                 except Exception as e:diagnostics.error('rakuten_download_enrich_failed',e)
-                with db() as c:result=rakuten_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
+                with db() as c:result=rakuten_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('rakuten_download_enqueued',created=result['created'])
                 return self.send(result)
             if path=='/api/justwatch-sync':
@@ -980,7 +1018,7 @@ class Handler(BaseHTTPRequestHandler):
                     if d.get('file_url'):
                         result=netzkino_downloads.enqueue_file(c,ROOT,root,item_id,d.get('file_url',''),
                             d.get('rights_basis',''),d.get('rights_note',''),confirmed=d.get('confirmed') is True)
-                    else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id)
+                    else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
                 return self.send(result)
             if path=='/api/pluto-enrich':
@@ -998,7 +1036,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     with SERVICE.provider_slots:justwatch_enrichment.enrich(ROOT,item_id,settings())
                 except Exception as e:diagnostics.error('justwatch_download_enrich_failed',e)
-                with db() as c:result=justwatch_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
+                with db() as c:result=justwatch_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('justwatch_download_enqueued',created=result['created'])
                 return self.send(result)
             if path=='/api/pluto-download-add':
@@ -1008,7 +1046,7 @@ class Handler(BaseHTTPRequestHandler):
                 try:
                     with SERVICE.provider_slots:pluto_enrichment.enrich(ROOT,item_id,settings())
                 except Exception as e:diagnostics.error('pluto_download_enrich_failed',e)
-                with db() as c:result=pluto_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
+                with db() as c:result=pluto_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('pluto_download_enqueued',created=result['created'])
                 return self.send(result)
             if path in ('/api/netzkino-download-action','/api/offline-download-action'):
@@ -1259,6 +1297,18 @@ class Handler(BaseHTTPRequestHandler):
                 return self.send({'ok':True})
             if path=='/api/task-action':
                 return self.send(task_action(str(d.get('task',''))[:40],str(d.get('action',''))[:20],d.get('value')))
+            if path=='/api/playback-stats':
+                # 0.5.63: what the player saw (waiting pauses, chosen level) for the diagnosis; numbers only.
+                def num(key,top):
+                    try:return max(0,min(round(float(d.get(key) or 0),1),top))
+                    except (TypeError,ValueError):return 0
+                if _PLAYBACK_STATS[0]<200:
+                    _PLAYBACK_STATS[0]+=1
+                    diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
+                                      wish=str(d.get('wish',''))[:6],level=str(d.get('level',''))[:6],native=bool(d.get('native')),
+                                      watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
+                                      stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),agent=str(self.headers.get('User-Agent',''))[:160])
+                return self.send({'ok':True})
             if path=='/api/client-error':
                 # 0.5.57: script errors of the web interface reach the diagnosis (at most 40 per run).
                 if _CLIENT_ERRORS[0]<40:

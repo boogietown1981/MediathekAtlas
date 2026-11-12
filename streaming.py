@@ -10,9 +10,9 @@ downloads and HLS streams are remuxed on the fly by ffmpeg into fragmented MP4
 plays. That costs little CPU and also works on older NAS models. Seeking in a
 remuxed stream restarts ffmpeg at the requested position (-ss before -i).
 """
-import json,re,subprocess,threading,time
+import json,os,re,secrets,subprocess,threading,time
 from pathlib import Path
-import catalog
+import catalog,hls_variants
 from runtime_tools import resolve as tool
 
 BROWSER_FILES={'.mp4':'video/mp4','.m4v':'video/mp4','.webm':'video/webm'}
@@ -74,7 +74,7 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',quality='auto'):
     """Best playable source: a finished local download wins over the online stream."""
     if rakuten:
         if root is None:raise ValueError('Rakuten-Katalog nicht verfügbar')
@@ -112,13 +112,54 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
     if not usable:raise ValueError('Für diesen Eintrag gibt es keinen abspielbaren Stream')
     # Prefer a direct file up to 1080p for smooth playback, then HLS.
     direct=[l for l in usable if l['supported']]
-    best=(sorted(direct,key=lambda l:(0<(l['height_hint'] or 720)<=1080,l['score']),reverse=True) or usable)[0]
+    # 0.5.63: the wish of the player decides ('max' = up to 1080p as before, 'auto' = up to 720p, or a height).
+    limit=quality_limit(quality)
+    best=(sorted(direct,key=lambda l:(0<(l['height_hint'] or 720)<=limit,l['score'] if (l['height_hint'] or 720)<=limit else -(l['height_hint'] or 720)),reverse=True) or usable)[0]
     out={'kind':'url','url':best['url'],'hls':bool(HLS.search(best['url'])),'quality':best['quality'],'title':title,'duration':duration}
+    out['files']=sorted({int(l['height_hint']) for l in direct if l.get('height_hint')},reverse=True)   # resolutions offered as files
     # Broadcaster live streams (0.5.50): no length, no resume position, title = station.
     if str(row.get('topic') or '').strip() in catalog.LIVE_TOPICS:
         import live_tv
         out.update(live=True,duration=0,title=live_tv.station_name(row.get('title'),row.get('channel')),quality='Live · '+best['quality'],provider='mediathek')
     return out
+
+def quality_limit(quality):
+    """Largest picture height for a wish of the player: 'max', 'auto' or a number such as '480'."""
+    wish=str(quality or 'auto').strip().lower()
+    if wish=='max':return 1080
+    try:return max(144,min(int(wish),4320))
+    except ValueError:return hls_variants.AUTO_HEIGHT
+
+def hls_levels(source,fetch=None):
+    """Quality levels of an online HLS source for the player; [] when there is nothing to choose
+    (media playlist, provider not reachable). Never raises: without levels ffmpeg gets the address as before."""
+    if source.get('kind')!='url' or not source.get('hls'):return []
+    try:return hls_variants.levels(hls_variants.load(source['url'],fetch)[2])
+    except Exception:return []
+
+def prepare(source,quality='auto',folder=None,fetch=None):
+    """One quality level as a local playlist for ffmpeg. Returns (path or None, chosen level or None).
+
+    ffmpeg opens every level of a master playlist before it starts and plays the largest one. With a
+    playlist that holds one level it starts sooner and loads what the connection can carry."""
+    if source.get('kind')!='url' or not source.get('hls') or folder is None:return None,None
+    try:
+        text,final,variants=hls_variants.load(source['url'],fetch)
+        chosen=hls_variants.choose(variants,quality)
+        if not chosen:return None,None
+        folder=Path(folder);folder.mkdir(parents=True,exist_ok=True)
+        for old in folder.glob('hls-*.m3u8'):
+            # left over after a crash: nothing references a list older than a day
+            try:
+                if time.time()-old.stat().st_mtime>86400:old.unlink()
+            except OSError:pass
+        path=folder/('hls-%s.m3u8'%secrets.token_hex(8))
+        path.write_text(hls_variants.single(text,final,chosen),encoding='utf-8')
+        try:os.chmod(path,0o600)
+        except OSError:pass
+        return path,{'label':hls_variants.label(chosen),'height':chosen['height'],'bandwidth':chosen['bandwidth'],'levels':len(variants)}
+    except Exception:
+        return None,None
 
 def probe(path):
     binary=tool('ffprobe')
@@ -135,6 +176,8 @@ def plan(source,info=None):
         out.update(mode='remux' if source['hls'] else 'direct',url=source['url'],hls=source['hls'],quality=source.get('quality'),origin='online')
         if source.get('provider'):out['provider']=source['provider']
         if source.get('live'):out['live']=True
+        # 0.5.63: what the player can offer under "Qualität" (HLS levels or the broadcaster's files)
+        out['levels']=hls_levels(source) if source['hls'] else [{'id':str(h),'label':'%dp'%h,'height':h,'bandwidth':0} for h in source.get('files') or []]
         return out
     out['origin']='local';path=Path(source['path'])
     info=probe(path) if info is None else info
@@ -147,13 +190,19 @@ def plan(source,info=None):
     out.update(mode='direct' if direct else 'remux',file=path.name)
     return out
 
-def command(source,start=0.0,audio_copy=True):
+def command(source,start=0.0,audio_copy=True,playlist=None):
     ffmpeg=tool('ffmpeg')
     if not ffmpeg:raise ValueError('ffmpeg konnte nicht gestartet werden. Unter Einstellungen die Werkzeugprüfung öffnen.')
     args=[ffmpeg,'-nostdin','-v','error']
-    if source['kind']=='url':audio_copy='aac';args+=['-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5']
+    if source['kind']=='url':
+        audio_copy='aac'
+        # A local one-level playlist (prepare) is a file: the HTTP options belong to addresses only.
+        if playlist:args+=['-protocol_whitelist','file,http,https,tcp,tls,crypto']
+        else:args+=['-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5']
+        # Live: keep asking when the provider's list is late (ffmpeg gives up after 3 tries otherwise).
+        if source.get('hls') and source.get('live'):args+=['-max_reload','60']
     if start>0:args+=['-ss','%.3f'%start]
-    args+=['-i',source['path'] if source['kind']=='file' else source['url']]
+    args+=['-i',source['path'] if source['kind']=='file' else str(playlist) if playlist else source['url']]
     # HLS seeks land on the segment before the position; stream copy would keep that pre-roll and the
     # player's clock would run seconds ahead. An output start of 0 drops it (copy starts on a keyframe).
     if start>0:args+=['-ss','0']
@@ -162,7 +211,12 @@ def command(source,start=0.0,audio_copy=True):
     # Broadcaster HLS carries ADTS AAC in MPEG-TS; MP4 needs it converted (older ffmpeg does not do this itself).
     audio=['-c:a','copy','-bsf:a','aac_adtstoasc'] if audio_copy=='aac' else ['-c:a','copy'] if audio_copy else ['-c:a','aac','-b:a','192k','-ac','2']
     args+=['-sn','-dn','-c:v','copy']+audio
-    args+=['-movflags','frag_keyframe+empty_moov+default_base_moof']
+    # 0.5.63 (Björn, 12.11.2026: picture and sound out of step with every provider): with
+    # 'empty_moov' the file header is written before the first packet, and a track that starts later
+    # than the other (audio 0.8 s after the picture in a live stream, the picture up to one keyframe
+    # interval after the sound when resuming) was moved to zero - the offset was lost. 'delay_moov'
+    # writes the header with the first fragment and keeps the offset (measured: 0.778 s kept instead of 0).
+    args+=['-movflags','frag_keyframe+delay_moov+default_base_moof']
     # 0.5.55: online streams arrive in real time. With one fragment per keyframe interval (often 6-10 s
     # for Pluto TV and other HLS sources) the browser got the picture in bursts and ran dry in between
     # (Björn, 12.11.2026: streams stutter). One fragment per second keeps the delivery even.
@@ -177,7 +231,7 @@ def audio_copy(source,info=None):
     audio=next((s.get('codec_name') for s in info.get('streams',[]) if s.get('codec_type')=='audio'),None)
     return 'aac' if audio=='aac' else not audio or audio in BROWSER_AUDIO
 
-def start(args,session=''):
+def start(args,session='',cleanup=None):
     """Start ffmpeg; a new request of the same player session replaces its previous stream (seeking)."""
     with _LOCK:
         old=_RUNNING.pop(session,None) if session else None
@@ -186,6 +240,7 @@ def start(args,session=''):
             if proc.poll() is not None:_RUNNING.pop(key,None)
         if len(_RUNNING)>=MAX_STREAMS:raise RuntimeError('Es laufen bereits %d Wiedergaben. Bitte eine beenden und erneut versuchen.'%MAX_STREAMS)
         proc=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,stdin=subprocess.DEVNULL)
+        proc.atlas_cleanup=cleanup   # one-level playlist of this stream
         _RUNNING[session or str(id(proc))]=proc
     return proc
 
@@ -196,6 +251,10 @@ def _stop(proc):
         except subprocess.TimeoutExpired:proc.kill();proc.wait()
 
 def finish(proc):
+    cleanup=getattr(proc,'atlas_cleanup',None)
+    if cleanup:
+        try:Path(cleanup).unlink()
+        except OSError:pass
     with _LOCK:
         for key,p in list(_RUNNING.items()):
             if p is proc:_RUNNING.pop(key,None)
