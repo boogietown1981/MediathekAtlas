@@ -107,7 +107,7 @@ def public_url(row,url):
     if row.get('_resolver') in HLS_RESOLVERS:return str(url).split('?',1)[0]
     return url
 
-def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024):
+def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024,min_share=.85):
     """Copy an HLS stream (best variant, ffmpeg default selection) into a staged Matroska file.
     Progress comes from ffmpeg's -progress output; a cancel stops ffmpeg at once."""
     ffmpeg=tool('ffmpeg')
@@ -155,7 +155,9 @@ def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024)
         proc.stdout.close();log.close()
     received=src.stat().st_size if src.exists() else 0
     if not received:raise ValueError('HLS-Download lieferte keine Daten')
-    if expected and position and position<expected*.9:
+    # Ad-supported streams (Pluto, JustWatch): catalogue runtimes can include ad breaks that are
+    # not delivered; Björn's Pluto copy had 86 of 98 minutes. Allow 85 %, still refuse real cuts.
+    if expected and position and position<expected*min_share:
         raise ValueError('Download unvollständig: %d von %d Minuten'%(position//60,expected//60))
     return received
 

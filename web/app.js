@@ -541,6 +541,8 @@ if(j.state==='done'&&j.file_state!=='missing'){const save=el('a','Herunterladen'
  if(!server.network){const b=el('button','Filmdatei öffnen');b.onclick=()=>busy(b,async()=>{await api('open-download',{id:j.id});});body.append(b);}
  const play=el('button','▶ Abspielen','play-button');play.title='Im Browser abspielen';play.onclick=()=>playJob(j);body.insertBefore(play,save);}
 const action=['error','cancelled','interrupted','remote'].includes(j.state)?'retry':['queued','downloading','tagging'].includes(j.state)?'cancel':null;if(action){const b=el('button',action==='retry'?'Erneut versuchen':'Abbrechen');b.onclick=()=>busy(b,async()=>{await api(action,{id:j.id});await refresh();});body.append(b);}
+// 0.5.43: failed, cancelled or interrupted orders can be removed from the list (no media file is touched).
+if(action==='retry'){const rm=el('button','Aus Liste entfernen');rm.title='Auftrag löschen; heruntergeladene Dateien gibt es für diesen Auftrag nicht';rm.onclick=()=>busy(rm,async()=>{await api('job-remove',{id:j.id});await refresh();});body.append(rm);}
 card.append(art,body);return card;}
 
 function ratingSource(m){return m.rating_source||(['OMDb','IMDb Offline'].includes(m.provider)?'IMDb':m.provider||'Quelle unbekannt');}

@@ -4,7 +4,9 @@
 
 - `tests/test_v0542_portal_title.py` um 4 Tests erweitert (11): Qualitätskennung (1080p/Cinemascope/720p/540p/2160p, Codecnamen), geplante und gemessene Namen für Film und Folge, Erkennung vorhandener Dateien (neues und altes Schema), Bilder mit Punkt im Titel („Mr. Robot“), Ablauf löscht -poster/-backdrop und den leeren Ordner, Bild-Hosts von Pluto/Netzkino.
 - Bestehende Ende-zu-Ende-Downloads (echtes ffmpeg: Mediathek-MP4, Netzkino, Pluto-HLS, JustWatch-HLS) auf das neue Schema umgestellt und grün, z. B. `Test & Film - (2020) - 64p - MPEG4.mkv` mit `.nfo` und `.metadata.json`; MeshSync sieht vor der Veröffentlichung weiterhin nur `.partial`.
-- Volllauf `python3 -m unittest discover -s tests` → 596 Tests OK (nach Neubau des Bundles); alle `tests/*.cjs` OK.
+- Neue Tests `tests/test_v0543_download_queue.py` (5): Doppelungen bereinigen (Björns Fall: zweimal „006 am Wolfgangsee“), Erneut versuchen behält den Auftrag, Entfernen nur für erfolglose Aufträge, neuer Portal-Auftrag ersetzt fehlgeschlagenen, Pluto-Laufzeit ohne Werbung und 85-%-Toleranz.
+- Browser-Durchlauf mit gebautem Bundle: zwei Aufträge für „006 am Wolfgangsee“ (unterbrochen + Fehler) → nach dem Start nur noch eine Karte (Ereignis `download_queue_deduplicated`), „Aus Liste entfernen“ löscht sie; keine JavaScript-Fehler.
+- Volllauf `python3 -m unittest discover -s tests` → 601 Tests OK (nach Neubau des Bundles); alle `tests/*.cjs` OK.
 - **Nicht geprüft:** echte Downloads auf Björns Mac; Darstellung in Kodi/Jellyfin.
 
 ## 0.5.42 – Titelseite für alle Plattformen, Netzkino-Download (12. November 2026)

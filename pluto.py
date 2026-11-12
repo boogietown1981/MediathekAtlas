@@ -260,7 +260,7 @@ def item_from(node, kind, category='', series_id='', season=None):
         'series_id': series_id, 'season': season if season is not None else _int(node.get('season'), 0, 999),
         'episode': _int(node.get('number') if kind == 'episode' else None, 0, 9999),
         'number': _int(node.get('number') if kind == 'channel' else None, 0, 100000),
-        'year': _year(node), 'duration': _seconds(node.get('duration') or node.get('originalContentDuration')),
+        'year': _year(node), 'duration': _seconds(node.get('originalContentDuration') or node.get('duration')),  # without ad breaks (0.5.43)
         'rating': _text(node.get('rating'), 20), 'genre': _text(genre, 120),
         'summary': _text(node.get('description') or node.get('summary'), 1200),
         'poster': _image(node), 'path': path if kind != 'series' else '',

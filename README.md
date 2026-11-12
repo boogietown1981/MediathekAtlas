@@ -4,6 +4,8 @@
 
 - Jeder Download (ARD/ZDF, Netzkino, Pluto TV, JustWatch TV) landet in einem eigenen Ordner und heißt nach dem Muster `Spellbound - (2024) - 1080p - H264 E-AC-3.mkv`. Auflösung und Codecs werden nach dem Download gemessen. Daneben liegen `….nfo`, `….metadata.json`, `…-poster.jpg` und `…-backdrop.jpg`; Serien: `Serien/<Serie> (<Jahr>)/Season 01/<Serie> - (<Jahr>) - S01E02 - 720p - H264 AAC.mkv` mit tvshow.nfo, poster und fanart im Serienordner.
 
+- Download-Warteschlange: fehlgeschlagene Aufträge lassen sich entfernen, „Erneut versuchen“ erzeugt keine Doppelungen mehr, Pluto-Downloads mit Werbepausen gelten nicht mehr fälschlich als unvollständig.
+
 ## Neu in 0.5.42: Eine Detailansicht für alle Plattformen
 
 - Netzkino, Pluto TV und JustWatch TV öffnen dieselbe Titelseite wie die ARD/ZDF-Werke (Cover, Jahr, Laufzeit, ★ Bewertung, Kategorien, Inhalt, Besetzung), egal ob aus dem Katalog oder unter Plattformen. Darunter für jede Plattform gleich: Folgen (Serien), Offline ansehen (30 Tage), Werkzuordnung (IMDb/TVDB/TMDB/OMDb/Wikidata) und „Angaben von <Anbieter>“ mit allem, was nur dieser Anbieter liefert.

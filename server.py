@@ -2,7 +2,7 @@ import subprocess,sys
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment
 from version import VERSION
 from contextlib import contextmanager
@@ -72,6 +72,7 @@ def put_job(j):
     if j['state']=='done':netzkino_downloads.stamp(j)
     with db() as c:
         c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
+        if j['state']=='queued':job_queue.supersede(c,j)
         if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
 
 def film_platforms(offline):
@@ -966,10 +967,12 @@ class Handler(BaseHTTPRequestHandler):
                 with db() as c:c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(d['id'],))
                 return self.send({'ok':True})
             if path=='/api/retry':
-                with db() as c:
-                    r=c.execute("SELECT payload FROM jobs WHERE id=? AND state IN ('error','cancelled','interrupted','remote')",(d['id'],)).fetchone()
-                if not r:raise ValueError('Auftrag ist nicht wiederholbar')
-                j=json.loads(r[0]);j.update(id=secrets.token_hex(8),state='queued',received=0,total=0,error='');put_job(j);return self.send({'ok':True})
+                # 0.5.43: same job again (one card), earlier failed twins disappear.
+                with db() as c:job_queue.retry(c,str(d.get('id','')))
+                return self.send({'ok':True})
+            if path=='/api/job-remove':
+                with db() as c:job_queue.remove(c,str(d.get('id','')))
+                return self.send({'ok':True})
             self.send({'error':'Nicht gefunden'},404)
         except Exception as e:
             diagnostics.error('http_post_failed',e,endpoint=urllib.parse.urlsplit(self.path).path)
@@ -997,6 +1000,10 @@ class Server(ThreadingHTTPServer):
 if __name__=='__main__':
     server=Server((LISTEN,PORT),Handler)
     threading.Thread(target=SERVICE.supervise,args=(worker,),daemon=True,name='download_worker').start()
+    try:
+        with db() as c:removed=job_queue.dedupe(c)
+        if removed:diagnostics.event('download_queue_deduplicated',count=removed)
+    except Exception as e:diagnostics.error('download_queue_dedupe_failed',e)
     try:
         with db() as c:moved=netzkino_downloads.migrate_legacy(ROOT,c,settings()['download_dir'])
         if moved:diagnostics.event('netzkino_licensed_jobs_migrated',count=moved)

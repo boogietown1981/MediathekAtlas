@@ -168,9 +168,10 @@ def insert(c, job):
     found = _duplicate(c, job)
     if found:
         return {'id': found[0], 'created': False, 'state': found[1]}
-    if Path(job['target']).exists():
+    if __import__('core').existing_download(job['target']):
         raise FileExistsError('Zieldatei existiert bereits – nichts überschrieben')
     c.execute('INSERT INTO jobs VALUES(?,?,?)', (job['id'], json.dumps(job), job['state']))
+    __import__('job_queue').supersede(c, job)   # 0.5.43: one card per file
     return {'id': job['id'], 'created': True, 'state': job['state'], 'target': job['target']}
 
 
