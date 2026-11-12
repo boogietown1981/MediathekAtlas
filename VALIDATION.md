@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.61 – Archive.org-Downloads (12. November 2026)
+- Automatisch: 9 neue Tests in `tests/test_v0561_archive_downloads.py` (Film-Auftrag mit Lizenz und Untertitel-Adresse, Worker nutzt die Archivadresse, keine Ablauffrist, keine Verbund-/Mediathek-Markierung, Dubletten, Folge mit Nummern, Folge ohne Nummer nur mit Angabe, nur Manifest-Dateien, Liste je Eintrag, Untertitel neben dem Video ohne Überschreiben, Verdrahtung). Gesamtsuite siehe PR.
+- Nicht geprüft: echter Download von archive.org (aus der Bauumgebung gesperrt bzw. nicht getestet), Weiterleitung auf die ia*.archive.org-Spiegel bei Björn, Untertitel-Sprachkürzel bei ungewöhnlichen Dateinamen, NAS-Hardware.
+
 ## 0.5.60 – Gespeicherte Plattform-Ansichten, Titelseiten, Dubletten (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (768 Tests), davon 16 neue in `tests/test_v0560_platform_views.py` (Seiten aus einer gespeicherten Liste, Neustart mit Datei und Erneuerung im Hintergrund, gefilterte Ansichten nur im Speicher, Neuaufbau nach Katalogabruf und Nutzeraktion, gesperrte Datenbank zeigt gespeicherte Ansicht, defekte Datei; Upload-Titel mit Untertitel, Kennung, Laufzeit, Gegenbeispiele „Alien“/„Alien: Covenant“, Serien ausgenommen, alte Regeln; Oberflächen-Verträge). `node --check` und UI-Smoke-Tests grün. Enthält die Tests aus 0.5.59 und dem YouTube-Zweig.
 - Browser (Chromium, Testbestand): Schalter „alle 24 Stunden“ auf allen fünf Plattformen umgestellt, neu geladen, Wert bleibt; Statuszeile über dem Katalog zeigt an/aus und Stand, „Verwalten“ öffnet den Bereich. Netzkino-Titelseite: ein Offline-Knopf, kein „IMDb Offline“, keine Zeile „Zuordnung“, „Technische Angaben“ zugeklappt mit Abgleich und Anbieterangaben. Klickdurchlauf aus 0.5.55 ohne Skriptfehler; Ordner `snapshots` wird angelegt.

@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -83,6 +83,14 @@ def put_job(j):
         c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
         if j['state']=='queued':job_queue.supersede(c,j)
         if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
+    # 0.5.61: subtitle files listed in the Archive.org manifest go next to the finished video.
+    if j['state']=='done' and j.get('origin')==archive_downloads.ORIGIN and j.get('sidecars') and not j.get('sidecars_fetched'):
+        def subtitles(job=dict(j)):
+            try:
+                names=archive_downloads.fetch_sidecars(job)
+                if names:diagnostics.event('archive_sidecars_saved',count=len(names))
+            except Exception as e:diagnostics.error('archive_sidecars_failed',e)
+        threading.Thread(target=subtitles,daemon=True,name='archive_sidecars').start()
 
 def film_platforms(offline):
     # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
@@ -576,6 +584,9 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
         if path=='/api/backups':return self.send(db_backup.listing(ROOT))
+        if path=='/api/archive-downloads':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:return self.send(archive_downloads.listing(c,item_id=q.get('id',[None])[0]))
         if path=='/api/archive-companion':
             status=archive_companion.read_status()
             if NETWORK:status['ui_url']=None
@@ -933,6 +944,13 @@ class Handler(BaseHTTPRequestHandler):
                                   variants=detail['variants_displayed'],
                                   complete=detail['inventory_complete'])
                 return self.send({'detail':detail,'ok':True})
+            if path=='/api/archive-download':
+                with db() as c:
+                    if not c.execute("SELECT 1 FROM portal_items WHERE id=? AND source='internet_archive'",(str(d.get('id') or ''),)).fetchone():
+                        raise ValueError('Archive.org-Eintrag nicht gefunden')
+                    result=archive_downloads.enqueue(c,settings()['download_dir'],d['id'],d.get('filename'),d.get('metadata'))
+                diagnostics.event('archive_download_queued',created=result.get('created'))
+                return self.send(result)
             if path=='/api/portal-archive-probe':
                 if d.get('acknowledged') is not True:
                     raise ValueError('Nur nach bestätigter Berechtigung zur technischen Teilprüfung')

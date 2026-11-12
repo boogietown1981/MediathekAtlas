@@ -56,9 +56,14 @@ def is_netzkino(job):
     return (job or {}).get('origin') == 'netzkino'
 
 
+# 0.5.61: Internet Archive files are permanent (no offline period) but, like portal copies,
+# stay on this device and never mark a Mediathek work as downloaded.
+LOCAL_ORIGINS = frozenset(PORTAL_LICENSES) | {'internet_archive'}
+
+
 def is_portal(job):
-    """Netzkino or Pluto job: per-device copy, never shared in the Verbund, no Mediathek work."""
-    return (job or {}).get('origin') in PORTAL_LICENSES
+    """Portal job: per-device copy, never shared in the Verbund, no Mediathek work."""
+    return (job or {}).get('origin') in LOCAL_ORIGINS
 
 
 def is_offline(job):
@@ -393,7 +398,7 @@ def _public(job, now):
     until = job.get('offline_until')
     return {'id': job['id'], 'netzkino_id': job.get('netzkino_id'), 'pluto_id': job.get('pluto_id'),
             'justwatch_id': job.get('justwatch_id'), 'rakuten_id': job.get('rakuten_id'),
-            'youtube_id': job.get('youtube_id'),
+            'youtube_id': job.get('youtube_id'), 'internet_archive_id': job.get('internet_archive_id'),
             'origin': job.get('origin'), 'state': job.get('state'),
             'title': (job.get('metadata') or {}).get('title'),
             'target_name': Path(job.get('path') or job.get('target') or '').name,

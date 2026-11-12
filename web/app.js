@@ -615,7 +615,7 @@ function portalItemCard(item){
   }
   if(item.license_url)card.append(el('p','Gemeldete Lizenz: '+item.license_url,'portal-licence'));
   if(item.rights)card.append(el('p','Rechtehinweis: '+item.rights.slice(0,240),'portal-licence'));
-  card.append(el('small','Nur Originalseite · Rechte und Verfügbarkeit nicht geprüft · kein Download','portal-rights'));
+  card.append(el('small',item.source==='internet_archive'?'Download über „Fassungen, Folgen und Sprachen prüfen“ · Lizenzangabe des Uploaders, nicht geprüft':'Nur Originalseite · Rechte und Verfügbarkeit nicht geprüft · kein Download','portal-rights'));
   const target=portalPageUrl(item);
   if(target){
     const link=el('a','Originalseite beim Anbieter öffnen','portal-link');
@@ -664,6 +664,26 @@ function archiveProbeSummary(probe){
   }
   part.append(el('small',probe.detail||probe.note||'Nur partielle Spurdaten.','portal-warning'));
   return part;
+}
+// 0.5.61: Archive.org-Downloads wie in ArchiveMedia (Björn, 12.11.2026) – dauerhaft, Lizenz nur angezeigt.
+function archiveDownloadButton(itemId,v,manifest){
+  const wrap=el('div',undefined,'portal-archive-download');
+  const btn=el('button','⬇ Herunterladen','portal-download');btn.type='button';
+  const state=el('small','', 'muted');
+  btn.onclick=()=>busy(btn,async()=>{
+    let meta=null;
+    if(v.kind==='series'&&(v.season==null||v.episode==null)){
+      const answer=prompt('Staffel und Folge dieser Datei sind unbekannt. Bitte als „Staffel/Folge“ angeben (z. B. 1/3). Leer lassen, um als Film zu laden.','');
+      if(answer===null)return;
+      const m=String(answer).trim().match(/^(\d{1,3})\s*[\/xXeE ]\s*(\d{1,4})$/);
+      meta=m?{kind:'series',season:Number(m[1]),episode:Number(m[2])}:{kind:'movie',title:v.title||manifest.normalized_title||manifest.title};
+    }
+    const r=await api('archive-download',{id:itemId,filename:v.filename,metadata:meta});
+    state.textContent=r.created===false?'Bereits in der Warteschlange oder geladen ('+r.state+').':'In die Download-Warteschlange gestellt.';
+    notice(r.created===false?'Diese Datei ist bereits vorhanden oder vorgemerkt.':'Archive.org-Download vorgemerkt: '+(v.title||v.filename));
+  });
+  wrap.append(btn,state);
+  return wrap;
 }
 function showArchiveManifest(host,manifest,probes={},itemId=''){
   host.replaceChildren();
@@ -749,6 +769,7 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
       };
       box.append(btn);
     }
+    box.append(archiveDownloadButton(itemId,v,manifest));
     list.append(box);
   }
   if(!list.childElementCount)

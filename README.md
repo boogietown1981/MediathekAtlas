@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.60
+# MediathekAtlas · 0.5.61
+
+## Neu in 0.5.61: Archive.org-Filme und -Folgen herunterladen (wie in ArchiveMedia)
+
+- Unter Plattformen → Internet Archive → „Fassungen, Folgen und Sprachen prüfen“ hat jede angezeigte Videodatei jetzt einen Knopf **„⬇ Herunterladen“**. Die Datei läuft durch die normale Download-Warteschlange: gleiche Ordner und Namen wie bei ARD/ZDF (`Filme/<Titel> (<Jahr>)/…`, `Serien/<Serie>/Season NN/…`), MKV mit Metadaten, NFO.
+- **Dauerhaft:** Anders als bei Netzkino, Pluto & Co. gibt es keine 30-Tage-Frist. Die Lizenzangabe des Uploaders (z. B. „Public Domain“, Creative-Commons-Link) wird mit dem Auftrag gespeichert und angezeigt, aber nicht geprüft (Björns Entscheidung vom 12.11.2026: „alles wie in ArchiveMedia“).
+- **Untertitel:** Im Upload mitgelieferte .srt/.vtt/.ass-Dateien werden nach dem Download neben das Video gelegt (z. B. `….de.srt`), vorhandene Dateien werden nie überschrieben.
+- **Folgen ohne Nummer:** Ist bei einer Serienfolge Staffel oder Folge unbekannt, fragt die App beim Herunterladen danach (oder lädt die Datei als Film). Es wird keine Staffel 1 erfunden.
+- Archive.org-Downloads bleiben auf diesem System (kein Verbund-Austausch) und markieren keine Mediathek-Sendung als geladen.
+
 
 ## Neu in 0.5.60: Plattform-Kataloge sofort, aufgeräumte Titelseiten, weniger Dubletten
 

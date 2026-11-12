@@ -1,3 +1,10 @@
+## 0.5.61 – Archive.org-Downloads wie in ArchiveMedia
+- Björn (12.11.2026, Entscheidungskarte): Archive.org-Filme in MediathekAtlas herunterladbar, „alles wie in ArchiveMedia“ – jede Datei ladbar, Lizenz nur gespeichert und angezeigt.
+- Neu `archive_downloads.py`: `build_job`/`enqueue` aus dem gespeicherten, gefilterten Item-Manifest (`portal_sources.archive_saved_detail`); nur dort gelistete Videodateien, Adresse aus Identifier + Dateiname (`_archive_video_url`), nie aus dem Browser. Metadaten: Film = normalisierter Upload-Titel (bei mehreren Dateien der Dateititel), Serie = Upload-Titel + Staffel/Folge der Datei; Korrektur über `metadata` (Titel, Jahr, Art, Staffel, Folge). Job `origin='internet_archive'`, `license.kind='archive_item'` mit `rights`/`license_url`, keine Ablauffrist. Dublettenschutz je Identifier + Datei und über das Ziel (`netzkino_downloads.insert`).
+- `fetch_sidecars`: Untertiteldateien aus dem Manifest (max. 12, je 8 MiB, keine HTML-Antworten) neben das fertige Video, Sprachkürzel aus dem Dateinamen, nie überschreiben; ausgelöst in `server.put_job` bei Abschluss.
+- `netzkino_downloads.LOCAL_ORIGINS`: `is_portal` gilt auch für `internet_archive` (kein Verbund, kein `mark_downloaded`); `_public` liefert `internet_archive_id`.
+- `server.py`: `POST /api/archive-download`, `GET /api/archive-downloads?id=`. `web/app.js`: Knopf „⬇ Herunterladen“ je Datei in `showArchiveManifest` (fragt bei Folgen ohne Nummer nach Staffel/Folge), Hinweistext der Archive.org-Karte.
+
 ## 0.5.60 – Gespeicherte Plattform-Ansichten, ruhige Titelseiten, Untertitel-Dubletten
 - Zusammenführung: 0.5.57 (mwe89v), 0.5.59 (5t9ycc, Rakuten-Livesender) und vtbjm6 @ a256f12 (YouTube: Werbevideos, Einrichtung öffnet sich). 0.5.58 wurde nicht vergeben.
 - Björn (12.11.2026): 24-Stunden-Einstellung unter Plattformen „bleibt nicht erhalten“; Katalog dort teils nicht da oder spät, soll nach dem Scan gespeichert bleiben; unschöne Abgleich-Angaben auf Film-/Serienseiten, „IMDb offline“ soll dort nicht stehen (Bildschirmfoto #Roxy); Dublette „Ab ins Meer“.
