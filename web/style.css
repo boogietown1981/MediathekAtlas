@@ -834,3 +834,7 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .portal-title-expert[open]>summary{margin-bottom:8px}
 .portal-title-expert .tv-section{margin-top:14px}
 .portal-title-expert h2{font-size:15px}
+/* 0.5.71: YouTube music playlists – play all, save all or a selection */
+.youtube-music-tools{display:flex;flex-wrap:wrap;gap:.5rem;align-items:center;margin:.5rem 0}
+.youtube-music-tools[hidden]{display:none}
+.atlas-music-pick{display:inline-flex;align-items:center;gap:.25rem;font-size:.85em}

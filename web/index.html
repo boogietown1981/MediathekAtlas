@@ -221,8 +221,8 @@
         <h4>2 · Kanäle und Playlists</h4>
         <div id="youtube-sources" class="youtube-sources"></div>
         <form id="youtube-source-form" class="youtube-row">
-          <input id="youtube-source-url" placeholder="youtube.com/@Kanal oder youtube.com/playlist?list=…" required>
-          <select id="youtube-source-kind" aria-label="Art"><option value="movies">Filme (ganzer Kanal / Playlist)</option><option value="series">Serie (eine Playlist)</option></select>
+          <input id="youtube-source-url" placeholder="youtube.com/@Kanal, youtube.com/playlist?list=… oder youtube.com/watch?v=…" required>
+          <select id="youtube-source-kind" aria-label="Art"><option value="movies">Filme (ganzer Kanal / Playlist)</option><option value="series">Serie (eine Playlist)</option><option value="music">Musikvideos (Playlist, Kanal oder einzelnes Video)</option></select>
           <input id="youtube-source-label" placeholder="Name (optional)" maxlength="120">
           <label class="youtube-min">Mindestlänge <input id="youtube-source-min" type="number" min="1" max="600" placeholder="60"> Min.</label>
           <button class="primary">Hinzufügen</button></form>
@@ -237,6 +237,7 @@
   <div class="netzkino-media-tabs" role="group" aria-label="YouTube-Ansicht">
     <button type="button" id="youtube-view-movies" class="primary">Filme</button>
     <button type="button" id="youtube-view-series">Serien</button>
+    <button type="button" id="youtube-view-music">Musikvideos</button>
     <button type="button" id="youtube-back" hidden>← Zur Serienübersicht</button>
     <span id="youtube-heading" role="status"></span>
   </div>
@@ -247,6 +248,13 @@
   <details id="youtube-offline" class="nk-offline youtube-offline"><summary>Offline-Kopien von YouTube <span id="youtube-offline-count" class="muted"></span></summary>
     <p class="muted">Nur wenn oben eingeschaltet. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO), 30 Tage.</p>
     <div id="youtube-offline-jobs"></div></details>
+  <div id="youtube-music-tools" class="youtube-music-tools" hidden>
+    <button type="button" id="youtube-music-play" class="primary">▶ Playlist abspielen</button>
+    <button type="button" id="youtube-music-all">⬇ Ganze Playlist offline speichern</button>
+    <button type="button" id="youtube-music-toggle">Alle auswählen</button>
+    <button type="button" id="youtube-music-pick" disabled>⬇ Auswahl offline speichern (0)</button>
+    <label>Auflösung <select id="youtube-music-quality"><option value="best">Beste verfügbare</option><option value="1080">höchstens 1080p</option><option value="720">höchstens 720p</option><option value="480">höchstens 480p</option><option value="360">höchstens 360p</option></select></label>
+    <span id="youtube-music-hint" class="muted" role="status"></span></div>
   <div id="youtube-items" class="netzkino-grid" aria-live="polite"></div>
   <div class="netzkino-pages"><button type="button" id="youtube-prev">← Zurück</button>
     <span id="youtube-page-label" class="muted"></span>

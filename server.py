@@ -504,6 +504,7 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
                 if q.get('view',[''])[0]=='episodes':data=youtube.episodes(ROOT,q.get('series',[''])[0])
+                elif q.get('view',[''])[0]=='tracks':data=youtube.tracks(ROOT,q.get('album',[''])[0])   # 0.5.71 music playlist
                 elif q.get('doubtful',['0'])[0]=='1':
                     # YouTube thread: uploads sorted out as advertising can be shown on request (read directly).
                     data=youtube.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
@@ -905,10 +906,23 @@ class Handler(BaseHTTPRequestHandler):
                     result=youtube_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
                 diagnostics.event('youtube_reference_check',status=result['status'],candidates=len(result.get('references',[])))
                 return self.send(result)
+            if path=='/api/youtube-download-add' and (d.get('album') or isinstance(d.get('ids'),list)):
+                # 0.5.71: a whole music playlist ('album') or a selection of its videos ('ids') in one click.
+                album=str(d.get('album') or '')
+                ids=[str(x) for x in d.get('ids')][:youtube.MAX_BATCH] if isinstance(d.get('ids'),list) else None
+                if album:ids=youtube.album_track_ids(ROOT,album,ids)
+                elif any(not youtube.VALID_ID.fullmatch(i) or not i.startswith('t.') for i in ids):raise ValueError('Ungültige Auswahl')
+                if not ids:raise ValueError('Keine speicherbaren Videos ausgewählt')
+                with db() as c:
+                    result=youtube_downloads.enqueue_many(c,ROOT,settings()['download_dir'],ids)
+                    for job_id in result['jobs']:download_quality.set_job(c,{'id':job_id,'created':True},d.get('quality'))
+                diagnostics.event('youtube_download_batch',created=result['created'],existing=result['existing'],failed=result['failed'])
+                return self.send(result)
             if path=='/api/youtube-download-add':
                 item_id=str(d.get('id',''))
                 try:
-                    with SERVICE.provider_slots:youtube_enrichment.enrich(ROOT,item_id,settings())
+                    if not item_id.startswith('t.'):   # music videos have no film references
+                        with SERVICE.provider_slots:youtube_enrichment.enrich(ROOT,item_id,settings())
                 except Exception as e:diagnostics.error('youtube_download_enrich_failed',e)
                 with db() as c:result=youtube_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('youtube_download_enqueued',created=result['created'])

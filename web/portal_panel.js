@@ -14,6 +14,9 @@ window.AtlasPortalPanel = function (cfg) {
   if (!$(K)) return null;
   const pageSize = 60;
   let view = 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
+  // 0.5.71 (cfg.music, YouTube): music videos – playlists ('album') with their videos ('track').
+  let album = null, picked = new Set(), offlineOn = false, lastTracks = [];
+  const LIST_VIEWS = ['episodes', 'tracks'];
   let genre = '';
   const cats = () => window.AtlasPortalCategories;
   const ACTIVE = ['queued', 'downloading', 'tagging'];
@@ -34,13 +37,15 @@ window.AtlasPortalPanel = function (cfg) {
     $(P + '-sync').disabled = !!st.running;
     $(P + '-sync').textContent = st.running ? 'Katalog wird geladen …' : '↻ Katalog jetzt laden';
     // The catalogue is stored locally and survives restarts; only a new run replaces it.
-    const stored = (st.movies || 0) + (st.series || 0) + (st.channels || 0) > 0;
+    const stored = (st.movies || 0) + (st.series || 0) + (st.channels || 0) + (st.music || 0) > 0;
+    offlineOn = !!st.offline_enabled;
     const phase = st.running ? 'Läuft' : st.last_result === 'complete' ? 'Aktuell' : st.last_result === 'partial' ? 'Teilweise geladen' :
       st.last_result === 'interrupted' ? (stored ? 'Abruf unterbrochen · gespeicherter Bestand' : 'Abruf unterbrochen') :
       st.last_result === 'failed' ? (stored ? 'Abruf fehlgeschlagen · gespeicherter Bestand' : 'Fehlgeschlagen') :
       stored ? 'Gespeicherter Bestand' : 'Noch nicht geladen';
     $(P + '-summary').textContent = `${st.movies || 0} Filme · ${st.series || 0} Serien · ` +
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
+      (cfg.music ? `${st.music || 0} Musik-Playlists/-Videos (${st.tracks || 0} Videos) · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +
       `Stand: ${date(st.last_success)}` + (stored ? ' · bleibt nach Neustart erhalten' : '') +
       (st.running && st.progress ? ` · ${st.progress}` : '') +
@@ -56,12 +61,14 @@ window.AtlasPortalPanel = function (cfg) {
       const img = make('img', undefined, 'netzkino-poster' + (item.kind === 'channel' ? ' pluto-logo' : ''));
       img.src = item.poster; img.alt = ''; img.loading = 'lazy'; box.append(img);
     }
-    const label = item.kind === 'episode' && item.season !== null && item.episode !== null ?
+    const label = item.kind === 'track' && view === 'tracks' && item.number !== null && item.number !== undefined ? `${item.number + 1}. ${item.title}` :
+      item.kind === 'episode' && item.season !== null && item.episode !== null ?
       `S${String(item.season).padStart(2, '0')}E${String(item.episode).padStart(2, '0')} · ${item.title}` :
       item.kind === 'channel' && item.number ? `${item.number} · ${item.title}` : item.title;
     box.append(make('h3', label));
-    const meta = [item.year, minutes(item.duration), item.rating,
-      item.kind === 'channel' ? item.genre || item.category : null].filter(Boolean).join(' · ');
+    const music = item.kind === 'album' || item.kind === 'track';
+    const meta = (music ? [item.category, item.kind === 'album' ? item.number + ' Videos' : null, minutes(item.duration), item.rating] :
+      [item.year, minutes(item.duration), item.rating, item.kind === 'channel' ? item.genre || item.category : null]).filter(Boolean).join(' · ');
     if (meta) box.append(make('small', meta, 'pluto-meta'));
     const stars = item.kind !== 'channel' && cats()?.rating(item.score);
     if (stars) box.append(stars);
@@ -69,7 +76,26 @@ window.AtlasPortalPanel = function (cfg) {
     if (line) box.append(line);
     if (item.summary) box.append(make('p', item.summary.length > 260 ? item.summary.slice(0, 257) + '…' : item.summary, 'netzkino-description'));
     const actions = make('div', undefined, 'netzkino-actions');
-    if (item.kind !== 'channel') {
+    if (item.kind === 'track' && view === 'tracks' && item.offline) {
+      const pick = make('label', undefined, 'check atlas-music-pick'), box2 = make('input');
+      box2.type = 'checkbox'; box2.checked = picked.has(item.id);
+      box2.onchange = () => { box2.checked ? picked.add(item.id) : picked.delete(item.id); musicTools(); };
+      pick.append(box2, ' Auswählen'); actions.append(pick);
+    }
+    if (item.kind === 'album') {
+      const open = make('button', 'Playlist öffnen', 'primary'); open.type = 'button';
+      open.onclick = () => { album = item; picked.clear(); view = 'tracks'; offset = 0; refresh(); };
+      actions.append(open);
+      if (offlineOn) {
+        const all = make('button', '⬇ Ganze Playlist offline'); all.type = 'button';
+        all.onclick = () => saveMany({album: item.id}, item.title, all);
+        actions.append(all);
+      }
+      if (cfg.externalLink && item.web_url) actions.append(externalLink(item));
+      box.append(actions);
+      return box;
+    }
+    if (item.kind !== 'channel' && !music) {
       const more = make('button', 'Details'); more.type = 'button';
       more.onclick = () => openDetail(item.id);
       actions.append(more);
@@ -92,6 +118,11 @@ window.AtlasPortalPanel = function (cfg) {
       const play = make('button', item.kind === 'channel' ? '▶ Live ansehen' : '▶ Ansehen', 'primary'); play.type = 'button';
       play.onclick = () => {
         if (typeof cfg.play() !== 'function') { say('Der Player ist nicht geladen; Seite neu laden.', true); return; }
+        if (item.kind === 'track' && view === 'tracks' && window.playYouTubeList) {
+          const list = lastTracks.filter(playable), at = list.findIndex(t => t.id === item.id);
+          window.playYouTubeList(list.map(t => ({id: t.id, label: t.title})), Math.max(0, at));
+          return;
+        }
         cfg.play()(item.id, item.kind === 'episode' && series ? series.title + ' · ' + label : label);
       };
       actions.append(play);
@@ -124,6 +155,34 @@ window.AtlasPortalPanel = function (cfg) {
     };
     return b;
   }
+  /* 0.5.71: whole playlist or the ticked videos in one click; each video becomes its own job. */
+  function quality() { const v = $(P + '-music-quality')?.value || (() => { try { return localStorage.getItem('atlas-download-quality'); } catch (e) { return ''; } })(); return /^(best|\d{3,4})$/.test(v || '') ? v : 'best'; }
+  async function saveMany(body, title, button) {
+    if (button) button.disabled = true;
+    try {
+      const q = quality(); try { localStorage.setItem('atlas-download-quality', q); } catch (e) { /* private mode */ }
+      const r = await window.api(K + '-download-add', {...body, quality: q});
+      const text = `${r.created} Videos werden offline gespeichert` + (r.existing ? `, ${r.existing} schon gespeichert oder eingereiht` : '') +
+        (r.failed ? `, ${r.failed} nicht möglich (${(r.errors || [])[0] || 'Fehler'})` : '') + '.';
+      say(text, !r.created && !!r.failed); window.notice?.('„' + (title || 'Playlist') + '“: ' + text);
+      picked.clear(); musicTools(); refreshOffline(); window.AtlasOffline?.refresh(K);
+      $(P + '-items').querySelectorAll('.atlas-music-pick input').forEach(i => { i.checked = false; });
+    } catch (e) { say('Kein Download gestartet: ' + e.message, true); }
+    if (button) button.disabled = false;
+  }
+  function musicTools() {
+    const host = $(P + '-music-tools'); if (!host) return;
+    host.hidden = view !== 'tracks';
+    if (host.hidden) return;
+    const savable = lastTracks.filter(t => t.offline);
+    $(P + '-music-play').disabled = !lastTracks.some(playable);
+    for (const id of [P + '-music-all', P + '-music-pick', P + '-music-toggle', P + '-music-quality']) if ($(id)) $(id).hidden = !offlineOn || !savable.length;
+    $(P + '-music-pick').disabled = !picked.size;
+    $(P + '-music-pick').textContent = `⬇ Auswahl offline speichern (${picked.size})`;
+    $(P + '-music-toggle').textContent = picked.size && picked.size === savable.length ? 'Auswahl aufheben' : 'Alle auswählen';
+    $(P + '-music-hint').textContent = offlineOn ? (savable.length ? '' : 'Keine Videos dieser Playlist sind speicherbar (z. B. altersbeschränkt).') :
+      'Offline-Speichern ist ausgeschaltet. Einschalten unter „YouTube-Kanäle & API-Schlüssel“.';
+  }
   async function refreshOffline() {
     let data;
     try { data = await window.api(K + '-downloads'); } catch (e) { return; }
@@ -152,7 +211,7 @@ window.AtlasPortalPanel = function (cfg) {
     refreshOffline();
     const call = ++seq;
     const q = $(P + '-filter').value.trim();
-    const params = view === 'episodes' ? {view, series: series?.id || ''} :
+    const params = view === 'tracks' ? {view, album: album?.id || ''} : view === 'episodes' ? {view, series: series?.id || ''} :
       {view, q, offset, limit: pageSize, genre: view === 'live' ? '' : genre, sort: $(P + '-sort')?.value || 'title'};
     let data;
     // 0.5.41: a slow answer is shown with its waiting time; an error also replaces the status line.
@@ -169,15 +228,18 @@ window.AtlasPortalPanel = function (cfg) {
     waiting?.();
     if (call !== seq) return;
     summary(data.status || {});
-    for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live']])
-      if ($(id)) $(id).classList.toggle('primary', view === v || (view === 'episodes' && v === 'series'));
-    $(P + '-back').hidden = view !== 'episodes';
+    for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live'], [P + '-view-music', 'music']])
+      if ($(id)) $(id).classList.toggle('primary', view === v || (view === 'episodes' && v === 'series') || (view === 'tracks' && v === 'music'));
+    $(P + '-back').hidden = !LIST_VIEWS.includes(view);
+    $(P + '-back').textContent = view === 'tracks' ? '← Zur Musikübersicht' : '← Zur Serienübersicht';
     if ($(P + '-live-all')) $(P + '-live-all').hidden = view !== 'live';  // 0.5.50: Live-TV tab by station
-    $(P + '-heading').textContent = view === 'episodes' ? (data.series?.title || '') + ' · ' + (data.items || []).length + ' Folgen' : '';
-    cats()?.render($(P + '-categories'), view === 'live' || view === 'episodes' ? [] : data.genre_counts, genre,
+    $(P + '-heading').textContent = LIST_VIEWS.includes(view) ? (data.series?.title || '') + ' · ' + (data.items || []).length + (view === 'tracks' ? ' Videos' : ' Folgen') : '';
+    cats()?.render($(P + '-categories'), ['live', 'music', ...LIST_VIEWS].includes(view) ? [] : data.genre_counts, genre,
       value => { genre = value; offset = 0; refresh(); });
     let items = data.items || [];
-    if (view === 'episodes' && q) items = items.filter(i => i.title.toLowerCase().includes(q.toLowerCase()));
+    if (view === 'tracks') lastTracks = data.items || [];
+    if (LIST_VIEWS.includes(view) && q) items = items.filter(i => (i.title + ' ' + (i.category || '')).toLowerCase().includes(q.toLowerCase()));
+    musicTools();
     const host = $(P + '-items'); host.replaceChildren();
     // 0.5.55: films and series use the same tile as the dashboard (web/unified_catalog.js), so
     // presentation and buttons are identical everywhere. Live channels and the episode list of the
@@ -185,19 +247,35 @@ window.AtlasPortalPanel = function (cfg) {
     const shared = (view === 'movies' || view === 'series') && window.AtlasCards;
     host.classList.toggle('atlas-uc-grid', !!shared);
     for (const item of items) host.append(shared ? shared.card(shared.portalRow(item, K)) : card(item));
-    const total = view === 'episodes' ? items.length : Number(data.total || 0);
-    $(P + '-prev').disabled = view === 'episodes' || offset === 0;
-    $(P + '-next').disabled = view === 'episodes' || offset + pageSize >= total;
-    $(P + '-page-label').textContent = view === 'episodes' ? '' : `${total ? offset + 1 : 0}–${Math.min(offset + pageSize, total)} von ${total}`;
+    const listed = LIST_VIEWS.includes(view);
+    const total = listed ? items.length : Number(data.total || 0);
+    $(P + '-prev').disabled = listed || offset === 0;
+    $(P + '-next').disabled = listed || offset + pageSize >= total;
+    $(P + '-page-label').textContent = listed ? '' : `${total ? offset + 1 : 0}–${Math.min(offset + pageSize, total)} von ${total}`;
     const st = data.status || {};
     say(data.error ? 'Folgen konnten nicht aktualisiert werden: ' + data.error :
       !total && !st.last_success ? 'Noch kein ' + SHORT + '-Katalog geladen. „↻ Katalog jetzt laden“ startet den Abruf.' :
       !total ? 'Keine passenden Einträge.' : '', !!data.error);
   }
 
-  for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live']])
-    if ($(id)) $(id).onclick = () => { view = v; series = null; offset = 0; genre = ''; refresh(); };
-  $(P + '-back').onclick = () => { view = 'series'; series = null; refresh(); };
+  for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live'], [P + '-view-music', 'music']])
+    if ($(id)) $(id).onclick = () => { view = v; series = null; album = null; offset = 0; genre = ''; refresh(); };
+  $(P + '-back').onclick = () => { view = view === 'tracks' ? 'music' : 'series'; series = null; album = null; refresh(); };
+  if ($(P + '-music-tools')) {
+    $(P + '-music-play').onclick = () => {
+      const list = lastTracks.filter(playable);
+      if (list.length && window.playYouTubeList) window.playYouTubeList(list.map(t => ({id: t.id, label: t.title})), 0);
+    };
+    $(P + '-music-all').onclick = ev => saveMany({album: album?.id || ''}, album?.title, ev.target);
+    $(P + '-music-pick').onclick = ev => saveMany({album: album?.id || '', ids: [...picked]}, album?.title, ev.target);
+    $(P + '-music-toggle').onclick = () => {
+      const savable = lastTracks.filter(t => t.offline);
+      if (picked.size === savable.length) picked.clear(); else savable.forEach(t => picked.add(t.id));
+      $(P + '-items').querySelectorAll('.atlas-music-pick input').forEach(i => { i.checked = picked.size > 0; });
+      musicTools();
+    };
+    try { const v = localStorage.getItem('atlas-download-quality'); if (v && [...$(P + '-music-quality').options].some(o => o.value === v)) $(P + '-music-quality').value = v; } catch (e) { /* private mode */ }
+  }
   $(P + '-filter').oninput = () => { offset = 0; clearTimeout(timer); timer = setTimeout(refresh, 250); };
   if ($(P + '-sort')) $(P + '-sort').onchange = () => { offset = 0; refresh(); };
   $(P + '-prev').onclick = () => { offset = Math.max(0, offset - pageSize); refresh(); };

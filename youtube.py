@@ -56,7 +56,9 @@ VIDEO_ID = r'[A-Za-z0-9_-]{11}'
 PLAYLIST_ID = r'[A-Za-z0-9_-]{12,64}'
 CHANNEL_ID = r'UC[A-Za-z0-9_-]{22}'
 HANDLE = r'@[A-Za-z0-9._\-]{3,30}'
-VALID_ID = re.compile(r'(?:[ve]\.%s|s\.%s)' % (VIDEO_ID, PLAYLIST_ID))
+VALID_ID = re.compile(r'(?:[vet]\.%s|[sm]\.%s)' % (VIDEO_ID, PLAYLIST_ID))
+MUSIC_KINDS = ('album', 'track')     # 0.5.71: music videos (playlist = album, video = track)
+MAX_BATCH = 500                   # videos one click may queue for offline saving
 VALID_VIDEO = re.compile(VIDEO_ID)
 ENDPOINTS = ('channels', 'playlists', 'playlistItems', 'videos')
 IMAGE_HOST = 'i.ytimg.com'
@@ -99,6 +101,9 @@ CREATE TABLE IF NOT EXISTS youtube_sources(
   title TEXT NOT NULL DEFAULT '', videos INTEGER NOT NULL DEFAULT 0, films INTEGER NOT NULL DEFAULT 0,
   last_error TEXT NOT NULL DEFAULT '', checked REAL NOT NULL DEFAULT 0, added REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS youtube_state(name TEXT PRIMARY KEY, value TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS youtube_album_tracks(
+  album TEXT NOT NULL, video TEXT NOT NULL, position INTEGER NOT NULL DEFAULT 0, seen REAL NOT NULL,
+  PRIMARY KEY(album, video));
 '''
 
 
@@ -210,16 +215,25 @@ def parse_ref(text):
         return value
     if re.fullmatch(r'(?:PL|OL|FL|UU)[A-Za-z0-9_-]{10,62}', value):
         return value
+    if re.fullmatch(r'v:' + VIDEO_ID, value):
+        return value
     if not re.match(r'https?://', value):
         value = 'https://' + value
     parts = urllib.parse.urlsplit(value)
     host = (parts.hostname or '').lower()
-    if host not in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com'):
-        raise ValueError('Bitte eine Adresse von youtube.com angeben (Kanal, @Handle oder Playlist)')
-    playlist = urllib.parse.parse_qs(parts.query).get('list', [''])[0]
+    if host not in ('youtube.com', 'www.youtube.com', 'm.youtube.com', 'music.youtube.com', 'youtu.be'):
+        raise ValueError('Bitte eine Adresse von youtube.com angeben (Kanal, @Handle, Playlist oder Video)')
+    query = urllib.parse.parse_qs(parts.query)
+    playlist = query.get('list', [''])[0]
     if playlist and re.fullmatch(PLAYLIST_ID, playlist):
         return playlist
     segments = [s for s in parts.path.split('/') if s]
+    # 0.5.71: a single video (watch?v=…, youtu.be/…, /shorts/…, /live/…) becomes 'v:ID'.
+    video = query.get('v', [''])[0] if segments[:1] == ['watch'] else (
+        segments[0] if host == 'youtu.be' and segments else
+        segments[1] if len(segments) >= 2 and segments[0] in ('shorts', 'live', 'embed') else '')
+    if video and VALID_VIDEO.fullmatch(video):
+        return 'v:' + video
     if segments and re.fullmatch(HANDLE, urllib.parse.unquote(segments[0])):
         return urllib.parse.unquote(segments[0])
     if len(segments) >= 2 and segments[0] == 'channel' and re.fullmatch(CHANNEL_ID, segments[1]):
@@ -227,7 +241,7 @@ def parse_ref(text):
     if len(segments) >= 2 and segments[0] == 'user' and re.fullmatch(r'[A-Za-z0-9]{3,40}', segments[1]):
         return 'user:' + segments[1]
     raise ValueError('Adresse nicht erkannt. Möglich: youtube.com/@Kanal, youtube.com/channel/UC…, '
-                     'youtube.com/playlist?list=…')
+                     'youtube.com/playlist?list=…, youtube.com/watch?v=…')
 
 
 # Title cleaning: "Der Pate (Ganzer Film Deutsch, HD) | Krimi | 1972" -> "Der Pate", 1972, Krimi.
@@ -512,6 +526,57 @@ def series_items(source, entries, facts_by_id):
     return [series] + out
 
 
+_MUSIC_NOISE = re.compile(r'\s*[\(\[](?:official\s+(?:music\s+)?(?:video|audio|visuali[sz]er)|offizielles\s+(?:musik)?video|'
+                          r'(?:full\s+)?hd|4k(?:\s+remaster(?:ed)?)?|remastered(?:\s+\d{4})?|video\s*clip|videoclip|'
+                          r'official\s+hd\s+video|music\s+video)[\)\]]', re.I)
+
+
+def music_title(raw):
+    """'Artist - Song (Official Video)' -> 'Artist - Song'; lyric and live markers stay."""
+    title = _MUSIC_NOISE.sub('', str(raw or ''))
+    return ' '.join(title.split())[:300] or ' '.join(str(raw or '').split())[:300]
+
+
+def _track(facts, source, album_id, position):
+    lang = LANGUAGE_NAMES.get(facts['language'].split('-')[0].lower(), '')
+    return {'id': 't.' + facts['id'], 'kind': 'track', 'title': music_title(facts['title']), 'path': facts['id'],
+            'series_id': album_id, 'season': None, 'episode': None, 'year': _int(facts['published'][:4], 1900, 2100),
+            'duration': facts['duration'], 'rating': facts['rating'], 'genre': '', 'summary': summary_text(facts['description']),
+            'poster': facts['poster'], 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': position,
+            'category': facts['channel'] or source.get('title') or '', 'raw_title': facts['title'], 'language': lang,
+            'published': facts['published'], 'source_id': source.get('id'), 'playable': int(facts['playable']),
+            'reason': facts['reason'], 'offline': 0, 'drm': 0, 'web_url': video_url(facts['id'])}
+
+
+def music_items(source, entries, facts_by_id):
+    """0.5.71 (Björn): music videos. No minimum length, no promo filter: a playlist or channel
+    becomes an album with its tracks in playlist order, a single video a track of its own.
+    Returns (items, [(album_id, video_id, position)])."""
+    if str(source.get('ref') or '').startswith('v:'):
+        f = facts_by_id.get(source['ref'][2:])
+        return ([_track(f, source, '', 0)] if f else []), []
+    playlist = source.get('playlist') or ''
+    if not re.fullmatch(PLAYLIST_ID, playlist):
+        return [], []
+    album_id = 'm.' + playlist
+    tracks, links = [], []
+    for video_id, position in entries:
+        f = facts_by_id.get(video_id)
+        if f:
+            tracks.append(_track(f, source, album_id, position))
+            links.append((album_id, video_id, position))
+    if not tracks:
+        return [], []
+    name = _text(source.get('label') or source.get('title'), 200) or 'Playlist'
+    album = {'id': album_id, 'kind': 'album', 'title': name, 'path': playlist, 'series_id': '', 'season': None,
+             'episode': None, 'year': None, 'duration': sum(t['duration'] or 0 for t in tracks), 'rating': '',
+             'genre': '', 'summary': '', 'poster': tracks[0]['poster'], 'imdb_id': '', 'imdb_score': None,
+             'imdb_votes': None, 'number': len(tracks), 'category': tracks[0]['category'] or source.get('title') or '',
+             'raw_title': name, 'language': '', 'published': '', 'source_id': source.get('id'), 'playable': 1,
+             'reason': '', 'offline': 0, 'drm': 0, 'web_url': playlist_url(playlist)}
+    return [album] + tracks, links
+
+
 # ---------------------------------------------------------------- network
 
 def _request(endpoint, query, key):
@@ -585,6 +650,14 @@ def resolve_source(request, src):
             raise ValueError('Kanal ohne öffentliche Uploads')
         return {'channel_id': str(node.get('id') or '')[:40], 'playlist': uploads,
                 'title': _text((node.get('snippet') or {}).get('title'), 120)}
+    if ref.startswith('v:'):
+        items = (request('videos', {'part': 'snippet', 'id': ref[2:], 'maxResults': 1}) or {}).get('items') or []
+        node = items[0] if items and isinstance(items[0], dict) else None
+        if not node:
+            raise ValueError('Video nicht gefunden')
+        snippet = node.get('snippet') or {}
+        return {'channel_id': _text(snippet.get('channelId'), 40), 'playlist': '',
+                'title': _text(snippet.get('title'), 120)}
     items = (request('playlists', {'part': 'snippet', 'id': ref, 'maxResults': 1}) or {}).get('items') or []
     node = items[0] if items and isinstance(items[0], dict) else None
     if not node:
@@ -682,14 +755,15 @@ def sources(root):
 
 def add_source(root, text, kind='movies', label='', min_minutes=None):
     ref = parse_ref(text)
-    if kind not in ('movies', 'series'):
-        raise ValueError('Art muss „Filme“ oder „Serie“ sein')
-    if kind == 'series' and (ref.startswith('@') or ref.startswith('UC') or ref.startswith('user:')):
+    if kind not in ('movies', 'series', 'music'):
+        raise ValueError('Art muss „Filme“, „Serie“ oder „Musikvideos“ sein')
+    if kind == 'series' and (ref.startswith('@') or ref.startswith('UC') or ref.startswith('user:') or ref.startswith('v:')):
         raise ValueError('Eine Serie bitte als Playlist-Adresse angeben (youtube.com/playlist?list=…)')
     minutes = _int(min_minutes, 1, 600) if min_minutes not in (None, '') else None
     if min_minutes not in (None, '') and minutes is None:
         raise ValueError('Mindestlänge: 1 bis 600 Minuten')
-    minutes = minutes or (MOVIE_MINUTES if kind == 'movies' else EPISODE_MINUTES)
+    # Music videos are never filtered by length (the column keeps a neutral 1 minute).
+    minutes = 1 if kind == 'music' else minutes or (MOVIE_MINUTES if kind == 'movies' else EPISODE_MINUTES)
     db = _connect(root)
     try:
         if db.execute('SELECT COUNT(*) FROM youtube_sources').fetchone()[0] >= MAX_SOURCES:
@@ -744,6 +818,7 @@ def sync(root, request=None, now=None, gap=None, key=None):
     _notify('youtube_sync_started', sources=len(active))
     found, failures, quota_hit = {}, [], False
     episodes_of = set()
+    album_links = []
     try:
         if not active:
             raise ValueError('Keine YouTube-Kanäle eingetragen')
@@ -751,24 +826,28 @@ def sync(root, request=None, now=None, gap=None, key=None):
             db = _connect(root)
             try:
                 try:
-                    if not src['playlist'] or now - (src['checked'] or 0) > 30 * 86400:
+                    single = src['ref'].startswith('v:')
+                    if (not src['playlist'] and not single) or not src['checked'] or now - (src['checked'] or 0) > 30 * 86400:
                         src.update(resolve_source(request, src))
-                    entries = playlist_entries(request, src['playlist'], gap)
+                    entries = [(src['ref'][2:], 0)] if single else playlist_entries(request, src['playlist'], gap)
                     facts = load_facts(request, db, [v for v, _ in entries], now, gap)
                     minimum = max(1, _int(src.get('min_minutes'), 1, 600) or (EPISODE_MINUTES if src['kind'] == 'series' else MOVIE_MINUTES)) * 60
                     skipped = {}
                     for v, _ in entries:
-                        why = screen(facts[v], minimum) if v in facts else 'nicht verfügbar (gesperrt, privat, live)'
+                        why = (screen(facts[v], minimum) if src['kind'] != 'music' else '') if v in facts else 'nicht verfügbar (gesperrt, privat, live)'
                         if why:
                             skipped[why] = skipped.get(why, 0) + 1
-                    if src['kind'] == 'series':
+                    if src['kind'] == 'music':
+                        items, links = music_items(src, entries, facts)
+                        album_links += links
+                    elif src['kind'] == 'series':
                         items = series_items(src, entries, facts)
                         episodes_of.update(i['path'] for i in items if i['kind'] == 'episode')
                     else:
                         items = [it for it in (movie_item(facts[v], src) for v, _ in entries if v in facts) if it]
                     for it in items:
                         found.setdefault(it['id'], it)
-                    films = sum(1 for i in items if i['kind'] in ('movie', 'episode'))
+                    films = sum(1 for i in items if i['kind'] in ('movie', 'episode', 'track'))
                     with db:
                         db.execute('''UPDATE youtube_sources SET channel_id=?,playlist=?,title=?,videos=?,films=?,
                             last_error='',checked=?,skipped=? WHERE id=?''', (src['channel_id'], src['playlist'], src['title'],
@@ -794,11 +873,16 @@ def sync(root, request=None, now=None, gap=None, key=None):
         counts = {'movies': sum(1 for i in items if i['kind'] == 'movie'),
                   'series': sum(1 for i in items if i['kind'] == 'series'),
                   'episodes': sum(1 for i in items if i['kind'] == 'episode'),
-                  'playable': sum(1 for i in items if i['kind'] != 'series' and i['playable'])}
+                  'playable': sum(1 for i in items if i['kind'] in ('movie', 'episode') and i['playable']),
+                  'music': sum(1 for i in items if i['kind'] == 'album' or (i['kind'] == 'track' and not i['series_id'])),
+                  'tracks': sum(1 for i in items if i['kind'] == 'track')}
         db = _connect(root)
         try:
             with db:
                 _store(db, items, now)
+                for album, video, position in album_links:
+                    db.execute('INSERT OR REPLACE INTO youtube_album_tracks(album,video,position,seen) VALUES(?,?,?,?)',
+                               (album, video, position, now))
                 previous = float(_get(db, 'last_success', '0') or 0)
                 visible_since = previous if partial and previous else now
                 for k, value in [('last_success', visible_since), ('last_loaded', now),
@@ -837,7 +921,7 @@ def offline_flag(root, row, enabled=None):
     if enabled is None:
         import youtube_downloads
         enabled = youtube_downloads.enabled(root)
-    return int(bool(enabled) and row.get('kind') in ('movie', 'episode')
+    return int(bool(enabled) and row.get('kind') in ('movie', 'episode', 'track')
                and not str(row.get('reason') or '').startswith('Altersbeschränkt'))
 
 
@@ -851,6 +935,8 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     """One page of films or series with canonical categories and ratings (same as the other portals).
     Titles whose every reference contradicts the runtime are hidden (counted in ``hidden``)."""
     import youtube_enrichment
+    if view == 'music':
+        return music_listing(root, query, offset, limit, sort)
     kind = {'movies': 'movie', 'series': 'series'}.get(view, 'movie')
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
     # 'all': the merged dashboard index (unified_index.py) reads every row once and pages itself.
@@ -889,6 +975,66 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         rows.sort(key=lambda r: (-(r.get('year') or 0), r['title'].casefold()))
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
             'genre_counts': counts, 'hidden': hidden}
+
+
+def music_listing(root, query='', offset=0, limit=60, sort='title'):
+    """0.5.71: music playlists (albums) and single music videos; no film references, no categories."""
+    import youtube_downloads
+    offset = max(0, min(_int(offset, 0) or 0, 1000000))
+    limit = 1000000 if limit == 'all' else max(1, min(_int(limit, 1) or 60, 200))
+    db = _connect(root)
+    try:
+        last = float(_get(db, 'last_success', '0') or 0)
+        sql = "FROM youtube_items WHERE (kind='album' OR (kind='track' AND series_id='')) AND seen>=?"
+        args = [last]
+        if query:
+            like = '%' + str(query)[:100] + '%'
+            # also finds a playlist by one of its songs
+            sql += (" AND (title LIKE ? OR category LIKE ? OR raw_title LIKE ? OR (kind='album' AND id IN "
+                    "(SELECT a.album FROM youtube_album_tracks a JOIN youtube_items t ON t.id='t.'||a.video "
+                    "WHERE a.seen>=? AND (t.title LIKE ? OR t.category LIKE ?))))")
+            args += [like, like, like, last, like, like]
+        order = 'published DESC, title COLLATE NOCASE' if sort == 'year' else 'title COLLATE NOCASE'
+        rows = [dict(r) for r in db.execute('SELECT * ' + sql + ' ORDER BY ' + order, args)]
+    finally:
+        db.close()
+    switch = youtube_downloads.enabled(root)
+    for row in rows:
+        row['offline'] = offline_flag(root, row, switch)
+    return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': 'music',
+            'genre_counts': {}, 'hidden': 0}
+
+
+def tracks(root, album_id):
+    """Videos of one music playlist in playlist order (read with the catalogue run)."""
+    if not VALID_ID.fullmatch(str(album_id or '')) or not str(album_id).startswith('m.'):
+        raise ValueError('Ungültige YouTube-Playlist')
+    import youtube_downloads
+    db = _connect(root)
+    try:
+        album = _row(db, album_id)
+        if not album or album['kind'] != 'album':
+            raise ValueError('Playlist nicht im Katalog; bitte Katalog neu laden')
+        last = float(_get(db, 'last_success', '0') or 0)
+        rows = [dict(r) for r in db.execute(
+            "SELECT i.*, a.position AS number FROM youtube_album_tracks a JOIN youtube_items i ON i.id='t.'||a.video "
+            "WHERE a.album=? AND a.seen>=? AND i.seen>=? ORDER BY a.position, i.title", (album_id, last, last))]
+    finally:
+        db.close()
+    switch = youtube_downloads.enabled(root)
+    for row in rows:
+        row['offline'] = offline_flag(root, row, switch)
+    return {'series': {'id': album_id, 'title': album['title'], 'kind': 'album', 'category': album['category'],
+                       'poster': album['poster'], 'web_url': album['web_url']}, 'items': rows, 'error': ''}
+
+
+def album_track_ids(root, album_id, selected=None):
+    """Track ids of an album for 'save all' / 'save selection' (selection limited to the album)."""
+    ids = [r['id'] for r in tracks(root, album_id)['items'] if r['offline']]
+    if selected is not None:
+        wanted = set(str(x) for x in selected)
+        ids = [i for i in ids if i in wanted]
+    return ids[:MAX_BATCH]
 
 
 def episodes(root, series_id, request=None, now=None):
@@ -950,6 +1096,7 @@ def state(root):
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'episodes': _int(_get(db, 'episodes', '0')) or 0, 'playable': _int(_get(db, 'playable', '0')) or 0,
+            'music': _int(_get(db, 'music', '0')) or 0, 'tracks': _int(_get(db, 'tracks', '0')) or 0,
             'sources': sum(1 for s in srcs if s['enabled']),
             'sources_failed': sum(1 for s in srcs if s['enabled'] and s['last_error']),
             'offline_enabled': _get(db, 'offline_enabled', '0') == '1',
@@ -1019,6 +1166,8 @@ def play_info(root, item_id):
         raise ValueError('YouTube-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':
         raise ValueError('Bitte eine Folge der Serie auswählen')
+    if row['kind'] == 'album':
+        raise ValueError('Bitte ein Video der Playlist auswählen')
     if not row['playable']:
         raise ValueError((row['reason'] or 'Nur auf youtube.com abspielbar') + '.')
     return {'mode': 'embed', 'provider': 'youtube', 'video_id': row['path'], 'embed': EMBED + row['path'],

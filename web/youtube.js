@@ -7,7 +7,7 @@
   const $ = id => document.getElementById(id);
   const make = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
   const panel = window.AtlasPortalPanel?.({
-    key: 'youtube', name: 'YouTube', short: 'YouTube', offlineFlag: true,
+    key: 'youtube', name: 'YouTube', short: 'YouTube', offlineFlag: true, music: true,
     play: () => window.playYouTube, externalLink: 'Bei YouTube ansehen',
     offlineNote: days => `YouTube: ${days} Tage offline, nur nach Einschalten (auf eigene Verantwortung).`
   });
@@ -21,9 +21,11 @@
     if (!list.length) host.append(make('p', 'Noch keine Kanäle eingetragen. Unten die Adresse eines offiziellen Kanals oder einer Playlist einfügen.', 'muted'));
     for (const s of list) {
       const row = make('div', undefined, 'youtube-source' + (s.enabled ? '' : ' disabled'));
-      row.append(make('strong', (s.label || s.title || s.ref) + (s.kind === 'series' ? ' · Serie' : ' · Filme')));
-      const facts = [s.ref, s.title && s.title !== s.label ? 'Kanal: ' + s.title : '', 'ab ' + s.min_minutes + ' Min.',
-        s.checked ? s.films + ' ' + (s.kind === 'series' ? 'Folgen' : 'Filme') + ' von ' + s.videos + ' Videos · Stand ' + when(s.checked) : 'noch nicht abgerufen',
+      const music = s.kind === 'music';
+      row.append(make('strong', (s.label || s.title || s.ref) + (s.kind === 'series' ? ' · Serie' : music ? ' · Musikvideos' : ' · Filme')));
+      const facts = [s.ref.startsWith('v:') ? 'Video ' + s.ref.slice(2) : s.ref, s.title && s.title !== s.label ? (s.ref.startsWith('v:') ? 'Titel: ' : 'Kanal: ') + s.title : '',
+        music ? 'ohne Längenfilter' : 'ab ' + s.min_minutes + ' Min.',
+        s.checked ? s.films + ' ' + (s.kind === 'series' ? 'Folgen' : music ? 'Musikvideos' : 'Filme') + ' von ' + s.videos + ' Videos · Stand ' + when(s.checked) : 'noch nicht abgerufen',
         s.suggested ? 'Vorschlag (ungeprüft)' : ''].filter(Boolean).join(' · ');
       row.append(make('small', facts, 'muted'));
       // 0.5.54: what the check left out and why (ArchiveMedia format check, description, length).
@@ -63,7 +65,7 @@
         (st.sources_failed ? ' · ' + st.sources_failed + ' mit Fehler' : '') + ' · Offline ' + (st.offline_enabled ? 'an' : 'aus');
       // 0.5.62: since 0.5.55 the setup sits in the collapsed "YouTube verwalten" block; without a key,
       // a source or a catalogue it opens by itself so channels and key are never out of sight.
-      if (!st.key_set || !st.sources || !(st.movies || st.series)) { window.AtlasPlatformLayout?.open('youtube'); $('youtube-setup').open = true; }
+      if (!st.key_set || !st.sources || !(st.movies || st.series || st.music)) { window.AtlasPlatformLayout?.open('youtube'); $('youtube-setup').open = true; }
     } catch (e) { say(e.message, true); }
   }
 
@@ -86,7 +88,9 @@
     } catch (e) { say(e.message, true); }
   };
   // Series episodes are shorter than films: the suggested minimum follows the kind (films 60, series 10 min).
-  const minHint = () => { $('youtube-source-min').placeholder = $('youtube-source-kind').value === 'series' ? '10' : '60'; };
+  // 0.5.71: music videos have no minimum length (and no promo filter).
+  const minHint = () => { const k = $('youtube-source-kind').value; $('youtube-source-min').placeholder = k === 'series' ? '10' : '60';
+    $('youtube-source-min').disabled = k === 'music'; $('youtube-source-min').closest('label').hidden = k === 'music'; };
   $('youtube-source-kind').onchange = minHint; minHint();
   $('youtube-offline-switch').onchange = async ev => {
     const on = ev.target.checked;

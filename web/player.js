@@ -87,13 +87,13 @@ function startEmbed(info,t){S.mode='embed';S.embedPos=t||0;stage.classList.add('
 window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocookie.com'||S.mode!=='embed'||e.source!==embed.contentWindow)return;
  let d;try{d=typeof e.data==='string'?JSON.parse(e.data):e.data;}catch{return;}
  const info=d&&d.info;if(!info)return;if(typeof info.currentTime==='number')S.embedPos=info.currentTime;
- if(info.playerState===0)save('ended');else if(info.playerState===2)save();});
+ if(info.playerState===0){save('ended');if(S.list[S.index]?.youtube&&S.list[S.index+1])playIndex(S.index+1);}else if(info.playerState===2)save();});
 // 0.5.68: only Safari (and other Apple WebKit browsers) plays HLS itself. Chrome reports a built-in
 // HLS player as well since late 2025, but it is new and plays live streams unevenly.
 function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayType('application/vnd.apple.mpegurl');}
 function stopVideo(){if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
-function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
-function playIndex(i){S.index=i;const item=S.list[i];return open({offer:item.id},episodeLabel(item),episodeKey(item));}
+function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n&&n.youtube){b.textContent='Nächstes Video ▸ '+String(n.label||'').slice(0,40);return;}if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
+function playIndex(i){S.index=i;const item=S.list[i];if(item.youtube)return open({youtube:item.youtube},item.label||'YouTube','youtube:'+item.youtube);return open({offer:item.id},episodeLabel(item),episodeKey(item));}
 function episodeLabel(item){const m=item.metadata||{};return (m.title||item.source?.title||'Video')+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?' · S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'')+(m.episode_title?' · '+m.episode_title:'');}
 async function episodes(show){const d=await api('catalog?'+new URLSearchParams({kind:'series',show,downloaded:'all',archive:'0'}));return d.items.filter(x=>!x.series_parent);}
 window.playMedia=async function(item,list){
@@ -112,6 +112,8 @@ window.playLive=function(ref,label){S.list=[];S.index=-1;return open(ref,label||
 window.playJustWatch=function(id,label){S.list=[];S.index=-1;return open({justwatch:id},label||'JustWatch TV','justwatch:'+id);};
 // 0.5.53: YouTube plays in the official embedded player (or locally when an offline copy exists).
 window.playYouTube=function(id,label){S.list=[];S.index=-1;return open({youtube:id},label||'YouTube','youtube:'+id);};
+// 0.5.71: a music playlist plays video after video (embedded player or offline copy), with "Nächstes Video".
+window.playYouTubeList=function(items,start){S.list=(items||[]).filter(x=>x&&x.id).map(x=>({youtube:x.id,label:x.label}));if(!S.list.length)return;return playIndex(Math.min(Math.max(0,start|0),S.list.length-1));};
 window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:id},label||'Rakuten TV','rakuten:'+id);};
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};

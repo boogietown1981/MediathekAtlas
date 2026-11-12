@@ -282,6 +282,30 @@ def metadata(row, series=None):
     return meta
 
 
+MUSIC_FOLDER = 'Musikvideos'
+
+
+def music_metadata(row, album=None):
+    title = ' '.join(str(row.get('title') or '').split())[:180]
+    if not title:
+        raise ValueError('YouTube-Video ohne Namen')
+    return {'kind': 'movie', 'title': title, 'episode_title': '', 'year': row.get('year'), 'season': None,
+            'episode': None, 'description': row.get('summary') or '', 'genres': ['Musik'],
+            'poster': row.get('poster') or (album or {}).get('poster') or '', 'fanart': '', 'provider': NAME,
+            'reference_id': None, 'state': 'manual',
+            'reason': 'YouTube-Musikvideo (%s); Offline-Kopie auf eigene Verantwortung, zeitlich begrenzt.'
+                      % ((album or {}).get('title') or row.get('category') or NAME)}
+
+
+def music_target(download_dir, row, album=None):
+    from package_media import clean_path_part
+    folder = clean_path_part((album or {}).get('title') or row.get('category') or 'Einzelne Videos') or 'YouTube'
+    name = clean_path_part(row.get('title') or row.get('path') or 'Video') or 'Video'
+    if album and row.get('number') is not None:
+        name = '%03d - %s' % (int(row['number']) + 1, name)
+    return Path(download_dir) / MUSIC_FOLDER / folder / (name + '.mkv')
+
+
 def build_job(root, download_dir, item_id, now=None):
     import core, youtube, youtube_enrichment, portal_reference
     if not enabled(root):
@@ -298,15 +322,23 @@ def build_job(root, download_dir, item_id, now=None):
         raise ValueError('YouTube-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':
         raise ValueError('Bitte eine einzelne Folge auswählen; Serien werden folgenweise geladen')
+    if row['kind'] == 'album':
+        raise ValueError('Bitte „Ganze Playlist offline speichern“ verwenden')
     if row['reason'].startswith('Altersbeschränkt'):
         raise ValueError('Altersbeschränktes Video: ohne Anmeldung nicht ladbar')
-    try:
-        report = youtube_enrichment.cached(root, item_id)
-    except Exception:
-        report = None
-    meta = core.validate_meta(portal_reference.apply(metadata(row, parent), report, NAME, series_report=True))
     source_id = 'youtube:' + item_id
-    target = str(core.target(download_dir, meta, source_id))
+    if row['kind'] == 'track':
+        # 0.5.71: music videos go to <Download>/Musikvideos/<Playlist or channel>/[NNN - ]<Titel>.mkv;
+        # no film references (a song has no IMDb entry).
+        meta = core.validate_meta(music_metadata(row, parent))
+        target = str(music_target(download_dir, row, parent))
+    else:
+        try:
+            report = youtube_enrichment.cached(root, item_id)
+        except Exception:
+            report = None
+        meta = core.validate_meta(portal_reference.apply(metadata(row, parent), report, NAME, series_report=True))
+        target = str(core.target(download_dir, meta, source_id))
     source = {'_id': source_id, '_resolver': 'youtube', '_youtube_id': item_id, '_youtube_home': str(root),
               '_video_id': row['path'], 'channel': row.get('category') or NAME, 'title': row['raw_title'] or row['title'],
               'duration': row['duration'], 'url': row['web_url']}
@@ -322,3 +354,26 @@ def build_job(root, download_dir, item_id, now=None):
 def enqueue(c, root, download_dir, item_id, now=None):
     job = build_job(root, download_dir, item_id, now)
     return offline.portal_duplicate(c, job) or offline.insert(c, job)
+
+
+def enqueue_many(c, root, download_dir, item_ids, now=None):
+    """0.5.71: one click for a whole playlist or a selection. Each video is its own job, so pause,
+    retry and the 30-day limit work per video; videos already saved or queued are not added twice."""
+    if not enabled(root):
+        raise ValueError('YouTube-Offline-Speichern ist ausgeschaltet (im YouTube-Bereich einschaltbar)')
+    out = {'created': 0, 'existing': 0, 'failed': 0, 'errors': [], 'jobs': []}
+    for item_id in list(item_ids)[:500]:
+        try:
+            result = enqueue(c, root, download_dir, item_id, now)
+        except FileExistsError:
+            out['existing'] += 1       # already saved earlier: nothing to do
+            continue
+        except (ValueError, OSError) as exc:
+            out['failed'] += 1
+            if len(out['errors']) < 5:
+                out['errors'].append(str(exc)[:200])
+            continue
+        out['created' if result.get('created') else 'existing'] += 1
+        if result.get('created'):
+            out['jobs'].append(result.get('id'))
+    return out
