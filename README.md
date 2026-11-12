@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.60
+# MediathekAtlas · 0.5.65
+
+## Neu in 0.5.65: Joyn
+
+- **Joyn als Plattform:** Neuer Reiter „Joyn“ unter Plattformen und Quelle „Joyn“ im Dashboard. Geladen werden alle Filme und Serien der Joyn-Genreseiten – kostenlos (mit Werbung) und, getrennt gekennzeichnet, Joyn+. Die Kategorien „Joyn (kostenlos)“ und „Joyn+“ filtern danach. Bewertungen, Kategorien und Titelseite wie bei den anderen Plattformen.
+- **Live-TV:** Die rund 125 Joyn-Sender stehen im Reiter Live-TV; Sender, die es auch bei ARD, ZDF & Co. gibt, erscheinen einmal mit beiden Anbietern.
+- **Ansehen:** Joyn spielt nur im eigenen Player ab, in der Regel mit Kopierschutz. MediathekAtlas umgeht ihn nicht und meldet sich nicht bei Joyn an: „Bei Joyn ansehen“ öffnet joyn.de, wo du angemeldet bist. Kein Abspielen im MediathekAtlas-Player, kein Offline-Speichern. Folgenlisten einzelner Serien folgen, sobald ein Mitschnitt die Abfrage zeigt.
+
 
 ## Neu in 0.5.60: Plattform-Kataloge sofort, aufgeräumte Titelseiten, weniger Dubletten
 

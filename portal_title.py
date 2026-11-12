@@ -16,7 +16,7 @@ detail sources into one model:
 """
 from __future__ import annotations
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -92,7 +92,8 @@ def _portal(root, source, item_id):
     if parent:
         m['series'] = {'id': parent.get('id'), 'title': _text(parent.get('title'), 200)}
     if m['kind'] == 'channel':
-        m['playable'] = True
+        # 0.5.65: Joyn channels are listed without a released stream (playable=0).
+        m['playable'] = it.get('playable') not in (0, False)
     elif m['kind'] != 'series':
         m['playable'] = it.get('playable') not in (0, False)
         # 0.5.48: JustWatch releases some titles only at night (youth protection): reserve the download.
@@ -127,6 +128,15 @@ def _portal(root, source, item_id):
         if it.get('drm'):
             facts.append(['Stream', 'nur mit Kopierschutz (Widevine/PlayReady) – bei Rakuten TV ansehen, kein Offline-Speichern'])
             m['notes'].append('Rakuten TV liefert kostenlose Filme und Folgen nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht.')
+    if source == 'joyn':
+        plus = it.get('offer') == 'plus'
+        facts.append(['Angebot', 'Joyn+ (mit Joyn-Konto)' if plus else 'Joyn, kostenlos mit Werbung'])
+        if it.get('brand'):
+            facts.append(['Sender', _text(it['brand'], 120)])
+        if it.get('seasons'):
+            facts.append(['Staffeln laut Joyn', str(it['seasons'])])
+        facts.append(['Stream', 'nur im Joyn-Player (in der Regel mit Kopierschutz) – bei Joyn ansehen, kein Offline-Speichern'])
+        m['notes'].append('Joyn spielt Titel nur im eigenen Player ab; MediathekAtlas meldet sich bei Joyn nicht an und umgeht keinen Kopierschutz.')
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
@@ -253,6 +263,8 @@ def model(root, source, item_id):
             m['episodes'] = _sort_episodes([_episode(source, e, m['poster']) for e in data.get('items') or []])
             if data.get('error'):
                 m['notes'].append('Folgen konnten nicht aktualisiert werden: ' + _text(data['error'], 200))
+            if data.get('note'):
+                m['notes'].append(_text(data['note'], 300))
     if not m['title']:
         raise ValueError('Titel nicht im Katalog; bitte Katalog neu laden')
     m['kind_label'] = KIND_LABEL.get(m['kind'], 'Titel')

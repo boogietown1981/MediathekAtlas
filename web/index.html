@@ -50,6 +50,7 @@
   <button type="button" data-catalog-source="justwatch">JustWatch TV</button>
   <button type="button" data-catalog-source="rakuten">Rakuten TV</button>
   <button type="button" data-catalog-source="youtube">YouTube</button>
+  <button type="button" data-catalog-source="joyn">Joyn</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Alle Plattformen · Filme</h2>
@@ -84,6 +85,7 @@
     <button class="platform-tab" type="button" data-platform="justwatch">JustWatch TV</button>
     <button class="platform-tab" type="button" data-platform="rakuten">Rakuten TV</button>
     <button class="platform-tab" type="button" data-platform="youtube">YouTube</button>
+    <button class="platform-tab" type="button" data-platform="joyn">Joyn</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -173,6 +175,34 @@
   <div class="netzkino-pages"><button type="button" id="rakuten-prev">← Zurück</button>
     <span id="rakuten-page-label" class="muted"></span>
     <button type="button" id="rakuten-next">Weiter →</button></div>
+</section>
+<section id="joyn" class="pluto-panel joyn-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Joyn · Filme, Serien und Live-Sender</h3>
+    <p class="muted">Kostenlose Titel (mit Werbung) und – getrennt gekennzeichnet als „Joyn+“ – die Titel und Sender, die ein Joyn+-Konto braucht. Filter über die Kategorien „Joyn (kostenlos)“ und „Joyn+“.
+       Joyn spielt Filme, Folgen und Live-Sender nur im eigenen Player ab, in der Regel mit Kopierschutz (Widevine). MediathekAtlas umgeht ihn nicht und meldet sich nicht bei Joyn an: Die Titel haben Katalog, Bewertung und Titelseite und öffnen zum Ansehen joyn.de, wo du angemeldet bist. Abspielen im MediathekAtlas-Player und Offline-Speichern sind dafür nicht möglich.
+       Die Folgenlisten einzelner Serien zeigt MediathekAtlas noch nicht an.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="joyn-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="joyn-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="joyn-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Joyn-Ansicht">
+    <button type="button" id="joyn-view-movies" class="primary">Filme</button>
+    <button type="button" id="joyn-view-series">Serien</button>
+    <button type="button" id="joyn-view-live">Live-TV</button>
+    <button type="button" id="joyn-back" hidden>← Zur Serienübersicht</button>
+    <span id="joyn-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Joyn-Titel suchen<input type="search" id="joyn-filter" placeholder="Titel, Genre oder Sender"></label>
+    <label>Sortierung<select id="joyn-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="joyn-categories" class="portal-categories" role="group" aria-label="Joyn-Kategorien" hidden></div>
+  <p id="joyn-status" class="muted" role="status"></p>
+  <details id="joyn-offline" class="nk-offline joyn-offline" hidden><summary>Offline-Kopien von Joyn <span id="joyn-offline-count" class="muted"></span></summary>
+    <div id="joyn-offline-jobs"></div></details>
+  <div id="joyn-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="joyn-prev">← Zurück</button>
+    <span id="joyn-page-label" class="muted"></span>
+    <button type="button" id="joyn-next">Weiter →</button></div>
 </section>
 <section id="youtube" class="pluto-panel youtube-panel">
   <div class="panel netzkino-sync-panel">
@@ -427,4 +457,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script></body></html>

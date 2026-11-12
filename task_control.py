@@ -28,7 +28,7 @@ FACTOR = {'high': 0.35, 'normal': 1.0, 'low': 3.0}
 PRIORITY_LABEL = {'high': 'Hoch', 'normal': 'Normal', 'low': 'Niedrig'}
 
 PORTALS = (('netzkino', 'Netzkino'), ('pluto', 'Pluto TV'), ('justwatch', 'JustWatch TV'),
-           ('rakuten', 'Rakuten TV'), ('youtube', 'YouTube'))
+           ('rakuten', 'Rakuten TV'), ('youtube', 'YouTube'), ('joyn', 'Joyn'))
 
 # id -> definition. ``can``: pause, start (run now), priority, cancel.
 TASKS = {

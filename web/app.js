@@ -789,6 +789,7 @@ function portalView(name){
   if(name==='justwatch')window.MediathekAtlasJustWatch?.refresh?.();
   if(name==='rakuten')window.MediathekAtlasRakuten?.refresh?.();
   if(name==='youtube')window.MediathekAtlasYouTube?.refresh?.();
+  if(name==='joyn')window.MediathekAtlasJoyn?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);

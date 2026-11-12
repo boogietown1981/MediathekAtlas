@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, joyn, joyn_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -86,7 +86,7 @@ def put_job(j):
 
 def film_platforms(offline):
     # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
-    nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT);rk=rakuten.state(ROOT);yt=youtube.state(ROOT)
+    nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT);rk=rakuten.state(ROOT);yt=youtube.state(ROOT);jy=joyn.state(ROOT)
     return [
         {'source':'netzkino','name':'Netzkino','titles':nk.get('catalog_count',0),'last_success':nk.get('last_success',0),
          'last_result':nk.get('last_result'),'running':nk.get('running'),'reference':netzkino_enrichment.metrics(ROOT),
@@ -103,6 +103,10 @@ def film_platforms(offline):
          'channels':rk.get('channels',0),'protected':rk.get('protected',0),'last_success':rk.get('last_success',0),'last_result':rk.get('last_result'),
          'running':rk.get('running'),'reference':rakuten_enrichment.metrics(ROOT),
          'offline':offline['rakuten'],'offline_days':rakuten_downloads.OFFLINE_DAYS},
+        {'source':'joyn','name':'Joyn','titles':(jy.get('movies',0) or 0)+(jy.get('series',0) or 0),
+         'channels':jy.get('channels',0),'plus':jy.get('plus',0),'protected':jy.get('protected',0),'last_success':jy.get('last_success',0),
+         'last_result':jy.get('last_result'),'running':jy.get('running'),'reference':joyn_enrichment.metrics(ROOT),
+         'offline':offline.get('joyn',{}),'offline_days':0},
         {'source':'youtube','name':'YouTube','titles':(yt.get('movies',0) or 0)+(yt.get('series',0) or 0),
          'playable':yt.get('playable',0),'sources':yt.get('sources',0),'last_success':yt.get('last_success',0),
          'last_result':yt.get('last_result'),'running':yt.get('running'),'reference':youtube_enrichment.metrics(ROOT),
@@ -110,7 +114,7 @@ def film_platforms(offline):
          'offline_note':yt.get('offline_note',''),'key_set':yt.get('key_set')}]
 
 # 0.5.55: Verwaltung → Aufgaben. One list of all background tasks with what they are doing.
-_PORTAL_MODULES={'netzkino':(netzkino,netzkino_enrichment),'pluto':(pluto,pluto_enrichment),'justwatch':(justwatch,justwatch_enrichment),'rakuten':(rakuten,rakuten_enrichment),'youtube':(youtube,youtube_enrichment)}
+_PORTAL_MODULES={'netzkino':(netzkino,netzkino_enrichment),'pluto':(pluto,pluto_enrichment),'justwatch':(justwatch,justwatch_enrichment),'rakuten':(rakuten,rakuten_enrichment),'joyn':(joyn,joyn_enrichment),'youtube':(youtube,youtube_enrichment)}
 _TASKS_CACHE=(float('-inf'),{})
 def _portal_titles(key,state):
     if key=='netzkino':return int(state.get('catalog_count') or 0)
@@ -408,7 +412,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
@@ -452,6 +456,24 @@ class Handler(BaseHTTPRequestHandler):
             except ValueError as e:return self.send({'error':str(e)},404)
             data['status']=portal_snapshot.status('rakuten',lambda:rakuten.state(ROOT))
             return self.send(data)
+        if path=='/api/joyn':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:
+                if q.get('view',[''])[0]=='episodes':data=joyn.episodes(ROOT,q.get('series',[''])[0])
+                else:return self.send(portal_page('joyn',joyn,q))
+            except ValueError as e:return self.send({'error':str(e)},404)
+            data['status']=portal_snapshot.status('joyn',lambda:joyn.state(ROOT))
+            return self.send(data)
+        if path=='/api/joyn-details':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            try:return self.send(joyn.item(ROOT,q.get('id',[''])[0]))
+            except ValueError as e:return self.send({'error':str(e)},404)
+        if path=='/api/joyn-downloads':
+            # 0.5.65: no Joyn offline copies (no released stream); the shared list stays empty.
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:result=netzkino_downloads.listing(c,item_id=job_ids(q),origin='joyn')
+            result['ffmpeg']=bool(downloads.tool('ffmpeg'))
+            return self.send(result)
         if path=='/api/youtube':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             try:
@@ -541,7 +563,7 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
         if path=='/api/play':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten')}
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn')}
             yt_id=q.get('youtube',[''])[0]
             if yt_id:
                 # 0.5.53: a finished offline copy plays locally; otherwise the official embedded player.
@@ -567,7 +589,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -595,14 +617,14 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/display':return self.send({'display':ui_prefs.load(ROOT),**ui_prefs.describe()})
         if path=='/api/film-platforms':
             # Light endpoint for the catalogue header (per-source overview), no portal_sources scan.
-            with db() as c:offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch','rakuten','youtube')}
+            with db() as c:offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch','rakuten','youtube','joyn')}
             return self.send({'film_platforms':film_platforms(offline)})
         if path=='/api/portals':
             with db() as c:
                 result=portal_sources.state(c)
                 result['platform_control']=portal_control.source_status(c)
                 result['archive_scopes']=portal_control.list_scopes(c)
-                offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch','rakuten','youtube')}
+                offline={name:netzkino_downloads.summary(c,name) for name in ('netzkino','pluto','justwatch','rakuten','youtube','joyn')}
             result['film_platforms']=film_platforms(offline)
             return self.send(result)
         if path=='/api/portal-items':
@@ -704,7 +726,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],root=ROOT)
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],root=ROOT)
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
@@ -792,7 +814,7 @@ class Handler(BaseHTTPRequestHandler):
             # Netzkino recordings arrive in parts of a few MB (answer texts only, no headers).
             if not 0<length<=(8*1024*1024 if self.path=='/api/netzkino-recording' else 100000):raise ValueError('Ungültige Anfragegröße')
             d=json.loads(self.rfile.read(length));path=self.path
-            for source in ('pluto','justwatch','rakuten','youtube','netzkino'):
+            for source in ('pluto','justwatch','rakuten','youtube','netzkino','joyn'):
                 # 0.5.60: a change of the user is visible at once; otherwise the stored view answers.
                 if path.startswith('/api/'+source+'-'):portal_snapshot.invalidate(source);break
             if path in ('/api/save-metadata','/api/review','/api/search'):
@@ -857,6 +879,15 @@ class Handler(BaseHTTPRequestHandler):
                 except Exception as e:diagnostics.error('rakuten_download_enrich_failed',e)
                 with db() as c:result=rakuten_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id)
                 diagnostics.event('rakuten_download_enqueued',created=result['created'])
+                return self.send(result)
+            if path=='/api/joyn-sync':
+                return self.send({'started':joyn.start_sync(ROOT)})
+            if path=='/api/joyn-auto':
+                return self.send({'status':joyn.set_auto(ROOT,d.get('enabled'))})
+            if path=='/api/joyn-enrich':
+                with SERVICE.provider_slots:
+                    result=joyn_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+                diagnostics.event('joyn_reference_check',status=result['status'],candidates=len(result.get('references',[])))
                 return self.send(result)
             if path=='/api/justwatch-sync':
                 return self.send({'started':justwatch.start_sync(ROOT)})
@@ -1313,6 +1344,8 @@ if __name__=='__main__':
                          daemon=True,name='justwatch_auto_enrichment').start()
         threading.Thread(target=rakuten_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
                          daemon=True,name='rakuten_auto_enrichment').start()
+        threading.Thread(target=joyn_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
+                         daemon=True,name='joyn_auto_enrichment').start()
         threading.Thread(target=youtube_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
                          daemon=True,name='youtube_auto_enrichment').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
@@ -1320,6 +1353,7 @@ if __name__=='__main__':
         threading.Thread(target=pluto.loop,args=(ROOT,STOP),daemon=True,name='pluto_catalog_scheduler').start()
         threading.Thread(target=justwatch.loop,args=(ROOT,STOP),daemon=True,name='justwatch_catalog_scheduler').start()
         threading.Thread(target=rakuten.loop,args=(ROOT,STOP),daemon=True,name='rakuten_catalog_scheduler').start()
+        threading.Thread(target=joyn.loop,args=(ROOT,STOP),daemon=True,name='joyn_catalog_scheduler').start()
         threading.Thread(target=youtube.loop,args=(ROOT,STOP),daemon=True,name='youtube_catalog_scheduler').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()

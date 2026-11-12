@@ -74,8 +74,13 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if joyn:
+        # 0.5.65: Joyn playback is not released (copy protection, see joyn.py) -> clear refusal.
+        if root is None:raise ValueError('Joyn-Katalog nicht verfügbar')
+        import joyn as joyn_tv
+        return joyn_tv.play_source(root,joyn)
     if rakuten:
         if root is None:raise ValueError('Rakuten-Katalog nicht verfügbar')
         import rakuten as rakuten_tv
