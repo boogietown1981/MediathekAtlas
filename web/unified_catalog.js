@@ -14,7 +14,7 @@
   let source='mediatheken',kind='series',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
   let medGenres=[],medTree=[],collection='';
-  const heading=() => ({all:'Gesamtkatalog',mediatheken:'Öffentlich-rechtliche Mediatheken',netzkino:'Netzkino',...PORTALS}[source]);
+  const heading=() => ({all:'Gesamtkatalog',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
     const discover=$('discover');
@@ -38,7 +38,7 @@
     const dashboard=el('section',undefined,'background-status atlas-main-dashboard');
     dashboard.id='atlas-main-dashboard';
     dashboard.setAttribute('aria-label','Mediatheken-Scanner und Metadatenabgleich');
-    dashboard.append(el('h2','Mediatheken · Scan & Erkennung','atlas-dashboard-heading'));
+    dashboard.append(el('h2','ARD, ZDF & Co. · Scan & Erkennung','atlas-dashboard-heading'));
     const oldSummary=historic.querySelector('summary');
     if(oldSummary) oldSummary.remove();
     while(historic.firstChild) dashboard.append(historic.firstChild);
@@ -75,7 +75,7 @@
     }
     return board;
   }
-  function portalCard(p) {
+  function portalCard(p, inTab) {
     const card=el('article',undefined,'atlas-portal-card');
     const phase=p.running?'Abruf läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise geladen':
       p.last_result==='interrupted'?(p.titles?'Abruf unterbrochen · gespeicherter Bestand':'Abruf unterbrochen'):
@@ -103,12 +103,33 @@
     card.append(el('small','Offline ('+p.offline_days+' Tage): '+num(off.done)+' verfügbar · '+num((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+num(off.error)+' Fehler':''),'muted'));
     const actions=el('div',undefined,'atlas-portal-actions');
     const load=el('button',p.running?'Katalog wird geladen …':'↻ Katalog jetzt laden');load.type='button';load.disabled=!!p.running;
-    load.onclick=async()=>{load.disabled=true;try{await window.api(SYNC[p.source],{});}catch(e){load.textContent=e.message;}setTimeout(refreshPortalBoard,1500);};
-    const open=el('button','Plattform öffnen');open.type='button';
-    open.onclick=()=>{document.querySelector('[data-view="portals"]')?.click();document.querySelector('.platform-tab[data-platform="'+p.source+'"]')?.click();};
+    load.onclick=async()=>{load.disabled=true;try{await window.api(SYNC[p.source],{});}catch(e){load.textContent=e.message;}setTimeout(inTab?()=>mountTabBoard(p.source):refreshPortalBoard,1500);};
+    const open=el('button',inTab?'Im Katalog anzeigen':'Plattform öffnen');open.type='button';
+    open.onclick=inTab?()=>{document.querySelector('[data-view="discover"]')?.click();document.querySelector('[data-catalog-source="'+p.source+'"]')?.click();}:
+      ()=>{document.querySelector('[data-view="portals"]')?.click();document.querySelector('.platform-tab[data-platform="'+p.source+'"]')?.click();};
     actions.append(load,open);card.append(actions);
     return card;
   }
+  // 0.5.49 (Björn, 12.11.2026): the platform tabs show the same overview as the catalogue (stock,
+  // recognised, to check, open, offline copies), so both views read alike and the stored stock is
+  // visible there too. One card implementation for both places.
+  const tabTimers={};
+  async function mountTabBoard(src) {
+    clearTimeout(tabTimers[src]);
+    const anchor=$(src==='netzkino'?'netzkino-sync-summary':src+'-summary')?.parentElement;
+    if (!anchor?.parentElement) return;
+    let host=$('atlas-tab-board-'+src);
+    if (!host) {host=el('section',undefined,'background-status atlas-portal-dashboard atlas-tab-board');host.id='atlas-tab-board-'+src;anchor.parentElement.insertBefore(host,anchor);}
+    let data;
+    try {data=await window.api('film-platforms');}catch(e){if(!host.childElementCount)host.replaceChildren(el('p','Übersicht nicht verfügbar: '+e.message,'muted'));return;}
+    const p=(data.film_platforms||[]).find(x=>x.source===src);
+    if (!p) return;
+    const grid=el('div',undefined,'atlas-portal-grid');grid.append(portalCard(p,true));
+    host.replaceChildren(el('h2',p.name+' · Bestand & Werkzuordnung','atlas-dashboard-heading'),grid);
+    const visible=!$('portals')?.hidden&&$('portals')?.dataset.platform===src;
+    if (visible) tabTimers[src]=setTimeout(()=>mountTabBoard(src),p.running?4000:15000);
+  }
+  window.AtlasPlatformBoard={mount:mountTabBoard};
   // Returning to the catalogue restarts the overview polling (it pauses while the view is hidden).
   document.querySelector('[data-view="discover"]')?.addEventListener?.('click', () => setTimeout(() => refreshPortalBoard().catch(() => {}), 0));
   async function refreshPortalBoard() {
@@ -342,7 +363,7 @@
     for(let i=0;i<requests.length;i++) {
       const request=requests[i],result=responses[i];
       if(result.status!=='fulfilled') {
-        notes.push(({netzkino:'Netzkino',...PORTALS}[request.source]||'Mediatheken')+' nicht verfügbar: '+result.reason.message);
+        notes.push(({netzkino:'Netzkino',...PORTALS}[request.source]||'ARD, ZDF & Co.')+' nicht verfügbar: '+result.reason.message);
         continue;
       }
       const data=result.value;
@@ -353,7 +374,7 @@
         facets.push(...medGenres);
         counts.push(...medTree.filter(r=>r.kind===(kind==='movies'?'movie':'series')));
         for (const item of data.items||[]) facets.push(...genreList(item.metadata?.genres));
-        notes.push('Mediatheken: '+data.total+' Treffer');
+        notes.push('ARD, ZDF & Co.: '+data.total+' Treffer');
       } else if (PORTALS[request.source]) {
         rows.push(...(data.items||[]).map(item=>plRow(item,request.source)));
         facets.push(...(data.genre_counts||[]).map(g=>g.genre).filter(g=>g!=='Unbekannt'));

@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.49 – Plattform-Ansicht, JustWatch-Folgen, geteilter Abgleich (12. November 2026)
+
+- Neue Tests `tests/test_v0549_platform_view.py` (9): zweite Plattform fragt nicht erneut (auch bei anderer Schreibweise), kein Teilen ohne Jahr / bei anderem Jahr / anderer Art, unvollständige Antworten werden nicht gespeichert, Ablauf, „Jetzt abgleichen“ fragt neu; JustWatch-Folgen: abgelehnte und leere Sammelabfrage → Staffelseiten (mit Rückfall auf 20 Folgen je Abfrage, fremde Pfade verworfen), Netzausfall nur eine Anfrage; Übersicht in den Plattform-Reitern, Reitername.
+- Browser-Durchlauf (Playwright, Testbestand): Reiter „Gesamt · ARD, ZDF & Co. · Netzkino · Pluto TV · JustWatch TV“; Pluto, JustWatch und Netzkino unter „Plattformen“ zeigen je genau eine Übersichtskarte mit Bestand und Werkzuordnung; „Im Katalog anzeigen“ öffnet den Katalog mit der Quelle; keine JavaScript-Fehler.
+- **Nicht geprüft:** ob die Staffelabfrage bei JustWatch live Folgen liefert (Form aus dem Mitschnitt übernommen, Angebotsfilter wie in der Serienabfrage der Website); echte Überschneidungen zwischen den Plattformen.
+
 ## 0.5.48 – Geplanter Nacht-Download (12. November 2026)
 
 - Neue Tests `tests/test_v0548_night_download.py` (7): Zeitfenster (17:25 → 00:10, 01:30 → sofort, 05:30 → nächste Nacht), Titel ohne Stream wird vorgemerkt, Titel mit Stream nicht, vorgemerkter Auftrag blockiert die Warteschlange nicht und startet nach der Startzeit, Listing zeigt die Startzeit nur solange gewartet wird, Verdrahtung.

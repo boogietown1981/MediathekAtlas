@@ -36,6 +36,7 @@
     const seq = ++searchSeq;
     const q = $('netzkino-filter').value.trim();
     const origin = $('netzkino-origin').value;
+    window.AtlasPlatformBoard?.mount('netzkino');   // same overview as in the catalogue (0.5.49)
     const waiting = window.atlasWaiting?.($('netzkino-sync-summary'), 'Katalogstatus wird geladen');
     try {
       const data = await endpoint('netzkino-grouped?' + new URLSearchParams({q, origin, offset,

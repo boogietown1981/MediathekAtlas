@@ -139,6 +139,9 @@ def enrich(spec, root, item_id, settings, *, lookup=None, now=None, force=False)
     if lookup is None:
         import core
         lookup = core.candidates
+    # 0.5.49: a work already checked for another platform is not asked again.
+    import reference_share
+    lookup = reference_share.wrap(root, lookup, spec.name, now=now, fresh=force)
     info = editorial(row)
     row_arg = {'title': row['title'], 'topic': meta['title'] if meta['kind'] == 'series' else '',
                'duration': row.get('duration'), 'channel': spec.name}

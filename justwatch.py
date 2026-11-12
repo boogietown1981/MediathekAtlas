@@ -90,6 +90,20 @@ SEASONS_QUERY = '''query MediathekAtlasJustWatchTvSeasons($fullPath: String!, $c
         offers(country: $country, platform: WEB, filter: {packages: ["jwt"]}) {
           standardWebURL streamUrlExternalPlayer package { shortName } } } } } } } }'''
 
+# 0.5.49: the shape justwatch.com itself uses (Björn's HAR, 12.11.2026): the series lists its seasons
+# with their own paths, each season page lists its episodes. Used when the combined query above
+# returns nothing (Björn: "Andromeda", 5 seasons x 22 episodes, showed no episodes).
+SEASON_LIST_QUERY = '''query MediathekAtlasJustWatchTvSeasonList($fullPath: String!, $country: Country!, $language: Language!) {
+  urlV2(fullPath: $fullPath) { node { id
+    ... on Show { seasons { id totalEpisodeCount content(country: $country, language: $language) { seasonNumber fullPath } } } } } }'''
+
+SEASON_QUERY = '''query MediathekAtlasJustWatchTvSeason($fullPath: String!, $country: Country!, $language: Language!, $limit: Int!) {
+  urlV2(fullPath: $fullPath) { node { id
+    ... on Season { episodes(limit: $limit) { id
+      content(country: $country, language: $language) { title shortDescription episodeNumber seasonNumber runtime }
+      offers(country: $country, platform: WEB, filter: {packages: ["jwt"]}) {
+        standardWebURL streamUrlExternalPlayer package { shortName } } } } } } }'''
+
 STREAM_QUERY = '''query MediathekAtlasJustWatchTvStream($fullPath: String!, $country: Country!) {
   urlV2(fullPath: $fullPath) { node { id
     ... on MovieOrShow { watchNowOffer(country: $country, platform: WEB, filter: {packages: ["jwt"], monetizationTypes: []}) {
@@ -416,8 +430,23 @@ def load_episodes(root, series_id, post=None, now=None):
         series = _series(db, series_id)
     finally:
         db.close()
-    found, streams = parse_seasons(_data((post or _post)(SEASONS_QUERY, {
-        'fullPath': series['path'], 'country': COUNTRY, 'language': LANGUAGE})), series)
+    call, first_error, mode = post or _post, None, 'combined'
+    try:
+        found, streams = parse_seasons(_data(call(SEASONS_QUERY, {
+            'fullPath': series['path'], 'country': COUNTRY, 'language': LANGUAGE})), series)
+    except Exception as exc:
+        if _offline(exc):
+            raise                  # network down: the per-season requests would fail the same way
+        found, streams, first_error = [], {}, exc   # query refused (also HTTP 4xx) or answer not usable
+    if not found:
+        mode = 'per_season'
+        try:
+            found, streams = _episodes_by_season(call, series, pause=post is None)
+        except Exception as exc:
+            raise first_error or exc
+        if not found and first_error:
+            raise first_error
+    _notify('justwatch_episodes_loaded', mode=mode, episodes=len(found), playable=len(streams))
     db = _connect(root)
     try:
         with db:
@@ -428,6 +457,43 @@ def load_episodes(root, series_id, post=None, now=None):
     for item_id, url in streams.items():
         _SOURCES[item_id] = (now + SOURCE_TTL, url)
     return found
+
+
+def _offline(exc):
+    """Network failure (not an HTTP answer of the server)."""
+    return isinstance(exc, (urllib.error.URLError, OSError)) and not isinstance(exc, urllib.error.HTTPError)
+
+
+def _episodes_by_season(call, series, pause=True):
+    """Seasons first, then every season page on its own (as the website does)."""
+    node = ((_data(call(SEASON_LIST_QUERY, {'fullPath': series['path'], 'country': COUNTRY, 'language': LANGUAGE}))
+             .get('urlV2') or {}).get('node') or {})
+    found, streams = [], {}
+    for season in (node.get('seasons') or [])[:60]:
+        content = season.get('content') if isinstance(season, dict) and isinstance(season.get('content'), dict) else {}
+        path = str(content.get('fullPath') or '')
+        if not re.fullmatch(r'/de/Serie/[A-Za-z0-9_\-]{1,160}/[A-Za-z0-9_\-]{1,60}', path):
+            continue
+        total = _int(season.get('totalEpisodeCount'), 1, 500) or 20
+        data = None
+        for limit in dict.fromkeys((min(total, 300), 20)):   # 20 is what the website asks for
+            try:
+                data = _data(call(SEASON_QUERY, {'fullPath': path, 'country': COUNTRY, 'language': LANGUAGE, 'limit': limit}))
+                break
+            except Exception as exc:
+                if _offline(exc):
+                    raise
+                continue
+        if data is None:
+            continue
+        episodes_ = ((data.get('urlV2') or {}).get('node') or {}).get('episodes') or []
+        rows, urls = parse_seasons({'urlV2': {'node': {'seasons': [{'content': {'seasonNumber': content.get('seasonNumber')},
+                                                                   'episodes': episodes_}]}}}, series)
+        found += rows
+        streams.update(urls)
+        if pause:
+            time.sleep(0.3)
+    return found, streams
 
 
 def episodes(root, series_id, post=None, now=None):

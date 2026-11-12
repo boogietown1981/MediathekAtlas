@@ -354,6 +354,9 @@ def enrich(root,item_id,settings,*,lookup=None,fetch=None,now=None,force=False):
     if lookup is None:
         import core
         lookup=core.candidates
+    # 0.5.49: a work already checked for another platform is not asked again.
+    import reference_share
+    lookup=reference_share.wrap(root,lookup,'Netzkino',now=now,fresh=force)
     row_arg={'title':row['title'],'topic':meta['title'] if meta['kind']=='series' else '',
              'duration':row.get('duration') or editorial.get('duration_seconds'),
              'channel':'Netzkino'}

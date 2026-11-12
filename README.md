@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.48
+# MediathekAtlas · 0.5.49
+
+## Neu in 0.5.49: Plattform-Ansicht wie der Katalog, JustWatch-Folgen, geteilter Abgleich
+
+- Die Reiter Netzkino, Pluto TV und JustWatch TV unter „Plattformen“ zeigen oben dieselbe Übersicht wie der Katalog: Bestand, Stand, eindeutig zugeordnet, zu prüfen, ohne Treffer, noch offen, Offline-Kopien.
+- Der Katalog-Reiter „Mediatheken“ heißt jetzt „ARD, ZDF & Co.“.
+- JustWatch-Serien: Liefert die Sammelabfrage keine Folgen (z. B. „Andromeda“), werden die Staffeln einzeln geladen, so wie es die JustWatch-Seite tut.
+- Ein Film, der schon für eine Plattform mit IMDb/TVDB/TMDB abgeglichen wurde, wird für eine andere Plattform nicht erneut abgefragt.
 
 ## Neu in 0.5.48: Geplanter Nacht-Download für JustWatch-Titel mit Jugendschutz-Zeitfenster
 

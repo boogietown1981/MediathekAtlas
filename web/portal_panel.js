@@ -141,6 +141,7 @@ window.AtlasPortalPanel = function (cfg) {
   }
 
   async function refresh() {
+    window.AtlasPlatformBoard?.mount(K);   // same overview as in the catalogue (0.5.49)
     refreshOffline();
     const call = ++seq;
     const q = $(P + '-filter').value.trim();
