@@ -88,7 +88,9 @@ window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocooki
  let d;try{d=typeof e.data==='string'?JSON.parse(e.data):e.data;}catch{return;}
  const info=d&&d.info;if(!info)return;if(typeof info.currentTime==='number')S.embedPos=info.currentTime;
  if(info.playerState===0)save('ended');else if(info.playerState===2)save();});
-function nativeHls(){return !!video.canPlayType('application/vnd.apple.mpegurl');}
+// 0.5.68: only Safari (and other Apple WebKit browsers) plays HLS itself. Chrome reports a built-in
+// HLS player as well since late 2025, but it is new and plays live streams unevenly.
+function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayType('application/vnd.apple.mpegurl');}
 function stopVideo(){if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
 function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
 function playIndex(i){S.index=i;const item=S.list[i];return open({offer:item.id},episodeLabel(item),episodeKey(item));}
