@@ -195,6 +195,52 @@ class CatalogueTests(Fixture):
         db.close()
 
 
+class ScreeningTests(Fixture):
+    """0.5.54: promo videos that reach the minimum length (ArchiveMedia format check + description)."""
+    def facts(self, title, description='', seconds=6000):
+        return {'title': title, 'description': description, 'duration': seconds}
+
+    def test_screen(self):
+        m = 3600
+        self.assertEqual(yt.screen(self.facts('Der Pate'), m), '')
+        self.assertEqual(yt.screen(self.facts('Der Pate', seconds=100), m), 'zu kurz')
+        self.assertEqual(yt.screen(self.facts('Mission Impossible – Official Trailer Compilation'), m), 'Trailer/Clip')
+        self.assertEqual(yt.screen(self.facts('Mein Podcast Folge 12'), m), 'Podcast')
+        self.assertEqual(yt.screen(self.facts('Blockbuster', 'Jetzt im Kino! Tickets unter …'), m), 'Werbung für Kino/DVD (Beschreibung)')
+        self.assertEqual(yt.screen(self.facts('Blockbuster', 'Ab 12. März auf Blu-ray und DVD'), m), 'Werbung für Kino/DVD (Beschreibung)')
+        # the description says it is the complete film: advertising lines do not exclude it
+        self.assertEqual(yt.screen(self.facts('Blockbuster', 'Der ganze Film in voller Länge. Jetzt auch auf Blu-ray'), m), '')
+        self.assertEqual(yt.screen(self.facts('Blockbuster | Ganzer Film', 'Official trailer: link'), m), '')
+
+    def test_runtime_doubt_hides_title(self):
+        self.sync()
+        self.assertEqual(yt.doubtful({'references': [{'eligible': False, 'issues': ['Laufzeit widersprüchlich']}]}),
+                         'Laufzeit passt zu keinem gefundenen Werk')
+        self.assertEqual(yt.doubtful({'references': [{'eligible': True, 'issues': []}]}), '')
+        self.assertEqual(yt.doubtful({'references': []}), '')
+
+        def lookup(row, meta, settings):
+            return {'candidates': [{'provider': 'IMDb Offline', 'reference_id': 'tt0088247', 'title': meta['title'], 'kind': 'movie',
+                                    'year': 1984, 'similarity': 1.0, 'runtime_mismatch': True}],
+                    'provider_checks': [{'provider': 'IMDb Offline', 'status': 'checked', 'count': 1}]}
+        report = ye.enrich(self.root, 'v.' + vid(1), {}, lookup=lookup, now=time.time())
+        self.assertTrue(yt.doubtful(report))
+        listing = yt.listing(self.root, 'movies')
+        self.assertNotIn(vid(1), [r['path'] for r in listing['items']])
+        self.assertEqual(listing['hidden'], 1)
+        self.assertIn(vid(1), [r['path'] for r in yt.listing(self.root, 'movies', show_doubtful=True)['items']])
+        m = portal_title.model(self.root, 'youtube', 'v.' + vid(1))
+        self.assertTrue(any('ausgeblendet' in n for n in m['notes']))
+
+    def test_skip_statistics_per_source(self):
+        self.sync()
+        src = next(s for s in yt.sources(self.root) if s['ref'] == '@ParamountVault')
+        skipped = json.loads(src['skipped'])
+        self.assertEqual(skipped.get('Trailer/Clip'), 1)
+        self.assertEqual(skipped.get('zu kurz'), 1)
+        self.assertEqual(skipped.get('nicht verfügbar (gesperrt, privat, live)'), 4)   # 2 × Region, live, privat
+
+
 class PlaybackTests(Fixture):
     def test_embed_only_for_playable(self):
         self.sync()

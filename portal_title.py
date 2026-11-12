@@ -137,6 +137,10 @@ def _portal(root, source, item_id):
         if it.get('published'):
             facts.append(['Hochgeladen', _text(it['published'], 10)])
         facts.append(['Wiedergabe', 'offizieller YouTube-Player' if m['playable'] else _text(it.get('reason') or 'nur auf youtube.com', 200)])
+        import youtube
+        doubt = youtube.doubtful(report)
+        if doubt:
+            m['notes'].append(doubt + ' – im YouTube-Katalog ausgeblendet (vermutlich Ausschnitt oder Werbevideo).')
         import youtube_downloads
         if not youtube_downloads.enabled(root):
             m['notes'].append(youtube_downloads.POLICY)

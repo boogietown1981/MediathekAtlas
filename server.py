@@ -356,7 +356,7 @@ class Handler(BaseHTTPRequestHandler):
                 else:data=youtube.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
                                           offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
                                           genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
-                                          collection=q.get('collection',[''])[0][:20])
+                                          collection=q.get('collection',[''])[0][:20],show_doubtful=q.get('doubtful',['0'])[0]=='1')
             except ValueError as e:return self.send({'error':str(e)},404)
             data['status']=youtube.state(ROOT)
             return self.send(data)

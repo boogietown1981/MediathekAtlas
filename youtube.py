@@ -130,6 +130,8 @@ def _connect(root):
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
     db.executescript(SCHEMA)
+    if 'skipped' not in {r[1] for r in db.execute('PRAGMA table_info(youtube_sources)')}:
+        db.execute("ALTER TABLE youtube_sources ADD COLUMN skipped TEXT NOT NULL DEFAULT '{}'")   # 0.5.54
     if _get(db, 'seeded') != '1':
         with db:
             for ref, kind, label in DEFAULT_SOURCES:
@@ -411,13 +413,56 @@ def video_facts(node, region=REGION):
             'kids': status.get('madeForKids') is True}
 
 
+# 0.5.54 (Björn, 12.11.2026): channels also upload promo videos that reach the minimum length.
+# The format check is ArchiveMedia's video_triage (vendor/archive_portals, imported, not copied, so
+# updates of the ArchiveMedia modules apply here too), plus the video description: release
+# advertising ("jetzt im Kino", "ab … auf Blu-ray", "offizieller Trailer") marks a promo unless the
+# title or description itself says it is the complete film.
+PROMO = re.compile(r'(?:\b(?:jetzt|ab\s+sofort|ab\s+\d{1,2}\.\s*\w*|ab\s+dem\s+\d{1,2}\.)\s+(?:\w+\s+){0,2}(?:im\s+kino|in\s+den\s+kinos|'
+                   r'auf\s+(?:dvd|blu-?ray|4k|uhd)|digital\s+(?:erhältlich|verfügbar|kaufen|leihen)|als\s+download|vorbestellen)|'
+                   r'offizielle[rs]?\s+(?:trailer|teaser)|official\s+(?:trailer|teaser|clip)|in\s+theaters|'
+                   r'now\s+(?:on|available\s+on)\s+(?:digital|blu-?ray|dvd)|pre-?order|vorbestellen|'
+                   r'making[\s-]?of|behind\s+the\s+scenes|featurette|interview\s+mit|exklusiver?\s+ausschnitt)', re.I)
+COMPLETE = re.compile(r'\b(?:ganzer\s+(?:spiel)?film|ganze\s+folge|kompletter\s+film|in\s+voller\s+länge|spielfilm|'
+                      r'full\s+(?:length\s+)?(?:movie|film|episode)|feature[ -]?(?:film|length)|komplette\s+folge)\b', re.I)
+
+
+def screen(facts, minimum):
+    """'' when the video may be a complete film/episode, else the German reason it is left out."""
+    if facts['duration'] < minimum:
+        return 'zu kurz'
+    try:
+        from vendor.archive_portals import video_triage
+        category, _ = video_triage.classify(facts['title'])
+    except ImportError:   # bundle without the ArchiveMedia modules: own vocabulary only
+        category = 'main'
+    if category != 'main':
+        return {'clip': 'Trailer/Clip', 'podcast': 'Podcast', 'religious': 'Gottesdienst/Predigt'}.get(category, category)
+    if _EXCLUDE.search(facts['title']):
+        return 'Trailer/Clip'
+    head = str(facts.get('description') or '')[:800]
+    if PROMO.search(head) and not (COMPLETE.search(facts['title']) or COMPLETE.search(head)):
+        return 'Werbung für Kino/DVD (Beschreibung)'
+    return ''
+
+
+def doubtful(report):
+    """Reason when every reference found contradicts the runtime (promo cut, compilation …)."""
+    refs = (report or {}).get('references') or []
+    if not refs or any(r.get('eligible') for r in refs):
+        return ''
+    if all('Laufzeit widersprüchlich' in (r.get('issues') or []) for r in refs):
+        return 'Laufzeit passt zu keinem gefundenen Werk'
+    return ''
+
+
 LANGUAGE_NAMES = {'de': 'Deutsch', 'en': 'Englisch', 'fr': 'Französisch', 'it': 'Italienisch', 'es': 'Spanisch'}
 
 
 def movie_item(facts, source):
     """Complete film from a channel/playlist of kind 'movies', or None (too short, trailer …)."""
     minimum = max(1, _int(source.get('min_minutes'), 1, 600) or MOVIE_MINUTES) * 60
-    if facts['duration'] < minimum or _EXCLUDE.search(facts['title']):
+    if screen(facts, minimum):
         return None
     title, year, genres, language = clean_title(facts['title'], facts['channel'])
     lang = language or LANGUAGE_NAMES.get(facts['language'].split('-')[0].lower(), '')
@@ -442,7 +487,7 @@ def series_items(source, entries, facts_by_id):
     out, poster, channel, rating = [], '', '', ''
     for video_id, position in entries:
         f = facts_by_id.get(video_id)
-        if not f or f['duration'] < minimum or _EXCLUDE.search(f['title']):
+        if not f or screen(f, minimum):
             continue
         season, number = episode_numbers(f['title'], position)
         poster = poster or f['poster']
@@ -710,6 +755,12 @@ def sync(root, request=None, now=None, gap=None, key=None):
                         src.update(resolve_source(request, src))
                     entries = playlist_entries(request, src['playlist'], gap)
                     facts = load_facts(request, db, [v for v, _ in entries], now, gap)
+                    minimum = max(1, _int(src.get('min_minutes'), 1, 600) or (EPISODE_MINUTES if src['kind'] == 'series' else MOVIE_MINUTES)) * 60
+                    skipped = {}
+                    for v, _ in entries:
+                        why = screen(facts[v], minimum) if v in facts else 'nicht verfügbar (gesperrt, privat, live)'
+                        if why:
+                            skipped[why] = skipped.get(why, 0) + 1
                     if src['kind'] == 'series':
                         items = series_items(src, entries, facts)
                         episodes_of.update(i['path'] for i in items if i['kind'] == 'episode')
@@ -720,8 +771,8 @@ def sync(root, request=None, now=None, gap=None, key=None):
                     films = sum(1 for i in items if i['kind'] in ('movie', 'episode'))
                     with db:
                         db.execute('''UPDATE youtube_sources SET channel_id=?,playlist=?,title=?,videos=?,films=?,
-                            last_error='',checked=? WHERE id=?''', (src['channel_id'], src['playlist'], src['title'],
-                                                                   len(entries), films, now, src['id']))
+                            last_error='',checked=?,skipped=? WHERE id=?''', (src['channel_id'], src['playlist'], src['title'],
+                                                                   len(entries), films, now, json.dumps(skipped, ensure_ascii=False), src['id']))
                 except Exception as exc:
                     message = _error(exc)
                     quota_hit |= isinstance(exc, ApiError) and exc.reason in ('quotaExceeded', 'dailyLimitExceeded', 'rateLimitExceeded')
@@ -796,8 +847,9 @@ def _summary(root, row, reports=None):
     return portal_reference.summary(row.get('genre'), report)
 
 
-def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection=''):
-    """One page of films or series with canonical categories and ratings (same as the other portals)."""
+def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection='', show_doubtful=False):
+    """One page of films or series with canonical categories and ratings (same as the other portals).
+    Titles whose every reference contradicts the runtime are hidden (counted in ``hidden``)."""
     import youtube_enrichment
     kind = {'movies': 'movie', 'series': 'series'}.get(view, 'movie')
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
@@ -817,9 +869,17 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     reports = youtube_enrichment.all_cached(root)
     import youtube_downloads
     switch = youtube_downloads.enabled(root)
+    hidden = 0
+    kept = []
     for row in rows:
+        row['doubt'] = doubtful(reports.get(row['id']))
+        if row['doubt'] and not show_doubtful:
+            hidden += 1
+            continue
         row.update(_summary(root, row, reports))
         row['offline'] = offline_flag(root, row, switch)
+        kept.append(row)
+    rows = kept
     counts = portal_reference.facets(rows)
     rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
@@ -827,7 +887,7 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     elif sort == 'year':
         rows.sort(key=lambda r: (-(r.get('year') or 0), r['title'].casefold()))
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
-            'genre_counts': counts}
+            'genre_counts': counts, 'hidden': hidden}
 
 
 def episodes(root, series_id, request=None, now=None):

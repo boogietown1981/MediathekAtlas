@@ -26,6 +26,10 @@
         s.checked ? s.films + ' ' + (s.kind === 'series' ? 'Folgen' : 'Filme') + ' von ' + s.videos + ' Videos · Stand ' + when(s.checked) : 'noch nicht abgerufen',
         s.suggested ? 'Vorschlag (ungeprüft)' : ''].filter(Boolean).join(' · ');
       row.append(make('small', facts, 'muted'));
+      // 0.5.54: what the check left out and why (ArchiveMedia format check, description, length).
+      let skipped = {}; try { skipped = JSON.parse(s.skipped || '{}'); } catch (e) { skipped = {}; }
+      const parts = Object.entries(skipped).sort((a, b) => b[1] - a[1]).map(([why, n]) => n + ' × ' + why);
+      if (parts.length) row.append(make('small', 'Ausgelassen: ' + parts.join(' · '), 'muted'));
       if (s.last_error) row.append(make('small', 'Fehler: ' + s.last_error, 'nk-warning'));
       const acts = make('div', undefined, 'youtube-source-actions');
       for (const [label, action] of [[s.enabled ? 'Pausieren' : 'Aktivieren', s.enabled ? 'disable' : 'enable'], ['Entfernen', 'remove']]) {
