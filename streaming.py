@@ -74,8 +74,12 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if rakuten:
+        if root is None:raise ValueError('Rakuten-Katalog nicht verfügbar')
+        import rakuten as rakuten_tv
+        return rakuten_tv.play_source(root,rakuten)
     if justwatch:
         if root is None:raise ValueError('JustWatch-Katalog nicht verfügbar')
         import justwatch as justwatch_tv

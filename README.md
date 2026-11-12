@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.50
+# MediathekAtlas · 0.5.51
+
+## Neu in 0.5.51: Rakuten TV (kostenlose Filme, Serien und Live-Sender)
+
+- Neue Quelle Rakuten TV: Katalog-Reiter „Rakuten TV“ und Plattform-Reiter mit allen kostenlosen Filmen (ca. 1.900) und Serien (ca. 120), gleiche Kacheln, Kategorien, Bewertung, Titel- und Serienseite (alle Staffeln) wie Netzkino, Pluto TV und JustWatch TV.
+- **Wichtig:** Rakuten liefert kostenlose Filme und Folgen nur mit Kopierschutz (Widevine/PlayReady) aus – das zeigt der Mitschnitt von rakuten.tv eindeutig. MediathekAtlas umgeht das nicht. Diese Titel öffnen deshalb „Bei Rakuten TV ansehen“; Abspielen im MediathekAtlas-Player und „Offline speichern (30 Tage)“ gibt es für sie nicht.
+- Die rund 160 kostenlosen **Live-Sender** von Rakuten TV laufen ohne Kopierschutz im MediathekAtlas-Player: im Plattform-Reiter unter „Live-TV“ und im Reiter „Live-TV“ zusammen mit ARD/ZDF und Pluto TV (nur live, nicht speicherbar).
+- Der IMDb/TVDB/TMDB-Abgleich nutzt den gemeinsamen Abgleich: Filme, die schon auf einer anderen Plattform abgeglichen wurden, werden nicht erneut abgefragt.
 
 ## Neu in 0.5.50: Live-TV nach Sendern
 

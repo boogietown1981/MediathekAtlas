@@ -10,6 +10,7 @@
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
   <button type="button" data-catalog-source="pluto">Pluto TV</button>
   <button type="button" data-catalog-source="justwatch">JustWatch TV</button>
+  <button type="button" data-catalog-source="rakuten">Rakuten TV</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Katalog · Serien</h2>
@@ -45,6 +46,7 @@
     <button class="platform-tab" type="button" data-platform="netzkino">Netzkino</button>
     <button class="platform-tab" type="button" data-platform="pluto">Pluto TV</button>
     <button class="platform-tab" type="button" data-platform="justwatch">JustWatch TV</button>
+    <button class="platform-tab" type="button" data-platform="rakuten">Rakuten TV</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -105,6 +107,35 @@
   <div class="netzkino-pages"><button type="button" id="justwatch-prev">← Zurück</button>
     <span id="justwatch-page-label" class="muted"></span>
     <button type="button" id="justwatch-next">Weiter →</button></div>
+</section>
+<section id="rakuten" class="pluto-panel rakuten-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Rakuten TV · kostenlose Filme, Serien und Live-Sender</h3>
+    <p class="muted">Nur das kostenlose Angebot von Rakuten TV (mit Werbung); Leih-, Kauf- und Abotitel werden nicht geladen.
+       Rakuten liefert kostenlose Filme und Folgen nur mit Kopierschutz (Widevine) aus. MediathekAtlas umgeht ihn nicht: Diese Titel haben Katalog, Bewertung und Titelseite und öffnen zum Ansehen die offizielle Rakuten-TV-Seite; Abspielen im MediathekAtlas-Player und Offline-Speichern sind dafür nicht möglich.
+       Die kostenlosen Live-Sender laufen ohne Kopierschutz im MediathekAtlas-Player (nur live, nicht speicherbar). Keine Anmeldung, kein Entfernen von Werbung.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="rakuten-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="rakuten-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="rakuten-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Rakuten-Ansicht">
+    <button type="button" id="rakuten-view-movies" class="primary">Filme</button>
+    <button type="button" id="rakuten-view-series">Serien</button>
+    <button type="button" id="rakuten-view-live">Live-TV</button>
+    <button type="button" id="rakuten-back" hidden>← Zur Serienübersicht</button>
+    <span id="rakuten-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Rakuten-Titel suchen<input type="search" id="rakuten-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="rakuten-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="rakuten-categories" class="portal-categories" role="group" aria-label="Rakuten-Kategorien" hidden></div>
+  <p id="rakuten-status" class="muted" role="status"></p>
+  <details id="rakuten-offline" class="nk-offline rakuten-offline"><summary>Offline-Kopien von Rakuten TV <span id="rakuten-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="rakuten-offline-jobs"></div></details>
+  <div id="rakuten-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="rakuten-prev">← Zurück</button>
+    <span id="rakuten-page-label" class="muted"></span>
+    <button type="button" id="rakuten-next">Weiter →</button></div>
 </section>
   <div id="portal-platform-overview" class="platform-summary">
     <div id="platform-dashboard" class="platform-stats-grid" aria-label="Status je Plattform"></div>
@@ -311,4 +342,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script></body></html>

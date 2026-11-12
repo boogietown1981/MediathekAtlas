@@ -8,8 +8,11 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch'];
-  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV'};
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten'];
+  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV'};
+  // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
+  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten};
+  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen'};
   const TYPES = ['movies','series'];
   let source='mediatheken',kind='series',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
@@ -62,7 +65,7 @@
   // recognition board; Netzkino, Pluto TV and JustWatch TV get their own catalogue, scan and
   // work-assignment progress; "Gesamt" shows the ARD/ZDF board plus all portal catalogues.
   let portalTimer=0,portalSeq=0;
-  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync'};
+  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync'};
   const num=n=>Number(n||0).toLocaleString('de-DE');
   const when=t=>t?new Date(t*1000).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'noch nie';
   function portalBoard() {
@@ -88,6 +91,7 @@
     tile('Filme & Serien im Katalog',num(titles));
     if (p.channels) tile('Live-Sender',num(p.channels));
     if (p.playable!==undefined) tile('im Player abspielbar',num(p.playable));
+    if (p.protected) tile('kopiergeschützt (nur beim Anbieter)',num(p.protected));
     tile('Stand des Katalogs',when(p.last_success));
     tile('eindeutig zugeordnet',num(by.candidate),'Eindeutige IMDb-/TVDB-/TMDB-Referenz');
     tile('zu prüfen',num(by.review),'Widersprüchliche Referenzen, keine automatische Zuordnung');
@@ -100,7 +104,9 @@
     bar.setAttribute('role','progressbar');bar.setAttribute('aria-valuenow',String(share));bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
     card.append(el('small','Werkzuordnung (IMDb/TVDB/TMDB): '+num(checked)+' von '+num(titles)+' geprüft · '+share+' %'),bar);
     const off=p.offline||{};
-    card.append(el('small','Offline ('+p.offline_days+' Tage): '+num(off.done)+' verfügbar · '+num((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+num(off.error)+' Fehler':''),'muted'));
+    // 0.5.51: Rakuten TV delivers every free film/episode with copy protection – no offline copies there.
+    if (p.protected && p.protected>=p.titles) card.append(el('small','Offline: nicht möglich – der Anbieter liefert nur mit Kopierschutz','muted'));
+    else card.append(el('small','Offline ('+p.offline_days+' Tage): '+num(off.done)+' verfügbar · '+num((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+num(off.error)+' Fehler':''),'muted'));
     const actions=el('div',undefined,'atlas-portal-actions');
     const load=el('button',p.running?'Katalog wird geladen …':'↻ Katalog jetzt laden');load.type='button';load.disabled=!!p.running;
     load.onclick=async()=>{load.disabled=true;try{await window.api(SYNC[p.source],{});}catch(e){load.textContent=e.message;}setTimeout(inTab?()=>mountTabBoard(p.source):refreshPortalBoard,1500);};
@@ -256,11 +262,11 @@
     }
     if (PORTALS[item.source] && item.kind!=='series' && item.playable) {
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
-      watch.onclick=()=>(item.source==='justwatch'?window.playJustWatch:window.playPluto)?.(item.id,item.title);
+      watch.onclick=()=>PLAY[item.source]?.()?.(item.id,item.title);
       actions.append(watch);
     }
     if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {
-      const link=el('a','Bei JustWatch ansehen','button');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
+      const link=el('a',EXTERNAL[item.source]||'Beim Anbieter ansehen','button');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
       actions.append(link);
     }
     // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.
@@ -275,7 +281,7 @@
   }
   function openItem(item) {
     // 0.5.42: every film portal opens the same title page as the Mediathek works.
-    if (item.source==='pluto'||item.source==='justwatch') window.AtlasPortalTitle?.open(item.source,item.id);
+    if (PORTALS[item.source]) window.AtlasPortalTitle?.open(item.source,item.id);
     else if (item.source==='netzkino') {
       if (item.kind==='series' && window.AtlasPortalTitle && /^series-[a-f0-9]{24}$/.test(item.series_key||'')) window.AtlasPortalTitle.open('netzkino',item.series_key);
       else if (item.kind==='series') {
@@ -342,6 +348,7 @@
     const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;
     const plNeeded=(source==='all'||source==='pluto') && !seriesKey;
     const jwNeeded=(source==='all'||source==='justwatch') && !seriesKey;
+    const rkNeeded=(source==='all'||source==='rakuten') && !seriesKey;
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -355,6 +362,9 @@
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     if (jwNeeded)requests.push({source:'justwatch',req:window.api('justwatch?'+new URLSearchParams({
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
+    }))});
+    if (rkNeeded)requests.push({source:'rakuten',req:window.api('rakuten?'+new URLSearchParams({
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));

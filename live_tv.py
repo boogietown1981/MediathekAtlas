@@ -59,7 +59,7 @@ _KNOWN = {key: (name, group, pos) for pos, (key, name, group, _) in enumerate(ST
 # Regional windows keep their own entry ("BR Nord", "NDR Hamburg") but sort under the station.
 _REGIONAL_PREFIXES = sorted((k for k, (_, g, _) in _KNOWN.items() if g == REGIONAL), key=len, reverse=True)
 
-PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'))
+PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('rakuten', 'Rakuten TV'))
 PROVIDER_NAMES = dict(PROVIDERS)
 
 
@@ -148,10 +148,20 @@ def pluto_channels(root):
     return out
 
 
+def rakuten_channels(root):
+    """Free Rakuten TV live channels (0.5.51): plain HLS via /api/play?rakuten=<id>, with adverts."""
+    import rakuten
+    return [_channel('rakuten', row['id'], row['title'], {'rakuten': row['id']},
+                     group=row.get('category') or 'Rakuten TV', logo=row.get('poster') or '',
+                     number=row.get('number'), summary=row.get('summary') or '', quality='mit Werbung')
+            for row in rakuten.channels(root)]
+
+
 def channels(c, root):
     """All live channels of all providers; a broken provider never hides the others."""
     found, errors = [], {}
-    for key, loader in (('mediathek', lambda: mediathek_channels(c)), ('pluto', lambda: pluto_channels(root))):
+    for key, loader in (('mediathek', lambda: mediathek_channels(c)), ('pluto', lambda: pluto_channels(root)),
+                        ('rakuten', lambda: rakuten_channels(root))):
         try:
             found.extend(loader())
         except Exception as exc:  # local database problems are reported per provider

@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.51 – Rakuten TV (12. November 2026)
+
+- HAR-Auswertung (Björn, 12.11.2026, 802 Anfragen): Katalog-, Serien- und Live-Formate übernommen; vier `avod/streamings`: Film „Meet Dave“ und Folge „Z Nation 1-1“ → `web:DASH-CENC:WVM` mit `license_url` (prod-widevine.rakuten.tv), MPD mit Widevine-`ContentProtection`; Live „Top Movies“ → `web:HLS-NONE:NONE`, AES-128/identity.
+- Neue Tests `tests/test_v0551_rakuten.py` (14): Gratislisten mit Seiten, Leihtitel verworfen, Live-Sender mit laufender Sendung, Fehlertexte, gespeicherter Bestand bleibt, Live-Fehler lässt Filme stehen, Adressprüfung; alle Staffeln einer Serie, Zwischenspeicher; Filme/Folgen ohne Netzanfrage abgelehnt; Live-Sender mit Prüfung, Lizenz bzw. geschützte Liste abgelehnt, AES-128/identity erlaubt; Offline-Ablehnungen und gemeinsame Warteschlange; gemeinsamer Abgleich, Titelseiten, Live-TV-Reiter; Verdrahtung. Gesamte Suite: 667 Tests grün.
+- Browser-Durchlauf (Playwright, Testbestand in HAR-Form): Katalog-Reiter, Plattform-Reiter mit Übersichtskarte, Filme nur „Details · Bei Rakuten TV ansehen“, Live-Sender „▶ Live ansehen“, Titelseite mit Kopierschutz-Hinweis, Reiter Live-TV mit Rakuten-Sendern; keine JavaScript-Fehler.
+- **Nicht geprüft:** echte Abrufe von rakuten.tv (aus der Cloud gesperrt), ob Rakuten die Live-Anfrage ohne die Werbe-/Einwilligungsfelder der Website annimmt, Wiedergabe der Live-Sender.
+
 ## 0.5.50 – Live-TV nach Sendern (12. November 2026)
 
 - Neue Tests `tests/test_v0550_live_tv.py` (11): Sendernamen aus Filmlisten-Titeln, Schreibvarianten, Regionalfenster nur bei Sendern, Livestreams nicht im Werkabgleich (auch Bestandsdatenbanken, manuelle Entscheidungen bleiben), Reihenfolge und Gruppen, inaktive Angebote und Nicht-HTTP-Adressen ausgeschlossen, Wiedergabe als Live ohne Länge, normale Angebote nicht live, Pluto-Sender in der Übersicht, Diagnose nur Zähler. Gesamte Testsuite lokal grün (ein bekannt lastabhängiger Launcher-Test lief einzeln grün).

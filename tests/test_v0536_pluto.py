@@ -151,7 +151,7 @@ class PlaybackTests(Fixture):
 class WiringTests(unittest.TestCase):
     def test_server_ui_and_packages(self):
         server = (ROOT / 'server.py').read_text('utf-8')
-        for needle in ("path=='/api/pluto'", "path=='/api/pluto-sync'", "('offer','job','netzkino','pluto','justwatch')",
+        for needle in ("path=='/api/pluto'", "path=='/api/pluto-sync'", "('offer','job','netzkino','pluto','justwatch','rakuten')",
                        "pluto=q.get('pluto',[''])[0]", "'pluto':pluto.state(ROOT)", "'/pluto.js'"):
             self.assertIn(needle, server)
         self.assertIn("'pluto.py'", (ROOT / 'build_macos.py').read_text('utf-8'))
