@@ -430,10 +430,15 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/':
             body=(Path(__file__).parent/'web'/'index.html').read_text().replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
             return self.send(body.encode(),ctype='text/html; charset=utf-8')
-        if path in ('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js'):return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
+        if path in SCRIPTS:return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
         # 0.5.68: hls.js (Apache-2.0, web/hls.LICENSE.txt) plays HLS in the browser the way the providers' own sites do
         if path=='/hls.min.js':return self.send((Path(__file__).parent/'web'/'hls.min.js').read_bytes(),ctype='text/javascript')
         if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
+        # 0.5.73: second address for the page's own scripts; app.js reloads a script here when its first request failed
+        if path.startswith('/code/'):
+            # '~' + the name backwards: an address without the file's name, for filters that block by name
+            name=path[7:][::-1] if path[6:7]=='~' else path[6:]
+            if '/'+name+'.js' in SCRIPTS:return self.send((Path(__file__).parent/'web'/(name+'.js')).read_bytes(),ctype='text/javascript')
         if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
@@ -1397,7 +1402,15 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.event('access_login_failed');return self.send({'error':str(e) if isinstance(e,ValueError) else 'Ungültige Anfrage'},403)
         diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
 
+# 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
+SCRIPTS=('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js')
+
 class Server(ThreadingHTTPServer):
+    # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
+    # backlog of 5 the system refuses the surplus while the server is busy, and single scripts such as
+    # player.js never arrive (Björn, 12.11.2026: "Skript nicht ladbar (player.js)").
+    request_queue_size=128
+    daemon_threads=True
     def server_bind(self):
         # HTTPServer resolves socket.getfqdn() here; reverse DNS can stall startup for ~30 s on macOS.
         socketserver.TCPServer.server_bind(self)

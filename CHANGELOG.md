@@ -1,3 +1,8 @@
+## 0.5.73 – Skripte der Seite kommen zuverlässig an
+- Björn (12.11.2026, 0.5.72, Chrome): „Der Player ist nicht geladen (Ursache: Skript nicht ladbar (player.js))“ bei Filmen und Live-TV; soll in Chrome, Safari und Firefox laufen. Die Datei ist im Paket und wird fehlerfrei ausgeliefert; die Anfrage selbst scheitert also im Browser. Wahrscheinlichste Ursache: `ThreadingHTTPServer` mit Standard-Warteschlange 5 bei 21 gleichzeitig geöffneten Verbindungen (HTTP/1.0, eine je Skript); nicht nachgestellt. Möglich bleibt eine Sperre durch Erweiterung/Schutzprogramm.
+- `server.py`: `Server.request_queue_size=128`, `daemon_threads=True`; `SCRIPTS` als eine Liste; zweite Adresse `/code/<name>` und `/code/~<name rückwärts>` (ohne Dateinamen in der Adresse).
+- `web/app.js`: ein nicht geladenes eigenes Skript wird bis zu dreimal nachgeladen (`/code/…`, 0,3/0,6/0,9 s Pause), Erfolg als `client_error` „Skript nachgeladen“ in der Diagnose; nach dem letzten Fehlversuch prüft `fetch`, ob der Server antwortet oder der Browser ablehnt, und die Meldung nennt das.
+
 ## 0.5.72 – Player startet zuverlässig, letzter Klick gewinnt
 - Björn (12.11.2026, 0.5.70): „Der Player ist nicht geladen; Seite neu laden.“ beim Live-TV, Wiedergabe aus dem Katalog (Pluto) startet nicht, „arte startet, obwohl ein anderer Sender angeklickt“. Das Paket 0.5.70 ist vollständig, in Chromium ließ sich der fehlende Player nicht nachstellen; die Ursache in Björns Browser ist offen (Diagnose mit `client_error` nötig).
 - `web/index.html`: kein blockierendes `<script src="/hls.min.js">` mehr. `web/player.js`: `loadHls()` lädt die Bibliothek bei Bedarf (8 s Frist), `hlsWanted()`; ohne Bibliothek ffmpeg-Weg. Qualitätsfeld wird angelegt, falls es in der Seite fehlt.

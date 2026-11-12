@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.72
+# MediathekAtlas · 0.5.73
+
+## Neu in 0.5.73: Alle Teile der Seite kommen an
+
+Enthält alles bis 0.5.72.
+
+- **Player lädt:** Die Seite lädt rund zwanzig Skripte gleichzeitig. Der Server nahm bisher nur wenige Verbindungen auf einmal an, einzelne Skripte wie der Player konnten dabei verloren gehen. Er nimmt jetzt deutlich mehr an.
+- **Automatisch nachladen:** Kommt ein Skript trotzdem nicht an, lädt die Seite es bis zu dreimal selbst nach, auch über eine zweite Adresse, falls eine Browser-Erweiterung oder ein Schutzprogramm den Dateinamen sperrt. Das gilt in Chrome, Safari und Firefox gleich.
+- **Ursache sichtbar:** Scheitert auch das, nennt die Meldung, ob der Server nicht antwortet oder der Browser die Anfrage ablehnt.
+
 
 ## Neu in 0.5.72: Player startet zuverlässig, der letzte Klick gewinnt
 

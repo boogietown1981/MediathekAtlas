@@ -3,7 +3,14 @@
 window.atlasReportError=m=>report(m,'','');
 // 0.5.72: the first script error is kept, so a message such as "Der Player ist nicht geladen" can name its cause.
 window.atlasScriptErrors=[];const keep=(m,f,l)=>{if(window.atlasScriptErrors.length<5)window.atlasScriptErrors.push(String(m||'')+(f?' ('+String(f).split('/').pop()+(l?':'+l:'')+')':''));};
-window.addEventListener('error',e=>{if(e.message)keep(e.message,e.filename,e.lineno);else if(e.target&&e.target.tagName==='SCRIPT')keep('Skript nicht ladbar',e.target.src,'');},true);
+// 0.5.73: a script of the page that did not arrive is fetched again (up to three times, with a pause) from its second
+// address /code/<name>; only when that fails as well the cause is kept for the message.
+const tries={},again=tag=>{let name;try{const u=new URL(tag.src,location.href);if(u.origin!==location.origin)return false;name=tag.dataset.name||(u.pathname.match(/^\/([a-z_.]+?)\.js$/)||[])[1];}catch(e){return false;}
+ if(!name||name==='hls.min')return false;tries[name]=(tries[name]||0)+1;if(tries[name]>3)return false;
+ setTimeout(()=>{const s=document.createElement('script');s.src='/code/'+(tries[name]>1?'~'+[...name].reverse().join(''):name)+'?r='+tries[name];s.dataset.name=name;s.async=false;s.onload=()=>report('Skript nachgeladen: '+name+'.js (Versuch '+tries[name]+')','','');document.head.appendChild(s);},300*tries[name]);return true;};
+window.addEventListener('error',e=>{if(e.message)keep(e.message,e.filename,e.lineno);else if(e.target&&e.target.tagName==='SCRIPT'&&!again(e.target)){const src=e.target.src,i=window.atlasScriptErrors.length;keep('Skript nicht ladbar',(e.target.dataset.name?e.target.dataset.name+'.js':src),'');
+ // why: the server's answer, or the browser's refusal (an extension or security program blocks the address)
+ fetch(src,{cache:'no-store'}).then(r=>r.ok?'Server liefert die Datei, der Browser führt sie nicht aus':'Server antwortet mit HTTP '+r.status,x=>'Anfrage vom Browser abgelehnt: '+(x&&x.message||x)+' – blockiert eine Erweiterung oder ein Schutzprogramm die Adresse?').then(why=>{if(window.atlasScriptErrors[i])window.atlasScriptErrors[i]+=' – '+why;report('Skript nicht ladbar: '+(e.target.dataset.name||src.split('/').pop())+' – '+why,'','');});}},true);
 window.atlasPlayerMissing=()=>'Der Player ist nicht geladen'+(window.atlasScriptErrors.length?' (Ursache: '+window.atlasScriptErrors[0]+')':'')+'. Bitte die Seite neu laden; bleibt es dabei, Diagnose senden.';
 window.addEventListener('error',e=>report(e.message,e.filename,e.lineno));
 window.addEventListener('unhandledrejection',e=>report('Promise: '+(e.reason?.message||e.reason),'',''));})();

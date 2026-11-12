@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.73 – Skripte der Seite kommen zuverlässig an (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (833 Tests), davon 3 neu in `tests/test_v0573_script_loading.py`; `node --check`; Oberflächen-Kurztests.
+- Im Browser (Chromium): `/player.js` einmal abgewiesen – wird über `/code/player` nachgeladen, Player vorhanden; alle Adressen mit „player“ abgewiesen – kommt über `/code/~reyalp`; 40 gleichzeitige Anfragen an den Server alle mit 200 beantwortet.
+- Nicht geprüft: Der Fehler bei Björn ließ sich nicht nachstellen, die Ursache ist eine begründete Vermutung. Firefox und Safari stehen in der Bauumgebung nicht zur Verfügung; das Nachladen nutzt nur Standardfunktionen (Fehlerereignis am Skript, `fetch`), ein Lauf dort steht aus.
+
 ## 0.5.72 – Player startet zuverlässig, letzter Klick gewinnt (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (830 Tests), davon 4 neu in `tests/test_v0572_player_start.py`; `node --check` für alle eigenen Skripte; die sechs Oberflächen-Kurztests (`*.cjs`).
 - Im Browser (Chromium, Test-Streams): zwei Klicks kurz nacheinander (erste Antwort 1,5 s verzögert) – es läuft der zuletzt gewählte Titel; `/hls.min.js` gesperrt – Wiedergabe läuft über ffmpeg, Stufen kommen über `probe=1`; Seite ohne Qualitätsfeld – Player startet; hls.js-Weg wie in 0.5.70 (drei Stufen, Umschalten auf 480p, Blitz/Piepton höchstens rund 100 ms, ohne CORS Rückfall auf ffmpeg), keine Skriptfehler.
