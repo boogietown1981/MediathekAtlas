@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.5.52
+# MediathekAtlas · 0.5.53
+
+## Neu in 0.5.53: YouTube – kostenlose Filme und Serien offizieller Kanäle
+
+- Neue Quelle YouTube: Katalog-Reiter „YouTube“ und Plattform-Reiter mit denselben Kacheln, Kategorien, Bewertungen, Titel- und Serienseiten und derselben Übersichtskarte wie die anderen Anbieter. Der IMDb/TVDB/TMDB-Abgleich läuft über die gemeinsame Werkzuordnung; ein Film, der schon bei einer anderen Plattform geprüft wurde, wird nicht erneut abgefragt.
+- Kuratiert statt Suche: Gelesen werden nur die Kanäle und Playlists aus deiner Liste (Plattformen → YouTube → „YouTube-Kanäle & API-Schlüssel“). Aus Kanälen kommen nur ganze Filme (Mindestlänge, Standard 60 Minuten; ohne Trailer, Clips, Making-of, Livestreams). Eine Playlist kann als Serie eingetragen werden. In Deutschland gesperrte, private und Live-Videos werden ausgelassen. Vorschläge zum Start: FilmRise Movies, Paramount Vault, Popcornflix (englisch, ungeprüft; entfernbar).
+- Benötigt einen kostenlosen API-Schlüssel für die offizielle „YouTube Data API v3“ (Google Cloud Console). Kein Auslesen von youtube.com.
+- Abspielen im offiziellen YouTube-Player im MediathekAtlas-Fenster (mit der Werbung von YouTube), „Weiterschauen“ inklusive. Videos, deren Kanal das Einbetten verbietet oder die altersbeschränkt sind, öffnen „Bei YouTube ansehen“.
+- Offline speichern (30 Tage) ist ein Schalter, **standardmäßig aus**. Die YouTube-Nutzungsbedingungen erlauben das Herunterladen nur über YouTube-eigene Funktionen oder mit Erlaubnis von YouTube und Rechteinhaber; Einschalten nur nach Bestätigung, auf eigene Verantwortung. Geladen wird mit yt-dlp (vorhandene Installation oder „yt-dlp einrichten“), ohne Anmeldung und ohne Umgehen von Alters- oder Regionssperren.
 
 ## Neu in 0.5.52: JustWatch – Nacht-Vormerkung nur bei echtem Zeitfenster, Hinweis bei Kopierschutz
 

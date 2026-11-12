@@ -8,7 +8,8 @@
   const SOURCES = {netzkino: {name: 'Netzkino', action: 'netzkino-download-action'},
     pluto: {name: 'Pluto TV', action: 'offline-download-action'},
     justwatch: {name: 'JustWatch TV', action: 'offline-download-action'},
-    rakuten: {name: 'Rakuten TV', action: 'offline-download-action'}};
+    rakuten: {name: 'Rakuten TV', action: 'offline-download-action'},
+    youtube: {name: 'YouTube', action: 'offline-download-action'}};
   const ACTIVE = ['queued', 'downloading', 'tagging'], FAILED = ['error', 'cancelled', 'interrupted'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar',
     error: 'Fehlgeschlagen', cancelled: 'Abgebrochen', interrupted: 'Unterbrochen'};
@@ -61,7 +62,7 @@
     catch (e) { return; }
     if (token !== st.pending) return;
     st.days = data.offline_days || st.days;
-    st.tool = data.ffmpeg === false ? 'ffmpeg fehlt in dieser Installation' : data.ytdl?.ok === false ? 'ytdl-nightly fehlt in dieser Installation' : '';
+    st.tool = data.tool_hint ? data.tool_hint : data.ffmpeg === false ? 'ffmpeg fehlt in dieser Installation' : data.ytdl?.ok === false ? 'ytdl-nightly fehlt in dieser Installation' : '';
     st.jobs = new Map();
     const key = source + '_id';
     // Newest job per title decides (listing is newest first); expired/removed copies can be saved again.

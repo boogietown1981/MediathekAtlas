@@ -14,8 +14,9 @@ const video=$('player-video'),bar=$('player-bar'),slider=$('player-seek'),time=$
 const fmt=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.floor(s%3600/60),x=String(s%60).padStart(2,'0');return h?h+':'+String(m).padStart(2,'0')+':'+x:m+':'+x;};
 const store=k=>{try{return JSON.parse(localStorage.getItem('atlas-play:'+k)||'null');}catch{return null;}};
 const remember=(k,v)=>{try{v?localStorage.setItem('atlas-play:'+k,JSON.stringify(v)):localStorage.removeItem('atlas-play:'+k);}catch{}};
-const position=()=>S.mode==='remux'?S.offset+(video.currentTime||0):video.currentTime||0;
-const duration=()=>S.mode==='remux'?S.info?.duration||0:(Number.isFinite(video.duration)?video.duration:S.info?.duration||0);
+const embed=$('player-embed'),stage=$('player-stage');
+const position=()=>S.mode==='embed'?S.embedPos||0:S.mode==='remux'?S.offset+(video.currentTime||0):video.currentTime||0;
+const duration=()=>S.mode==='embed'?S.info?.duration||0:S.mode==='remux'?S.info?.duration||0:(Number.isFinite(video.duration)?video.duration:S.info?.duration||0);
 function episodeKey(item){return item.work_id||item.id;}
 function say(text){status.textContent=text||'';status.hidden=!text;}
 function save(final){if(!S.key||S.info?.live)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});return;}if(p>20)remember(S.key,{pos:p,at:Date.now()});}
@@ -31,16 +32,28 @@ async function open(ref,label,key,start){
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
  let info;try{info=await api('play?'+new URLSearchParams(ref));}catch(e){say(e.message);return;}
  S.info=info;$('player-title').textContent=info.title||label||'Video';
- $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls())?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');
+ $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&!(info.hls&&nativeHls())?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');
  const last=start===0||info.live?null:store(S.key);let t=last&&!last.done&&last.pos>20&&(!info.duration||last.pos<info.duration-45)?last.pos:0;
  $('player-restart').hidden=!t;
  if(t)notice('Fortgesetzt bei '+fmt(t)+'. „Von vorn“ startet neu.');
+ if(info.mode==='embed'){startEmbed(info,t);return;}
  if(info.mode==='direct')startDirect(info.src,t);
  else if(info.hls&&info.url&&nativeHls())startDirect(info.url,t);
  else if(!info.ffmpeg)say('Für diesen Stream wird ffmpeg benötigt. Unter Einstellungen die Werkzeugprüfung öffnen.');
  else startRemux(t);}
+// 0.5.53: YouTube – the official embedded player (youtube-nocookie.com). Its IFrame API reports the
+// position via postMessage, so "Weiterschauen" works as for every other title.
+function startEmbed(info,t){S.mode='embed';S.embedPos=t||0;stage.classList.add('embed');embed.hidden=false;
+ const q=new URLSearchParams({autoplay:'1',rel:'0',playsinline:'1',enablejsapi:'1',origin:location.origin,start:String(Math.floor(t||0))});
+ if(!/^https:\/\/www\.youtube-nocookie\.com\/embed\/[A-Za-z0-9_-]{11}$/.test(info.embed||'')){say('Ungültige YouTube-Adresse');return;}
+ embed.src=info.embed+'?'+q;say('');
+ embed.onload=()=>{try{embed.contentWindow.postMessage(JSON.stringify({event:'listening',id:'atlas'}),'https://www.youtube-nocookie.com');}catch{}};}
+window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocookie.com'||S.mode!=='embed'||e.source!==embed.contentWindow)return;
+ let d;try{d=typeof e.data==='string'?JSON.parse(e.data):e.data;}catch{return;}
+ const info=d&&d.info;if(!info)return;if(typeof info.currentTime==='number')S.embedPos=info.currentTime;
+ if(info.playerState===0)save('ended');else if(info.playerState===2)save();});
 function nativeHls(){return !!video.canPlayType('application/vnd.apple.mpegurl');}
-function stopVideo(){clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
+function stopVideo(){if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
 function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
 function playIndex(i){S.index=i;const item=S.list[i];return open({offer:item.id},episodeLabel(item),episodeKey(item));}
 function episodeLabel(item){const m=item.metadata||{};return (m.title||item.source?.title||'Video')+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?' · S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'')+(m.episode_title?' · '+m.episode_title:'');}
@@ -59,6 +72,8 @@ window.playPluto=function(id,label){S.list=[];S.index=-1;return open({pluto:id},
 // Live-TV tab (0.5.50): ref is {offer:id} (broadcaster live stream) or {pluto:id}; live has no resume position.
 window.playLive=function(ref,label){S.list=[];S.index=-1;return open(ref,label||'Live-TV','live:'+Object.values(ref).join(':'),0);};
 window.playJustWatch=function(id,label){S.list=[];S.index=-1;return open({justwatch:id},label||'JustWatch TV','justwatch:'+id);};
+// 0.5.53: YouTube plays in the official embedded player (or locally when an offline copy exists).
+window.playYouTube=function(id,label){S.list=[];S.index=-1;return open({youtube:id},label||'YouTube','youtube:'+id);};
 window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:id},label||'Rakuten TV','rakuten:'+id);};
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};
@@ -66,7 +81,7 @@ window.playable=function(item){return !!(item&&(item.series_parent||item.downloa
 function close(){save();stopVideo();S.key='';if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(dialog.open)dialog.close();}
 $('player-close').onclick=close;dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
 $('player-next').onclick=()=>{save('ended');playIndex(S.index+1);};
-$('player-restart').onclick=()=>{remember(S.key,null);$('player-restart').hidden=true;S.mode==='remux'?startRemux(0):seek(0);};
+$('player-restart').onclick=()=>{remember(S.key,null);$('player-restart').hidden=true;if(S.mode==='embed'){startEmbed(S.info,0);return;}S.mode==='remux'?startRemux(0):seek(0);};
 toggle.onclick=()=>video.paused?video.play().catch(()=>{}):video.pause();
 $('player-mute').onclick=()=>{video.muted=!video.muted;$('player-mute').textContent=video.muted?'🔇':'🔊';};
 $('player-full').onclick=()=>{const box=$('player-stage');document.fullscreenElement?document.exitFullscreen().catch(()=>{}):(box.requestFullscreen?box.requestFullscreen().catch(()=>{}):video.webkitEnterFullscreen?.());};

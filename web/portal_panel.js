@@ -82,6 +82,9 @@ window.AtlasPortalPanel = function (cfg) {
       // 0.5.52: only with a real time window (item.night); otherwise the title is copy protected.
       const night = cfg.nightOffline && item.kind !== 'channel' && (item.night ? window.AtlasOffline?.control(K, item.id, label, {night: true}) : window.AtlasOffline?.protectedNote());
       if (night) actions.append(night);
+      // 0.5.53: YouTube videos that refuse embedding can still be saved (opt-in switch).
+      const keep = cfg.offlineFlag && item.offline && window.AtlasOffline?.control(K, item.id, label);
+      if (keep) actions.append(keep);
     } else {
       const play = make('button', item.kind === 'channel' ? '▶ Live ansehen' : '▶ Ansehen', 'primary'); play.type = 'button';
       play.onclick = () => {
@@ -89,7 +92,7 @@ window.AtlasPortalPanel = function (cfg) {
         cfg.play()(item.id, item.kind === 'episode' && series ? series.title + ' · ' + label : label);
       };
       actions.append(play);
-      const off = item.kind !== 'channel' && window.AtlasOffline?.control(K, item.id, label);
+      const off = item.kind !== 'channel' && (!cfg.offlineFlag || item.offline) && window.AtlasOffline?.control(K, item.id, label);
       if (off) actions.append(off);
       if (cfg.externalLink && item.web_url) actions.append(externalLink(item));
     }

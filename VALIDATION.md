@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.53 – YouTube (12. November 2026)
+- Automatisch: gesamte Python-Suite grün, davon 14 neue Tests in `tests/test_v0553_youtube.py` (Titelbereinigung, Adressen, Katalog mit Filtern und Regionssperre, Serien-Playlist, Wochen-Zwischenspeicher, fehlender Schlüssel, Kontingent, unbekannter Kanal, Quellenverwaltung, Einbettung nur bei abspielbaren Videos, Offline-Schalter mit Bestätigung, Auftrag in der gemeinsamen Warteschlange, yt-dlp-Aufruf mit Fortschritt, Prüfsumme beim Einrichten, gemeinsamer Abgleich, Verdrahtung).
+- Browser (Chromium, Testbestand aus synthetischen API-Antworten): Katalog-Reiter „YouTube“ und Plattform-Reiter zeigen die Filme, Übersichtskarte, Einrichtung mit Quellenliste; „▶ Ansehen“ öffnet den Einbettungsplayer mit korrekter Adresse; Offline-Schalter fragt nach Bestätigung und blendet danach den Offline-Knopf ein (ohne yt-dlp gesperrt mit Hinweis); Titelseite mit „Angaben von YouTube“; keine Skriptfehler.
+- YouTube-Nutzungsbedingungen (Bewertung an Björn, 12.11.2026): Herunterladen nur über YouTube-eigene Funktionen oder mit schriftlicher Erlaubnis von YouTube und Rechteinhaber. Björn hat „Offline als Schalter, Standard aus“ gewählt.
+- Nicht geprüft: Live-Abruf der YouTube Data API (ohne Schlüssel in der Bauumgebung; youtube.com ist dort gesperrt), ob die vorgeschlagenen Handles existieren, Einbettung aus der lokalen App heraus (Referrer bei 127.0.0.1), yt-dlp-Download gegen echtes YouTube (kann Deno/Node.js oder eine Anmeldung verlangen; MediathekAtlas meldet sich nicht an).
+
 ## 0.5.52 – JustWatch: Zeitfenster und Kopierschutz (12. November 2026)
 - Automatisch: 677 Python-Tests und alle `.cjs`-Tests grün, darunter 10 neue in `tests/test_v0552_justwatch_protected.py` (Zeitfenster aus `availableHours`, Rückfall auf die Altersfreigabe, Rückfall auf die Abfrage ohne das Feld, Migration alter Bestände, Ablehnung geschützter Titel, Titelseite, Kacheln).
 - Browser (Chromium, Testbestand): Titel ohne Stream und ohne Zeitfenster zeigt in Katalog und Plattform-Reiter „Bei JustWatch ansehen“ und den Kopierschutz-Hinweis, kein Offline-Knopf; keine Skriptfehler.

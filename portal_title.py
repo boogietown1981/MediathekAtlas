@@ -16,7 +16,7 @@ detail sources into one model:
 """
 from __future__ import annotations
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -100,11 +100,14 @@ def _portal(root, source, item_id):
         night = source == 'justwatch' and not m['playable'] and bool(it.get('night'))
         m['protected'] = source == 'justwatch' and not m['playable'] and not night
         m['offline'] = {'allowed': m['playable'] or night, 'days': OFFLINE_DAYS, 'night': night}
+        if source == 'youtube':
+            # 0.5.53: offline only after Björn's opt-in switch (YouTube terms), independent of embedding.
+            m['offline'] = {'allowed': bool(it.get('offline')), 'days': OFFLINE_DAYS, 'night': False}
     m['web_url'] = _https(it.get('web_url'))
     facts = m['provider_facts']
     if it.get('genre'):
         facts.append([PROVIDERS[source] + '-Genre', _text(it['genre'], 200)])
-    if it.get('category'):
+    if it.get('category') and source != 'youtube':   # YouTube: the channel, listed below
         facts.append([PROVIDERS[source] + '-Kategorie', _text(it['category'], 200)])
     if it.get('number'):
         facts.append(['Sendernummer', str(it['number'])])
@@ -124,6 +127,19 @@ def _portal(root, source, item_id):
         if it.get('drm'):
             facts.append(['Stream', 'nur mit Kopierschutz (Widevine/PlayReady) – bei Rakuten TV ansehen, kein Offline-Speichern'])
             m['notes'].append('Rakuten TV liefert kostenlose Filme und Folgen nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht.')
+    if source == 'youtube':
+        facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
+        facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
+        if it.get('raw_title') and it['raw_title'] != m['title']:
+            facts.append(['Videotitel bei YouTube', _text(it['raw_title'], 300)])
+        if it.get('language'):
+            facts.append(['Sprache laut YouTube', _text(it['language'], 40)])
+        if it.get('published'):
+            facts.append(['Hochgeladen', _text(it['published'], 10)])
+        facts.append(['Wiedergabe', 'offizieller YouTube-Player' if m['playable'] else _text(it.get('reason') or 'nur auf youtube.com', 200)])
+        import youtube_downloads
+        if not youtube_downloads.enabled(root):
+            m['notes'].append(youtube_downloads.POLICY)
     _fill_from_reference(m, report)
     return m
 
@@ -185,7 +201,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': playable or night, 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url'))}
 
 

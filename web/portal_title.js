@@ -16,7 +16,9 @@
     justwatch: {play: () => window.playJustWatch, jobs: id => 'justwatch-downloads?id=' + encodeURIComponent(id), add: 'justwatch-download-add',
       action: 'offline-download-action', enrich: 'justwatch-enrich', external: 'Bei JustWatch ansehen'},
     rakuten: {play: () => window.playRakuten, jobs: id => 'rakuten-downloads?id=' + encodeURIComponent(id), add: 'rakuten-download-add',
-      action: 'offline-download-action', enrich: 'rakuten-enrich', external: 'Bei Rakuten TV ansehen'}
+      action: 'offline-download-action', enrich: 'rakuten-enrich', external: 'Bei Rakuten TV ansehen'},
+    youtube: {play: () => window.playYouTube, jobs: id => 'youtube-downloads?id=' + encodeURIComponent(id), add: 'youtube-download-add',
+      action: 'offline-download-action', enrich: 'youtube-enrich', external: 'Bei YouTube ansehen'}
   };
   const ACTIVE = ['queued', 'downloading', 'tagging'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar', error: 'Fehler',
@@ -194,7 +196,7 @@
     if (m.kind === 'series') actions.push(button('Folgen anzeigen', 'primary', () => host.querySelector('.portal-title-episodes')?.scrollIntoView({behavior: 'smooth'})));
     else if (m.playable) actions.push(button(m.kind === 'channel' ? '▶ Live ansehen' : '▶ Abspielen', 'primary play-button', () => play(m, label)));
     if (m.offline?.allowed) actions.push(button((m.offline.night ? '🌙 Heute Nacht offline speichern (' : '⬇ Offline speichern (') + m.offline.days + ' Tage)', '', () => host.querySelector('.portal-title-jobs')?.parentElement?.scrollIntoView({behavior: 'smooth'})));
-    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
+    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : 'Nur beim Anbieter abspielbar') : ''];

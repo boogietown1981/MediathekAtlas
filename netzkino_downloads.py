@@ -36,9 +36,10 @@ OFFLINE_SECONDS = OFFLINE_DAYS * 86400
 LICENSE_OFFLINE = 'netzkino_offline'
 # Streaming portals with time-limited offline copies in the shared queue (0.5.37: Pluto TV).
 PORTAL_LICENSES = {'netzkino': LICENSE_OFFLINE, 'pluto': 'pluto_offline', 'justwatch': 'justwatch_offline',
-                   'rakuten': 'rakuten_offline'}
+                   'rakuten': 'rakuten_offline', 'youtube': 'youtube_offline'}
 # Display name and offline period module per portal (listing policy text).
-PORTAL_NAMES = {'netzkino': 'Netzkino', 'pluto': 'Pluto-TV', 'justwatch': 'JustWatch-TV', 'rakuten': 'Rakuten-TV'}
+PORTAL_NAMES = {'netzkino': 'Netzkino', 'pluto': 'Pluto-TV', 'justwatch': 'JustWatch-TV', 'rakuten': 'Rakuten-TV',
+                'youtube': 'YouTube'}
 OFFLINE_KINDS = frozenset(PORTAL_LICENSES.values())
 LICENSE_FILE = 'licensed_file'
 ACTIVE = ('queued', 'downloading', 'tagging')
@@ -185,7 +186,8 @@ def _safe_host(host):
     h = (host or '').lower().rstrip('.')
     if not h or len(h) > 240 or '.' not in h or h.endswith(('.local', '.internal', '.test', '.localhost')):
         raise ValueError('Nur öffentliche HTTPS-Downloadserver sind erlaubt')
-    if any(h == n or h.endswith('.' + n) for n in ('netzkino.de', 'pluto.tv', 'tubitv.com', 'justwatch.com', 'dailymotion.com', 'rakuten.tv')):
+    if any(h == n or h.endswith('.' + n) for n in ('netzkino.de', 'pluto.tv', 'tubitv.com', 'justwatch.com', 'dailymotion.com', 'rakuten.tv',
+                                             'youtube.com', 'youtu.be', 'googlevideo.com')):
         raise ValueError('Für Netzkino-Titel „Offline herunterladen“ verwenden; dieses Feld ist für fremde Lizenzdateien')
     try:
         ipaddress.ip_address(h.strip('[]'))
@@ -391,6 +393,7 @@ def _public(job, now):
     until = job.get('offline_until')
     return {'id': job['id'], 'netzkino_id': job.get('netzkino_id'), 'pluto_id': job.get('pluto_id'),
             'justwatch_id': job.get('justwatch_id'), 'rakuten_id': job.get('rakuten_id'),
+            'youtube_id': job.get('youtube_id'),
             'origin': job.get('origin'), 'state': job.get('state'),
             'title': (job.get('metadata') or {}).get('title'),
             'target_name': Path(job.get('path') or job.get('target') or '').name,
@@ -418,6 +421,10 @@ def listing(c, item_id=None, limit=50, now=None, origin='netzkino'):
         if len(items) >= limit:
             break
     days, name = portal_days(origin), PORTAL_NAMES.get(origin, origin)
+    if origin == 'youtube':
+        import youtube_downloads
+        return {'items': items, 'offline_days': days, 'policy': youtube_downloads.POLICY,
+                'enabled': youtube_downloads.enabled_cached()}
     return {'items': items, 'offline_days': days,
             'policy': '%s-Titel dürfen heruntergeladen und %d Tage offline genutzt werden; '
                       'danach entfernt MediathekAtlas die Datei automatisch.' % (name, days)}
@@ -433,6 +440,9 @@ def portal_days(origin):
     if origin == 'rakuten':
         import rakuten_downloads
         return rakuten_downloads.OFFLINE_DAYS
+    if origin == 'youtube':
+        import youtube_downloads
+        return youtube_downloads.OFFLINE_DAYS
     return OFFLINE_DAYS
 
 

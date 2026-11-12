@@ -98,6 +98,7 @@ def _source_url(row,quality='best'):
     if row.get('_resolver')=='rakuten':
         import rakuten_downloads
         return rakuten_downloads.resolve(row)
+    if row.get('_resolver')=='youtube':return row.get('url')
     if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
     keys=QUALITY_KEYS
     return row.get('_download_url') or next((row.get(k) for k in keys.get(quality,keys['hd']) if row.get(k)),None)
@@ -169,7 +170,9 @@ def run(row,meta,root,quality,update,cancelled):
     # before any download or FFmpeg process; FFprobe is not a catalog scanner.
     if meta.get('kind')=='series':check_episode_runtime(row,meta)
     if not tool('ffmpeg') or not tool('ffprobe'):raise ValueError('ffmpeg oder ffprobe ist nicht startbar. Unter Einstellungen die gefundenen Pfade prüfen.')
-    url=source_url(row,quality)
+    # 0.5.53: YouTube (opt-in) is fetched by yt-dlp into the staged file; no address leaves the module.
+    fetcher=row.get('_resolver')=='youtube'
+    url=row.get('url') if fetcher else source_url(row,quality)
     if not url:raise ValueError('Keine Downloadadresse vorhanden')
     hls=row.get('_resolver') in HLS_RESOLVERS
     if not hls and ('.m3u8' in url.lower() or '.mpd' in url.lower()):raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
@@ -183,7 +186,10 @@ def run(row,meta,root,quality,update,cancelled):
         with tempfile.TemporaryDirectory(prefix='.mediathekatlas-',suffix='.partial',dir=dest.parent) as work:
             src=Path(work)/'original.bin.partial';out=Path(work)/'tagged.mkv.partial'
             reserve=256*1024*1024
-            if hls:
+            if fetcher:
+                import youtube_downloads
+                received=youtube_downloads.fetch(row,src,dest.parent,update,cancelled);total=0
+            elif hls:
                 try:expected=float(row.get('duration') or 0)
                 except (TypeError,ValueError):expected=0
                 received=fetch_hls(url,src,dest.parent,expected,update,cancelled,reserve);total=0

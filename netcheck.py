@@ -16,7 +16,7 @@ import urllib.error
 
 # Fixed catalogue hosts (no user input reaches this list).
 CATALOG_HOSTS = ('data.netzkino.de', 'www.netzkino.de', 'boot.pluto.tv', 'service-vod.clusters.pluto.tv',
-                 'service-channels.clusters.pluto.tv', 'apis.justwatch.com', 'gizmo.rakuten.tv', 'liste.mediathekview.de')
+                 'service-channels.clusters.pluto.tv', 'apis.justwatch.com', 'gizmo.rakuten.tv', 'www.googleapis.com', 'liste.mediathekview.de')
 
 
 def _root(exc):

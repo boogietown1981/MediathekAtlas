@@ -5,7 +5,7 @@ import core,diagnostics,metadata
 import broadcaster
 HOSTS={'image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','images.justwatch.com'}|broadcaster.IMAGE_HOSTS
 # Portal artwork (0.5.42): Pluto TV and Netzkino deliver their covers from these hosts.
-PORTAL_HOST=re.compile(r'^(?:[a-z0-9-]+\.)*(?:pluto\.tv|netzkino\.de|cloudfront\.net|rakuten\.tv|wuaki\.tv)$')
+PORTAL_HOST=re.compile(r'^(?:[a-z0-9-]+\.)*(?:pluto\.tv|netzkino\.de|cloudfront\.net|rakuten\.tv|wuaki\.tv|ytimg\.com)$')
 def valid(url):
     p=urllib.parse.urlsplit(str(url or ''))
     return p.scheme=='https' and bool(p.hostname) and (p.hostname in HOSTS or bool(PORTAL_HOST.fullmatch(p.hostname))) and not p.username and p.port in (None,443)

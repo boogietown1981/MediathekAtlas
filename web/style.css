@@ -498,7 +498,7 @@ dialog.player::backdrop{background:#000c}
 #atlas-nk-evidence,#atlas-nk-validation {font-size:12px;color:#a3bbc6;line-height:1.5;margin:12px 0}
 #atlas-nk-validation .nk-warning {color:#ffb78e}
 @media(max-width:680px){.nk-detail-layout{grid-template-columns:1fr}.nk-detail-layout>img{max-height:220px}.nk-detail-field{grid-template-columns:1fr}}
-#portals #pluto, #portals #justwatch, #portals #rakuten {display:none}
+#portals #pluto, #portals #justwatch, #portals #rakuten, #portals #youtube {display:none}
 #portals[data-platform="justwatch"] > :not(.platform-tabs):not(#justwatch) {display:none!important}
 #portals[data-platform="justwatch"] > #justwatch {display:block!important}
 #portals[data-platform="rakuten"] > :not(.platform-tabs):not(#rakuten) {display:none!important}
@@ -719,3 +719,20 @@ dialog.player::backdrop{background:#000c}
 .livetv-strip summary{cursor:pointer;color:#8af1d1;font-weight:600}
 .livetv-strip-row{display:flex;flex-wrap:wrap;gap:6px;margin-top:10px}
 .livetv-strip-row button{padding:6px 11px;border-radius:999px;font-size:12px}
+
+/* YouTube (0.5.53): own platform tab, source list, embedded official player */
+#portals[data-platform="youtube"] > :not(.platform-tabs):not(#youtube) {display:none!important}
+#portals[data-platform="youtube"] > #youtube {display:block!important}
+#youtube-offline-jobs .nk-offline-job{display:grid;gap:4px;padding:8px 0;border-top:1px solid #2c3840}
+#youtube-offline-jobs .nk-offline-job button{justify-self:start}
+.youtube-panel a.button{display:inline-block;padding:6px 12px;border-radius:8px;border:1px solid #3a4a55;text-decoration:none;color:inherit}
+.youtube-setup{margin-top:10px}.youtube-setup summary{cursor:pointer;font-weight:600}
+.youtube-setup-body{display:grid;gap:8px;padding-top:8px}.youtube-setup-body h4{margin:10px 0 0}
+.youtube-row{display:flex;flex-wrap:wrap;gap:8px;align-items:center}.youtube-row input:not([type=number]){flex:1 1 220px;min-width:0}
+.youtube-min input{width:5em}
+.youtube-sources{display:grid;gap:6px}
+.youtube-source{display:grid;grid-template-columns:1fr auto;gap:4px 10px;padding:8px 10px;border:1px solid #2c3840;border-radius:8px}
+.youtube-source small{grid-column:1}.youtube-source .youtube-source-actions{grid-row:1/span 3;grid-column:2;display:flex;gap:6px;align-items:start}
+.youtube-source.disabled{opacity:.6}.youtube-source .nk-warning{color:#ffb78e}
+#player-embed{width:100%;aspect-ratio:16/9;border:0;display:block;background:#000}
+#player-stage.embed #player-video,#player-stage.embed #player-bar{display:none!important}
