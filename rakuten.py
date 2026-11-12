@@ -51,6 +51,7 @@ DEVICE = 'web'
 FREE_LISTS = (('free-all-movies', 'movie'), ('free-all-tv-shows', 'series'))
 LIVE_PLAYER = 'web:HLS-NONE:NONE'  # the website's own profile for live channels
 MAX_ANSWER = 16 * 1024 * 1024
+MAX_STREAM_URL = 16000             # advert parameters make live addresses ~2,000 characters long
 MAX_ITEMS = 20000
 PER_PAGE = 24                      # as the website
 LIVE_PER_PAGE = 25
@@ -172,6 +173,21 @@ def _error(exc):
     if isinstance(exc, ValueError):
         return str(exc)[:200]
     return 'Rakuten-TV-Katalog konnte nicht geladen werden'
+
+
+def _http_detail(exc):
+    """_error plus Rakuten's own error text from the answer body, if it sends one (0.5.59)."""
+    text = _error(exc)
+    try:
+        answer = json.loads(exc.read(65536).decode('utf-8', 'replace'))
+        errors = answer.get('errors') if isinstance(answer, dict) else None
+        first = errors[0] if isinstance(errors, list) and errors and isinstance(errors[0], dict) else {}
+        detail = first.get('message') or first.get('code')
+        if detail:
+            text += ': ' + _text(detail, 160)
+    except Exception:
+        pass
+    return text
 
 
 # ---------------------------------------------------------------- parsing
@@ -685,16 +701,63 @@ def loop(root, stop):
 # ---------------------------------------------------------------- playback
 
 def stream_info(answer):
-    """(url, licence) from an avod/streamings answer: data.stream_infos[0]."""
+    """(url, licence) from an avod/streamings answer: data.stream_infos[0].
+
+    0.5.59: any https address without credentials is accepted (live channels are served by
+    advert-inserting CDNs whose host is not always *.rakuten.tv, and the advert parameters make
+    the address long); hls_guard.check still inspects every playlist before playback."""
     data = _data(answer)
     infos = data.get('stream_infos') if isinstance(data, dict) else None
     first = infos[0] if isinstance(infos, list) and infos and isinstance(infos[0], dict) else {}
     url = str(first.get('url') or '')
     parts = urllib.parse.urlsplit(url)
-    if parts.scheme != 'https' or not (parts.hostname or '').endswith('.rakuten.tv') or parts.username \
-            or parts.password or len(url) > 8000:
+    if parts.scheme != 'https' or not parts.hostname or parts.username or parts.password \
+            or len(url) > MAX_STREAM_URL:
         url = ''
     return url, str(first.get('license_url') or '')
+
+
+def _no_stream_reason(answer):
+    """Short, token-free description of an avod/streamings answer without a usable address."""
+    if not isinstance(answer, dict):
+        return 'keine Antwortdaten'
+    errors = answer.get('errors')
+    if isinstance(errors, list) and errors and isinstance(errors[0], dict):
+        return _text(errors[0].get('message') or errors[0].get('code') or 'Fehler', 160)
+    data = answer.get('data') if isinstance(answer.get('data'), dict) else {}
+    infos = data.get('stream_infos')
+    if not isinstance(infos, list) or not infos:
+        return 'Antwort ohne Streamliste (Felder: %s)' % ', '.join(sorted(map(str, data))[:12])
+    first = infos[0] if isinstance(infos[0], dict) else {}
+    url = str(first.get('url') or '')
+    if not url:
+        return 'Streamliste ohne Adresse (Profil %s)' % _text(first.get('player') or '?', 40)
+    parts = urllib.parse.urlsplit(url)
+    return 'Adresse abgelehnt (%s, %d Zeichen)' % (parts.scheme or 'ohne Schema', len(url))
+
+
+def _live_body(row, session):
+    """Request body for a live channel, built like the website's own (0.5.59).
+
+    Sent: the technical player fields of the website. Not sent: IP address, browser string,
+    advertising IDs or a consent string. Consent is declared as refused (opt-out); adverts stay
+    in the stream (Rakuten inserts them server-side)."""
+    return {'unique_session_id': session, 'audio_language': 'DEU', 'audio_quality': '2.0',
+            'classification_id': CLASSIFICATION_ID, 'content_id': row['path'], 'content_type': 'live_channels',
+            'custom_device_type': DEVICE, 'device_make': 'chrome', 'device_model': 'GENERIC',
+            'device_serial': 'not implemented', 'device_stream_video_quality': 'HD', 'device_uid': _DEVICE_UID,
+            'device_year': 1970, 'gdpr_consent_opt_out': '1', 'gdpr_consent': '', 'hdr_type': 'NONE',
+            'ifa_subscriber_id': None, 'ifa_type': 'ppid', 'player_height': 1080, 'player_width': 1920,
+            'player': LIVE_PLAYER, 'strict_video_quality': False, 'subtitle_formats': ['vtt'],
+            'subtitle_language': 'MIS', 'support_closed_captions': True, 'video_type': 'stream',
+            'support_thumbnails': True, 'app_bundle': 'com.rakutentv.web', 'app_name': 'RakutenTV',
+            'url': 'rakuten.tv'}
+
+
+def _live_query(session):
+    return {'device_stream_audio_quality': '2.0', 'device_stream_hdr_type': 'NONE',
+            'device_stream_video_quality': 'FHD', 'device_uid': _DEVICE_UID,
+            'disable_dash_legacy_packages': 'false', 'unique_session_id': session}
 
 
 def live_stream(row, request=None, now=None):
@@ -704,18 +767,19 @@ def live_stream(row, request=None, now=None):
     cached = _SOURCES.get(row['id'])
     if cached and cached[0] > now:
         return cached[1]
-    body = {'audio_language': 'DEU', 'audio_quality': '2.0', 'classification_id': CLASSIFICATION_ID,
-            'content_id': row['path'], 'content_type': 'live_channels', 'custom_device_type': DEVICE,
-            'device_make': 'chrome', 'device_model': 'GENERIC', 'device_serial': 'not implemented',
-            'device_stream_video_quality': 'HD', 'device_uid': _DEVICE_UID, 'device_year': 1970,
-            'hdr_type': 'NONE', 'player': LIVE_PLAYER, 'player_height': 1080, 'player_width': 1920,
-            'subtitle_language': 'MIS', 'video_type': 'stream'}
-    answer = (request or _request)('avod/streamings', {'device_uid': _DEVICE_UID}, body)
+    session = str(uuid.uuid4())
+    answer = (request or _request)('avod/streamings', _live_query(session), _live_body(row, session))
     url, licence = stream_info(answer)
     if licence:
         raise hls_guard.DrmProtected(hls_guard.DRM_MESSAGE)
     if not url:
-        raise ValueError('Rakuten TV lieferte für diesen Sender keinen Stream')
+        reason = _no_stream_reason(answer)
+        try:
+            import diagnostics
+            diagnostics.event('rakuten_live_no_stream', 'WARNING', channel=row['path'], reason=reason)
+        except Exception:
+            pass
+        raise ValueError('Rakuten TV lieferte für diesen Sender keinen Stream (%s)' % reason)
     _SOURCES[row['id']] = (now + SOURCE_TTL, url)
     return url
 
@@ -740,6 +804,8 @@ def play_source(root, item_id, request=None, check=None, now=None):
     try:
         url = live_stream(row, request, now)
         (check or hls_guard.check)(url)
+    except urllib.error.HTTPError as exc:
+        raise ValueError(_http_detail(exc)) from None
     except (urllib.error.URLError, OSError) as exc:
         raise ValueError(_error(exc)) from None
     title = ('%s · %s' % (row['number'], row['title'])) if row['number'] else row['title']

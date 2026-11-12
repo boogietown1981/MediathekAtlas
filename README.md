@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.5.56
+# MediathekAtlas · 0.5.59
+
+## Neu in 0.5.59: Rakuten-TV-Livesender
+
+- **Livesender:** Die Stream-Anfrage an Rakuten TV enthält jetzt dieselben technischen Felder wie die Website (Sitzungskennung, Player- und Qualitätsangaben). Werbekennungen, IP-Adresse, Browserkennung und eine Werbe-Einwilligung werden weiterhin nicht gesendet; die Einwilligung wird als abgelehnt übermittelt, die Werbung bleibt im Stream.
+- **Stream-Adressen:** Live-Adressen von Werbe-CDNs werden nicht mehr wegen ihres Hosts oder ihrer Länge verworfen; die Kopierschutzprüfung (`hls_guard`) prüft jede Wiedergabeliste weiter.
+- **Fehlermeldung:** Liefert Rakuten trotzdem keinen Stream, nennt die Meldung den Grund (Rakutens Fehlertext oder was in der Antwort fehlt), und die Diagnose enthält den Eintrag `rakuten_live_no_stream`.
 
 ## Neu in 0.5.56: Archive Media Stufe 1 – Fanart.tv und Datenbanksicherungen
 

@@ -1,3 +1,10 @@
+## 0.5.59 – Rakuten TV: Livesender liefern wieder einen Stream
+- Björn (12.11.2026, 0.5.56): bei jedem Rakuten-Livesender „Rakuten TV lieferte für diesen Sender keinen Stream“, dieselben Sender über Pluto TV laufen.
+- Ursache (Analyse gegen Björns HAR, Rakuten ist aus der Bauumgebung gesperrt): Die Meldung entsteht, wenn `avod/streamings` mit HTTP 200 antwortet, aber `stream_info` keine Adresse zurückgibt. Zwei Stellen: (1) `stream_info` verwarf jede Adresse außerhalb von `*.rakuten.tv` und über 8.000 Zeichen; die Live-Adressen sind Werbe-Einfüge-Sitzungen (MediaTailor, im HAR ~1.900 Zeichen mit 50 `ads.*`-Parametern), Host und Länge hängen von den Werbeparametern ab. (2) Die Anfrage wich deutlich von der Website ab: ohne `unique_session_id`, ohne `device_stream_*`/`disable_dash_legacy_packages` in der Adresse, ohne `strict_video_quality`, `subtitle_formats`, `app_bundle`, `app_name`, `url`, ohne Einwilligungsfelder.
+- `rakuten.py`: `_live_query`/`_live_body` wie die Website (neue Sitzungskennung je Abruf); `gdpr_consent_opt_out='1'`, `gdpr_consent=''`; weiterhin keine IP, kein Browserstring, keine Werbe-IDs (`publisher_provided_id`, `gam_correlator`, `requestedContent`). `stream_info` akzeptiert jede https-Adresse ohne Zugangsdaten bis 16.000 Zeichen; `hls_guard.check` bleibt vor jeder Wiedergabe.
+- Fehlerfall: `_no_stream_reason` (Rakutens Fehlertext, fehlende Streamliste mit Feldnamen, fehlende oder abgelehnte Adresse), Diagnose-Ereignis `rakuten_live_no_stream`; HTTP-Fehler mit Rakutens Fehlertext (`_http_detail`).
+- 0.5.57 und 0.5.58 sind von anderen Arbeitssträngen reserviert.
+
 ## 0.5.56 – Archive Media Stufe 1: Fanart.tv und Datenbanksicherungen
 - Björn (12.11.2026): HomeTube und Archive Media sollen in MediathekAtlas aufgehen; Archive Media ist noch nicht vollständig integriert. Plan: Doc „Integrationsplan: HomeTube und Archive Media in MediathekAtlas“.
 - `vendor/archive_portals/fanart_client.py` (unverändert aus ArchiveMedia v0.10.53): Fanart.tv v3.2, Schlüssel nur in Kopfzeilen, ID-Gegenprüfung, Bildhosts nur `assets.fanart.tv`/`fanart.tv`.

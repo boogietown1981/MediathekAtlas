@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.59 – Rakuten-TV-Livesender (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (737 Tests), davon `tests/test_v0559_rakuten_live.py` (4 neu: Anfrage wie die Website mit gleicher Sitzungskennung in Adresse und Body, ~2.000 Zeichen lange Adresse angenommen, fremder CDN-Host angenommen, Grund bei fehlendem Stream in vier Varianten, HTTP-Fehler mit Rakutens Text); `tests/test_v0551_rakuten.py` angepasst (keine IP/Werbe-IDs im Body, http- und Zugangsdaten-Adressen abgelehnt).
+- Nicht geprüft: echte Rakuten-Antwort auf die neue Anfrage (gizmo.rakuten.tv ist aus der Cloud gesperrt). Falls es weiter scheitert, nennt die Meldung jetzt den Grund.
+
 ## 0.5.56 – Archive Media Stufe 1 (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (733 Tests, 1 übersprungen), davon 16 neue in `tests/test_v0556_archivemedia_stage1.py` (Prüfsummen in PROVENANCE, kein Abruf ohne Schlüssel, Film-Logo/Poster/Hintergrund per IMDb-ID, Schlüssel nicht in der Adresse, vorhandene Bilder bleiben, widersprüchliche ID sperrt Bilder, Serie über TVDB-ID, fremde Bildhosts abgelehnt, clearlogo-Export, Verdrahtung; Sicherung konsistent bei offener WAL-Verbindung, Rotation behält eigene und die vier neuesten automatischen, Intervall, Löschen nur mit Bestätigung und Fingerabdruck, aktive DB geschützt, zu wenig Speicher, Aufgabe steuerbar, Schleife auf Anforderung). `node --check` für alle geänderten Skripte.
 - Browser (Chromium, leerer Bestand): Einstellungen zeigen die Fanart.tv-Felder; Datenbanksicherungen aufklappen, „Jetzt sichern“ legt `catalog-<Zeit>.db` an und listet sie; Verwaltung → Aufgaben zeigt „Datenbanksicherung“ mit „Jetzt starten“/„Pausieren“; keine Skriptfehler.
