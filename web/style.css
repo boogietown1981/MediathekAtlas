@@ -844,3 +844,8 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .atlas-music-pick{display:inline-flex;align-items:center;gap:.25rem;font-size:.85em}
 .youtube-music-tools label{display:inline-flex;gap:.4rem;align-items:center;margin:0}.youtube-music-tools select{width:auto}
 .youtube-music-item .netzkino-poster{aspect-ratio:16/9;height:auto;object-fit:cover}
+/* 0.5.76: way out below the embedded YouTube player */
+#player-embed-help{display:flex;flex-wrap:wrap;gap:.6rem;align-items:center;padding:.5rem .75rem;font-size:.9em;color:#b9c7d8}
+#player-embed-help[hidden]{display:none}
+#player-embed-help.refused{background:#3a2a12;color:#ffe2b0;border-radius:8px;margin-top:.4rem}
+.atlas-uc-music .atlas-uc-poster img{aspect-ratio:16/9;object-fit:cover;height:auto}

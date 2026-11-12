@@ -1195,4 +1195,7 @@ def play_info(root, item_id):
         raise ValueError((row['reason'] or 'Nur auf youtube.com abspielbar') + '.')
     return {'mode': 'embed', 'provider': 'youtube', 'video_id': row['path'], 'embed': EMBED + row['path'],
             'title': row['title'], 'duration': row['duration'] or 0, 'web_url': row['web_url'],
-            'quality': 'offizieller YouTube-Player, mit Werbung', 'channel': row['category']}
+            'quality': 'offizieller YouTube-Player, mit Werbung', 'channel': row['category'],
+            # 0.5.76: the player offers "load and play here" when YouTube refuses the embedded player
+            'offline': offline_flag(root, row),
+            'offline_hint': '' if offline_flag(root, row) else 'Mit eingeschaltetem YouTube-Offline-Schalter lässt es sich laden und hier abspielen.'}

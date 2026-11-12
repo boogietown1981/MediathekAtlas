@@ -215,7 +215,7 @@
       const active=b.dataset.crossKind===kind;
       b.classList.toggle('primary',active);b.setAttribute('aria-pressed',String(active));
     }
-    $('atlas-cross-title').textContent=seriesKey?seriesTitle:heading()+' · '+(kind==='movies'?'Filme':'Serien');
+    $('atlas-cross-title').textContent=kind==='music'?'YouTube · Musikvideos':seriesKey?seriesTitle:heading()+' · '+(kind==='movies'?'Filme':'Serien');
     $('atlas-cross-back-series').hidden=!seriesKey;
     $('atlas-cross-open-portal').hidden=source==='mediatheken'||source==='all';
   }
@@ -484,11 +484,52 @@
     const total=Number(data.total||0);
     $('atlas-cross-page').textContent=(total?offset+1:0)+'–'+Math.min(offset+48,total)+' von '+num(total);
   }
+  /* 0.5.76 (Björn, 13.11.2026): music videos as third entry next to films and series. They come from
+     YouTube only (playlists and single videos); a playlist opens in the YouTube area with "play all"
+     and "save all / selection". No film references, no genres. */
+  function musicCard(item) {
+    const card=el('article',undefined,'atlas-uc-card atlas-uc-music');
+    const art=el('div',undefined,'atlas-uc-poster clickable');
+    if (hrefOkay(item.poster)) {const img=el('img');img.src=item.poster;img.loading='lazy';img.alt='';img.referrerPolicy='no-referrer';art.append(img);}
+    else art.append(el('span','Kein Cover','atlas-uc-empty-art'));
+    const album=item.kind==='album';
+    const open=()=>album?window.MediathekAtlasYouTube?.openAlbum?.(item):window.playYouTube?.(item.id,item.title);
+    art.onclick=open;
+    const text=el('div',undefined,'atlas-uc-body');
+    text.append(el('small','YouTube · '+(album?'Musik-Playlist':'Musikvideo'),'atlas-uc-source'));
+    const title=el('h3',item.title);title.classList.add('clickable');title.onclick=open;text.append(title);
+    const mins=item.duration?Math.round(item.duration/60)+' min':'';
+    text.append(el('small',[item.category,album?num(item.number||0)+' Videos':null,mins].filter(Boolean).join(' · '),'atlas-uc-facts'));
+    const actions=el('div',undefined,'atlas-uc-actions');
+    const main=el('button',album?'Playlist öffnen':'▶ Ansehen','atlas-uc-play');main.type='button';main.onclick=open;actions.append(main);
+    if (!album && item.offline) {const off=window.AtlasOffline?.control('youtube',item.id,item.title);if(off)actions.append(off);}
+    if (hrefOkay(item.web_url)) {const a=el('a','Bei YouTube ansehen','button');a.href=item.web_url;a.target='_blank';a.rel='noopener noreferrer';actions.append(a);}
+    text.append(actions);card.append(art,text);
+    return card;
+  }
+  async function refreshMusic(seq) {
+    const host=$('atlas-cross-items');
+    let data;
+    try {data=await window.api('youtube?'+new URLSearchParams({view:'music',q:search,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48'}));}
+    catch(e){if(seq!==sequence)return;host.replaceChildren(el('p','Musikvideos nicht verfügbar: '+e.message,'empty'));$('atlas-cross-status').textContent='';host.setAttribute('aria-busy','false');return;}
+    if (seq!==sequence) return;
+    host.replaceChildren();
+    const items=data.items||[],total=Number(data.total||0),st=data.status||{};
+    for (const item of items) host.append(musicCard(item));
+    if (!items.length) host.append(el('p',search?'Keine passenden Musikvideos gefunden.':st.running?'Der YouTube-Abruf läuft – die Musikvideos erscheinen, sobald er fertig ist.':
+      'Noch keine Musikvideos. Unter Plattformen → YouTube → „YouTube-Kanäle & API-Schlüssel“ eine Playlist oder ein Video mit der Art „Musikvideos“ eintragen.','empty'));
+    $('atlas-cross-status').textContent='YouTube: '+num(total)+' Musik-Playlists und einzelne Videos'+(st.tracks?' · '+num(st.tracks)+' Musikvideos insgesamt':'')+(st.running&&st.progress?' · Abruf läuft: '+st.progress:'');
+    $('atlas-cross-page').textContent=(total?offset+1:0)+'–'+Math.min(offset+48,total)+' von '+num(total);
+    $('atlas-cross-prev').disabled=offset===0;$('atlas-cross-next').disabled=offset+48>=total;
+    paintCategories([]);
+    host.setAttribute('aria-busy','false');
+  }
   async function refresh() {
     const seq=++sequence;
     updateControls();
     $('atlas-cross-items').setAttribute('aria-busy','true');
-    $('atlas-cross-status').textContent='Filme und Serien werden geladen …';
+    $('atlas-cross-status').textContent=kind==='music'?'Musikvideos werden geladen …':'Filme und Serien werden geladen …';
+    if (kind==='music') return refreshMusic(seq);
     if (source==='all' && !seriesKey) return refreshAll(seq);
     const nkNeeded=(source==='all'||source==='netzkino');
     const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;

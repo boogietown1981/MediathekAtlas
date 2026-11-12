@@ -304,5 +304,12 @@ window.AtlasPortalPanel = function (cfg) {
   // A tile started or finished a copy: keep the list "Offline gespeichert" in step.
   window.AtlasOffline?.onChange(K, () => { if (visible()) refreshOffline(); });
   const openDetail = id => window.AtlasPortalTitle?.open(K, id);
-  return {refresh, openDetail};
+  // 0.5.76: the dashboard's "Musikvideos" opens a playlist here (play all, save all / selection).
+  const openAlbum = item => {
+    document.querySelector('[data-view="portals"]')?.click();
+    document.querySelector('.platform-tab[data-platform="' + K + '"]')?.click();
+    album = item; picked.clear(); view = 'tracks'; offset = 0; $(P + '-filter').value = '';
+    return refresh();
+  };
+  return {refresh, openDetail, openAlbum};
 };

@@ -112,5 +112,5 @@
     ev.target.disabled = false; ev.target.textContent = 'yt-dlp einrichten';
   };
   $('youtube-setup').addEventListener('toggle', () => { if ($('youtube-setup').open) load(); });
-  window.MediathekAtlasYouTube = {refresh: () => { load(); return panel.refresh(); }, openDetail: panel.openDetail};
+  window.MediathekAtlasYouTube = {refresh: () => { load(); return panel.refresh(); }, openDetail: panel.openDetail, openAlbum: panel.openAlbum};
 })();

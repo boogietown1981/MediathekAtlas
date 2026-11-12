@@ -103,7 +103,7 @@ function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode=
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.
  S.offset=t;slider.value=t;time.textContent=fmt(t)+' / '+fmt(d);clearTimeout(S.seekTimer);S.seekTimer=setTimeout(()=>startRemux(t),350);}
 async function open(ref,label,key,start){
- const call=++S.call;save();sendStats();S.retried=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;S.hlsFailed='';S.hlsHeight=0;renderQuality();
+ const call=++S.call;save();sendStats();S.retried=false;S.embedAlt=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;S.hlsFailed='';S.hlsHeight=0;renderQuality();
  $('player-title').textContent=label||'Wird geladen …';$('player-meta').textContent='';$('player-restart').hidden=true;
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
  let info;try{info=await api('play?'+new URLSearchParams({...ref,quality:wish(),...(hlsWanted()?{levels:'0'}:{})}));}catch(e){if(call===S.call)say(e.message);return;}
@@ -125,19 +125,47 @@ function describe(info){
  $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&(S.mode==='remux'||!(info.hls&&(hlsJs()||(nativeHls()&&wish()==='auto'))))?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');}
 // 0.5.53: YouTube – the official embedded player (youtube-nocookie.com). Its IFrame API reports the
 // position via postMessage, so "Weiterschauen" works as for every other title.
-function startEmbed(info,t){S.mode='embed';S.embedPos=t||0;stage.classList.add('embed');embed.hidden=false;
+// 0.5.76 (Björn, 13.11.2026: music videos show "nicht verfügbar" in the embedded player but play on
+// youtube.com): many labels allow playback on youtube.com only. A refused video is tried once more
+// through youtube.com/embed; a bar below the player always offers the way out: open on YouTube, or
+// (with the offline switch on) load it shortly and play the copy here.
+const EMBED_REFUSED=[100,101,150,152,153];
+const embedHelp=(()=>{const n=document.createElement('div');n.id='player-embed-help';n.hidden=true;stage.after(n);return n;})();
+function embedHelpShow(reason){const info=S.info||{};embedHelp.replaceChildren();embedHelp.hidden=false;embedHelp.classList.toggle('refused',!!reason);
+ const text=document.createElement('span');text.textContent=reason||'Spielt das Video hier nicht?';embedHelp.append(text);
+ if(/^https:\/\/www\.youtube\.com\/watch\?v=[A-Za-z0-9_-]{11}$/.test(info.web_url||'')){const a=document.createElement('a');a.className='button';a.textContent='Auf YouTube ansehen';a.href=info.web_url;a.target='_blank';a.rel='noopener noreferrer';embedHelp.append(a);}
+ if(info.offline&&S.ref?.youtube){const b=document.createElement('button');b.type='button';b.textContent='⬇ Kurz laden und hier abspielen';b.onclick=()=>loadAndPlay(b,text);embedHelp.append(b);}
+ else if(reason&&info.offline_hint){const h=document.createElement('small');h.textContent=info.offline_hint;embedHelp.append(h);}}
+async function loadAndPlay(button,text){const ref=S.ref,key=S.key,label=$('player-title').textContent,session=S.session,id=ref.youtube;button.disabled=true;
+ let quality='best';try{const v=localStorage.getItem('atlas-download-quality')||'';if(/^(best|\d{3,4})$/.test(v))quality=v;}catch{}
+ try{await api('youtube-download-add',{id,quality});}catch(e){text.textContent='Laden nicht möglich: '+e.message;button.disabled=false;return;}
+ window.AtlasOffline?.refresh('youtube');
+ for(let i=0;i<400;i++){
+  if(S.session!==session||!dialog.open)return;   // another title was opened or the player closed: the copy keeps loading
+  let job;try{job=((await api('youtube-downloads?'+new URLSearchParams({id}))).items||[])[0];}catch{job=null;}
+  if(job&&job.state==='done'){open(ref,label,key);return;}
+  if(job&&['error','cancelled','interrupted','expired','removed'].includes(job.state)){text.textContent='Laden fehlgeschlagen'+(job.error?': '+job.error:'')+'.';button.disabled=false;return;}
+  text.textContent=job&&job.state==='tagging'?'Datei wird fertiggestellt …':job&&job.total?'Wird geladen … '+Math.round(100*job.received/job.total)+' %':job&&job.received?'Wird geladen … '+(job.received/1048576).toFixed(1).replace('.',',')+' MiB':'Wird geladen …';
+  await new Promise(r=>setTimeout(r,2500));}
+ text.textContent='Das Laden dauert ungewöhnlich lange; der Auftrag steht unter Downloads.';button.disabled=false;}
+function embedRefused(code){if(S.mode!=='embed')return;
+ if(!S.embedAlt){S.embedAlt=true;startEmbed(S.info,S.embedPos||0);return;}   // second try: youtube.com instead of youtube-nocookie.com
+ embedHelpShow(code===100?'Das Video ist bei YouTube nicht mehr verfügbar.':'YouTube erlaubt dieses Video nicht in eingebetteten Playern, nur auf youtube.com.');}
+function startEmbed(info,t){S.mode='embed';S.embedPos=t||0;stage.classList.add('embed');embed.hidden=false;embedHelpShow('');
  const q=new URLSearchParams({autoplay:'1',rel:'0',playsinline:'1',enablejsapi:'1',origin:location.origin,start:String(Math.floor(t||0))});
  if(!/^https:\/\/www\.youtube-nocookie\.com\/embed\/[A-Za-z0-9_-]{11}$/.test(info.embed||'')){say('Ungültige YouTube-Adresse');return;}
- embed.src=info.embed+'?'+q;say('');
- embed.onload=()=>{try{embed.contentWindow.postMessage(JSON.stringify({event:'listening',id:'atlas'}),'https://www.youtube-nocookie.com');}catch{}};}
-window.addEventListener('message',e=>{if(e.origin!=='https://www.youtube-nocookie.com'||S.mode!=='embed'||e.source!==embed.contentWindow)return;
+ const host=S.embedAlt?'https://www.youtube.com':'https://www.youtube-nocookie.com';
+ embed.src=(S.embedAlt?info.embed.replace('https://www.youtube-nocookie.com','https://www.youtube.com'):info.embed)+'?'+q;say('');
+ embed.onload=()=>{try{embed.contentWindow.postMessage(JSON.stringify({event:'listening',id:'atlas'}),host);}catch{}};}
+window.addEventListener('message',e=>{if(!['https://www.youtube-nocookie.com','https://www.youtube.com'].includes(e.origin)||S.mode!=='embed'||e.source!==embed.contentWindow)return;
  let d;try{d=typeof e.data==='string'?JSON.parse(e.data):e.data;}catch{return;}
- const info=d&&d.info;if(!info)return;if(typeof info.currentTime==='number')S.embedPos=info.currentTime;
+ if(d&&d.event==='onError'&&EMBED_REFUSED.includes(Number(d.info))){embedRefused(Number(d.info));return;}
+ const info=d&&d.info;if(!info||typeof info!=='object')return;if(typeof info.currentTime==='number')S.embedPos=info.currentTime;
  if(info.playerState===0){save('ended');if(S.list[S.index]?.youtube&&S.list[S.index+1])playIndex(S.index+1);}else if(info.playerState===2)save();});
 // 0.5.68: only Safari (and other Apple WebKit browsers) plays HLS itself. Chrome reports a built-in
 // HLS player as well since late 2025, but it is new and plays live streams unevenly.
 function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayType('application/vnd.apple.mpegurl');}
-function stopVideo(){stopHls();if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
+function stopVideo(){stopHls();embedHelp.hidden=true;if(S.mode==='embed'){embed.removeAttribute('src');embed.hidden=true;stage.classList.remove('embed');S.mode='';}clearTimeout(S.seekTimer);video.pause();video.removeAttribute('src');video.load();}
 function renderNext(){const b=$('player-next'),n=S.list[S.index+1];b.hidden=!n;if(n&&n.youtube){b.textContent='Nächstes Video ▸ '+String(n.label||'').slice(0,40);return;}if(n){const m=n.metadata||{};b.textContent='Nächste Folge ▸ '+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'');}}
 function playIndex(i){S.index=i;const item=S.list[i];if(item.youtube)return open({youtube:item.youtube},item.label||'YouTube','youtube:'+item.youtube);return open({offer:item.id},episodeLabel(item),episodeKey(item));}
 function episodeLabel(item){const m=item.metadata||{};return (m.title||item.source?.title||'Video')+(Number.isInteger(m.season)&&Number.isInteger(m.episode)?' · S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'')+(m.episode_title?' · '+m.episode_title:'');}

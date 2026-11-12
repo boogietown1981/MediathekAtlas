@@ -123,6 +123,23 @@ class MusicTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, 'Ganze Playlist'):
             yd.enqueue(self.c, self.root, self.media, album)
 
+    def test_player_way_out_and_catalogue_entry(self):
+        # 0.5.76: the player learns whether "load and play here" is possible
+        self.assertEqual(yt.play_info(self.root, 't.' + vid(20))['offline'], 0)
+        self.assertIn('Offline-Schalter', yt.play_info(self.root, 't.' + vid(20))['offline_hint'])
+        yd.set_enabled(self.root, True, confirmed=True)
+        info = yt.play_info(self.root, 't.' + vid(20))
+        self.assertEqual((info['offline'], info['offline_hint'], info['web_url']), (1, '', yt.video_url(vid(20))))
+        player = (ROOT / 'web/player.js').read_text(encoding='utf-8')
+        for part in ("d.event==='onError'", 'embedRefused', 'https://www.youtube.com', 'Kurz laden und hier abspielen', 'Auf YouTube ansehen'):
+            self.assertIn(part, player)
+        self.assertIn('data-cross-kind="music"', (ROOT / 'web/index.html').read_text(encoding='utf-8'))
+        catalogue = (ROOT / 'web/unified_catalog.js').read_text(encoding='utf-8')
+        self.assertIn("view:'music'", catalogue)
+        self.assertIn('openAlbum', catalogue)
+        self.assertIn('openAlbum', (ROOT / 'web/portal_panel.js').read_text(encoding='utf-8'))
+        subprocess.run(['node', '--check', str(ROOT / 'web/unified_catalog.js')], check=True)
+
     def test_wiring(self):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
         self.assertIn("youtube.tracks(ROOT", server)
