@@ -1,3 +1,8 @@
+## 0.5.67 – Live-TV-Reiter mit Zeitgrenze je Anbieter
+- Björn (12.11.2026, Bildschirmfoto 0.5.61): Reiter Live-TV bleibt bei „Live-Sender werden geladen …“. Nicht nachstellbar; zwei mögliche Wege abgesichert: Darstellungsfehler (seit 0.5.66 abgefangen und gemeldet) und ein Anbieter, dessen Datenbank nicht antwortet.
+- `live_tv.channels`: Pluto, Rakuten, Joyn in eigenen Threads mit `BUDGET = 4.0` s; späte oder fehlerhafte Anbieter liefern `_LAST` (letzter vollständiger Stand) und einen Fehlertext je Anbieter. Die Filmliste wird weiter in der Verbindung des Aufrufers gelesen.
+- `server.py`: `pluto.state` in `/api/live-tv` darf fehlschlagen. `web/live_tv.js`: bei Fehler bleiben die Sender stehen, Knopf „Erneut versuchen“.
+
 ## 0.5.66 – Wiedergabe, Download-Auswahl, Dubletten, Live-TV
 - Zusammenführung: enthält 0.5.61 (Archive.org, d3kpuk) und 0.5.65 (Joyn, b5yaql); 0.5.62–0.5.64 wurden nicht als Pakete ausgegeben.
 - Björn (12.11.2026): Live-TV und Streams bei jedem Anbieter asynchron, zeitversetzt, zu langsam. Ursache 1: `-movflags empty_moov` schrieb den Dateikopf vor dem ersten Paket, der Startversatz zwischen Bild- und Tonspur ging verloren (gemessen 0,778 s → 0; nach Spulen Bild 1,0 s → 0). Jetzt `frag_keyframe+delay_moov+default_base_moof` (`streaming.command`). Ursache 2: ffmpeg bekam die Master-Liste, prüfte jede Stufe und spielte immer die höchste.

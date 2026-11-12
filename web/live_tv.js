@@ -138,7 +138,13 @@
     let d;
     const waiting = window.atlasWaiting?.($('livetv-status'), 'Live-Sender werden geladen');
     try { d = await window.api('live-tv?' + new URLSearchParams(params)); }
-    catch (e) { waiting?.(); if (call === seq) say('Live-Sender nicht verfügbar: ' + e.message, true); return; }
+    catch (e) {
+      waiting?.(); if (call !== seq) return;
+      // 0.5.67: the stations already shown stay; the reason and a retry are offered.
+      say('Live-Sender nicht ' + (data ? 'aktualisiert' : 'verfügbar') + ': ' + e.message, true);
+      const again = make('button', 'Erneut versuchen'); again.type = 'button'; again.onclick = refresh; $('livetv-status').append(' ', again);
+      return;
+    }
     waiting?.();
     if (call !== seq) return;
     data = d;

@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.5.66
+# MediathekAtlas · 0.5.67
+
+## Neu in 0.5.67: Live-TV-Reiter bleibt nicht mehr hängen
+
+- Der Reiter Live-TV fragt die Anbieter jetzt nebeneinander und mit einer Zeitgrenze von vier Sekunden ab. Antwortet ein Anbieter nicht rechtzeitig (zum Beispiel, während sein Katalog geladen wird), erscheinen die übrigen Sender sofort und für den langsamen Anbieter der letzte bekannte Stand. Die Statuszeile nennt den Anbieter.
+- Schlägt das Laden fehl, bleiben die schon gezeigten Sender stehen; daneben steht der Grund und „Erneut versuchen“.
+- Ob das die Ursache des leeren Reiters in 0.5.61 war, ist nicht bestätigt: Der Fehler ließ sich mit Testdaten nicht nachstellen.
 
 ## Neu in 0.5.66: Wiedergabe, Download-Auswahl, Dubletten, Live-TV
 

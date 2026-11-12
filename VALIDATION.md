@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.67 – Live-TV-Reiter (12. November 2026)
+- Automatisch: gesamte Python-Suite grün (814 Tests), davon 5 neu in `tests/test_v0567_live_tv_budget.py` (alle Anbieter antworten; langsamer Anbieter hält die anderen nicht auf und zeigt den letzten Stand; langsamer Anbieter ohne früheren Stand; fehlerhafte Anbieter werden benannt).
+- Im Browser (Chromium, Testdaten): Reiter Live-TV zeigt die Sender.
+- Nicht geprüft: ob dies die Ursache auf Björns Rechner war. Dort hilft die Statuszeile des Reiters oder eine Diagnose (Ereignisse `live_tv_overview`, `client_error`).
+
 ## 0.5.66 – Wiedergabe, Download-Auswahl, Dubletten, Live-TV (12. November 2026)
 - Automatisch: gesamte Python-Suite grün (809 Tests), davon 23 neu in `tests/test_v0566_playback_downloads.py`; `node --check` für alle Skripte, 6 Node-Oberflächentests.
 - Gemessen mit ffmpeg/ffprobe an einem selbst erzeugten HLS-Stream: Tonversatz 0,778 s bleibt erhalten (vorher 0), nach Spulen Bildversatz 1,0 s bleibt erhalten; Liste mit einer Stufe wird von ffmpeg gespielt (720p, 480p, 240p je nach Wunsch); Download mit „höchstens 480p“ ergibt eine 480p-Datei, „Beste“ 720p.

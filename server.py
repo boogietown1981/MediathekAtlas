@@ -446,7 +446,8 @@ class Handler(BaseHTTPRequestHandler):
             began=time.monotonic()
             with db() as c:data=live_tv.overview(c,ROOT,query=q.get('q',[''])[0][:100],
                                                  provider=q.get('provider',[''])[0][:20],group=q.get('group',[''])[0][:120])
-            data['pluto']=pluto.state(ROOT)
+            try:data['pluto']=pluto.state(ROOT)
+            except Exception:data['pluto']={}   # 0.5.67: a busy Pluto database must not hold back the stations
             # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
             # platforms still played them): an empty or slow answer leaves a line in the diagnosis.
             took=round(time.monotonic()-began,2)

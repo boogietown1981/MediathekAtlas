@@ -22,6 +22,8 @@ from __future__ import annotations
 
 import json
 import re
+import threading
+import time
 import unicodedata
 
 from catalog import LIVE_TOPICS  # one definition: catalog.mark_live keeps them out of the work scan
@@ -175,15 +177,51 @@ def joyn_channels(root):
     return out
 
 
-def channels(c, root):
-    """All live channels of all providers; a broken provider never hides the others."""
-    found, errors = [], {}
-    for key, loader in (('mediathek', lambda: mediathek_channels(c)), ('pluto', lambda: pluto_channels(root)),
-                        ('rakuten', lambda: rakuten_channels(root)), ('joyn', lambda: joyn_channels(root))):
+BUDGET = 4.0     # seconds one provider may take before the tab shows its last known channels
+_LAST = {}       # provider -> channels of the last complete answer
+_LAST_LOCK = threading.Lock()
+
+
+def channels(c, root, budget=None):
+    """All live channels of all providers; a broken or slow provider never hides the others.
+
+    0.5.67 (Björn, 12.11.2026: the tab stayed at "Live-Sender werden geladen …" with 0.5.61): the
+    platform catalogues are read side by side with a time limit. A provider that does not answer in
+    time (its database is busy while the catalogue is loaded) is shown with its last known channels
+    and named in the status line instead of holding back the whole tab."""
+    budget = BUDGET if budget is None else budget
+    found, errors, results = [], {}, {}
+    loaders = (('pluto', lambda: pluto_channels(root)), ('rakuten', lambda: rakuten_channels(root)),
+               ('joyn', lambda: joyn_channels(root)))
+
+    def work(key, loader):
         try:
-            found.extend(loader())
+            results[key] = ('ok', loader())
         except Exception as exc:  # local database problems are reported per provider
-            errors[key] = str(exc)[:200] or exc.__class__.__name__
+            results[key] = ('error', str(exc)[:200] or exc.__class__.__name__)
+
+    threads = [(key, threading.Thread(target=work, args=(key, loader), daemon=True, name='live_tv_' + key))
+               for key, loader in loaders]
+    for _, thread in threads:
+        thread.start()
+    try:   # the film list lives in the caller's database connection, so it is read here
+        found.extend(mediathek_channels(c))
+    except Exception as exc:
+        errors['mediathek'] = str(exc)[:200] or exc.__class__.__name__
+    deadline = time.monotonic() + budget
+    for key, thread in threads:
+        thread.join(max(0.0, deadline - time.monotonic()))
+        state, value = results.get(key, ('late', None))
+        if state == 'ok':
+            with _LAST_LOCK:
+                _LAST[key] = value
+            found.extend(value)
+            continue
+        with _LAST_LOCK:
+            known = list(_LAST.get(key) or [])
+        found.extend(known)
+        errors[key] = (('antwortet gerade nicht (Katalog wird vermutlich geladen)' if state == 'late' else value)
+                       + (' · letzter bekannter Stand: %d Sender' % len(known) if known else ''))
     return found, errors
 
 
