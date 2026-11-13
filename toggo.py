@@ -628,9 +628,12 @@ def _summary(root, row, reports=None):
     import toggo_enrichment
     report = (reports if reports is not None else toggo_enrichment.all_cached(root)).get(row['id'])
     out = portal_reference.summary(row.get('genre') or GENRE, report)
-    # TOGGO and TOGGOLINO (pre-school) are categories of their own, so parents can filter by age group.
-    brand = row.get('brand') or 'TOGGO'
-    out['categories'] = [c for c in out['categories'] if c != portal_reference.UNKNOWN] + [brand]
+    # 0.5.83: TOGGO is a children's platform, so every title is 'Kinder & Familie' even before the
+    # reference check; TOGGO/TOGGOLINO (pre-school) is the brand, kept as filter value, not a category.
+    import categories as fixed
+    out['categories'] = sorted({c for c in out['categories'] if not fixed.is_special(c)} | {'Kinder & Familie'},
+                               key=fixed.sort_key)
+    out['brand_label'] = row.get('brand') or 'TOGGO'
     return out
 
 
@@ -659,7 +662,10 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         row['playable'] = 0
         row['seasons'] = None
     counts = portal_reference.facets(rows)
-    rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, 'series')]
+    if str(genre).upper() in ('TOGGO', 'TOGGOLINO'):
+        rows = [r for r in rows if str(r.get('brand_label')).upper() == str(genre).upper()]
+    else:
+        rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, 'series')]
     if sort == 'rating':
         rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,

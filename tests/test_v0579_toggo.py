@@ -167,7 +167,8 @@ class CatalogueTests(Fixture):
         paw = self.series('PAW Patrol')
         self.assertEqual((paw['brand'], paw['poster'], paw['web_url']), ('TOGGOLINO', IMG % 'VEP1', 'https://www.toggo.de/serien/paw-patrol'))
         self.assertIn('Kinder & Familie', paw['categories'])
-        self.assertIn('TOGGOLINO', paw['categories'])
+        self.assertNotIn('TOGGOLINO', paw['categories'])   # 0.5.83: brand, not category
+        self.assertEqual(paw['brand_label'], 'TOGGOLINO')
         self.assertEqual(self.series('Weihnachtsmann & Co. KG')['web_url'], 'https://www.toggo.de/weihnachtsmann--co-kg')
         self.assertEqual(toggo.listing(self.root, 'movies')['total'], 0)
         self.assertEqual(toggo.listing(self.root, 'live')['total'], 0)

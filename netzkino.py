@@ -1245,8 +1245,11 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
             if not group['genres']:group['genres']=row.get('genres') or ''
             if not group['year']:group['year']=row.get('year')
     for group in series.values():
-        cats=sorted({c for e in group['children'] for c in e['categories']}-{portal_reference.UNKNOWN},key=str.casefold)
-        group['categories']=cats or portal_reference.categories(group.get('genres'))
+        import categories as fixed
+        found={c for e in group['children'] for c in e['categories']}
+        cats=sorted({c for c in found if not fixed.is_special(c)},key=fixed.sort_key)
+        group['categories']=cats or ([fixed.OTHER] if fixed.OTHER in found else [fixed.UNCLASSIFIED])
+        group['source_genres']=portal_reference.split_labels(group.get('genres'))[:12]
         group.setdefault('score',None)
         group['children'].sort(key=lambda e:(e['season'] or 0,e['episode'] or 0,e['title'].casefold()))
         group['episode_count']=len(group['children'])

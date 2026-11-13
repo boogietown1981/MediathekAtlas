@@ -239,7 +239,7 @@ class MergeTests(unittest.TestCase):
         self.assertEqual(portal_reference.summary('Animation', report)['reference'],
                          {'provider': 'TMDB', 'id': '80321', 'year': 2011, 'title': 'Ab ins Meer'})
         import portal_snapshot
-        self.assertEqual(portal_snapshot.FORMAT, 2)   # stored views are rebuilt once so the rows get the fields
+        self.assertEqual(portal_snapshot.FORMAT, 3)   # stored views are rebuilt once so the rows get the fields
 
 
 class WiringTests(unittest.TestCase):

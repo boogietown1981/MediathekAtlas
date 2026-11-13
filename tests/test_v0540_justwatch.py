@@ -107,7 +107,7 @@ class CatalogueTests(Fixture):
         self.assertEqual(arrival['score'], {'value': 7.9, 'source': 'IMDb', 'votes': 750000})
         self.assertEqual(jw.listing(self.root, 'movies', collection='cinema')['total'], 1)
         series = jw.listing(self.root, 'series')['items'][0]
-        self.assertEqual(series['categories'], ['Kriegsfilm', 'Mystery', 'Thriller'])
+        self.assertEqual(series['categories'], ['Krieg', 'Mystery', 'Thriller'])
         # No stream address is stored anywhere in the database.
         dump = '\n'.join(sqlite3.connect(self.root / 'justwatch.sqlite3').iterdump())
         self.assertNotIn('manifest/external', dump)
@@ -130,7 +130,7 @@ class CatalogueTests(Fixture):
         data = jw.episodes(self.root, 'ts200', post=self.api, now=1500)
         self.assertEqual([(e['id'], e['season'], e['episode'], e['playable']) for e in data['items']],
                          [('tse301', 1, 1, 1), ('tse302', 1, 2, 0)])
-        self.assertEqual(data['items'][0]['categories'], ['Kriegsfilm', 'Mystery', 'Thriller'])
+        self.assertEqual(data['items'][0]['categories'], ['Krieg', 'Mystery', 'Thriller'])
         detail = jw.item(self.root, 'tse301')
         self.assertEqual((detail['series']['title'], detail['item']['web_url']),
                          ('Spy City', 'https://www.justwatch.com/de/Serie/Spy-City?package=jwt'))

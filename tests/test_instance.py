@@ -16,7 +16,7 @@ class InstanceTests(unittest.TestCase):
 def tree_namespace(tree,clock=time):
  source=ast.parse((Path(__file__).resolve().parents[1]/'server.py').read_text())
  nodes=[n for n in source.body if isinstance(n,ast.FunctionDef) and n.name in ('catalog_tree','refresh_tree') or isinstance(n,ast.Assign) and any(getattr(t,'id','') in ('_TREE_CACHE','_TREE_TTL') for t in n.targets)]
- ns={'threading':threading,'time':clock,'db':lambda:contextlib.nullcontext(None),'catalog':types.SimpleNamespace(tree=tree),'diagnostics':types.SimpleNamespace(event=lambda *a,**k:None),'_TREE_LOCK':threading.Lock(),'_TREE_BUSY':False,'_TREE_ERROR':''}
+ ns={'threading':threading,'time':clock,'db':lambda:contextlib.nullcontext(None),'catalog':types.SimpleNamespace(tree=tree,category_tree=lambda c:[]),'categories':__import__('categories'),'diagnostics':types.SimpleNamespace(event=lambda *a,**k:None),'_TREE_LOCK':threading.Lock(),'_TREE_BUSY':False,'_TREE_ERROR':''}
  exec(compile(ast.Module(body=nodes,type_ignores=[]),'server.py','exec'),ns);return ns
 class TreeTests(unittest.TestCase):
  def test_first_request_loads_even_shortly_after_boot(self):

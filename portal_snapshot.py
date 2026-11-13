@@ -30,7 +30,7 @@ from pathlib import Path
 
 TTL = 60.0
 _MAX = 40
-FORMAT = 2           # 2 (0.5.63): rows carry reference year and title for the merged catalogue
+FORMAT = 3           # 2 (0.5.63): reference year and title; 3 (0.5.83): fixed categories (categories.py)
 _MEM = {}            # key -> {'data': dict, 'stamp': str, 'built': monotonic, 'used': monotonic}
 _LOCK = threading.Lock()
 _BUILD = {}          # source -> Lock, one build per platform at a time
