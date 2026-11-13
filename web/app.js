@@ -1022,6 +1022,32 @@ function displayPortalControls(data){
     card.append(actions);host.append(card);
   }
 }
+// 0.5.92 (ArchiveMedia catalog_transfer): hand the found uploads to another installation as one file.
+$('archive-list-export').onclick=e=>busy(e.target,async()=>{
+  const r=await request('archive-list-export');
+  if(!r.ok)throw Error((await r.json().catch(()=>({}))).error||'Die Liste konnte nicht erstellt werden');
+  const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='MediathekAtlas_Archive-Liste_'+new Date().toISOString().slice(0,10)+'.zip';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+  $('archive-list-status').textContent='Liste gespeichert. Auf der anderen Installation über „Liste einlesen“ übernehmen.';
+});
+$('archive-list-import').onclick=()=>$('archive-list-file').click();
+$('archive-list-file').onchange=e=>{
+  const file=e.target.files[0];e.target.value='';
+  if(!file)return;
+  busy($('archive-list-import'),async()=>{
+    $('archive-list-status').textContent='„'+file.name+'“ wird geprüft und eingelesen …';
+    const control=new AbortController(),timer=setTimeout(()=>control.abort(),600000);
+    let r;
+    try{r=await fetch('/api/archive-list-import',{method:'POST',headers:{'Content-Type':'application/zip','X-Atlas-Token':token},body:file,signal:control.signal});}
+    catch(error){$('archive-list-status').textContent='';throw Error('Die Liste konnte nicht übertragen werden.');}
+    finally{clearTimeout(timer);}
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){$('archive-list-status').textContent='';throw Error(d.error||'Die Liste wurde nicht angenommen');}
+    $('archive-list-status').textContent=countLabel(d.added)+' neue Uploads übernommen, '+countLabel(d.known)+' waren schon bekannt (Liste aus '+d.written_by+', '+countLabel(d.items)+' Uploads). '+d.note;
+    notice(countLabel(d.added)+' Uploads aus der Liste übernommen.');
+    await loadPortals();
+  });
+};
 $('platform-global-controls').onsubmit=e=>{
   e.preventDefault();
   const button=$('platform-global-controls').querySelector('button');

@@ -269,7 +269,7 @@ def finish(c,scope_id,rows,more,detail=None,task=None):
                       0 if stop else 1,time.time(),time.time()+2,time.time(),scope_id))
 
 
-def failure(c,scope_id,error):
+def failure(c,scope_id,error,task=None):
     r=c.execute('SELECT failures,enabled FROM portal_scopes WHERE id=?',(scope_id,)).fetchone()
     if not r:return
     count=r[0]+1
@@ -280,6 +280,9 @@ def failure(c,scope_id,error):
        next_try=?,last_error=?,updated=? WHERE id=?""",
        (count,state,time.time()+pause,
         type(error).__name__+': '+core.safe_error(error),time.time(),scope_id))
+    if state=='stalled' and task:
+        # ArchiveMedia catalog_fallback: ask the same source in time windows instead of pages.
+        return recovery.fallback(c,task)
 
 
 class Scheduler:
@@ -319,6 +322,6 @@ class Scheduler:
                 with self.db() as c:finish(c,task['id'],rows,more,detail,task)
             except Exception as error:
                 if task:
-                    with self.db() as c:failure(c,task['id'],error)
+                    with self.db() as c:failure(c,task['id'],error,task)
             finally:
                 with LOCK:_ACTIVE['internet_archive']-=1

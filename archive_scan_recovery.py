@@ -220,6 +220,35 @@ def plan(error, failures, enabled=True):
     return 'error', 0
 
 
+def fallback(c, scope, now=None):
+    """ArchiveMedia catalog_fallback: a search that stalls is asked in smaller parts instead.
+
+    A paged source changes to time windows (found uploads and the old position are kept in the
+    history); a window that stalls is halved. Returns what was done, or '' when nothing smaller exists.
+    """
+    now = time.time() if now is None else now
+    scope_id, window = scope['id'], scope.get('window')
+    if scope.get('mode') != VERIFIED or scope.get('kind') == 'item':
+        return ''
+    if window:
+        done = split(c, scope_id, window['start_utc'], window['end_utc'], now)
+        c.execute('UPDATE portal_scope_windows SET state=?,note=?,updated=? WHERE id=?',
+                  ('split' if done else 'error', 'Geteilt nach wiederholtem Stillstand' if done else 'Stillstand; nicht weiter teilbar', now, window['id']))
+        action = 'window_split' if done else ''
+    else:
+        if c.execute('SELECT 1 FROM portal_scope_windows WHERE scope_id=? LIMIT 1', (scope_id,)).fetchone():
+            return ''
+        row = c.execute('SELECT cursor,pages_done,imported,last_identifier,provider_total FROM portal_scopes WHERE id=?', (scope_id,)).fetchone()
+        c.execute('INSERT INTO portal_scope_history(scope_id,saved,snapshot) VALUES(?,?,?)',
+                  (scope_id, now, json.dumps({'fallback': dict(zip(('cursor', 'pages_done', 'imported', 'last_identifier', 'provider_total'), row))}, ensure_ascii=False)))
+        split(c, scope_id, *full_window(now), now)
+        c.execute('UPDATE portal_scopes SET imported=0 WHERE id=?', (scope_id,))
+        action = 'windows'
+    if action:
+        c.execute("UPDATE portal_scopes SET state='queued',failures=0,next_try=?,updated=? WHERE id=?", (now + 5, now, scope_id))
+    return action
+
+
 # ---- a new run ----------------------------------------------------------------------------
 
 def rescan(c, scope_id, now=None):

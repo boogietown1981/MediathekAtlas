@@ -188,6 +188,46 @@ class WrongPageTests(Base):
         self.assertEqual(recovery.check({'response': {'numFound': 20000, 'docs': docs}}, 1, 25)['too_large'], True)
 
 
+class FallbackTests(Base):
+    def test_a_stalled_page_scan_changes_to_time_windows(self):
+        archive = Archive(80)
+        sid = control.add_scope(self.c, 'collection', 'sammlung', page_budget=25)
+        control.control_scope(self.c, sid, 'start')
+        with mock.patch.object(control.core, 'open_url', archive.open):
+            task = control._claim(self.c)
+            self.c.execute('COMMIT')
+            rows, more, detail = control.fetch_scope_page(task)
+            control.finish(self.c, sid, rows, more, detail, task)
+            for attempt in range(recovery.MAX_STALLS):
+                self.c.execute('UPDATE portal_scopes SET next_try=0 WHERE id=?', (sid,))
+                task = control._claim(self.c)
+                self.c.execute('COMMIT')
+                action = control.failure(self.c, sid, recovery.Stalled('Suchseite wiederholt'), task)
+        self.assertEqual(action, 'windows')
+        scope = self.scope(sid)
+        self.assertEqual((scope['state'], scope['failures'], scope['imported'], scope['cursor']), ('queued', 0, 0, 2))
+        kept = json.loads(self.c.execute('SELECT snapshot FROM portal_scope_history WHERE scope_id=?', (sid,)).fetchone()[0])['fallback']
+        self.assertEqual((kept['cursor'], kept['imported'], kept['last_identifier']), (2, 25, 'item000024'))
+        del self.seen[:]
+        self.run_scope(sid, archive)
+        self.assertEqual((self.scope(sid)['state'], sorted(self.seen)), ('complete', ['item%06d' % n for n in range(80)]))
+        self.assertIn('publicdate', archive.requests[-1]['q'])
+
+    def test_a_stalled_window_is_halved_and_legacy_scans_are_left_alone(self):
+        sid = control.add_scope(self.c, 'collection', 'sammlung')
+        recovery.split(self.c, sid, '2020-01-01T00:00:00Z', '2020-01-03T00:00:00Z')
+        window = recovery.next_window(self.c, sid)
+        self.assertEqual(recovery.fallback(self.c, {'id': sid, 'kind': 'collection', 'mode': recovery.VERIFIED, 'window': window}), 'window_split')
+        self.assertEqual(sorted(tuple(r) for r in self.c.execute('SELECT start_utc,end_utc,state FROM portal_scope_windows WHERE scope_id=?', (sid,))),
+                         [('2020-01-01T00:00:00Z', '2020-01-02T00:00:00Z', 'queued'), ('2020-01-02T00:00:00Z', '2020-01-02T12:00:00Z', 'queued'),
+                          ('2020-01-02T00:00:00Z', '2020-01-03T00:00:00Z', 'split'), ('2020-01-02T12:00:00Z', '2020-01-03T00:00:00Z', 'queued')])
+        second = {'id': 1, 'start_utc': '2020-01-01T00:00:00Z', 'end_utc': '2020-01-01T00:00:01Z', 'page': 1, 'last_identifier': ''}
+        self.assertEqual(recovery.fallback(self.c, {'id': sid, 'kind': 'collection', 'mode': recovery.VERIFIED, 'window': second}), '')
+        self.assertEqual(recovery.fallback(self.c, {'id': sid, 'kind': 'collection', 'mode': recovery.LEGACY}), '')
+        # A source that already has windows is not seeded a second time.
+        self.assertEqual(recovery.fallback(self.c, {'id': sid, 'kind': 'collection', 'mode': recovery.VERIFIED}), '')
+
+
 class FailureTests(Base):
     def test_kinds(self):
         http = lambda code: urllib.error.HTTPError('u', code, 'x', {}, io.BytesIO(b''))

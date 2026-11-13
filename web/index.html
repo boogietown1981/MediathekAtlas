@@ -347,6 +347,16 @@
     </form>
     <p class="muted">Es wird nichts automatisch gestartet: Zuerst die Plattform aktivieren, danach den gewünschten Scanbereich mit „Start“ freigeben. Maximal 25 Ergebnisse je Seite; kein globales Archive.org-Crawling.</p>
     <div id="archive-scope-results" class="platform-scope-list" aria-live="polite"></div>
+    <details class="archive-list-transfer">
+      <summary>Gefundene Uploads mit einer anderen Installation austauschen</summary>
+      <p class="muted">Die Liste enthält nur Archive.org-Kennungen, Titel und öffentlich gelistete Dateinamen – keine Videos, Pfade, Einstellungen oder Schlüssel. Sie passt auch zu ArchiveMedia. Beim Einlesen kommen nur Uploads dazu, die hier noch fehlen.</p>
+      <div class="platform-scope-actions">
+        <button type="button" id="archive-list-export">Liste speichern</button>
+        <button type="button" id="archive-list-import">Liste einlesen …</button>
+        <input type="file" id="archive-list-file" accept=".zip,application/zip" hidden>
+      </div>
+      <small id="archive-list-status" class="muted" aria-live="polite"></small>
+    </details>
   </div>
   <div class="portal-dashboard">
     <div class="panel portal-card">
