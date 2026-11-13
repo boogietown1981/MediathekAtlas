@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.95
+# MediathekAtlas · 0.5.99
+
+## Neu in 0.5.99: Helles Design, Systemmonitor, Klicktest in echten Browsern
+
+- **Helles Design.** Verwaltung → Darstellung → „Design“: Dunkel (wie bisher, Standard), Hell oder „Wie das System“. Die Auswahl gilt für alle Browser, die diese Installation öffnen. Das helle Design wird aus dem dunklen berechnet: gleiche Aufteilung, gleiche Akzentfarben, nur die Helligkeit gespiegelt. Player, Hintergrundbilder und alles, was auf einem Bild liegt, bleiben dunkel. Erste Fassung: Ansichten mit echten Covern und Titelseiten konnten hier nicht beurteilt werden, Rückmeldungen zu einzelnen Stellen sind willkommen.
+- **Systemmonitor.** Verwaltung → „System“ zeigt Prozessorlast, freien Arbeitsspeicher, Speicherbedarf von MediathekAtlas, Temperatur (wo das System sie meldet), freien Platz auf den Laufwerken von Daten und Downloads, die Größe der Datenbanken und was gerade läuft (Downloads, Umwandlungen, Dateiprüfung, Verbund). Dazu Hinweise in Klartext, wenn Prozessor, Speicher, Temperatur oder Platz knapp werden. Gemessen wird nur, solange die Ansicht offen ist.
+- **Klicktest in der CI.** Bei jedem Pull Request öffnet ein Test alle Hauptansichten, alle Bereiche der Verwaltung und alle Plattform-Reiter in Chromium, Firefox und WebKit (steht für Safari) und schlägt bei jedem Skriptfehler oder fehlgeschlagenen Aufruf an.
+- Die Reiter der Verwaltung sind etwas schmaler, damit der neue Reiter „System“ in die Zeile passt.
+- Sammelstand: 0.5.99 enthält 0.5.95 (Archivnachweise), 0.5.94 (Umwandeln) und alles davor.
+
 
 ## Neu in 0.5.95: Prüfsumme und Archivnachweis für Archive.org-Downloads, Zweitkopie im Verbund
 

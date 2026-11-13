@@ -1,3 +1,11 @@
+## 0.5.99 – Helles Design, Systemmonitor, Klicktest in Chromium, Firefox und WebKit
+- Schritt 8 aus `docs/REVIEW_0577.md`.
+- `light_theme.py` (neu): berechnet aus `web/style.css` ein zweites Stylesheet. Jede Regel mit Farbe wird unter `html[data-theme="light"]` wiederholt, die Farbe in der Helligkeit gespiegelt (Farbton bleibt). Unverändert bleiben Schatten, `::backdrop`, `@keyframes` und Regeln, deren Selektor zu Player, Hintergrundbild, Cover oder Overlay gehört (`KEEP`). `style.css` selbst bleibt unverändert und die einzige Stelle, an der gestaltet wird; das helle Blatt entsteht beim ersten Abruf von `/theme-light.css` und neu, wenn sich `style.css` ändert.
+- `ui_prefs`: `theme` (`dark` Standard, `light`, `auto`). `web/display.js` setzt `data-theme`, folgt bei `auto` der Systemeinstellung und merkt die Wahl in `localStorage`, damit die Seite gleich in den richtigen Farben startet (kleines Skript im Kopf von `index.html`). `web/admin.js`: Auswahl „Design“.
+- `system_monitor.py` (neu): `snapshot` (Last, Arbeitsspeicher für Linux, macOS und Windows, Prozess-Speicher, Temperatur über Linux-Thermalzonen, Laufwerke, Datenbanken, Tätigkeit) und `assess` (Hinweise). Nur Standardbibliothek, kein Hintergrund-Thread. Route `GET /api/system-monitor`, Ansicht `web/system.js`, Reiter „System“.
+- `tests/browser/click_all.cjs` (neu) und CI-Job `browser-click` (Matrix chromium, firefox, webkit; Playwright wird im Job installiert).
+- `.admin-tab`: Innenabstand 10 statt 14 px, Abstand 6 statt 8 px.
+- Tests: `tests/test_v0599_theme_monitor.py` (10).
 ## 0.5.95 – Prüfsumme und signierter Archivnachweis für Archive.org-Downloads, Zweitkopie im Verbund
 - Schritt 7 aus `docs/REVIEW_0577.md` („Archivkopie im Verbund mit Prüfsumme und Nachweis“, nach HomeTube).
 - `portal_sources`: Varianten tragen `md5`/`sha1` aus dem Manifest. `archive_downloads.build_job`: `source._expect`. `downloads.run`: bei `_expect` werden MD5, SHA-1 und SHA-256 während des Ladens mitgerechnet; Abweichung von der genannten Prüfsumme bricht ab, bevor etwas veröffentlicht wird; Ergebnis als `source_check` im Auftrag. Andere Downloads bleiben unberührt.

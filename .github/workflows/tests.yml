@@ -67,6 +67,28 @@ jobs:
       - name: Unit-Tests
         run: python -m unittest discover -s tests -v
 
+  # 0.5.99: the interface in real browsers. WebKit stands in for Safari. Kept apart from the unit
+  # tests so that a browser download problem never blocks the packages.
+  browser-click:
+    name: Klicktest · ${{ matrix.browser }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        browser: [chromium, firefox, webkit]
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-python@v6
+        with:
+          python-version: '3.13'
+      - name: Playwright und Browser installieren
+        run: |
+          npm install --no-save --no-audit --no-fund --prefix "$RUNNER_TEMP/pw" playwright@1
+          "$RUNNER_TEMP/pw/node_modules/.bin/playwright" install --with-deps ${{ matrix.browser }}
+      - name: Oberfläche durchklicken
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/click_all.cjs ${{ matrix.browser }}
+
   # Separate job: macOS runners are sometimes not assigned for a long time; that must not
   # hold back the NAS packages, which only need the Linux results.
   test-macos:

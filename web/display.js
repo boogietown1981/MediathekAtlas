@@ -3,7 +3,15 @@
    as classes on <body>, so every tile and title page follows them without knowing about them. */
 (() => {
   'use strict';
-  const DEFAULTS = {card_size: 'normal', start_source: 'all', start_kind: 'movies', merge_duplicates: true};
+  const DEFAULTS = {card_size: 'normal', start_source: 'all', start_kind: 'movies', merge_duplicates: true, theme: 'dark'};
+  // 0.5.99: helles Design. 'auto' follows the system; the choice is mirrored in localStorage so the page starts in the right colours.
+  const system = window.matchMedia ? window.matchMedia('(prefers-color-scheme: light)') : null;
+  function theme() {
+    const wanted = prefs.theme || 'dark', light = wanted === 'light' || (wanted === 'auto' && !!system && system.matches);
+    if (light) document.documentElement.dataset.theme = 'light'; else delete document.documentElement.dataset.theme;
+    try { localStorage.setItem('atlas-theme', wanted); } catch (e) { /* private mode: the server setting still applies */ }
+  }
+  if (system) { const again = () => theme(); if (system.addEventListener) system.addEventListener('change', again); else if (system.addListener) system.addListener(again); }
   let prefs = {...DEFAULTS}, meta = {switches: [], sizes: []};
   const listeners = [];
   function apply() {
@@ -13,6 +21,7 @@
     for (const [key, value] of Object.entries(prefs))
       if (value === false && /^(card|title)_/.test(key)) body.classList.add('atlas-hide-' + key.replace(/_/g, '-'));
     body.dataset.cardSize = prefs.card_size || 'normal';
+    theme();
   }
   const ready = (async () => {
     // window.api comes from app.js; without a server answer the defaults apply.

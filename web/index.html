@@ -1,4 +1,4 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="atlas-token" content="__TOKEN__"><title>MediathekAtlas</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head><body>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="atlas-token" content="__TOKEN__"><title>MediathekAtlas</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme-light.css"><script>try{var t=localStorage.getItem("atlas-theme");if(t==="light"||(t==="auto"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.dataset.theme="light"}catch(e){}</script></head><body>
 <aside><div class="brand"><img src="/icon.svg" width="34" height="34" alt=""> MediathekAtlas</div><span class="eyebrow">DEINE MEDIATHEKEN. GEORDNET.</span><nav><button class="nav active" data-view="discover">▤ &nbsp; Dashboard</button><button class="nav" data-view="portals">◎ &nbsp; Plattformen</button><button class="nav" data-view="livetv">◉ &nbsp; Live-TV</button><button class="nav" data-view="queue">↓ &nbsp; Downloads <span id="jobcount">0</span></button><button class="nav" data-view="admin" data-admin-root="1">⚙ &nbsp; Verwaltung</button></nav><div class="asidebottom">MEDIATHEKATLAS · LOKAL<br><small id="edition">v__VERSION__ · Lokale Bibliothek</small><button id="quit-app" type="button">App beenden</button><button id="logout" type="button" hidden>Abmelden</button><p id="tools">System wird geprüft …</p></div></aside>
 <main><header><div><span class="eyebrow" id="heading-eyebrow">DASHBOARD</span><h1 id="heading">Filme und Serien aller Plattformen</h1></div><span class="pill" id="location-pill">● Lokal auf deinem Rechner</span></header>
 <div id="connection-status" role="status" hidden></div>
@@ -8,6 +8,7 @@
   <button type="button" class="admin-tab" data-view="status" title="Bestand, Scan und Werkzuordnung aller Quellen">Status &amp; Abgleich</button>
   <button type="button" class="admin-tab" data-view="display" title="Was Kacheln und Titelseiten zeigen">Darstellung</button>
   <button type="button" class="admin-tab" data-view="storage" title="Belegter Platz der Downloads, Platzbudget und Aufräum-Vorschlag">Speicher</button>
+  <button type="button" class="admin-tab" data-view="system" title="Auslastung, Arbeitsspeicher, Laufwerke und Temperatur dieses Geräts">System</button>
   <button type="button" class="admin-tab" data-view="review" title="Unklare Zuordnungen prüfen">Zuordnung</button>
   <button type="button" class="admin-tab" data-view="subscriptions">Download-Abos</button>
   <button type="button" class="admin-tab" data-view="legacy" title="Werkkatalog ARD, ZDF &amp; Co. mit Genre-Baum und Zuordnungsfiltern">Werkkatalog</button>
@@ -73,6 +74,18 @@
     <p class="muted">Ohne Haken entsteht eine zweite Datei neben dem Original, z. B. „Titel [720p].mkv“. Auf älteren Geräten und NAS kann eine Umwandlung mehrere Stunden dauern.</p>
     <button type="submit" id="encoder-submit" class="primary">In die Warteschlange</button>
   </form></dialog>
+<section id="system" hidden>
+  <div class="sectionhead"><div><h2>System</h2>
+    <p class="muted">Wie es dem Gerät geht, auf dem MediathekAtlas läuft. Gemessen wird nur, solange diese Ansicht offen ist. Werte, die das System nicht liefert, stehen als „unbekannt“ da.</p></div>
+    <button type="button" id="system-refresh">Neu messen</button></div>
+  <div id="system-hints"></div>
+  <div id="system-metrics" class="storage-metrics"></div>
+  <div id="system-drives" class="storage-sources" aria-label="Laufwerke"></div>
+  <div class="system-columns"><div><h3>MediathekAtlas gerade</h3><dl id="system-activity" class="system-list"></dl></div>
+    <div><h3>Gerät</h3><dl id="system-facts" class="system-list"></dl></div>
+    <div><h3>Datenbanken</h3><dl id="system-databases" class="system-list"></dl></div></div>
+  <p id="system-status" class="muted" role="status"></p>
+</section>
 <section id="legacy" hidden>
   <div class="sectionhead"><div><h2>Werkkatalog ARD, ZDF &amp; Co.</h2>
     <p class="muted">Arbeitsansicht mit Genre-Baum, Zuordnungs- und Download-Filtern. Zum Stöbern ist das Dashboard gedacht.</p></div></div>
@@ -550,4 +563,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/system.js"></script></body></html>

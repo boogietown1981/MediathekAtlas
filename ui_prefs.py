@@ -13,6 +13,7 @@ from pathlib import Path
 SIZES = ('compact', 'normal', 'large')
 START_SOURCES = ('all', 'mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo')
 START_KINDS = ('movies', 'series')
+THEMES = ('dark', 'light', 'auto')   # 0.5.99: 'auto' follows the system setting of the browser
 
 # key -> (group, label, default)
 SWITCHES = {
@@ -31,7 +32,7 @@ SWITCHES = {
     'title_info': ('Titelseite', 'Angaben wie Sender, Laufzeit und Quelle', True),
     'title_versions': ('Titelseite', 'Fassungen und Dateien', True),
 }
-DEFAULTS = {'card_size': 'normal', 'start_source': 'all', 'start_kind': 'movies',
+DEFAULTS = {'card_size': 'normal', 'start_source': 'all', 'start_kind': 'movies', 'theme': 'dark',
             **{key: value[2] for key, value in SWITCHES.items()}}
 
 
@@ -49,6 +50,8 @@ def clean(data):
         out['start_source'] = data['start_source']
     if data.get('start_kind') in START_KINDS:
         out['start_kind'] = data['start_kind']
+    if data.get('theme') in THEMES:
+        out['theme'] = data['theme']
     return out
 
 

@@ -19,7 +19,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 | 2 | `vendor/archivemedia` (0.10.12) und `vendor/archive_portals` (0.10.53) doppelt | offen |
 | 2 | `netzkino_downloads` und `netzkino_enrichment.analyze` bedienen alle Plattformen | offen (neutrale Namen) |
 | 2 | Netzwerkmodus: Sitzungen nur im Arbeitsspeicher, nur HTTP | offen |
-| 2 | Kein Klicktest der Oberfläche in der CI, Safari und Firefox nie geprüft | offen |
+| 2 | Kein Klicktest der Oberfläche in der CI, Safari und Firefox nie geprüft | Klicktest in der CI seit 0.5.99 (Chromium, Firefox, WebKit); echtes Safari weiter ungeprüft |
 | 3 | 44 Pakete (625 MB) in `downloads/` im Git, alter Bausatz in `integration/preview` | Pakete in 0.5.84 aus dem Git genommen (Historie unverändert); `integration/preview` offen |
 | 3 | Gestapelte offene Pull Requests, `main` bei 0.5.40 | braucht Freigabe |
 
@@ -36,7 +36,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 | Umwandeln in 1080p, 720p, 480p (Encoder) | übernommen in 0.5.94 (`encoder.py`, ffmpeg statt HandBrake), ohne Hardware-Beschleunigung |
 | Signierter Archivnachweis je Datei, gezielte Übertragung an ein zweites System | übernommen in 0.5.95 (`archive_receipts.py`, `ed25519_lite.py`) für Archive.org-Downloads; die zweite Kopie wird von Archive.org geladen, nicht zwischen den Systemen übertragen |
 | Eigene Videos mit Rechteangabe aufnehmen | offen |
-| Systemmonitor, helles Design | offen |
+| Systemmonitor, helles Design | übernommen in 0.5.99 (`system_monitor.py`, `light_theme.py`) |
 | Paket für Synology-Router (SRM) | offen |
 
 ## Reihenfolge
@@ -48,5 +48,5 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 5. Plattform-Registratur (0.5.84, `platform_registry.py`); Netzkino auf das gemeinsame Panel noch offen
 6. Umwandeln (Encoder) (0.5.94, `encoder.py`)
 7. Archivkopie im Verbund mit Prüfsumme und Nachweis (0.5.95, `archive_receipts.py`)
-8. Helles Design, Systemmonitor, Klicktest in der CI mit Firefox und WebKit
+8. Helles Design, Systemmonitor, Klicktest in der CI mit Firefox und WebKit (0.5.99)
 9. Audio, Hörbücher und Bücher von Archive.org, Austausch des Bestands als Datei

@@ -760,8 +760,8 @@ dialog.atlas-offline-choice::backdrop{background:#000a}
 #player-stage.embed #player-video,#player-stage.embed #player-bar{display:none!important}
 
 /* 0.5.55 · Dashboard nur mit Filmen und Serien, Verwaltung mit Reitern, einheitliche Kacheln */
-.admin-tabs{display:flex;gap:8px;flex-wrap:wrap;border-bottom:1px solid #354957;padding:0 0 13px;margin:0 0 20px}
-.admin-tabs .admin-tab{border-radius:8px;min-height:36px;padding:8px 14px;margin:0}
+.admin-tabs{display:flex;gap:6px;flex-wrap:wrap;border-bottom:1px solid #354957;padding:0 0 13px;margin:0 0 20px}
+.admin-tabs .admin-tab{border-radius:8px;min-height:36px;padding:8px 10px;margin:0}
 .admin-all{display:flex;gap:8px;flex-wrap:wrap}
 .tasks-list{display:flex;flex-direction:column;gap:18px}
 .tasks-group{background:#111a26;border:1px solid #2c3b49;border-radius:13px;padding:14px 16px}
@@ -935,6 +935,13 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .encoder-job strong{display:block;font-size:13px}.encoder-job small{display:block;color:#8ea2b5;font-size:11px;overflow-wrap:anywhere}
 .encoder-job button{min-height:30px;padding:4px 10px;font-size:12px}.encoder-job.error .encoder-note{color:#ffb4a8}.encoder-job.done .encoder-note{color:#91dcc7}
 .receipt-bad{color:#ffb4a8!important}
+.system-columns{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:18px;margin-top:10px}
+.system-list{display:grid;grid-template-columns:minmax(0,1fr) auto;gap:6px 14px;margin:0;font-size:12px;border:1px solid #2c3b49;border-radius:12px;background:#101d29;padding:13px 15px}
+.system-list dt{color:#adc0d1;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}.system-list dd{margin:0;text-align:right;font-weight:600}
+.system-hint{border:1px solid #6d5a2a;background:#2a2412;color:#f4d27a;border-radius:10px;padding:10px 13px;margin:0 0 8px;font-size:12px}
+.system-hint.error{border-color:#6b3a36;background:#2b1715;color:#ffb4a8}
+.storage-bar.used i{background:#7fb2e6}.storage-bar.tight i{background:#f4d27a}.storage-bar.full i{background:#ff9d8f}
+@media(max-width:1100px){.system-columns{grid-template-columns:minmax(0,1fr)}}
 .encoder-form{display:grid;gap:12px;max-width:520px}.encoder-form label:not(.check){display:flex;flex-direction:column;gap:5px;font-size:12px;color:#adc0d1}
 #encoder-dialog{max-width:600px}
 @media(max-width:680px){.encoder-job{grid-template-columns:minmax(0,1fr)}}

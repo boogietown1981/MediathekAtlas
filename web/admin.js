@@ -223,7 +223,8 @@
     general.append(
       field('Startansicht', choice('start_source', [['all', 'Alle Plattformen'], ['mediatheken', 'ARD, ZDF & Co.'], ['netzkino', 'Netzkino'], ['pluto', 'Pluto TV'], ['justwatch', 'JustWatch TV'], ['rakuten', 'Rakuten TV'], ['joyn', 'Joyn'], ['toggo', 'TOGGO'], ['youtube', 'YouTube']])),
       field('Zuerst zeigen', choice('start_kind', [['movies', 'Filme'], ['series', 'Serien']])),
-      field('Kachelgröße', choice('card_size', (meta.sizes || []).map(s => [s.key, s.label]))));
+      field('Kachelgröße', choice('card_size', (meta.sizes || []).map(s => [s.key, s.label]))),
+      field('Design', choice('theme', [['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Wie das System']])));
     form.append(general);
     const groups = new Map();
     for (const sw of meta.switches || []) { if (!groups.has(sw.group)) groups.set(sw.group, []); groups.get(sw.group).push(sw); }
@@ -241,7 +242,7 @@
   }
   if ($('display-reset')) $('display-reset').onclick = async () => {
     const D = window.AtlasDisplay; if (!D) return;
-    const reset = {card_size: 'normal', start_source: 'all', start_kind: 'movies'};
+    const reset = {card_size: 'normal', start_source: 'all', start_kind: 'movies', theme: 'dark'};
     for (const sw of D.meta().switches || []) reset[sw.key] = true;
     try { await D.save(reset); say('display-status', 'Standard wiederhergestellt.'); renderDisplay(); }
     catch (e) { say('display-status', e.message, true); }

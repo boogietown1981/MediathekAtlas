@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -480,6 +480,9 @@ class Handler(BaseHTTPRequestHandler):
         if not self.valid_host():return self.send({'error':'Ungültiger Host'},403)
         path=urllib.parse.urlsplit(self.path).path
         if path=='/icon.svg':return self.send((Path(__file__).parent/'assets'/'icon.svg').read_bytes(),ctype='image/svg+xml')
+        if path=='/theme-light.css':
+            # 0.5.99: the light design, computed from style.css (light_theme.py); applies only with data-theme="light"
+            return self.send(light_theme.sheet(Path(__file__).parent/'web'/'style.css'),ctype='text/css')
         if path in ('/style.css','/login.js'):
             return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript' if path.endswith('js') else 'text/css')
         if path.startswith('/api/peer/'):return self.peer_get(path)
@@ -659,6 +662,14 @@ class Handler(BaseHTTPRequestHandler):
             # 0.5.81: Merkliste, Weiterschauen and playback positions, kept on the server (watch_state).
             return self.send(watch_state.overview(ROOT))
         if path=='/api/archive-receipts':return self.send(receipts_overview())
+        if path=='/api/system-monitor':
+            # 0.5.99: one reading of the machine on request (system_monitor); nothing runs while nobody looks.
+            with db() as c:states=dict(c.execute("SELECT state,COUNT(*) FROM jobs WHERE state IN ('queued','downloading','tagging') GROUP BY state").fetchall())
+            mesh=SERVICE.mesh_status
+            return self.send(system_monitor.snapshot(ROOT,settings().get('download_dir'),{
+                'downloads_running':states.get('downloading',0)+states.get('tagging',0),'downloads_waiting':states.get('queued',0),
+                'encoder_active':encoder.listing(ROOT)['active'],'receipt_task':RECEIPT_TASK['running'],
+                'verbund':mesh.get('enabled') is True,'verbund_systems':len(mesh.get('nodes') or []),'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND')}))
         if path=='/api/encoder':return self.send(encoder.listing(ROOT,encoder_tools()))
         if path=='/api/storage':
             # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
@@ -1493,7 +1504,7 @@ class Handler(BaseHTTPRequestHandler):
         diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
