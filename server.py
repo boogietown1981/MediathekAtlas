@@ -14,7 +14,12 @@ LISTEN=os.environ.get('MEDIATHEKATLAS_LISTEN','127.0.0.1')
 PORT=int(os.environ.get('MEDIATHEKATLAS_PORT','0') or 0)
 NETWORK=LISTEN not in ('127.0.0.1','localhost','::1') or os.environ.get('MEDIATHEKATLAS_LOGIN')=='1'
 MANAGED=os.environ.get('MEDIATHEKATLAS_MANAGED','')
-DEFAULT_DOWNLOAD_DIR=os.environ.get('MEDIATHEKATLAS_DOWNLOAD_DIR') or str(Path.home()/'Movies'/'MediathekAtlas')
+def _default_download_dir():
+    # 0.5.80: Windows and Linux name the video folder "Videos"; an existing ~/Movies keeps its role.
+    home=Path.home()
+    if __import__('sys').platform!='darwin' and not (home/'Movies').is_dir():return str(home/'Videos'/'MediathekAtlas')
+    return str(home/'Movies'/'MediathekAtlas')
+DEFAULT_DOWNLOAD_DIR=os.environ.get('MEDIATHEKATLAS_DOWNLOAD_DIR') or _default_download_dir()
 SESSION_COOKIE='mediathekatlas_session'
 INSTANCE=None
 if __name__=='__main__':
@@ -339,7 +344,7 @@ def recognition():
     with _TREE_LOCK:
         if not _RECOGNITION['busy'] and time.monotonic()-_RECOGNITION['at']>600:
             _RECOGNITION['busy']=True;threading.Thread(target=refresh_recognition,daemon=True,name='catalog_recognition').start()
-        return {'channels':_RECOGNITION['rows'],'loading':_RECOGNITION['busy'],'error':_RECOGNITION['error']}
+        return {'channels':_RECOGNITION['rows'],'kinds':catalog.recognition_totals(_RECOGNITION['rows']),'loading':_RECOGNITION['busy'],'error':_RECOGNITION['error']}
 def refresh_recognition():
     try:
         with db() as c:rows=catalog.recognition(c)
@@ -460,8 +465,12 @@ class Handler(BaseHTTPRequestHandler):
             # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
             # platforms still played them): an empty or slow answer leaves a line in the diagnosis.
             took=round(time.monotonic()-began,2)
-            if not data['total'] or took>3 or any(p['error'] for p in data['providers']):
+            # 0.5.80 (Björn's diagnosis 0.5.72: dozens of "total 0, filtered" warnings): the live strip of a
+            # platform asks for its own provider, and a provider without channels (Joyn before its first
+            # complete catalogue run) correctly answers 0. Only a real problem is reported now.
+            if live_tv.overview_problem(data,took,query=q.get('q',[''])[0],provider=q.get('provider',[''])[0],group=q.get('group',[''])[0]):
                 diagnostics.event('live_tv_overview',level='WARNING',total=data['total'],seconds=took,filtered=bool(q.get('q',[''])[0] or q.get('provider',[''])[0] or q.get('group',[''])[0]),
+                                  provider=q.get('provider',[''])[0][:20],group_set=bool(q.get('group',[''])[0]),query_set=bool(q.get('q',[''])[0]),
                                   providers={p['key']:p['channels'] for p in data['providers']},errors={p['key']:p['error'] for p in data['providers'] if p['error']})
             return self.send(data)
         if path=='/api/pluto':
@@ -1335,6 +1344,12 @@ class Handler(BaseHTTPRequestHandler):
                 j={'id':secrets.token_hex(8),'source':row,'metadata':m,'root':settings()['download_dir'],'quality':d.get('quality','best'),'target':dest,'state':'queued','received':0,'total':0}
                 put_job(j);return self.send({'ok':True})
             if path=='/api/imdb-update':return self.send({'queued':IMDB.request()})
+            if path=='/api/cast-photos':
+                # 0.5.80: photos for the cast row of a title page (TMDB only, see cast_photos.py).
+                import cast_photos
+                people=d.get('people',[]);context=d.get('context',{})
+                if not isinstance(people,list) or not isinstance(context,dict):raise ValueError('Ungültige Besetzung')
+                return self.send(cast_photos.lookup(ROOT,settings().get('tmdb',''),people[:cast_photos.MAX_PEOPLE],context))
             if path=='/api/artwork-priority':
                 ids=d.get('ids',[])
                 if not isinstance(ids,list) or any(not isinstance(i,str) for i in ids):raise ValueError('Ungültige Auswahl')

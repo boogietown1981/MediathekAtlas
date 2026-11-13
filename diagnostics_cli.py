@@ -23,4 +23,5 @@ def main():
     with dest.open('xb') as f:f.write(diagnostics.export({'mode':'offline_export'}))
     print(dest,flush=True)
     if sys.platform=='darwin':subprocess.run(['/usr/bin/open','-R',str(dest)],check=False)
+    elif os.name=='nt':subprocess.run(['explorer','/select,',str(dest)],check=False)
 if __name__=='__main__':main()

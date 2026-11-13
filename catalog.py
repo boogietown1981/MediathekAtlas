@@ -866,10 +866,17 @@ def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
     topic=cleaned(source.get('topic'));title=cleaned(source.get('title'))
     import metadata
-    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or key(topic)==key(title) or metadata.RUBRIC.match(topic):return False
+    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or metadata.RUBRIC.match(topic):return False
     if TRAILER.search(title):return False
-    if FORMAT_WORDS.search(topic):return topic_works>=2
-    return int(source.get('duration') or 0)<600 and topic_works>=3
+    clip=m.get('kind')=='other';duration=int(source.get('duration') or 0)
+    # 0.5.80 (Björn: news and magazine clips belong to their Sendung, not to "Weitere Sendungen"):
+    # editions titled like their Sendung ("Landesschau" / "Landesschau") count once there are several,
+    # and a clip the import already recognised as news/magazine material ('other') joins its Sendung
+    # even as the only edition so far.
+    if key(topic)==key(title):return bool(FORMAT_WORDS.search(topic)) and topic_works>=2
+    if FORMAT_WORDS.search(topic):return topic_works>=(1 if clip else 2)
+    if clip and duration<1200 and topic_works>=2:return True
+    return duration<600 and topic_works>=3
 
 def broadcaster_format(m,source,topic_works):
     """True for an episode of a news or magazine Sendung that only the broadcaster's Mediathek identified.
@@ -974,7 +981,7 @@ def backfill_film_hints(c,limit=400):
     return len(rows)
 
 # Raise when the format rules change: existing catalogues then get one more format pass.
-FORMAT_REV=3
+FORMAT_REV=4   # 0.5.80: clips ('other') and editions named like their Sendung
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
@@ -1013,7 +1020,12 @@ def assign_formats(c,limit=500):
         if not format_contribution(m,source,counts[topic]):continue
         fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
         m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
-        m.update(kind='series',title=fmt,episode_title=cleaned(source.get('title')),year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
+        edition=cleaned(source.get('title'))
+        if key(edition)==key(fmt) and source.get('timestamp'):
+            # Editions named like the Sendung are told apart by their broadcast date.
+            try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
+            except (TypeError,ValueError,OverflowError,OSError):pass
+        m.update(kind='series',title=fmt,episode_title=edition,year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
                  state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
                  reason='Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
         c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
@@ -1025,18 +1037,36 @@ def assign_formats(c,limit=500):
 
 def restart_formats(c):set_state(c,'format_cursor',0)
 
+KIND_KEYS=('movie','series','unknown','other')
 def recognition(c):
-    """Recognition per channel and state; formats are counted separately from open works."""
+    """Recognition per channel and state; formats are counted separately from open works.
+
+    0.5.80 (Björn: "Erkennungsrate je Sender/Medienart"): every channel row also carries ``kinds`` with
+    the counters per media type (movie, series, unknown, other). The main counters keep excluding
+    'other' (trailers, clips, live streams), which are not meant to be matched; they are listed as ``clips``."""
     try:
-        rows=c.execute("SELECT COALESCE(json_extract(o.payload,'$.channel'),'') channel,w.state,COUNT(DISTINCT w.id) n FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.kind!='other' GROUP BY channel,w.state").fetchall()
+        rows=c.execute("SELECT COALESCE(json_extract(o.payload,'$.channel'),'') channel,w.kind,w.state,COUNT(DISTINCT w.id) n FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 GROUP BY channel,w.kind,w.state").fetchall()
     except sqlite3.OperationalError:
-        rows=c.execute("SELECT '' channel,w.state,COUNT(*) n FROM works w WHERE w.kind!='other' GROUP BY w.state").fetchall()
+        rows=c.execute("SELECT '' channel,w.kind,w.state,COUNT(*) n FROM works w GROUP BY w.kind,w.state").fetchall()
     out={}
     for r in rows:
-        d=out.setdefault(r['channel'] or 'Unbekannt',{'channel':r['channel'] or 'Unbekannt','works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0})
-        state=r['state'];d['works']+=r['n']
-        key_={'matched':'matched','manual':'matched','identified':'identified','format':'format','review':'review'}.get(state,'open');d[key_]+=r['n']
-    return sorted(out.values(),key=lambda d:-d['works'])
+        d=out.setdefault(r['channel'] or 'Unbekannt',{'channel':r['channel'] or 'Unbekannt','works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0,'clips':0,
+                                                      'kinds':{k:{'works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0} for k in KIND_KEYS}})
+        state=r['state'];kind=r['kind'] if r['kind'] in KIND_KEYS else 'unknown'
+        key_={'matched':'matched','manual':'matched','identified':'identified','format':'format','review':'review'}.get(state,'open')
+        k=d['kinds'][kind];k['works']+=r['n'];k[key_]+=r['n']
+        if kind=='other':d['clips']+=r['n'];continue
+        d['works']+=r['n'];d[key_]+=r['n']
+    return sorted((d for d in out.values() if d['works'] or d['clips']),key=lambda d:-d['works'])
+
+def recognition_totals(rows):
+    """Sum of the channel rows per media type (table "Nach Medienart")."""
+    total={k:{'works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0} for k in KIND_KEYS}
+    for r in rows or []:
+        for k,v in (r.get('kinds') or {}).items():
+            if k in total:
+                for f in total[k]:total[k][f]+=v.get(f,0)
+    return [{'kind':k,**v} for k,v in total.items() if v['works']]
 
 def reclassify_batch(c,limit=500):
     cursor=get_state(c,'reclassify_cursor_v030',0)

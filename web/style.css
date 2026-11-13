@@ -108,6 +108,7 @@ body.title-open main>header{display:none}.clickable{cursor:pointer}.card h3.clic
 .tv-tabs{display:flex;flex-wrap:wrap;gap:6px}.tv-tab{border-radius:20px;padding:8px 14px;background:#141e2b}.tv-tab.active{background:#21372f;color:#8af1d1;border-color:#3d6b5a}
 .tv-cast{display:flex;gap:14px;overflow-x:auto;padding-bottom:8px}
 .tv-person{flex:0 0 104px;text-align:center;display:flex;flex-direction:column;gap:3px}.tv-person strong{font-size:12px;font-weight:600}.tv-person small{font-size:11px;color:#90a2b7}
+.tv-avatar.tv-photo{object-fit:cover;display:block;background:#20312c}
 .tv-avatar{width:76px;height:76px;margin:0 auto 6px;border-radius:50%;background:linear-gradient(135deg,#284453,#20312c);display:flex;align-items:center;justify-content:center;font-size:22px;color:#b9d6da}
 .tv-episodes{display:grid;gap:12px}
 .tv-episode{display:grid;grid-template-columns:260px minmax(0,1fr);gap:20px;padding:12px;border-radius:12px;border:1px solid transparent}

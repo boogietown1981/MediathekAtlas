@@ -60,7 +60,7 @@ jobs:
         run: |
           python -m compileall -q *.py tests vendor/archivemedia
           bash -n launcher.sh
-          for f in packaging/nas/*.sh packaging/qnap/shared/*.sh packaging/synology/scripts/*; do sh -n "$f"; done
+          for f in packaging/nas/*.sh packaging/qnap/shared/*.sh packaging/synology/scripts/* packaging/linux/*.sh; do sh -n "$f"; done
           for f in web/*.js; do node --check "$f"; done
       - name: UI-Smoke-Tests (Netzkino, gemeinsamer Katalog)
         run: for f in tests/*.cjs; do node "$f"; done

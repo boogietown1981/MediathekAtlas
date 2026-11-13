@@ -53,7 +53,9 @@ class AssignTests(unittest.TestCase):
         with self.db() as c:
             catalog.assign_formats(c);c.execute("UPDATE works SET state='identified' WHERE kind='movie'")
             rows=catalog.recognition(c)
-        self.assertEqual(rows,[{'channel':'ZDF','works':3,'matched':0,'identified':1,'format':2,'open':0,'review':0}])
+        # 0.5.80: rows also carry 'clips' and 'kinds' (per media type).
+        self.assertEqual([{k:v for k,v in r.items() if k not in ('clips','kinds')} for r in rows],[{'channel':'ZDF','works':3,'matched':0,'identified':1,'format':2,'open':0,'review':0}])
+        self.assertEqual(rows[0]['kinds']['movie']['identified'],1)
     def test_import_only_classifies_changed_works(self):
         service=catalog_service.Service(self.db,dict,threading.Event(),Path(self.tmp.name))
         with self.db() as c:catalog.assign_formats(c);catalog.assign_formats(c)

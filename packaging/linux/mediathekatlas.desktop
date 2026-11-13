@@ -1,0 +1,11 @@
+[Desktop Entry]
+Type=Application
+Name=MediathekAtlas
+GenericName=Mediatheken-Katalog
+Comment=Filme und Serien aus Mediatheken und freien Plattformen finden, abspielen und laden
+Exec=@EXEC@
+Icon=mediathekatlas
+Terminal=false
+Categories=AudioVideo;Video;Network;
+Keywords=Mediathek;ARD;ZDF;Film;Serie;
+StartupNotify=false

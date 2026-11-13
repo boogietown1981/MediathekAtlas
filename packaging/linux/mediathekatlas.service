@@ -1,0 +1,13 @@
+# systemd user service (optional): systemctl --user enable --now mediathekatlas
+# Runs MediathekAtlas without a browser window, e.g. on a headless Linux box.
+[Unit]
+Description=MediathekAtlas (lokaler Mediatheken-Katalog)
+After=network-online.target
+
+[Service]
+ExecStart=@EXEC@ --no-browser
+Restart=on-failure
+RestartSec=10
+
+[Install]
+WantedBy=default.target
