@@ -8,4 +8,4 @@ Dieser GitHub-Import enthält den vollständigen Quellstand von MediathekAtlas 0
 git clone archive/MediathekAtlas-history.bundle MediathekAtlas-history
 ```
 
-Das installierbare macOS-Paket liegt unter [downloads/MediathekAtlas_v0.4.7_macOS.zip](../downloads/MediathekAtlas_v0.4.7_macOS.zip). Es enthält App, Quellcode, Diagnosehilfe und Git-Bundle. Lokale Katalogdatenbanken, Schlüssel und persönliche Downloads sind kein Bestandteil des Repositories.
+Das installierbare macOS-Paket 0.4.7 lag bis 0.5.82 unter `downloads/` im Repository (weiter in der Git-Historie abrufbar); seit 0.5.84 liegen Installationspakete nicht mehr im Git, sondern in den Projektdateien unter `releases/`. Es enthält App, Quellcode, Diagnosehilfe und Git-Bundle. Lokale Katalogdatenbanken, Schlüssel und persönliche Downloads sind kein Bestandteil des Repositories.
