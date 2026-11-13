@@ -22,6 +22,7 @@ by ffmpeg into one file; MediathekAtlas then tags it like every other download.
 from __future__ import annotations
 
 import hashlib
+import json
 import os
 import re
 import secrets
@@ -301,7 +302,7 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
     fmt = ('bv*[height<={h}][vcodec^=avc1][protocol^=http]+ba[acodec^=mp4a][protocol^=http]/'
            'b[height<={h}][vcodec^=avc1]/b[vcodec^=avc1]/b').format(h=limit)
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
-            '--no-warnings', '-f', fmt, '-g', youtube.video_url(row['path'])]
+            '--no-warnings', '-f', fmt, '-j', youtube.video_url(row['path'])]
     try:
         done = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
                                           env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
@@ -309,18 +310,46 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
         raise ValueError('YouTube hat nicht rechtzeitig geantwortet; bitte erneut versuchen') from None
     except OSError:
         raise ValueError('yt-dlp konnte nicht gestartet werden') from None
-    urls = [l.strip() for l in (done.stdout or '').splitlines() if _GOOGLEVIDEO.match(l.strip()) and len(l) < 8000]
+    urls, headers, height = _stream_urls(done.stdout)
     if done.returncode != 0 or not urls:
         raise ValueError(_reason(done.stderr))
     hls = '.m3u8' in urls[0] or '/manifest/hls' in urls[0]
+    # 0.5.86 (Björn, 13.11.2026: stutters, picture and sound out of step; diagnosis: 1.8 Mbit/s, first
+    # data after 8 s): YouTube serves one open-ended request only at about playback speed. 'ranged'
+    # sends both addresses through range_relay, which loads them in 4 MB pieces like youtube.com.
     source = {'kind': 'url', 'url': urls[0], 'audio_url': urls[1] if len(urls) > 1 and not hls else '', 'hls': hls,
-              'remux': True, 'provider': 'youtube', 'title': row['title'], 'duration': row['duration'] or 0,
-              'quality': 'eigener Player, bis %dp' % limit}
+              'remux': True, 'ranged': not hls, 'headers': headers, 'provider': 'youtube', 'title': row['title'],
+              'duration': row['duration'] or 0,
+              'quality': 'eigener Player, %s' % ('%dp' % height if height else 'bis %dp' % limit)}
     with _SOURCES_LOCK:
         if len(_SOURCES) > 200:
             _SOURCES.clear()
         _SOURCES[key] = (now + SOURCE_TTL, source)
     return dict(source)
+
+
+_HEADER_NAMES = {'user-agent', 'accept', 'accept-language', 'origin', 'referer'}
+
+
+def _stream_urls(stdout):
+    """(addresses, request headers, picture height) from yt-dlp. 0.5.86: -j (JSON) instead of -g, so the
+    headers yt-dlp would send with the addresses come along (some YouTube clients require their own
+    User-Agent). Lines with bare addresses (older output) are still understood."""
+    text = str(stdout or '').strip()
+    if text.startswith('{'):
+        try:
+            info = json.loads(text.splitlines()[0])
+        except ValueError:
+            info = {}
+        formats = info.get('requested_formats') or [info]
+        urls = [str(f.get('url') or '') for f in formats]
+        urls = [u for u in urls if _GOOGLEVIDEO.match(u) and len(u) < 8000]
+        raw = (formats[0].get('http_headers') if formats else None) or info.get('http_headers') or {}
+        headers = {str(k): str(v)[:400] for k, v in raw.items() if str(k).lower() in _HEADER_NAMES}
+        height = next((int(f.get('height')) for f in formats if isinstance(f.get('height'), (int, float)) and f.get('height')), 0)
+        return urls, headers, height
+    urls = [l.strip() for l in text.splitlines() if _GOOGLEVIDEO.match(l.strip()) and len(l) < 8000]
+    return urls, {}, 0
 
 
 # ------------------------------------------------------------ jobs

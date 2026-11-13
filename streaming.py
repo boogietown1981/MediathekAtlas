@@ -220,16 +220,23 @@ def command(source,start=0.0,audio_copy=True,playlist=None):
         # Live: keep asking when the provider's list is late (ffmpeg gives up after 3 tries otherwise).
         if source.get('hls') and source.get('live'):args+=['-max_reload','60']
     if start>0:args+=['-ss','%.3f'%start]
-    args+=['-i',source['path'] if source['kind']=='file' else str(playlist) if playlist else source['url']]
+    first=source['path'] if source['kind']=='file' else str(playlist) if playlist else _ranged(source,source['url'])
+    args+=['-i',first]
     # 0.5.78: picture and sound from two addresses (YouTube): second input with the same options, joined while playing
     second=source['kind']=='url' and not playlist and source.get('audio_url')
     if second:
         args+=['-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5']
         if start>0:args+=['-ss','%.3f'%start]
-        args+=['-i',second,'-map','0:v:0','-map','1:a:0']
-    # HLS seeks land on the segment before the position; stream copy would keep that pre-roll and the
-    # player's clock would run seconds ahead. An output start of 0 drops it (copy starts on a keyframe).
-    if start>0:args+=['-ss','0']
+        args+=['-i',_ranged(source,second),'-map','0:v:0','-map','1:a:0']
+        # 0.5.86: wait for both inputs instead of writing up to 10 s of one track ahead of the other
+        # when one address is slow (fragments out of order make the browser lose picture/sound sync).
+        args+=['-max_interleave_delta','0']
+    # 0.5.86 (Björn, 13.11.2026: picture and sound out of step after resuming or seeking): no output
+    # start of 0 any more. It dropped the picture up to the next keyframe while the sound started at
+    # the chosen position - measured 3.6 s of a frozen picture with running sound (HLS and YouTube).
+    # Without it the picture is copied from the keyframe before the position with negative times; the
+    # MP4 edit list makes Chrome, Firefox and Safari decode that pre-roll silently and show the picture
+    # exactly at the position (measured in Chromium: first shown frame at 0.00 s, clock not ahead).
     # Default stream selection takes the highest resolution video and the richest audio track,
     # which also picks the best variant of an HLS master playlist.
     # Broadcaster HLS carries ADTS AAC in MPEG-TS; MP4 needs it converted (older ffmpeg does not do this itself).
@@ -247,6 +254,13 @@ def command(source,start=0.0,audio_copy=True,playlist=None):
     if source['kind']=='url':args+=['-frag_duration','1000000','-flush_packets','1']
     args+=['-f','mp4','pipe:1']
     return args
+
+def _ranged(source,url):
+    """0.5.86: addresses that the provider only serves at full speed in pieces (YouTube) go through
+    the loopback relay (range_relay), which loads them in ranged pieces of 4 MB, three at a time."""
+    if not source.get('ranged'):return url
+    import range_relay
+    return range_relay.local(url,source.get('headers') or None)
 
 def audio_copy(source,info=None):
     """'aac' (copy with ADTS fix), True (copy), False (convert to AAC)."""

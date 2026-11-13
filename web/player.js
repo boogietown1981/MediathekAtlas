@@ -70,9 +70,12 @@ function stepDown(){const st=S.stats;if(!st||S.mode!=='remux'||wish()!=='auto'||
  stallEnd();st.recent=[];st.reduced++;st.reducedAt=Date.now();S.level=String(lower.height);renderQuality();
  notice('Die Verbindung reicht für diese Qualität nicht. Wiedergabe läuft mit '+lower.height+'p weiter; unter „Qualität“ lässt sich eine feste Stufe wählen.');
  startRemux(S.info.live?0:position());}
+// 0.5.86: pictures shown and skipped by the browser (getVideoPlaybackQuality) for the diagnosis: a stutter
+// with stalls=0 and many dropped frames is a display problem, one with stalls a delivery problem.
+function frames(){try{const q=video.getVideoPlaybackQuality?.();return q?{frames:q.totalVideoFrames,dropped:q.droppedVideoFrames}:{};}catch{return {};}}
 function sendStats(){const st=S.stats,info=S.info;if(!st||st.sent||!info)return;stallEnd();if(st.playing)st.watched+=(Date.now()-st.playing)/1000;st.playing=0;
  if(st.watched<5&&!st.stalls)return;st.sent=true;
- api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String((S.mode==='hls'?S.hlsHeight:currentHeight())||''),native:!!(info.hls&&S.mode==='direct'),fallback:S.hlsFailed||'',switches:st.switches||0,watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
+ api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String((S.mode==='hls'?S.hlsHeight:currentHeight())||''),native:!!(info.hls&&S.mode==='direct'),fallback:S.hlsFailed||'',switches:st.switches||0,...frames(),gates:st.gates||0,watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
 function startRemux(t){gateOff();S.gated=false;if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
 // 0.5.68 (Björn, 12.11.2026: on the providers' own sites the stations run clearly smoother than in the
 // app): HLS is played by hls.js inside the browser, as those sites do - it loads the segments itself,
@@ -189,7 +192,12 @@ function nativeHls(){return /Apple/.test(navigator.vendor||'')&&!!video.canPlayT
 const GATE={start:8,seek:4,stall:5,max:15};
 function ahead(){const b=video.buffered,t=video.currentTime;for(let i=0;i<b.length;i++)if(b.start(i)<=t+1&&b.end(i)>t)return b.end(i)-Math.max(t,b.start(i));return 0;}
 function gateOff(){if(S.gate){clearInterval(S.gate.timer);S.gate=null;}}
-function gate(need){if(S.gate||!S.info||S.info.origin!=='online'||S.mode==='embed'||!S.mode||ahead()>=need)return false;
+// 0.5.86 (Björn, 13.11.2026: every video in the own player stutters): not for streams converted by
+// MediathekAtlas. Chrome reports only about 2.3 s as buffered for such a stream, however much has
+// arrived (measured: 2.26 s after 8 s of pause), so the reserve was never reached: every start waited
+// until nothing grew for 3 s, and every short wait while playing paused the picture again for at
+// least 3 s. The browser keeps its own reserve of the stream and continues by itself.
+function gate(need){if(S.gate||!S.info||S.info.origin!=='online'||S.mode==='embed'||S.mode==='remux'||!S.mode||ahead()>=need)return false;
  const g=S.gate={need,until:Date.now()+GATE.max*1000,timer:0,best:0,grew:Date.now()};if(S.stats)S.stats.gates=(S.stats.gates||0)+1;
  const tick=()=>{if(S.gate!==g)return;const have=ahead();
   if(have>g.best+0.2){g.best=have;g.grew=Date.now();}

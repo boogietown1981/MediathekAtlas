@@ -6,6 +6,13 @@
 - **Uploader erkannter Werke.** Wer einen erkannten Film oder eine erkannte Serie hochgeladen hat, hat oft mehr davon. Das öffentliche Archive.org-Konto solcher Uploads wird als Scanquelle vorgemerkt (Plattformen → Internet Archive → Scanquellen, mit dem Hinweis „Uploader von …“). Vorgemerkte Konten sind pausiert und werden erst durchsucht, wenn du sie startest; ein entferntes Konto kommt nicht wieder. E-Mail-Adressen von Uploadern werden nie gelesen oder gespeichert.
 - 0.5.86 und 0.5.87 sind von anderen Arbeitssträngen reserviert und noch nicht erschienen; 0.5.88 baut auf 0.5.85 auf.
 
+## Neu in 0.5.86: Videos laufen im eigenen Player flüssig
+
+- YouTube im eigenen Player: Bild und Ton werden wie auf youtube.com in Stücken von 4 MB geladen, drei gleichzeitig. Bisher kam ein Video nur ungefähr in Abspielgeschwindigkeit an (laut Diagnose 1,8 Mbit/s, erstes Bild nach 8 s, nach dem Spulen 20 s nichts), dadurch stockte es ständig.
+- Alle Streams, die MediathekAtlas umwandelt (YouTube, Pluto TV, Rakuten, Sender-Streams ohne direkten Zugriff, MKV-Dateien): Nach dem Spulen oder beim Weiterschauen startet das Bild jetzt genau an der Stelle. Bisher stand es bis zu einige Sekunden still, während der Ton schon lief.
+- Der Startpuffer aus 0.5.77 gilt nicht mehr für umgewandelte Streams. Chrome meldet bei ihnen nie genug Vorrat, deshalb hielt der Player das Bild nach jedem kurzen Stocken wieder mindestens 3 s an.
+- Während ein Video läuft, lädt die Seite dahinter ihren Stand nicht mehr alle 2,5 s neu. Die Diagnose nennt jetzt auch ausgelassene Bilder je Wiedergabe.
+
 ## Neu in 0.5.85: Joyn lädt den Katalog wieder vollständig
 
 - Bisher reichte eine einzige langsame Antwort von Joyn, und der Katalog galt als „nur teilweise geladen“ (in der Diagnose vom 13.11.2026 fehlten dadurch 70 Filme, ohne Angabe eines Grundes). Jetzt wird eine fehlgeschlagene Seite nach kurzer Pause noch einmal abgefragt, und ein Genre, das trotzdem abbricht, läuft am Ende des Abrufs ein zweites Mal.
