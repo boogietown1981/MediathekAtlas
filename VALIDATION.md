@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.80 – Offene Punkte (13. November 2026)
+- Automatisch: gesamte Python-Suite; neu `tests/test_v0580_open_points.py` (Live-TV-Fehlalarm, Fotos über Titel-Credits und IMDb-Personen-ID, keine Namenssuche, Zwischenspeicher, Netzfehler nicht gemerkt, unsichere Bildpfade verworfen, Clips/Ausgaben bei ihrer Sendung, Erkennung je Medienart, Paketinhalt Windows/Linux).
+- Linux: `.deb` mit `dpkg -i` installiert, `mediathekatlas --no-browser` gestartet, Oberfläche antwortet; `tar.gz` mit `install.sh` installiert und mit `uninstall.sh` entfernt (Daten bleiben).
+- Windows: Setup.exe mit NSIS 3.09 gebaut, ZIP geprüft (start.ps1 mit BOM und CRLF). **Nicht auf echtem Windows getestet** (keine Windows-Umgebung): Start über PowerShell, Python-Suche, winget-Angebot, Verknüpfungen.
+- Im Browser (Chromium): Titelseite mit nachgestellter TMDB-Antwort – Foto und Rolle erscheinen, ohne Foto bleiben Initialen; Tabelle „Nach Medienart“ vorhanden.
+- Nicht geprüft: echte TMDB-Antworten (aus der Bauumgebung gesperrt), Formatdurchlauf auf Björns großem Katalog (Dauer).
+
 ## 0.5.78 – YouTube im eigenen Player, Musikvideos im Katalog (13. November 2026)
 - Automatisch: gesamte Python-Suite; neu in `tests/test_v0571_youtube_music.py`: eigener Player nur mit Schalter (yt-dlp wird sonst nicht gestartet), Aufruf ohne Cookies, Zwischenspeicher, Altersbeschränkung, Fehlermeldung „kein Bot“, ffmpeg-Aufruf mit zwei Eingaben; Auswege im Player, Katalog-Eintrag.
 - Mit echtem ffmpeg: Bild (H.264) und Ton (AAC) von zwei HTTP-Adressen werden beim Abspielen zusammengeführt, auch nach dem Spulen (beide Spuren starten gleich).
