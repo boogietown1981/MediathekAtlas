@@ -28,8 +28,8 @@ def card(typename, ident, title, path, licences=('AVOD',), genres=('Horror',), m
     return node
 
 
-def brand(title, live_id, path='/channels/x', groups=(), markings=(), quality='HD', radio=False):
-    return {'id': '1', 'title': title, '__typename': 'Brand', 'path': path, 'isRadio': radio,
+def brand(title, live_id, path='/channels/x', groups=(), markings=(), quality='HD', radio=False, brand_id='1'):
+    return {'id': brand_id, 'title': title, '__typename': 'Brand', 'path': path, 'isRadio': radio,
             'logo': {'type': 'BRAND_LOGO', 'url': IMG % live_id},
             'livestream': {'id': live_id, 'title': title, 'quality': quality, 'liveStreamGroups': list(groups),
                            'markings': list(markings)} if live_id else None, 'audioStreams': []}
@@ -40,9 +40,9 @@ def lane(*paths):
 
 
 NAVIGATION = {'data': {'navigation': [], 'mediatheken': {'blocks': []},
-                       'liveTv': [brand('Das Erste', 'daserste-de-hd', '/channels/das-erste', ['PUBLIC_VALUE']),
+                       'liveTv': [brand('Das Erste', 'daserste-de-hd', '/channels/das-erste', ['PUBLIC_VALUE'], brand_id='165'),
                                   brand('ProSieben', 'prosieben-de', '/mediatheken/prosieben', quality='SD'),
-                                  brand('ProSieben FUN', 'prosiebenfun-de-hd', None, markings=['PLUS']),
+                                  brand('ProSieben FUN', 'prosiebenfun-de-hd', None, markings=['PLUS'], brand_id='1000'),
                                   brand('Radio', 'radio-x', radio=True),
                                   brand('DYN Sport Mix', None, '/channels/dyn')],
                        'movieGenre': lane('/filme/genre/horror'),
@@ -139,8 +139,10 @@ class JoynTest(unittest.TestCase):
         self.assertEqual((series['id'], series['seasons'], series['brand']), ('s.a_stromberg', 5, 'ProSieben'))
         live = joyn.listing(self.root, 'live')['items']
         self.assertEqual([c['id'] for c in live], ['c.daserste-de-hd', 'c.prosieben-de', 'c.prosiebenfun-de-hd'])
-        self.assertEqual(live[0]['web_url'], 'https://www.joyn.de/channels/das-erste')
-        self.assertEqual(live[1]['web_url'], 'https://www.joyn.de/play/live-tv')
+        # 0.5.90: every channel opens its own player page (channel_id = Brand.id), never the bare live page.
+        self.assertEqual([c['web_url'] for c in live], ['https://www.joyn.de/play/live-tv?channel_id=165',
+                                                         'https://www.joyn.de/play/live-tv?channel_id=1',
+                                                         'https://www.joyn.de/play/live-tv?channel_id=1000'])
         self.assertEqual(live[2]['offer'], 'plus')
         st = joyn.state(self.root)
         self.assertEqual((st['last_result'], st['movies'], st['playable']), ('complete', 34, 0))
@@ -204,7 +206,7 @@ class JoynTest(unittest.TestCase):
         found = live_tv.joyn_channels(self.root)
         first = found[0]
         self.assertEqual((first['key'], first['play'], first['link']),
-                         ('daserste', None, 'https://www.joyn.de/channels/das-erste'))
+                         ('daserste', None, 'https://www.joyn.de/play/live-tv?channel_id=165'))
         self.assertIn('Joyn+', next(c for c in found if c['id'] == 'c.prosiebenfun-de-hd')['quality'])
         self.assertIn(('joyn', 'Joyn'), live_tv.PROVIDERS)
 

@@ -74,6 +74,7 @@ class WebWiringTests(unittest.TestCase):
         self.assertEqual(title.count('direct(m.source, e.web_url'), 2)
         self.assertIn("direct(source, m.web_url)", title)
         self.assertIn("window.AtlasDirect.href(item.source,item.web_url)", (ROOT / 'web' / 'unified_catalog.js').read_text(encoding='utf-8'))
+        self.assertEqual((ROOT / 'web' / 'live_tv.js').read_text(encoding='utf-8').count('window.AtlasDirect.href(src.provider, src.link)'), 2)
         self.assertIn("window.AtlasDirect.href(K, item.web_url)", (ROOT / 'web' / 'portal_panel.js').read_text(encoding='utf-8'))
 
     def test_packages_carry_the_extension(self):

@@ -75,7 +75,7 @@
       if (!src.play) {
         if (!safeImage(src.link)) return;
         const a = make('a', '↗ ' + (many ? src.provider_name : 'Bei ' + src.provider_name + ' ansehen'), 'button');
-        a.href = src.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
+        a.href = window.AtlasDirect ? window.AtlasDirect.href(src.provider, src.link) : src.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
         a.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
         actions.append(a);
         return;
@@ -199,7 +199,7 @@
       if (!src.play) {
         if (!safeImage(src.link)) continue;
         const a = make('a', '↗ ' + st.name, 'livetv-strip-button button');
-        a.href = src.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.title = src.title + ' · bei ' + src.provider_name + ' ansehen';
+        a.href = window.AtlasDirect ? window.AtlasDirect.href(src.provider, src.link) : src.link; a.target = '_blank'; a.rel = 'noopener noreferrer'; a.title = src.title + ' · bei ' + src.provider_name + ' ansehen';
         row.append(a);
         continue;
       }

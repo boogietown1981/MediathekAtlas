@@ -13,6 +13,7 @@ assert.equal(D.href('joyn','https://www.joyn.de/compilation/best-of/1-2-teil'),'
 // Serie selbst, Sender und Live bleiben, bekommen aber die Kennung
 assert.equal(D.href('joyn','https://www.joyn.de/serien/navy-cis'),'https://www.joyn.de/serien/navy-cis'+M);
 assert.equal(D.href('joyn','https://www.joyn.de/play/live-tv'),'https://www.joyn.de/play/live-tv'+M);
+assert.equal(D.href('joyn','https://www.joyn.de/play/live-tv?channel_id=1007'),'https://www.joyn.de/play/live-tv?channel_id=1007'+M);
 assert.equal(D.href('joyn','https://www.joyn.de/play/filme/x'),'https://www.joyn.de/play/filme/x'+M);
 // Rakuten, TOGGO, JustWatch: Adresse bleibt, Kennung kommt dazu, Abfrage bleibt erhalten
 assert.equal(D.href('rakuten','https://www.rakuten.tv/de/movies/der-film'),'https://www.rakuten.tv/de/movies/der-film'+M);

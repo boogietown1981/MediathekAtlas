@@ -1,4 +1,21 @@
-# MediathekAtlas · 0.5.89
+# MediathekAtlas · 0.5.91
+
+## Neu in 0.5.91: Videos bei Rakuten TV, Joyn, TOGGO und JustWatch TV starten schneller
+
+- Titel mit Kopierschutz laufen weiter nur beim Anbieter. Bisher öffnete der Link die Detailseite, dann musste man auf „Ansehen“ klicken und bei Rakuten TV noch den HDCP-Hinweis bestätigen.
+- **Direkter Player-Link:** Bei Joyn öffnet „Bei Joyn ansehen“ jetzt gleich den Player (`joyn.de/play/filme/…` bzw. `/play/serien/…/<folge>`), nicht mehr die Detailseite. Gilt für Kacheln, Titel- und Serienseiten, Plattform-Reiter und Live-TV. Bei Rakuten TV, TOGGO und JustWatch TV bleibt die bisherige Seite, weil deren Player-Adresse nicht belegt ist.
+- **Optionale Chrome-Erweiterung „MediathekAtlas Videostart“:** Verwaltung → Einstellungen → „Videostart bei Anbietern“ → ZIP herunterladen, entpacken, in Chrome unter `chrome://extensions` mit Entwicklermodus → „Entpackte Erweiterung laden“. Danach klickt sie bei Links aus MediathekAtlas den Abspielknopf und bestätigt den HDCP-Hinweis. Kaufen, Leihen, Abo, Anmelden und Cookie-Zustimmung klickt sie nie. Sie wird nur auf rakuten.tv, joyn.de, toggo.de und justwatch.com aktiv, nur bei Links aus MediathekAtlas und höchstens 90 Sekunden lang. Sie verschickt keine Daten.
+- Chrome erlaubt Autoplay mit Ton nur nach einem Klick in die Seite. Lehnt Chrome ab, startet das Video stumm, und der erste Klick schaltet den Ton ein. Dauerhaft mit Ton: beim Anbieter Schloss-Symbol → Website-Einstellungen → Ton: Zulassen.
+- Mit dem Schalter im selben Bereich lässt sich alles abschalten. Der Kopierschutz wird nicht umgangen.
+- **Nicht geprüft:** die echten Seiten von Rakuten TV, Joyn, TOGGO und JustWatch (aus der Bauumgebung gesperrt). Die Erweiterung erkennt Knöpfe an ihrer Beschriftung. Ändert ein Anbieter sie, öffnet der Link die Seite wie bisher, und man klickt selbst.
+- Sammelstand: 0.5.91 enthält 0.5.88, 0.5.89 (YouTube 1080p) und 0.5.90 (Joyn-Sender).
+
+## Neu in 0.5.90: Joyn-Sender öffnen den richtigen Sender
+
+- **Live-TV → Joyn öffnete arte.** Bei 114 von 128 Joyn-Sendern zeigte der Knopf „Joyn“ auf die allgemeine Live-Seite von joyn.de. Joyn spielt dort seinen Standardsender, deshalb landete man z. B. bei Naruto oder SAT.1 auf arte. Jetzt öffnet jeder Knopf die Player-Seite genau dieses Senders, so wie joyn.de selbst verlinkt (`/play/live-tv?channel_id=…`).
+- Ein schon geladener Joyn-Katalog wird kurz nach dem Start mit einer einzigen Anfrage repariert, Filme und Serien bleiben unverändert. Bis dahin zeigen Joyn-Sender keinen falschen Link, sondern „Direktlink folgt nach dem nächsten Joyn-Abruf“.
+- Geprüft: Pluto TV, Rakuten TV und ARD/ZDF & Co. spielen je Sender über die eigene Kennung ab und haben keinen solchen Sammel-Link. Joyns „Hessischer Rundfunk“ steht jetzt beim hr-fernsehen.
+- Sammelstand: 0.5.90 baut auf 0.5.88 auf (enthält 0.5.86 und 0.5.87). 0.5.89 ist für die YouTube-Auflösung reserviert.
 
 ## Neu in 0.5.89: YouTube im eigenen Player in 1080p
 
