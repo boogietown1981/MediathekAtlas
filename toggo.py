@@ -1,39 +1,42 @@
-"""TOGGO: the children's series of toggo.de (Super RTL), incl. TOGGOLINO (0.5.79).
+"""TOGGO: series and films of toggo.de (Super RTL), incl. the pre-school offer TOGGOLINO.
 
-Björn (12.11.2026): "integriere mir als nächstes TOGGO für meine Tochter".
+Björn (12.11.2026): "integriere mir als nächstes TOGGO für meine Tochter". 0.5.79 was built
+without access to toggo.de from publicly documented formats (sitemap, yt-dlp, Brightcove). Björn's
+HAR (13.11.2026, www.toggo.de in Chrome, not signed in) shows the real formats; since 0.5.87
+this module follows the recording and the guesses are gone:
 
-toggo.de was not reachable from the development environment and no recording (HAR) existed
-when this was written, so everything here rests on publicly documented formats only and is
-NOT confirmed live:
+* Catalogue: ``POST https://production-n.toggo.de/api/assetstore/vod/asset?expand=false`` with a
+  JSON filter, e.g. ``{"filter":{"and":[{"type":["movie"]}]},"sort":"title[asc]","size":20}``;
+  answer ``{"success":true,"data":{"size","offset","total_items","items":[…]}}``. Recorded sizes:
+  10, 20 and 500. No account, no key; the website sends ``x-authorized-user: false``,
+  ``x-paid-user: false``, ``x-platform-type: Web``, ``x-preview-mode: false``.
+  NOT recorded: a second page. If ``total_items`` exceeds one answer, ``offset`` is tried (the
+  answer names that field) and the run stops as soon as a page brings nothing new.
+* One series with all seasons and episodes:
+  ``GET …/vod/asset/<u_name>?filter=rootParentTypes[not|hidden]`` -> ``data.episodes`` (204 for
+  PAW Patrol in one answer).
+* Fields: ``id`` (VSE302, VEP17623, MOV116), ``u_name``, ``title``, ``description``, ``summary``,
+  ``images`` (SeriesCover, MovieCover, Thumbnail on ameepublic.imgix.net), ``genres``,
+  ``target_age_group`` (school / preschool), ``age_range_start``, ``season_no``, ``episode_no``,
+  ``run_length`` (seconds), ``release_year``, ``available_packages`` (fvod = free, catchup = free
+  for some days after the broadcast, svod = subscription), ``latest_end_date``,
+  ``video_audio_amee_asset_id`` (ASV18480).
+* Pages: ``/videos/serien/<serie>``, ``/videos/serien/<serie>/folge/<folge>``,
+  ``/sammlung/alle-filme/filme/<film>/video/<film>``.
+* Streams: ``GET https://stus.player.streamingtech.de/movie-playout-variants/superrtl/<ASV>?platform=web``
+  -> variants dashsd/dashhd (licences WIDEVINE + PLAYREADY) and hlsfairplayhd/hlsfairplaysd
+  (FAIRPLAY); the player fetched a Widevine licence. Recorded for a free episode (catchup) and
+  a free film (fvod): every variant is copy protected.
 
-* Addresses of episodes and clips (documented by yt-dlp's Toggo extractor):
-  ``https://www.toggo.de/[toggolino/]<serie>/folge/<folge>`` and ``…/video/<clip>``.
-  The catalogue is built from the website's own sitemap (robots.txt -> ``Sitemap:`` lines,
-  sitemap index, ``<loc>`` entries; the standard sitemap format): every address of that shape
-  is an episode or clip of the series named in it.
-* Details of one episode (yt-dlp): ``https://production-n.toggo.de/api/assetstore/vod/asset/<folge>``
-  -> ``data`` with ``title``, ``description``, ``images``, ``series_title``, ``season_no``,
-  ``episode_no`` and ``custom_fields`` (``video-cloud-id`` = Brightcove video id).
-* Streams: Brightcove Playback API (public, documented): the player's policy key from
-  ``players.brightcove.net/<account>/default_default/config.json``, then
-  ``edge.api.brightcove.com/playback/v1/accounts/<account>/videos/<id>`` -> ``sources``.
+So TOGGO titles get catalogue, title and series pages and open toggo.de ("Bei TOGGO ansehen");
+MediathekAtlas circumvents nothing, plays nothing protected and stores no offline copies. After
+each catalogue run up to three free titles are checked: only if TOGGO ever lists a variant
+without a licence (plain HLS, confirmed by hls_guard) do titles get the player button.
 
-Copy protection: according to yt-dlp, TOGGO lists its streams as Widevine (DASH ``/cenc/``) and
-FairPlay (HLS ``/fairplay/``). MediathekAtlas never rewrites addresses to reach an unlisted
-variant and circumvents nothing. Only a source the Playback API itself lists WITHOUT a key
-system (plain HLS or MP4) is played, and hls_guard checks the playlist once more. If there is
-none, the episode opens toggo.de ("Bei TOGGO ansehen"). The outcome of the first check is
-remembered, so the tiles show the right button. No offline copies in this version.
-
-The sitemap run records only technical counters in the diagnosis (number of sitemaps, addresses
-and path shapes), never titles, tokens or addresses.
+Titles, tokens and URLs never go to logs or the diagnosis export.
 """
 from __future__ import annotations
 
-import concurrent.futures
-import gzip
-import hashlib
-import html
 import json
 import os
 import re
@@ -48,66 +51,56 @@ from pathlib import Path
 import portal_reference
 
 SITE = 'https://www.toggo.de'
-ASSET_API = 'https://production-n.toggo.de/api/assetstore/vod/asset/'
-BRIGHTCOVE_ACCOUNT = '6057955896001'
-PLAYER_CONFIG = 'https://players.brightcove.net/%s/default_default/config.json' % BRIGHTCOVE_ACCOUNT
-PLAYER_SCRIPT = 'https://players.brightcove.net/%s/default_default/index.min.js' % BRIGHTCOVE_ACCOUNT
-PLAYBACK_API = 'https://edge.api.brightcove.com/playback/v1/accounts/%s/videos/' % BRIGHTCOVE_ACCOUNT
-HOSTS = {'www.toggo.de', 'production-n.toggo.de', 'players.brightcove.net', 'edge.api.brightcove.com'}
-SITEMAP_CANDIDATES = ('/sitemap.xml', '/sitemap_index.xml', '/sitemap-index.xml', '/sitemaps/sitemap.xml')
-MAX_SITEMAPS = 60
-MAX_ANSWER = 24 * 1024 * 1024
-MAX_SERIES = 1500
-MAX_ITEMS = 60000
-REQUEST_GAP = 0.25
-SERIES_DETAIL_TTL = 7 * 24 * 3600
-EPISODE_BUDGET = 10.0              # seconds a series page may spend completing episode details
-EPISODE_WORKERS = 4
-POLICY_TTL = 12 * 3600
+API = 'https://production-n.toggo.de/api/assetstore/vod/asset'
+VARIANTS = 'https://stus.player.streamingtech.de/movie-playout-variants/superrtl/%s?platform=web'
+HOSTS = {'production-n.toggo.de', 'stus.player.streamingtech.de'}
+PAGE = 500                         # largest size the website itself uses
+MAX_PAGES = 20
+MAX_ANSWER = 32 * 1024 * 1024
+REQUEST_GAP = 0.5
+SERIES_TTL = 6 * 3600
 SOURCE_TTL = 300
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
-VALID_ID = re.compile(r'[se]\.[0-9a-f]{16}')
-SLUG = r"[^/?#\s<>\"\\]{1,200}"
-EPISODE_URL = re.compile(r'https://www\.toggo\.de/(toggolino/)?(' + SLUG + r')/(folge|video)/(' + SLUG + r')/?')
-VIDEO_ID = re.compile(r'\d{6,20}|ref:[A-Za-z0-9_.:\-]{1,80}')
-POLICY_KEY = re.compile(r'BCpk[A-Za-z0-9_\-.~]{20,400}')
-BRANDS = {'': 'TOGGO', 'toggolino/': 'TOGGOLINO'}
+VALID_ID = re.compile(r'[sme]\.[A-Z]{2,5}\d{1,9}')        # s.VSE302, m.MOV116, e.VEP17623
+ASSET_ID = re.compile(r'[A-Z]{2,5}\d{1,9}')
+U_NAME = re.compile(r"[a-z0-9][a-z0-9\-_.']{0,200}")
+KIND_PREFIX = {'series': 's', 'movie': 'm', 'episode': 'e'}
+FREE_PACKAGES = {'fvod', 'catchup'}
 GENRE = 'Kinder'
-HLS_TYPES = {'application/x-mpegurl', 'application/vnd.apple.mpegurl'}
-DRM_NOTE = ('TOGGO liefert diese Folge nur mit Kopierschutz (Widevine/FairPlay). MediathekAtlas umgeht ihn '
-            'nicht: bitte bei TOGGO ansehen.')
-NO_SITEMAP = ('TOGGO nennt in seiner Seitenübersicht (Sitemap) keine Folgen. MediathekAtlas braucht dafür ein '
-              'Update; bitte die Diagnose oder einen HAR-Mitschnitt von toggo.de schicken')
+IGNORED_GENRES = {'allgemein', 'preschool', 'school', 'kino'}
+AGE_GROUPS = {'preschool': 'TOGGOLINO (Vorschule)', 'school': 'TOGGO (Schulkinder)'}
+PAID = 'Nur mit Abo'
+FREE = 'Kostenlos'
+CHILDREN = 'Kinder & Familie'
+IMAGE_HOSTS = ('.imgix.net', '.toggo.de', '.superrtl.de')
+DRM_NOTE = ('TOGGO liefert Folgen und Filme nur mit Kopierschutz (Widevine/PlayReady/FairPlay) aus. '
+            'MediathekAtlas umgeht ihn nicht: bitte bei TOGGO ansehen.')
 
 _SYNC_LOCK = threading.Lock()
 _ACTIVE = False
-_POLICY = {}        # {'key': (expires, value)} – in memory only
 _SOURCES = {}       # item id -> (expires, source dict)
 
 SCHEMA = '''
-CREATE TABLE IF NOT EXISTS toggo_items(
+CREATE TABLE IF NOT EXISTS toggo_assets(
   id TEXT PRIMARY KEY, kind TEXT NOT NULL, title TEXT NOT NULL, path TEXT NOT NULL DEFAULT '',
   series_id TEXT NOT NULL DEFAULT '', season INTEGER, episode INTEGER, year INTEGER, duration INTEGER,
   rating TEXT NOT NULL DEFAULT '', genre TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
   poster TEXT NOT NULL DEFAULT '', imdb_id TEXT NOT NULL DEFAULT '', imdb_score REAL, imdb_votes INTEGER,
-  number INTEGER, category TEXT NOT NULL DEFAULT '', brand TEXT NOT NULL DEFAULT '', slug TEXT NOT NULL DEFAULT '',
-  clip INTEGER NOT NULL DEFAULT 0, video_id TEXT NOT NULL DEFAULT '', detailed REAL NOT NULL DEFAULT 0,
+  number INTEGER, category TEXT NOT NULL DEFAULT '', ages TEXT NOT NULL DEFAULT '', offer TEXT NOT NULL DEFAULT 'free',
+  seasons INTEGER, until REAL, video_id TEXT NOT NULL DEFAULT '', original_title TEXT NOT NULL DEFAULT '',
   drm INTEGER, web_url TEXT NOT NULL DEFAULT '', seen REAL NOT NULL, updated REAL NOT NULL);
-CREATE INDEX IF NOT EXISTS toggo_items_kind ON toggo_items(kind, seen);
-CREATE INDEX IF NOT EXISTS toggo_items_series ON toggo_items(series_id, season, episode);
+CREATE INDEX IF NOT EXISTS toggo_assets_kind ON toggo_assets(kind, seen);
+CREATE INDEX IF NOT EXISTS toggo_assets_series ON toggo_assets(series_id, season, episode);
 CREATE TABLE IF NOT EXISTS toggo_state(name TEXT PRIMARY KEY, value TEXT NOT NULL);
 '''
 
 
-def _notify(event, level=None, **details):
+def _notify(event, **details):
     """Technical counters only; never URLs, tokens or titles."""
     try:
         import diagnostics
-        if level:
-            diagnostics.event(event, level, **details)
-        else:
-            diagnostics.event(event, **details)
+        diagnostics.event(event, **details)
     except (ImportError, OSError, RuntimeError):
         pass
 
@@ -124,6 +117,10 @@ def _connect(root):
             pass
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='toggo_items'").fetchone():
+        # 0.5.79-0.5.85 stored guessed sitemap entries under other ids: catalogue, state and checks start anew.
+        db.executescript('DROP TABLE IF EXISTS toggo_items; DROP TABLE IF EXISTS toggo_reference_checks; '
+                         'DROP TABLE IF EXISTS toggo_state;')
     db.executescript(SCHEMA)
     return db
 
@@ -139,34 +136,53 @@ def _set(db, key, value):
 
 # ---------------------------------------------------------------- network
 
-def _fetch(url, headers=None):
-    """GET one address on a fixed TOGGO/Brightcove host; size-limited, gzip sitemaps unpacked."""
+def headers(body=False):
+    """The website's own request headers (HAR); no account and no device data."""
+    out = {'User-Agent': USER_AGENT, 'Accept': '*/*', 'Accept-Language': 'de-DE,de;q=0.9', 'Origin': SITE,
+           'Referer': SITE + '/', 'x-authorized-user': 'false', 'x-paid-user': 'false', 'x-platform-type': 'Web',
+           'x-preview-mode': 'false'}
+    if body:
+        out['Content-Type'] = 'application/json'
+    return out
+
+
+def _fetch(url, body=None):
+    """One request to a fixed TOGGO host: POST with a JSON body, otherwise GET. Returns bytes."""
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != 'https' or parts.hostname not in HOSTS or parts.port or parts.username or parts.password:
         raise ValueError('Ungültige TOGGO-Anfrage')
-    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT, 'Accept': 'application/json, text/xml, */*',
-                                               'Accept-Language': 'de-DE,de;q=0.9', 'Origin': SITE,
-                                               'Referer': SITE + '/', **(headers or {})})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    data = json.dumps(body, separators=(',', ':'), ensure_ascii=False).encode('utf-8') if body is not None else None
+    if parts.hostname == 'production-n.toggo.de':
+        head = headers(body is not None)
+    else:
+        head = {'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Origin': SITE, 'Referer': SITE + '/'}
+    req = urllib.request.Request(url, data=data, headers=head, method='POST' if data is not None else 'GET')
+    with urllib.request.urlopen(req, timeout=40) as response:
         final = urllib.parse.urlsplit(response.geturl())
         if final.scheme != 'https' or final.hostname not in HOSTS:
             raise ValueError('TOGGO leitete auf eine unerwartete Adresse um')
         raw = response.read(MAX_ANSWER + 1)
     if len(raw) > MAX_ANSWER:
         raise ValueError('TOGGO-Antwort zu groß')
-    if raw[:2] == b'\x1f\x8b':
-        with gzip.GzipFile(fileobj=__import__('io').BytesIO(raw)) as packed:
-            raw = packed.read(MAX_ANSWER + 1)
-        if len(raw) > MAX_ANSWER:
-            raise ValueError('TOGGO-Antwort zu groß')
     return raw
 
 
 def _json(raw):
     try:
         return json.loads(raw.decode('utf-8'))
-    except (ValueError, UnicodeDecodeError):
+    except (ValueError, UnicodeDecodeError, AttributeError):
         raise ValueError('TOGGO lieferte kein gültiges Ergebnis') from None
+
+
+def _data(answer):
+    """``data`` of an API answer; ``success: false`` becomes a clear message."""
+    if not isinstance(answer, dict):
+        raise ValueError('TOGGO lieferte kein gültiges Ergebnis')
+    if answer.get('success') is False or answer.get('data') is None:
+        err = answer.get('err')
+        text = err.get('message') or err.get('code') if isinstance(err, dict) else err
+        raise ValueError('TOGGO lehnte die Abfrage ab' + (': ' + _text(text, 160) if text else ''))
+    return answer['data']
 
 
 def _error(exc):
@@ -190,263 +206,193 @@ def _text(value, limit):
 
 
 def _int(value, low=None, high=None):
+    if isinstance(value, bool):
+        return None
     try:
         number = int(value)
     except (TypeError, ValueError):
         return None
-    if isinstance(value, bool) or (low is not None and number < low) or (high is not None and number > high):
+    if (low is not None and number < low) or (high is not None and number > high):
         return None
     return number
 
 
-def item_id(kind, key):
-    return ('s.' if kind == 'series' else 'e.') + hashlib.sha1(key.encode('utf-8')).hexdigest()[:16]
-
-
 def image(value):
-    """Artwork address from TOGGO's own API: https, no credentials, no odd characters."""
+    """Artwork on TOGGO's image hosts (ameepublic.imgix.net), https only."""
     value = str(value or '')
     parts = urllib.parse.urlsplit(value)
-    if parts.scheme != 'https' or not parts.hostname or parts.port or parts.username or parts.password \
-            or len(value) > 800 or re.search(r'[\s<>"\'\\]', value):
+    host = (parts.hostname or '').lower()
+    if parts.scheme != 'https' or parts.port or parts.username or parts.password or len(value) > 800 \
+            or not any(host.endswith(h) for h in IMAGE_HOSTS) or re.search(r'[\s<>"\'\\]', value):
         return ''
     return value
 
 
-def pretty(slug):
-    """Readable title from an address part until the real title is known: 'paw-patrol' -> 'Paw Patrol'."""
-    words = [w for w in re.split(r'-+', urllib.parse.unquote(str(slug or ''))) if w]
-    return _text(' '.join(w[:1].upper() + w[1:] for w in words), 200) or 'Ohne Titel'
+def _image(node, *keys):
+    images = node.get('images') if isinstance(node.get('images'), dict) else {}
+    for key in keys:
+        url = image(images.get(key))
+        if url:
+            return url
+    return ''
 
 
-def locs(text):
-    """All <loc> addresses of a sitemap or sitemap index (plain text scan: no XML entity expansion)."""
-    return [html.unescape(m).strip() for m in re.findall(r'<loc>\s*([^<]{1,2000}?)\s*</loc>', str(text or ''))]
-
-
-def is_index(text):
-    return '<sitemapindex' in str(text or '')[:4000]
-
-
-def robots_sitemaps(text):
-    out = []
-    for line in str(text or '').splitlines():
-        m = re.match(r'(?i)\s*sitemap\s*:\s*(\S+)', line)
-        if m and _own(m.group(1)) and m.group(1) not in out:
-            out.append(m.group(1))
-    return out
-
-
-def _own(url):
-    parts = urllib.parse.urlsplit(str(url or ''))
-    return parts.scheme == 'https' and parts.hostname == 'www.toggo.de' and not parts.port and not parts.username
-
-
-SECTION_WORDS = ('toggolino', 'folge', 'video', 'serien', 'serie', 'videos', 'spiele', 'live-tv', 'tv')
-
-
-def classify(url):
-    """{'prefix','series','clip','slug','url'} for an episode/clip address, else None.
-
-    0.5.79 knew ``/[toggolino/]<serie>/folge/<folge>`` only. Björn's diagnosis of 13.11.2026 showed
-    what the sitemap really lists: ``/<bereich>/serien/<serie>/folge/<folge>`` (10605 addresses)
-    and ``/toggolino/<bereich>/serien/<serie>/folge/<folge>`` (4542), so no episode was found.
-    Now the series is the part in front of ``folge``/``video``, with at most two section parts
-    before it; the address itself is kept and never rebuilt."""
-    url = str(url or '').strip()
-    if not _own(url) or re.search(r'[\s<>"\\]', url):
-        return None
-    split = urllib.parse.urlsplit(url)
-    if split.query or split.fragment:
-        return None
-    parts = [urllib.parse.unquote(p) for p in split.path.split('/') if p]
-    page = SITE + '/' + '/'.join(_q(p) for p in parts)      # as listed, encoded for use in a link
-    prefix = ''
-    if parts and parts[0] == 'toggolino':
-        prefix, parts = 'toggolino/', parts[1:]
-    if not 3 <= len(parts) <= 5 or parts[-2] not in ('folge', 'video'):
-        return None
-    series, slug = parts[-3], parts[-1]
-    if series in SECTION_WORDS or len(series) > 200 or len(slug) > 200 or re.search(r'[/?#\s<>"\\]', series + slug):
-        return None
-    return {'prefix': prefix, 'series': series, 'clip': parts[-2] == 'video', 'slug': slug, 'url': page}
+def _u_name(value):
+    value = str(value or '')
+    return value if U_NAME.fullmatch(value) else ''
 
 
 def _q(part):
     return urllib.parse.quote(part, safe='-._~')
 
 
-def episode_url(entry):
-    if entry.get('url'):
-        return entry['url']
-    return '%s/%s%s/%s/%s' % (SITE, entry['prefix'], _q(entry['series']), 'video' if entry['clip'] else 'folge', _q(entry['slug']))
+def web_url(kind, u_name, series_u_name=''):
+    """Page of a title on toggo.de, as the website builds it (HAR)."""
+    if not u_name:
+        return ''
+    if kind == 'series':
+        return '%s/videos/serien/%s' % (SITE, _q(u_name))
+    if kind == 'movie':
+        return '%s/sammlung/alle-filme/filme/%s/video/%s' % (SITE, _q(u_name), _q(u_name))
+    if kind == 'episode' and series_u_name:
+        return '%s/videos/serien/%s/folge/%s' % (SITE, _q(series_u_name), _q(u_name))
+    return ''
 
 
-def shapes(urls):
-    """Counters of path shapes for the diagnosis: depth and the fixed words only, no titles."""
-    counts = {}
-    for url in urls:
-        parts = [p for p in urllib.parse.urlsplit(url).path.split('/') if p]
-        key = '/'.join(p if p in SECTION_WORDS else '*'
-                       for p in parts[:5]) or '/'
-        counts[key] = counts.get(key, 0) + 1
-    return dict(sorted(counts.items(), key=lambda kv: -kv[1])[:12])
+def offer(node):
+    """'free' (fvod or catchup), 'plus' (subscription only) or '' (no package: not listed)."""
+    packages = {str(p).lower() for p in node.get('available_packages') or [] if isinstance(p, str)}
+    if packages & FREE_PACKAGES:
+        return 'free'
+    return 'plus' if packages else ''
 
 
-def read_sitemaps(fetch, gap=0.0):
-    """All page addresses of the website's sitemaps -> (addresses, number of sitemaps read, first error)."""
-    queue, first_error = [], None
-    try:
-        queue = robots_sitemaps(fetch(SITE + '/robots.txt').decode('utf-8', 'replace'))
-    except Exception as exc:
-        first_error = exc
-    if not queue:      # robots.txt names none (or was not readable): the usual places
-        queue = [SITE + path for path in SITEMAP_CANDIDATES]
-    seen, pages, read = set(), [], 0
-    while queue and len(seen) < MAX_SITEMAPS and len(pages) < 400000:
-        url = queue.pop(0)
-        if url in seen or not _own(url):
-            continue
-        seen.add(url)
-        if gap and read:
+def _genres(node):
+    out = []
+    for g in node.get('genres') or []:
+        name = _text(g, 40)
+        if name and name.casefold() not in IGNORED_GENRES and name not in out:
+            out.append(name)
+    return ', '.join([GENRE] + out[:8])
+
+
+def _ages(node):
+    groups = [g for g in node.get('target_age_group') or [] if g in AGE_GROUPS]
+    return ','.join(sorted(set(groups)))
+
+
+def _until(node, kind_offer):
+    """End of the free availability (catch-up episodes vanish after some days), else None."""
+    if kind_offer != 'free':
+        return None
+    ends = [node.get(k) for k in ('fvod_latest_end_date', 'catchup_latest_end_date')]
+    ends = [e for e in ends if isinstance(e, (int, float)) and not isinstance(e, bool) and e > 0]
+    return float(max(ends)) if ends else None
+
+
+def item_from(node, series=None):
+    """Series, film or episode of an API answer; None for anything else (audio, games, live events)."""
+    if not isinstance(node, dict):
+        return None
+    kind = str(node.get('type') or '')
+    ident = str(node.get('id') or '')
+    title = _text(node.get('title'), 200)
+    u_name = _u_name(node.get('u_name'))
+    kind_offer = offer(node)
+    if kind not in KIND_PREFIX or not ASSET_ID.fullmatch(ident) or not title or not kind_offer:
+        return None
+    if kind == 'episode' and not series:
+        return None
+    age = _int(node.get('age_recommendation') if node.get('age_recommendation') is not None else node.get('age_range_start'), 0, 18)
+    video = str(node.get('video_audio_amee_asset_id') or '')
+    year = _int(node.get('release_year'), 1900, 2100)
+    if kind == 'series':
+        poster = _image(node, 'SeriesCover', 'SeriesDetailPageMobile', 'Thumbnail')
+        link = web_url('series', u_name)
+    elif kind == 'movie':
+        poster = _image(node, 'MovieCover', 'Thumbnail', 'StageThumbnail', 'MovieDetailPageMobile')
+        link = web_url('movie', u_name)
+    else:
+        poster = _image(node, 'Thumbnail', 'StageThumbnail')
+        link = web_url('episode', u_name, series['path'])
+    return {
+        'id': KIND_PREFIX[kind] + '.' + ident, 'kind': kind, 'title': title, 'path': u_name,
+        'series_id': series['id'] if series else '', 'season': _int(node.get('season_no'), 0, 999) if kind == 'episode' else None,
+        'episode': _int(node.get('episode_no'), 0, 9999) if kind == 'episode' else None, 'year': year,
+        'duration': _int(node.get('run_length'), 1, 100000) if kind != 'series' else None,
+        'rating': ('ab %d' % age) if age is not None else '', 'genre': _genres(node),
+        'summary': _text(node.get('summary') or node.get('description') or node.get('short_summary'), 1600),
+        'poster': poster, 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
+        'category': PAID if kind_offer == 'plus' else FREE, 'ages': _ages(node), 'offer': kind_offer,
+        'seasons': _int(node.get('season_count'), 0, 200) if kind == 'series' else None,
+        'until': _until(node, kind_offer), 'video_id': video if ASSET_ID.fullmatch(video) else '',
+        'original_title': _text(node.get('original_title'), 200), 'web_url': link}
+
+
+def list_body(kind, offset=0):
+    """Filter of the website's own list request; ``offset`` only from the second page on."""
+    body = {'filter': {'and': [{'type': [kind]}]}, 'sort': 'title[asc]', 'size': PAGE}
+    if offset:
+        body['offset'] = offset
+    return body
+
+
+def load_list(fetch, kind, gap, found):
+    """All titles of one type; False when the list stopped early (paging not answered as expected)."""
+    seen, total = set(), None
+    for page in range(MAX_PAGES):
+        if gap and page:
             time.sleep(gap)
         try:
-            text = fetch(url).decode('utf-8', 'replace')
-        except Exception as exc:
-            first_error = first_error or exc
-            continue
-        found = locs(text)
-        if not found:
-            continue
-        read += 1
-        if is_index(text):
-            queue += [u for u in found if u not in seen]
-        else:
-            pages += found
-            # Sitemaps nested without an index element: follow addresses that are sitemaps themselves.
-            queue += [u for u in found if re.search(r'sitemap[^/]*\.xml(?:\.gz)?$', u) and u not in seen]
-    return pages, read, first_error
-
-
-def catalogue(pages):
-    """Series and their episodes from page addresses: {series key: {...,'entries': {key: entry}}}."""
-    series, plain = {}, {}
-    for url in pages:
-        entry = classify(url)
-        if not entry:
-            if _own(url):
-                parts = [p for p in urllib.parse.urlsplit(url).path.split('/') if p]
-                if parts:
-                    plain.setdefault(urllib.parse.unquote(parts[-1]), url)
-            continue
-        key = entry['prefix'] + entry['series']
-        group = series.setdefault(key, {'prefix': entry['prefix'], 'series': entry['series'], 'entries': {}})
-        group['entries'].setdefault(('video/' if entry['clip'] else 'folge/') + entry['slug'], entry)
-    for group in series.values():
-        # Page of the series itself, if the sitemap lists one whose last part is the series name.
-        page = plain.get(group['series'], '')
-        first = next(iter(group['entries'].values()))
-        group['web_url'] = page if page and not re.search(r'[\s<>"\'\\]', page) else episode_url(first)
-    return series
-
-
-def asset_fields(answer):
-    """Fields of one asset answer (``data``); {} when it is not usable."""
-    data = answer.get('data') if isinstance(answer, dict) else None
-    if not isinstance(data, dict):
-        return {}
-    video = ''
-    for field in data.get('custom_fields') or []:
-        if isinstance(field, dict) and field.get('key') == 'video-cloud-id' and VIDEO_ID.fullmatch(str(field.get('value') or '')):
-            video = str(field['value'])
-    images = data.get('images') if isinstance(data.get('images'), dict) else {}
-    ordered = sorted(images.items(), key=lambda kv: next((i for i, word in enumerate(('teaser', 'thumb', 'landscape', '16', 'poster'))
-                                                          if word in str(kv[0]).lower()), 9))
-    poster = next((image(v) for _, v in ordered if image(v)), '')
-    duration = _int(data.get('duration'), 1, 10 ** 9)
-    if duration and duration > 6 * 3600:          # milliseconds
-        duration = duration // 1000
-    age = _int(data.get('fsk') if data.get('fsk') is not None else data.get('age_rating'), 0, 18)
-    return {'title': _text(data.get('title'), 200), 'summary': _text(data.get('description'), 1600),
-            'series_title': _text(data.get('series_title'), 200), 'season': _int(data.get('season_no'), 0, 999),
-            'episode': _int(data.get('episode_no'), 0, 9999), 'video_id': video, 'poster': poster,
-            'duration': duration, 'rating': ('FSK %d' % age) if age is not None else ''}
-
-
-def load_asset(fetch, slug):
-    return asset_fields(_json(fetch(ASSET_API + urllib.parse.quote(slug, safe=''))))
+            data = _data(_json(fetch(API + '?expand=false', list_body(kind, len(seen)))))
+        except Exception:
+            if page == 0:
+                raise
+            return False
+        items = data.get('items') if isinstance(data, dict) else None
+        items = items if isinstance(items, list) else []
+        total = _int(data.get('total_items'), 0) if isinstance(data, dict) else None
+        fresh = 0
+        for node in items:
+            ident = str(node.get('id') or '') if isinstance(node, dict) else ''
+            if ident and ident not in seen:
+                seen.add(ident)
+                fresh += 1
+                it = item_from(node)
+                if it and it['kind'] == kind:
+                    found[it['id']] = it
+        if not fresh:
+            return total is None or len(seen) >= total
+        if total is None or len(seen) >= total:
+            return True
+    return False
 
 
 # ---------------------------------------------------------------- storage
 
-def _rows_from(series):
-    rows = []
-    for key, group in series.items():
-        sid = item_id('series', key)
-        brand = BRANDS[group['prefix']]
-        rows.append({'id': sid, 'kind': 'series', 'title': pretty(group['series']), 'path': key, 'series_id': '',
-                     'brand': brand, 'slug': group['series'], 'clip': 0, 'web_url': group['web_url'],
-                     'number': len(group['entries'])})
-        for ekey, entry in group['entries'].items():
-            rows.append({'id': item_id('episode', key + '/' + ekey), 'kind': 'episode', 'title': pretty(entry['slug']),
-                         'path': key + '/' + ekey, 'series_id': sid, 'brand': brand, 'slug': entry['slug'],
-                         'clip': int(entry['clip']), 'web_url': episode_url(entry), 'number': None})
-    return rows
+FIELDS = ('kind', 'title', 'path', 'series_id', 'season', 'episode', 'year', 'duration', 'rating', 'genre', 'summary',
+          'poster', 'imdb_id', 'imdb_score', 'imdb_votes', 'number', 'category', 'ages', 'offer', 'seasons', 'until',
+          'video_id', 'original_title', 'web_url')
 
 
-def _store(db, rows, now):
-    """New rows are inserted with the title derived from the address; known rows keep their loaded
-    details (title, picture, numbers, video id) and only get the fresh address data."""
-    for r in rows:
-        db.execute('''INSERT INTO toggo_items(id,kind,title,path,series_id,genre,category,brand,slug,clip,web_url,number,seen,updated)
-            VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?)
-            ON CONFLICT(id) DO UPDATE SET path=excluded.path,series_id=excluded.series_id,category=excluded.category,
-              brand=excluded.brand,slug=excluded.slug,clip=excluded.clip,web_url=excluded.web_url,number=excluded.number,
-              seen=excluded.seen''',
-                   (r['id'], r['kind'], r['title'], r['path'], r['series_id'], GENRE, r['brand'], r['brand'], r['slug'],
-                    r['clip'], r['web_url'], r['number'], now, now))
+def _store(db, items, now):
+    """Insert or refresh rows; the remembered copy-protection result (drm) of a title stays."""
+    for item in items:
+        db.execute('''INSERT INTO toggo_assets(id,%s,seen,updated) VALUES(?,%s,?,?)
+            ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
+                   % (','.join(FIELDS), ','.join('?' * len(FIELDS)), ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)),
+                   (item['id'], *[item[f] for f in FIELDS], now, now))
 
 
-def _apply_episode(db, row_id, fields, now):
-    db.execute('''UPDATE toggo_items SET title=CASE WHEN ?<>'' THEN ? ELSE title END, summary=?, season=?, episode=?,
-        duration=COALESCE(?,duration), rating=?, poster=CASE WHEN ?<>'' THEN ? ELSE poster END, video_id=?, detailed=?, updated=?
-        WHERE id=?''', (fields.get('title', ''), fields.get('title', ''), fields.get('summary', ''), fields.get('season'),
-                        fields.get('episode'), fields.get('duration'), fields.get('rating', ''), fields.get('poster', ''),
-                        fields.get('poster', ''), fields.get('video_id', ''), now, now, row_id))
-
-
-def _apply_series(db, series_id, fields, now):
-    if fields.get('series_title'):
-        db.execute('UPDATE toggo_items SET title=? WHERE id=?', (fields['series_title'], series_id))
-    if fields.get('poster'):
-        db.execute("UPDATE toggo_items SET poster=? WHERE id=? AND poster=''", (fields['poster'], series_id))
-    if fields.get('rating'):
-        db.execute("UPDATE toggo_items SET rating=? WHERE id=? AND rating=''", (fields['rating'], series_id))
-    db.execute('UPDATE toggo_items SET detailed=?, updated=? WHERE id=?', (now, now, series_id))
-
-
-def _counts(db, since):
-    row = db.execute("""SELECT SUM(kind='series'), SUM(kind='episode' AND clip=0), SUM(kind='episode' AND clip=1)
-                        FROM toggo_items WHERE seen>=?""", (since,)).fetchone()
-    return {'movies': 0, 'series': row[0] or 0, 'episodes': row[1] or 0, 'clips': row[2] or 0}
-
-
-def _first_episodes(db, now, since):
-    """(series id, episode id, slug) of the series whose title/picture still has to be loaded."""
-    out = []
-    for s in db.execute("SELECT id FROM toggo_items WHERE kind='series' AND seen>=? AND (detailed=0 OR detailed<?) ORDER BY title",
-                        (since, now - SERIES_DETAIL_TTL)).fetchall():
-        e = db.execute("SELECT id,slug FROM toggo_items WHERE series_id=? AND seen>=? ORDER BY clip,rowid LIMIT 1",
-                       (s[0], since)).fetchone()
-        if e:
-            out.append((s[0], e[0], e[1]))
-    return out[:MAX_SERIES]
+def _counts(items):
+    return {'movies': sum(1 for i in items if i['kind'] == 'movie'),
+            'series': sum(1 for i in items if i['kind'] == 'series'),
+            'plus': sum(1 for i in items if i['offer'] == 'plus')}
 
 
 def sync(root, fetch=None, now=None, gap=None, check=None):
-    """Read the sitemaps, store all series and episodes, then load title and picture of each series
-    from its first episode. What is already found is stored at once, so the catalogue fills up
-    during the run. Rows stay, but only titles seen in the latest successful run are listed."""
+    """Load all series and films. Rows stay, but only titles seen in the latest successful run
+    are listed (catch-up episodes and licences rotate)."""
     now = time.time() if now is None else float(now)
     fetch = fetch or _fetch
     gap = (REQUEST_GAP if fetch is _fetch else 0) if gap is None else gap
@@ -455,82 +401,51 @@ def sync(root, fetch=None, now=None, gap=None, check=None):
         with db:
             _set(db, 'last_attempt', now)
             _set(db, 'last_result', 'running')
-            _set(db, 'progress', 'Seitenübersicht von toggo.de wird gelesen')
     finally:
         db.close()
     _notify('toggo_sync_started')
     try:
-        pages, read, first_error = read_sitemaps(fetch, gap)
-        series = catalogue(pages)
-        _notify('toggo_sitemap', sitemaps=read, addresses=len(pages), series=len(series),
-                episodes=sum(len(g['entries']) for g in series.values()), shapes=shapes(pages))
-        if not read and first_error is not None:
-            raise first_error
-        if not series:
-            raise ValueError(NO_SITEMAP + ' (%d Sitemaps, %d Adressen gelesen)' % (read, len(pages)))
-        rows = _rows_from(series)[:MAX_ITEMS]
+        found, partial, notes = {}, False, []
+        for kind in ('series', 'movie'):
+            try:
+                partial |= not load_list(fetch, kind, gap, found)
+            except Exception as exc:
+                if kind == 'series':
+                    raise
+                partial = True
+                notes.append('Filme: ' + _error(exc))
+            if gap:
+                time.sleep(gap)
+        if not any(i['kind'] == 'series' for i in found.values()):
+            raise ValueError('TOGGO lieferte keine Serien')
+        items = list(found.values())
+        counts = _counts(items)
         db = _connect(root)
         try:
             with db:
-                _store(db, rows, now)
-                # Visible at once: this run's rows count as the current catalogue.
-                for key, value in [('last_success', now), ('last_loaded', time.time()),
-                                   ('progress', 'Serien gefunden, Titel und Bilder folgen'), *_counts(db, now).items()]:
+                _store(db, items, now)
+                previous = float(_get(db, 'last_success', '0') or 0)
+                visible_since = previous if partial and previous else now
+                for key, value in [('last_success', visible_since), ('last_loaded', time.time()),
+                                   ('last_result', 'partial' if partial else 'complete'),
+                                   ('last_error', ('Katalog nur teilweise geladen' + (': ' + notes[0] if notes else '')) if partial else ''),
+                                   ('next_attempt', now + 24 * 3600), *counts.items()]:
                     _set(db, key, value)
-            todo = _first_episodes(db, now, now)
         finally:
             db.close()
-        failed, notes = 0, []
-        for number, (sid, eid, slug) in enumerate(todo, 1):
-            if gap:
-                time.sleep(gap)
-            try:
-                fields = load_asset(fetch, slug)
-                if not fields:
-                    raise ValueError('TOGGO lieferte keine Folgendaten')
-            except Exception as exc:
-                failed += 1
-                if not notes:
-                    notes.append(_error(exc))
-                if failed >= 8 and failed == number:     # nothing works: do not hammer the server
-                    break
-                continue
-            db = _connect(root)
-            try:
-                with db:
-                    _apply_episode(db, eid, fields, now)
-                    _apply_series(db, sid, fields, now)
-                    if number % 10 == 0 or number == len(todo):
-                        _set(db, 'last_loaded', time.time())
-                        _set(db, 'progress', 'Serie %d von %d' % (number, len(todo)))
-            finally:
-                db.close()
-        partial = failed > 0
         protection = ''
         try:
             protection = probe(root, fetch, check=check)
         except Exception:
             pass
-        db = _connect(root)
-        try:
-            with db:
-                counts = _counts(db, now)
-                for key, value in [('last_loaded', time.time()), ('progress', ''),
-                                   ('last_result', 'partial' if partial else 'complete'),
-                                   ('last_error', ('Titel und Bilder von %d Serien fehlen noch%s' % (failed, ': ' + notes[0] if notes else ''))
-                                    if partial else ''),
-                                   ('next_attempt', now + 24 * 3600), *counts.items()]:
-                    _set(db, key, value)
-        finally:
-            db.close()
-        _notify('toggo_sync_completed', partial=partial, details_failed=failed, protection=protection or 'unknown', **counts)
+        _notify('toggo_sync_completed', partial=partial, protection=protection or 'unknown', **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)
         db = _connect(root)
         try:
             with db:
-                for key, value in [('last_result', 'failed'), ('last_error', message), ('progress', ''),
+                for key, value in [('last_result', 'failed'), ('last_error', message),
                                    ('last_http_status', getattr(exc, 'code', 0) or 0), ('next_attempt', now + 3600)]:
                     _set(db, key, value)
         finally:
@@ -543,152 +458,160 @@ def sync(root, fetch=None, now=None, gap=None, check=None):
 # ---------------------------------------------------------------- views
 
 def _row(db, row_id):
-    row = db.execute('SELECT * FROM toggo_items WHERE id=?', (row_id,)).fetchone()
+    row = db.execute('SELECT * FROM toggo_assets WHERE id=?', (row_id,)).fetchone()
     return dict(row) if row else None
 
 
 def _series(db, series_id):
-    row = db.execute("SELECT * FROM toggo_items WHERE id=? AND kind='series'", (series_id,)).fetchone()
+    row = db.execute("SELECT * FROM toggo_assets WHERE id=? AND kind='series'", (series_id,)).fetchone()
     if not row:
         raise ValueError('TOGGO-Serie nicht im Katalog; bitte Katalog neu laden')
     return dict(row)
 
 
 def _playable(row, protection):
-    """Verified plain stream, or not checked yet while TOGGO is not known to protect its streams."""
-    if row.get('kind') != 'episode':
+    """Only a title whose own check found a plain stream, or an unchecked free title while the
+    probe of the latest run found plain streams. TOGGO protects everything as recorded."""
+    if row.get('kind') not in ('episode', 'movie') or row.get('offer') != 'free':
         return 0
     if row.get('drm') == 0:
         return 1
-    return 0 if row.get('drm') == 1 or protection == 'drm' else 1
+    return 1 if row.get('drm') is None and protection == 'clear' else 0
 
 
-def complete_episodes(root, series_id, fetch=None, now=None, budget=None):
-    """Load the details (title, numbers, picture, video id) of episodes that only have their
-    address so far; stops after ``budget`` seconds, the rest follows on the next call."""
+def load_episodes(root, series_id, fetch=None, now=None):
+    """All seasons and episodes of a series: one request, as the series page of the website."""
     now = time.time() if now is None else now
     fetch = fetch or _fetch
-    budget = EPISODE_BUDGET if budget is None else budget
-    db = _connect(root)
-    try:
-        last = float(_get(db, 'last_success', '0') or 0)
-        todo = [(r[0], r[1]) for r in db.execute(
-            "SELECT id,slug FROM toggo_items WHERE kind='episode' AND series_id=? AND seen>=? AND detailed=0 ORDER BY clip,rowid",
-            (series_id, last))]
-    finally:
-        db.close()
-    if not todo:
-        return {'loaded': 0, 'left': 0, 'error': ''}
-    deadline, done, first_error = time.monotonic() + budget, [], ''
-    pool = concurrent.futures.ThreadPoolExecutor(max_workers=EPISODE_WORKERS, thread_name_prefix='toggo_episode')
-    try:
-        futures = {pool.submit(load_asset, fetch, slug): eid for eid, slug in todo}
-        try:
-            for future in concurrent.futures.as_completed(futures, timeout=max(0.1, budget)):
-                try:
-                    fields = future.result()
-                    if fields:
-                        done.append((futures[future], fields))
-                    elif not first_error:
-                        first_error = 'TOGGO lieferte keine Folgendaten'
-                except Exception as exc:
-                    first_error = first_error or _error(exc)
-                if time.monotonic() > deadline:
-                    break
-        except concurrent.futures.TimeoutError:
-            pass
-    finally:
-        try:
-            pool.shutdown(wait=False, cancel_futures=True)
-        except TypeError:      # Python 3.8
-            pool.shutdown(wait=False)
-    db = _connect(root)
-    try:
-        with db:
-            for eid, fields in done:
-                _apply_episode(db, eid, fields, now)
-    finally:
-        db.close()
-    return {'loaded': len(done), 'left': len(todo) - len(done), 'error': first_error}
-
-
-def episodes(root, series_id, fetch=None, now=None, budget=None):
-    """Episodes of a series; missing details are loaded on demand (see complete_episodes)."""
-    if not VALID_ID.fullmatch(str(series_id or '')) or not str(series_id).startswith('s.'):
-        raise ValueError('Ungültige TOGGO-Serie')
     db = _connect(root)
     try:
         series = _series(db, series_id)
     finally:
         db.close()
-    result = complete_episodes(root, series_id, fetch, now, budget)
+    if not series['path']:
+        raise ValueError('TOGGO nannte für diese Serie keine Seite')
+    data = _data(_json(fetch('%s/%s?filter=rootParentTypes[not|hidden]' % (API, _q(series['path'])))))
+    nodes = data.get('episodes') if isinstance(data, dict) else None
+    found = [it for it in (item_from(n, series) for n in nodes if isinstance(nodes, list)) if it and it['kind'] == 'episode'] \
+        if isinstance(nodes, list) else []
     db = _connect(root)
     try:
-        last = float(_get(db, 'last_success', '0') or 0)
+        with db:
+            _store(db, found, now)
+            _set(db, 'series_checked:' + series_id, now)
+    finally:
+        db.close()
+    return found
+
+
+def episodes(root, series_id, fetch=None, now=None):
+    """Episodes of a series, loaded on demand and cached for six hours."""
+    if not VALID_ID.fullmatch(str(series_id or '')) or not str(series_id).startswith('s.'):
+        raise ValueError('Ungültige TOGGO-Serie')
+    now = time.time() if now is None else now
+    db = _connect(root)
+    try:
+        series = _series(db, series_id)
+        checked = float(_get(db, 'series_checked:' + series_id, '0') or 0)
+    finally:
+        db.close()
+    error = ''
+    if not checked or now - checked > SERIES_TTL:
+        try:
+            load_episodes(root, series_id, fetch, now)
+        except Exception as exc:
+            error = _error(exc)
+    db = _connect(root)
+    try:
+        checked = float(_get(db, 'series_checked:' + series_id, '0') or 0)
         protection = _get(db, 'protection')
         rows = [dict(r) for r in db.execute(
-            """SELECT * FROM toggo_items WHERE kind='episode' AND series_id=? AND seen>=?
-               ORDER BY clip, season IS NULL, season, episode IS NULL, episode, title COLLATE NOCASE""", (series_id, last))]
+            """SELECT * FROM toggo_assets WHERE kind='episode' AND series_id=? AND seen>=?
+               ORDER BY season IS NULL, season, episode IS NULL, episode, title COLLATE NOCASE""", (series_id, checked))]
     finally:
         db.close()
     extra = _summary(root, series)
+    free = sum(1 for r in rows if r['offer'] == 'free')
     for row in rows:
-        row.update(extra)
+        row.update({**extra, **_labels(row)})
         row['poster'] = row['poster'] or series['poster']
         row['playable'] = _playable(row, protection)
-        if row['clip']:
-            row['title'] = 'Clip · ' + row['title']
     note = ''
-    if result['left']:
-        note = ('Bei %d Folgen fehlen noch Titel und Nummer; sie werden beim nächsten Öffnen der Serie ergänzt.' % result['left'])
+    if rows:
+        note = '%d von %d Folgen sind bei TOGGO kostenlos, die übrigen nur mit Abo.' % (free, len(rows)) if free < len(rows) else ''
     return {'series': {'id': series_id, 'title': series['title'], 'web_url': series['web_url'], **extra},
-            'items': rows, 'error': result['error'] if result['left'] else '', 'note': note}
+            'items': rows, 'error': error, 'note': note}
+
+
+def _labels(row):
+    """TOGGO's own filter values (0.5.83: offer and age group are no categories): offer, age groups
+    and the short line on the card ('kostenlos bis 20.11.' / 'Nur mit Abo')."""
+    plus = row.get('offer') == 'plus'
+    badge = PAID if plus else 'kostenlos'
+    until = row.get('until')
+    if not plus and until and row.get('kind') != 'series' and until - time.time() < 60 * 86400:
+        badge += ' bis ' + time.strftime('%d.%m.', time.localtime(until))
+    return {'offer_label': PAID if plus else FREE, 'badge': badge,
+            'age_labels': [AGE_GROUPS[g] for g in str(row.get('ages') or '').split(',') if g in AGE_GROUPS]}
 
 
 def _summary(root, row, reports=None):
+    """Canonical categories and rating. TOGGO is a children's platform: every title is
+    'Kinder & Familie' even before the reference check."""
+    import categories as fixed
     import toggo_enrichment
     report = (reports if reports is not None else toggo_enrichment.all_cached(root)).get(row['id'])
     out = portal_reference.summary(row.get('genre') or GENRE, report)
-    # 0.5.83: TOGGO is a children's platform, so every title is 'Kinder & Familie' even before the
-    # reference check; TOGGO/TOGGOLINO (pre-school) is the brand, kept as filter value, not a category.
-    import categories as fixed
-    out['categories'] = sorted({c for c in out['categories'] if not fixed.is_special(c)} | {'Kinder & Familie'},
-                               key=fixed.sort_key)
-    out['brand_label'] = row.get('brand') or 'TOGGO'
+    out['categories'] = sorted({c for c in out['categories'] if not fixed.is_special(c)} | {CHILDREN}, key=fixed.sort_key)
     return out
 
 
+FILTERS = (FREE, PAID, 'TOGGO', 'TOGGOLINO')
+
+
+def _filter(row, value):
+    """Own filter values of the TOGGO tab (sent like a category)."""
+    if value in (FREE, PAID):
+        return row.get('offer_label') == value
+    group = 'preschool' if value == 'TOGGOLINO' else 'school'
+    return group in str(row.get('ages') or '').split(',')
+
+
 def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection=''):
-    """One page of series (TOGGO has no single films and no live channels here)."""
+    """One page of films or series, with canonical categories, age groups and ratings."""
     import toggo_enrichment
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
     limit = 1000000 if limit == 'all' else max(1, min(_int(limit, 1) or 60, 200))
-    if view != 'series':
+    kind = {'movies': 'movie', 'series': 'series'}.get(view)
+    if not kind:
         return {'items': [], 'total': 0, 'offset': offset, 'view': view, 'genre_counts': []}
     db = _connect(root)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
-        sql = "FROM toggo_items WHERE kind='series' AND seen>=?"
-        args = [last]
+        protection = _get(db, 'protection')
+        sql = 'FROM toggo_assets WHERE kind=? AND seen>=?'
+        args = [kind, last]
         if query:
-            sql += ' AND (title LIKE ? OR brand LIKE ?)'
+            sql += ' AND (title LIKE ? OR genre LIKE ? OR original_title LIKE ?)'
             like = '%' + str(query)[:100] + '%'
-            args += [like, like]
+            args += [like, like, like]
         rows = [dict(r) for r in db.execute('SELECT * ' + sql + ' ORDER BY title COLLATE NOCASE', args)]
     finally:
         db.close()
     reports = toggo_enrichment.all_cached(root)
     for row in rows:
         row.update(_summary(root, row, reports))
-        row['playable'] = 0
-        row['seasons'] = None
+        row.update(_labels(row))
+        row['playable'] = _playable(row, protection)
     counts = portal_reference.facets(rows)
-    if str(genre).upper() in ('TOGGO', 'TOGGOLINO'):
-        rows = [r for r in rows if str(r.get('brand_label')).upper() == str(genre).upper()]
+    if genre in FILTERS:
+        rows = [r for r in rows if _filter(r, genre) and portal_reference.in_collection(r, collection, kind)]
     else:
-        rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, 'series')]
+        rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
         rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
+    elif sort == 'year':
+        rows.sort(key=lambda r: (-(r.get('year') or 0), r['title'].casefold()))
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
             'genre_counts': counts}
 
@@ -698,7 +621,7 @@ def channels(root):
 
 
 def item(root, row_id):
-    """Detail view of one series or episode: catalogue row, series, reference report."""
+    """Detail view of one series, film or episode: catalogue row, series, reference report."""
     import toggo_enrichment
     if not VALID_ID.fullmatch(str(row_id or '')):
         raise ValueError('Ungültiger TOGGO-Titel')
@@ -714,7 +637,7 @@ def item(root, row_id):
     base = parent if row['kind'] == 'episode' and parent else row
     report = toggo_enrichment.cached(root, base['id'])
     summary = _summary(root, base, {base['id']: report})
-    return {'item': {**row, **summary, 'poster': row.get('poster') or (parent or {}).get('poster') or '',
+    return {'item': {**row, **summary, **_labels(row), 'poster': row.get('poster') or (parent or {}).get('poster') or '',
                      'playable': _playable(row, protection), 'protection': protection},
             'series': parent, 'reference': report}
 
@@ -723,7 +646,7 @@ def state(root):
     db = _connect(root)
     try:
         protection = _get(db, 'protection')
-        series = _int(_get(db, 'series', '0')) or 0
+        movies, series = _int(_get(db, 'movies', '0')) or 0, _int(_get(db, 'series', '0')) or 0
         out = {
             'running': _ACTIVE, 'auto': _get(db, 'auto', '0') == '1',
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0),
@@ -733,11 +656,11 @@ def state(root):
             'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _ACTIVE),
             'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
-            'movies': 0, 'series': series, 'channels': 0,
-            'episodes': _int(_get(db, 'episodes', '0')) or 0, 'clips': _int(_get(db, 'clips', '0')) or 0,
-            'protection': protection or 'unknown', 'protected': series if protection == 'drm' else 0,
-            'progress': _get(db, 'progress') if _ACTIVE else ''}
-        if protection == 'drm':
+            'movies': movies, 'series': series, 'channels': 0, 'plus': _int(_get(db, 'plus', '0')) or 0,
+            'protection': protection or 'unknown',
+            'protected': 0 if protection == 'clear' else movies + series,
+            'episodes_cached': db.execute("SELECT COUNT(*) FROM toggo_assets WHERE kind='episode'").fetchone()[0]}
+        if protection != 'clear':
             out['playable'] = 0
         return out
     finally:
@@ -788,34 +711,6 @@ def loop(root, stop):
 
 # ---------------------------------------------------------------- playback
 
-def policy_key(fetch=None, now=None):
-    """Public policy key of TOGGO's Brightcove player (config.json, else the player script)."""
-    now = time.time() if now is None else now
-    hit = _POLICY.get('key')
-    if hit and hit[0] > now:
-        return hit[1]
-    fetch = fetch or _fetch
-    key = ''
-    try:
-        config = _json(fetch(PLAYER_CONFIG))
-        key = str(((config.get('video_cloud') or {}) if isinstance(config, dict) else {}).get('policy_key') or '')
-    except Exception:
-        key = ''
-    if not POLICY_KEY.fullmatch(key):
-        found = POLICY_KEY.search(fetch(PLAYER_SCRIPT).decode('utf-8', 'replace'))
-        key = found.group(0) if found else ''
-    if not POLICY_KEY.fullmatch(key):
-        raise ValueError('Der TOGGO-Player nannte keinen Zugangsschlüssel für die Wiedergabe')
-    _POLICY['key'] = (now + POLICY_TTL, key)
-    return key
-
-
-def _protected(source):
-    src = str(source.get('src') or '')
-    return bool(source.get('key_systems')) or '/fairplay/' in src or '/cenc/' in src or '/playready/' in src \
-        or '/widevine/' in src
-
-
 def _stream_url(value):
     value = str(value or '')
     parts = urllib.parse.urlsplit(value)
@@ -825,127 +720,75 @@ def _stream_url(value):
     return value
 
 
-def pick_source(sources):
-    """(source, protected count): the best source listed WITHOUT copy protection – HLS first, then
-    the largest MP4 up to 1080p. None when every listed source needs a DRM licence."""
-    plain, protected = [], 0
-    for s in sources if isinstance(sources, list) else []:
-        if not isinstance(s, dict):
+def pick_variant(variants):
+    """(HLS address, number of protected variants): only a variant the service lists WITHOUT any
+    licence and whose address is an HLS playlist. As recorded every variant carries Widevine,
+    PlayReady or FairPlay, so this returns ('', 4)."""
+    protected, plain = 0, ''
+    for v in variants if isinstance(variants, list) else []:
+        if not isinstance(v, dict):
             continue
-        if _protected(s):
+        if v.get('licenses') or 'fairplay' in str(v.get('name') or '').lower():
             protected += 1
             continue
-        url = _stream_url(s.get('src'))
-        kind = str(s.get('type') or '').lower()
-        if not url:
-            continue
-        if kind in HLS_TYPES or urllib.parse.urlsplit(url).path.endswith('.m3u8'):
-            plain.append((2, 0, {'url': url, 'hls': True}))
-        elif kind == 'video/mp4' or str(s.get('container') or '').upper() == 'MP4':
-            height = _int(s.get('height'), 1, 4320) or 0
-            plain.append((1, height if height <= 1080 else -height, {'url': url, 'hls': False, 'height': height}))
-    if not plain:
-        return None, protected
-    plain.sort(key=lambda entry: (entry[0], entry[1]), reverse=True)
-    return plain[0][2], protected
+        for s in v.get('sources') or []:
+            url = _stream_url(s.get('url')) if isinstance(s, dict) else ''
+            if url and urllib.parse.urlsplit(url).path.endswith('.m3u8') and not plain:
+                plain = url
+    return plain, protected
 
 
-def playback(video_id, fetch=None, now=None):
-    """Answer of the Brightcove Playback API for one video."""
-    if not VIDEO_ID.fullmatch(str(video_id or '')):
-        raise ValueError('TOGGO nannte für diese Folge kein Video')
-    fetch = fetch or _fetch
-    url = PLAYBACK_API + urllib.parse.quote(video_id, safe=':')
-    for attempt in (0, 1):
-        try:
-            return _json(fetch(url, {'Accept': 'application/json;pk=' + policy_key(fetch, now)}))
-        except urllib.error.HTTPError as exc:
-            detail = ''
-            try:
-                body = json.loads(exc.read(20000).decode('utf-8', 'replace'))
-                first = body[0] if isinstance(body, list) and body and isinstance(body[0], dict) else {}
-                detail = str(first.get('error_subcode') or first.get('error_code') or '')
-            except Exception:
-                pass
-            if detail == 'INVALID_POLICY_KEY' and attempt == 0:
-                _POLICY.clear()
-                continue
-            if 'GEO' in detail:
-                raise ValueError('TOGGO gibt diese Folge nur in Deutschland frei (Standortsperre)') from None
-            if exc.code == 404:
-                raise ValueError('TOGGO hat diese Folge nicht mehr im Angebot') from None
-            raise ValueError('TOGGO lehnte die Wiedergabe ab (HTTP %d%s)' % (exc.code, ', ' + _text(detail, 40) if detail else '')) from None
-    raise ValueError('TOGGO lehnte die Wiedergabe ab')
-
-
-def _remember(root, row_id, drm, duration=None):
-    """Result of one episode's check (0 = plain stream, 1 = copy protected)."""
+def _remember(root, row_id, drm):
+    """Result of one title's check (0 = plain stream, 1 = copy protected)."""
     db = _connect(root)
     try:
         with db:
-            db.execute('UPDATE toggo_items SET drm=?, duration=COALESCE(?,duration) WHERE id=?', (drm, duration, row_id))
+            db.execute('UPDATE toggo_assets SET drm=? WHERE id=?', (drm, row_id))
     finally:
         db.close()
 
 
 def resolve(root, row, fetch=None, check=None, now=None):
-    """Playable source of one episode, or hls_guard.DrmProtected. The result is remembered."""
+    """Playable source of one episode or film, or hls_guard.DrmProtected. The result is remembered."""
     import hls_guard
     now = time.time() if now is None else now
     cached = _SOURCES.get(row['id'])
     if cached and cached[0] > now:
         return cached[1]
-    fetch = fetch or _fetch
-    video = row.get('video_id') or ''
-    if not video:
-        fields = load_asset(fetch, row['slug'])
-        if not fields:
-            raise ValueError('TOGGO lieferte keine Folgendaten')
-        db = _connect(root)
+    if not ASSET_ID.fullmatch(str(row.get('video_id') or '')):
+        raise ValueError('TOGGO nannte für diesen Titel kein Video')
+    url, protected = pick_variant(_json((fetch or _fetch)(VARIANTS % row['video_id'])))
+    if url:
         try:
-            with db:
-                _apply_episode(db, row['id'], fields, now)
-        finally:
-            db.close()
-        video = fields.get('video_id') or ''
-        row = {**row, 'title': fields.get('title') or row['title']}
-    answer = playback(video, fetch, now)
-    source, protected = pick_source(answer.get('sources') if isinstance(answer, dict) else None)
-    duration = _int((answer or {}).get('duration'), 1, 10 ** 9) if isinstance(answer, dict) else None
-    duration = duration // 1000 if duration else None
-    if source and source['hls']:
-        try:
-            (check or hls_guard.check)(source['url'])
+            (check or hls_guard.check)(url)
         except hls_guard.DrmProtected:
-            source = None
+            url = ''
             protected += 1
-    if not source:
-        _notify('toggo_playback', result='protected' if protected else 'no_source', protected_sources=protected)
+    if not url:
+        _notify('toggo_playback', result='protected' if protected else 'no_source', protected_variants=protected)
         if protected:
-            _remember(root, row['id'], 1, duration)
+            _remember(root, row['id'], 1)
             raise hls_guard.DrmProtected(DRM_NOTE)
-        raise ValueError('TOGGO lieferte für diese Folge keinen Stream')
-    _remember(root, row['id'], 0, duration)
-    _notify('toggo_playback', result='clear', hls=source['hls'])
-    out = {'kind': 'url', 'url': source['url'], 'hls': source['hls'],
-           'quality': 'TOGGO' + (' %dp' % source['height'] if source.get('height') else ''),
-           'title': row['title'], 'duration': duration or row.get('duration') or 0, 'provider': 'toggo'}
+        raise ValueError('TOGGO lieferte für diesen Titel keinen Stream')
+    _remember(root, row['id'], 0)
+    _notify('toggo_playback', result='clear')
+    out = {'kind': 'url', 'url': url, 'hls': True, 'quality': 'TOGGO', 'title': row['title'],
+           'duration': row.get('duration') or 0, 'provider': 'toggo'}
     _SOURCES[row['id']] = (now + SOURCE_TTL, out)
     return out
 
 
 def probe(root, fetch=None, now=None, check=None, samples=3):
-    """Check one episode each of up to ``samples`` series to learn whether TOGGO protects its
-    streams: 'clear' if one plays without copy protection, 'drm' if all checked ones are
-    protected, '' if nothing could be checked. The answer decides which button episodes show
-    that were not played yet."""
+    """Check up to ``samples`` free films to learn whether TOGGO protects its streams: 'clear' if
+    one is listed without copy protection, 'drm' if all checked ones are protected, '' if
+    nothing could be checked. Unchecked titles get the player button only after 'clear'."""
     import hls_guard
     db = _connect(root)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
         rows = [dict(r) for r in db.execute(
-            """SELECT * FROM toggo_items WHERE kind='episode' AND clip=0 AND video_id<>'' AND seen>=?
-               GROUP BY series_id ORDER BY rowid LIMIT ?""", (last, samples))]
+            """SELECT * FROM toggo_assets WHERE kind='movie' AND offer='free' AND video_id<>'' AND seen>=?
+               ORDER BY title LIMIT ?""", (last, samples))]
     finally:
         db.close()
     protected, result = 0, ''
@@ -973,7 +816,8 @@ def probe(root, fetch=None, now=None, check=None, samples=3):
 
 
 def play_source(root, row_id, fetch=None, check=None, now=None):
-    """Source for streaming.resolve: the episode's stream if TOGGO lists one without copy protection."""
+    """Source for streaming.resolve: a stream only if TOGGO lists one without copy protection."""
+    import hls_guard
     if not VALID_ID.fullmatch(str(row_id or '')):
         raise ValueError('Ungültiger TOGGO-Titel')
     db = _connect(root)
@@ -986,6 +830,8 @@ def play_source(root, row_id, fetch=None, check=None, now=None):
         raise ValueError('TOGGO-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':
         raise ValueError('Bitte eine Folge der Serie auswählen')
+    if row['offer'] != 'free':
+        raise hls_guard.DrmProtected('Diesen Titel gibt es bei TOGGO nur mit Abo; bitte bei TOGGO ansehen.')
     try:
         source = resolve(root, row, fetch, check, now)
     except urllib.error.HTTPError as exc:

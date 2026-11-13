@@ -40,7 +40,7 @@ class SeriesModelTests(unittest.TestCase):
         self.assertEqual([(e['season'], e['episode']) for e in m['episodes']], [(1, 1), (1, 2), (2, 1)])
         first = m['episodes'][0]
         self.assertEqual(set(first), {'id', 'title', 'season', 'episode', 'duration', 'year', 'summary', 'poster',
-                                      'playable', 'offline', 'night', 'protected', 'web_url'})
+                                      'playable', 'offline', 'night', 'protected', 'web_url', 'badge'})
         # Episodes without artwork use the series poster.
         self.assertEqual(first['poster'], 'https://images.pluto.tv/s.jpg')
         self.assertTrue(first['playable']); self.assertTrue(first['offline'])

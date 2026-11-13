@@ -4,7 +4,16 @@
 
 - **Staffeln und Folgen auswählen.** Bisher musste bei einem Upload mit vielen Dateien jede Folge einzeln angeklickt werden. In der Detailansicht eines Archive.org-Uploads (Plattformen → Internet Archive → „Dateibestand prüfen“) gibt es jetzt den Bereich „Staffeln und Folgen auswählen“: Tonsprache, Untertitel, Auflösung, Dateiformat und Staffel wählen, „Auswahl anzeigen“ zeigt je Folge die beste passende Datei und bei fehlenden Folgen den Grund. Mit einem Klick werden die angehakten Dateien vorgemerkt (höchstens 300 auf einmal). Eine Sprache aus dem Dateinamen gilt als Hinweis; mit „Sprache muss durch die Tonspur belegt sein“ zählen nur Dateien, deren Spuren geprüft wurden.
 - **Uploader erkannter Werke.** Wer einen erkannten Film oder eine erkannte Serie hochgeladen hat, hat oft mehr davon. Das öffentliche Archive.org-Konto solcher Uploads wird als Scanquelle vorgemerkt (Plattformen → Internet Archive → Scanquellen, mit dem Hinweis „Uploader von …“). Vorgemerkte Konten sind pausiert und werden erst durchsucht, wenn du sie startest; ein entferntes Konto kommt nicht wieder. E-Mail-Adressen von Uploadern werden nie gelesen oder gespeichert.
-- 0.5.86 und 0.5.87 sind von anderen Arbeitssträngen reserviert und noch nicht erschienen; 0.5.88 baut auf 0.5.85 auf.
+- Sammelstand: 0.5.88 enthält auch 0.5.86 (flüssige Wiedergabe) und 0.5.87 (TOGGO nach dem Mitschnitt).
+
+## Neu in 0.5.87: TOGGO nach dem echten Angebot von toggo.de
+
+- Grundlage ist Björns Mitschnitt von toggo.de (13.11.2026). TOGGO lädt den Katalog jetzt so, wie die Website selbst: **alle Serien und zusätzlich alle Filme**, mit Titelbild, Beschreibung, Altersempfehlung, Staffeln und Folgen. Die bisherige Ableitung aus der Seitenübersicht (0.5.79 bis 0.5.85) entfällt; der alte TOGGO-Bestand wird beim ersten Start ersetzt, danach bitte einmal „Katalog jetzt laden“.
+- **Kostenlos oder Abo:** Jede Kachel und jede Folge zeigt „kostenlos“ (bei Folgen aus dem Fernsehprogramm mit Enddatum, z. B. „kostenlos bis 20.11.“) oder „Nur mit Abo“. Im Reiter „TOGGO“ gibt es die Auswahl „Angebot“: Alles, nur Kostenloses, nur mit Abo, TOGGOLINO (Vorschule), TOGGO (Schulkinder). Die Serienseite nennt, wie viele Folgen kostenlos sind.
+- **Wiedergabe:** Der Mitschnitt zeigt, dass TOGGO alle Folgen und Filme, auch die kostenlosen, nur mit Kopierschutz (Widevine/PlayReady/FairPlay) ausliefert. MediathekAtlas umgeht ihn nicht. Deshalb gibt es bei TOGGO keinen eigenen Player und kein Offline-Speichern; „Bei TOGGO ansehen“ öffnet genau die Folge oder den Film auf toggo.de. Sollte TOGGO einen Titel einmal ohne Kopierschutz anbieten, erscheint dort „▶ Ansehen“.
+- TOGGO-Filme stehen auch im gemeinsamen Katalog unter „Filme“.
+- **Nicht geprüft:** ein Abruf gegen toggo.de selbst (aus der Bauumgebung gesperrt). Die Anfragen entsprechen dem Mitschnitt; ob das Blättern bei mehr als 500 Titeln je Liste so funktioniert, war im Mitschnitt nicht enthalten (aktuell 182 Serien und 104 Filme, also eine Antwort je Liste).
+- Diese Version baut auf 0.5.85 auf und enthält alles daraus.
 
 ## Neu in 0.5.86: Videos laufen im eigenen Player flüssig
 

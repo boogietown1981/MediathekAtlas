@@ -225,21 +225,23 @@
 </section>
 <section id="toggo" class="pluto-panel toggo-panel">
   <div class="panel netzkino-sync-panel">
-    <h3>TOGGO · Kinderserien von toggo.de (mit TOGGOLINO)</h3>
-    <p class="muted">Alle Serien von TOGGO und TOGGOLINO (Vorschule) mit ihren Folgen und Clips. Über die Kategorien „TOGGO“ und „TOGGOLINO“ lässt sich nach Altersgruppe filtern.
-       Eine Folge läuft im MediathekAtlas-Player, wenn TOGGO sie ohne Kopierschutz ausliefert. Liefert TOGGO nur mit Kopierschutz (Widevine/FairPlay), umgeht MediathekAtlas ihn nicht: Die Folge öffnet dann toggo.de.
-       Titel und Nummern der Folgen einer Serie werden beim ersten Öffnen der Serie geladen. Offline-Speichern gibt es für TOGGO nicht.</p>
+    <h3>TOGGO · Kinderserien und Filme von toggo.de (mit TOGGOLINO)</h3>
+    <p class="muted">Alle Serien und Filme von TOGGO und TOGGOLINO (Vorschule) mit Staffeln, Folgen, Altersempfehlung und Bewertung. Die Auswahl „Angebot“ zeigt nur Kostenloses oder nur einen Altersbereich.
+       TOGGO liefert alle Folgen und Filme mit Kopierschutz (Widevine/PlayReady/FairPlay) aus. MediathekAtlas umgeht ihn nicht: „Bei TOGGO ansehen“ öffnet den Titel auf toggo.de, dort läuft er im Browser.
+       Ein Teil des Angebots ist kostenlos (manche Folgen nur einige Tage nach der Ausstrahlung), der Rest nur mit TOGGO-Abo. Offline-Speichern gibt es für TOGGO nicht.</p>
     <div class="netzkino-sync-actions"><button type="button" id="toggo-sync" class="primary">↻ Katalog jetzt laden</button>
       <label class="check"><input type="checkbox" id="toggo-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
     <p id="toggo-summary" class="muted">Katalogstatus wird geladen …</p>
   </div>
   <div class="netzkino-media-tabs" role="group" aria-label="TOGGO-Ansicht">
     <button type="button" id="toggo-view-series" class="primary">Serien</button>
+    <button type="button" id="toggo-view-movies">Filme</button>
     <button type="button" id="toggo-back" hidden>← Zur Serienübersicht</button>
     <span id="toggo-heading" role="status"></span>
   </div>
-  <div class="netzkino-toolbar"><label>TOGGO-Serie suchen<input type="search" id="toggo-filter" placeholder="Titel"></label>
-    <label>Sortierung<select id="toggo-sort"><option value="title">Titel</option><option value="rating">Bewertung</option></select></label></div>
+  <div class="netzkino-toolbar"><label>TOGGO-Titel suchen<input type="search" id="toggo-filter" placeholder="Titel"></label>
+    <label>Angebot<select id="toggo-pick"><option value="">Alles</option><option value="Kostenlos">Nur Kostenloses</option><option value="Nur mit Abo">Nur mit Abo</option><option value="TOGGOLINO">TOGGOLINO (Vorschule)</option><option value="TOGGO">TOGGO (Schulkinder)</option></select></label>
+    <label>Sortierung<select id="toggo-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
   <div id="toggo-categories" class="portal-categories" role="group" aria-label="TOGGO-Kategorien" hidden></div>
   <p id="toggo-status" class="muted" role="status"></p>
   <details id="toggo-offline" class="nk-offline toggo-offline" hidden><summary>Offline-Kopien von TOGGO <span id="toggo-offline-count" class="muted"></span></summary>

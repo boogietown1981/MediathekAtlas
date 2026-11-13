@@ -82,7 +82,7 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         import youtube_downloads
         return youtube_downloads.play_source(root,youtube,quality)
     if toggo:
-        # 0.5.79: TOGGO episode, only if TOGGO lists a stream without copy protection (toggo.py)
+        # TOGGO episode or film, only if TOGGO lists a stream without copy protection (toggo.py)
         if root is None:raise ValueError('TOGGO-Katalog nicht verfügbar')
         import toggo as toggo_tv
         return toggo_tv.play_source(root,toggo)

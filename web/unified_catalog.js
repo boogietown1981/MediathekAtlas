@@ -273,7 +273,7 @@
     return {source:src,night:!!item.night,offline:src==='youtube'?!!item.offline:undefined,playable:item.playable!==0&&item.playable!==false,web_url:item.web_url||'',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',description:item.summary||'',
       genres:(item.categories||[]).filter(c=>!SPECIAL.includes(c)),score:item.score||null,duration:item.duration||null,
-      season:item.season,episode:item.episode};
+      season:item.season,episode:item.episode,badge:typeof item.badge==='string'?item.badge:''};
   }
   function genreList(value) {
     if (Array.isArray(value)) return value.filter(v=>typeof v==='string');
@@ -364,7 +364,7 @@
     const facts=[main.kind==='series'||main.series_parent?'Serie':main.kind==='episode'?'Episode':'Film',
       year,(main.kind==='series'||main.series_parent)&&main.episode_count?main.episode_count+' Folgen':null,
       main.kind==='episode'&&main.episode?'S'+(main.season??'?')+' E'+main.episode:null,
-      ...genres.slice(0,2)].filter(Boolean).join(' · ');
+      ...genres.slice(0,2),offers.length===1?main.badge:null].filter(Boolean).join(' · ');
     text.append(el('small',facts,'atlas-uc-meta'));
     const scored=offers.find(o=>o.score)||main;
     const stars=window.AtlasPortalCategories?.rating(scored.score);
@@ -544,7 +544,7 @@
     const rkNeeded=(source==='all'||source==='rakuten') && !seriesKey;
     const ytNeeded=(source==='all'||source==='youtube') && !seriesKey;
     const jyNeeded=(source==='all'||source==='joyn') && !seriesKey;
-    const tgNeeded=(source==='all'||source==='toggo') && !seriesKey && kind!=='movies';   // TOGGO: series only
+    const tgNeeded=(source==='all'||source==='toggo') && !seriesKey;
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -570,7 +570,7 @@
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     if (tgNeeded)requests.push({source:'toggo',req:window.api('toggo?'+new URLSearchParams({
-      view:'series',q:search,genre,sort:'title',offset:String(offset),limit:'48',collection
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));
     if (seq!==sequence) return;
