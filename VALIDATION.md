@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.106 – RTL+-Links (13. November 2026)
+- Automatisch: gesamte Python-Suite (1132 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund). Link-Schema aus Björns echter Adresse; ob jede Kachel den richtigen Namensteil (`seo`) liefert, prüft erst der Test bei Björn.
+
 ## 0.5.105 – Sammelstand 0.5.103 + 0.5.104 (13. November 2026)
 - Nach dem Zusammenführen erneut: gesamte Python-Suite (1128 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund).
 

@@ -220,6 +220,26 @@ def stored_result(last_result, active):
     return 'interrupted' if last_result == 'running' and not active else last_result
 
 
+def retry_after_update(root, module, current):
+    """0.5.106 (Björn: Plex still showed the 404 of the old version): after an update, a catalogue whose
+    last load failed or was partial is loaded once more with the new code, without waiting 24 hours."""
+    if current.get('running') or current.get('last_result') not in ('partial', 'failed'):
+        return False
+    try:
+        from version import VERSION
+    except ImportError:
+        return False
+    db = module._connect(root)
+    try:
+        if module._get(db, 'retried_with', '') == VERSION:
+            return False
+        with db:
+            module._set(db, 'retried_with', VERSION)
+    finally:
+        db.close()
+    return True
+
+
 def first_load_due(current):
     """One automatic catalogue load on the very first start (never attempted), so nobody has to
     press "load" after installing; afterwards only the 24-hour automatic setting reloads."""

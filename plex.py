@@ -33,6 +33,7 @@ import json
 import os
 import re
 import sqlite3
+import sys
 import threading
 import time
 import urllib.error
@@ -801,7 +802,7 @@ def loop(root, stop):
         if task_control.paused('catalog:plex'):
             continue
         current = state(root)
-        if portal_reference.first_load_due(current) or (
+        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
                 current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 

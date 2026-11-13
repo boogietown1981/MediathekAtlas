@@ -25,6 +25,7 @@ import hashlib
 import json
 import re
 import sqlite3
+import sys
 import threading
 import time
 import urllib.error
@@ -95,6 +96,7 @@ def _connect(root):
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
     db.executescript(SCHEMA)
+    _migrate_links(db)
     return db
 
 
@@ -234,9 +236,28 @@ def _target(content):
 
 
 def web_url(section, seo, ident):
+    """Page of a programme or film on plus.rtl.de: ``/<seo>-p_<id>``.
+
+    Confirmed by Björn on 13.11.2026 (``plus.rtl.de/kurbis-chaos-in-der-heimat-p_1068``); the earlier
+    ``/video-tv/<bereich>/<seo>-<id>`` ended on "Diese Seite existiert nicht". ``section`` stays for callers."""
     if not SEO.fullmatch(str(seo or '')) or not re.fullmatch(r'\d{1,12}', str(ident or '')):
         return SITE + '/'
-    return '%s/video-tv/%s/%s-%s' % (SITE, section, seo, ident)
+    return '%s/%s-p_%s' % (SITE, seo, ident)
+
+
+OLD_LINK = re.compile(r'https://plus\.rtl\.de/video-tv/[a-z]+/([a-z0-9][a-z0-9\-]{0,160})-(\d{1,12})')
+
+
+def _migrate_links(db):
+    """0.5.106: rewrite links stored by 0.5.102–0.5.105 to the confirmed scheme, once."""
+    if _get(db, 'links_v2') == '1':
+        return
+    with db:
+        for row in db.execute("SELECT id, web_url FROM rtlplus_items WHERE web_url LIKE 'https://plus.rtl.de/video-tv/%'").fetchall():
+            match = OLD_LINK.fullmatch(row[1] or '')
+            db.execute('UPDATE rtlplus_items SET web_url=? WHERE id=?',
+                       (web_url('', match.group(1), match.group(2)) if match else SITE + '/', row[0]))
+        _set(db, 'links_v2', 1)
 
 
 def item_from(entry, kind, section, genre=''):
@@ -560,7 +581,7 @@ def loop(root, stop):
         if task_control.paused('catalog:rtlplus'):
             continue
         current = state(root)
-        if portal_reference.first_load_due(current) or (
+        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
                 current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 

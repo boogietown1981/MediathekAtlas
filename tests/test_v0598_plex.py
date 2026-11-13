@@ -150,6 +150,15 @@ class PlexTest(unittest.TestCase):
         self.assertIn(('vod.provider.plex.tv', '/hubs/home/neu'), [c[:2] for c in fake.calls])
         self.assertNotIn('/hubs/home/serien', [c[1] for c in fake.calls])   # complete preview, no extra page
 
+    def test_partial_catalogue_reloaded_once_after_update(self):
+        import portal_reference
+        db = plex._connect(self.root)
+        with db:
+            plex._set(db, 'last_result', 'partial')
+        db.close()
+        self.assertTrue(portal_reference.retry_after_update(self.root, plex, plex.state(self.root)))
+        self.assertFalse(portal_reference.retry_after_update(self.root, plex, plex.state(self.root)))   # once per version
+
     def test_token_renewed_once_on_401(self):
         fake = FakePlex()
         self.load(fake)

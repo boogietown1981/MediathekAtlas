@@ -99,7 +99,7 @@ class RtlPlusTest(unittest.TestCase):
         series = {i['id']: i for i in rtlplus.listing(self.root, 'series')['items']}
         self.assertEqual(set(series), {'s.201', 's.301', 's.401', 's.402'})   # 402 from the linked genre folder
         self.assertEqual(sum(1 for c in fake.calls if '/folder/4/layout' in c), 1)
-        self.assertEqual(series['s.301']['web_url'], 'https://plus.rtl.de/video-tv/shows/titel-301-301')
+        self.assertEqual(series['s.301']['web_url'], 'https://plus.rtl.de/titel-301-p_301')
         self.assertIn('Kinder', series['s.401']['genre'])
         self.assertNotIn('2024', series['s.201']['genre'])
         self.assertTrue(all(i['playable'] == 0 and i['drm'] == 1 for i in series.values()))
@@ -112,7 +112,22 @@ class RtlPlusTest(unittest.TestCase):
         tile['itemContent']['action']['target']['value_layout']['parent'] = {'id': '9001', 'seo': 'ein-film'}
         it, locked = rtlplus.item_from(tile, 'movie', 'filme')
         self.assertEqual((it['id'], it['path'], locked), ('m.9001', '9001', False))
-        self.assertEqual(it['web_url'], 'https://plus.rtl.de/video-tv/filme/ein-film-9001')
+        self.assertEqual(it['web_url'], 'https://plus.rtl.de/ein-film-p_9001')
+
+    def test_link_scheme_confirmed_by_bjoern(self):
+        # plus.rtl.de/kurbis-chaos-in-der-heimat-p_1068 (13.11.2026)
+        self.assertEqual(rtlplus.web_url('filme', 'kurbis-chaos-in-der-heimat', '1068'),
+                         'https://plus.rtl.de/kurbis-chaos-in-der-heimat-p_1068')
+        self.assertEqual(rtlplus.web_url('filme', 'Böse Url', '1'), 'https://plus.rtl.de/')
+
+    def test_old_links_are_rewritten_once(self):
+        rtlplus.sync(self.root, opener=FakeRtl(), now=NOW)
+        db = rtlplus._connect(self.root)
+        with db:
+            db.execute("UPDATE rtlplus_items SET web_url='https://plus.rtl.de/video-tv/filme/28-weeks-later-67082' WHERE id='m.101'")
+            rtlplus._set(db, 'links_v2', 0)
+        db.close()
+        self.assertEqual(rtlplus.item(self.root, 'm.101')['item']['web_url'], 'https://plus.rtl.de/28-weeks-later-p_67082')
 
     def test_signed_images(self):
         url = rtlplus.image_url('img101')

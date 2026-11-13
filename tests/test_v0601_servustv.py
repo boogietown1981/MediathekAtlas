@@ -66,10 +66,15 @@ def http_error(url, code):
 class FakeServus:
     def __init__(self):
         self.calls, self.player, self.down = [], {}, False
+        self.refuse = {}          # path fragment -> how many times to answer 403
 
     def __call__(self, url, headers, limit=None):
         if self.down:
             raise urllib.error.URLError('offline')
+        for fragment, left in list(self.refuse.items()):
+            if fragment in url and left:
+                self.refuse[fragment] = left - 1
+                raise urllib.error.HTTPError(url, 403, 'Forbidden', {}, None)
         parts = urllib.parse.urlsplit(url)
         q = dict(urllib.parse.parse_qsl(parts.query))
         self.calls.append((parts.hostname, parts.path, q))
@@ -138,6 +143,19 @@ class CatalogueTests(Base):
         self.assertEqual([(e['season'], e['episode']) for e in eps[:2]], [(13, 1), (13, 2)])
         live = servustv.listing(self.root, 'live')['items']
         self.assertEqual([(c['title'], c['number']) for c in live], [('ServusTV: Der Livestream', 1), ('Wetterpanorama On', 2)])
+
+    def test_refused_requests_are_retried(self):
+        # Björn 13.11.2026: "teilweise geladen: ServusTV verweigert den Zugriff (HTTP 403)"
+        fake = FakeServus()
+        fake.refuse = {'/products/v5.3/stv/de/de/sendungen': 1}
+        result = servustv.sync(self.root, opener=fake, now=NOW, waits=(0, 0))
+        self.assertTrue(result['ok'])
+        self.assertFalse(result['partial'])
+        fake = FakeServus()
+        fake.refuse = {'/products/v5.3/stv/de/de/AA-25RX849FN1W11': 9}
+        result = servustv.sync(self.root, opener=fake, now=NOW + 10, waits=(0, 0))
+        self.assertTrue(result['partial'])
+        self.assertRegex(servustv.state(self.root)['last_error'], r'HTTP 403.*\(1 von \d+ Abrufen\)')
 
     def test_failure_keeps_catalogue(self):
         servustv.sync(self.root, opener=self.fake, now=NOW)

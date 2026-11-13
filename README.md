@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.105
+# MediathekAtlas · 0.5.106
+
+## Neu in 0.5.106: RTL+-Links führen auf die richtige Seite
+
+- „Bei RTL+ ansehen“ öffnet jetzt die Seite im Schema, das Björn bestätigt hat (`plus.rtl.de/<titel>-p_<nummer>`), statt „Diese Seite existiert nicht“. Bereits gespeicherte Links werden beim ersten Start einmal umgeschrieben, ein neuer Katalogabruf ist nicht nötig.
+- **ServusTV** ruft langsamer ab (0,5 s statt 0,25 s zwischen den Anfragen) und versucht es nach „HTTP 403“ zweimal mit Pause erneut; die Plattform hatte zu schnelle Abrufe abgewiesen. Bleibt etwas abgewiesen, nennt der Hinweis die Anzahl.
+- **Nach einem Update** lädt MediathekAtlas einen Katalog, der zuletzt nur teilweise oder gar nicht geladen wurde (Plex, ServusTV, RTL+), einmal neu, ohne auf den 24-Stunden-Abruf zu warten.
+- Sonst wie 0.5.105.
 
 ## Neu in 0.5.105: Sammelstand
 

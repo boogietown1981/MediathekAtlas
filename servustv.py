@@ -31,6 +31,7 @@ import html
 import json
 import re
 import sqlite3
+import sys
 import threading
 import time
 import urllib.error
@@ -54,7 +55,8 @@ MAX_ITEMS = 30000
 MAX_PRODUCTS = 600           # pages and shows read per run
 MAX_COLLECTIONS = 1500
 MAX_COLLECTION_PAGES = 60    # 20 cards each
-REQUEST_GAP = 0.25
+REQUEST_GAP = 0.5           # 0.5.106: 0.25 s drew HTTP 403 from the Red Bull edge (Björn, 13.11.2026)
+RETRY_WAITS = (4, 15)       # seconds before the 2nd and 3rd try after 403/429/503
 SOURCE_TTL = 120
 MIN_FILM = 20 * 60           # seconds; shorter videos without a show are clips
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
@@ -252,8 +254,26 @@ def _base(card, kind):
 class Crawl:
     """Breadth-first walk over pages, shows and rails, with fixed request limits."""
 
-    def __init__(self, opener, gap):
-        self.opener, self.gap = opener, gap
+    def __init__(self, opener, gap, waits=()):
+        self.gap, self.waits = gap, tuple(waits)
+        self.refused = self.recovered = 0
+        raw = opener
+
+        def patient(url, headers, *args, **kwargs):
+            """0.5.106: the edge answers bursts with 403 – wait and try again before giving up."""
+            for attempt in range(len(self.waits) + 1):
+                try:
+                    answer = raw(url, headers, *args, **kwargs)
+                    if attempt:
+                        self.recovered += 1
+                    return answer
+                except urllib.error.HTTPError as exc:
+                    if exc.code not in (403, 429, 503) or attempt == len(self.waits):
+                        if exc.code in (403, 429, 503):
+                            self.refused += 1
+                        raise
+                    time.sleep(self.waits[attempt])
+        self.opener = patient
         self.items, self.shows, self.show_names = {}, {}, {}
         self.pending_products, self.done_products = [], set()
         self.pending_collections, self.done_collections = [], set()
@@ -264,7 +284,7 @@ class Crawl:
         if self.requests % 200 == 0:
             # 0.5.104: progress in the diagnosis (counts only, no titles or addresses)
             _notify('servustv_sync_progress', requests=self.requests, items=len(self.items),
-                    shows=len(self.shows), errors=len(self.errors))
+                    shows=len(self.shows), errors=len(self.errors), refused=self.refused, recovered=self.recovered)
         if self.gap:
             time.sleep(self.gap)
 
@@ -442,7 +462,7 @@ def live_rows():
              'web_url': SITE + '/de/video/' + cid[2:]} for cid, title, number in LIVE_FALLBACK]
 
 
-def sync(root, opener=None, now=None, gap=None):
+def sync(root, opener=None, now=None, gap=None, waits=None):
     """Read the ServusTV library. Rows stay, but only titles seen in the latest successful run are listed."""
     now = time.time() if now is None else float(now)
     gap = (REQUEST_GAP if opener is None else 0) if gap is None else gap
@@ -458,7 +478,7 @@ def sync(root, opener=None, now=None, gap=None):
         db.close()
     _notify('servustv_sync_started')
     try:
-        crawl = Crawl(opener or _open, gap)
+        crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()))
         crawl.run()
         rows = crawl.rows()
         if not any(r['kind'] in ('movie', 'episode') for r in rows):
@@ -481,13 +501,15 @@ def sync(root, opener=None, now=None, gap=None):
                 visible_since = previous if partial and previous else now
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'),
-                                   ('last_error', ('Katalog nur teilweise geladen' + (': ' + crawl.errors[0] if crawl.errors else '')) if partial else ''),
+                                   ('last_error', ('Katalog nur teilweise geladen' + (': ' + crawl.errors[0] if crawl.errors else '')
+                                                  + (' (%d von %d Abrufen)' % (len(crawl.errors), crawl.requests) if crawl.errors else '')) if partial else ''),
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
                                    ('requests', crawl.requests), *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()
-        _notify('servustv_sync_completed', partial=partial, requests=crawl.requests, **counts)
+        _notify('servustv_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
+                recovered=crawl.recovered, errors=len(crawl.errors), **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)
@@ -678,7 +700,7 @@ def loop(root, stop):
         if task_control.paused('catalog:servustv'):
             continue
         current = state(root)
-        if portal_reference.first_load_due(current) or (
+        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
                 current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 

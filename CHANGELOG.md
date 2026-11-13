@@ -1,3 +1,9 @@
+## 0.5.106 – RTL+-Links nach bestätigtem Schema
+- `rtlplus.web_url`: `https://plus.rtl.de/<seo>-p_<id>` (Björns Beispiel `plus.rtl.de/kurbis-chaos-in-der-heimat-p_1068`, 13.11.2026) statt `/video-tv/<bereich>/<seo>-<id>`. Einmalige Umschreibung gespeicherter Links in `rtlplus.sqlite3` (Merker `links_v2`).
+- ServusTV: `REQUEST_GAP` 0,5 s, nach 403/429/503 zwei weitere Versuche nach 4 und 15 s (`RETRY_WAITS`); Diagnose zählt abgewiesene und gerettete Abrufe, Hinweis nennt „x von y Abrufen“.
+- `portal_reference.retry_after_update`: Plex, ServusTV, RTL+ laden nach einem Update einen teilweisen/fehlgeschlagenen Katalog einmal neu (Merker `retried_with` je Version).
+- Tests: Link-Schema, Umschreibung, 403-Wiederholung, Neuabruf nach Update.
+
 ## 0.5.105 – Sammelstand 0.5.103 + 0.5.104
 - Zusammenführung von 0.5.103 (Kinder/Familie, PR #51) und 0.5.104 (Diagnose-Korrekturen Plex, RTL+, ServusTV). Keine eigenen Änderungen.
 
