@@ -1,4 +1,16 @@
-# MediathekAtlas · 0.5.94
+# MediathekAtlas · 0.5.97
+
+## Neu in 0.5.97: Samsung TV Plus im Reiter Live-TV
+
+- **Rund 200 kostenlose Live-Sender von Samsung TV Plus** (Filme, Serien, Dokus, Kids, Anime, Sport, News …) stehen im Reiter **Live-TV**, mit Logo, Gruppe, Kanalnummer und dem Programm, das **gerade läuft und danach kommt**. Über den Anbieter-Filter „Samsung TV Plus“ siehst du nur diese Sender.
+- Samsung TV Plus hat in Deutschland nur Live-Sender, keine Filme oder Serien zum Abrufen. Deshalb gibt es keinen eigenen Plattform-Reiter und kein Offline-Speichern.
+- **Kopierschutz:** 16 der 216 deutschen Sender liefert Samsung nur mit Widevine aus. Die werden nicht aufgeführt, nur gezählt. Alle anderen Streams werden vor dem Abspielen geprüft und laufen im eigenen Player (mit der Werbung des Senders).
+- Die Senderliste lädt sich beim ersten Start von selbst und danach alle 12 Stunden. Fehlt sie oder schlug der Abruf fehl, steht im Reiter Live-TV ein Knopf zum Laden. Unter Verwaltung → Aufgaben heißt der Abruf „Samsung TV Plus · Senderliste“.
+- Quelle: Samsung hat keine offene Schnittstelle. Die Senderliste kommt aus der öffentlichen Sammlung bei i.mjh.nz, die Wiedergabe-Adresse über deren Weiterleitung jmp2.uk zur offiziellen Samsung-Adresse (wie bei Kodi-Erweiterungen und IPTV-Playern). Fällt eines davon weg, nennt der Reiter den Grund, die anderen Anbieter laufen weiter.
+- Nicht geprüft: Wiedergabe echter Samsung-Streams (aus der Bauumgebung gesperrt). Geprüft ist die Senderliste mit dem echten Stand vom 13.11.2026.
+- Sammelstand: 0.5.97 enthält 0.5.94 und alles davor (0.5.95 und 0.5.96 sind von anderen Threads reserviert).
+
+
 
 ## Neu in 0.5.94: Umwandeln auf 1080p, 720p oder 480p (Encoder)
 

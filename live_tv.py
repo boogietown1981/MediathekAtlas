@@ -13,6 +13,8 @@ Sources so far:
 - Joyn (0.5.65): the live channels of joyn.de. Joyn plays them in its own player (Widevine as far
   as known); until a recording shows an unprotected stream they only link to joyn.de ('link'
   instead of 'play'). Joyn+ channels are marked.
+- Samsung TV Plus (0.5.97): free FAST channels from the stored channel list (samsung_tvplus.py), HLS
+  via /api/play?samsung=<id>; channels Samsung delivers only with Widevine are not listed.
 
 A new provider only needs a loader returning channel dicts (see _channel) and an entry in
 PROVIDERS. Live streams are never stored offline. Nothing here fetches from the network:
@@ -65,7 +67,8 @@ _KNOWN = {key: (name, group, pos) for pos, (key, name, group, _) in enumerate(ST
 # Regional windows keep their own entry ("BR Nord", "NDR Hamburg") but sort under the station.
 _REGIONAL_PREFIXES = sorted((k for k, (_, g, _) in _KNOWN.items() if g == REGIONAL), key=len, reverse=True)
 
-PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
+PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('samsung', 'Samsung TV Plus'),
+             ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
 PROVIDER_NAMES = dict(PROVIDERS)
 
 
@@ -163,6 +166,15 @@ def rakuten_channels(root):
             for row in rakuten.channels(root)]
 
 
+def samsung_channels(root):
+    """Samsung TV Plus live channels (0.5.97) with the programme running now as summary."""
+    import samsung_tvplus
+    return [_channel('samsung', row['id'], row['title'], {'samsung': row['id']},
+                     group=row.get('category') or 'Samsung TV Plus', logo=row.get('poster') or '',
+                     number=row.get('number'), summary=row.get('summary') or '', quality='mit Werbung')
+            for row in samsung_tvplus.channels(root)]
+
+
 def joyn_channels(root):
     """Joyn live channels (0.5.65): link to joyn.de only (no playback released, see joyn.py)."""
     import joyn
@@ -197,8 +209,8 @@ def channels(c, root, budget=None):
     and named in the status line instead of holding back the whole tab."""
     budget = BUDGET if budget is None else budget
     found, errors, results = [], {}, {}
-    loaders = (('pluto', lambda: pluto_channels(root)), ('rakuten', lambda: rakuten_channels(root)),
-               ('joyn', lambda: joyn_channels(root)))
+    loaders = (('pluto', lambda: pluto_channels(root)), ('samsung', lambda: samsung_channels(root)),
+               ('rakuten', lambda: rakuten_channels(root)), ('joyn', lambda: joyn_channels(root)))
 
     def work(key, loader):
         try:
