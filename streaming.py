@@ -74,7 +74,7 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus=''):
     """Best playable source: a finished local download wins over the online stream."""
     if samsung:
         # 0.5.97: Samsung TV Plus live channel (HLS without copy protection, see samsung_tvplus.py)
@@ -91,6 +91,11 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         if root is None:raise ValueError('Plex-Katalog nicht verfügbar')
         import plex as plex_tv
         return plex_tv.play_source(root,plex)
+    if rtlplus:
+        # 0.5.102: RTL+ is Widevine only, never a source (rtlplus.py names the reason)
+        if root is None:raise ValueError('RTL+-Katalog nicht verfügbar')
+        import rtlplus as rtl_plus
+        return rtl_plus.play_source(root,rtlplus)
     if servustv:
         # 0.5.101: ServusTV video or live channel (plain HLS, checked by hls_guard, see servustv.py)
         if root is None:raise ValueError('ServusTV-Katalog nicht verfügbar')

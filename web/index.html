@@ -108,6 +108,7 @@
   <button type="button" data-catalog-source="crunchyroll">Crunchyroll</button>
   <button type="button" data-catalog-source="plex">Plex</button>
   <button type="button" data-catalog-source="servustv">ServusTV</button>
+  <button type="button" data-catalog-source="rtlplus">RTL+</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Alle Plattformen · Filme</h2>
@@ -148,6 +149,7 @@
     <button class="platform-tab" type="button" data-platform="crunchyroll">Crunchyroll</button>
     <button class="platform-tab" type="button" data-platform="plex">Plex</button>
     <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
+    <button class="platform-tab" type="button" data-platform="rtlplus">RTL+</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -322,6 +324,33 @@
   <div class="netzkino-pages"><button type="button" id="plex-prev">← Zurück</button>
     <span id="plex-page-label" class="muted"></span>
     <button type="button" id="plex-next">Weiter →</button></div>
+</section>
+<section id="rtlplus" class="pluto-panel rtlplus-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>RTL+ · kostenlose Filme, Serien und Shows (RTL+ Free)</h3>
+    <p class="muted">Die kostenlosen Titel von RTL+ (mit Werbung, ohne Konto). RTL+ liefert alle Videos nur mit Kopierschutz (Widevine) aus: MediathekAtlas umgeht nichts, „Bei RTL+ ansehen“ öffnet den Titel auf plus.rtl.de (mit der optionalen Chrome-Erweiterung startet er dort von selbst).
+       Titel, die nur mit RTL+ Premium laufen, werden nur gezählt. Offline-Speichern gibt es für RTL+ nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="rtlplus-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="rtlplus-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="rtlplus-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="RTL+-Ansicht">
+    <button type="button" id="rtlplus-view-movies" class="primary">Filme</button>
+    <button type="button" id="rtlplus-view-series">Serien</button>
+    <button type="button" id="rtlplus-back" hidden>← Zur Serienübersicht</button>
+    <span id="rtlplus-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>RTL+-Titel suchen<input type="search" id="rtlplus-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="rtlplus-sort"><option value="title">Titel</option><option value="rating">Bewertung</option></select></label></div>
+  <div id="rtlplus-categories" class="portal-categories" role="group" aria-label="RTL+-Kategorien" hidden></div>
+  <p id="rtlplus-status" class="muted" role="status"></p>
+  <details id="rtlplus-offline" class="nk-offline rtlplus-offline" hidden><summary>Offline-Kopien von RTL+ <span id="rtlplus-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="rtlplus-offline-jobs"></div></details>
+  <div id="rtlplus-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="rtlplus-prev">← Zurück</button>
+    <span id="rtlplus-page-label" class="muted"></span>
+    <button type="button" id="rtlplus-next">Weiter →</button></div>
 </section>
 <section id="servustv" class="pluto-panel servustv-panel">
   <div class="panel netzkino-sync-panel">
@@ -655,4 +684,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/system.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/system.js"></script></body></html>

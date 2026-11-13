@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import categories
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'rtlplus': 'RTL+'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -186,6 +186,13 @@ def _portal(root, source, item_id):
                           'noch nicht geprüft – „Ansehen“ prüft, ob Plex den Titel ohne Kopierschutz ausliefert'])
         if not m['playable'] and m['kind'] != 'series':
             m['notes'].append('Plex liefert diesen Titel nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht.')
+    if source == 'rtlplus':
+        # 0.5.102: catalogue with links only; every RTL+ stream uses Widevine.
+        facts.append(['Angebot', 'RTL+ Free, kostenlos mit Werbung (Folgen teils nur mit RTL+ Premium)'])
+        facts.append(['Stream', 'nur mit Kopierschutz (Widevine) – bei RTL+ ansehen'])
+        m['offline'] = {'allowed': False, 'days': 0, 'night': False}
+        m['notes'].append('RTL+ liefert alle Videos nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. '
+                          '„Bei RTL+ ansehen“ öffnet den Titel auf plus.rtl.de.')
     if source == 'servustv':
         # 0.5.101: free, plain HLS; youth protection and geo blocks are named at playback.
         facts.append(['Angebot', 'ServusTV On, kostenlos (ohne Konto)'])
@@ -291,7 +298,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'plex', 'servustv') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'plex', 'servustv', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 

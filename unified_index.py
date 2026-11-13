@@ -31,12 +31,12 @@ _CACHE = {}
 _LOCK = threading.Lock()
 _BUILD = threading.Lock()
 
-SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv')
+SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'rtlplus')
 NAMES = {'mediatheken': 'ARD, ZDF & Co.', 'netzkino': 'Netzkino', 'pluto': 'Pluto TV',
-         'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV'}
+         'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'rtlplus': 'RTL+'}
 # Which offer represents a merged entry: curated catalogues first, uploads with free-text
 # titles and landscape thumbnails (YouTube) and copy-protected offers (Rakuten) last.
-RANK = {'mediatheken': 0, 'netzkino': 1, 'pluto': 2, 'justwatch': 3, 'rakuten': 4, 'youtube': 5, 'joyn': 6, 'toggo': 7, 'crunchyroll': 8, 'plex': 9, 'servustv': 10}
+RANK = {'mediatheken': 0, 'netzkino': 1, 'pluto': 2, 'justwatch': 3, 'rakuten': 4, 'youtube': 5, 'joyn': 6, 'toggo': 7, 'crunchyroll': 8, 'plex': 9, 'servustv': 10, 'rtlplus': 11}
 # Sources whose year is the upload year, not the year of the work.
 LOOSE_YEAR = {'youtube', 'servustv'}
 
@@ -233,9 +233,9 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     catalogue; ``modules`` maps source -> module (tests pass fakes)."""
     import catalog
     if modules is None:
-        import netzkino, pluto, justwatch, rakuten, youtube, joyn, toggo, crunchyroll, plex, servustv
+        import netzkino, pluto, justwatch, rakuten, youtube, joyn, toggo, crunchyroll, plex, servustv, rtlplus
         modules = {'netzkino': netzkino, 'pluto': pluto, 'justwatch': justwatch, 'rakuten': rakuten,
-                   'youtube': youtube, 'joyn': joyn, 'toggo': toggo, 'crunchyroll': crunchyroll, 'plex': plex, 'servustv': servustv}
+                   'youtube': youtube, 'joyn': joyn, 'toggo': toggo, 'crunchyroll': crunchyroll, 'plex': plex, 'servustv': servustv, 'rtlplus': rtlplus}
     view = 'series' if kind == 'series' else 'movies'
     offers, counts, errors, genre_counts = [], {}, {}, {}
 
@@ -263,7 +263,7 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     except Exception as exc:   # one broken source never hides the others
         errors['mediatheken'] = str(exc)[:160] or exc.__class__.__name__
     seconds['mediatheken'] = round(time.monotonic() - started, 2)
-    for source in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv'):
+    for source in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'rtlplus'):
         module = modules.get(source)
         if module is None:
             continue

@@ -500,7 +500,7 @@ dialog.player::backdrop{background:#000c;-webkit-backdrop-filter:none;backdrop-f
 #atlas-nk-evidence,#atlas-nk-validation {font-size:12px;color:#a3bbc6;line-height:1.5;margin:12px 0}
 #atlas-nk-validation .nk-warning {color:#ffb78e}
 @media(max-width:680px){.nk-detail-layout{grid-template-columns:1fr}.nk-detail-layout>img{max-height:220px}.nk-detail-field{grid-template-columns:1fr}}
-#portals #pluto, #portals #justwatch, #portals #rakuten, #portals #youtube, #portals #joyn, #portals #toggo, #portals #crunchyroll, #portals #plex, #portals #servustv {display:none}
+#portals #pluto, #portals #justwatch, #portals #rakuten, #portals #youtube, #portals #joyn, #portals #toggo, #portals #crunchyroll, #portals #plex, #portals #servustv, #portals #rtlplus {display:none}
 #portals[data-platform="justwatch"] > :not(.platform-tabs):not(#justwatch) {display:none!important}
 #portals[data-platform="justwatch"] > #justwatch {display:block!important}
 #portals[data-platform="rakuten"] > :not(.platform-tabs):not(#rakuten) {display:none!important}
@@ -515,6 +515,8 @@ dialog.player::backdrop{background:#000c;-webkit-backdrop-filter:none;backdrop-f
 #portals[data-platform="plex"] > #plex {display:block!important}
 #portals[data-platform="servustv"] > :not(.platform-tabs):not(#servustv) {display:none!important}
 #portals[data-platform="servustv"] > #servustv {display:block!important}
+#portals[data-platform="rtlplus"] > :not(.platform-tabs):not(#rtlplus) {display:none!important}
+#portals[data-platform="rtlplus"] > #rtlplus {display:block!important}
 #portals[data-platform="pluto"] > :not(.platform-tabs):not(#pluto) {display:none!important}
 #portals[data-platform="pluto"] > #pluto {display:block!important}
 
@@ -676,7 +678,7 @@ dialog.player::backdrop{background:#000c;-webkit-backdrop-filter:none;backdrop-f
 .pluto-item img.netzkino-poster.pluto-logo{object-fit:contain;background:#111;padding:8px}
 #justwatch-offline-jobs .nk-offline-job,#rakuten-offline-jobs .nk-offline-job{display:grid;gap:4px;padding:8px 0;border-top:1px solid #2c3840}
 #justwatch-offline-jobs .nk-offline-job button,#rakuten-offline-jobs .nk-offline-job button{justify-self:start}
-.justwatch-panel a.button,.rakuten-panel a.button,.joyn-panel a.button,.toggo-panel a.button,.crunchyroll-panel a.button,.plex-panel a.button,.servustv-panel a.button,.livetv-actions a.button,.livetv-strip-row a.button{display:inline-block;padding:6px 12px;border-radius:8px;border:1px solid #3a4a55;text-decoration:none;color:inherit}
+.justwatch-panel a.button,.rakuten-panel a.button,.joyn-panel a.button,.toggo-panel a.button,.crunchyroll-panel a.button,.plex-panel a.button,.servustv-panel a.button,.rtlplus-panel a.button,.livetv-actions a.button,.livetv-strip-row a.button{display:inline-block;padding:6px 12px;border-radius:8px;border:1px solid #3a4a55;text-decoration:none;color:inherit}
 #pluto-offline-jobs .nk-offline-job{display:grid;gap:4px;padding:8px 0;border-top:1px solid #2c3840}
 #pluto-offline-jobs .nk-offline-job button{justify-self:start}
 .pluto-item .nk-warning,#pluto-offline-jobs .nk-warning{color:#ffb78e}

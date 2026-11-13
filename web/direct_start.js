@@ -14,7 +14,7 @@
   const MARK = 'mediathekatlas-autostart';
   const KEY = 'atlas.directStart';
   // Anbieter, deren Titel nur beim Anbieter laufen, und deren Hosts (gleiche Liste wie manifest.json).
-  const HOSTS = {joyn: ['www.joyn.de'], rakuten: ['www.rakuten.tv'], toggo: ['www.toggo.de'], justwatch: ['www.justwatch.com'], crunchyroll: ['www.crunchyroll.com']};
+  const HOSTS = {joyn: ['www.joyn.de'], rakuten: ['www.rakuten.tv'], toggo: ['www.toggo.de'], justwatch: ['www.justwatch.com'], crunchyroll: ['www.crunchyroll.com'], rtlplus: ['plus.rtl.de']};
   const SAFE = /^https:\/\/[a-z0-9.-]+\/[^\s<>'"]*$/i;
 
   function enabled() {

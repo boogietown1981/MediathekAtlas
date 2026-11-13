@@ -1,9 +1,9 @@
-"""0.5.101: ServusTV On – free video library and live channels, plain HLS in the own player.
+"""0.5.101/0.5.102: ServusTV On – free video library and live channels, plain HLS in the own player.
 
-The player answers have the shape documented by yt-dlp's ServusIE (videoUrl, title, label, season,
-chapter, playabilityErrors). The WordPress media assets follow the page data yt-dlp reads
-(title.rendered, stv_date.raw, stv_duration, category_names, stv_short_description); their exact
-list route is not known, so the fake answers the REST index with one. ServusTV is blocked here."""
+Answers have the shape recorded in Björn's HAR of servustv.com (13.11.2026): tv-api.redbull.com
+products (``collections`` with ids) and collections (``cards``, ``meta.total``/``meta.next``, 20 per
+page), api-player.redbull.com/tv (``videoUrl`` or ``playabilityErrors``). Titles and ids are made
+up; ServusTV is blocked in the build environment."""
 import io
 import json
 import tempfile
@@ -19,17 +19,44 @@ import servustv
 import streaming
 
 NOW = 1794556800
+IMG = 'https://resources.redbull.tv/%s/rbtv_display_art_portrait/{im}?namespace=stv&refresh=true'
 
 
-def asset(n, series='', season=None, chapter=None, cat='Natur'):
-    node = {'id': 1000 + n, 'title': {'rendered': 'Video &amp; %d' % n}, 'aa_id': 'AA-%013d' % n,
-            'link': 'https://www.servustv.com/natur/v/aa-%013d/' % n, 'stv_date': {'raw': NOW - n * 3600},
-            'stv_duration': 2823.4, 'category_names': [cat], 'stv_short_description': '<p>Kurz &uuml;ber %d</p>' % n,
-            'stv_image': 'https://backend.servustv.com/wp-content/uploads/%d.jpg' % n}
-    if series:
-        node.update(stv_format=series, stv_season='Season %d' % season if season else None,
-                    stv_episode='Episode %d - Folge %d' % (chapter, n) if chapter else None)
-    return node
+def card(ident, title, ctype, **extra):
+    base = {'id': ident, 'title': title, 'type': 'video' if ctype not in ('show', 'subchannel') else ctype,
+            'content_type': ctype, 'long_description': 'Über ' + title, 'duration': 2812160, 'playable': True,
+            'media_resources': {'rbtv_display_art_portrait': {'url': IMG % ident}},
+            'share_url': 'https://www.servustv.com/de/page/page:' + ident}
+    base.update(extra)
+    return base
+
+
+NATUR = [card('AA%018d' % n, 'Folge %d' % n, 'episode', show_name='Bergwelten', subheading='Bergwelten',
+              season_number=13, episode_number=n, content_color=['Natur']) for n in range(1, 26)]
+FILMS = [card('AAU3HRL0S34IKQ6NINUP', 'Sundown - Geheimnisse in Acapulco', 'film', duration=4766040,
+              tags=['Unterhaltung'], content_color=['Unterhaltung']),
+         card('AACLIPCLIPCLIPCLIP01', 'Kurzer Clip', 'clip', duration=222880),
+         card('AASHORTSHORTSHORT01', 'Kurzes Video ohne Sendung', 'video', duration=300000)]
+SHOW = card('AA-25RX849FN1W11', 'Messner erklärt die Achttausender', 'show', content_color=['Natur'])
+SEASON = [card('AAMESSNER%011d' % n, 'Teil %d' % n, 'episode', season_number=1, episode_number=n) for n in (1, 2)]
+CHANNELS = [card('PN0B1EC15B2FE10', 'ServusTV: Der Livestream', 'video_channel'),
+            card('PN2C35800228344', 'Wetterpanorama On', 'video_channel')]
+PRODUCTS = {
+    'sendungen': {'id': 'sendungen', 'type': 'page', 'collections': [
+        {'id': '16f72eb7-0bb8-43e7-a314-287205fe9a06', 'list_type': 'reference'},
+        {'id': '1d9e083e-5b80-4f57-96dd-24d1e7cc6e27'}, {'id': 'dbca43da-6420-475b-94b8-6fd187dd347e'}]},
+    'PN3MIRXVT1EXR8T': {'id': 'PN3MIRXVT1EXR8T', 'content_type': 'subchannel', 'collections': [
+        {'id': 'c688c1d4-62f5-49e1-bd19-8e33242088cf'}, {'id': '0834cca5-f64d-49c0-9ef3-a666bdac652e'}]},
+    'AA-25RX849FN1W11': {'id': 'AA-25RX849FN1W11', 'content_type': 'show', 'collections': [
+        {'id': '27e85b45-1d42-43e7-9997-f97958db461a'}]},
+}
+COLLECTIONS = {
+    '1d9e083e-5b80-4f57-96dd-24d1e7cc6e27': [card('PN3MIRXVT1EXR8T', 'Filme & Serien', 'subchannel'), SHOW],
+    'dbca43da-6420-475b-94b8-6fd187dd347e': NATUR,
+    'c688c1d4-62f5-49e1-bd19-8e33242088cf': FILMS,
+    '0834cca5-f64d-49c0-9ef3-a666bdac652e': CHANNELS,
+    '27e85b45-1d42-43e7-9997-f97958db461a': SEASON,
+}
 
 
 def http_error(url, code):
@@ -37,67 +64,43 @@ def http_error(url, code):
 
 
 class FakeServus:
-    def __init__(self, rest=True, total=130, sitemap_titles=False):
-        self.calls, self.rest, self.total, self.sitemap_titles = [], rest, total, sitemap_titles
-        self.player = {}
+    def __init__(self):
+        self.calls, self.player, self.down = [], {}, False
 
     def __call__(self, url, headers, limit=None):
+        if self.down:
+            raise urllib.error.URLError('offline')
         parts = urllib.parse.urlsplit(url)
         q = dict(urllib.parse.parse_qsl(parts.query))
         self.calls.append((parts.hostname, parts.path, q))
-        if parts.hostname == 'backend.servustv.com':
-            if not self.rest:
-                raise http_error(url, 403)
-            if parts.path == '/wp-json/':
-                return self.json({'routes': {'/wp/v2/posts': {}, '/rbmh/v2/media_asset': {},
-                                             '/rbmh/v2/media_asset/aa_id/(?P<id>[\\w-]+)': {}}})
-            if parts.path == '/wp-json/rbmh/v2/media_asset':
-                page, size = int(q['page']), int(q['per_page'])
-                rows = []
-                for n in range(1, self.total + 1):
-                    if n <= 4:
-                        rows.append(asset(n, 'Bergwelten', 11, n))
-                    elif n == 5:
-                        rows.append(asset(n, 'Servus Krimi', cat='Krimi'))
-                    else:
-                        rows.append(asset(n))
-                rows = rows[(page - 1) * size:page * size]
-                if not rows:
-                    raise http_error(url, 400)
-                return self.json(rows)
-            raise http_error(url, 404)
-        if parts.hostname == 'www.servustv.com':
-            if parts.path == '/robots.txt':
-                return b'User-agent: *\nSitemap: https://www.servustv.com/sitemap_index.xml\n', url
-            if parts.path == '/sitemap_index.xml':
-                return (b'<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-                        b'<sitemap><loc>https://www.servustv.com/post-sitemap.xml</loc></sitemap>'
-                        b'<sitemap><loc>https://www.servustv.com/video-sitemap1.xml</loc></sitemap></sitemapindex>'), url
-            if parts.path == '/video-sitemap1.xml':
-                video = (b'<video:video><video:title>Sitemap-Titel</video:title><video:duration>600</video:duration>'
-                         b'<video:thumbnail_loc>https://backend.servustv.com/x.jpg</video:thumbnail_loc></video:video>') \
-                    if self.sitemap_titles else b''
-                return (b'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9" '
-                        b'xmlns:video="http://www.google.com/schemas/sitemap-video/1.1">'
-                        b'<url><loc>https://www.servustv.com/natur/v/aa-28bycqnh92111/</loc>' + video + b'</url>'
-                        b'<url><loc>https://www.servustv.com/wissen/v/aa-1xg5xwmgw2112/</loc></url>'
-                        b'<url><loc>https://www.servustv.com/aktuelles/b/nachrichten/</loc></url></urlset>'), url
-            if parts.path == '/post-sitemap.xml':
-                return (b'<?xml version="1.0"?><urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">'
-                        b'<url><loc>https://www.servustv.com/a/b/</loc></url></urlset>'), url
-            raise http_error(url, 404)
-        if parts.hostname == 'api-player.redbull.com':
+        assert headers['Referer'] == 'https://www.servustv.com/'
+        if parts.hostname == 'tv-api.redbull.com':
+            kind, ident = parts.path.split('/stv/de/de/')
+            if kind == '/products/v5.3':
+                if ident not in PRODUCTS:
+                    raise http_error(url, 404)
+                return json.dumps(PRODUCTS[ident]).encode()
+            cards = COLLECTIONS.get(ident)
+            if cards is None:
+                raise http_error(url, 404)
+            offset = int(q.get('offset', 0))
+            page = cards[offset:offset + 20]
+            meta = {'total': len(cards)}
+            if offset + 20 < len(cards):
+                meta['next'] = '/collections/v5.1/stv/de/de/%s?offset=%d' % (ident, offset + 20)
+            return json.dumps({'id': ident, 'cards': page, 'meta': meta}).encode()
+        if parts.hostname == 'api-player.redbull.com' and parts.path == '/tv':
             vid = q['videoId']
-            answer = self.player.get(vid) or {'videoUrl': 'https://dms.redbull.tv/%s/playlist.m3u8' % vid,
-                                              'title': 'Vie Ferrate - Klettersteige', 'label': 'Bergwelten',
-                                              'season': 'Season 11', 'chapter': 'Episode 8 - Vie Ferrate',
-                                              'poster': 'https://resources.redbull.tv/p.jpg', 'duration': 2823}
-            return self.json(answer)
+            self.assert_query(q)
+            answer = self.player.get(vid) or {
+                'videoId': vid, 'playabilityErrors': [], 'duration': 4766,
+                'videoUrl': 'https://play.redbull.com/main/v1/stv/de/de/personal_computer/http/%s.m3u8?device_group=group_5' % vid}
+            return json.dumps(answer).encode()
         raise AssertionError('unexpected host ' + url)
 
     @staticmethod
-    def json(obj):
-        return json.dumps(obj).encode(), 'https://x'
+    def assert_query(q):
+        assert (q['deviceGroup'], q['locale'], q['tenant']) == ('group_5', 'de', 'stv'), q
 
 
 class Base(unittest.TestCase):
@@ -105,81 +108,64 @@ class Base(unittest.TestCase):
         self.tmp = tempfile.TemporaryDirectory()
         self.root = Path(self.tmp.name)
         servustv._SOURCES.clear()
+        self.fake = FakeServus()
 
     def tearDown(self):
         self.tmp.cleanup()
 
 
 class CatalogueTests(Base):
-    def test_rest_catalogue_with_formats_and_paging(self):
-        fake = FakeServus()
-        result = servustv.sync(self.root, opener=fake, now=NOW)
+    def test_crawl_pages_rails_and_shows(self):
+        result = servustv.sync(self.root, opener=self.fake, now=NOW)
         self.assertTrue(result['ok'], result)
-        self.assertEqual(result['source'], 'rest')
         self.assertFalse(result['partial'])
-        self.assertEqual((result['movies'], result['series'], result['episodes'], result['channels']), (126, 1, 4, 2))
-        pages = [c[2]['page'] for c in fake.calls if c[1] == '/wp-json/rbmh/v2/media_asset']
-        self.assertEqual(pages, ['1', '2'])          # 130 entries: second page shorter, no third request
-        films = servustv.listing(self.root, 'movies', limit='all')
-        first = next(r for r in films['items'] if r['id'] == 'v.AA-0000000000010')
-        self.assertEqual(first['title'], 'Video & 10')
-        self.assertEqual(first['summary'], 'Kurz über 10')
-        self.assertEqual(first['duration'], 2823)
-        self.assertIsNone(first['year'])                # publication date is not the production year
-        self.assertEqual(first['web_url'], 'https://www.servustv.com/natur/v/aa-0000000000010/')
-        shows = servustv.listing(self.root, 'series')
-        self.assertEqual([(s['title'], s['episodes']) for s in shows['items']], [('Bergwelten', 4)])
-        # A film format without season/episode (Servus Krimi) stays a film.
-        self.assertIn('v.AA-0000000000005', [r['id'] for r in films['items']])
-        eps = servustv.episodes(self.root, 's.bergwelten')
-        self.assertEqual([(e['season'], e['episode'], e['title']) for e in eps['items']][:2], [(11, 1, 'Folge 1'), (11, 2, 'Folge 2')])
-        self.assertEqual(servustv.state(self.root)['source'], 'rest')
-
-    def test_sitemap_fallback_fills_titles_from_player(self):
-        fake = FakeServus(rest=False)
-        result = servustv.sync(self.root, opener=fake, now=NOW)
-        self.assertTrue(result['ok'], result)
-        self.assertEqual(result['source'], 'sitemap')
-        players = [c for c in fake.calls if c[0] == 'api-player.redbull.com']
-        self.assertEqual(len(players), 2)               # one per video without a title
-        eps = servustv.episodes(self.root, 's.bergwelten')['items']
-        self.assertEqual({e['id'] for e in eps}, {'v.AA-28BYCQNH92111', 'v.AA-1XG5XWMGW2112'})
-        self.assertEqual((eps[0]['season'], eps[0]['episode'], eps[0]['title']), (11, 8, 'Vie Ferrate'))
-        self.assertNotIn('/aktuelles/b/', json.dumps(servustv.listing(self.root, 'movies', limit='all')))
-
-    def test_sitemap_titles_need_no_player(self):
-        fake = FakeServus(rest=False, sitemap_titles=True)
-        servustv.sync(self.root, opener=fake, now=NOW)
-        films = servustv.listing(self.root, 'movies', limit='all')['items']
-        self.assertIn('Sitemap-Titel', [f['title'] for f in films])
-        self.assertEqual(next(f for f in films if f['title'] == 'Sitemap-Titel')['genre'], 'Natur')
+        self.assertEqual((result['movies'], result['series'], result['episodes'], result['channels']), (1, 2, 27, 2))
+        offsets = [c[2]['offset'] for c in self.fake.calls if c[1].endswith('dbca43da-6420-475b-94b8-6fd187dd347e')]
+        self.assertEqual(offsets, ['0', '20'])           # 25 cards: two pages
+        self.assertNotIn('/collections/v5.3/stv/de/de/16f72eb7-0bb8-43e7-a314-287205fe9a06',
+                         [c[1] for c in self.fake.calls])  # personal list skipped
+        film = servustv.listing(self.root, 'movies')['items']
+        self.assertEqual([f['title'] for f in film], ['Sundown - Geheimnisse in Acapulco'])   # no clips
+        self.assertEqual(film[0]['duration'], 4766)
+        self.assertEqual(film[0]['poster'], 'https://resources.redbull.tv/AAU3HRL0S34IKQ6NINUP/rbtv_display_art_portrait/'
+                                            'im:i:w_480,q_70?namespace=stv&refresh=true')
+        self.assertEqual(film[0]['web_url'], 'https://www.servustv.com/de/page/AAU3HRL0S34IKQ6NINUP')
+        shows = {s['title']: s for s in servustv.listing(self.root, 'series')['items']}
+        self.assertEqual({k: v['episodes'] for k, v in shows.items()},
+                         {'Bergwelten': 25, 'Messner erklärt die Achttausender': 2})
+        self.assertEqual(shows['Messner erklärt die Achttausender']['id'], 's.AA-25RX849FN1W11')
+        eps = servustv.episodes(self.root, 's.n-bergwelten')['items']
+        self.assertEqual([(e['season'], e['episode']) for e in eps[:2]], [(13, 1), (13, 2)])
+        live = servustv.listing(self.root, 'live')['items']
+        self.assertEqual([(c['title'], c['number']) for c in live], [('ServusTV: Der Livestream', 1), ('Wetterpanorama On', 2)])
 
     def test_failure_keeps_catalogue(self):
-        servustv.sync(self.root, opener=FakeServus(), now=NOW)
-
-        def down(url, headers, limit=None):
-            raise urllib.error.URLError('offline')
-        result = servustv.sync(self.root, opener=down, now=NOW + 10)
+        servustv.sync(self.root, opener=self.fake, now=NOW)
+        self.fake.down = True
+        result = servustv.sync(self.root, opener=self.fake, now=NOW + 10)
         self.assertFalse(result['ok'])
-        self.assertEqual(servustv.listing(self.root, 'movies')['total'], 126)
+        self.assertEqual(servustv.listing(self.root, 'movies')['total'], 1)
         self.assertEqual(servustv.state(self.root)['last_result'], 'failed')
+        self.assertEqual(len(servustv.channels(self.root)), 2)
 
-    def test_sitemap_rejects_entities(self):
-        with self.assertRaises(ValueError):
-            servustv.parse_sitemap(b'<?xml version="1.0"?><!DOCTYPE x [<!ENTITY a "b">]><urlset/>')
+    def test_live_fallback_after_failed_first_run(self):
+        self.assertEqual(servustv.channels(self.root), [])          # never tried: nothing yet
+        self.fake.down = True
+        servustv.sync(self.root, opener=self.fake, now=NOW)
+        self.assertEqual([c['id'] for c in servustv.channels(self.root)], ['c.PN0B1EC15B2FE10'])
 
     def test_ids_and_images(self):
-        self.assertEqual(servustv.video_id('https://www.servustv.com/natur/v/aa-28bycqnh92111/'), 'AA-28BYCQNH92111')
-        self.assertEqual(servustv.video_id('aansszcx3yi9jmlmhdc1'), 'AANSSZCX3YI9JMLMHDC1')
-        self.assertEqual(servustv.image('http://x/y.jpg'), '')
-        self.assertEqual(servustv.image({'url': 'https://a.b/c.jpg'}), 'https://a.b/c.jpg')
+        self.assertTrue(servustv.VALID_ID.fullmatch('v.AAU3HRL0S34IKQ6NINUP'))
+        self.assertTrue(servustv.VALID_ID.fullmatch('s.n-bergwelten'))
         self.assertFalse(servustv.VALID_ID.fullmatch('v.AA-1;drop'))
+        self.assertEqual(servustv.image({'media_resources': {'rbtv_display_art_portrait': {'url': 'http://x/{im}'}}}), '')
+        with self.assertRaises(ValueError):
+            servustv.collection(self.fake, '../x')
 
 
 class PlaybackTests(Base):
     def setUp(self):
         super().setUp()
-        self.fake = FakeServus()
         servustv.sync(self.root, opener=self.fake, now=NOW)
         self.checked = []
 
@@ -188,57 +174,55 @@ class PlaybackTests(Base):
         return {'variants': 1, 'protected': False}
 
     def test_episode_plays_as_checked_hls(self):
-        src = servustv.play_source(self.root, 'v.AA-0000000000002', opener=self.fake, check=self.check, now=NOW)
-        self.assertEqual(src['url'], 'https://dms.redbull.tv/AA-0000000000002/playlist.m3u8')
+        vid = 'v.AA%018d' % 2
+        src = servustv.play_source(self.root, vid, opener=self.fake, check=self.check, now=NOW)
+        self.assertTrue(src['url'].startswith('https://play.redbull.com/main/v1/stv/de/de/personal_computer/http/AA'))
         self.assertTrue(src['hls'])
-        self.assertEqual(src['title'], 'Bergwelten · S11E02 · Folge 2')
-        self.assertEqual(self.checked, [src['url']])
-        servustv.play_source(self.root, 'v.AA-0000000000002', opener=self.fake, check=self.check, now=NOW + 5)
+        self.assertEqual(src['title'], 'Bergwelten · S13E02 · Folge 2')
+        servustv.play_source(self.root, vid, opener=self.fake, check=self.check, now=NOW + 5)
         self.assertEqual(len(self.checked), 1)          # remembered for two minutes
 
-    def test_youth_protection_is_named(self):
-        self.fake.player['AA-0000000000010'] = {'playabilityErrors': ['FSK_BLOCKED'],
-                                                'playabilityErrorDetails': {'FSK_BLOCKED': {'minEveningHour': 22, 'maxMorningHour': 6, 'minAge': 16}}}
+    def test_youth_protection_and_geo_are_named(self):
+        self.fake.player['AAU3HRL0S34IKQ6NINUP'] = {
+            'playabilityErrors': ['FSK_BLOCKED'],
+            'playabilityErrorDetails': {'FSK_BLOCKED': {'minEveningHour': 22, 'maxMorningHour': 6, 'minAge': 16}}}
         with self.assertRaises(ValueError) as ctx:
-            servustv.play_source(self.root, 'v.AA-0000000000010', opener=self.fake, check=self.check, now=NOW)
+            servustv.play_source(self.root, 'v.AAU3HRL0S34IKQ6NINUP', opener=self.fake, check=self.check, now=NOW)
         self.assertEqual(str(ctx.exception), 'Jugendschutz: ServusTV zeigt dieses Video nur von 22:00 bis 06:00 Uhr (ab 16 Jahren).')
-        self.fake.player['AA-0000000000011'] = {'playabilityErrors': ['GEO_BLOCKED']}
+        self.fake.player['AA%018d' % 3] = {'playabilityErrors': ['GEO_BLOCKED']}
         with self.assertRaisesRegex(ValueError, 'Geosperre'):
-            servustv.play_source(self.root, 'v.AA-0000000000011', opener=self.fake, check=self.check, now=NOW)
+            servustv.play_source(self.root, 'v.AA%018d' % 3, opener=self.fake, check=self.check, now=NOW)
 
     def test_protected_stream_is_refused_and_remembered(self):
         def drm(url):
             raise hls_guard.DrmProtected(hls_guard.DRM_MESSAGE)
+        vid = 'v.AA%018d' % 4
         with self.assertRaises(hls_guard.DrmProtected):
-            servustv.play_source(self.root, 'v.AA-0000000000020', opener=self.fake, check=drm, now=NOW)
-        self.assertEqual(servustv.item(self.root, 'v.AA-0000000000020')['item']['playable'], 0)
+            servustv.play_source(self.root, vid, opener=self.fake, check=drm, now=NOW)
         servustv.sync(self.root, opener=self.fake, now=NOW + 100)       # a new catalogue run keeps it
-        self.assertEqual(servustv.item(self.root, 'v.AA-0000000000020')['item']['drm'], 1)
+        self.assertEqual(servustv.item(self.root, vid)['item']['playable'], 0)
 
-    def test_live_tries_candidates(self):
-        def first_fails(url):
-            if url == servustv.LIVE[0][3][0]:
-                raise ValueError('Der Anbieter lieferte keine HLS-Wiedergabeliste')
-            return {}
-        src = servustv.play_source(self.root, 'c.de', check=first_fails, now=NOW)
-        self.assertEqual(src['url'], servustv.LIVE[0][3][1])
+    def test_live_channel(self):
+        src = servustv.play_source(self.root, 'c.PN0B1EC15B2FE10', opener=self.fake, check=self.check, now=NOW)
         self.assertTrue(src['live'])
-
-    def test_streaming_and_live_tv(self):
-        original = servustv.play_source
-        servustv.play_source = lambda root, item_id: {'kind': 'url', 'url': 'https://a/b.m3u8', 'provider': 'servustv', 'item': item_id}
-        try:
-            self.assertEqual(streaming.resolve(None, servustv='c.at', root=self.root)['item'], 'c.at')
-        finally:
-            servustv.play_source = original
+        self.assertEqual(src['duration'], 0)
         rows = live_tv.servustv_channels(self.root)
         self.assertEqual([(r['title'], r['play']) for r in rows],
-                         [('ServusTV Deutschland', {'servustv': 'c.de'}), ('ServusTV Österreich', {'servustv': 'c.at'})])
+                         [('ServusTV: Der Livestream', {'servustv': 'c.PN0B1EC15B2FE10'}),
+                          ('Wetterpanorama On', {'servustv': 'c.PN2C35800228344'})])
+
+    def test_streaming_resolve(self):
+        original = servustv.play_source
+        servustv.play_source = lambda root, item_id: {'kind': 'url', 'url': 'https://a/b.m3u8', 'item': item_id}
+        try:
+            self.assertEqual(streaming.resolve(None, servustv='c.PN0B1EC15B2FE10', root=self.root)['item'], 'c.PN0B1EC15B2FE10')
+        finally:
+            servustv.play_source = original
 
     def test_title_page(self):
-        m = portal_title.model(self.root, 'servustv', 's.bergwelten')
-        self.assertEqual(len(m['episodes']), 4)
-        m = portal_title.model(self.root, 'servustv', 'v.AA-0000000000010')
+        m = portal_title.model(self.root, 'servustv', 's.AA-25RX849FN1W11')
+        self.assertEqual(len(m['episodes']), 2)
+        m = portal_title.model(self.root, 'servustv', 'v.AAU3HRL0S34IKQ6NINUP')
         self.assertFalse(m['offline']['allowed'])
         self.assertIn(['Angebot', 'ServusTV On, kostenlos (ohne Konto)'], m['provider_facts'])
 
@@ -247,7 +231,7 @@ class WiringTests(unittest.TestCase):
     def test_wiring(self):
         here = Path(__file__).resolve().parent.parent
         server = (here / 'server.py').read_text(encoding='utf-8')
-        for needle in ("'plex','servustv')}", "servustv=q.get('servustv',[''])[0]", "'servustv':servustv.state(ROOT)",
+        for needle in ("'servustv',", "servustv=q.get('servustv',[''])[0]", "'servustv':servustv.state(ROOT)",
                        "'/servustv.js'", "'source':'servustv'"):
             self.assertIn(needle, server)
         self.assertIn("'servustv.py','servustv_enrichment.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))

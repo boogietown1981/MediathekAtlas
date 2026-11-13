@@ -17,7 +17,7 @@
   const when = t => t ? new Date(t * 1000).toLocaleString('de-DE', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '';
 
   // ---------------------------------------------------------------- platform tabs
-  const PLATFORMS = {netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV', rakuten: 'Rakuten TV', youtube: 'YouTube', joyn: 'Joyn', toggo: 'TOGGO', crunchyroll: 'Crunchyroll', plex: 'Plex', servustv: 'ServusTV'};
+  const PLATFORMS = {netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV', rakuten: 'Rakuten TV', youtube: 'YouTube', joyn: 'Joyn', toggo: 'TOGGO', crunchyroll: 'Crunchyroll', plex: 'Plex', servustv: 'ServusTV', rtlplus: 'RTL+'};
   function arrangePlatform(key) {
     const section = $(key);
     if (!section || $(key + '-admin')) return;
@@ -221,7 +221,7 @@
     };
     const general = make('fieldset'); general.append(make('legend', 'Dashboard'));
     general.append(
-      field('Startansicht', choice('start_source', [['all', 'Alle Plattformen'], ['mediatheken', 'ARD, ZDF & Co.'], ['netzkino', 'Netzkino'], ['pluto', 'Pluto TV'], ['justwatch', 'JustWatch TV'], ['rakuten', 'Rakuten TV'], ['joyn', 'Joyn'], ['toggo', 'TOGGO'], ['crunchyroll', 'Crunchyroll'], ['plex', 'Plex'], ['servustv', 'ServusTV'], ['youtube', 'YouTube']])),
+      field('Startansicht', choice('start_source', [['all', 'Alle Plattformen'], ['mediatheken', 'ARD, ZDF & Co.'], ['netzkino', 'Netzkino'], ['pluto', 'Pluto TV'], ['justwatch', 'JustWatch TV'], ['rakuten', 'Rakuten TV'], ['joyn', 'Joyn'], ['toggo', 'TOGGO'], ['crunchyroll', 'Crunchyroll'], ['plex', 'Plex'], ['servustv', 'ServusTV'], ['rtlplus', 'RTL+'], ['youtube', 'YouTube']])),
       field('Zuerst zeigen', choice('start_kind', [['movies', 'Filme'], ['series', 'Serien']])),
       field('Kachelgröße', choice('card_size', (meta.sizes || []).map(s => [s.key, s.label]))),
       field('Design', choice('theme', [['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Wie das System']])));

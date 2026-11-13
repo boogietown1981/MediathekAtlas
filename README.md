@@ -1,11 +1,19 @@
-# MediathekAtlas · 0.5.101
+# MediathekAtlas · 0.5.102
+
+## Neu in 0.5.102: RTL+ als Katalog, ServusTV nach Björns Mitschnitt
+
+- **Neuer Plattform-Reiter „RTL+“** mit dem kostenlosen Teil von RTL+ (RTL+ Free, ohne Konto): Filme, Serien, Shows und Kindersendungen, mit einheitlichen Kategorien, Titel- und Serienseite, Suche, Merkliste und im Dashboard. RTL+ liefert jedes Video nur mit Kopierschutz (Widevine) aus. Deshalb spielt MediathekAtlas RTL+ nie selbst ab: Jeder Titel hat „Bei RTL+ ansehen“, die optionale Chrome-Erweiterung startet dort die Wiedergabe. Titel, die RTL+ Premium brauchen, werden nur gezählt. Kein Offline-Speichern.
+- **ServusTV läuft jetzt über die echten Schnittstellen** aus Björns HAR-Mitschnitt von servustv.com: Katalog aus der Red-Bull-Plattform (alle Sendungen und Kategorien, Sendungen mit Staffeln und Folgen, Filme), Wiedergabe über den Red-Bull-Player (klares HLS, bis 1080p). Live-Sender kommen aus dem Katalog (ServusTV, dazu Red Bull TV und Wetterpanorama, soweit ServusTV sie anbietet). Clips und Trailer bleiben draußen.
+- Nicht geprüft: RTL+ und ServusTV selbst (aus der Bauumgebung gesperrt). Die ServusTV-Antworten sind im Test genau so aufgebaut wie im Mitschnitt; die RTL+-Schnittstelle stammt aus öffentlichen Open-Source-Clients und ist noch nicht mitgeschnitten.
+- Sammelstand: 0.5.102 enthält 0.5.101 und alles davor.
+
 
 ## Neu in 0.5.101: ServusTV On
 
 - **Neuer Plattform-Reiter „ServusTV“** mit der kostenlosen Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen wie „Bergwelten“ mit allen Folgen, Spielfilme. Dazu **ServusTV Deutschland und Österreich live**, auch im Reiter Live-TV. Wie bei den anderen Plattformen mit einheitlichen Kategorien, Titel- und Sendungsseite, Suche, Merkliste und im Dashboard.
 - **Alles läuft im MediathekAtlas-Player**: ServusTV liefert ohne Kopierschutz aus (jeder Stream wird trotzdem vorher geprüft). Gibt ServusTV ein Video gerade nicht frei, nennt der Player den Grund, zum Beispiel „Jugendschutz: nur von 22:00 bis 06:00 Uhr“ oder „Geosperre“.
 - **Kein Offline-Speichern**: ServusTV erlaubt Downloads nur in der eigenen App.
-- Nicht geprüft: ServusTV selbst (aus der Bauumgebung gesperrt). Die Wiedergabe-Schnittstelle ist durch yt-dlp belegt. Woher die Videoliste kommt, ist eine begründete Annahme (WordPress-Schnittstelle, sonst Sitemap). Bleibt der Katalog leer, hilft ein HAR-Mitschnitt von servustv.com.
+- Überholt durch 0.5.102: Katalog und Wiedergabe laufen jetzt über die Schnittstellen aus Björns HAR-Mitschnitt.
 - Sammelstand: 0.5.101 enthält 0.5.100 (Plex) und alles davor.
 
 ## Neu in 0.5.100: Plex – kostenlose Filme, Serien und Live-Sender
