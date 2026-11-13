@@ -115,7 +115,7 @@ class LibraryNamingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             m = {'kind': 'movie', 'title': 'Spellbound', 'year': 2024}
             planned = core.target(tmp, m, 'x')
-            self.assertEqual(planned.relative_to(tmp).as_posix(), 'Filme/Spellbound (2024)/Spellbound - (2024).mkv')
+            self.assertEqual(planned.resolve().relative_to(Path(tmp).resolve()).as_posix(), 'Filme/Spellbound (2024)/Spellbound - (2024).mkv')
             final = core.final_target(planned, {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'width': 1920, 'height': 1080},
                                                             {'codec_type': 'audio', 'codec_name': 'eac3'}]})
             self.assertEqual(final.name, 'Spellbound - (2024) - 1080p - H264 E-AC-3.mkv')
@@ -127,7 +127,7 @@ class LibraryNamingTests(unittest.TestCase):
             legacy = planned.parent / 'Spellbound (2024).mkv'; legacy.write_bytes(b'x')
             self.assertEqual(core.existing_download(planned), legacy)    # files from before 0.5.42
             ep = core.target(tmp, {'kind': 'series', 'title': 'Tatort', 'year': 1970, 'season': 1, 'episode': 2}, 'y')
-            self.assertEqual(ep.relative_to(tmp).as_posix(), 'Serien/Tatort (1970)/Season 01/Tatort - (1970) - S01E02.mkv')
+            self.assertEqual(ep.resolve().relative_to(Path(tmp).resolve()).as_posix(), 'Serien/Tatort (1970)/Season 01/Tatort - (1970) - S01E02.mkv')
 
     def test_images_with_dotted_names_and_expiry(self):
         import artwork, tempfile, netzkino_downloads as nd

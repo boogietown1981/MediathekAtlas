@@ -113,7 +113,7 @@ class MusicTests(unittest.TestCase):
         result = yd.enqueue_many(self.c, self.root, self.media, ids)
         self.assertEqual((result['created'], result['existing'], result['failed']), (1, 1, 0))
         jobs = [json.loads(p) for (p,) in self.c.execute('SELECT payload FROM jobs')]
-        targets = sorted(Path(j['target']).relative_to(self.media.resolve()).as_posix() for j in jobs)
+        targets = sorted(Path(j['target']).resolve().relative_to(self.media.resolve()).as_posix() for j in jobs)
         self.assertEqual(targets, ['Musikvideos/Hits 2024/001 - Künstler A - Lied Eins.mkv',
                                    'Musikvideos/Hits 2024/002 - Künstler B - Lied Zwei.mkv'])
         self.assertEqual({(j['origin'], j['license']['kind'], j['metadata']['genres'][0]) for j in jobs},
