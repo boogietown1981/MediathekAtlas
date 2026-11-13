@@ -74,8 +74,13 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',samsung=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',samsung='',plex=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if plex:
+        # 0.5.98: Plex film, episode or live channel, only without copy protection (plex.py)
+        if root is None:raise ValueError('Plex-Katalog nicht verfügbar')
+        import plex as plex_tv
+        return plex_tv.play_source(root,plex)
     if samsung:
         # 0.5.97: Samsung TV Plus live channel (HLS without copy protection, see samsung_tvplus.py)
         if root is None:raise ValueError('Samsung-TV-Plus-Liste nicht verfügbar')

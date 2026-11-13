@@ -30,6 +30,7 @@ import justwatch, justwatch_downloads, justwatch_enrichment
 import rakuten, rakuten_downloads, rakuten_enrichment
 import joyn, joyn_enrichment
 import toggo, toggo_enrichment
+import plex, plex_enrichment
 import youtube, youtube_downloads, youtube_enrichment
 
 
@@ -68,6 +69,8 @@ PLATFORMS = (
     Platform('youtube', youtube, youtube_enrichment, youtube_downloads, page=False, add=False, jobs_extra=_youtube_jobs),
     Platform('joyn', joyn, joyn_enrichment),
     Platform('toggo', toggo, toggo_enrichment),
+    # 0.5.98: no offline copies (Plex itself offers no download of its free titles).
+    Platform('plex', plex, plex_enrichment),
 )
 BY_KEY = {p.key: p for p in PLATFORMS}
 KEYS = tuple(p.key for p in PLATFORMS)
@@ -128,7 +131,7 @@ def handle_get(ctx, path, q):
         except ValueError as e:
             return {'error': str(e)}, 404
     if action == 'downloads' and p.jobs:
-        # Platforms without offline copies (Joyn, TOGGO) answer with the shared, empty list.
+        # Platforms without offline copies (Joyn, TOGGO, Plex) answer with the shared, empty list.
         with ctx.db() as c:
             result = netzkino_downloads.listing(c, item_id=ctx.job_ids(q), origin=p.key)
         result['ffmpeg'] = bool(downloads.tool('ffmpeg'))

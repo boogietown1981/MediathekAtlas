@@ -1,2 +1,2 @@
 """Single source for the application version used by server, packages and builds."""
-VERSION='0.5.97'
+VERSION='0.5.98'

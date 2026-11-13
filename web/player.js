@@ -136,7 +136,7 @@ async function open(ref,label,key,start){
  else if(!info.ffmpeg)say('Für diesen Stream wird ffmpeg benötigt. Unter Einstellungen die Werkzeugprüfung öffnen.');
  else{startRemux(t);probeLevels();}}
 function describe(info){
- $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='samsung'?'Live bei Samsung TV Plus':info.provider==='toggo'?'Online-Stream von TOGGO':info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&(S.mode==='remux'||!(info.hls&&(hlsJs()||(nativeHls()&&wish()==='auto'))))?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');}
+ $('player-meta').textContent=[info.origin==='local'?'Lokale Datei'+(info.file?' · '+info.file:''):(info.provider==='netzkino'?'Online-Stream von Netzkino':info.provider==='pluto'?(info.live?'Live bei Pluto TV':'Online-Stream von Pluto TV'):info.provider==='justwatch'?'Online-Stream von JustWatch TV':info.provider==='rakuten'?(info.live?'Live bei Rakuten TV':'Online-Stream von Rakuten TV'):info.provider==='samsung'?'Live bei Samsung TV Plus':info.provider==='plex'?(info.live?'Live bei Plex':'Online-Stream von Plex'):info.provider==='toggo'?'Online-Stream von TOGGO':info.provider==='youtube'?'YouTube'+(info.channel?' · '+info.channel:''):info.live?'Live-Stream des Senders':'Online-Stream des Senders')+(info.quality?' · '+info.quality:''),info.duration?fmt(info.duration):'',info.mode==='remux'&&(S.mode==='remux'||!(info.hls&&(hlsJs()||(nativeHls()&&wish()==='auto'))))?'über MediathekAtlas umgewandelt':''].filter(Boolean).join(' · ');}
 // 0.5.53: YouTube – the official embedded player (youtube-nocookie.com). Its IFrame API reports the
 // position via postMessage, so "Weiterschauen" works as for every other title.
 // 0.5.76 (Björn, 13.11.2026: music videos show "nicht verfügbar" in the embedded player but play on
@@ -233,6 +233,8 @@ window.playRef=function(ref,label,key){S.direct=false;S.list=[];S.index=-1;retur
 window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:id},label||'Rakuten TV','rakuten:'+id);};
 // 0.5.79: TOGGO episode (only streams TOGGO lists without copy protection; otherwise the server names the reason)
 window.playToggo=function(id,label){S.list=[];S.index=-1;return open({toggo:id},label||'TOGGO','toggo:'+id);};
+// 0.5.98: Plex film, episode or channel (only streams Plex delivers without copy protection)
+window.playPlex=function(id,label){S.list=[];S.index=-1;return open({plex:id},label||'Plex','plex:'+id);};
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};
 window.playable=function(item){return !!(item&&(item.series_parent||item.downloaded||(item.links||[]).some(l=>/^https?:\/\//i.test(l.url)&&!/\.mpd(\?|$)/i.test(l.url))));};

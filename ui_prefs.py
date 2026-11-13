@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 SIZES = ('compact', 'normal', 'large')
-START_SOURCES = ('all', 'mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo')
+START_SOURCES = ('all', 'mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'plex')
 START_KINDS = ('movies', 'series')
 
 # key -> (group, label, default)

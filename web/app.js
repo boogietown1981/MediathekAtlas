@@ -1005,6 +1005,7 @@ function portalView(name){
   if(name==='youtube')window.MediathekAtlasYouTube?.refresh?.();
   if(name==='joyn')window.MediathekAtlasJoyn?.refresh?.();
   if(name==='toggo')window.MediathekAtlasToggo?.refresh?.();
+  if(name==='plex')window.MediathekAtlasPlex?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);
