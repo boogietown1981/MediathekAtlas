@@ -6,6 +6,15 @@
 - `tests/browser/click_all.cjs` (neu) und CI-Job `browser-click` (Matrix chromium, firefox, webkit; Playwright wird im Job installiert).
 - `.admin-tab`: Innenabstand 10 statt 14 px, Abstand 6 statt 8 px.
 - Tests: `tests/test_v0599_theme_monitor.py` (10).
+
+## 0.5.96 – Crunchyroll (Katalog mit Links, Gratis-Folgen über YouTube)
+- Björn (13.11.2026): „crunchyroll mit dem free content anbinden“. Befund: kostenloses Crunchyroll-Angebot zum 31.12.2025 eingestellt, alle Streams Widevine (yt-dlp hat Crunchyroll deshalb entfernt). Björns Entscheidung: Katalog + YouTube-Kanal.
+- `crunchyroll.py` (neu): anonymer Zugang `POST /auth/v1/token` (`grant_type=client_id`, `ETP-Anonymous-ID`), bekannte App-Zugänge der Reihe nach, der funktionierende wird gemerkt; erneuter Zugang einmal bei HTTP 401. Katalog `GET /content/v2/discover/browse` (100 je Seite, alphabetisch, `locale=de-DE`), Staffeln/Folgen bei Bedarf über `/content/v2/cms/series/<id>/seasons` und `/cms/seasons/<id>/episodes` (6 h zwischengespeichert), Film-Einträge über `/cms/movie_listings/<id>/movies` (Seite `/de/watch/<id>` wird gemerkt). Tabelle `crunchyroll_titles` in `crunchyroll.sqlite3`. „Kostenlos“ nur bei ausdrücklichem `is_premium_only: false`. Cloudflare-Abwehr (HTTP 403/429/503 mit Challenge) wird als eigene Meldung erkannt. `play_source` liefert nie eine Quelle, sondern den Grund (DRM).
+- `crunchyroll_enrichment.py`: Referenzabgleich über `portal_enrichment` wie bei allen Plattformen.
+- Verdrahtung: `platform_registry` (Routen `/api/crunchyroll*`, ohne `-download-add`), Katalog-Karte im Dashboard, `streaming.resolve(crunchyroll=…)`, `portal_title` (Angebot, Sprache, Altersfreigabe, Staffeln/Folgen, Hinweis auf YouTube), `unified_index`, `watch_state`, `ui_prefs`, `task_control`, `artwork` (Bilder von *.crunchyroll.com), `netcheck`, `build_macos`.
+- Oberfläche: Reiter und Katalog-Quelle „Crunchyroll“ (`web/crunchyroll.js`, gemeinsames Plattform-Panel), Auswahl „Angebot“, Direktstart-Kennung für crunchyroll.com, Chrome-Erweiterung auf crunchyroll.com erweitert („anschauen“, „start watching“; nie Premium/Abo).
+- `youtube.py`: Vorschlag `@CrunchyrollDE` (Filme-Quelle, Mindestlänge 20 min) wird einmalig auch in bestehende Installationen eingetragen; entfernt bleibt entfernt.
+- Tests: `tests/test_v0596_crunchyroll.py` (20); Routentabelle und Verdrahtungstests um Crunchyroll ergänzt.
 ## 0.5.95 – Prüfsumme und signierter Archivnachweis für Archive.org-Downloads, Zweitkopie im Verbund
 - Schritt 7 aus `docs/REVIEW_0577.md` („Archivkopie im Verbund mit Prüfsumme und Nachweis“, nach HomeTube).
 - `portal_sources`: Varianten tragen `md5`/`sha1` aus dem Manifest. `archive_downloads.build_job`: `source._expect`. `downloads.run`: bei `_expect` werden MD5, SHA-1 und SHA-256 während des Ladens mitgerechnet; Abweichung von der genannten Prüfsumme bricht ab, bevor etwas veröffentlicht wird; Ergebnis als `source_check` im Auftrag. Andere Downloads bleiben unberührt.

@@ -27,7 +27,7 @@
   if (!since || Date.now() - since > WINDOW_MS) return;
 
   const PLAY_WORDS = ['kostenlos ansehen', 'gratis ansehen', 'jetzt ansehen', 'jetzt abspielen', 'film ansehen', 'folge ansehen',
-    'jetzt schauen', 'weiterschauen', 'fortsetzen', 'abspielen', 'wiedergabe starten', 'wiedergabe', 'ansehen', 'play', 'watch now'];
+    'jetzt schauen', 'weiterschauen', 'fortsetzen', 'abspielen', 'wiedergabe starten', 'wiedergabe', 'ansehen', 'anschauen', 'play', 'watch now', 'start watching'];
   const NEVER = ['kauf', 'leih', 'miete', 'abo', 'abonn', 'plus', 'premium', 'anmeld', 'registr', 'login', 'log in', 'konto', 'trailer',
     'teilen', 'merkliste', 'merken', 'cookie', 'zustimm', 'akzeptier', 'einstellung', 'untertitel', 'sprache', 'mute', 'lautst',
     'pause', 'zurück', 'schließ', 'close', 'abbrech', 'cancel', 'bewert', 'herunterladen', 'download', 'werbung überspringen'];

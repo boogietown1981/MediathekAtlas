@@ -1,6 +1,6 @@
 /* 0.5.91: Videostart bei Anbietern mit Kopierschutz abkürzen (Björn, 13.11.2026).
  *
- * Titel von Rakuten TV, Joyn, TOGGO und JustWatch TV laufen wegen Kopierschutz (DRM) nur beim Anbieter.
+ * Titel von Rakuten TV, Joyn, TOGGO, JustWatch TV und Crunchyroll laufen wegen Kopierschutz (DRM) nur beim Anbieter.
  * 1. Direkter Player-Link: wo die Player-Adresse des Anbieters bekannt ist, öffnet der Link gleich den
  *    Player statt der Detailseite (Joyn: /play/filme/…, /play/serien/…/…, /play/compilation/…/… laut
  *    Routentabelle der Joyn-Seite im HAR vom 12.11.2026). Sonst bleibt die bisherige Seite.
@@ -14,7 +14,7 @@
   const MARK = 'mediathekatlas-autostart';
   const KEY = 'atlas.directStart';
   // Anbieter, deren Titel nur beim Anbieter laufen, und deren Hosts (gleiche Liste wie manifest.json).
-  const HOSTS = {joyn: ['www.joyn.de'], rakuten: ['www.rakuten.tv'], toggo: ['www.toggo.de'], justwatch: ['www.justwatch.com']};
+  const HOSTS = {joyn: ['www.joyn.de'], rakuten: ['www.rakuten.tv'], toggo: ['www.toggo.de'], justwatch: ['www.justwatch.com'], crunchyroll: ['www.crunchyroll.com']};
   const SAFE = /^https:\/\/[a-z0-9.-]+\/[^\s<>'"]*$/i;
 
   function enabled() {

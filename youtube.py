@@ -76,6 +76,10 @@ DEFAULT_SOURCES = (
     ('@ParamountVault', 'movies', 'Paramount Vault (Studio, englisch)'),
     ('@Popcornflix', 'movies', 'Popcornflix (Verleih, englisch)'),
 )
+# 0.5.96 (Björn: Crunchyroll mit Gratis-Inhalten): crunchyroll.com is subscription-only since 1.1.2026; the
+# official German YouTube channel uploads whole episodes for free. Added once, also to existing installs;
+# a removed suggestion stays removed. Whole episodes run about 24 minutes, trailers and clips are shorter.
+CRUNCHYROLL_SOURCE = ('@CrunchyrollDE', 'movies', 'Crunchyroll auf Deutsch (offiziell, ganze Folgen gratis)', 20)
 
 _KEY = lambda: ''                 # set by server.configure(): returns the stored API key
 _SYNC_LOCK = threading.Lock()
@@ -150,6 +154,12 @@ def _connect(root):
                 db.execute('INSERT OR IGNORE INTO youtube_sources(ref,kind,label,min_minutes,suggested,added) '
                            'VALUES(?,?,?,?,1,?)', (ref, kind, label, MOVIE_MINUTES, time.time()))
             _set(db, 'seeded', '1')
+    if _get(db, 'seeded_crunchyroll') != '1':
+        ref, kind, label, minutes = CRUNCHYROLL_SOURCE
+        with db:
+            db.execute('INSERT OR IGNORE INTO youtube_sources(ref,kind,label,min_minutes,suggested,added) '
+                       'VALUES(?,?,?,?,1,?)', (ref, kind, label, minutes, time.time()))
+            _set(db, 'seeded_crunchyroll', '1')
     return db
 
 

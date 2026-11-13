@@ -21,6 +21,8 @@
       action: 'offline-download-action', enrich: 'joyn-enrich', external: 'Bei Joyn ansehen'},
     toggo: {play: () => window.playToggo, jobs: id => 'toggo-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'toggo-enrich', external: 'Bei TOGGO ansehen'},
+    crunchyroll: {play: () => null, jobs: id => 'crunchyroll-downloads?id=' + encodeURIComponent(id), add: '',
+      action: 'offline-download-action', enrich: 'crunchyroll-enrich', external: 'Bei Crunchyroll ansehen'},
     youtube: {play: () => window.playYouTube, jobs: id => 'youtube-downloads?id=' + encodeURIComponent(id), add: 'youtube-download-add',
       action: 'offline-download-action', enrich: 'youtube-enrich', external: 'Bei YouTube ansehen'}
   };
@@ -217,10 +219,10 @@
       const save = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night});
       if (save) actions.push(save);
     }
-    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
+    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo' || source === 'crunchyroll')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
-      !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : m.source === 'toggo' ? '🔒 Kopiergeschützt · nur bei TOGGO' : 'Nur beim Anbieter abspielbar') : ''];
+      !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : m.source === 'toggo' ? '🔒 Kopiergeschützt · nur bei TOGGO' : m.source === 'crunchyroll' ? '🔒 Kopiergeschützt · nur bei Crunchyroll (Abo)' : 'Nur beim Anbieter abspielbar') : ''];
     const info = [['Kategorien', (m.categories || []).join(', ')], ['Regie', (m.directors || []).join(', ')], ['Drehbuch', (m.writers || []).join(', ')],
       ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Anbieter', m.provider]];
     host.replaceChildren(...hero({meta: {title: label, poster: m.poster, fanart: m.fanart}, type: m.kind_label + ' · ' + m.provider, facts,

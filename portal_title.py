@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import categories
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -175,6 +175,23 @@ def _portal(root, source, item_id):
         if not m['playable']:
             m['notes'].append('TOGGO liefert Folgen und Filme nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. '
                               'Auf toggo.de laufen sie im Browser' + (' (dieser Titel nur mit Abo).' if plus else '.'))
+    if source == 'crunchyroll':
+        # 0.5.96: catalogue with links only. Free ad-supported plan ended 31.12.2025; streams use Widevine.
+        free = it.get('offer') == 'free'
+        facts.append(['Angebot', 'Crunchyroll, kostenlos' if free else 'Crunchyroll, nur mit Abo'])
+        if it.get('language_labels'):
+            facts.append(['Sprache', ', '.join(_text(a, 60) for a in it['language_labels'])])
+        if it.get('rating'):
+            facts.append(['Altersfreigabe', _text(it['rating'], 20)])
+        if it.get('seasons') and m['kind'] == 'series':
+            facts.append(['Staffeln laut Crunchyroll', str(it['seasons'])])
+        if it.get('episodes_total') and m['kind'] == 'series':
+            facts.append(['Folgen laut Crunchyroll', str(it['episodes_total'])])
+        m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # no offline copies of Crunchyroll
+        if m['kind'] != 'series':
+            facts.append(['Stream', 'nur mit Kopierschutz (Widevine) – bei Crunchyroll ansehen'])
+        m['notes'].append('Crunchyroll liefert alle Titel nur mit Kopierschutz und seit 1.1.2026 nur mit Abo aus; '
+                          'MediathekAtlas umgeht nichts. Gratis-Folgen gibt es auf dem offiziellen YouTube-Kanal (Quelle „YouTube“).')
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
@@ -253,7 +270,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source == 'toggo' else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 

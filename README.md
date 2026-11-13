@@ -8,6 +8,14 @@
 - Die Reiter der Verwaltung sind etwas schmaler, damit der neue Reiter „System“ in die Zeile passt.
 - Sammelstand: 0.5.99 enthält 0.5.95 (Archivnachweise), 0.5.94 (Umwandeln) und alles davor.
 
+## Neu in 0.5.96: Crunchyroll
+
+- **Neuer Plattform-Reiter „Crunchyroll“** und Crunchyroll im gemeinsamen Katalog: Anime-Serien mit Staffeln und Folgen sowie Filme, mit deutschen Texten, Altersfreigabe, einheitlichen deutschen Kategorien, Bewertung (IMDb/TMDB-Abgleich wie bei den anderen Plattformen), Merkliste und Weiterschauen.
+- **Wichtig: Crunchyroll hat das kostenlose Angebot mit Werbung zum 31.12.2025 eingestellt.** Seit dem 1.1.2026 braucht man auf crunchyroll.com für jeden Titel ein Abo, und alle Streams sind mit Widevine geschützt. MediathekAtlas umgeht nichts: „Bei Crunchyroll ansehen“ öffnet den Titel auf crunchyroll.com; die optionale Chrome-Erweiterung „Videostart“ klickt dort auf Abspielen. Kein Player, kein Offline-Speichern.
+- Die Auswahl „Angebot“ filtert nach **Kostenlos / Nur mit Abo / Deutsche Synchronfassung / Deutsche Untertitel**. Sollte Crunchyroll wieder Folgen ohne Abo freigeben, erscheinen sie automatisch als „Kostenlos“.
+- **Gratis-Folgen:** Der offizielle YouTube-Kanal „Crunchyroll auf Deutsch“ (@CrunchyrollDE) ist unter YouTube als Vorschlag eingetragen (ganze Folgen ab 20 Minuten, Trailer und Clips bleiben draußen). Er läuft im MediathekAtlas-Player, braucht aber den YouTube-API-Schlüssel.
+- Nicht live geprüft: crunchyroll.com ist aus der Bauumgebung gesperrt. Crunchyroll schützt die Seite mit Cloudflare; blockiert es den Abruf, sagt die Katalog-Karte das im Klartext.
+- Sammelstand: 0.5.96 enthält 0.5.95 (Archivnachweis) und alles davor.
 
 ## Neu in 0.5.95: Prüfsumme und Archivnachweis für Archive.org-Downloads, Zweitkopie im Verbund
 
