@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.5.100
+# MediathekAtlas · 0.5.101
+
+## Neu in 0.5.101: ServusTV On
+
+- **Neuer Plattform-Reiter „ServusTV“** mit der kostenlosen Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen wie „Bergwelten“ mit allen Folgen, Spielfilme. Dazu **ServusTV Deutschland und Österreich live**, auch im Reiter Live-TV. Wie bei den anderen Plattformen mit einheitlichen Kategorien, Titel- und Sendungsseite, Suche, Merkliste und im Dashboard.
+- **Alles läuft im MediathekAtlas-Player**: ServusTV liefert ohne Kopierschutz aus (jeder Stream wird trotzdem vorher geprüft). Gibt ServusTV ein Video gerade nicht frei, nennt der Player den Grund, zum Beispiel „Jugendschutz: nur von 22:00 bis 06:00 Uhr“ oder „Geosperre“.
+- **Kein Offline-Speichern**: ServusTV erlaubt Downloads nur in der eigenen App.
+- Nicht geprüft: ServusTV selbst (aus der Bauumgebung gesperrt). Die Wiedergabe-Schnittstelle ist durch yt-dlp belegt. Woher die Videoliste kommt, ist eine begründete Annahme (WordPress-Schnittstelle, sonst Sitemap). Bleibt der Katalog leer, hilft ein HAR-Mitschnitt von servustv.com.
+- Sammelstand: 0.5.101 enthält 0.5.100 (Plex) und alles davor.
 
 ## Neu in 0.5.100: Plex – kostenlose Filme, Serien und Live-Sender
 

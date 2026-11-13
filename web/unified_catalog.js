@@ -8,11 +8,11 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex'];
-  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex'};
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv'];
+  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
-  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex};
-  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen'};
+  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV};
+  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen',servustv:'Bei ServusTV ansehen'};
   const TYPES = ['movies','series'];
   let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
@@ -114,7 +114,7 @@
   // recognition board; Netzkino, Pluto TV and JustWatch TV get their own catalogue, scan and
   // work-assignment progress; "Gesamt" shows the ARD/ZDF board plus all portal catalogues.
   let portalTimer=0,portalSeq=0;
-  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync',youtube:'youtube-sync',joyn:'joyn-sync',toggo:'toggo-sync',crunchyroll:'crunchyroll-sync',plex:'plex-sync'};
+  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync',youtube:'youtube-sync',joyn:'joyn-sync',toggo:'toggo-sync',crunchyroll:'crunchyroll-sync',plex:'plex-sync',servustv:'servustv-sync'};
   const num=n=>Number(n||0).toLocaleString('de-DE');
   const when=t=>t?new Date(t*1000).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'noch nie';
   function portalBoard() {
@@ -547,6 +547,7 @@
     const tgNeeded=(source==='all'||source==='toggo') && !seriesKey;
     const crNeeded=(source==='all'||source==='crunchyroll') && !seriesKey;
     const pxNeeded=(source==='all'||source==='plex') && !seriesKey;
+    const svNeeded=(source==='all'||source==='servustv') && !seriesKey;
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -578,6 +579,9 @@
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     if (pxNeeded)requests.push({source:'plex',req:window.api('plex?'+new URLSearchParams({
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
+    }))});
+    if (svNeeded)requests.push({source:'servustv',req:window.api('servustv?'+new URLSearchParams({
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));

@@ -1007,6 +1007,7 @@ function portalView(name){
   if(name==='toggo')window.MediathekAtlasToggo?.refresh?.();
   if(name==='crunchyroll')window.MediathekAtlasCrunchyroll?.refresh?.();
   if(name==='plex')window.MediathekAtlasPlex?.refresh?.();
+  if(name==='servustv')window.MediathekAtlasServusTV?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);

@@ -16,6 +16,7 @@ Sources so far:
 - Samsung TV Plus (0.5.97): free FAST channels from the stored channel list (samsung_tvplus.py), HLS
   via /api/play?samsung=<id>; channels Samsung delivers only with Widevine are not listed.
 - Plex (0.5.98): free live channels of the Plex catalogue (plex.py), HLS via /api/play?plex=<id>.
+- ServusTV (0.5.101): ServusTV Deutschland and Österreich (servustv.py), HLS via /api/play?servustv=<id>.
 
 A new provider only needs a loader returning channel dicts (see _channel) and an entry in
 PROVIDERS. Live streams are never stored offline. Nothing here fetches from the network:
@@ -69,7 +70,7 @@ _KNOWN = {key: (name, group, pos) for pos, (key, name, group, _) in enumerate(ST
 _REGIONAL_PREFIXES = sorted((k for k, (_, g, _) in _KNOWN.items() if g == REGIONAL), key=len, reverse=True)
 
 PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('samsung', 'Samsung TV Plus'),
-             ('plex', 'Plex'), ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
+             ('plex', 'Plex'), ('servustv', 'ServusTV'), ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
 PROVIDER_NAMES = dict(PROVIDERS)
 
 
@@ -190,6 +191,15 @@ def plex_channels(root):
     return out
 
 
+def servustv_channels(root):
+    """ServusTV Deutschland and Österreich (0.5.101): HLS via /api/play?servustv=<id>."""
+    import servustv
+    return [_channel('servustv', row['id'], row['title'], {'servustv': row['id']}, group='ServusTV',
+                     logo=row.get('poster') or '', number=row.get('number'), summary=row.get('summary') or '',
+                     quality='kostenlos, je nach Land gesperrt')
+            for row in servustv.channels(root)]
+
+
 def joyn_channels(root):
     """Joyn live channels (0.5.65): link to joyn.de only (no playback released, see joyn.py)."""
     import joyn
@@ -225,7 +235,7 @@ def channels(c, root, budget=None):
     budget = BUDGET if budget is None else budget
     found, errors, results = [], {}, {}
     loaders = (('pluto', lambda: pluto_channels(root)), ('samsung', lambda: samsung_channels(root)),
-               ('plex', lambda: plex_channels(root)),
+               ('plex', lambda: plex_channels(root)), ('servustv', lambda: servustv_channels(root)),
                ('rakuten', lambda: rakuten_channels(root)), ('joyn', lambda: joyn_channels(root)))
 
     def work(key, loader):

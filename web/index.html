@@ -107,6 +107,7 @@
   <button type="button" data-catalog-source="toggo">TOGGO</button>
   <button type="button" data-catalog-source="crunchyroll">Crunchyroll</button>
   <button type="button" data-catalog-source="plex">Plex</button>
+  <button type="button" data-catalog-source="servustv">ServusTV</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Alle Plattformen · Filme</h2>
@@ -146,6 +147,7 @@
     <button class="platform-tab" type="button" data-platform="toggo">TOGGO</button>
     <button class="platform-tab" type="button" data-platform="crunchyroll">Crunchyroll</button>
     <button class="platform-tab" type="button" data-platform="plex">Plex</button>
+    <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -320,6 +322,35 @@
   <div class="netzkino-pages"><button type="button" id="plex-prev">← Zurück</button>
     <span id="plex-page-label" class="muted"></span>
     <button type="button" id="plex-next">Weiter →</button></div>
+</section>
+<section id="servustv" class="pluto-panel servustv-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>ServusTV On · Sendungen, Filme und Live</h3>
+    <p class="muted">Die kostenlose Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen mit allen Folgen, Spielfilme sowie ServusTV Deutschland und Österreich live.
+       ServusTV liefert ohne Kopierschutz aus: Alles läuft im MediathekAtlas-Player. Manche Filme gibt ServusTV aus Jugendschutzgründen nur abends frei, manche nur in Deutschland oder Österreich; der Player nennt dann den Grund.
+       Offline-Speichern gibt es nicht, ServusTV erlaubt Downloads nur in der eigenen App.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="servustv-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="servustv-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="servustv-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="ServusTV-Ansicht">
+    <button type="button" id="servustv-view-movies" class="primary">Filme</button>
+    <button type="button" id="servustv-view-series">Sendungen</button>
+    <button type="button" id="servustv-view-live">Live-TV</button>
+    <button type="button" id="servustv-back" hidden>← Zur Serienübersicht</button>
+    <span id="servustv-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>ServusTV-Videos suchen<input type="search" id="servustv-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="servustv-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="servustv-categories" class="portal-categories" role="group" aria-label="ServusTV-Kategorien" hidden></div>
+  <p id="servustv-status" class="muted" role="status"></p>
+  <details id="servustv-offline" class="nk-offline servustv-offline" hidden><summary>Offline-Kopien von ServusTV <span id="servustv-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="servustv-offline-jobs"></div></details>
+  <div id="servustv-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="servustv-prev">← Zurück</button>
+    <span id="servustv-page-label" class="muted"></span>
+    <button type="button" id="servustv-next">Weiter →</button></div>
 </section>
 <section id="crunchyroll" class="pluto-panel crunchyroll-panel">
   <div class="panel netzkino-sync-panel">
@@ -624,4 +655,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/system.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/system.js"></script></body></html>

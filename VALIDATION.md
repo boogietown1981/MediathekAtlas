@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.101 – ServusTV On (13. November 2026)
+- Automatisch: gesamte Python-Suite (1111 Tests, 3 übersprungen), alle Node-Smoke-Tests, Klicktest `tests/browser/click_all.cjs` in Chromium ohne Befund. Neu `tests/test_v0601_servustv.py` (13 Tests) gegen nachgebaute Antworten: REST-Katalog mit zwei Seiten (130 Einträge), Sendung „Bergwelten“ mit Staffel/Folge, Filmformat bleibt Film, HTML-Entitäten und Tags entfernt; Sitemap-Rückfall mit Titeln aus der Player-Schnittstelle bzw. aus `video:`-Angaben, Nicht-Video-Seiten ausgelassen, Sitemaps mit DOCTYPE/ENTITY abgelehnt; Fehler behält den Katalog; Wiedergabe (geprüftes HLS, Zwischenspeicher, Jugendschutz- und Geosperre-Meldung, Kopierschutz gemerkt auch nach neuem Katalogauf), Live mit Ausweichadresse, `streaming.resolve`, Live-TV, Titelseite, Verdrahtung.
+- Im Browser (Chromium, echter Server, Katalog aus der nachgebauten Schnittstelle): Reiter ServusTV mit 126 Filmen, 1 Sendung, 2 Live-Sendern; Titelseite mit „Abspielen“ und „Bei ServusTV ansehen“; Dashboard-Quelle ServusTV mit Live-Leiste; Reiter Live-TV mit Anbieter ServusTV · 2. Keine Skriptfehler, keine fehlgeschlagenen Anfragen.
+- Nicht geprüft: echte ServusTV-Schnittstellen (gesperrt). Offen ist vor allem die Katalogquelle (Route und Feldnamen der WordPress-Schnittstelle bzw. Aufbau der Sitemaps), außerdem die Live-Adressen und Geosperren.
+
 ## 0.5.100 – Plex auf Basis 0.5.99 (13. November 2026)
 - Die Prüfungen von 0.5.98 (unten) gelten weiter; für 0.5.100 erneut ausgeführt: siehe Zeile „Sammelstand“.
 - Automatisch: gesamte Python-Suite (1051 Tests, 3 übersprungen), alle Node-Smoke-Tests. Neu `tests/test_v0598_plex.py` (8 Tests) gegen eine nachgebaute Plex-Schnittstelle: Bereiche und Seiten (230 Filme in drei Seiten), Rückfall auf Hubs, ein Gast-Zugang je Lauf, Erneuerung nach 401, Folgen, Wiedergabe (DASH ohne Schutz über ffmpeg ohne Adresse im Browser, `license` und `ContentProtection` abgelehnt und gemerkt, auch nach neuem Katalogauf), Live über `hls_guard`, Live-TV, Titelseite, Fehler behält den Katalog, keine Bilder mit Token.

@@ -113,7 +113,7 @@ class PlutoLive(Base, pluto_test.Fixture):
         self.ingest(live_row('ARD', 'Das Erste Livestream'))
         data = live_tv.overview(self.c, self.root)
         counts = {p['key']: p['channels'] for p in data['providers']}
-        self.assertEqual(counts, {'mediathek': 1, 'pluto': 1, 'samsung': 0, 'plex': 0, 'rakuten': 0, 'joyn': 0})
+        self.assertEqual(counts, {'mediathek': 1, 'pluto': 1, 'samsung': 0, 'plex': 0, 'servustv': 0, 'rakuten': 0, 'joyn': 0})
         pl = [s for s in data['stations'] if s['sources'][0]['provider'] == 'pluto'][0]
         self.assertEqual((pl['name'], pl['number'], pl['logo']), ('Pluto TV Filme', 100, 'https://images.pluto.tv/channels/logo.png'))
         self.assertEqual(pl['sources'][0]['play'], {'pluto': '5ce4475cd43850831ca91ce7'})
@@ -125,7 +125,7 @@ class PlutoLive(Base, pluto_test.Fixture):
     def test_summary_has_counters_only(self):
         pluto.sync(self.root, fetch=self.fetch, now=1000)
         s = live_tv.summary(self.c, self.root)
-        self.assertEqual(s['channels'], {'mediathek': 0, 'pluto': 1, 'samsung': 0, 'plex': 0, 'rakuten': 0, 'joyn': 0})
+        self.assertEqual(s['channels'], {'mediathek': 0, 'pluto': 1, 'samsung': 0, 'plex': 0, 'servustv': 0, 'rakuten': 0, 'joyn': 0})
         self.assertNotIn('Pluto TV Filme', json.dumps(s))
 
 
