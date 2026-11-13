@@ -1,4 +1,4 @@
-/* 0.5.81: Verwaltung → Speicher. Used space of the downloads, a budget and a cleanup suggestion
+/* 0.5.81: Verwaltung → Speicher (0.5.94: plus Umwandeln). Used space of the downloads, a budget and a cleanup suggestion
    after the rules taken from HomeTube (storage_policy.py). MediathekAtlas deletes nothing by itself
    here: a file goes only after "Löschen" for exactly that file and a confirmation. */
 (() => {
@@ -81,12 +81,76 @@
         paint(r.storage);
       });
     };
-    actions.append(pin, del);
+    const enc = el('button', 'Umwandeln'); enc.type = 'button';
+    enc.title = 'Auf eine kleinere Bildgröße umrechnen (ffmpeg). Das Original bleibt, wenn du es nicht ausdrücklich ersetzen lässt.';
+    enc.onclick = () => askEncode(item);
+    actions.append(enc, pin, del);
     tr.append(name, el('td', item.source), el('td', size(item.size_bytes), 'num'), el('td', day(item.stored_at)),
       el('td', item.watched_done ? 'zu Ende, ' + day(item.last_watched) : item.last_watched ? day(item.last_watched) : 'noch nie'), state, actions);
     return tr;
   }
+  /* 0.5.94: Umwandeln (encoder.py). One conversion at a time on the server; this block only shows the queue. */
+  const STATE = {queued: 'wartet', running: 'läuft', done: 'fertig', error: 'fehlgeschlagen', cancelled: 'abgebrochen'};
+  let encoder = null, encTimer = 0, encItem = null;
+  function paintEncoder(d) {
+    const wasActive = encoder && encoder.active > 0;
+    encoder = d;
+    const status = $('encoder-status');
+    status.className = d.available ? 'muted' : 'notice-error';
+    status.textContent = !d.available ? 'ffmpeg oder ffprobe fehlt auf diesem System. Ohne beide ist keine Umwandlung möglich (siehe Verwaltung → Diagnose, Werkzeuge).'
+      : d.active ? d.active + (d.active === 1 ? ' Umwandlung' : ' Umwandlungen') + ' in Arbeit oder in der Warteschlange.' : d.jobs.length ? 'Keine Umwandlung in Arbeit.' : 'Noch keine Umwandlung gestartet.';
+    $('encoder-clear').hidden = !d.jobs.some(j => !['queued', 'running'].includes(j.state));
+    $('encoder-jobs').replaceChildren(...d.jobs.map(job => {
+      const row = el('div', undefined, 'encoder-job ' + job.state), text = el('div');
+      text.append(el('strong', job.title || job.file), el('small', job.file + ' → ' + job.target + (job.replace ? ' (ersetzt das Original)' : '')));
+      const bar = el('div', undefined, 'storage-bar'), fill = el('i');
+      const percent = job.state === 'done' ? 100 : Math.round((job.progress || 0) * 100);
+      fill.style.width = percent + '%'; bar.append(fill);
+      let note = STATE[job.state] || job.state;
+      if (job.state === 'running') note += ' · ' + percent + ' %';
+      if (job.state === 'done' && job.result_bytes) note += ' · ' + size(job.source_bytes) + ' → ' + size(job.result_bytes);
+      if (job.state === 'error' && job.error) note += ': ' + job.error;
+      row.append(text, el('span', job.label, 'storage-tag'), bar, el('span', note, 'encoder-note'));
+      if (job.state === 'queued' || job.state === 'running') {
+        const stop = el('button', 'Abbrechen'); stop.type = 'button'; stop.title = 'Umwandlung beenden. Das Original bleibt unberührt.';
+        stop.onclick = () => window.busy(stop, async () => paintEncoder(await window.api('encoder-cancel', {id: job.id})));
+        row.append(stop);
+      } else row.append(el('span'));
+      return row;
+    }));
+    clearTimeout(encTimer);
+    if (d.active > 0 && !box.hidden) encTimer = setTimeout(loadEncoder, 3000);
+    if (wasActive && !d.active) load();
+  }
+  async function loadEncoder() {
+    try { paintEncoder(await window.api('encoder')); }
+    catch (e) { $('encoder-status').textContent = 'Umwandlungen konnten nicht gelesen werden: ' + e.message; $('encoder-status').className = 'notice-error'; }
+  }
+  function askEncode(item) {
+    if (!encoder || !encoder.available) { window.notice?.('ffmpeg oder ffprobe fehlt auf diesem System.', 'error'); return; }
+    encItem = item;
+    const fill = (select, list, keep) => { select.replaceChildren(...list.map(o => { const n = el('option', o.label); n.value = o.id; return n; })); if (keep) select.value = keep; };
+    fill($('encoder-profile'), encoder.profiles, '720'); fill($('encoder-speed'), encoder.speeds, 'fast');
+    $('encoder-replace').checked = false;
+    $('encoder-what').textContent = '„' + item.title + '“ · ' + item.file + ' · ' + size(item.size_bytes);
+    $('encoder-dialog').showModal();
+  }
+  $('encoder-close').onclick = () => $('encoder-dialog').close();
+  $('encoder-form').addEventListener('submit', event => {
+    event.preventDefault();
+    const item = encItem, replace = $('encoder-replace').checked;
+    if (!item) return;
+    if (replace && !confirm('„' + item.title + '“ nach der Umwandlung ersetzen?\n\n' + item.file + '\n\nDas Original wird entfernt, sobald das Ergebnis geprüft ist (Bildgröße, Laufzeit, Tonspuren). Schlägt die Prüfung fehl, bleibt es erhalten.')) return;
+    window.busy($('encoder-submit'), async () => {
+      const r = await window.api('encoder-add', {id: item.id, profile: $('encoder-profile').value, speed: $('encoder-speed').value, replace, confirm: replace});
+      $('encoder-dialog').close();
+      window.notice?.('Umwandlung vorgemerkt.');
+      paintEncoder(r.encoder);
+    });
+  });
+  $('encoder-clear').onclick = () => window.busy($('encoder-clear'), async () => paintEncoder(await window.api('encoder-clear', {})));
   async function load() {
+    loadEncoder();
     $('storage-status').textContent = 'Speicher wird gemessen …';
     try { paint(await window.api('storage')); }
     catch (e) { $('storage-status').textContent = 'Speicher konnte nicht gemessen werden: ' + e.message; $('storage-status').className = 'notice-error'; }

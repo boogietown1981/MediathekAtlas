@@ -48,7 +48,23 @@
   <div id="storage-sources" class="storage-sources" aria-label="Belegung je Quelle"></div>
   <div class="storage-tablewrap"><table class="storage-table"><thead><tr><th>Titel</th><th>Quelle</th><th class="num">Größe</th><th>Geladen</th><th>Zuletzt gesehen</th><th>Status</th><th>Aktionen</th></tr></thead><tbody id="storage-rows"></tbody></table></div>
   <p id="storage-more" class="muted"></p>
+  <div id="encoder-box" class="encoder-box" aria-label="Umwandeln">
+    <div class="sectionhead"><div><h3>Umwandeln (kleinere Bildgröße)</h3>
+      <p class="muted">Rechnet einen fertigen Download mit ffmpeg auf 1080p, 720p oder 480p herunter (H.264 in MKV). Ton und Untertitel bleiben unverändert. Es läuft immer nur eine Umwandlung, mit gesenkter Priorität. Das Original bleibt erhalten, außer du wählst ausdrücklich „Original ersetzen“; dann wird es erst nach bestandener Prüfung des Ergebnisses entfernt. Start über „Umwandeln“ in der Liste oben.</p></div>
+      <button type="button" id="encoder-clear" hidden title="Fertige, abgebrochene und fehlgeschlagene Einträge aus dieser Liste nehmen. Dateien werden nicht angefasst.">Liste leeren</button></div>
+    <p id="encoder-status" class="muted" role="status"></p>
+    <div id="encoder-jobs" class="encoder-jobs"></div>
+  </div>
 </section>
+<dialog id="encoder-dialog" aria-label="Download umwandeln"><div class="modalhead"><h2>Umwandeln</h2><button type="button" id="encoder-close">Schließen</button></div>
+  <p id="encoder-what"></p>
+  <form id="encoder-form" class="encoder-form">
+    <label><span>Zielgröße</span><select id="encoder-profile"></select></label>
+    <label><span>Tempo</span><select id="encoder-speed" title="Schnell: weniger Rechenzeit, etwas größere Datei. Ausgewogen: kleinere Datei, deutlich längere Rechenzeit."></select></label>
+    <label class="check"><input type="checkbox" id="encoder-replace"> Original ersetzen (erst nach bestandener Prüfung des Ergebnisses)</label>
+    <p class="muted">Ohne Haken entsteht eine zweite Datei neben dem Original, z. B. „Titel [720p].mkv“. Auf älteren Geräten und NAS kann eine Umwandlung mehrere Stunden dauern.</p>
+    <button type="submit" id="encoder-submit" class="primary">In die Warteschlange</button>
+  </form></dialog>
 <section id="legacy" hidden>
   <div class="sectionhead"><div><h2>Werkkatalog ARD, ZDF &amp; Co.</h2>
     <p class="muted">Arbeitsansicht mit Genre-Baum, Zuordnungs- und Download-Filtern. Zum Stöbern ist das Dashboard gedacht.</p></div></div>

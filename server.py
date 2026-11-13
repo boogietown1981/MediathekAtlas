@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -270,6 +270,19 @@ def worker():
         elif claimed[0]:SERVICE.mesh_release(j)
 
 SERVICE=catalog_service.Service(db,settings,STOP,ROOT)
+def encoder_tools():return {'ffmpeg':runtime_tools.resolve('ffmpeg'),'ffprobe':runtime_tools.resolve('ffprobe')}
+def encoder_replaced(job_id,old,new):
+    """0.5.94: after a checked conversion replaced the original, the download points to the new file."""
+    with db() as c:
+        row=c.execute('SELECT payload FROM jobs WHERE id=?',(str(job_id),)).fetchone()
+        if row:
+            job=json.loads(row[0])
+            for key in ('path','target'):
+                if job.get(key)==old:job[key]=new
+            job['encoded']={'at':time.time(),'from':Path(old).name}
+            c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(job,ensure_ascii=False),str(job_id)))
+    local_library.invalidate(old,new);catalog.invalidate_listings(drop=True);unified_index.invalidate()
+ENCODER=encoder.Worker(ROOT,encoder_tools,encoder_replaced,diagnostics.event,diagnostics.error)
 catalog.LISTING_DB=db
 catalog.load_listings(ROOT/'listing-cache.json')   # 0.5.57: grouped lists of the last run, shown at once after a start
 def _unified_built(key,index,seconds):
@@ -616,6 +629,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/watch':
             # 0.5.81: Merkliste, Weiterschauen and playback positions, kept on the server (watch_state).
             return self.send(watch_state.overview(ROOT))
+        if path=='/api/encoder':return self.send(encoder.listing(ROOT,encoder_tools()))
         if path=='/api/storage':
             # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
             with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
@@ -1365,6 +1379,19 @@ class Handler(BaseHTTPRequestHandler):
                 values=storage_policy.save(ROOT,d)
                 diagnostics.event('storage_settings',budget_gb=values['budget_gb'],protect_days=values['protect_days'])
                 with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
+            if path=='/api/encoder-add':
+                # 0.5.94: convert one finished download to a smaller picture (encoder.py). Replacing the original needs the confirmation.
+                replace=d.get('replace') is True
+                if replace and d.get('confirm') is not True:raise ValueError('Original ersetzen nur nach Bestätigung')
+                with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(str(d.get('id','')),)).fetchone()
+                if not row:raise ValueError('Nur fertige Downloads können umgewandelt werden')
+                result=encoder.add(ROOT,json.loads(row[0]),str(d.get('profile','')),encoder_tools(),speed=str(d.get('speed') or 'fast'),replace=replace)
+                diagnostics.event('encoder_queued',profile=str(d.get('profile','')),replace=replace,source_height=result['source_height'])
+                return self.send({**result,'encoder':encoder.listing(ROOT,encoder_tools())})
+            if path=='/api/encoder-cancel':
+                encoder.cancel(ROOT,d.get('id'));return self.send(encoder.listing(ROOT,encoder_tools()))
+            if path=='/api/encoder-clear':
+                encoder.clear(ROOT);return self.send(encoder.listing(ROOT,encoder_tools()))
             if path=='/api/storage-delete':
                 # One file per request, only after the user's confirmation in the page; pinned titles are refused.
                 if d.get('confirm') is not True:raise ValueError('Löschen nur nach Bestätigung')
@@ -1444,6 +1471,7 @@ if __name__=='__main__':
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
         threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()
+        threading.Thread(target=ENCODER.loop,args=(STOP,),daemon=True,name='encoder').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)

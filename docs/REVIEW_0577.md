@@ -33,7 +33,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 | --- | --- |
 | Favoriten, Anheften, zuletzt gesehen | übernommen in 0.5.81 (`watch_state.py`) |
 | Speicherregeln mit Platzbudget und Aufräum-Vorschlag | übernommen in 0.5.81 (`storage_policy.py`), ohne selbsttätiges Löschen |
-| Umwandeln in 1080p, 720p, 480p (Encoder) | offen |
+| Umwandeln in 1080p, 720p, 480p (Encoder) | übernommen in 0.5.94 (`encoder.py`, ffmpeg statt HandBrake), ohne Hardware-Beschleunigung |
 | Signierter Archivnachweis je Datei, gezielte Übertragung an ein zweites System | offen |
 | Eigene Videos mit Rechteangabe aufnehmen | offen |
 | Systemmonitor, helles Design | offen |
@@ -46,7 +46,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 3. Archive.org-Erkennung: Jahr, Suchtitel, Serien zusammenführen, Anime (0.5.82, `archive_recognition.py`); Spuren vor dem Download waren schon aktiv
 4. Staffel-Auswahl für Archive.org, Uploader weiterverfolgen
 5. Plattform-Registratur (0.5.84, `platform_registry.py`); Netzkino auf das gemeinsame Panel noch offen
-6. Umwandeln (Encoder)
+6. Umwandeln (Encoder) (0.5.94, `encoder.py`)
 7. Archivkopie im Verbund mit Prüfsumme und Nachweis
 8. Helles Design, Systemmonitor, Klicktest in der CI mit Firefox und WebKit
 9. Audio, Hörbücher und Bücher von Archive.org, Austausch des Bestands als Datei

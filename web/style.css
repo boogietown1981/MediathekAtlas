@@ -930,6 +930,13 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .storage-tag.safe{color:#91dcc7;border-color:#2c5a4f}.storage-tag.suggest{color:#f4d27a;border-color:#6d5a2a}
 .storage-actions{white-space:nowrap}.storage-actions button{margin:0 0 0 6px;min-height:30px;padding:4px 10px;font-size:12px}
 .storage-actions button.danger{color:#ffb4a8;border-color:#6b3a36}
+.encoder-box{margin-top:26px}.encoder-jobs{display:grid;gap:6px}
+.encoder-job{display:grid;grid-template-columns:minmax(0,2fr) 70px minmax(80px,1fr) minmax(0,1.4fr) 100px;gap:10px;align-items:center;border:1px solid #2c3b49;border-radius:10px;background:#101d29;padding:8px 11px;font-size:12px}
+.encoder-job strong{display:block;font-size:13px}.encoder-job small{display:block;color:#8ea2b5;font-size:11px;overflow-wrap:anywhere}
+.encoder-job button{min-height:30px;padding:4px 10px;font-size:12px}.encoder-job.error .encoder-note{color:#ffb4a8}.encoder-job.done .encoder-note{color:#91dcc7}
+.encoder-form{display:grid;gap:12px;max-width:520px}.encoder-form label:not(.check){display:flex;flex-direction:column;gap:5px;font-size:12px;color:#adc0d1}
+#encoder-dialog{max-width:600px}
+@media(max-width:680px){.encoder-job{grid-template-columns:minmax(0,1fr)}}
 @media(max-width:1100px){.storage-metrics{grid-template-columns:repeat(2,minmax(0,1fr))}}
 @media(max-width:680px){.storage-metrics{grid-template-columns:minmax(0,1fr)}.storage-source{grid-template-columns:90px minmax(0,1fr) 70px}.storage-source small{display:none}.atlas-watch-tile{flex-basis:260px}}
 

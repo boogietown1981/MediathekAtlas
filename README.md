@@ -1,4 +1,16 @@
-# MediathekAtlas · 0.5.93
+# MediathekAtlas · 0.5.94
+
+## Neu in 0.5.94: Umwandeln auf 1080p, 720p oder 480p (Encoder)
+
+- **Verwaltung → Speicher → „Umwandeln“** rechnet einen fertigen Download mit ffmpeg auf eine kleinere Bildgröße herunter (H.264 in MKV). Ton und Untertitel bleiben unverändert, Kapitel und Titelangaben auch.
+- **Das Original bleibt erhalten.** Ohne weiteres Zutun entsteht eine zweite Datei daneben, z. B. „Titel [720p].mkv“. Nur mit dem Haken „Original ersetzen“ und einer Bestätigung tritt das Ergebnis an die Stelle des Originals, und auch dann erst, wenn es geprüft ist (Bildhöhe, Laufzeit, Zahl der Tonspuren). Besteht es die Prüfung nicht, bleibt das Original und das Ergebnis wird verworfen.
+- **Schonend für ältere Geräte:** immer nur eine Umwandlung, mit gesenkter Priorität. „Schnell“ braucht weniger Rechenzeit, „Ausgewogen“ ergibt kleinere Dateien. Hochrechnen wird abgelehnt (ein 720p-Video wird nicht zu 1080p).
+- Die Warteschlange steht unter der Dateiliste, mit Fortschritt, „Abbrechen“ und „Liste leeren“. Nach einem Neustart wird eine unterbrochene Umwandlung von vorn begonnen; halbfertige Dateien heißen `.partial` und zählen nie als Ergebnis.
+- Vor dem Start wird der freie Platz geprüft. Fehlen ffmpeg oder ffprobe, sagt die Seite das, statt einen Auftrag anzunehmen.
+- Bewusst ffmpeg statt HandBrake: ffmpeg ist für Downloads ohnehin dabei, auf macOS, Windows, Linux und NAS. Hardware-Beschleunigung (VideoToolbox, Quick Sync) ist noch nicht eingebaut.
+- Nicht geprüft: echte NAS-Hardware, macOS und Windows, sehr lange Filme. Getestet ist mit kurzen echten Videos unter Linux.
+- Sammelstand: 0.5.94 enthält 0.5.93 und alles davor.
+
 
 ## Neu in 0.5.93: Videostart auch bei TOGGO und JustWatch, SAT.1 als Joyn+
 
