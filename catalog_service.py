@@ -3,7 +3,7 @@ import hashlib,json,time,threading,secrets,sqlite3
 from collections import deque
 import platform
 from pathlib import Path
-import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer,task_control
+import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer,task_control,archive_receipts
 
 def retry_delay(attempts,result):
     """Back off stable non-matches; retry genuine network failures sooner."""
@@ -848,6 +848,7 @@ class Service:
                 journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers});self.mesh_beat=time.time()
             # Results from before joining the Verbund are shared once, in batches.
             journal.flush(force=self.mesh_backfill(journal)>0)
+            self.mesh_receipts(journal,folder)
             self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
@@ -900,6 +901,8 @@ class Service:
         return old is None or key>tuple(old),old is not None
     def mesh_apply(self,c,event):
         if event['type'] in meshjournal.DOWNLOAD_TYPES:return self.mesh_download_apply(c,event)
+        # 0.5.95: signed proof of an Archive.org copy on another system; kept in its own database, checked there.
+        if event['type']==meshjournal.RECEIPT:return archive_receipts.accept(self.root,event['node'],event['data'])
         d=event['data'];rank=meshjournal.RANK[d['outcome']]
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
@@ -961,6 +964,26 @@ class Service:
             else:self.mesh_backlog={'done':True,'shared':self.mesh_backlog.get('shared',0)}
         if published:diagnostics.event('mesh_backfill',published=published)
         return published
+    def mesh_receipts(self,journal=None,folder=None):
+        """Announce this system's Archive.org receipts (archive_receipts) the Verbund has not seen yet."""
+        if journal is None:
+            with self.mesh_lock:journal=self.mesh
+            if journal is None:return 0
+        if folder is not None:
+            # Another Verbund folder has not seen any of them: announce all once more.
+            with self.db() as c:
+                if catalog.get_state(c,'mesh_receipt_folder')!=folder:
+                    archive_receipts.republish(self.root);catalog.set_state(c,'mesh_receipt_folder',folder)
+        items=archive_receipts.unpublished(self.root);sent=[]
+        for data in items:
+            try:journal.append(meshjournal.RECEIPT,data);sent.append(data)
+            except (OSError,ValueError) as e:
+                diagnostics.error('mesh_receipt_failed',e);break
+        if sent:
+            try:journal.flush(force=True)
+            except OSError:pass
+            archive_receipts.mark_published(self.root,sent);diagnostics.event('mesh_receipts_published',count=len(sent))
+        return len(sent)
     def mesh_publish(self,c,kind,wid,dest,outcome,meta,providers):
         with self.mesh_lock:journal=self.mesh
         if journal is None:return None

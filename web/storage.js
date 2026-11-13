@@ -149,8 +149,72 @@
     });
   });
   $('encoder-clear').onclick = () => window.busy($('encoder-clear'), async () => paintEncoder(await window.api('encoder-clear', {})));
+  /* 0.5.95: Archivnachweise (archive_receipts.py): checksum and signed receipt per Archive.org download, copies in the Verbund. */
+  const CHECK = {md5: 'Quelle mit Archive.org-Prüfsumme (MD5) bestätigt', sha1: 'Quelle mit Archive.org-Prüfsumme (SHA-1) bestätigt'};
+  let recTimer = 0, recWasRunning = false;
+  function paintReceipts(d) {
+    const status = $('receipts-status'), n = d.counts, task = d.task || {};
+    status.className = 'muted';
+    const parts = [];
+    if (!d.total && !d.pending) parts.push('Noch keine Archive.org-Downloads mit Nachweis.');
+    else parts.push(n.own + (n.own === 1 ? ' Datei' : ' Dateien') + ' hier mit Nachweis, davon ' + n.second_copy + ' mit belegter Zweitkopie.');
+    if (n.remote_only) parts.push(n.remote_only + ' nur auf anderen Systemen.');
+    if (d.pending) parts.push(d.pending + (d.pending === 1 ? ' älterer Download hat' : ' ältere Downloads haben') + ' noch keinen Nachweis.');
+    if (!d.verbund) parts.push('Kein Verbund aktiv: Die Nachweise bleiben auf diesem System, bis ein Verbund eingerichtet ist (Verwaltung → Status & Abgleich).');
+    if (task.running) parts.unshift(task.label + ' läuft (' + task.done + ' von ' + task.total + ') …');
+    else if (recWasRunning && task.result) { parts.unshift(task.result.message); if (task.result.state !== 'ok') status.className = 'notice-error'; }
+    if (n.attention) { parts.push(n.attention + (n.attention === 1 ? ' Eintrag braucht' : ' Einträge brauchen') + ' Aufmerksamkeit.'); }
+    status.textContent = parts.join(' ');
+    $('receipts-create').hidden = !d.pending; $('receipts-create').disabled = !!task.running;
+    $('receipts-wrap').hidden = !d.files.length;
+    $('receipts-rows').replaceChildren(...d.files.map(f => {
+      const tr = el('tr'), name = el('td'), own = el('td'), copies = el('td'), state = el('td'), actions = el('td', undefined, 'storage-actions');
+      name.append(el('strong', f.title || f.file), el('small', f.identifier + ' / ' + f.file));
+      if (f.own) {
+        own.append(el('span', size(f.own.stored_size) + ' · Nachweis vom ' + day(f.own.at)),
+          el('small', (CHECK[f.own.source_check] || (f.own.source_known ? 'Archive.org nennt keine Prüfsumme; Quelle nur gemessen' : 'Nachweis nachträglich erstellt, Quelle nicht geprüft')) + (f.own.converted ? ' · umgewandelt' : '')));
+        if (f.own.check_state === 'changed') own.append(el('small', 'Datei weicht vom Nachweis ab (geprüft am ' + day(f.own.checked) + ')', 'receipt-bad'));
+        else if (f.own.checked && f.own.checked > f.own.at + 60) own.append(el('small', 'zuletzt unverändert geprüft am ' + day(f.own.checked)));
+      } else own.append(el('span', 'nicht vorhanden', 'muted'));
+      if (!f.copies.length) copies.append(el('span', 'keine gemeldet', 'muted'));
+      for (const c of f.copies) {
+        const line = el('small', c.name + ' · ' + day(c.at) + (c.converted ? ' · umgewandelt' : '')
+          + (c.trust !== 'valid' ? ' · Schlüssel geändert, zählt nicht' : c.same_source === false ? ' · andere Quelldatei' : c.same_source ? ' · gleiche Quelldatei' : ''));
+        if (c.trust !== 'valid' || c.same_source === false) line.className = 'receipt-bad';
+        copies.append(line);
+      }
+      state.append(el('span', f.status === 'second_copy' ? 'Zweitkopie belegt' : f.status === 'single' ? 'Nur hier' : 'Nur auf anderem System',
+        'storage-tag' + (f.status === 'second_copy' ? ' safe' : f.status === 'single' ? ' suggest' : '')));
+      if (f.own) {
+        const check = el('button', 'Erneut prüfen'); check.type = 'button'; check.disabled = !!task.running;
+        check.title = 'Die Datei vollständig lesen und mit ihrem Nachweis vergleichen. Erkennt beschädigte oder veränderte Dateien.';
+        check.onclick = () => window.busy(check, async () => { const r = await window.api('archive-receipt-check', {identifier: f.identifier, file: f.file}); recWasRunning = true; paintReceipts(r); });
+        actions.append(check);
+      } else {
+        const get = el('button', 'Hier ebenfalls laden'); get.type = 'button';
+        get.title = 'Dieselbe Datei von Archive.org auf dieses System laden (zweite Kopie). Sie wird wie jeder Download geprüft.';
+        get.onclick = () => window.busy(get, async () => {
+          const r = await window.api('archive-receipt-fetch', {identifier: f.identifier, file: f.file});
+          window.notice?.(r.created === false ? 'Steht bereits in den Downloads.' : 'Download vorgemerkt.');
+          paintReceipts(r.receipts);
+        });
+        actions.append(get);
+      }
+      tr.append(name, own, copies, state, actions);
+      return tr;
+    }));
+    clearTimeout(recTimer);
+    if (task.running && !box.hidden) { recWasRunning = true; recTimer = setTimeout(loadReceipts, 2500); }
+    else recWasRunning = false;
+  }
+  async function loadReceipts() {
+    try { paintReceipts(await window.api('archive-receipts')); }
+    catch (e) { $('receipts-status').textContent = 'Nachweise konnten nicht gelesen werden: ' + e.message; $('receipts-status').className = 'notice-error'; }
+  }
+  $('receipts-refresh').onclick = () => loadReceipts();
+  $('receipts-create').onclick = () => window.busy($('receipts-create'), async () => { const r = await window.api('archive-receipts-create', {}); recWasRunning = true; paintReceipts(r); });
   async function load() {
-    loadEncoder();
+    loadEncoder(); loadReceipts();
     $('storage-status').textContent = 'Speicher wird gemessen …';
     try { paint(await window.api('storage')); }
     catch (e) { $('storage-status').textContent = 'Speicher konnte nicht gemessen werden: ' + e.message; $('storage-status').className = 'notice-error'; }

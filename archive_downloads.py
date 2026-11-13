@@ -105,7 +105,8 @@ def build_job(c, download_dir, item_id, filename, override=None, now=None):
     url = portal_sources._archive_video_url(identifier, filename)
     source_id = 'archive:' + identifier + ':' + hashlib.sha1(filename.encode()).hexdigest()[:12]
     target = str(core.target(download_dir, meta, source_id))
-    source = {'_id': source_id, '_download_url': url, 'channel': 'Internet Archive',
+    import archive_receipts
+    source = {'_id': source_id, '_download_url': url, 'channel': 'Internet Archive', '_expect': archive_receipts.expectation(variant),
               'title': variant.get('title') or saved.get('title'), 'topic': saved.get('title'),
               'duration': variant.get('duration_seconds'), 'size': variant.get('size_bytes'),
               'url_website': saved.get('page_url')}
