@@ -37,6 +37,15 @@
 
   const settings = {autoplay: true, hdcp: true};
   let ready = false, done = false, playClicks = 0, lastPlayClick = 0, triedVideo = new WeakSet(), clicked = new WeakSet(), timer = 0, observer = null;
+  let overlayClicks = 0, lastOverlay = 0, lastVideoTry = 0;
+  const begun = Date.now();
+  // 0.5.93: Play-Knöpfe ohne Beschriftung (Björn, 13.11.2026: pinker Knopf bei TOGGO, Mini-Player bei JustWatch).
+  // Klassen der verbreiteten Web-Player und Klassennamen mit „play“ als eigenem Wortteil.
+  const OVERLAY_SELECTORS = ['.vjs-big-play-button', '.jw-display-icon-display', '.jw-icon-display', '.bmpui-ui-hugeplaybacktogglebutton',
+    '.shaka-play-button', '.theo-big-play-button', '.plyr__control--overlaid', '.mejs__overlay-play', '.fp-play', '.ytp-large-play-button',
+    '[data-testid*="play" i]', '[class*="play" i]', '[id*="play" i]', '[aria-label*="play" i]', '[aria-label*="abspielen" i]', '[aria-label*="wiedergabe" i]'];
+  const PLAYISH = /(^|[^a-z])(big-?|huge-?|large-?|center-?)?play(-?(btn|button|icon|overlay|toggle|circle|cta))?([^a-z]|$)|playbutton|play_button|playbtn|big-play/;
+  const PLAYER_BOX = 'video, [class*="player" i], [id*="player" i], [data-testid*="player" i], [class*="video-container" i], [class*="videoplayer" i]';
 
   const label = el => [el.getAttribute('aria-label'), el.getAttribute('title'), el.getAttribute('data-testid'), el.textContent]
     .filter(Boolean).join(' ').replace(/\s+/g, ' ').trim().toLowerCase().slice(0, 160);
@@ -56,6 +65,19 @@
     try { return new URL(a.href, location.href).hostname === location.hostname; } catch (e) { return false; }
   }
   const clickables = root => Array.from(root.querySelectorAll('button, a[href], [role="button"], [aria-label][tabindex]'));
+  const classOf = el => String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className || '').toLowerCase();
+
+  // Klick wie mit der Maus: Zeiger- und Maus-Ereignisse in der Mitte des Elements, dann click.
+  // Manche Player hören auf pointerdown/mousedown statt auf click; SVG-Elemente haben kein .click().
+  function press(el) {
+    const r = el.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    const o = {bubbles: true, cancelable: true, composed: true, clientX: x, clientY: y, button: 0, buttons: 1, view: window};
+    for (const type of ['pointerover', 'pointerenter', 'mouseover', 'pointerdown', 'mousedown', 'pointerup', 'mouseup']) {
+      try { el.dispatchEvent(type.startsWith('pointer') ? new PointerEvent(type, {...o, pointerType: 'mouse', isPrimary: true}) : new MouseEvent(type, o)); }
+      catch (e) { /* ältere Engines */ }
+    }
+    if (typeof el.click === 'function') el.click(); else el.dispatchEvent(new MouseEvent('click', o));
+  }
 
   function toast(text, ms) {
     try {
@@ -98,7 +120,7 @@
     let best = null, score = 0;
     for (const el of clickables(document)) {
       if (clicked.has(el) || !visible(el) || !sameSite(el)) continue;
-      const t = label(el), cls = String(el.className && el.className.baseVal !== undefined ? el.className.baseVal : el.className || '').toLowerCase();
+      const t = label(el), cls = classOf(el);
       if (hasPart(t, NEVER)) continue;
       const i = PLAY_WORDS.findIndex(w => has(t, [w]));
       let s = i >= 0 ? 100 - i : 0;
@@ -110,7 +132,7 @@
     }
     if (!best) return false;
     clicked.add(best); playClicks++; lastPlayClick = Date.now();
-    best.click();
+    press(best);
     toast('Video wird gestartet …');
     return true;
   }
@@ -118,8 +140,9 @@
   function startVideo() {
     if (!settings.autoplay) return;
     for (const v of document.querySelectorAll('video')) {
-      if (triedVideo.has(v) || !v.paused || v.readyState < 2 || !visible(v)) continue;
-      triedVideo.add(v);
+      // 0.5.93: auch Videos, die erst beim Abspielen laden (preload="none", readyState 0)
+      if (triedVideo.has(v) || !v.paused || v.ended || !(v.currentSrc || v.src || v.querySelector('source') || v.srcObject) || !visible(v)) continue;
+      triedVideo.add(v); lastVideoTry = Date.now();
       v.play().catch(() => {
         v.muted = true;
         v.play().then(() => {
@@ -128,6 +151,49 @@
         }).catch(() => {});
       });
     }
+  }
+
+  // 0.5.93: Play-Knopf ohne Beschriftung über dem Player (z. B. pinker Kreis bei TOGGO, Mini-Player bei JustWatch).
+  // 1. bekannte Player-Klassen bzw. Elemente mit „play“ in Klasse/ID/Test-ID; 2. sonst die Mitte des größten Players.
+  function players() {
+    return Array.from(document.querySelectorAll(PLAYER_BOX)).filter(el => {
+      if (!visible(el)) return false;
+      const r = el.getBoundingClientRect();
+      return r.width >= 200 && r.height >= 110 && r.width / r.height > 0.9 && r.width / r.height < 3;
+    }).sort((a, b) => { const ra = a.getBoundingClientRect(), rb = b.getBoundingClientRect(); return rb.width * rb.height - ra.width * ra.height; });
+  }
+  function inside(el, box) {
+    const r = el.getBoundingClientRect(), b = box.getBoundingClientRect(), x = r.left + r.width / 2, y = r.top + r.height / 2;
+    return x >= b.left && x <= b.right && y >= b.top && y <= b.bottom;
+  }
+  function clickOverlay() {
+    if (!settings.autoplay || overlayClicks >= 3 || Date.now() - begun < 1500 || Date.now() - lastOverlay < 3000 || Date.now() - lastPlayClick < 2500 || Date.now() - lastVideoTry < 2500) return false;
+    const boxes = players();
+    let pick = null;
+    for (const el of document.querySelectorAll(OVERLAY_SELECTORS.join(','))) {
+      if (clicked.has(el) || !visible(el) || !sameSite(el)) continue;
+      const r = el.getBoundingClientRect();
+      if (r.width > 260 || r.height > 260) continue;                       // Knopf, nicht der ganze Player
+      const t = label(el).slice(0, 60);
+      if (hasPart(t, NEVER) || /playlist|player-?(bar|controls?)/.test(classOf(el))) continue;
+      const id = classOf(el) + ' ' + String(el.id || '').toLowerCase() + ' ' + String(el.getAttribute('data-testid') || '').toLowerCase()
+        + ' ' + String(el.getAttribute('aria-label') || '').toLowerCase();
+      if (!PLAYISH.test(id) && !/abspielen|wiedergabe/.test(id) && !el.matches(OVERLAY_SELECTORS.slice(0, 10).join(','))) continue;
+      if (boxes.length && !boxes.some(b => inside(el, b))) continue;       // nur Knöpfe auf einem Player
+      pick = el; break;
+    }
+    if (!pick && boxes.length && Date.now() - begun > 3000) {
+      const b = boxes[0].getBoundingClientRect();
+      const hit = document.elementFromPoint(b.left + b.width / 2, b.top + b.height / 2);
+      // nur eigene Beschriftung prüfen (aria-label/title), nicht den ganzen Text des Players
+      const own = [hit && hit.getAttribute('aria-label'), hit && hit.getAttribute('title')].filter(Boolean).join(' ').toLowerCase();
+      if (hit && !clicked.has(hit) && sameSite(hit) && !hasPart(own, NEVER) && hit.tagName !== 'A' && hit.tagName !== 'IFRAME') pick = hit;
+    }
+    if (!pick) return false;
+    clicked.add(pick); overlayClicks++; lastOverlay = Date.now();
+    press(pick);
+    toast('Video wird gestartet …');
+    return true;
   }
 
   function finish(text) {
@@ -145,6 +211,7 @@
     if (confirmHdcp()) return;
     if (clickPlay()) return;
     startVideo();
+    clickOverlay();
   }
 
   function begin() {

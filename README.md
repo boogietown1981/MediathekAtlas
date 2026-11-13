@@ -1,4 +1,14 @@
-# MediathekAtlas · 0.5.91
+# MediathekAtlas · 0.5.93
+
+## Neu in 0.5.93: Videostart auch bei TOGGO und JustWatch, SAT.1 als Joyn+
+
+- Nach Björns Test von 0.5.91: Joyn startet direkt. Bei TOGGO war noch der pinke Play-Knopf zu klicken, bei JustWatch der Play-Knopf im Mini-Player.
+- Die Chrome-Erweiterung klickt jetzt auch **Play-Knöpfe ohne Beschriftung** über dem Player: bekannte Player-Knöpfe (Video.js, JW Player, Bitmovin, Shaka u. a.), Elemente mit „play“ im Klassennamen, und als Letztes die Mitte des Players. Sie klickt wie eine Maus (Zeiger- und Maus-Ereignisse), weil manche Player nicht auf einen einfachen Klick reagieren. Videos, die erst beim Abspielen laden (Mini-Player), startet sie direkt. Sie wirkt auch in eingebetteten Rahmen derselben Seite.
+- **SAT.1 ist als Joyn+ gekennzeichnet** (Live-TV und Reiter Joyn), auch in schon geladenen Katalogen. Joyns eigene Senderliste führt SAT.1 als frei; die Kennzeichnung beruht auf Björns Beobachtung vom 13.11.2026. SAT.1 GOLD, SAT.1 emotions und die Regionalfenster bleiben unverändert.
+- **Erweiterung aktualisieren:** neues ZIP unter Einstellungen → „Videostart bei Anbietern“ herunterladen, den alten Ordner damit ersetzen und unter `chrome://extensions` bei „MediathekAtlas Videostart“ auf ↻ (Neu laden) klicken.
+- Nicht geprüft: die echten Seiten von TOGGO und JustWatch (aus der Bauumgebung gesperrt); getestet mit nachgebauten Seiten. Liegt der Player in einem Rahmen einer anderen Adresse, kommt die Erweiterung dort nicht hin.
+- 0.5.92 ist vom Review-Thread reserviert. 0.5.93 baut auf 0.5.91 auf.
+
 
 ## Neu in 0.5.91: Videos bei Rakuten TV, Joyn, TOGGO und JustWatch TV starten schneller
 

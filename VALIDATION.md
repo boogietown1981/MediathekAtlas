@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.93 – Videostart TOGGO/JustWatch, SAT.1 Joyn+ (13. November 2026)
+- Automatisch: gesamte Python-Suite (996 Tests, 3 übersprungen), alle Node-Smoke-Tests; neu `tests/test_v0593_videostart_plus.py` (SAT.1 Joyn+, Regionalfenster und Schwestersender frei, gespeicherter Katalog ohne neuen Abruf gekennzeichnet; Erweiterung).
+- Chromium mit geladener Erweiterung, nachgebaute Seiten: TOGGO-artige Folge mit pinkem Kreis (div ohne Text, CSS-Modul-Klasse, reagiert nur auf pointerdown) → geklickt, Video läuft; Header-Links „TOGGO Plus“/„Merken“ nicht geklickt. JustWatch-artiger Mini-Player (video preload="none", kein Knopf) → läuft; Link „Bei Netflix ansehen“ nicht geklickt. Player mit unbeschriftetem Overlay → Klick in die Mitte, läuft. Ohne Kennung: nichts. Rakuten (Kostenlos ansehen + HDCP) und Joyn wie in 0.5.91 weiter grün.
+- Nicht geprüft: echte Seiten von TOGGO und JustWatch, ob deren Player in einem fremden Rahmen liegt, und ob SAT.1 bei angemeldeten Joyn-Nutzern ohne Joyn+ läuft.
+
 ## 0.5.91 – Videostart bei Anbietern (13. November 2026)
 - Automatisch: gesamte Python-Suite (993 Tests, 4 übersprungen), alle Node-Smoke-Tests; neu `tests/test_v0591_direct_start.py` (7 Tests: Manifest MV3 nur mit `storage` und den vier Hosts, ZIP-Inhalt und -Version, reproduzierbar, Versionsformat, Skript ohne Netz-/Lizenzzugriff, Route hinter dem Token, Verdrahtung aller Anbieter-Links, Pakete enthalten Erweiterung und Modul) und `tests/direct_start_smoke.cjs` (Joyn-Umschreibung, Kennung, fremde Hosts/`javascript:` unverändert, Schalter aus, Hosts = Manifest).
 - Chromium mit geladener Erweiterung (aus dem heruntergeladenen ZIP), Anbieterseiten über Playwright-Routen nachgebaut (erfundene Inhalte, gleiche Hosts): Rakuten-Detailseite mit „Kaufen“, „Trailer ansehen“, „Alle akzeptieren“ und „Kostenlos ansehen“ → nur „Kostenlos ansehen“ geklickt, HDCP-Dialog mit „Weiter“ bestätigt („Abbrechen“ nicht), Video läuft (stumm, Autoplay-Sperre). Gleiche Seite ohne Kennung: nichts geklickt. Joyn-Player mit Play-Knopf: geklickt, Video läuft.

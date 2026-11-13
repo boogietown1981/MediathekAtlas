@@ -71,6 +71,14 @@ TITLE_PATH = re.compile(r'/(?:filme|serien|compilation|channels|mediatheken)/[a-
 KIND_PREFIX = {'movie': 'm', 'series': 's', 'channel': 'c'}
 TYPE_KIND = {'Movie': 'movie', 'Series': 'series'}
 FREE, PLUS = 'Joyn (kostenlos)', 'Joyn+'
+# 0.5.93: Sender, die Joyns Navigation als frei führt (PUBLIC_VALUE, ohne PLUS-Markierung), die joyn.de
+# aber nur mit Joyn+ abspielt. Beobachtet von Björn am 13.11.2026 (SAT.1). Nur der genaue Sendername,
+# nicht SAT.1 GOLD, SAT.1 emotions oder die Regionalfenster.
+PLUS_CHANNELS = {'sat.1'}
+
+
+def plus_channel(title):
+    return str(title or '').strip().lower() in PLUS_CHANNELS
 FREE_LICENSES = {'AVOD', 'FREE'}
 PAID_LICENSES = {'SVOD', 'TVOD', 'PREMIUM', 'PLUS', 'HD'}
 GROUP_NAMES = {'PUBLIC_VALUE': 'Öffentlich-rechtlich & Regional', 'SPORTS': 'Sport'}
@@ -306,7 +314,7 @@ def channel_from(node, number=None):
         return None
     groups = [str(g) for g in live.get('liveStreamGroups') or [] if isinstance(g, str)]
     markings = {str(m).upper() for m in live.get('markings') or [] if isinstance(m, str)}
-    plus = 'PLUS' in markings
+    plus = 'PLUS' in markings or plus_channel(title) or plus_channel(node.get('title'))
     group = next((GROUP_NAMES[g] for g in groups if g in GROUP_NAMES), '')
     return {
         'id': 'c.' + ident, 'kind': 'channel', 'title': title, 'path': ident, 'series_id': '', 'season': None,
@@ -525,7 +533,14 @@ def sync(root, request=None, now=None, gap=None):
 
 def _row(db, item_id):
     row = db.execute('SELECT * FROM joyn_items WHERE id=?', (item_id,)).fetchone()
-    return dict(row) if row else None
+    return _plus_fix(dict(row)) if row else None
+
+
+def _plus_fix(row):
+    """0.5.93: a channel of PLUS_CHANNELS is Joyn+ also in catalogues stored before the list."""
+    if row.get('kind') == 'channel' and plus_channel(row.get('title')):
+        row['offer'], row['category'] = 'plus', PLUS
+    return row
 
 
 def episodes(root, series_id):
@@ -579,6 +594,7 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         db.close()
     if kind == 'channel':
         for row in rows:      # 0.5.90: no link of an earlier catalogue that opens the wrong channel
+            _plus_fix(row)
             if not live_link_current(row.get('web_url')):
                 row['web_url'] = ''
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
@@ -604,11 +620,13 @@ def channels(root):
     db = _connect(root)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
-        return [dict(r) for r in db.execute(
+        rows = [dict(r) for r in db.execute(
             "SELECT id,title,number,genre,category,summary,poster,offer,quality,web_url,playable FROM joyn_items "
             "WHERE kind='channel' AND seen>=? ORDER BY number,title", (last,))]
     finally:
         db.close()
+    # 0.5.93: also for catalogues stored before the list (no new request needed)
+    return [_plus_fix({**row, 'kind': 'channel'}) for row in rows]
 
 
 def item(root, item_id):
