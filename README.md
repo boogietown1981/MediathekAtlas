@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.85
+# MediathekAtlas · 0.5.87
+
+## Neu in 0.5.87: TOGGO nach dem echten Angebot von toggo.de
+
+- Grundlage ist Björns Mitschnitt von toggo.de (13.11.2026). TOGGO lädt den Katalog jetzt so, wie die Website selbst: **alle Serien und zusätzlich alle Filme**, mit Titelbild, Beschreibung, Altersempfehlung, Staffeln und Folgen. Die bisherige Ableitung aus der Seitenübersicht (0.5.79 bis 0.5.85) entfällt; der alte TOGGO-Bestand wird beim ersten Start ersetzt, danach bitte einmal „Katalog jetzt laden“.
+- **Kostenlos oder Abo:** Jede Kachel und jede Folge zeigt „kostenlos“ (bei Folgen aus dem Fernsehprogramm mit Enddatum, z. B. „kostenlos bis 20.11.“) oder „Nur mit Abo“. Im Reiter „TOGGO“ gibt es die Auswahl „Angebot“: Alles, nur Kostenloses, nur mit Abo, TOGGOLINO (Vorschule), TOGGO (Schulkinder). Die Serienseite nennt, wie viele Folgen kostenlos sind.
+- **Wiedergabe:** Der Mitschnitt zeigt, dass TOGGO alle Folgen und Filme, auch die kostenlosen, nur mit Kopierschutz (Widevine/PlayReady/FairPlay) ausliefert. MediathekAtlas umgeht ihn nicht. Deshalb gibt es bei TOGGO keinen eigenen Player und kein Offline-Speichern; „Bei TOGGO ansehen“ öffnet genau die Folge oder den Film auf toggo.de. Sollte TOGGO einen Titel einmal ohne Kopierschutz anbieten, erscheint dort „▶ Ansehen“.
+- TOGGO-Filme stehen auch im gemeinsamen Katalog unter „Filme“.
+- **Nicht geprüft:** ein Abruf gegen toggo.de selbst (aus der Bauumgebung gesperrt). Die Anfragen entsprechen dem Mitschnitt; ob das Blättern bei mehr als 500 Titeln je Liste so funktioniert, war im Mitschnitt nicht enthalten (aktuell 182 Serien und 104 Filme, also eine Antwort je Liste).
+- Diese Version baut auf 0.5.85 auf und enthält alles daraus.
 
 ## Neu in 0.5.85: Joyn lädt den Katalog wieder vollständig
 

@@ -152,18 +152,29 @@ def _portal(root, source, item_id):
         facts.append(['Stream', 'nur im Joyn-Player (in der Regel mit Kopierschutz) – bei Joyn ansehen, kein Offline-Speichern'])
         m['notes'].append('Joyn spielt Titel nur im eigenen Player ab; MediathekAtlas meldet sich bei Joyn nicht an und umgeht keinen Kopierschutz.')
     if source == 'toggo':
-        facts.append(['Angebot', 'TOGGOLINO (Vorschule), kostenlos' if it.get('brand') == 'TOGGOLINO' else 'TOGGO (Super RTL), kostenlos'])
-        if m['kind'] == 'series' and it.get('number'):
-            facts[:] = [f for f in facts if f[0] != 'Sendernummer']
-            facts.append(['Folgen und Clips laut TOGGO', str(it['number'])])
+        # 0.5.87: fields of TOGGO's real catalogue (offer, age group, end of the free period).
+        plus = it.get('offer') == 'plus'
+        facts[:] = [f for f in facts if f[0] != 'Sendernummer']
+        facts.append(['Angebot', 'TOGGO, nur mit Abo' if plus else 'TOGGO (Super RTL), kostenlos'])
+        if it.get('age_labels'):
+            facts.append(['Bereich', ', '.join(_text(a, 60) for a in it['age_labels'])])
+        if it.get('rating'):
+            facts.append(['Empfohlen', _text(it['rating'], 20) + ' Jahren'])
+        if it.get('seasons') and m['kind'] == 'series':
+            facts.append(['Staffeln laut TOGGO', str(it['seasons'])])
+        if not plus and it.get('until') and m['kind'] != 'series':
+            import time
+            facts.append(['Kostenlos bis', time.strftime('%d.%m.%Y', time.localtime(it['until']))])
+        if it.get('original_title') and not m.get('original_title'):
+            m['original_title'] = _text(it['original_title'], 200)
+        m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # no offline copies of TOGGO
         if m['kind'] != 'series':
-            m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # 0.5.79: no offline copies of TOGGO
-            state = it.get('protection') or ''
-            facts.append(['Stream', 'ohne Kopierschutz – läuft im MediathekAtlas-Player' if it.get('drm') == 0 else
-                          'nur mit Kopierschutz (Widevine/FairPlay) – bei TOGGO ansehen' if (it.get('drm') == 1 or state == 'drm') else
-                          'noch nicht geprüft – „Ansehen“ prüft, ob TOGGO die Folge ohne Kopierschutz ausliefert'])
-        if not m['playable'] and m['kind'] != 'series':
-            m['notes'].append('TOGGO liefert diese Folge nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. Auf toggo.de läuft sie im Browser.')
+            clear = it.get('drm') == 0 or (it.get('drm') is None and it.get('protection') == 'clear')
+            facts.append(['Stream', 'ohne Kopierschutz – läuft im MediathekAtlas-Player' if clear and not plus else
+                          'nur mit Kopierschutz (Widevine/PlayReady/FairPlay) – bei TOGGO ansehen'])
+        if not m['playable']:
+            m['notes'].append('TOGGO liefert Folgen und Filme nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. '
+                              'Auf toggo.de laufen sie im Browser' + (' (dieser Titel nur mit Abo).' if plus else '.'))
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
@@ -243,7 +254,7 @@ def _episode(source, e, series_poster=''):
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
             'offline': bool(e.get('offline')) if source == 'youtube' else False if source == 'toggo' else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
-            'web_url': _https(e.get('web_url'))}
+            'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 
 def _sort_episodes(rows):

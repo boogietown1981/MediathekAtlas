@@ -175,12 +175,12 @@
         thumb.append(make('span', code || 'Folge', 'tv-code')); row.append(thumb);
         const body = make('div', undefined, 'tv-epbody');
         body.append(make('h3', (Number.isInteger(e.episode) ? e.episode + '. ' : '') + (e.title || m.title)));
-        const meta = [mins(e.duration), e.year];
+        const meta = [mins(e.duration), e.year, e.badge];
         body.append(make('p', meta.filter(Boolean).join(' · '), 'tv-epmeta'));
         if (e.summary) body.append(make('p', e.summary, 'tv-epdesc'));
         const acts = make('div', undefined, 'tv-epactions');
         if (e.playable) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || ''))));
-        // 0.5.79: TOGGO – whether a stream is free of copy protection shows only when it is played; keep the way to toggo.de.
+        // TOGGO: keep the way to toggo.de beside the player button.
         if (e.playable && m.source === 'toggo' && https(e.web_url)) acts.append(link(src.external, e.web_url));
         else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
         const off = e.offline && window.AtlasOffline?.control(m.source, e.id, m.title + (code ? ' · ' + code : ''), {night: !!e.night});

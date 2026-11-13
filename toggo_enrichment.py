@@ -1,4 +1,4 @@
-"""IMDb/TVDB/TMDB/OMDb/Wikidata reference checks for TOGGO titles (0.5.79).
+"""IMDb/TVDB/TMDB/OMDb/Wikidata reference checks for TOGGO titles (0.5.79, table toggo_assets since 0.5.87).
 
 Same shared implementation as Pluto TV, JustWatch TV and Rakuten TV (portal_enrichment): no TOGGO-specific
 matching code. Reports live in toggo.sqlite3 (table toggo_reference_checks). Björn
@@ -10,7 +10,7 @@ from __future__ import annotations
 import portal_enrichment as engine
 import toggo
 
-SPEC = engine.Spec(name='TOGGO', key='toggo', items='toggo_items', checks='toggo_reference_checks',
+SPEC = engine.Spec(name='TOGGO', key='toggo', items='toggo_assets', checks='toggo_reference_checks',
                    connect=toggo._connect, valid_id=lambda v: bool(toggo.VALID_ID.fullmatch(v)),
                    last_success=lambda db: toggo._get(db, 'last_success', '0'))
 UNCHECKED = engine.UNCHECKED

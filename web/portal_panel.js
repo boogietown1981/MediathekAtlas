@@ -43,7 +43,7 @@ window.AtlasPortalPanel = function (cfg) {
       st.last_result === 'interrupted' ? (stored ? 'Abruf unterbrochen · gespeicherter Bestand' : 'Abruf unterbrochen') :
       st.last_result === 'failed' ? (stored ? 'Abruf fehlgeschlagen · gespeicherter Bestand' : 'Fehlgeschlagen') :
       stored ? 'Gespeicherter Bestand' : 'Noch nicht geladen';
-    $(P + '-summary').textContent = (cfg.seriesOnly ? `${st.series || 0} Serien · ${st.episodes || 0} Folgen · ${st.clips || 0} Clips · ` : `${st.movies || 0} Filme · ${st.series || 0} Serien · `) +
+    $(P + '-summary').textContent = `${st.movies || 0} Filme · ${st.series || 0} Serien · ` +
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
       (cfg.music ? `${st.music || 0} Musik-Playlists/-Videos (${st.tracks || 0} Videos) · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +
@@ -68,7 +68,7 @@ window.AtlasPortalPanel = function (cfg) {
     box.append(make('h3', label));
     const music = item.kind === 'album' || item.kind === 'track';
     const meta = (music ? [item.category, item.kind === 'album' ? item.number + ' Videos' : null, minutes(item.duration), item.rating] :
-      [item.year, minutes(item.duration), item.rating, item.kind === 'channel' ? item.genre || item.category : null]).filter(Boolean).join(' · ');
+      [item.year, minutes(item.duration), item.rating, item.badge, item.kind === 'channel' ? item.genre || item.category : null]).filter(Boolean).join(' · ');
     if (meta) box.append(make('small', meta, 'pluto-meta'));
     const stars = item.kind !== 'channel' && cats()?.rating(item.score);
     if (stars) box.append(stars);
@@ -213,7 +213,7 @@ window.AtlasPortalPanel = function (cfg) {
     const call = ++seq;
     const q = $(P + '-filter').value.trim();
     const params = view === 'tracks' ? {view, album: album?.id || ''} : view === 'episodes' ? {view, series: series?.id || ''} :
-      {view, q, offset, limit: pageSize, genre: view === 'live' ? '' : genre, sort: $(P + '-sort')?.value || 'title'};
+      {view, q, offset, limit: pageSize, genre: view === 'live' ? '' : ($(P + '-pick')?.value || genre), sort: $(P + '-sort')?.value || 'title'};
     let data;
     // 0.5.41: a slow answer is shown with its waiting time; an error also replaces the status line.
     const waiting = window.atlasWaiting?.($(P + '-summary'), 'Katalogstatus wird geladen');
