@@ -74,13 +74,18 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo=''):
     """Best playable source: a finished local download wins over the online stream."""
     if youtube:
         # 0.5.78: YouTube video in the own player (only after the opt-in, see youtube_downloads.play_source)
         if root is None:raise ValueError('YouTube-Katalog nicht verfügbar')
         import youtube_downloads
         return youtube_downloads.play_source(root,youtube,quality)
+    if toggo:
+        # 0.5.79: TOGGO episode, only if TOGGO lists a stream without copy protection (toggo.py)
+        if root is None:raise ValueError('TOGGO-Katalog nicht verfügbar')
+        import toggo as toggo_tv
+        return toggo_tv.play_source(root,toggo)
     if joyn:
         # 0.5.65: Joyn playback is not released (copy protection, see joyn.py) -> clear refusal.
         if root is None:raise ValueError('Joyn-Katalog nicht verfügbar')

@@ -13,7 +13,7 @@ window.AtlasPortalPanel = function (cfg) {
   };
   if (!$(K)) return null;
   const pageSize = 60;
-  let view = 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
+  let view = cfg.startView || 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
   // 0.5.71 (cfg.music, YouTube): music videos – playlists ('album') with their videos ('track').
   let album = null, picked = new Set(), offlineOn = false, lastTracks = [];
   const LIST_VIEWS = ['episodes', 'tracks'];
@@ -43,7 +43,7 @@ window.AtlasPortalPanel = function (cfg) {
       st.last_result === 'interrupted' ? (stored ? 'Abruf unterbrochen · gespeicherter Bestand' : 'Abruf unterbrochen') :
       st.last_result === 'failed' ? (stored ? 'Abruf fehlgeschlagen · gespeicherter Bestand' : 'Fehlgeschlagen') :
       stored ? 'Gespeicherter Bestand' : 'Noch nicht geladen';
-    $(P + '-summary').textContent = `${st.movies || 0} Filme · ${st.series || 0} Serien · ` +
+    $(P + '-summary').textContent = (cfg.seriesOnly ? `${st.series || 0} Serien · ${st.episodes || 0} Folgen · ${st.clips || 0} Clips · ` : `${st.movies || 0} Filme · ${st.series || 0} Serien · `) +
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
       (cfg.music ? `${st.music || 0} Musik-Playlists/-Videos (${st.tracks || 0} Videos) · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +

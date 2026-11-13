@@ -18,6 +18,14 @@ Baut auf 0.5.78 (YouTube) auf.
 - **Live-TV:** Der Fehlalarm „0 Sender bei aktivem Filter“ in der Diagnose ist weg. Er kam von der Live-Leiste der Joyn-Plattform, solange Joyn noch keine Sender hatte; die Sender selbst waren nie betroffen.
 - **Windows und Linux:** `MediathekAtlas_v0.5.80-Windows-Setup.exe` (Installation ohne Administratorrechte, Startmenü, Desktop, optional Autostart), portable ZIP, `mediathekatlas_0.5.80_all.deb` (Debian, Ubuntu, Mint, Raspberry Pi OS) und `MediathekAtlas_v0.5.80-Linux.tar.gz` mit `install.sh` für alle anderen. Voraussetzung ist Python ab 3.9; unter Windows bietet der Start die Installation über winget an. Gebaut mit `python3 build_desktop.py`.
 
+## Neu in 0.5.79: TOGGO (Kinderserien von toggo.de, mit TOGGOLINO)
+
+- Neue Quelle **TOGGO**: Reiter „TOGGO“ unter „Plattformen“ und im Katalog (Dashboard, „Serien“). Alle Serien von TOGGO und TOGGOLINO mit Serienseite, Staffeln, Folgen und Clips; Genre „Kinder & Familie“, dazu die Kategorien „TOGGO“ und „TOGGOLINO“ (Vorschule) zum Filtern nach Altersgruppe.
+- Der Katalog entsteht aus der Seitenübersicht (Sitemap) von toggo.de. Titel, Nummer und Bild der Folgen einer Serie werden beim ersten Öffnen der Serie nachgeladen.
+- **Wiedergabe:** Eine Folge läuft im MediathekAtlas-Player, wenn TOGGO sie ohne Kopierschutz ausliefert. Liefert TOGGO nur mit Kopierschutz (Widevine/FairPlay), umgeht MediathekAtlas ihn nicht; die Folge öffnet dann toggo.de („Bei TOGGO ansehen“). Nach dem Katalogabruf prüft MediathekAtlas an je einer Folge von bis zu drei Serien, welcher Fall vorliegt, und zeigt danach den passenden Knopf.
+- Kein Offline-Speichern für TOGGO in dieser Version, kein Live-TV.
+- **Wichtig:** toggo.de war aus der Bauumgebung nicht erreichbar. Die Anbindung beruht auf öffentlich dokumentierten Formaten und ist nicht live geprüft. Lädt der Katalog nicht, bitte die Diagnose schicken (Einträge `toggo_sitemap`, `toggo_sync_failed`) oder einen HAR-Mitschnitt von toggo.de.
+
 ## Neu in 0.5.78: Musikvideos laufen auch, wenn YouTube das Einbetten ablehnt
 
 - Lehnt YouTube ein Video im eingebetteten Player ab, schaltet MediathekAtlas automatisch auf den eigenen Player um. Das geht nur mit eingeschaltetem YouTube-Offline-Schalter, weil der Stream dabei wie beim Speichern über yt-dlp geholt wird.
