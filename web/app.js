@@ -926,6 +926,9 @@ function portalView(name){
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);
+function portalScopeState(state){
+  return ({queued:'wartet',running:'läuft',paused:'pausiert',complete:'fertig',retry:'neuer Versuch geplant',error:'angehalten nach Fehler',stalled:'angehalten, kein Fortschritt'})[state]||state;
+}
 function portalScopeTitle(kind){
   return ({item:'Einzelne Archive.org-URL',collection:'Sammlung',uploader:'Öffentlicher Uploader'})[kind]||kind;
 }
@@ -971,15 +974,24 @@ function displayPortalControls(data){
     const card=el('article',undefined,'platform-scope-item');
     card.append(el('strong',portalScopeTitle(scope.kind)+' · '+scope.scope));
     if(scope.label&&scope.label!==scope.scope)card.append(el('small',scope.label+' · automatisch vorgemerkt, startet erst auf deinen Klick','muted'));
-    card.append(el('small','Status '+scope.state+' · Priorität '+scope.priority+
-      ' · Seiten '+scope.pages_done+' · Importiert '+scope.imported));
-    card.append(el('small','Nächste Seite '+scope.cursor+' · Budget '+scope.page_budget+' Seiten pro Start'));
+    // 0.5.92 (ArchiveMedia clean_scan/scan_recovery): plain state, coverage against Archive.org's own total, time windows.
+    const stopped=['error','stalled'].includes(scope.state),facts=scope.coverage||{};
+    card.append(el('small','Status: '+portalScopeState(scope.state)+' · Priorität '+scope.priority+
+      ' · Seiten '+scope.pages_done+' · Gelesen '+countLabel(scope.imported)+
+      (facts.provider_total!=null?' von '+countLabel(facts.provider_total)+' laut Archive.org':'')));
+    card.append(el('small',(facts.windows?'Große Quelle, in Zeitfenstern gelesen: '+countLabel(facts.windows_done)+' von '+countLabel(facts.windows)+' fertig':'Nächste Seite '+scope.cursor)+
+      ' · Budget '+scope.page_budget+' Seiten pro Start'));
+    if(facts.coverage==='needs_review')card.append(el('small','Fertig, aber '+(facts.windows_failed?'ein Zeitfenster ließ sich nicht lesen'+(facts.gap?' und ':''):'')+
+      (facts.gap?countLabel(facts.gap)+' Uploads weniger gelesen als Archive.org nennt':'')+'. „Neu durchsuchen“ liest die Quelle noch einmal; Gefundenes bleibt.','portal-warning'));
+    if(facts.verified===false&&scope.state!=='complete')card.append(el('small','Dieser Scan wurde vor 0.5.92 begonnen und läuft in der alten Reihenfolge zu Ende. „Neu durchsuchen“ stellt auf die geprüfte Suche um.','muted'));
+    if(scope.state==='stalled')card.append(el('small','Archive.org lieferte wiederholt nicht die angefragte Seite. Die Position ist gemerkt; „Start / Fortsetzen“ versucht es erneut.','portal-warning'));
     if(scope.last_error)card.append(el('small','Letzter Fehler: '+scope.last_error,'portal-warning'));
     const actions=el('div',undefined,'platform-scope-actions');
-    const toggle=el('button',scope.enabled?'Pausieren':'Start / Fortsetzen');
+    const active=scope.enabled&&!stopped;
+    const toggle=el('button',active?'Pausieren':'Start / Fortsetzen');
     toggle.type='button';
     toggle.onclick=()=>busy(toggle,async()=>{
-      await api('portal-scope-control',{id:scope.id,action:scope.enabled?'pause':'start'});
+      await api('portal-scope-control',{id:scope.id,action:active?'pause':'start'});
       await loadPortals();
     });
     actions.append(toggle);
@@ -990,6 +1002,15 @@ function displayPortalControls(data){
       await loadPortals();
     });
     actions.append(promote);
+    if(scope.state!=='running'&&scope.kind!=='item'&&(scope.pages_done||stopped)){
+      const again=el('button','Neu durchsuchen');again.type='button';
+      again.title='Liest die Quelle von vorn. Bereits gefundene Uploads bleiben erhalten, die Zähler des alten Laufs werden aufbewahrt.';
+      again.onclick=()=>busy(again,async()=>{
+        await api('portal-scope-control',{id:scope.id,action:'rescan'});
+        await loadPortals();notice('Quelle wird von vorn gelesen. Bereits Gefundenes bleibt erhalten.');
+      });
+      actions.append(again);
+    }
     if(scope.state!=='running'){
       const remove=el('button','Entfernen');remove.type='button';
       remove.onclick=()=>busy(remove,async()=>{
