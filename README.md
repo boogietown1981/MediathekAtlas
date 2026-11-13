@@ -1,4 +1,16 @@
-# MediathekAtlas · 0.5.81
+# MediathekAtlas · 0.5.82
+
+## Neu in 0.5.82: Sammelstand, Archive.org erkennt Werke
+
+0.5.82 enthält alles aus 0.5.78 (YouTube), 0.5.79 (TOGGO), 0.5.80 (Besetzung mit Fotos, Clips, Windows und Linux) und 0.5.81 (Merkliste, Weiterschauen, Speicher). Neu dazu:
+
+- **Archive.org-Uploads werden Werken zugeordnet** (aus Archive Media). Bisher stand jeder Upload für sich. Jetzt zeigt jeder gespeicherte Upload, welcher Film oder welche Serie er ist, mit Kennung bei IMDb, TVDB oder TMDB und Bewertung.
+- **Suchtitel:** Zusätze wie `[DVD]`, `1080p`, Upload-Zähler und Folgenangaben werden für die Abfrage entfernt. Der gespeicherte Upload bleibt unverändert.
+- **Jahr berichtigt:** Archive.org nennt oft das Upload-Datum statt des Erscheinungsjahrs. Findet die Abfrage mit dem Jahr nichts, läuft sie einmal ohne; nur ein eindeutiger Treffer liefert dann das Jahr („Jahr aus der Datenbank“).
+- **Serien aus mehreren Uploads** gehören zusammen: gleicher Serienname oder nach der Prüfung dieselbe Kennung. Staffel und Folge aus dem Upload-Titel stehen dabei.
+- **Anime** ohne Treffer in den Filmdatenbanken werden bei AniList gesucht (nur ein eindeutiger, fast wörtlicher Titeltreffer zählt).
+- Plattformen → Internet Archive → Liste: Umschalter „Einzelne Uploads / Werke (Archive.org)“, je Werk „Alle Uploads zeigen“ und „Neu prüfen“. Die Prüfung läuft im Hintergrund wie bei den anderen Plattformen (Verwaltung → Aufgaben: „Internet Archive · Werkzuordnung“).
+- TOGGO-Serien lassen sich merken und erscheinen in „Weiterschauen“.
 
 ## Neu in 0.5.81: Merkliste, „Weiterschauen“ auf jedem Gerät und Speicherübersicht
 

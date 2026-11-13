@@ -69,6 +69,12 @@ for _key, _name in PORTALS:
         'label': _name + ' · Werkzuordnung', 'group': 'Werkzuordnung', 'portal': _key,
         'hint': 'Prüft jeden Titel von ' + _name + ' gegen IMDb, TVDB und TMDB (ein Titel alle paar Sekunden).',
         'can': ('pause', 'priority')}
+# 0.5.82: works on top of the Archive.org uploads (archive_recognition); no catalogue fetch of its own.
+TASKS['enrich:archive'] = {
+    'label': 'Internet Archive · Werkzuordnung', 'group': 'Werkzuordnung', 'portal': 'archive',
+    'hint': 'Fasst gespeicherte Archive.org-Uploads zu Werken zusammen und prüft jedes Werk gegen IMDb, TVDB und TMDB; '
+            'Anime ohne Treffer zusätzlich bei AniList.',
+    'can': ('pause', 'priority')}
 
 _LOCK = threading.RLock()
 _PATH = None

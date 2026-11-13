@@ -22,8 +22,8 @@ from pathlib import Path
 DB_NAME = 'watch.sqlite3'
 KEY = re.compile(r'^[A-Za-z0-9_.:\-]{1,200}$')
 # What the player may be asked to open again: the same references /api/play accepts.
-REF_KEYS = ('offer', 'job', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'joyn', 'youtube')
-SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'joyn', 'youtube', 'download')
+REF_KEYS = ('offer', 'job', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'joyn', 'youtube', 'toggo')
+SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'joyn', 'youtube', 'toggo', 'download')
 KINDS = ('movie', 'series', 'episode', 'music')
 MIN_POSITION = 20      # seconds; below that a title does not count as started (as in the player)
 END_MARGIN = 45        # seconds before the end that count as "watched to the end"

@@ -422,6 +422,9 @@
         <select id="portal-source" aria-label="Filmanbieter">
           <option value="">Alle Portale</option><option value="internet_archive">Internet Archive</option><option value="netzkino">Netzkino</option>
         </select>
+        <select id="portal-view" aria-label="Uploads oder erkannte Werke zeigen" title="Werke: Uploads desselben Films oder derselben Serie bei Archive.org sind zu einem Eintrag zusammengefasst">
+          <option value="uploads">Einzelne Uploads</option><option value="works">Werke (Archive.org)</option>
+        </select>
         <select id="portal-language" aria-label="Sprachansicht dieses Portals">
           <option value="de">Deutsch/Unbekannt</option><option value="all">Alle Sprachen</option>
         </select>
@@ -429,6 +432,7 @@
         <button id="portal-filter-run" type="button">Filtern</button>
       </div>
     </div>
+    <p id="portal-work-filter" class="portal-work-filter" hidden></p>
     <div id="portal-items" class="portal-results" aria-live="polite"></div>
     <div class="portal-pager"><button id="portal-prev" type="button" disabled>← Zurück</button><button id="portal-next" type="button" disabled>Weitere →</button></div>
   </div>

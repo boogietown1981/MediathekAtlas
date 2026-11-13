@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment
-import page_scripts,watch_state,storage_policy
+import page_scripts,watch_state,storage_policy,archive_recognition
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -153,6 +153,9 @@ def task_details():
             out['enrich:'+key]={'checked':min(checked,titles) if titles else checked,'total':titles}
         except Exception as e:
             out['catalog:'+key]={'error':core.safe_error(e)}
+    try:
+        aw=archive_recognition.summary(ROOT);out['enrich:archive']={'checked':min(aw['checked'],aw['works']),'total':aw['works']}
+    except Exception as e:out['enrich:archive']={'error':core.safe_error(e)}
     try:
         with db() as c:
             out['downloads']=job_queue.summary(c)
@@ -668,7 +671,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -717,11 +720,24 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(result)
         if path=='/api/portal-items':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            work=q.get('work',[''])[0]
             with db() as c:
+                # 0.5.82: works on top of the Archive.org uploads (archive_recognition); ``work`` lists the uploads of one work.
+                try:archive_recognition.sync(ROOT,c)
+                except Exception as e:diagnostics.error('archive_work_sync_failed',e)
                 result=portal_sources.listing(c,source=q.get('source',[''])[0],
                             query=q.get('query',[''])[0],
                             offset=q.get('offset',['0'])[0],
-                            locale=q.get('locale',['all'])[0])
+                            locale=q.get('locale',['all'])[0],
+                            ids=archive_recognition.members_of(ROOT,work) if work else None)
+            try:archive_recognition.annotate(ROOT,result['items'])
+            except Exception as e:diagnostics.error('archive_work_annotate_failed',e)
+            return self.send(result)
+        if path=='/api/archive-works':
+            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+            with db() as c:archive_recognition.sync(ROOT,c)
+            result=archive_recognition.overview(ROOT,query=q.get('query',[''])[0],offset=q.get('offset',['0'])[0])
+            result['summary']=archive_recognition.summary(ROOT);result['auto']=bool(settings().get('auto_metadata',True))
             return self.send(result)
         if path=='/api/portal-archive-detail':
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1129,6 +1145,11 @@ class Handler(BaseHTTPRequestHandler):
                     else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id);download_quality.set_job(c,result,d.get('quality'))
                 diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
                 return self.send(result)
+            if path=='/api/archive-work-check':
+                with SERVICE.provider_slots:
+                    result=archive_recognition.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+                diagnostics.event('archive_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+                return self.send({'status':result['status'],'ok':True})
             if path=='/api/pluto-enrich':
                 with SERVICE.provider_slots:
                     result=pluto_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
@@ -1523,6 +1544,8 @@ if __name__=='__main__':
                          daemon=True,name='rakuten_auto_enrichment').start()
         threading.Thread(target=joyn_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
                          daemon=True,name='joyn_auto_enrichment').start()
+        threading.Thread(target=archive_recognition.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP,db),
+                         daemon=True,name='archive_auto_enrichment').start()
         threading.Thread(target=toggo_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),
                          daemon=True,name='toggo_auto_enrichment').start()
         threading.Thread(target=youtube_enrichment.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP),

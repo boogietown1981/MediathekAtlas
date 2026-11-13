@@ -634,6 +634,7 @@ function portalItemCard(item){
   const detail=el('p',(item.year?item.year+' · ':'')+portalLabel(item.source),'muted');
   card.append(detail);
   if(item.description)card.append(el('p',item.description.length>380?item.description.slice(0,380)+' …':item.description,'portal-description'));
+  if(item.work)card.append(portalWorkLine(item.work,!portalWork));
   if(item.local_work_id){
     card.append(el('small','Möglicher Eintrag im Hauptkatalog (gleicher Titel und Jahr). Keine automatische Zusammenführung.','portal-match'));
   }
@@ -952,12 +953,88 @@ $('archive-scope-add').onsubmit=e=>{
     notice('Scanbereich gespeichert. Zum tatsächlichen Start Freigabe per Start-Schalter nötig.');
   });
 };
+/* 0.5.82: works on top of the Archive.org uploads (archive_recognition.py, from Archive Media). */
+let portalWork=null;   // {id,title}: only the uploads of this work are listed
+const PORTAL_REF_URL={'IMDb Offline':id=>/^tt\d+$/.test(id)?'https://www.imdb.com/title/'+id+'/':'',IMDb:id=>/^tt\d+$/.test(id)?'https://www.imdb.com/title/'+id+'/':'',
+  TMDB:()=>'',TVDB:()=>'',OMDb:id=>/^tt\d+$/.test(id)?'https://www.imdb.com/title/'+id+'/':'',Wikidata:id=>/^Q\d+$/.test(id)?'https://www.wikidata.org/wiki/'+id:''};
+function portalWorkStatus(work){
+  if(work.reference)return 'Erkannt';
+  if(work.anilist)return 'Anime erkannt (AniList)';
+  return {unchecked:'Noch nicht geprüft',review:'Mehrere mögliche Treffer',no_match:'Kein Treffer in den Datenbanken',partial:'Datenbanken gerade nicht erreichbar'}[work.status]||'Nicht zugeordnet';
+}
+function portalWorkLine(work,withUploads){
+  const box=el('div',undefined,'portal-work'+(work.reference||work.anilist?' known':''));
+  const kind=work.kind==='series'?'Serie':'Film';
+  const name=work.anilist&&!work.reference?(work.anilist.title||work.title):work.title;
+  const head=el('strong',portalWorkStatus(work)+': '+name+(work.year?' ('+work.year+')':'')+' · '+kind);
+  box.append(head);
+  const facts=[];
+  if(work.season||work.episode)facts.push((work.season?'Staffel '+work.season:'')+(work.season&&work.episode?', ':'')+(work.episode?'Folge '+work.episode:''));
+  if(work.reference)facts.push(work.reference.provider.replace(' Offline','')+' '+work.reference.id);
+  if(work.anilist)facts.push('AniList '+work.anilist.id+(work.anilist.episodes?' · '+work.anilist.episodes+' Folgen':''));
+  if(typeof work.rating==='number')facts.push('★ '+work.rating.toLocaleString('de-DE'));
+  if(work.year_source==='reference'&&work.year_upload)facts.push('Jahr aus der Datenbank (Upload nennt '+work.year_upload+')');
+  if(work.year_source==='reference'&&!work.year_upload)facts.push('Jahr aus der Datenbank');
+  if(work.year_source==='anilist')facts.push('Jahr von AniList');
+  if(!work.reference&&!work.anilist&&work.query_title)facts.push('Gesucht als „'+work.query_title+'“');
+  if(facts.length)box.append(el('small',facts.join(' · ')));
+  const row=el('div',undefined,'portal-work-actions');
+  const url=work.reference?(PORTAL_REF_URL[work.reference.provider]||(()=>''))(work.reference.id):work.anilist?'https://anilist.co/anime/'+work.anilist.id:'';
+  if(url){const a=el('a','Eintrag in der Datenbank','portal-link');a.href=url;a.target='_blank';a.rel='noopener noreferrer';row.append(a);}
+  if(withUploads&&work.uploads>1){
+    const all=el('button',work.uploads+' Uploads zu diesem Werk');all.type='button';
+    all.onclick=()=>{portalWork={id:work.group,title:name};portalOffset=0;$('portal-view').value='uploads';$('portal-source').value='internet_archive';$('portal-language').value='all';$('portal-filter').value='';loadPortals();};
+    row.append(all);
+  }
+  const again=el('button',work.status==='unchecked'?'Jetzt prüfen':'Neu prüfen');again.type='button';again.title='Fragt IMDb, TVDB und TMDB für dieses Werk jetzt ab';
+  again.onclick=()=>busy(again,async()=>{await api('archive-work-check',{id:work.id,force:true});await loadPortals();});
+  row.append(again);
+  box.append(row);
+  return box;
+}
+function portalWorkCard(work){
+  const card=el('article',undefined,'portal-result');
+  card.append(el('h4',work.title+(work.year?' ('+work.year+')':'')));
+  card.append(el('p',(work.kind==='series'?'Serie':'Film')+' · '+work.uploads+(work.uploads===1?' Upload':' Uploads')+' bei Archive.org','muted'));
+  if((work.titles||[]).length>1)card.append(el('small','Schreibweisen: '+work.titles.join(' · '),'muted'));
+  card.append(portalWorkLine(work,false));
+  const open=el('button',work.uploads===1?'Upload zeigen':'Alle '+work.uploads+' Uploads zeigen','primary');open.type='button';
+  open.onclick=()=>{portalWork={id:work.group,title:work.title};portalOffset=0;$('portal-view').value='uploads';$('portal-source').value='internet_archive';$('portal-language').value='all';$('portal-filter').value='';loadPortals();};
+  card.append(open);
+  return card;
+}
+function portalWorkFilter(){
+  const box=$('portal-work-filter');box.replaceChildren();box.hidden=!portalWork;
+  if(!portalWork)return;
+  box.append(el('span','Uploads zum Werk „'+portalWork.title+'“'));
+  const all=el('button','Alle Uploads zeigen');all.type='button';all.onclick=()=>{portalWork=null;portalOffset=0;loadPortals();};
+  box.append(all);
+}
+async function loadPortalWorks(){
+  const [state,result]=await Promise.all([api('portals'),api('archive-works?'+new URLSearchParams({query:$('portal-filter').value.trim(),offset:portalOffset}))]);
+  displayPortalControls(state);
+  const sum=result.summary||{};
+  $('portal-total').textContent='('+countLabel(result.total)+' Werke)';
+  $('portal-status').textContent='Internet Archive · '+countLabel(sum.uploads)+' Uploads in '+countLabel(sum.works)+' Werken · '+countLabel(sum.recognised)+' erkannt'+
+    (sum.year_repaired?' · '+countLabel(sum.year_repaired)+' mit berichtigtem Jahr':'')+(sum.works>sum.checked?' · '+countLabel(sum.works-sum.checked)+' noch zu prüfen'+(result.auto?' (läuft im Hintergrund)':' (automatischer Abgleich ist ausgeschaltet)'):'');
+  const host=$('portal-items');host.replaceChildren();
+  if(!result.items.length)host.append(el('p','Noch keine Werke. Oben nach Archivfilmen suchen; gespeicherte Uploads werden hier zu Werken zusammengefasst.','muted'));
+  else for(const work of result.items)host.append(portalWorkCard(work));
+  $('portal-prev').disabled=portalOffset<=0;
+  $('portal-next').disabled=portalOffset+result.items.length>=result.total;
+}
 async function loadPortals(){
   if(appStopped||$('portals').hidden||portalBusy)return;
   portalBusy=true;
   try{
+    const works=$('portal-view').value==='works';
+    $('portal-source').disabled=works;$('portal-language').disabled=works;
+    if(works)portalWork=null;
+    portalWorkFilter();
+    if(works){await loadPortalWorks();return;}
     const filters=new URLSearchParams({source:$('portal-source').value,
       query:$('portal-filter').value.trim(),offset:portalOffset,locale:$('portal-language').value});
+    if(portalWork)filters.set('work',portalWork.id);
     const [state,result]=await Promise.all([api('portals'),api('portal-items?'+filters)]);
     displayPortalControls(state);
     $('portal-total').textContent='('+countLabel(result.total)+')';
@@ -977,7 +1054,7 @@ $('portal-archive-search').onsubmit=e=>{
   busy($('portal-archive-search').querySelector('button'),async()=>{
     const query=$('portal-archive-query').value.trim();
     const result=await api('portal-search',{source:'internet_archive',query});
-    portalOffset=0;$('portal-source').value='internet_archive';$('portal-filter').value='';
+    portalOffset=0;portalWork=null;$('portal-view').value='uploads';$('portal-source').value='internet_archive';$('portal-filter').value='';
     await loadPortals();
     notice(countLabel(result.added_or_updated)+' Archive-Metadatensätze übernommen. Rechte und Downloads bleiben ungeprüft.');
   });
@@ -997,7 +1074,8 @@ $('portal-netzkino-add').onsubmit=e=>{
   });
 };
 $('portal-filter-run').onclick=()=>{portalOffset=0;loadPortals();};
-$('portal-source').onchange=()=>{portalOffset=0;loadPortals();};
+$('portal-source').onchange=()=>{portalOffset=0;portalWork=null;loadPortals();};
+$('portal-view').onchange=()=>{portalOffset=0;loadPortals();};
 $('portal-language').onchange=()=>{portalOffset=0;loadPortals();};
 $('portal-filter').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();portalOffset=0;loadPortals();}};
 $('portal-prev').onclick=()=>{portalOffset=Math.max(0,portalOffset-40);loadPortals();};

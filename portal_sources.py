@@ -530,7 +530,7 @@ def save(c,rows,query=None):
     return ids
 
 
-def listing(c,source='',query='',offset=0,limit=40,locale='all'):
+def listing(c,source='',query='',offset=0,limit=40,locale='all',ids=None):
     if source and source not in SOURCES:raise ValueError('Unbekannte Quelle')
     offset=max(0,min(int(offset),100000))
     limit=max(1,min(int(limit),60))
@@ -549,6 +549,10 @@ def listing(c,source='',query='',offset=0,limit=40,locale='all'):
         where.append('title_key LIKE ?')
         fragment=title_key(query)[:90].replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
         params.append('%'+fragment+'%')
+    if ids is not None:
+        # 0.5.82: the uploads of one recognised work (archive_recognition.members_of).
+        ids=[str(x) for x in ids][:900]
+        where.append('id IN ('+','.join('?' for _ in ids)+')' if ids else '0');params.extend(ids)
     clause=' WHERE '+' AND '.join(where) if where else ''
     count=c.execute('SELECT COUNT(*) FROM portal_items'+clause,params).fetchone()[0]
     rows=c.execute('SELECT metadata FROM portal_items'+clause+

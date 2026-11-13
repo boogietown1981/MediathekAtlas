@@ -25,7 +25,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 
 ## Fehlend aus Archive Media 0.10.53 (17 von 36 Modulen)
 
-selection_matrix (Staffel-Auswahl), uploader_priority und discovery_queue (Uploader weiterverfolgen), series_merge, year_repair, anime_match, work_title_queries, clean_scan, scan_recovery, catalog_fallback, catalog_transfer, bluray_playlist, multi_catalog, catalog_taxonomy, catalog_enrichment (Audio, Bücher, Software), clean_rebuild, live_telemetry (entfällt, als Protokoll vorhanden). `container_tracks` liegt bei, wird aber nicht aufgerufen.
+selection_matrix (Staffel-Auswahl), uploader_priority und discovery_queue (Uploader weiterverfolgen), clean_scan, scan_recovery, catalog_fallback, catalog_transfer, bluray_playlist, multi_catalog, catalog_taxonomy, catalog_enrichment (Audio, Bücher, Software), clean_rebuild, live_telemetry (entfällt, als Protokoll vorhanden). `container_tracks` liegt bei, wird aber nicht aufgerufen.
 
 ## Fehlend aus HomeTube 0.1.0-dev.1, MeshSync und Jellyfin Encoder
 
@@ -43,7 +43,7 @@ selection_matrix (Staffel-Auswahl), uploader_priority und discovery_queue (Uploa
 
 1. Aufräumen und Merkliste (0.5.81)
 2. Speicherübersicht (0.5.81)
-3. Archive.org-Erkennung: Jahr, Suchtitel, Serien zusammenführen, Anime, Spuren vor dem Download
+3. Archive.org-Erkennung: Jahr, Suchtitel, Serien zusammenführen, Anime (0.5.82, `archive_recognition.py`); Spuren vor dem Download waren schon aktiv
 4. Staffel-Auswahl für Archive.org, Uploader weiterverfolgen
 5. Plattform-Registratur, Netzkino auf das gemeinsame Panel
 6. Umwandeln (Encoder)
