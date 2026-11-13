@@ -9,6 +9,7 @@ import sys
 import tempfile
 import unittest
 from pathlib import Path
+from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -122,6 +123,68 @@ class MusicTests(unittest.TestCase):
         self.assertTrue(target.endswith('Musikvideos/Einzelkanal/Single - Einzelnes Video.mkv'), target)
         with self.assertRaisesRegex(ValueError, 'Ganze Playlist'):
             yd.enqueue(self.c, self.root, self.media, album)
+
+    def test_player_way_out_and_catalogue_entry(self):
+        # 0.5.76: the player learns whether "load and play here" is possible
+        self.assertEqual(yt.play_info(self.root, 't.' + vid(20))['offline'], 0)
+        self.assertIn('Offline-Schalter', yt.play_info(self.root, 't.' + vid(20))['offline_hint'])
+        yd.set_enabled(self.root, True, confirmed=True)
+        info = yt.play_info(self.root, 't.' + vid(20))
+        self.assertEqual((info['offline'], info['offline_hint'], info['web_url']), (1, '', yt.video_url(vid(20))))
+        player = (ROOT / 'web/player.js').read_text(encoding='utf-8')
+        for part in ("d.event==='onError'", 'embedRefused', 'https://www.youtube.com', 'Kurz laden und hier abspielen', 'Auf YouTube ansehen'):
+            self.assertIn(part, player)
+        self.assertIn('data-cross-kind="music"', (ROOT / 'web/index.html').read_text(encoding='utf-8'))
+        catalogue = (ROOT / 'web/unified_catalog.js').read_text(encoding='utf-8')
+        self.assertIn("view:'music'", catalogue)
+        self.assertIn('openAlbum', catalogue)
+        self.assertIn('openAlbum', (ROOT / 'web/portal_panel.js').read_text(encoding='utf-8'))
+        subprocess.run(['node', '--check', str(ROOT / 'web/unified_catalog.js')], check=True)
+
+    def test_own_player_resolves_stream_only_with_switch(self):
+        # 0.5.78: refused embeds play in the own player; yt-dlp resolves, ffmpeg joins picture and sound
+        import streaming
+        calls = []
+
+        class Done:
+            returncode = 0
+            stderr = ''
+            stdout = 'https://rr1---sn-x.googlevideo.com/videoplayback?itag=136\nhttps://rr1---sn-x.googlevideo.com/videoplayback?itag=140\n'
+
+        def runner(args, **kw):
+            calls.append(args)
+            return Done()
+        with self.assertRaisesRegex(ValueError, 'Offline-Schalter'):
+            yd.play_source(self.root, 't.' + vid(20), runner=runner)
+        self.assertEqual(calls, [])                      # switch off: yt-dlp is not even started
+        yd.set_enabled(self.root, True, confirmed=True)
+        with mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')):
+            src = yd.play_source(self.root, 't.' + vid(20), 'auto', runner=runner, now=100)
+            again = yd.play_source(self.root, 't.' + vid(20), 'auto', runner=runner, now=200)   # seeking: cached
+            with self.assertRaisesRegex(ValueError, 'Altersbeschränkt'):
+                yd.play_source(self.root, 't.' + vid(22), runner=runner)
+            Done.returncode, Done.stdout, Done.stderr = 1, '', "ERROR: Sign in to confirm you're not a bot"
+            with self.assertRaisesRegex(ValueError, 'kein Bot'):
+                yd.play_source(self.root, 't.' + vid(21), runner=runner)
+        self.assertEqual(len(calls), 2)
+        args = calls[0]
+        self.assertIn('--no-cookies-from-browser', args)
+        self.assertIn('-g', args)
+        self.assertEqual(args[-1], yt.video_url(vid(20)))
+        self.assertIn('height<=720', args[args.index('-f') + 1])
+        self.assertEqual((src['audio_url'][-8:], src['hls'], src['remux'], src['provider'], again['url']),
+                         ('itag=140', False, True, 'youtube', src['url']))
+        plan = streaming.plan(src)
+        self.assertEqual((plan['mode'], plan['origin'], 'url' in plan), ('remux', 'online', False))
+        with mock.patch.object(streaming, 'tool', return_value='ffmpeg'):
+            cmd = streaming.command(src, start=30)
+        self.assertEqual(cmd.count('-i'), 2)
+        self.assertEqual(cmd[cmd.index('-map'):cmd.index('-map') + 4], ['-map', '0:v:0', '-map', '1:a:0'])
+        self.assertEqual(cmd.count('30.000'), 2)         # both inputs seek
+        server = (ROOT / 'server.py').read_text(encoding='utf-8')
+        self.assertIn("ref['youtube']=yt_id", server)
+        self.assertIn("youtube=q.get('youtube',[''])[0])", server)
+        self.assertIn('ownPlayer', (ROOT / 'web/player.js').read_text(encoding='utf-8'))
 
     def test_wiring(self):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')

@@ -259,6 +259,70 @@ def _reason(text):
     return 'yt-dlp meldet einen Fehler' + (': ' + detail.strip() if detail.strip() else '')
 
 
+# ------------------------------------------------------------ direct playback
+
+SOURCE_TTL = 20 * 60          # resolved stream addresses are reused this long (seeking, "Von vorn")
+_SOURCES = {}
+_SOURCES_LOCK = threading.Lock()
+_GOOGLEVIDEO = re.compile(r'(?i)^https://[a-z0-9.-]+\.(?:googlevideo\.com|youtube\.com)/')
+
+
+def play_source(root, item_id, quality='auto', runner=None, now=None):
+    """0.5.78 (Björn, 13.11.2026: music videos refuse the embedded player, the download works):
+    source for MediathekAtlas' own player. yt-dlp resolves the stream addresses of the video the
+    same way as for an offline copy (no sign-in, no cookies, nothing copy protected), ffmpeg on the
+    server joins picture and sound while playing. Same switch as offline saving: without the
+    explicit opt-in nothing is resolved."""
+    import youtube, streaming
+    if not enabled(root):
+        raise ValueError('Im eigenen Player lassen sich YouTube-Videos nur mit eingeschaltetem YouTube-Offline-Schalter abspielen')
+    if not youtube.VALID_ID.fullmatch(str(item_id or '')):
+        raise ValueError('Ungültiger YouTube-Titel')
+    db = youtube._connect(root)
+    try:
+        row = youtube._row(db, item_id)
+    finally:
+        db.close()
+    if not row or row['kind'] in ('series', 'album'):
+        raise ValueError('YouTube-Video nicht im Katalog; bitte Katalog neu laden')
+    if row['reason'].startswith('Altersbeschränkt'):
+        raise ValueError('Altersbeschränktes Video: ohne Anmeldung nicht abspielbar')
+    limit = streaming.quality_limit(quality)
+    now = time.time() if now is None else float(now)
+    key = (str(root), item_id, limit)
+    with _SOURCES_LOCK:
+        hit = _SOURCES.get(key)
+    if hit and hit[0] > now:
+        return dict(hit[1])
+    tool = find_tool(root)
+    if not tool:
+        raise ValueError('yt-dlp fehlt; im YouTube-Bereich „yt-dlp einrichten“ wählen')
+    # H.264 + AAC so that the browser plays the stream without re-encoding; one file as fallback.
+    fmt = ('bv*[height<={h}][vcodec^=avc1][protocol^=http]+ba[acodec^=mp4a][protocol^=http]/'
+           'b[height<={h}][vcodec^=avc1]/b[vcodec^=avc1]/b').format(h=limit)
+    args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
+            '--no-warnings', '-f', fmt, '-g', youtube.video_url(row['path'])]
+    try:
+        done = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
+                                          env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+    except subprocess.TimeoutExpired:
+        raise ValueError('YouTube hat nicht rechtzeitig geantwortet; bitte erneut versuchen') from None
+    except OSError:
+        raise ValueError('yt-dlp konnte nicht gestartet werden') from None
+    urls = [l.strip() for l in (done.stdout or '').splitlines() if _GOOGLEVIDEO.match(l.strip()) and len(l) < 8000]
+    if done.returncode != 0 or not urls:
+        raise ValueError(_reason(done.stderr))
+    hls = '.m3u8' in urls[0] or '/manifest/hls' in urls[0]
+    source = {'kind': 'url', 'url': urls[0], 'audio_url': urls[1] if len(urls) > 1 and not hls else '', 'hls': hls,
+              'remux': True, 'provider': 'youtube', 'title': row['title'], 'duration': row['duration'] or 0,
+              'quality': 'eigener Player, bis %dp' % limit}
+    with _SOURCES_LOCK:
+        if len(_SOURCES) > 200:
+            _SOURCES.clear()
+        _SOURCES[key] = (now + SOURCE_TTL, source)
+    return dict(source)
+
+
 # ------------------------------------------------------------ jobs
 
 def metadata(row, series=None):

@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.5.77
+# MediathekAtlas · 0.5.78
+
+## Neu in 0.5.78: Musikvideos laufen auch, wenn YouTube das Einbetten ablehnt
+
+- Lehnt YouTube ein Video im eingebetteten Player ab, schaltet MediathekAtlas automatisch auf den eigenen Player um. Das geht nur mit eingeschaltetem YouTube-Offline-Schalter, weil der Stream dabei wie beim Speichern über yt-dlp geholt wird.
+- Unter dem YouTube-Player stehen immer die Auswege: „Auf YouTube ansehen“, „▶ Im eigenen Player abspielen“ und „⬇ Kurz laden und hier abspielen“.
+- Im Katalog gibt es neben „Filme“ und „Serien“ jetzt „Musikvideos“.
 
 ## Neu in 0.5.77: Die Seite bringt alle ihre Teile selbst mit, Streams sammeln erst Puffer
 

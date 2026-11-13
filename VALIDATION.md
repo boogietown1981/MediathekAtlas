@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.78 – YouTube im eigenen Player, Musikvideos im Katalog (13. November 2026)
+- Automatisch: gesamte Python-Suite; neu in `tests/test_v0571_youtube_music.py`: eigener Player nur mit Schalter (yt-dlp wird sonst nicht gestartet), Aufruf ohne Cookies, Zwischenspeicher, Altersbeschränkung, Fehlermeldung „kein Bot“, ffmpeg-Aufruf mit zwei Eingaben; Auswege im Player, Katalog-Eintrag.
+- Mit echtem ffmpeg: Bild (H.264) und Ton (AAC) von zwei HTTP-Adressen werden beim Abspielen zusammengeführt, auch nach dem Spulen (beide Spuren starten gleich).
+- Im Browser (Chromium, Testdaten): Katalog „Musikvideos“ zeigt Playlist und Einzelvideo, „Playlist öffnen“ führt in den YouTube-Bereich; eine nachgestellte Fehlermeldung des YouTube-Players löst den zweiten Versuch und dann den Hinweis mit den Auswegen aus; „Kurz laden“ startet den Auftrag.
+- Nicht geprüft: echte Musikvideos gegen YouTube (aus der Bauumgebung gesperrt). Ob YouTube die Fehlermeldung des eingebetteten Players in jedem Fall sendet und ob yt-dlp für jedes Video H.264-Adressen ohne Anmeldung bekommt, zeigt erst Björns Test.
+
 ## 0.5.77 – Skripte in der Seite, Startpuffer, Sammelstand (13. November 2026)
 - Automatisch: gesamte Python-Suite grün (849 Tests), davon 6 neu in `tests/test_v0577_inline_scripts_buffer.py`; `node --check`; Oberflächen-Kurztests.
 - Im Browser (Chromium): alle Anfragen auf `*.js` abgewiesen – Seite vollständig (Player, Netzkino, Offline-Knopf, Pluto, YouTube vorhanden, keine Skriptfehler, keine Skript-Anfrage); Fehler nennen weiter die Datei. Puffer: hls.js-Stream läuft nach kurzem Sammeln an; gedrosselte Segmente (1,8 s Verzögerung) – Wiedergabe wartet sichtbar („Puffer wird gefüllt … 3 von 8 s“) und läuft danach ohne weiteres Stocken; kurze Datei über den ffmpeg-Weg – Warten endet nach 3 s ohne Zuwachs. Wiedergabe-Abläufe aus 0.5.70/0.5.72 erneut grün.

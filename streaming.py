@@ -74,8 +74,13 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto'):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube=''):
     """Best playable source: a finished local download wins over the online stream."""
+    if youtube:
+        # 0.5.78: YouTube video in the own player (only after the opt-in, see youtube_downloads.play_source)
+        if root is None:raise ValueError('YouTube-Katalog nicht verfügbar')
+        import youtube_downloads
+        return youtube_downloads.play_source(root,youtube,quality)
     if joyn:
         # 0.5.65: Joyn playback is not released (copy protection, see joyn.py) -> clear refusal.
         if root is None:raise ValueError('Joyn-Katalog nicht verfügbar')
@@ -178,7 +183,9 @@ def plan(source,info=None,levels=True):
     """What the browser should do: 'direct' (play the source itself) or 'remux' (via /api/stream)."""
     out={'title':source['title'],'duration':float(source.get('duration') or 0)}
     if source['kind']=='url':
-        out.update(mode='remux' if source['hls'] else 'direct',url=source['url'],hls=source['hls'],quality=source.get('quality'),origin='online')
+        # 'remux' (0.5.78): addresses only the server may fetch (bound to its IP, picture and sound separate)
+        out.update(mode='remux' if source['hls'] or source.get('remux') else 'direct',url=source['url'],hls=source['hls'],quality=source.get('quality'),origin='online')
+        if source.get('remux') and not source['hls']:out.pop('url')
         if source.get('provider'):out['provider']=source['provider']
         if source.get('live'):out['live']=True
         # 0.5.63: what the player can offer under "Qualität" (HLS levels or the broadcaster's files)
@@ -209,6 +216,12 @@ def command(source,start=0.0,audio_copy=True,playlist=None):
         if source.get('hls') and source.get('live'):args+=['-max_reload','60']
     if start>0:args+=['-ss','%.3f'%start]
     args+=['-i',source['path'] if source['kind']=='file' else str(playlist) if playlist else source['url']]
+    # 0.5.78: picture and sound from two addresses (YouTube): second input with the same options, joined while playing
+    second=source['kind']=='url' and not playlist and source.get('audio_url')
+    if second:
+        args+=['-reconnect','1','-reconnect_streamed','1','-reconnect_delay_max','5']
+        if start>0:args+=['-ss','%.3f'%start]
+        args+=['-i',second,'-map','0:v:0','-map','1:a:0']
     # HLS seeks land on the segment before the position; stream copy would keep that pre-roll and the
     # player's clock would run seconds ahead. An output start of 0 drops it (copy starts on a keyframe).
     if start>0:args+=['-ss','0']
