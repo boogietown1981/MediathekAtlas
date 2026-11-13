@@ -171,7 +171,7 @@ class MusicTests(unittest.TestCase):
         self.assertIn('--no-cookies-from-browser', args)
         self.assertIn('-j', args)                        # 0.5.86: JSON with addresses and request headers
         self.assertEqual(args[-1], yt.video_url(vid(20)))
-        self.assertIn('height<=720', args[args.index('-f') + 1])
+        self.assertIn('height<=1080', args[args.index('-f') + 1])   # 0.5.89: YouTube "Automatisch" up to 1080p
         self.assertEqual((src['audio_url'][-8:], src['hls'], src['remux'], src['provider'], again['url']),
                          ('itag=140', False, True, 'youtube', src['url']))
         plan = streaming.plan(src)

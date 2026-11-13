@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.89 – YouTube-Auflösung (13. November 2026)
+- Automatisch: gesamte Python-Suite; neu `tests/test_v0589_youtube_resolution.py`: echte yt-dlp-Auswahl gegen gespeicherte Formatlisten (`--load-info-json`, übersprungen ohne yt-dlp), alte Angabe ergibt 480p, neue die höchste Stufe; Grenzen 1080/2160/480; Menü aus den angebotenen Höhen; HLS-Adressen bleiben auf dem Server.
+- Manuell: VP9-Bild mit AAC-Ton als MP4 in Chromium nach dem Spulen (synchron).
+- Nicht geprüft: welche Formate YouTube Björn für „Take My Breath Away“ wirklich anbietet (aus der Bauumgebung gesperrt). Bietet das Video selbst nur 480p an, bleibt es bei 480p; dann zeigt das Qualitätsmenü nur 480p und 360p.
+
 ## 0.5.88 – Staffel-Auswahl und Uploader (13. November 2026)
 - Automatisch: gesamte Python-Suite (975 Tests, mit den Tests aus 0.5.86 und 0.5.87); neu `tests/test_v0588_archive_selection.py` (13 Tests): Wünsche und Ablehnung falscher Werte, eine Datei je Folge, Gründe bei fehlenden Folgen, belegte Tonspur vor Dateiname, Filme je Dateifamilie, nur Gewinner werden vorgemerkt (auch bei fremden Dateinamen in der Auswahl), Obergrenze 300, Bildhöhe und öffentliches Konto aus dem Manifest (E-Mail landet nicht im Ergebnis), Konten einmalig und pausiert, entfernte Konten bleiben weg, eigene Quellen behalten ihre Einstellungen, Hintergrundlauf gedrosselt.
 - Im Browser (Chromium): Testbestand mit einem Serien-Upload (2 Staffeln, 14 Dateien). Detailansicht geöffnet, „Staffeln und Folgen auswählen“: 8 von 8 Folgen mit der 1080p-Originaldatei, Summe 5,2 GiB; mit „höchstens 480p“ und Staffel 2 drei Folgen mit der 480p-Fassung und bei Folge 3 der Grund „Auflösung zu hoch“; eine Folge abgewählt, zwei Dateien vorgemerkt (stehen in der Download-Liste). Uploader: drei erkannte Werke, drei Konten pausiert vorgemerkt, zweiter Lauf legt nichts doppelt an. Alle Plattform-Reiter und Hauptansichten geöffnet, keine Skriptfehler, keine fehlgeschlagenen Anfragen.

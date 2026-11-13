@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.5.88
+# MediathekAtlas · 0.5.89
+
+## Neu in 0.5.89: YouTube im eigenen Player in 1080p
+
+- Bisher lief YouTube im eigenen Player oft nur in 480p. Ohne Anmeldung bietet YouTube Bild und Ton als getrennte H.264-Dateien häufig nur bis 480p an; die höheren Stufen gibt es als HLS-Stream (Bild und Ton zusammen) oder als VP9. MediathekAtlas nahm die erste passende Variante statt der höchsten.
+- Jetzt wählt MediathekAtlas die höchste Auflösung bis zur Grenze: „Automatisch“ bis 1080p, „Beste“ bis 2160p. Bei gleicher Auflösung wird H.264 vor VP9 bevorzugt, weil Safari H.264 sicher abspielt.
+- Unter „Qualität“ stehen jetzt die Auflösungen, die YouTube für das jeweilige Video anbietet.
 
 ## Neu in 0.5.88: Ganze Staffeln von Archive.org laden, Uploader erkannter Werke vormerken
 

@@ -43,7 +43,7 @@ const AUTO_HEIGHT=720;
 function wish(){try{const v=localStorage.getItem('atlas-play-quality')||'auto';return /^(auto|max|\d{3,4})$/.test(v)?v:'auto';}catch{return 'auto';}}
 function levels(){return (S.info?.levels||[]).filter(l=>l.height>0).sort((a,b)=>b.height-a.height);}
 // Height the server plays for a wish (same rule as hls_variants.choose): largest level that fits, else the smallest.
-function heightFor(w){const all=levels();if(!all.length)return 0;if(w==='max')return (S.info.hls?all[0]:all.find(l=>l.height<=1080)||all[all.length-1]).height;const top=w==='auto'?AUTO_HEIGHT:Number(w)||AUTO_HEIGHT;return (all.find(l=>l.height<=top)||all[all.length-1]).height;}
+function heightFor(w){const all=levels();if(!all.length)return 0;if(w==='max')return (S.info.hls||S.info.auto_height?all[0]:all.find(l=>l.height<=1080)||all[all.length-1]).height;const auto=S.info?.auto_height||AUTO_HEIGHT,top=w==='auto'?auto:Number(w)||auto;return (all.find(l=>l.height<=top)||all[all.length-1]).height;}
 function currentHeight(){return heightFor(S.level||wish());}
 function renderQuality(){const all=levels(),info=S.info;
  // Nothing to choose: one level only, local files, YouTube.
