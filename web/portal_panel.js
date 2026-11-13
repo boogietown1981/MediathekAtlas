@@ -139,7 +139,7 @@ window.AtlasPortalPanel = function (cfg) {
   const safeLink = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\//i.test(v) && !/[\s<>'"]/.test(v);
   function externalLink(item) {
     const a = make('a', cfg.externalLink || ('Bei ' + NAME + ' ansehen'), 'button');
-    if (safeLink(item.web_url)) { a.href = item.web_url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    if (safeLink(item.web_url)) { a.href = window.AtlasDirect ? window.AtlasDirect.href(K, item.web_url) : item.web_url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
     else a.setAttribute('aria-disabled', 'true');
     return a;
   }

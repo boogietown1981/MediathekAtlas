@@ -34,6 +34,8 @@
   const mib = n => (Number(n || 0) / 1048576).toLocaleString('de-DE', {maximumFractionDigits: 1}) + ' MiB';
   const mins = s => s ? Math.round(s / 60) + ' Min.' : '';
   const https = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\//i.test(v) && !/[\s<>'"]/.test(v);
+  // 0.5.91: direkter Player-Link + Autostart-Kennung für Anbieter mit Kopierschutz (web/direct_start.js)
+  const direct = (source, url) => window.AtlasDirect ? window.AtlasDirect.href(source, url) : url;
   // Portal artwork comes from the provider's own image hosts (validated https, no referrer).
   const image = (url, alt) => {
     if (!https(url)) return null;
@@ -181,8 +183,8 @@
         const acts = make('div', undefined, 'tv-epactions');
         if (e.playable) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || ''))));
         // TOGGO: keep the way to toggo.de beside the player button.
-        if (e.playable && m.source === 'toggo' && https(e.web_url)) acts.append(link(src.external, e.web_url));
-        else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', e.web_url || m.web_url));
+        if (e.playable && m.source === 'toggo' && https(e.web_url)) acts.append(link(src.external, direct(m.source, e.web_url)));
+        else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', direct(m.source, e.web_url || m.web_url)));
         const off = e.offline && window.AtlasOffline?.control(m.source, e.id, m.title + (code ? ' · ' + code : ''), {night: !!e.night});
         if (off) acts.append(off);
         else if (e.protected) { const lock = window.AtlasOffline?.protectedNote(); if (lock) acts.append(lock); }
@@ -215,7 +217,7 @@
       const save = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night});
       if (save) actions.push(save);
     }
-    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo')) actions.push(link(src.external || 'Beim Anbieter ansehen', m.web_url));
+    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : m.source === 'toggo' ? '🔒 Kopiergeschützt · nur bei TOGGO' : 'Nur beim Anbieter abspielbar') : ''];

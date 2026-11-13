@@ -956,3 +956,7 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .archive-selection-table th{color:#a8c3d0;font-weight:600}
 .archive-selection-missing td{color:#e0b46a}
 .archive-selection-tick input,.archive-selection-table input{width:auto;flex:none;margin:0}
+/* 0.5.91 Videostart bei Anbietern */
+.direct-start-steps{margin:.4rem 0 .6rem 1.2rem;padding:0;line-height:1.55}
+.direct-start-steps li{margin:.15rem 0}
+#direct-start-panel code{font-size:.92em}

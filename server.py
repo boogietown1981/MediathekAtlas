@@ -467,6 +467,8 @@ class Handler(BaseHTTPRequestHandler):
             with db() as c:
                 video_backfill.initialize(c)
                 return self.send(video_backfill.status(c,q.get('offset',['0'])[0]))
+        # 0.5.91: optionale Chrome-Erweiterung für den Videostart bei Anbietern mit Kopierschutz
+        if path=='/api/browser-extension':return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')
         if path=='/api/live-tv':
             # 0.5.50: live channels of all sources, merged by station (web/live_tv.js).
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1353,7 +1355,7 @@ class Handler(BaseHTTPRequestHandler):
         diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

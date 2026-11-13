@@ -320,7 +320,7 @@
     }
     if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {
       // 0.5.70: the same button shape as "Ansehen" on every tile
-      const link=el('a','↗ '+(EXTERNAL[item.source]||'Beim Anbieter ansehen'),'button atlas-uc-external');link.href=item.web_url;link.target='_blank';link.rel='noopener noreferrer';
+      const link=el('a','↗ '+(EXTERNAL[item.source]||'Beim Anbieter ansehen'),'button atlas-uc-external');link.href=window.AtlasDirect?window.AtlasDirect.href(item.source,item.web_url):item.web_url;link.target='_blank';link.rel='noopener noreferrer';
       nodes.push(link);
     }
     // 0.5.47: 30 days offline directly in the tile, the same control for every film platform.

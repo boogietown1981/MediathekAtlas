@@ -1,0 +1,27 @@
+{
+  "manifest_version": 3,
+  "name": "MediathekAtlas Videostart",
+  "short_name": "Videostart",
+  "version": "0.5.91",
+  "description": "Startet Videos von Rakuten TV, Joyn, TOGGO und JustWatch TV, die aus MediathekAtlas geöffnet werden, ohne weitere Klicks. Kein Umgehen von Kopierschutz.",
+  "permissions": ["storage"],
+  "content_scripts": [
+    {
+      "matches": [
+        "https://www.rakuten.tv/*",
+        "https://www.joyn.de/*",
+        "https://www.toggo.de/*",
+        "https://www.justwatch.com/*"
+      ],
+      "js": ["autostart.js"],
+      "run_at": "document_start",
+      "all_frames": false
+    }
+  ],
+  "action": {
+    "default_title": "MediathekAtlas Videostart",
+    "default_popup": "popup.html",
+    "default_icon": {"16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png"}
+  },
+  "icons": {"16": "icons/icon16.png", "48": "icons/icon48.png", "128": "icons/icon128.png"}
+}
