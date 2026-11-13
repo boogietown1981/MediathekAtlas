@@ -1,3 +1,7 @@
+## 0.5.85 – Joyn: fehlgeschlagene Genre-Seiten werden wiederholt
+- Björns Diagnose vom 13.11.2026: `joyn_sync_progress` Schritt 2 von 15 dauerte 85 s und setzte `partial`; Ergebnis 1430 statt 1500 Filme, `last_error` ohne Grund. `_load_genre` gab bei einem Fehler ab Seite 2 nur `False` zurück.
+- `joyn._page`: eine fehlgeschlagene Seite wird nach 5 s einmal wiederholt. `_load_genre` liefert den Grund (`Seite N: …` oder Seitengrenze). `sync`: abgebrochene Genres laufen am Ende noch einmal (`joyn_sync_retry`); nur was dann noch fehlt, macht den Katalog `partial`. `last_error` nennt Genre-Schritt und Grund; `joyn_sync_completed` meldet `failed_steps` und `reasons`; nächster Versuch bei `partial` nach 1 h statt 24 h.
+
 ## 0.5.84 – TOGGO-Sitemap, Plattform-Registratur, Installationspakete aus dem Git, enthält 0.5.83
 - Björns Diagnose vom 13.11.2026 (0.5.82): `toggo_sitemap` mit 10 Sitemaps, 16475 Adressen, 0 Serien; Formen `*/serien/*/folge/*` (10605) und `toggolino/*/serien/*/folge` (4542). `toggo.classify` erwartete `/[toggolino/]<serie>/folge/<folge>`. Jetzt: Serie = Teil vor `folge`/`video`, davor höchstens zwei Bereichsteile; die gelistete Adresse wird behalten (`entry['url']`, für den Link kodiert) statt neu zusammengesetzt. Sonst zeigte die Diagnose seit 0.5.81 keine Fehler; die `logging`-Fehler (22–23 Uhr) stammen aus 0.5.72/0.5.73 und sind seit 0.5.74 behoben.
 - Enthält 0.5.83 (einheitliche Kategorien, Zweig 8whd4k, PR #42).

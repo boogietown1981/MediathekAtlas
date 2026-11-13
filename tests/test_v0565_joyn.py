@@ -263,5 +263,55 @@ class JoynProgress(unittest.TestCase):
         self.assertTrue(all(n == 2 for n in per_path.values()), per_path)   # not MAX_PAGES
 
 
+
+class JoynRetry(unittest.TestCase):
+    """0.5.85: Björn's diagnosis of 13.11.2026: one film genre stopped early (step 2 of 15 took 85 s),
+    the catalogue counted as "nur teilweise geladen" and lost 70 films, without a reason."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def flaky(self, failures):
+        """Api whose second horror page fails the first ``failures`` times it is asked."""
+        class Flaky(Api):
+            left = failures
+
+            def __call__(inner, operation, variables=None):
+                if operation == 'PageOverviewGenre' and variables['path'] == '/filme/genre/horror' and variables['offset'] == 32 and inner.left:
+                    inner.left -= 1
+                    inner.calls.append((operation, variables))
+                    raise TimeoutError('timed out')
+                return super().__call__(operation, variables)
+        return Flaky()
+
+    def test_one_failed_page_is_asked_again_at_once(self):
+        api = self.flaky(1)
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertEqual((result['partial'], result['movies']), (False, 34))
+        self.assertEqual(joyn.state(self.root)['last_result'], 'complete')
+
+    def test_a_genre_that_failed_twice_runs_again_at_the_end(self):
+        api = self.flaky(2)
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertEqual((result['partial'], result['movies']), (False, 34))
+        order = [v['path'] for op, v in api.calls if op == 'PageOverviewGenre']
+        self.assertEqual(order[-2:], ['/filme/genre/horror', '/filme/genre/horror'])     # after every other genre
+        self.assertEqual(joyn.state(self.root)['last_error'], '')
+
+    def test_what_still_fails_is_named_and_tried_again_within_the_hour(self):
+        api = self.flaky(99)
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertTrue(result['partial'])
+        self.assertEqual(result['movies'], 33)          # first page of the genre and the rest stay
+        state = joyn.state(self.root)
+        self.assertEqual(state['last_result'], 'partial')
+        self.assertRegex(state['last_error'], r'^Katalog nur teilweise geladen: Genre-Seite \d+ von \d+ \(Seite 2: Joyn ist nicht erreichbar')
+        self.assertEqual(state['next_attempt'], 1794500000.0 + 3600)
+
+
 if __name__ == '__main__':
     unittest.main()

@@ -356,21 +356,30 @@ def _merge(found, item):
         old['offer'], old['category'] = 'free', FREE
 
 
-def _load_genre(request, path, plus, gap, found):
-    """All pages of one genre path; False when it stopped early. A page that brings no title not
-    already seen on this path ends the path (0.5.68: protects against an ignored offset, which
-    would otherwise repeat the same 32 titles up to MAX_PAGES times)."""
+def _page(request, path, page, retry_wait):
+    """One genre page. A failed request is asked once more after a pause (0.5.85: Björn's run of
+    12.11.2026 lost a film genre to a single slow answer and the whole catalogue counted as partial)."""
+    variables = {'first': PAGE_SIZE, 'path': path, 'offset': page * PAGE_SIZE}
+    try:
+        return genre_assets(_data(request('PageOverviewGenre', variables)))
+    except Exception:
+        if retry_wait:
+            time.sleep(retry_wait)
+        return genre_assets(_data(request('PageOverviewGenre', variables)))
+
+
+def _load_genre(request, path, plus, gap, found, retry_wait=0.0):
+    """All pages of one genre path. Returns '' when complete, otherwise why it stopped early.
+    A page that brings no title not already seen on this path ends the path (0.5.68: protects
+    against an ignored offset, which would otherwise repeat the same 32 titles up to MAX_PAGES times)."""
     seen = set()
     for page in range(MAX_PAGES):
         if gap and page:
             time.sleep(gap)
         try:
-            assets = genre_assets(_data(request('PageOverviewGenre', {'first': PAGE_SIZE, 'path': path,
-                                                                     'offset': page * PAGE_SIZE})))
-        except Exception:
-            if page == 0:
-                raise
-            return False
+            assets = _page(request, path, page, retry_wait)
+        except Exception as exc:
+            return 'Seite %d: %s' % (page + 1, _error(exc))
         ids = {str(node.get('id') or '') for node in assets}
         fresh = ids - seen
         seen |= ids
@@ -379,8 +388,8 @@ def _load_genre(request, path, plus, gap, found):
             if it:
                 _merge(found, it)
         if len(assets) < PAGE_SIZE or not fresh or len(found) >= MAX_ITEMS:
-            return True
-    return False
+            return ''
+    return 'mehr als %d Seiten' % MAX_PAGES
 
 
 def _counts(items):
@@ -435,16 +444,31 @@ def sync(root, request=None, now=None, gap=None):
         paths = genre_paths(navigation, extra)
         if not paths:
             raise ValueError('Joyn nannte keine Genre-Seiten')
+        retry_wait = 5.0 if gap else 0.0
+        failed = {}      # step number -> reason
         for number, (path, plus) in enumerate(paths, 1):
-            try:
-                partial |= not _load_genre(request, path, plus, gap, found)
-            except Exception as exc:
-                partial = True
-                notes.append(_error(exc))
+            reason = _load_genre(request, path, plus, gap, found, retry_wait)
+            if reason:
+                failed[number] = reason
             _save_progress(root, found, now, 'Genre-Seite %d von %d' % (number, len(paths)))
-            _notify('joyn_sync_progress', step=number, steps=len(paths), partial=partial, **_counts(list(found.values())))
+            _notify('joyn_sync_progress', step=number, steps=len(paths), partial=partial or bool(failed), failed=len(failed),
+                    **_counts(list(found.values())))
             if gap:
                 time.sleep(gap)
+        # 0.5.85: genre pages that stopped early get a second run at the end, when a short
+        # disturbance at Joyn is usually over; only what still fails makes the catalogue partial.
+        for number in list(failed):
+            path, plus = paths[number - 1]
+            _save_progress(root, found, now, 'Genre-Seite %d von %d noch einmal' % (number, len(paths)))
+            reason = _load_genre(request, path, plus, gap, found, retry_wait)
+            _notify('joyn_sync_retry', step=number, steps=len(paths), ok=not reason, **_counts(list(found.values())))
+            if reason:
+                failed[number] = reason
+            else:
+                del failed[number]
+        for number, reason in failed.items():
+            partial = True
+            notes.append('Genre-Seite %d von %d (%s)' % (number, len(paths), reason))
         if not any(i['kind'] in ('movie', 'series') for i in found.values()):
             raise ValueError(notes[0] if notes else 'Joyn lieferte keine Filme oder Serien')
         items = list(found.values())
@@ -458,11 +482,11 @@ def sync(root, request=None, now=None, gap=None):
                 for key, value in [('last_success', visible_since), ('last_loaded', time.time()), ('progress', ''),
                                    ('last_result', 'partial' if partial else 'complete'),
                                    ('last_error', ('Katalog nur teilweise geladen' + (': ' + notes[0] if notes else '')) if partial else ''),
-                                   ('next_attempt', now + 24 * 3600), *counts.items()]:
+                                   ('next_attempt', now + (3600 if partial else 24 * 3600)), *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()
-        _notify('joyn_sync_completed', partial=partial, **counts)
+        _notify('joyn_sync_completed', partial=partial, failed_steps=sorted(failed), reasons=[_text(r, 120) for r in list(failed.values())[:5]], **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)

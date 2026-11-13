@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.5.84
+# MediathekAtlas · 0.5.85
+
+## Neu in 0.5.85: Joyn lädt den Katalog wieder vollständig
+
+- Bisher reichte eine einzige langsame Antwort von Joyn, und der Katalog galt als „nur teilweise geladen“ (in der Diagnose vom 13.11.2026 fehlten dadurch 70 Filme, ohne Angabe eines Grundes). Jetzt wird eine fehlgeschlagene Seite nach kurzer Pause noch einmal abgefragt, und ein Genre, das trotzdem abbricht, läuft am Ende des Abrufs ein zweites Mal.
+- Bleibt danach etwas offen, nennt die Meldung das Genre und den Grund, und der nächste Versuch startet nach einer Stunde statt nach einem Tag (bei eingeschaltetem täglichen Abruf).
 
 ## Neu in 0.5.84: TOGGO-Katalog repariert, Code aufgeräumt
 

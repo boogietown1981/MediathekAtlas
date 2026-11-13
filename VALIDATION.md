@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.85 – Joyn-Abruf (13. November 2026)
+- Automatisch: gesamte Python-Suite (948 Tests); neu `JoynRetry` in `tests/test_v0565_joyn.py` (eine Seite fällt einmal aus, ein Genre fällt zweimal aus, dauerhafter Ausfall mit Grund und Wiederholung nach einer Stunde).
+- Nicht geprüft: gegen Joyn selbst (aus der Bauumgebung gesperrt). Ob der Katalog bei Björn wieder vollständig lädt, zeigt sein nächster Abruf; warum Joyn am 12.11. langsam antwortete, ist aus der Diagnose nicht erkennbar.
+
 ## 0.5.84 – Plattform-Registratur (13. November 2026)
 - TOGGO: nur gegen die Adressformen aus der Diagnose geprüft (`test_addresses_as_the_sitemap_lists_them`), **nicht gegen toggo.de selbst** (aus der Bauumgebung gesperrt). Ob danach Titel, Bilder und Wiedergabe stimmen, zeigt erst Björns nächster Abruf.
 - Automatisch: gesamte Python-Suite (945 Tests, mit den Tests aus 0.5.83); neu `tests/test_v0584_platform_registry.py` (9 Tests): die Registratur beantwortet genau die 38 Adressen, die 0.5.82 ausgeschrieben hatte, und keine der plattformeigenen; Katalogseite, Folgen, Details mit 404, Offline-Liste auch ohne Offline-Kopien, Katalogabruf, täglicher Abruf, Werkzuordnung, Offline-Download trotz Anbieterfehler, Ereignisnamen, Hintergrund-Threads.
