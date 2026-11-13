@@ -717,6 +717,7 @@ function archiveDownloadButton(itemId,v,manifest){
 const ARCHIVE_LANGUAGE_NAMES={de:'Deutsch',en:'Englisch',fr:'Französisch',es:'Spanisch',it:'Italienisch',ja:'Japanisch',ru:'Russisch',pl:'Polnisch',nl:'Niederländisch',pt:'Portugiesisch',tr:'Türkisch',sv:'Schwedisch'};
 function archiveSizeLabel(bytes){
   if(!bytes)return 'Größe unbekannt';
+  if(bytes<1048576)return Math.max(1,Math.round(bytes/1024)).toLocaleString('de-DE')+' KiB';
   return bytes>=1073741824?(bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:1})+' GiB':(bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:0})+' MiB';
 }
 function archiveSelectionPanel(itemId,manifest){
@@ -795,6 +796,79 @@ function archiveSelectionPanel(itemId,manifest){
   panel.ontoggle=()=>{const card=panel.closest('.portal-result');if(card)card.style.gridColumn=panel.open?'1 / -1':'';};
   return panel;
 }
+// 0.5.92 (ArchiveMedia bluray_playlist, multi_catalog, catalog_enrichment): what the upload holds besides videos.
+function archiveDurationLabel(seconds){
+  const s=Math.round(seconds||0),h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+  return h?h+':'+String(m).padStart(2,'0')+' Std.':m+' Min.';
+}
+function archiveExtrasPanel(itemId,manifest){
+  const wrap=el('div',undefined,'archive-extras');
+  const bluray=manifest.bluray;
+  if(bluray?.playlists?.length){
+    const box=document.createElement('details');box.className='archive-selection';
+    box.append(el('summary','Blu-ray-Abbild: '+countLabel(bluray.playlists.length)+' Playlists, '+countLabel(bluray.clips)+' Clips'));
+    box.append(el('p','Die einzelnen Clips einer Blu-ray sind als technische Dateien ausgeblendet. Eine Playlist sagt, welche Clips in welcher Reihenfolge einen Titel ergeben. '+bluray.note,'muted'));
+    const list=el('div',undefined,'archive-extras-list'),rows=new Map(),main=el('p','','portal-evidence');
+    const show=(row,p)=>{
+      row.info.textContent=countLabel(p.play_items)+(p.play_items===1?' Abschnitt':' Abschnitte')+' · '+archiveDurationLabel(p.duration_seconds)+' · '+
+        (p.clips_present===p.distinct_clips?'alle '+countLabel(p.distinct_clips)+' Clips im Upload ('+archiveSizeLabel(p.bytes)+')':countLabel(p.distinct_clips-p.clips_present)+' von '+countLabel(p.distinct_clips)+' Clips fehlen im Upload');
+      row.info.className=p.clips_present===p.distinct_clips?'muted':'portal-warning';
+      row.clips.textContent=p.clips.map(c=>c.clip+'.m2ts ('+archiveDurationLabel(c.duration_seconds)+')').join(' → ')+(p.play_items>p.clips.length?' …':'');
+    };
+    const mark=name=>{main.textContent=name?'Längster vollständiger Titel bisher: Playlist '+name.split('/').pop()+'. Das ist meist der Hauptfilm, aber kein Beweis.':'';
+      for(const [file,row] of rows)row.node.classList.toggle('archive-extras-main',file===name);};
+    const read=async(p,row)=>{const r=await api('archive-bluray-playlist',{id:itemId,filename:p.filename});bluray.parsed[p.filename]=r;show(row,r);mark(r.main);};
+    for(const p of bluray.playlists){
+      const node=el('div',undefined,'archive-extras-row'),info=el('small','Noch nicht gelesen ('+countLabel(p.size_bytes)+' Bytes)','muted'),clips=el('small','','muted');
+      const button=el('button','Playlist lesen','portal-verify');button.type='button';
+      const row={node,info,clips,button};rows.set(p.filename,row);
+      button.onclick=()=>busy(button,()=>read(p,row));
+      node.append(el('strong',(p.folder?p.folder+' · ':'')+p.number+'.mpls'),info,clips,button);
+      if(bluray.parsed?.[p.filename])show(row,bluray.parsed[p.filename]);
+      list.append(node);
+    }
+    const all=el('button','Hauptfilm suchen (liest bis zu 12 Playlists)','portal-verify');all.type='button';
+    all.onclick=()=>busy(all,async()=>{
+      let done=0;
+      for(const p of bluray.playlists){
+        if(bluray.parsed?.[p.filename])continue;
+        if(done>=12)break;
+        try{await read(p,rows.get(p.filename));}catch(error){rows.get(p.filename).info.textContent=error.message;rows.get(p.filename).info.className='portal-warning';}
+        done+=1;
+      }
+    });
+    box.append(all,main,list);wrap.append(box);
+    const parsed=Object.values(bluray.parsed||{}).filter(p=>p.distinct_clips&&p.clips_present===p.distinct_clips);
+    if(parsed.length)mark(parsed.sort((a,b)=>b.duration_seconds-a.duration_seconds||(a.filename<b.filename?1:-1))[0].filename);
+  }
+  if(manifest.other_media?.length||manifest.external_ids?.length){
+    const box=document.createElement('details');box.className='archive-selection';
+    const total=(manifest.other_media||[]).reduce((n,g)=>n+g.files,0);
+    box.append(el('summary','Weitere Inhalte dieses Uploads'+(total?': '+(manifest.other_media||[]).map(g=>g.label+' ('+countLabel(g.files)+')').join(', '):'')));
+    box.append(el('p','MediathekAtlas verwaltet Filme und Serien. Was der Upload sonst enthält, ist hier aufgeführt; die Links öffnen die Datei bei Archive.org.','muted'));
+    for(const group of manifest.other_media||[]){
+      const node=el('div',undefined,'archive-extras-row');
+      node.append(el('strong',group.label+' · '+group.subtype_label),el('small',countLabel(group.files)+(group.files===1?' Datei':' Dateien')+' · '+archiveSizeLabel(group.bytes)+' · Einordnung: '+group.reason,'muted'));
+      const files=el('div',undefined,'archive-extras-files');
+      for(const file of group.examples){const link=el('a',file.name+(file.size_bytes?' ('+archiveSizeLabel(file.size_bytes)+')':''),'portal-link');link.href=file.url;link.target='_blank';link.rel='noopener noreferrer';files.append(link);}
+      if(group.files>group.examples.length)files.append(el('small','… und '+countLabel(group.files-group.examples.length)+' weitere','muted'));
+      node.append(files);box.append(node);
+    }
+    for(const number of manifest.external_ids||[]){
+      const node=el('div',undefined,'archive-extras-row'),out=el('small','','muted');
+      const service=number.provider==='openlibrary'?'Open Library':'MusicBrainz';
+      const describe=r=>{out.textContent=r.found?service+': „'+r.title+'“'+[r.published,r.pages?r.pages+' Seiten':'',(r.publishers||r.artists||[]).join(', '),r.country].filter(Boolean).map(x=>' · '+x).join(''):service+' kennt diese Kennung nicht.';};
+      const button=el('button','Bei '+service+' nachschlagen','portal-verify');button.type='button';
+      button.title='Fragt nur nach der Kennung, die der Uploader angegeben hat – nie nach dem Titel.';
+      button.onclick=()=>busy(button,async()=>describe(await api('archive-external-id',{id:itemId,provider:number.provider})));
+      node.append(el('strong',number.label),out,button);
+      if(manifest.external_lookups?.[number.provider])describe(manifest.external_lookups[number.provider]);
+      box.append(node);
+    }
+    wrap.append(box);
+  }
+  return wrap;
+}
 function showArchiveManifest(host,manifest,probes={},itemId=''){
   host.replaceChildren();
   if(!manifest||typeof manifest!=='object'){
@@ -805,6 +879,13 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
   heading.append(el('small','Identität: '+(manifest.identity_origin||'unbekannt')+
       ' · '+(manifest.identity_confidence||'unbestätigt')));
   host.append(heading);
+  if(itemId){
+    // 0.5.92: a stored manifest can be read again, so data added by newer versions (picture height, Blu-ray, other media) appears.
+    const again=el('button','Dateibestand neu von Archive.org lesen','portal-verify');again.type='button';
+    again.title='Liest die Dateiliste dieses Uploads erneut (eine Anfrage). Geprüfte Tonspuren bleiben erhalten.';
+    again.onclick=()=>busy(again,async()=>{const fetched=await api('portal-archive-inspect',{id:itemId});showArchiveManifest(host,fetched.detail,probes,itemId);notice('Dateibestand neu gelesen.');});
+    host.append(again);
+  }
   // ArchiveMedia preserves distinct evidence for the title, work, actual
   // episode and video file. A metadata-only light scan never claims content
   // or spoken language has been verified.
@@ -837,6 +918,7 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
     host.append(el('p','Audio-Hinweis aus Upload-Titel: '+
       archiveLanguages(manifest.upload_audio_hint_languages)+' (ungeprüft)','muted'));
   if(itemId&&(manifest.video_variants||[]).length>1)host.append(archiveSelectionPanel(itemId,manifest));
+  if(itemId&&(manifest.bluray||manifest.other_media?.length||manifest.external_ids?.length))host.append(archiveExtrasPanel(itemId,manifest));
   const consent=el('label',undefined,'portal-consent');
   const checkbox=document.createElement('input');
   checkbox.type='checkbox';
@@ -926,6 +1008,9 @@ function portalView(name){
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);
+function portalScopeState(state){
+  return ({queued:'wartet',running:'läuft',paused:'pausiert',complete:'fertig',retry:'neuer Versuch geplant',error:'angehalten nach Fehler',stalled:'angehalten, kein Fortschritt'})[state]||state;
+}
 function portalScopeTitle(kind){
   return ({item:'Einzelne Archive.org-URL',collection:'Sammlung',uploader:'Öffentlicher Uploader'})[kind]||kind;
 }
@@ -971,15 +1056,24 @@ function displayPortalControls(data){
     const card=el('article',undefined,'platform-scope-item');
     card.append(el('strong',portalScopeTitle(scope.kind)+' · '+scope.scope));
     if(scope.label&&scope.label!==scope.scope)card.append(el('small',scope.label+' · automatisch vorgemerkt, startet erst auf deinen Klick','muted'));
-    card.append(el('small','Status '+scope.state+' · Priorität '+scope.priority+
-      ' · Seiten '+scope.pages_done+' · Importiert '+scope.imported));
-    card.append(el('small','Nächste Seite '+scope.cursor+' · Budget '+scope.page_budget+' Seiten pro Start'));
+    // 0.5.92 (ArchiveMedia clean_scan/scan_recovery): plain state, coverage against Archive.org's own total, time windows.
+    const stopped=['error','stalled'].includes(scope.state),facts=scope.coverage||{};
+    card.append(el('small','Status: '+portalScopeState(scope.state)+' · Priorität '+scope.priority+
+      ' · Seiten '+scope.pages_done+' · Gelesen '+countLabel(scope.imported)+
+      (facts.provider_total!=null?' von '+countLabel(facts.provider_total)+' laut Archive.org':'')));
+    card.append(el('small',(facts.windows?'Große Quelle, in Zeitfenstern gelesen: '+countLabel(facts.windows_done)+' von '+countLabel(facts.windows)+' fertig':'Nächste Seite '+scope.cursor)+
+      ' · Budget '+scope.page_budget+' Seiten pro Start'));
+    if(facts.coverage==='needs_review')card.append(el('small','Fertig, aber '+(facts.windows_failed?'ein Zeitfenster ließ sich nicht lesen'+(facts.gap?' und ':''):'')+
+      (facts.gap?countLabel(facts.gap)+' Uploads weniger gelesen als Archive.org nennt':'')+'. „Neu durchsuchen“ liest die Quelle noch einmal; Gefundenes bleibt.','portal-warning'));
+    if(facts.verified===false&&scope.state!=='complete')card.append(el('small','Dieser Scan wurde vor 0.5.92 begonnen und läuft in der alten Reihenfolge zu Ende. „Neu durchsuchen“ stellt auf die geprüfte Suche um.','muted'));
+    if(scope.state==='stalled')card.append(el('small','Archive.org lieferte wiederholt nicht die angefragte Seite. Die Position ist gemerkt; „Start / Fortsetzen“ versucht es erneut.','portal-warning'));
     if(scope.last_error)card.append(el('small','Letzter Fehler: '+scope.last_error,'portal-warning'));
     const actions=el('div',undefined,'platform-scope-actions');
-    const toggle=el('button',scope.enabled?'Pausieren':'Start / Fortsetzen');
+    const active=scope.enabled&&!stopped;
+    const toggle=el('button',active?'Pausieren':'Start / Fortsetzen');
     toggle.type='button';
     toggle.onclick=()=>busy(toggle,async()=>{
-      await api('portal-scope-control',{id:scope.id,action:scope.enabled?'pause':'start'});
+      await api('portal-scope-control',{id:scope.id,action:active?'pause':'start'});
       await loadPortals();
     });
     actions.append(toggle);
@@ -990,6 +1084,15 @@ function displayPortalControls(data){
       await loadPortals();
     });
     actions.append(promote);
+    if(scope.state!=='running'&&scope.kind!=='item'&&(scope.pages_done||stopped)){
+      const again=el('button','Neu durchsuchen');again.type='button';
+      again.title='Liest die Quelle von vorn. Bereits gefundene Uploads bleiben erhalten, die Zähler des alten Laufs werden aufbewahrt.';
+      again.onclick=()=>busy(again,async()=>{
+        await api('portal-scope-control',{id:scope.id,action:'rescan'});
+        await loadPortals();notice('Quelle wird von vorn gelesen. Bereits Gefundenes bleibt erhalten.');
+      });
+      actions.append(again);
+    }
     if(scope.state!=='running'){
       const remove=el('button','Entfernen');remove.type='button';
       remove.onclick=()=>busy(remove,async()=>{
@@ -1001,6 +1104,32 @@ function displayPortalControls(data){
     card.append(actions);host.append(card);
   }
 }
+// 0.5.92 (ArchiveMedia catalog_transfer): hand the found uploads to another installation as one file.
+$('archive-list-export').onclick=e=>busy(e.target,async()=>{
+  const r=await request('archive-list-export');
+  if(!r.ok)throw Error((await r.json().catch(()=>({}))).error||'Die Liste konnte nicht erstellt werden');
+  const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='MediathekAtlas_Archive-Liste_'+new Date().toISOString().slice(0,10)+'.zip';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+  $('archive-list-status').textContent='Liste gespeichert. Auf der anderen Installation über „Liste einlesen“ übernehmen.';
+});
+$('archive-list-import').onclick=()=>$('archive-list-file').click();
+$('archive-list-file').onchange=e=>{
+  const file=e.target.files[0];e.target.value='';
+  if(!file)return;
+  busy($('archive-list-import'),async()=>{
+    $('archive-list-status').textContent='„'+file.name+'“ wird geprüft und eingelesen …';
+    const control=new AbortController(),timer=setTimeout(()=>control.abort(),600000);
+    let r;
+    try{r=await fetch('/api/archive-list-import',{method:'POST',headers:{'Content-Type':'application/zip','X-Atlas-Token':token},body:file,signal:control.signal});}
+    catch(error){$('archive-list-status').textContent='';throw Error('Die Liste konnte nicht übertragen werden.');}
+    finally{clearTimeout(timer);}
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){$('archive-list-status').textContent='';throw Error(d.error||'Die Liste wurde nicht angenommen');}
+    $('archive-list-status').textContent=(d.added===1?'1 neuer Upload':countLabel(d.added)+' neue Uploads')+' übernommen, '+(d.known===1?'1 war':countLabel(d.known)+' waren')+' schon bekannt (Liste aus '+d.written_by+', '+countLabel(d.items)+' Uploads). '+d.note;
+    notice(countLabel(d.added)+' Uploads aus der Liste übernommen.');
+    await loadPortals();
+  });
+};
 $('platform-global-controls').onsubmit=e=>{
   e.preventDefault();
   const button=$('platform-global-controls').querySelector('button');

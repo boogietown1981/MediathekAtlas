@@ -1,10 +1,10 @@
-import subprocess,sys,types
+import subprocess,sys,tempfile,types
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -594,6 +594,11 @@ class Handler(BaseHTTPRequestHandler):
             q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
             with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
         if path=='/api/backups':return self.send(db_backup.listing(ROOT))
+        if path=='/api/archive-list-export':
+            # 0.5.92 (ArchiveMedia catalog_transfer): the known uploads as one file for another installation.
+            with db() as c:body,facts=archive_transfer.export_bytes(c)
+            diagnostics.event('archive_list_exported',items=facts['items'],files=facts['files'])
+            return self.send(body,ctype='application/zip')
         if path=='/api/archive-uploaders':
             with db() as c:return self.send(archive_uploaders.listing(c))
         if path=='/api/archive-downloads':
@@ -836,12 +841,32 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.error('peer_put_failed',e)
             try:self.send({'error':core.safe_error(e)},500)
             except (BrokenPipeError,ConnectionResetError):pass
+    def archive_list_import(self):
+        """0.5.92: a list file of another installation (ZIP body, not JSON). Adds unknown uploads only."""
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if not 0<length<=archive_transfer.MAX_UPLOAD:raise ValueError('Die Liste ist leer oder zu groß')
+            with tempfile.TemporaryDirectory(prefix='atlas-list-') as folder:
+                target=Path(folder)/'liste.zip';left=length
+                with target.open('wb') as out:
+                    while left>0:
+                        part=self.rfile.read(min(1048576,left))
+                        if not part:raise ValueError('Die Übertragung der Liste wurde unterbrochen')
+                        out.write(part);left-=len(part)
+                with db() as c:result=archive_transfer.load(c,target)
+            diagnostics.event('archive_list_imported',items=result['items'],added=result['added'])
+            return self.send(result)
+        except ValueError as e:return self.send({'error':str(e)},400)
+        except Exception as e:
+            diagnostics.error('archive_list_import_failed',e)
+            return self.send({'error':core.safe_error(e)},500)
     def post(self):
         global _TREE_CACHE,_STATUS_CACHE
         if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
         if NETWORK and self.path=='/api/login':return self.login()
         if not self.authorized():return self.send({'error':'Anmeldung erforderlich','login':True},401)
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
+        if self.path=='/api/archive-list-import':return self.archive_list_import()
         try:
             length=int(self.headers.get('Content-Length','0'))
             # Netzkino recordings arrive in parts of a few MB (answer texts only, no headers).
@@ -973,6 +998,20 @@ class Handler(BaseHTTPRequestHandler):
                                   variants=detail['variants_displayed'],
                                   complete=detail['inventory_complete'])
                 return self.send({'detail':detail,'ok':True})
+            if path in ('/api/archive-bluray-playlist','/api/archive-external-id'):
+                # 0.5.92 (ArchiveMedia bluray_playlist, catalog_enrichment): one small look-up on request, stored with the manifest.
+                item_id=str(d.get('id') or '')
+                with db() as c:saved=portal_sources.archive_saved_detail(c,item_id)
+                detail=saved.get('detail')
+                if not detail:raise ValueError('Bitte erst den Archiv-Dateibestand prüfen')
+                if path=='/api/archive-bluray-playlist':
+                    result=archive_extras.read_playlist(detail,str(d.get('filename') or ''))
+                    result['main']=archive_extras.main_playlist(detail)
+                else:
+                    result=archive_extras.lookup(detail,str(d.get('provider') or ''))
+                    detail.setdefault('external_lookups',{})[str(d.get('provider'))]=result
+                with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
+                return self.send(result)
             if path=='/api/archive-selection':
                 # 0.5.88 (ArchiveMedia selection_matrix): which file of every episode fits the wishes; nothing is fetched or queued.
                 with db() as c:saved=portal_sources.archive_saved_detail(c,str(d.get('id') or ''))

@@ -960,3 +960,9 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .direct-start-steps{margin:.4rem 0 .6rem 1.2rem;padding:0;line-height:1.55}
 .direct-start-steps li{margin:.15rem 0}
 #direct-start-panel code{font-size:.92em}
+.archive-list-transfer{margin-top:14px}
+.archive-list-transfer summary{cursor:pointer;font-weight:600}
+.archive-extras-row{display:flex;flex-direction:column;gap:4px;align-items:flex-start;padding:8px 0;border-bottom:1px solid #22404e}
+.archive-extras-row small{overflow-wrap:anywhere}
+.archive-extras-main{border-left:3px solid #6ee7b7;padding-left:8px}
+.archive-extras-files{display:flex;flex-direction:column;gap:2px;font-size:12px}

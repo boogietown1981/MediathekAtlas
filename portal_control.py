@@ -13,6 +13,7 @@ import threading
 import time
 import urllib.parse
 
+import archive_scan_recovery as recovery
 import core
 import portal_sources as portals
 
@@ -61,6 +62,7 @@ _LAST_FETCH={'internet_archive':0.0}
 
 def initialize(c):
     c.executescript(SCHEMA)
+    recovery.migrate(c)
     for source in portals.SOURCES:
         c.execute("""INSERT OR IGNORE INTO portal_controls(source,enabled,workers,locale,updated)
             VALUES(?,0,1,'de',0)""",(source,))
@@ -73,7 +75,7 @@ def initialize(c):
 
 def source_status(c):
     limit=int(c.execute("SELECT value FROM portal_runtime WHERE setting='max_active'").fetchone()[0])
-    counts={str(r[0]):{'running':0,'queued':0,'paused':0,'complete':0,'error':0}
+    counts={str(r[0]):{'running':0,'queued':0,'paused':0,'complete':0,'error':0,'stalled':0}
             for r in c.execute('SELECT source FROM portal_controls')}
     for r in c.execute('SELECT source,state,COUNT(*) FROM portal_scopes GROUP BY source,state'):
         counts.setdefault(r[0],{})[r[1]]=r[2]
@@ -150,18 +152,25 @@ def add_scope(c,kind,value,priority=None,page_budget=8):
 
 def list_scopes(c,source='internet_archive'):
     if source!='internet_archive':return []
-    return [dict(r) for r in c.execute("""SELECT id,source,kind,scope,label,priority,
+    rows=[dict(r) for r in c.execute("""SELECT id,source,kind,scope,label,priority,
        state,enabled,cursor,pages_done,run_pages,page_budget,imported,failures,last_error,
        last_success,updated FROM portal_scopes WHERE source=?
        ORDER BY priority,id LIMIT 300""",(source,))]
+    # 0.5.92: what Archive.org names for the source next to what was read (archive_scan_recovery).
+    facts=recovery.coverage(c)
+    for row in rows:row['coverage']=facts.get(row['id'])
+    return rows
 
 
 def control_scope(c,scope_id,action,priority=None):
     r=c.execute('SELECT source,state,enabled FROM portal_scopes WHERE id=?',(int(scope_id),)).fetchone()
     if not r:raise ValueError('Scanquelle nicht gefunden')
     if action=='start':
-        c.execute("""UPDATE portal_scopes SET enabled=1,state='queued',run_pages=0,next_try=0,
+        # Also the way out of 'error' and 'stalled': the stored position is kept.
+        c.execute("""UPDATE portal_scopes SET enabled=1,state='queued',run_pages=0,next_try=0,failures=0,
           updated=? WHERE id=?""",(time.time(),scope_id))
+    elif action=='rescan':
+        recovery.rescan(c,int(scope_id))
     elif action=='pause':
         c.execute("""UPDATE portal_scopes SET enabled=0,state='paused',updated=?
             WHERE id=?""",(time.time(),scope_id))
@@ -172,6 +181,7 @@ def control_scope(c,scope_id,action,priority=None):
                   (level,time.time(),scope_id))
     elif action=='remove':
         if r['state']=='running':raise ValueError('Laufenden Scan zunächst pausieren')
+        c.execute('DELETE FROM portal_scope_windows WHERE scope_id=?',(scope_id,))
         c.execute('DELETE FROM portal_scopes WHERE id=?',(scope_id,))
     else:raise ValueError('Unbekannte Scanaktion')
 
@@ -180,14 +190,16 @@ def _claim(c):
     # BEGIN IMMEDIATE provides durable cross-thread claim without worker races.
     c.execute('BEGIN IMMEDIATE')
     r=c.execute("""SELECT id,source,kind,scope,cursor,pages_done,page_budget,
-      imported,failures,enabled FROM portal_scopes WHERE enabled=1
+      imported,failures,enabled,mode,last_identifier FROM portal_scopes WHERE enabled=1
       AND state IN ('queued','retry') AND next_try<=?
       AND source IN (SELECT source FROM portal_controls WHERE enabled=1)
       ORDER BY priority,next_try,id LIMIT 1""",(time.time(),)).fetchone()
     if not r:return None
     c.execute("""UPDATE portal_scopes SET state='running',updated=?
         WHERE id=?""",(time.time(),r['id']))
-    return dict(r)
+    task=dict(r)
+    if task['kind']!='item' and task['mode']==recovery.VERIFIED:task['window']=recovery.next_window(c,task['id'])
+    return task
 
 
 def archive_scope_query(scope):
@@ -208,7 +220,14 @@ def fetch_scope_page(scope):
         return [item],False,detail
     query=archive_scope_query(scope)
     page=int(scope['cursor'])
+    verified=scope.get('mode')==recovery.VERIFIED
+    last=''
+    if verified:
+        # Sorted, with a provable position; a large source is read in time windows.
+        page,last=recovery.position(scope)
+        if scope.get('window'):query+=recovery.window_clause(scope['window'])
     params=[('q',query),('output','json'),('rows',str(PER_PAGE)),('page',str(page))]
+    if verified:params.append(('sort[]','identifier asc'))
     params.extend(('fl[]',field) for field in
                   ('identifier','title','year','date','description','language','licenseurl','rights',portals.UPLOADER_FIELD))
     url='https://archive.org/advancedsearch.php?'+urllib.parse.urlencode(params)
@@ -216,6 +235,10 @@ def fetch_scope_page(scope):
         data=response.read(portals.MAX_RESPONSE_BYTES+1)
     if len(data)>portals.MAX_RESPONSE_BYTES:raise ValueError('Archive.org-Suchantwort zu groß')
     document=json.loads(data)
+    if verified:
+        facts=recovery.check(document,page,PER_PAGE,last)
+        scope['_facts']=facts
+        return ([] if facts['too_large'] else portals.archive_document(document)),facts['more'],None
     rows=portals.archive_document(document)
     raw=document.get('response',{}).get('docs',[])
     total=int(document.get('response',{}).get('numFound') or 0)
@@ -223,9 +246,15 @@ def fetch_scope_page(scope):
     return rows,more,None
 
 
-def finish(c,scope_id,rows,more,detail=None):
+def finish(c,scope_id,rows,more,detail=None,task=None):
     r=c.execute('SELECT * FROM portal_scopes WHERE id=?',(scope_id,)).fetchone()
     if not r:return
+    facts=(task or {}).get('_facts')
+    read=len(rows)
+    if facts:
+        # A verified page: the proof decides whether more follows (windows, 10 000 limit).
+        more=recovery.apply(c,task,facts)
+        read=facts['count']
     if rows:portals.save(c,rows)
     if detail and rows:portals.save_archive_detail(c,rows[0]['id'],detail)
     pages_done=r['pages_done']+1
@@ -233,21 +262,27 @@ def finish(c,scope_id,rows,more,detail=None):
     # Persist the total cursor; resume a new bounded tranche on next Start.
     stop=(not more or run_pages>=r['page_budget'])
     state='paused' if not r['enabled'] else ('complete' if not more else 'paused' if stop else 'queued')
+    step=int(bool(more)) if not (facts and (task.get('window') or facts['too_large'])) else 0
     c.execute("""UPDATE portal_scopes SET cursor=?,pages_done=?,run_pages=?,imported=imported+?,
-       state=?,enabled=?,last_success=?,last_error='',next_try=?,updated=?
-       WHERE id=?""",(r['cursor']+int(bool(more)),pages_done,run_pages,len(rows),state,
+       state=?,enabled=?,last_success=?,last_error='',failures=0,next_try=?,updated=?
+       WHERE id=?""",(r['cursor']+step,pages_done,run_pages,read,state,
                       0 if stop else 1,time.time(),time.time()+2,time.time(),scope_id))
 
 
-def failure(c,scope_id,error):
+def failure(c,scope_id,error,task=None):
     r=c.execute('SELECT failures,enabled FROM portal_scopes WHERE id=?',(scope_id,)).fetchone()
     if not r:return
     count=r[0]+1
-    pause=min(3600,30*2**min(count,7))
+    # 0.5.92 (ArchiveMedia scan_recovery): passing failures are retried a bounded number of times,
+    # a search without provable progress stops as 'stalled', a refusal as 'error'. The cursor stays.
+    state,pause=recovery.plan(error,count,bool(r['enabled']))
     c.execute("""UPDATE portal_scopes SET failures=?,state=?,
        next_try=?,last_error=?,updated=? WHERE id=?""",
-       (count,'retry' if r['enabled'] else 'paused',time.time()+pause,
+       (count,state,time.time()+pause,
         type(error).__name__+': '+core.safe_error(error),time.time(),scope_id))
+    if state=='stalled' and task:
+        # ArchiveMedia catalog_fallback: ask the same source in time windows instead of pages.
+        return recovery.fallback(c,task)
 
 
 class Scheduler:
@@ -284,9 +319,9 @@ class Scheduler:
                     _LAST_FETCH['internet_archive']=time.monotonic()+delay
                 if self.stop.wait(delay):break
                 rows,more,detail=fetch_scope_page(task)
-                with self.db() as c:finish(c,task['id'],rows,more,detail)
+                with self.db() as c:finish(c,task['id'],rows,more,detail,task)
             except Exception as error:
                 if task:
-                    with self.db() as c:failure(c,task['id'],error)
+                    with self.db() as c:failure(c,task['id'],error,task)
             finally:
                 with LOCK:_ACTIVE['internet_archive']-=1
