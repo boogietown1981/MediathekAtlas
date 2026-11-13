@@ -1,6 +1,6 @@
 /* Live-TV by station (0.5.50): one tab for the live channels of all sources (live_tv.py).
    ARD, ZDF & Co. come from the film list (topic "Livestream"), Pluto TV from its catalogue,
-   Rakuten TV and Joyn (0.5.65, link to joyn.de only) from theirs.
+   Rakuten TV and Joyn (0.5.65, link to joyn.de only) from theirs, Samsung TV Plus (0.5.97) from its channel list.
    A station offered by several providers is listed once with one play button per provider.
    Favourites are kept per device (localStorage) and shown first. */
 (() => {
@@ -129,7 +129,26 @@
       out.push('ARD/ZDF: keine Livestreams in der Filmliste gefunden – nach dem nächsten Filmlisten-Abgleich erneut prüfen.');
     if (!counts.pluto?.channels && !counts.pluto?.error)
       out.push(d.pluto?.last_success ? 'Pluto TV lieferte zuletzt keine Live-Sender.' : 'Pluto TV: Katalog noch nicht geladen (Plattformen → Pluto TV → „↻ Katalog jetzt laden“).');
+    // 0.5.97: Samsung TV Plus loads its channel list itself (first start, then every 12 hours).
+    const sm = d.samsung || {};
+    if (sm.running) out.push('Samsung TV Plus: Senderliste wird geladen …');
+    else if (!counts.samsung?.channels && !counts.samsung?.error)
+      out.push(sm.last_error ? 'Samsung TV Plus: ' + sm.last_error : 'Samsung TV Plus: Senderliste noch nicht geladen.');
+    if (sm.protected) out.push('Samsung TV Plus: ' + sm.protected + ' Sender nur mit Kopierschutz, hier nicht aufgeführt');
     return out;
+  }
+
+  // 0.5.97: load the Samsung TV Plus channel list now (otherwise it loads on its own every 12 hours).
+  async function samsungLoad(button) {
+    button.disabled = true;
+    try { await window.api('samsung-sync', {}); }
+    catch (e) { say('Samsung TV Plus: ' + e.message, true); return; }
+    for (let i = 0; i < 40; i++) {
+      await new Promise(r => setTimeout(r, 1500));
+      let st; try { st = await window.api('samsung'); } catch { break; }
+      if (!st.running) break;
+    }
+    refresh();
   }
 
   async function refresh() {
@@ -157,6 +176,11 @@
     const narrowed = !d.total && all > 0 && (params.q || provider || group);
     say((d.total ? d.total + ' Sender' : narrowed ? 'Keine Sender für diese Auswahl (' + [params.q && 'Suche „' + params.q + '“', provider && 'Anbieter', group && 'Gruppe „' + group + '“'].filter(Boolean).join(', ') + ').' : 'Keine Sender gefunden.') + (extra.length ? ' · ' + extra.join(' · ') : ''),
       (d.providers || []).some(p => p.error));
+    const sm = d.samsung || {}, smCount = (d.providers || []).find(p => p.key === 'samsung')?.channels || 0;
+    if (!sm.running && (!smCount || sm.last_result === 'error')) {
+      const load = make('button', smCount ? 'Samsung-TV-Plus-Liste neu laden' : 'Samsung-TV-Plus-Sender laden'); load.type = 'button';
+      load.onclick = () => samsungLoad(load); $('livetv-status').append(' ', load);
+    }
     if (narrowed) { const reset = make('button', 'Alle Sender zeigen'); reset.type = 'button'; reset.onclick = () => { $('livetv-filter').value = ''; provider = ''; group = ''; refresh(); }; $('livetv-status').append(' ', reset); }
   }
 

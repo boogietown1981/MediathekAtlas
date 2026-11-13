@@ -69,6 +69,11 @@ for _key, _name in PORTALS:
         'label': _name + ' · Werkzuordnung', 'group': 'Werkzuordnung', 'portal': _key,
         'hint': 'Prüft jeden Titel von ' + _name + ' gegen IMDb, TVDB und TMDB (ein Titel alle paar Sekunden).',
         'can': ('pause', 'priority')}
+# 0.5.97: Samsung TV Plus has live channels only: a channel list, no titles to match.
+TASKS['catalog:samsung'] = {
+    'label': 'Samsung TV Plus · Senderliste', 'group': 'Katalogabrufe', 'portal': 'samsung',
+    'hint': 'Lädt die Live-Sender von Samsung TV Plus mit Programm (beim ersten Start, danach alle 12 Stunden).',
+    'can': ('pause', 'start')}
 # 0.5.82: works on top of the Archive.org uploads (archive_recognition); no catalogue fetch of its own.
 TASKS['enrich:archive'] = {
     'label': 'Internet Archive · Werkzuordnung', 'group': 'Werkzuordnung', 'portal': 'archive',
