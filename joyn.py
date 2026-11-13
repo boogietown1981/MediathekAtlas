@@ -65,6 +65,8 @@ ASSET_ID = r'[a-z0-9][a-z0-9_\-]{0,80}'
 VALID_ID = re.compile(r'[msc]\.' + ASSET_ID)       # m.<film>, s.<series>, c.<live stream>
 VALID_ASSET = re.compile(ASSET_ID)
 GENRE_PATH = re.compile(r'/(?:plus/)?(?:filme|serien)/genre/[a-z0-9\-]{1,80}')
+VALID_BRAND = re.compile(r'[A-Za-z0-9][A-Za-z0-9_\-]{0,80}')   # Brand.id: "165", "bbc-earth"
+LIVE_PATH = '/play/live-tv'
 TITLE_PATH = re.compile(r'/(?:filme|serien|compilation|channels|mediatheken)/[a-z0-9\-]{1,160}(?:/[a-z0-9\-]{1,160}){0,2}')
 KIND_PREFIX = {'movie': 'm', 'series': 's', 'channel': 'c'}
 TYPE_KIND = {'Movie': 'movie', 'Series': 'series'}
@@ -232,6 +234,23 @@ def web_url(path):
     return SITE + path if TITLE_PATH.fullmatch(path) else ''
 
 
+def live_url(brand_id):
+    """Player page of one live channel, built as the website builds it (0.5.90).
+
+    The website links each entry of the Navigation's liveTv list as
+    ``/play/live-tv?channel_id=<id of the brand>`` (JavaScript bundle of 12.11.2026). Before 0.5.90
+    MediathekAtlas linked the brand page (/channels/…) or, for the 114 of 128 channels without one,
+    the bare /play/live-tv: Joyn then opened its default channel (Björn, 13.11.2026: "Joyn zeigt
+    immer noch auf arte"). Without a valid brand id there is no channel link at all."""
+    brand_id = str(brand_id or '')
+    return SITE + LIVE_PATH + '?' + urllib.parse.urlencode({'channel_id': brand_id}) if VALID_BRAND.fullmatch(brand_id) else ''
+
+
+def live_link_current(url):
+    """True for a channel link that names its channel (stored by 0.5.90 or later)."""
+    return str(url or '').startswith(SITE + LIVE_PATH + '?channel_id=')
+
+
 def _names(values, key='name', limit=12):
     out = []
     for v in values if isinstance(values, list) else []:
@@ -289,7 +308,6 @@ def channel_from(node, number=None):
     markings = {str(m).upper() for m in live.get('markings') or [] if isinstance(m, str)}
     plus = 'PLUS' in markings
     group = next((GROUP_NAMES[g] for g in groups if g in GROUP_NAMES), '')
-    path = str(node.get('path') or '')
     return {
         'id': 'c.' + ident, 'kind': 'channel', 'title': title, 'path': ident, 'series_id': '', 'season': None,
         'episode': None, 'year': None, 'duration': None, 'rating': '', 'genre': group,
@@ -298,8 +316,8 @@ def channel_from(node, number=None):
         'category': PLUS if plus else (group or 'Joyn'), 'brand': _text(node.get('title'), 80),
         'offer': 'plus' if plus else 'free', 'seasons': None, 'quality': _text(live.get('quality'), 8),
         'playable': 0, 'drm': 1,
-        # Channel page of the brand if there is one, otherwise the live overview of the website.
-        'web_url': web_url(path) if path.startswith('/channels/') else SITE + '/play/live-tv'}
+        # 0.5.90: the player page of exactly this channel (see live_url).
+        'web_url': live_url(node.get('id'))}
 
 
 def genre_paths(navigation, paths_answer=None):
@@ -534,6 +552,9 @@ def _summary(root, row, reports=None):
     # 0.5.83: Joyn+ / kostenlos is the offer, not a category; it stays on the card (row['category'])
     # and as filter value (listing genre=FREE/PLUS), but no longer among the shared category chips.
     out['offer_label'] = PLUS if row.get('offer') == 'plus' else FREE
+    # 0.5.90: a channel link of an earlier catalogue opens Joyn's default channel, not this one.
+    if row.get('kind') == 'channel' and not live_link_current(row.get('web_url')):
+        out['web_url'] = ''
     return out
 
 
@@ -557,6 +578,9 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     finally:
         db.close()
     if kind == 'channel':
+        for row in rows:      # 0.5.90: no link of an earlier catalogue that opens the wrong channel
+            if not live_link_current(row.get('web_url')):
+                row['web_url'] = ''
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
                 'genre_counts': []}
     reports = joyn_enrichment.all_cached(root)
@@ -643,6 +667,70 @@ def _run(root):
             _ACTIVE = False
 
 
+def live_links_outdated(root):
+    """Number of listed live channels whose stored link does not name its channel (catalogues
+    loaded before 0.5.90 linked the bare live page, which plays Joyn's default channel)."""
+    db = _connect(root)
+    try:
+        last = float(_get(db, 'last_success', '0') or 0)
+        if not last:
+            return 0
+        rows = db.execute("SELECT web_url FROM joyn_items WHERE kind='channel' AND seen>=?", (last,)).fetchall()
+        return sum(1 for (url,) in rows if not live_link_current(url))
+    finally:
+        db.close()
+
+
+LINK_RETRY = 3600     # seconds between two attempts of the link refresh after a failure
+
+
+def refresh_live_links(root, request=None, now=None):
+    """0.5.90: rebuild the links of the live channels with one Navigation request, so a catalogue
+    of an earlier version opens the right channel without waiting for the next full run.
+    Only web_url of channels already in the catalogue changes; films and series stay untouched."""
+    now = time.time() if now is None else float(now)
+    request = request or _request
+    db = _connect(root)
+    try:
+        with db:
+            _set(db, 'links_attempt', now)
+    finally:
+        db.close()
+    try:
+        navigation = _data(request('Navigation'))
+    except Exception as exc:
+        _notify('joyn_links_failed', reason=_text(_error(exc), 120))
+        return {'ok': False, 'error': _error(exc), 'updated': 0}
+    links = {}
+    for pos, node in enumerate(navigation.get('liveTv') or []):
+        ch = channel_from(node, pos + 1)
+        if ch and ch['web_url']:
+            links.setdefault(ch['id'], ch['web_url'])
+    db = _connect(root)
+    try:
+        with db:
+            updated = 0
+            for ident, url in links.items():
+                updated += db.execute("UPDATE joyn_items SET web_url=? WHERE id=? AND kind='channel' AND web_url<>?",
+                                      (url, ident, url)).rowcount
+    finally:
+        db.close()
+    _notify('joyn_links_refreshed', channels=len(links), updated=updated)
+    return {'ok': True, 'updated': updated, 'channels': len(links)}
+
+
+def _links_due(root, current, now=None):
+    now = time.time() if now is None else now
+    if current.get('running') or not current.get('last_success'):
+        return False
+    db = _connect(root)
+    try:
+        attempt = float(_get(db, 'links_attempt', '0') or 0)
+    finally:
+        db.close()
+    return now - attempt >= LINK_RETRY and live_links_outdated(root) > 0
+
+
 def start_sync(root):
     global _ACTIVE
     with _SYNC_LOCK:
@@ -662,6 +750,11 @@ def loop(root, stop):
         if portal_reference.first_load_due(current) or (
                 current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
+        elif _links_due(root, current):
+            try:
+                refresh_live_links(root)
+            except Exception:  # a local database problem must not end the loop
+                pass
 
 
 def play_source(root, item_id, **_):

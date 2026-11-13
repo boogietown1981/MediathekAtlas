@@ -51,7 +51,7 @@ STATIONS = [
     ('orf2', 'ORF 2', PUBLIC, ('orf2',)),
     ('srf1', 'SRF 1', PUBLIC, ('srf1',)),
     ('br', 'BR Fernsehen', REGIONAL, ('br', 'brfernsehen', 'bayerischesfernsehen')),
-    ('hr', 'hr-fernsehen', REGIONAL, ('hr', 'hrfernsehen')),
+    ('hr', 'hr-fernsehen', REGIONAL, ('hr', 'hrfernsehen', 'hessischerrundfunk')),
     ('mdr', 'MDR', REGIONAL, ('mdr', 'mdrfernsehen')),
     ('ndr', 'NDR', REGIONAL, ('ndr', 'ndrfernsehen')),
     ('rbb', 'rbb', REGIONAL, ('rbb', 'rbbfernsehen')),
@@ -169,11 +169,17 @@ def joyn_channels(root):
     out = []
     for row in joyn.channels(root):
         plus = row.get('offer') == 'plus'
+        # 0.5.90: only a link that names its channel is offered. Catalogues of earlier versions
+        # stored the bare live page, which opened Joyn's default channel (arte) for every station;
+        # joyn.loop rebuilds those links with one request shortly after the start.
+        link = row.get('web_url') or ''
+        current = joyn.live_link_current(link)
         out.append(_channel('joyn', row['id'], row['title'], None, group=row.get('genre') or 'Joyn',
                             logo=row.get('poster') or '', summary=row.get('summary') or '',
                             quality=' · '.join(x for x in ('Joyn+' if plus else 'kostenlos', row.get('quality') or '',
-                                                           'bei Joyn ansehen') if x),
-                            link=row.get('web_url') or ''))
+                                                           'bei Joyn ansehen' if current else
+                                                           'Direktlink folgt nach dem nächsten Joyn-Abruf') if x),
+                            link=link if current else ''))
     return out
 
 

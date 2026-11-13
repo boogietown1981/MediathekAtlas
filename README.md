@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.88
+# MediathekAtlas · 0.5.90
+
+## Neu in 0.5.90: Joyn-Sender öffnen den richtigen Sender
+
+- **Live-TV → Joyn öffnete arte.** Bei 114 von 128 Joyn-Sendern zeigte der Knopf „Joyn“ auf die allgemeine Live-Seite von joyn.de. Joyn spielt dort seinen Standardsender, deshalb landete man z. B. bei Naruto oder SAT.1 auf arte. Jetzt öffnet jeder Knopf die Player-Seite genau dieses Senders, so wie joyn.de selbst verlinkt (`/play/live-tv?channel_id=…`).
+- Ein schon geladener Joyn-Katalog wird kurz nach dem Start mit einer einzigen Anfrage repariert, Filme und Serien bleiben unverändert. Bis dahin zeigen Joyn-Sender keinen falschen Link, sondern „Direktlink folgt nach dem nächsten Joyn-Abruf“.
+- Geprüft: Pluto TV, Rakuten TV und ARD/ZDF & Co. spielen je Sender über die eigene Kennung ab und haben keinen solchen Sammel-Link. Joyns „Hessischer Rundfunk“ steht jetzt beim hr-fernsehen.
+- Sammelstand: 0.5.90 baut auf 0.5.88 auf (enthält 0.5.86 und 0.5.87). 0.5.89 ist für die YouTube-Auflösung reserviert.
 
 ## Neu in 0.5.88: Ganze Staffeln von Archive.org laden, Uploader erkannter Werke vormerken
 
