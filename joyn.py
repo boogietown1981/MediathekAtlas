@@ -563,7 +563,7 @@ def episodes(root, series_id):
 def _summary(root, row, reports=None):
     import joyn_enrichment
     report = (reports if reports is not None else joyn_enrichment.all_cached(root)).get(row['id'])
-    out = portal_reference.summary(row.get('genre'), report)
+    out = portal_reference.summary(row.get('genre'), report, age=portal_reference.age_of(row))
     # 0.5.83: Joyn+ / kostenlos is the offer, not a category; it stays on the card (row['category'])
     # and as filter value (listing genre=FREE/PLUS), but no longer among the shared category chips.
     out['offer_label'] = PLUS if row.get('offer') == 'plus' else FREE

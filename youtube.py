@@ -949,7 +949,7 @@ def offline_flag(root, row, enabled=None):
 def _summary(root, row, reports=None):
     import youtube_enrichment
     report = (reports if reports is not None else youtube_enrichment.all_cached(root)).get(row['id'])
-    return portal_reference.summary(row.get('genre'), report)
+    return portal_reference.summary(row.get('genre'), report, age=portal_reference.age_of(row))
 
 
 def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection='', show_doubtful=False):

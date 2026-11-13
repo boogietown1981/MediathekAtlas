@@ -68,7 +68,7 @@ CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,pr
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
 SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K|untertitel(?:n)?|UT|OmU|OV|Originalversion(?:\s+mit\s+Untertitel(?:n)?)?|Originalfassung(?:\s+mit\s+Untertitel(?:n)?)?|Original\s+mit\s+Untertitel(?:n)?|VOST(?:F)?|VO-?ST)[)\]]\s*')
 EP=re.compile(r'(?i)\bS(\d{1,2})[\s/._-]*E(\d{1,4})\b|\b(\d{1,2})x(\d{1,4})\b|\bStaffel\s*(\d+)\D{1,20}Folge\s*(\d+)\b')
-GENRES={'Krimi':r'\b(?:krimi|kriminalfilm|krimiserie|tatort|polizeiruf)\b','Komödie':r'\b(?:komödie|comedy|sitcom)\b','Drama':r'\b(?:drama|melodram)\b','Thriller':r'\bthriller\b','Science-Fiction':r'\b(?:science.fiction|sci.fi)\b','Fantasy':r'\bfantasy\b','Animation':r'\b(?:animation|zeichentrick|anime)\b','Dokumentation':r'\b(?:dokumentation|dokumentarfilm|dokumentarserie|doku)\b','Kinder & Familie':r'\b(?:kinderfilm|kinderserie|familienfilm)\b','Romantik':r'\b(?:liebesfilm|romantik|romantische komödie)\b'}
+GENRES={'Krimi':r'\b(?:krimi|kriminalfilm|krimiserie|tatort|polizeiruf)\b','Komödie':r'\b(?:komödie|comedy|sitcom)\b','Drama':r'\b(?:drama|melodram)\b','Thriller':r'\bthriller\b','Science-Fiction':r'\b(?:science.fiction|sci.fi)\b','Fantasy':r'\bfantasy\b','Animation':r'\b(?:animation|zeichentrick|anime)\b','Dokumentation':r'\b(?:dokumentation|dokumentarfilm|dokumentarserie|doku)\b','Kinder':r'\b(?:kinderfilm|kinderserie)\b','Familie':r'\bfamilienfilm\b','Romantik':r'\b(?:liebesfilm|romantik|romantische komödie)\b'}
 
 def key(s):
     s=unicodedata.normalize('NFKD',str(s or '').casefold())
@@ -619,34 +619,44 @@ def category_clause(c,genre):
         if not known:return CLASSIFIED_SQL,[]
         return (CLASSIFIED_SQL+' AND NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'
                 %','.join('?'*len(known))),known
-    if text in categories.CATEGORIES:
-        raw=labels.get(text) or []
+    def has(names):
+        raw=[r for n in names for r in labels.get(n) or []]
         if not raw:return '0',[]
-        return (CLASSIFIED_SQL+' AND EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'
-                %','.join('?'*len(raw))),raw
+        return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'%','.join('?'*len(raw)),raw
+    if text in ('Kinder','Familie'):
+        # 0.5.103: same rules as categories.refine (Kinder also for Familie + Animation; never next to
+        # Horror/Thriller/Krimi/Erotik/Krieg, Familie never next to Horror/Erotik).
+        own,own_args=has([text])
+        if text=='Kinder':
+            fam,fam_args=has(['Familie']);ani,ani_args=has(['Animation'])
+            own='(%s OR (%s AND %s))'%(own,fam,ani);own_args=own_args+fam_args+ani_args
+        bad,bad_args=has(categories.NOT_FOR_KIDS if text=='Kinder' else categories.NOT_FOR_FAMILY)
+        return CLASSIFIED_SQL+' AND '+own+' AND NOT '+bad,own_args+bad_args
+    if text in categories.CATEGORIES:
+        clause,raw=has([text])
+        if not raw:return '0',[]
+        return CLASSIFIED_SQL+' AND '+clause,raw
     return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre=?)',[text]
 
 def category_tree(c):
-    """[{kind, genre, n}] with the fixed categories (series counted once per show), like tree()."""
+    """[{kind, genre, n}] with the fixed categories (series counted once per show), like tree().
+    0.5.103: the rules over the whole title (categories.refine: no 'Kinder' next to Horror/Krimi …)
+    apply to the union of all labels of a film or show."""
     import categories
-    units={}
     rows=c.execute("SELECT w.kind,CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END unit,"+CLASSIFIED_SQL+
                    " classified,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
                    " WHERE w.kind IN ('movie','series') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)")
-    named={};checked={}
+    found={}
     for kind,unit,classified,genre in rows:
-        if not classified:names=(categories.UNCLASSIFIED,)
-        else:
-            checked.setdefault(kind,set()).add(unit)
-            names=categories.of_label(genre) if genre else []
-            if names:named.setdefault(kind,set()).add(unit)
-            else:names=(categories.OTHER,)
-        for name in names:units.setdefault((kind,name),set()).add(unit)
-    out=[]
-    for (kind,name),members in units.items():
-        if name==categories.OTHER:members=members-named.get(kind,set())
-        elif name==categories.UNCLASSIFIED:members=members-checked.get(kind,set())   # one checked episode classifies the show
-        if members:out.append({'kind':kind,'genre':name,'n':len(members)})
+        entry=found.setdefault((kind,unit),[False,set()])
+        if classified:
+            entry[0]=True
+            if genre:entry[1].update(categories.of_label(genre))
+    counts={}
+    for (kind,unit),(checked,names) in found.items():
+        names=categories.refine(names) if checked else [categories.UNCLASSIFIED]
+        for name in names or [categories.OTHER]:counts[(kind,name)]=counts.get((kind,name),0)+1
+    out=[{'kind':kind,'genre':name,'n':n} for (kind,name),n in counts.items()]
     out.sort(key=lambda r:(r['kind'],categories.sort_key(r['genre'])))
     return out
 
@@ -1149,6 +1159,24 @@ def normalized_genres(values):
     from metadata import genres
     return genres(values or [])
 
+def split_kids_family(c):
+    """0.5.103 (Björn): the stored label 'Kinder & Familie' mixed TMDB 'Family' with real children's
+    programmes. Labels derived from the broadcaster (KiKA, 'Kinderfilm', 'Kinderserie') become 'Kinder',
+    everything else (reference genres such as TMDB 'Family') 'Familie'. Runs once."""
+    old='Kinder & Familie'
+    ids=[r[0] for r in c.execute('SELECT work_id FROM work_genres WHERE genre=?',(old,))]
+    for wid in ids:
+        row=c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()
+        m=json.loads(row[0] or '{}') if row else {}
+        kids=m.get('genre_source') in ('Senderhinweis','Sender (abgeleitet)')
+        new='Kinder' if kids else 'Familie'
+        c.execute('DELETE FROM work_genres WHERE work_id=? AND genre=?',(wid,old))
+        c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,new))
+        if row:
+            m['genres']=sorted({new if g==old else g for g in (m.get('genres') or [])})
+            c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+    return len(ids)
+
 def merge_genre_spellings(c):
     """Fold genres stored under older or provider-specific spellings into one canonical name."""
     from metadata import genre_names
@@ -1203,6 +1231,7 @@ def initialize(c):
     c.execute('CREATE INDEX IF NOT EXISTS work_topic ON works(topic)')
     mark_live(c)
     if not get_state(c,'genre_spellings_v053',False):merge_genre_spellings(c);set_state(c,'genre_spellings_v053',True)
+    if not get_state(c,'kids_family_split_v0103',False):split_kids_family(c);set_state(c,'kids_family_split_v0103',True)
     # One-time migration of existing identified episodes; no destructive resets.
     if not get_state(c,'episode_queue_migrated_v0528',False):
         c.execute("""INSERT OR IGNORE INTO episode_queue(work_id)

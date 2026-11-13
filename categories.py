@@ -27,7 +27,7 @@ LEGACY_UNKNOWN = 'Unbekannt'
 # Feste Reihenfolge = Reihenfolge der Chips: zuerst Spielfilm-Genres, dann Sachthemen und Fernsehformate.
 CATEGORIES = (
     'Action', 'Abenteuer', 'Animation', 'Biografie', 'Drama', 'Erotik', 'Fantasy', 'Historie', 'Horror',
-    'Kinder & Familie', 'Komödie', 'Krieg', 'Krimi', 'Musical', 'Mystery', 'Romantik', 'Science-Fiction',
+    'Kinder', 'Familie', 'Komödie', 'Krieg', 'Krimi', 'Musical', 'Mystery', 'Romantik', 'Science-Fiction',
     'Thriller', 'Western',
     'Dokumentation', 'Natur & Tiere', 'Wissen & Technik', 'Politik & Gesellschaft', 'Nachrichten & Magazine',
     'Kultur', 'Musik', 'Sport', 'Reise', 'Ratgeber & Lifestyle', 'Talk', 'Show & Unterhaltung', 'Reality-TV',
@@ -47,7 +47,10 @@ _RULES = (
     ('Fantasy', r'fantas|marchen|märchen|fairy ?tale|sword and sorcery|übernat|ubernat|supernatural'),
     ('Historie', r'histor|geschicht|mittelalter|antike|kostum|kostüm|period drama|\bhistory\b|epos'),
     ('Horror', r'horror|slasher|zombie|monster|splatter|grusel|vampir|werwolf'),
-    ('Kinder & Familie', r'kinder|\bkids?\b|famil|children|jugend|teen|weihnacht|christmas'),
+    # 0.5.103 (Björn): „Kinder“ nur bei eindeutigen Kinder-Signalen, „Familie“ (TMDB „Family“, Weihnachten …)
+    # getrennt. Jugend/Teen ist kein Kinder-Signal (Teen-Horror, Jugenddrama).
+    ('Kinder', r'kinder(?!garten cop)|\bkids?\b|children|vorschul|preschool|toggolino|\bkika\b|sendung mit der maus'),
+    ('Familie', r'famil|weihnacht|christmas|elternschaft|feiertag'),
     ('Komödie', r'kom(?:ö|o|oe)die|comedy|dramedy|sitcom|kabarett|satire|parodie|parody|spoof|stand ?up|humor|mockbuster|slapstick'),
     ('Krieg', r'krieg|\bwar\b|milit'),
     ('Krimi', r'krimi|crime|detektiv|detective|polizei|police|noir|gangster|mafia|\bheist\b|whodunit'),
@@ -83,10 +86,10 @@ _NOISE = {'film', 'filme', 'spielfilm', 'serie', 'serien', 'fernsehserie', 'tv s
 _OVERRIDE = {
     'eastern': ['Action'], 'tragikomodie': ['Drama', 'Komödie'], 'tragikomödie': ['Drama', 'Komödie'],
     'dokudrama': ['Dokumentation'], 'kampfsport': ['Sport'], 'sporttalk': ['Sport', 'Talk'],
-    'feiertag': ['Kinder & Familie'], 'heimatfilm': ['Drama'], 'space western': ['Science-Fiction', 'Western'],
+    'feiertag': ['Familie'], 'kinder and familie': ['Familie'], 'kinder familie': ['Familie'], 'heimatfilm': ['Drama'], 'space western': ['Science-Fiction', 'Western'],
     'secret history': [], 'gemeinschaft': [], 'spekulativer spielfilm': ['Science-Fiction'],
-    'point and click adventure': ['Abenteuer'], 'kinderfernsehen': ['Kinder & Familie'],
-    'elternschaft': ['Kinder & Familie'], 'bildungsfernsehen': ['Wissen & Technik'],
+    'point and click adventure': ['Abenteuer'], 'kinderfernsehen': ['Kinder'],
+    'elternschaft': ['Familie'], 'bildungsfernsehen': ['Wissen & Technik'],
     'kriegsfilm': ['Krieg'], 'eiskunstlauf': ['Sport'], 'kunst im öffentlichen raum': ['Kultur'],
     'landwirtschaft': ['Natur & Tiere'], 'verbraucherinformation': ['Ratgeber & Lifestyle'], 'kampfkunst': ['Action'], 'war': ['Krieg'], 'history': ['Historie'],
 }
@@ -145,15 +148,55 @@ def of_labels(labels):
     return sorted(found, key=ORDER.get)
 
 
-def classify(reference_labels=(), provider_labels=(), checked=True):
+# 0.5.103: Inhalte, die nie unter „Kinder“ (bzw. „Familie“) stehen, auch wenn ein Anbieter es so etikettiert.
+NOT_FOR_KIDS = ('Horror', 'Thriller', 'Krimi', 'Erotik', 'Krieg')
+NOT_FOR_FAMILY = ('Horror', 'Erotik')
+KIDS_MAX_AGE = 6        # FSK 0/6
+FAMILY_MAX_AGE = 12     # FSK 0/6/12
+
+
+def age_of(value):
+    """Altersfreigabe aus 'FSK 12', 'ab 16', 12, 'de/16', 'TV-MA' … (None, wenn unbekannt)."""
+    if value is None or isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        return int(value) if 0 <= value <= 21 else None
+    text = str(value).strip().upper()
+    if not text:
+        return None
+    named = {'TV-Y': 0, 'TV-G': 0, 'G': 0, 'TV-Y7': 6, 'PG': 6, 'TV-PG': 6, 'PG-13': 12, 'TV-14': 12,
+             'R': 16, 'TV-MA': 16, 'NC-17': 18, 'X': 18}
+    if text in named:
+        return named[text]
+    m = re.search(r'(?<!\d)(0|6|12|16|18)(?!\d)', text)
+    return int(m.group(1)) if m else None
+
+
+def refine(names, age=None):
+    """Regeln über den ganzen Titel: „Kinder“ nur ohne Horror/Thriller/Krimi/Erotik/Krieg und bis FSK 6;
+    „Familie“ ohne Horror/Erotik und bis FSK 12. Familie + Animation ohne Ausschluss gilt auch als Kinder."""
+    names = set(names)
+    age = age_of(age)
+    if 'Familie' in names and 'Animation' in names:
+        names.add('Kinder')
+    if names & set(NOT_FOR_KIDS) or (age is not None and age > KIDS_MAX_AGE):
+        names.discard('Kinder')
+    if names & set(NOT_FOR_FAMILY) or (age is not None and age > FAMILY_MAX_AGE):
+        names.discard('Familie')
+    return sorted(names, key=ORDER.get)
+
+
+def classify(reference_labels=(), provider_labels=(), checked=True, age=None):
     """Kategorien eines Titels.
+
+    ``age``: Altersfreigabe (FSK), wenn bekannt; siehe ``refine``.
 
     ``checked``: der Abgleich mit den Referenzen ist gelaufen. Sonst ``[UNCLASSIFIED]``.
     Danach entscheiden die Referenz-Genres; Anbieter-Genres ergänzen nur, wenn die Referenz keine
     Kategorie liefert (so landet ein Film nicht wegen eines Anbieter-Etiketts in einer falschen Gruppe)."""
     if not checked:
         return [UNCLASSIFIED]
-    names = of_labels(reference_labels) or of_labels(provider_labels)
+    names = refine(of_labels(reference_labels) or of_labels(provider_labels), age)
     return names or [OTHER]
 
 
@@ -176,6 +219,8 @@ def wanted(value):
             return name, text
     if text.casefold() == LEGACY_UNKNOWN.casefold():
         return UNCLASSIFIED, text
+    if text == 'Kinder & Familie':   # Chip bis 0.5.102
+        return 'Familie', text
     mapped = of_label(text)
     return (mapped[0] if len(mapped) == 1 else None), text
 

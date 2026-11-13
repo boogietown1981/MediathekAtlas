@@ -1,6 +1,11 @@
-# MediathekAtlas · 0.5.102
+# MediathekAtlas · 0.5.103
 
-## Neu in 0.5.102: RTL+ als Katalog, ServusTV nach Björns Mitschnitt
+## Neu in 0.5.103: „Kinder“ und „Familie“ getrennt
+
+- Die frühere Kategorie „Kinder & Familie“ ist geteilt. **Kinder** gibt es nur bei eindeutigen Kinder-Angaben (Kinderfilm, Kinderserie, KiKA, TOGGO, Kids) und nie zusammen mit Horror, Thriller, Krimi, Erotik oder Krieg oder ab FSK 12. **Familie** (z. B. TMDB „Family“, Weihnachtsfilme) steht nie neben Horror oder Erotik und gilt bis FSK 12.
+- Bestehende Datenbanken werden beim Start einmal umgestellt.
+
+## 0.5.102: RTL+ als Katalog, ServusTV nach Björns Mitschnitt
 
 - **Neuer Plattform-Reiter „RTL+“** mit dem kostenlosen Teil von RTL+ (RTL+ Free, ohne Konto): Filme, Serien, Shows und Kindersendungen, mit einheitlichen Kategorien, Titel- und Serienseite, Suche, Merkliste und im Dashboard. RTL+ liefert jedes Video nur mit Kopierschutz (Widevine) aus. Deshalb spielt MediathekAtlas RTL+ nie selbst ab: Jeder Titel hat „Bei RTL+ ansehen“, die optionale Chrome-Erweiterung startet dort die Wiedergabe. Titel, die RTL+ Premium brauchen, werden nur gezählt. Kein Offline-Speichern.
 - **ServusTV läuft jetzt über die echten Schnittstellen** aus Björns HAR-Mitschnitt von servustv.com: Katalog aus der Red-Bull-Plattform (alle Sendungen und Kategorien, Sendungen mit Staffeln und Folgen, Filme), Wiedergabe über den Red-Bull-Player (klares HLS, bis 1080p). Live-Sender kommen aus dem Katalog (ServusTV, dazu Red Bull TV und Wetterpanorama, soweit ServusTV sie anbietet). Clips und Trailer bleiben draußen.

@@ -622,7 +622,7 @@ def own_score(row):
 def _summary(root, row, reports=None):
     import plex_enrichment
     report = (reports if reports is not None else plex_enrichment.all_cached(root)).get(row['id'])
-    out = portal_reference.summary(row.get('genre'), report)
+    out = portal_reference.summary(row.get('genre'), report, age=portal_reference.age_of(row))
     if not out['score']:
         out['score'] = own_score(row)
     return out

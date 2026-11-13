@@ -26,7 +26,7 @@ class FixedListTests(unittest.TestCase):
             'Science fiction television series': ['Science-Fiction'], 'Sci-Fi & Fantasy': ['Fantasy', 'Science-Fiction'],
             'Dokumentation': ['Dokumentation'], 'Dokumentationen': ['Dokumentation'], 'Documentary': ['Dokumentation'],
             'Romantische Komödie': ['Komödie', 'Romantik'], 'Kriegsfilm': ['Krieg'], 'War & Politics': ['Krieg', 'Politik & Gesellschaft'],
-            'Dokusoap': ['Reality-TV'], 'Doku-Soap': ['Reality-TV'], 'Talkshow': ['Talk'], 'Kinderfernsehen': ['Kinder & Familie'],
+            'Dokusoap': ['Reality-TV'], 'Doku-Soap': ['Reality-TV'], 'Talkshow': ['Talk'], 'Kinderfernsehen': ['Kinder'],
             'Angeln': ['Sport'], 'Skifahren': ['Sport'], 'Kochen': ['Ratgeber & Lifestyle'], 'Komoedie': ['Komödie'],
         }
         for label, expected in pairs.items():

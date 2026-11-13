@@ -1220,7 +1220,7 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
     movies=[];series={}
     for row in _view_rows(root,origin):
         classification=classify_media(row)
-        enriched={**row,**classification,**portal_reference.summary(row.get('genres'),reports.get(row['id']))}
+        enriched={**row,**classification,**portal_reference.summary(row.get('genres'),reports.get(row['id']),age=portal_reference.age_of(row))}
         if classification['media_type']=='movie':
             movies.append(enriched)
             continue

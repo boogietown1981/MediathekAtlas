@@ -469,7 +469,7 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
                 'genre_counts': []}
     reports = pluto_enrichment.all_cached(root)
     for row in rows:
-        row.update(portal_reference.summary(row.get('genre'), reports.get(row['id'])))
+        row.update(portal_reference.summary(row.get('genre'), reports.get(row['id']), age=portal_reference.age_of(row)))
     counts = portal_reference.facets(rows)
     rows = [r for r in rows if portal_reference.matches(r, genre)
             and portal_reference.in_collection(r, collection, kind)]
@@ -511,7 +511,7 @@ def item(root, item_id):
         db.close()
     report = pluto_enrichment.cached(root, item_id) if row['kind'] != 'channel' else dict(pluto_enrichment.UNCHECKED)
     genre = row.get('genre') or (parent or {}).get('genre')
-    return {'item': {**row, **portal_reference.summary(genre, report),
+    return {'item': {**row, **portal_reference.summary(genre, report, age=portal_reference.age_of(row)),
                      'poster': row.get('poster') or (parent or {}).get('poster') or ''},
             'series': parent, 'reference': report}
 

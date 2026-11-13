@@ -192,8 +192,8 @@ class CatalogueTests(Fixture):
     def test_categories_and_own_filters(self):
         self.load()
         page = toggo.listing(self.root, 'movies')
-        self.assertTrue(all('Kinder & Familie' in r['categories'] for r in page['items']))
-        self.assertIn('Kinder & Familie', [c['genre'] for c in page['genre_counts']])
+        self.assertTrue(all('Kinder' in r['categories'] for r in page['items']))
+        self.assertIn('Kinder', [c['genre'] for c in page['genre_counts']])
         self.assertNotIn('Nur mit Abo', [c['genre'] for c in page['genre_counts']])   # offer is no category
         self.assertEqual(self.titles('movies', genre='Kostenlos'), ['Der kleine Drache', 'Zauberwald'])
         self.assertEqual(self.titles('movies', genre='Nur mit Abo'), ['Abo-Film'])
@@ -389,7 +389,7 @@ class IntegrationTests(Fixture):
         self.assertEqual(facts['Angebot'], 'TOGGO, nur mit Abo')
         self.assertIn('Kopierschutz', facts['Stream'])
         self.assertTrue(film['web_url'].startswith('https://www.toggo.de/sammlung/alle-filme/filme/abo-film/'))
-        self.assertIn('Kinder & Familie', film['categories'])
+        self.assertIn('Kinder', film['categories'])
         ep = portal_title.model(self.root, 'toggo', 'e.VEP2')
         self.assertEqual((ep['kind'], ep['series']['title']), ('episode', 'PAW Patrol'))
         self.assertIn('Kostenlos bis', dict(ep['provider_facts']))

@@ -72,7 +72,7 @@ IGNORED_GENRES = {'allgemein', 'preschool', 'school', 'kino'}
 AGE_GROUPS = {'preschool': 'TOGGOLINO (Vorschule)', 'school': 'TOGGO (Schulkinder)'}
 PAID = 'Nur mit Abo'
 FREE = 'Kostenlos'
-CHILDREN = 'Kinder & Familie'
+CHILDREN = 'Kinder'
 IMAGE_HOSTS = ('.imgix.net', '.toggo.de', '.superrtl.de')
 DRM_NOTE = ('TOGGO liefert Folgen und Filme nur mit Kopierschutz (Widevine/PlayReady/FairPlay) aus. '
             'MediathekAtlas umgeht ihn nicht: bitte bei TOGGO ansehen.')
@@ -557,11 +557,11 @@ def _labels(row):
 
 def _summary(root, row, reports=None):
     """Canonical categories and rating. TOGGO is a children's platform: every title is
-    'Kinder & Familie' even before the reference check."""
+    'Kinder' even before the reference check (0.5.103: 'Kinder' and 'Familie' are separate)."""
     import categories as fixed
     import toggo_enrichment
     report = (reports if reports is not None else toggo_enrichment.all_cached(root)).get(row['id'])
-    out = portal_reference.summary(row.get('genre') or GENRE, report)
+    out = portal_reference.summary(row.get('genre') or GENRE, report, age=portal_reference.age_of(row))
     out['categories'] = sorted({c for c in out['categories'] if not fixed.is_special(c)} | {CHILDREN}, key=fixed.sort_key)
     return out
 
