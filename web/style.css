@@ -955,3 +955,4 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .archive-selection-table th,.archive-selection-table td{text-align:left;padding:5px 8px;border-bottom:1px solid #22404e;overflow-wrap:anywhere}
 .archive-selection-table th{color:#a8c3d0;font-weight:600}
 .archive-selection-missing td{color:#e0b46a}
+.archive-selection-tick input,.archive-selection-table input{width:auto;flex:none;margin:0}

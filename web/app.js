@@ -791,6 +791,8 @@ function archiveSelectionPanel(itemId,manifest){
   };
   const refresh=()=>busy(show,async()=>render(await api('archive-selection',{id:itemId,criteria:wishes()})));
   show.onclick=refresh;
+  // The table needs room: while the panel is open the card takes the full row.
+  panel.ontoggle=()=>{const card=panel.closest('.portal-result');if(card)card.style.gridColumn=panel.open?'1 / -1':'';};
   return panel;
 }
 function showArchiveManifest(host,manifest,probes={},itemId=''){
