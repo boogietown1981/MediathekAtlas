@@ -708,7 +708,7 @@ def _summary(root, row, reports=None):
     import categories as fixed
     import crunchyroll_enrichment
     report = (reports if reports is not None else crunchyroll_enrichment.all_cached(root)).get(row['id'])
-    out = portal_reference.summary(row.get('genre') or GENRE, report)
+    out = portal_reference.summary(row.get('genre') or GENRE, report, age=portal_reference.age_of(row))
     out['categories'] = sorted({c for c in out['categories'] if not fixed.is_special(c)} | {'Animation'}, key=fixed.sort_key)
     return out
 

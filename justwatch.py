@@ -574,7 +574,7 @@ def _summary(root, row, reports=None):
     import portal_reference, justwatch_enrichment
     report = (reports if reports is not None else justwatch_enrichment.all_cached(root)).get(row['id'])
     # JustWatch is itself a metadata service: its IMDb ID identifies the title (0.5.83).
-    out = portal_reference.summary(row.get('genre'), report, identified=bool(row.get('imdb_id')))
+    out = portal_reference.summary(row.get('genre'), report, identified=bool(row.get('imdb_id')), age=portal_reference.age_of(row))
     if not out['score']:
         out['score'] = own_score(row)
     return out

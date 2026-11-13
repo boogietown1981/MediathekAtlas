@@ -1,8 +1,17 @@
+## 0.5.105 – Sammelstand 0.5.103 + 0.5.104
+- Zusammenführung von 0.5.103 (Kinder/Familie, PR #51) und 0.5.104 (Diagnose-Korrekturen Plex, RTL+, ServusTV). Keine eigenen Änderungen.
+
 ## 0.5.104 – Plex, RTL+ und ServusTV nach Björns Diagnose (13.11.2026)
 - Plex: `/library/sections` antwortet Gästen mit 404 → Katalog aus `/hubs` und `/hubs/promoted`, jede Leiste über `X-Plex-Container-Start` geblättert (`_read_hubs`, auch für den bisherigen Bereichs-Rückfall). Leisten-Schlüssel mit voller `vod.provider.plex.tv`-Adresse werden angenommen.
 - RTL+: Kachel mit Ziel `video` verweist auf das Programm (`parent.id`/`parent.seo`); Folgeseiten eines Blocks mit 404 beenden nur diesen Block; Unterordner (Ziel `folder`) werden mitgelesen (bis 60 Ordner, verschwundene Unterordner still übersprungen); Fehlermeldung nennt den Ordner; Diagnose-Ereignis mit Ordnerzahl und 404-Zählern.
 - ServusTV: veraltete WordPress-/Sitemap-Fehler von 0.5.101 werden beim Start gelöscht; Fortschrittsereignis `servustv_sync_progress` alle 200 Anfragen (nur Zahlen).
 - Tests: Plex (Hubs bei 404), RTL+ (Video-Kachel, Unterordner, Block-404, Ordnername), ServusTV (alter Fehler gelöscht).
+## 0.5.103 – „Kinder“ und „Familie“ getrennt
+- Björn (13.11.2026): Unter „Kinder“ standen Filme mit Tod usw. Ursache: die Kategorie „Kinder & Familie“ (0.5.83) nahm TMDBs „Family“ (auch Familiendramen), Weihnachtsfilme, „Jugend“ und „Teen“ auf; schon `metadata.GENRES` speicherte „Family“, „Kids“ und „Kinderfilm“ als dasselbe Label.
+- `categories.py`: zwei Kategorien „Kinder“ (nur eindeutige Signale: Kinderfilm/-serie/-fernsehen, Kids, Children, Vorschule, KiKA, TOGGO) und „Familie“ (Family, Familienfilm, Weihnachten, Elternschaft). „Jugend“/„Teen“ sind kein Kinder-Signal mehr. `refine`: „Kinder“ nie neben Horror, Thriller, Krimi, Erotik oder Krieg und nur bis FSK 6; „Familie“ nie neben Horror oder Erotik und bis FSK 12; Familie + Animation ohne Ausschluss zählt auch als „Kinder“. `age_of` liest FSK-Angaben (FSK 12, ab 16, de/12, TV-MA …).
+- Plattformen: `portal_reference.summary(…, age=…)` mit `portal_reference.age_of(row)` (Feld `fsk` oder FSK-Text in `rating`/`age_rating`/`content_rating`; eine Zahl in `rating` ist eine Bewertung und zählt nicht) in allen Quellen. TOGGO bleibt immer „Kinder“.
+- ARD, ZDF & Co.: `metadata.GENRES` speichert „Kinder“ bzw. „Familie“ (altes Mischlabel „Kinder & Familie“ → „Familie“); `catalog.GENRES` und `broadcaster` (KiKA, Sendung mit der Maus) → „Kinder“. `catalog.category_tree` wendet `refine` je Film/Sendung an, `category_clause` dieselben Regeln in SQL.
+- Migration `catalog.split_kids_family` (einmal, `kids_family_split_v0103`): gespeichertes „Kinder & Familie“ wird „Kinder“, wenn es vom Sender stammt (`genre_source` Senderhinweis / Sender abgeleitet), sonst „Familie“. Filterwert „Kinder & Familie“ aus alten Links → „Familie“.
 
 ## 0.5.102 – RTL+ als Katalog mit Links, ServusTV auf den echten Schnittstellen
 - Björn (13.11.2026, Entscheidung „Beides“): RTL+ als Katalog mit Links; ServusTV nach Björns HAR von servustv.com (13.11.2026) ausgerichtet.

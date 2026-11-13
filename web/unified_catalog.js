@@ -19,7 +19,7 @@
   let medGenres=[],medTree=[],collection='';
   // Fixed list of categories.py (the server sends it with the category tree; this is the fallback).
   let CATEGORY_NAMES=['Action','Abenteuer','Animation','Biografie','Drama','Erotik','Fantasy','Historie','Horror',
-    'Kinder & Familie','Komödie','Krieg','Krimi','Musical','Mystery','Romantik','Science-Fiction','Thriller','Western',
+    'Kinder','Familie','Komödie','Krieg','Krimi','Musical','Mystery','Romantik','Science-Fiction','Thriller','Western',
     'Dokumentation','Natur & Tiere','Wissen & Technik','Politik & Gesellschaft','Nachrichten & Magazine','Kultur','Musik',
     'Sport','Reise','Ratgeber & Lifestyle','Talk','Show & Unterhaltung','Reality-TV'];
   const SPECIAL=['Unklassifiziert','Sonstige','Unbekannt'];

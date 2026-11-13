@@ -58,12 +58,29 @@ def reference_labels(report):
     return []
 
 
-def categories(provider_genres, report=None, identified=False):
+def age_of(row):
+    """Age rating of a portal row (0.5.103): 'fsk' (number) or an FSK text in 'age_rating'/'rating'/
+    'content_rating'. A numeric 'rating' is a score, never an age."""
+    import categories as fixed
+    if not isinstance(row, dict):
+        return None
+    if row.get('fsk') is not None:
+        return fixed.age_of(row.get('fsk'))
+    for field in ('age_rating', 'content_rating', 'rating'):
+        value = row.get(field)
+        if isinstance(value, str) and value.strip():
+            age = fixed.age_of(value)
+            if age is not None:
+                return age
+    return None
+
+
+def categories(provider_genres, report=None, identified=False, age=None):
     """0.5.83: fixed German categories (categories.CATEGORIES) after the reference check,
     'Unklassifiziert' before it, 'Sonstige' when no label names a category. The provider's raw
     labels stay in the portal tables and appear as ``source_genres`` on the title page."""
     import categories as fixed
-    return fixed.classify(reference_labels(report), split_labels(provider_genres), identified or checked(report))
+    return fixed.classify(reference_labels(report), split_labels(provider_genres), identified or checked(report), age)
 
 
 def genre_names(provider_genres, report=None):
@@ -93,12 +110,12 @@ def rating(report):
     return {'value': round(float(value), 1), 'source': label, 'votes': meta.get('votes')}
 
 
-def summary(provider_genres, report, identified=False):
+def summary(provider_genres, report, identified=False, age=None):
     """Fields a catalogue row gets: categories, score (reference rating), reference status.
 
     ``identified``: the provider itself names the title's IMDb ID (JustWatch), so its genres are
     already classified data and count without our own reference check (0.5.83)."""
-    out = {'categories': categories(provider_genres, report, identified), 'score': rating(report),
+    out = {'categories': categories(provider_genres, report, identified, age), 'score': rating(report),
            'source_genres': split_labels(provider_genres)[:12],
            'reference_status': (report or {}).get('status') or 'unchecked'}
     sel = selected(report)

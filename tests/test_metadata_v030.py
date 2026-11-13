@@ -14,7 +14,7 @@ class ProviderTests(unittest.TestCase):
    if path=='tv/1':return {'id':1,'name':'Bibi und Tina','first_air_date':'2004-07-03','genres':[{'name':'Animation'},{'name':'Kids'}],'seasons':[{'season_number':2}]}
    return {'episodes':[{'name':row['title'],'season_number':2,'episode_number':8}]}
   with patch('core.tmdb',side_effect=tmdb):result=metadata.tmdb_candidates(row,m,'test','series',row['topic'])
-  self.assertTrue(result[0]['episode_verified']);self.assertEqual((result[0]['season'],result[0]['episode']),(2,8));self.assertIn('Kinder & Familie',result[0]['genres']);self.assertIsNotNone(catalog.auto_choice(m,result))
+  self.assertTrue(result[0]['episode_verified']);self.assertEqual((result[0]['season'],result[0]['episode']),(2,8));self.assertIn('Kinder',result[0]['genres']);self.assertIsNotNone(catalog.auto_choice(m,result))
  def test_duplicate_episode_names_not_guessed(self):
   m={'episode_title':'Anfang'};c={'title':'Serie','description':''}
   out=metadata.resolve_episode(m,c,[{'name':'Anfang','season_number':1,'episode_number':1},{'name':'Anfang','season_number':2,'episode_number':1}]);self.assertFalse(out.get('episode_verified'))
@@ -23,7 +23,7 @@ class ProviderTests(unittest.TestCase):
  def test_omdb_preserves_genre_runtime_plot(self):
   m={'title':'Ein Film','kind':'movie','year':2020,'description':''}
   with patch('metadata.omdb',return_value={'Title':'Ein Film','Type':'movie','Year':'2020','Runtime':'90 min','Genre':'Comedy, Family','Plot':'Handlung','imdbID':'tt1234567'}):r=metadata.omdb_candidates({'duration':5400},m,'key','movie','Ein Film')[0]
-  self.assertEqual(r['description'],'Handlung');self.assertTrue(r['runtime_agrees']);self.assertEqual(r['genres'],['Kinder & Familie','Komödie']);self.assertIsNotNone(catalog.auto_choice(m,[r]))
+  self.assertEqual(r['description'],'Handlung');self.assertTrue(r['runtime_agrees']);self.assertEqual(r['genres'],['Familie','Komödie']);self.assertIsNotNone(catalog.auto_choice(m,[r]))
  def test_clip_mentioning_film_not_a_movie(self):
   m=catalog.seed({'title':'Filmtricks','topic':'Wissen','description':'Heute schauen wir, wie der Film gemacht wird.','duration':120});self.assertEqual(m['kind'],'unknown')
  def test_series_identity_not_episode_confirmation(self):

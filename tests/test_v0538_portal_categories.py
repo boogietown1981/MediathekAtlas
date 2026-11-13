@@ -37,7 +37,7 @@ class SharedRulesTests(unittest.TestCase):
         report = {'status': 'candidate', 'metadata': {'genres': ['Comedy', 'Crime']}}
         self.assertEqual(pr.categories('Action', report), ['Komödie', 'Krimi'])  # reference first
         self.assertEqual(pr.categories('Sci-Fi & Fantasy', {'status': 'no_match'}), ['Fantasy', 'Science-Fiction'])
-        self.assertEqual(pr.categories('["Kinderfilm","Familie"]', {'status': 'review'}), ['Kinder & Familie'])
+        self.assertEqual(pr.categories('["Kinderfilm","Familie"]', {'status': 'review'}), ['Kinder', 'Familie'])
         self.assertEqual(pr.categories('', {'status': 'no_match'}), ['Sonstige'])
         self.assertEqual(pr.categories('Action', None), ['Unklassifiziert'])
         self.assertEqual(pr.categories('Action', {'status': 'partial'}), ['Unklassifiziert'])

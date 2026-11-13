@@ -45,7 +45,7 @@ class TVDBTests(unittest.TestCase):
   row={'title':'Freundschaft','topic':'Bibi und Tina'};meta={'kind':'series','title':'Bibi und Tina','description':''}
   with patch('tvdb.request',side_effect=get):return metadata.tvdb_candidates(row,meta,('key','pin'),'series','Bibi und Tina')[0]
  def test_german_episode_genre_and_catalog_identity(self):
-  c=self.candidates();self.assertTrue(c['episode_verified']);self.assertEqual((c['season'],c['episode']),(2,4));self.assertEqual(c['genres'],['Kinder & Familie'])
+  c=self.candidates();self.assertTrue(c['episode_verified']);self.assertEqual((c['season'],c['episode']),(2,4));self.assertEqual(c['genres'],['Familie'])
   self.assertIsNotNone(catalog.auto_choice({'kind':'series'},[c]));self.assertIsNotNone(catalog.canonical(c))
  def test_ambiguous_or_truncated_pages_never_verify(self):
   self.assertFalse(self.candidates(ambiguous=True)['episode_verified']);self.assertFalse(self.candidates(incomplete=True)['episode_verified'])
