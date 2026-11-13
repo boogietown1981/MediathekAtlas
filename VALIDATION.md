@@ -1,7 +1,7 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
 ## 0.5.93 – Videostart TOGGO/JustWatch, SAT.1 Joyn+ (13. November 2026)
-- Automatisch: gesamte Python-Suite (996 Tests, 3 übersprungen), alle Node-Smoke-Tests; neu `tests/test_v0593_videostart_plus.py` (SAT.1 Joyn+, Regionalfenster und Schwestersender frei, gespeicherter Katalog ohne neuen Abruf gekennzeichnet; Erweiterung).
+- Automatisch: gesamte Python-Suite (1023 Tests, 4 übersprungen), alle Node-Smoke-Tests; neu `tests/test_v0593_videostart_plus.py` (SAT.1 Joyn+, Regionalfenster und Schwestersender frei, gespeicherter Katalog ohne neuen Abruf gekennzeichnet; Erweiterung).
 - Chromium mit geladener Erweiterung, nachgebaute Seiten: TOGGO-artige Folge mit pinkem Kreis (div ohne Text, CSS-Modul-Klasse, reagiert nur auf pointerdown) → geklickt, Video läuft; Header-Links „TOGGO Plus“/„Merken“ nicht geklickt. JustWatch-artiger Mini-Player (video preload="none", kein Knopf) → läuft; Link „Bei Netflix ansehen“ nicht geklickt. Player mit unbeschriftetem Overlay → Klick in die Mitte, läuft. Ohne Kennung: nichts. Rakuten (Kostenlos ansehen + HDCP) und Joyn wie in 0.5.91 weiter grün.
 - Nicht geprüft: echte Seiten von TOGGO und JustWatch, ob deren Player in einem fremden Rahmen liegt, und ob SAT.1 bei angemeldeten Joyn-Nutzern ohne Joyn+ läuft.
 ## 0.5.92 – Restliche Archive-Media-Module (13. November 2026)
