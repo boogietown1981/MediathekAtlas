@@ -190,12 +190,15 @@ def plan(source,info=None,levels=True):
     if source['kind']=='url':
         # 'remux' (0.5.78): addresses only the server may fetch (bound to its IP, picture and sound separate)
         out.update(mode='remux' if source['hls'] or source.get('remux') else 'direct',url=source['url'],hls=source['hls'],quality=source.get('quality'),origin='online')
-        if source.get('remux') and not source['hls']:out.pop('url')
+        if source.get('remux') and (not source['hls'] or source.get('server_only')):out.pop('url')
+        if source.get('auto_height'):out['auto_height']=source['auto_height']
         if source.get('provider'):out['provider']=source['provider']
         if source.get('live'):out['live']=True
         # 0.5.63: what the player can offer under "Qualität" (HLS levels or the broadcaster's files)
         # 0.5.72: levels=False skips the provider request; the browser reads the levels itself (hls.js)
-        out['levels']=(hls_levels(source) if levels else []) if source['hls'] else [{'id':str(h),'label':'%dp'%h,'height':h,'bandwidth':0} for h in source.get('files') or []]
+        # 0.5.89: YouTube names its heights itself ('files'), also for its HLS streams
+        files=[{'id':str(h),'label':'%dp'%h,'height':h,'bandwidth':0} for h in source.get('files') or []]
+        out['levels']=files if files or not source['hls'] else (hls_levels(source) if levels else [])
         return out
     out['origin']='local';path=Path(source['path'])
     info=probe(path) if info is None else info

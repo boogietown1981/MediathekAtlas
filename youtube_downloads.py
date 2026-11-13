@@ -288,7 +288,10 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
         raise ValueError('YouTube-Video nicht im Katalog; bitte Katalog neu laden')
     if row['reason'].startswith('Altersbeschränkt'):
         raise ValueError('Altersbeschränktes Video: ohne Anmeldung nicht abspielbar')
-    limit = streaming.quality_limit(quality)
+    # 0.5.89 (Björn, 13.11.2026: smooth now, but only 480p): since 0.5.86 the pieces arrive at full
+    # speed, so "Automatisch" goes up to 1080p like youtube.com instead of the general 720p.
+    wish = str(quality or 'auto').strip().lower()
+    limit = AUTO_HEIGHT if wish in ('', 'auto') else MAX_HEIGHT if wish == 'max' else streaming.quality_limit(quality)
     now = time.time() if now is None else float(now)
     key = (str(root), item_id, limit)
     with _SOURCES_LOCK:
@@ -298,11 +301,8 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
     tool = find_tool(root)
     if not tool:
         raise ValueError('yt-dlp fehlt; im YouTube-Bereich „yt-dlp einrichten“ wählen')
-    # H.264 + AAC so that the browser plays the stream without re-encoding; one file as fallback.
-    fmt = ('bv*[height<={h}][vcodec^=avc1][protocol^=http]+ba[acodec^=mp4a][protocol^=http]/'
-           'b[height<={h}][vcodec^=avc1]/b[vcodec^=avc1]/b').format(h=limit)
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
-            '--no-warnings', '-f', fmt, '-j', youtube.video_url(row['path'])]
+            '--no-warnings', '-f', FORMAT.format(h=limit), '-S', SORT.format(h=limit), '-j', youtube.video_url(row['path'])]
     try:
         done = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
                                           env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
@@ -317,9 +317,11 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
     # 0.5.86 (Björn, 13.11.2026: stutters, picture and sound out of step; diagnosis: 1.8 Mbit/s, first
     # data after 8 s): YouTube serves one open-ended request only at about playback speed. 'ranged'
     # sends both addresses through range_relay, which loads them in 4 MB pieces like youtube.com.
+    # 'server_only': the addresses are bound to the server's IP and never go to the browser (also HLS).
+    # 'files': heights YouTube offers, for the player's "Qualität" menu (0.5.89).
     source = {'kind': 'url', 'url': urls[0], 'audio_url': urls[1] if len(urls) > 1 and not hls else '', 'hls': hls,
-              'remux': True, 'ranged': not hls, 'headers': headers, 'provider': 'youtube', 'title': row['title'],
-              'duration': row['duration'] or 0,
+              'remux': True, 'server_only': True, 'ranged': not hls, 'headers': headers, 'provider': 'youtube',
+              'title': row['title'], 'duration': row['duration'] or 0, 'files': _heights(done.stdout), 'auto_height': AUTO_HEIGHT,
               'quality': 'eigener Player, %s' % ('%dp' % height if height else 'bis %dp' % limit)}
     with _SOURCES_LOCK:
         if len(_SOURCES) > 200:
@@ -329,6 +331,34 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
 
 
 _HEADER_NAMES = {'user-agent', 'accept', 'accept-language', 'origin', 'referer'}
+
+# 0.5.89 (Björn, 13.11.2026: "Take My Breath Away" smooth, but only 480p). Until 0.5.88 the first
+# alternative demanded H.264 as separate HTTPS file. Without a sign-in YouTube often offers those
+# files only up to 480p; the higher levels exist as HLS (H.264 with sound in one stream) or as VP9.
+# yt-dlp took the first alternative that matched at all (480p) instead of the highest picture.
+# Now: picture H.264 or VP9 (the browser plays both from MP4, ffmpeg only copies), sound AAC; the
+# order (-S) is resolution up to the limit first, then H.264 before VP9 (Safari is surest with
+# H.264), then HTTPS before HLS.
+AUTO_HEIGHT = 1080
+MAX_HEIGHT = 2160
+VIDEO_CODECS = r"^(avc1|vp0?9)"
+FORMAT = ("bv*[height<={h}][vcodec~='" + VIDEO_CODECS + "']+ba[acodec^=mp4a]/"
+          "b[height<={h}][vcodec^=avc1]/bv*[vcodec~='" + VIDEO_CODECS + "']+ba[acodec^=mp4a]/b")
+SORT = 'res:{h},vcodec:h264,proto,acodec:aac'
+
+
+def _heights(stdout):
+    """Picture heights (>=240) of the formats the own player can play, highest first."""
+    try:
+        info = json.loads(str(stdout or '').strip().splitlines()[0])
+    except (ValueError, IndexError):
+        return []
+    found = set()
+    for f in info.get('formats') or []:
+        h, codec = f.get('height'), str(f.get('vcodec') or '')
+        if isinstance(h, (int, float)) and 240 <= h <= MAX_HEIGHT and re.match(VIDEO_CODECS, codec) and str(f.get('protocol') or '').startswith(('http', 'm3u8')):
+            found.add(int(h))
+    return sorted(found, reverse=True)
 
 
 def _stream_urls(stdout):
