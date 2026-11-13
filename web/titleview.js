@@ -28,7 +28,18 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('title-view').hi
 function openTitle(item){if(item.series_parent||(item.metadata?.kind==='series'&&item.show_key))return openShow(item.show_key,item.series_parent?null:item.work_id);return openMovie(item);}
 
 // image: optional loader for portal artwork (Netzkino/Pluto/JustWatch hosts, 0.5.42).
-function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,image}){
+// 0.5.80 (Björn): cast photos from TMDB, loaded after the page is shown; initials stay where none is known.
+function castContext(m){return m?{kind:m.kind,title:m.title,year:m.year,provider:m.provider,reference_id:m.reference_id,imdb_id:m.imdb_id}:null;}
+async function castPhotos(row,cast,context){
+ if(!context||!cast?.length||!latestSettings?.tmdb_set)return;
+ const seq=titleSequence;let d;
+ try{d=await api('cast-photos',{people:cast.slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context});}catch{return;}
+ if(seq!==titleSequence||!row.isConnected)return;
+ for(const box of row.querySelectorAll('.tv-person')){const name=box.dataset.name,url=d.photos?.[name];
+  if(url&&safeArt(url)){const img=artImage(url,name,'tv-avatar tv-photo');if(img){img.onerror=()=>img.replaceWith(el('span',box.dataset.initials,'tv-avatar'));box.querySelector('.tv-avatar')?.replaceWith(img);}}
+  const role=d.roles?.[name];if(role&&!box.querySelector('small'))box.append(el('small',role));}
+}
+function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,image,castRef}){
  const art=image||artImage;
  const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=art(meta.fanart||meta.poster,'');
  if(bg){if(!meta.fanart)back.classList.add('blurred');back.append(bg);}wrap.append(back);
@@ -46,7 +57,7 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,im
  const dl=el('dl',undefined,'tv-info');for(const [k,v] of info){if(v)dl.append(el('dt',k),el('dd',v));}if(dl.childElementCount)text.append(dl);
  body.append(cover,text);wrap.append(body);
  const out=[wrap];
- if(cast?.length){const sec=el('section',undefined,'tv-section');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person');c.append(el('span',(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join(''),'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);}
+ if(cast?.length){const sec=el('section',undefined,'tv-section');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,cast,castRef===undefined?castContext(meta):castRef);}
  return out;
 }
 function ratingFact(m){const r=Number(m.rating);if(m.rating==null||m.rating===''||!Number.isFinite(r))return null;const s=el('span','★ '+r.toLocaleString('de-DE',{maximumFractionDigits:1}),'tv-rating');s.title=ratingSource(m)+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':'');return s;}
@@ -74,7 +85,7 @@ function renderShow(){
  const facts=[years,ratingFact(s),...extraRatings(s),nSeasons?nSeasons+(nSeasons===1?' Staffel':' Staffeln'):'',s.episode_count+(s.episode_count===1?' Folge':' Folgen')+' verfügbar',s.downloaded?s.downloaded+' heruntergeladen (Dateipfade ggf. prüfen)':'',(s.genres||[]).slice(0,3).join(' · ')];
  const hint=s.state==='format'?'Sendung mit einzelnen Beiträgen. Sendungsbeiträge werden nicht mit Filmdatenbanken abgeglichen.':!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Noch keine Serienbeschreibung. Mit einem TMDB- oder TVDB-Zugang in den Einstellungen werden Beschreibung und Hintergrundbild ergänzt.':'Serienbeschreibung wird beim nächsten Abgleich ergänzt.';
  const info=[['Genres',(s.genres||[]).join(', ')],['Sender',s.channels.join(', ')],['Netzwerk',(s.networks||[]).join(', ')],['Studios',(s.studios||[]).join(', ')],...creditInfo(credits),matchInfo(s.state,s.provider,s.reference_id)];
- host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast}));
+ host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast,castRef:{...castContext(s),kind:'series'}}));
  const sec=el('section',undefined,'tv-section');const head=el('div',undefined,'tv-sectionhead');head.append(el('h2','Staffeln & Folgen'));
  const tabs=el('div',undefined,'tv-tabs');tabs.setAttribute('role','tablist');
  const options=s.seasons.length>1?[{season:SEASON_ALL,episodes:eps.length},...s.seasons]:s.seasons;

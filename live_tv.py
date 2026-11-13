@@ -272,6 +272,27 @@ def overview(c, root, query='', provider='', group=''):
                           for k, n in PROVIDERS]}
 
 
+def overview_problem(data, seconds, query='', provider='', group=''):
+    """True when an overview answer deserves a diagnosis line (0.5.80).
+
+    Empty is only a problem when nothing was asked to be narrowed and still no station came back,
+    or when a provider filter returns nothing although that provider reported channels. A search
+    without hits, a group that vanished after a catalogue run and a provider without any channels
+    are ordinary answers (the tab names them itself)."""
+    if seconds > 3 or any(p.get('error') for p in data.get('providers') or []):
+        return True
+    if data.get('total'):
+        return False
+    if query:
+        return False
+    counts = {p['key']: p.get('channels', 0) for p in data.get('providers') or []}
+    if provider:
+        return bool(counts.get(provider)) and not group
+    if group:
+        return False
+    return True
+
+
 def summary(c, root):
     """Counters for the diagnosis export; no titles or addresses."""
     found, errors = channels(c, root)

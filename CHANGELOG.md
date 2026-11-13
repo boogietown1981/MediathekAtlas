@@ -8,6 +8,14 @@
 - Review, Stufe 1: 20 ungenutzte Importe entfernt; `/api/candidates` liest den Metadaten-Cache nicht mehr umsonst; `-webkit-backdrop-filter`; Rückfall für `@container` über `@supports not (container-type:inline-size)`.
 - Diagnose-Export: Abschnitt `watch` (nur Anzahlen), Ereignisse `watch_mark`, `storage_settings`, `storage_delete`.
 
+## 0.5.80 – Besetzung mit Fotos, Clips bei ihrer Sendung, Erkennungsrate je Medienart, Windows/Linux-Pakete
+- Björn (12.11.2026): liegengebliebene Punkte abarbeiten. Baut auf 0.5.78 (YouTube, Zweig vtbjm6) auf; 0.5.79 ist vom TOGGO-Thread reserviert.
+- Live-TV: Björns Diagnose (0.5.72) zeigte dutzende `live_tv_overview`-Warnungen „total 0, filtered“ mit `joyn: 0`. Ursache: die Live-Leiste der Plattform Joyn fragt `provider=joyn`, Joyn hatte vor dem ersten vollständigen Abruf keine Sender. `live_tv.overview_problem` meldet nur noch echte Fälle (ungefiltert leer, Anbieterfilter leer obwohl der Anbieter Sender hat, langsam, Fehler); das Ereignis nennt jetzt `provider`, `group_set`, `query_set`.
+- `cast_photos.py` (neu), `POST /api/cast-photos`: Fotos über TMDB (`movie/<id>/credits`, `tv/<id>/aggregate_credits`, `find/nm…`). Titel-ID direkt (TMDB), über IMDb-/TVDB-ID oder einen eindeutigen Suchtreffer mit Jahr ±1; keine Namenssuche. Zwischenspeicher `people.sqlite` (Treffer 90 Tage, keine Treffer 14 Tage, Netzfehler nicht). `web/titleview.js` `castPhotos()` ersetzt Initialen nach dem Laden; `portal_title` liefert `cast_ref` für Plattform-Titelseiten.
+- `catalog.format_contribution`: Clips (`kind=other`) mit Format-Wort im Thema gehören auch als einzige Ausgabe zur Sendung, kurze Clips (< 20 min) ab zwei Ausgaben; Ausgaben mit gleichem Titel wie die Sendung ab zwei Ausgaben (Folgentitel + Sendedatum). `FORMAT_REV=4` startet einen Durchlauf.
+- `catalog.recognition`: je Sender `kinds` (movie/series/unknown/other) und `clips`; `recognition_totals` für die Tabelle „Nach Medienart“ (`/api/recognition` → `kinds`).
+- `build_desktop.py`, `packaging/windows` (NSIS-Installer, `start.ps1`), `packaging/linux` (Starter, .desktop, systemd-Benutzerdienst, install/uninstall). Standard-Downloadordner unter Windows/Linux `~/Videos/MediathekAtlas`, wenn kein `~/Movies` existiert. Diagnose-Export öffnet unter Windows den Explorer.
+
 ## 0.5.78 – YouTube: gesperrte Einbettung im eigenen Player, Musikvideos im Katalog
 - Björn (13.11.2026, 0.5.75): Musikvideos zeigen im eingebetteten Player „nicht verfügbar“, laufen aber auf youtube.com; der Download geht. Im Katalog fehlt „Musikvideos“ neben Filmen und Serien. Frage: Browser im Rahmen (Frame in Frame) oder andere Wege?
 - Bewertung: youtube.com selbst lässt sich nicht in einen Rahmen laden (YouTube verbietet das per `X-Frame-Options`/`frame-ancestors`, der Browser setzt es durch). Viele Musiklabels erlauben die Einbettung nur auf ausgewählten Seiten. Tragfähig ist der eigene Player.

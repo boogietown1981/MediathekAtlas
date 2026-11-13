@@ -48,6 +48,16 @@ def _year(value):
     return year if 1880 <= year <= 2100 else None
 
 
+def _cast_ref(report):
+    import portal_reference
+    sel = portal_reference.selected(report)
+    if not sel:
+        return None
+    meta = (report or {}).get('metadata') or {}
+    return {'provider': sel.get('provider') or '', 'reference_id': str(sel.get('reference_id') or '')[:40],
+            'imdb_id': str(meta.get('imdb_id') or '')[:20]}
+
+
 def _base(source, item_id, report):
     import portal_reference
     meta = (report or {}).get('metadata') or {}
@@ -59,6 +69,8 @@ def _base(source, item_id, report):
             'writers': _names(meta.get('writers')), 'country': _text(meta.get('country'), 80),
             'language': _text(meta.get('original_language'), 80), 'original_title': _text(meta.get('original_title'), 200),
             'provider_facts': [], 'reference': report or {'status': 'unchecked'},
+            # 0.5.80: the reference identity lets the title page fetch cast photos (cast_photos.py).
+            'cast_ref': _cast_ref(report),
             'playable': False, 'web_url': '', 'offline': {'allowed': False, 'days': OFFLINE_DAYS},
             'notes': []}
 

@@ -219,7 +219,8 @@
       ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Anbieter', m.provider]];
     host.replaceChildren(...hero({meta: {title: label, poster: m.poster, fanart: m.fanart}, type: m.kind_label + ' · ' + m.provider, facts,
       overview: m.description, overviewHint: 'Keine Inhaltsangabe veröffentlicht.', actions, info,
-      cast: (m.cast || []).map(name => ({name})), image}));
+      cast: (m.cast || []).map(name => ({name})), image,
+      castRef: m.cast_ref && m.kind !== 'channel' ? {...m.cast_ref, kind: m.kind === 'episode' ? 'series' : m.kind, title: m.kind === 'episode' && m.series ? m.series.title : m.title, year: m.year} : null}));
     if (m.kind === 'series') episodesSection(m, host);
     if (m.offline?.allowed && m.kind !== 'series' && !m.offline.night) versionSection(m, host);
     if (m.offline?.allowed) offlineSection(m, host).catch(() => {});

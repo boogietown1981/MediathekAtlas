@@ -8,6 +8,16 @@
 - Ältere Browser ohne Container-Abfragen (Safari vor 16, Firefox vor 110) zeigen die Statusübersicht wieder passend zur Fensterbreite; die Unschärfe hinter Dialogen wirkt auch in Safari vor 18.
 - Merkliste und Speicherregeln stammen aus HomeTube. Der vollständige Review und die Lückenanalyse gegen HomeTube und Archive Media stehen in `docs/REVIEW_0577.md`.
 
+## Neu in 0.5.80: Besetzung mit Fotos, Clips bei ihrer Sendung, Pakete für Windows und Linux
+
+Baut auf 0.5.78 (YouTube) auf.
+
+- **Besetzung mit Fotos:** Titelseiten zeigen die Darsteller mit Foto und Rolle (TMDB, nur mit hinterlegtem TMDB-Schlüssel). Fotos kommen nur aus den Angaben des Titels selbst oder über die IMDb-Personenkennung, nie aus einer bloßen Namenssuche; ohne Treffer bleiben die Initialen. Antworten werden gemerkt (`people.sqlite`).
+- **Nachrichten- und Magazinclips bei ihrer Sendung:** Clips, die bisher unter „Weitere Sendungen“ lagen, und Ausgaben, die genau wie ihre Sendung heißen („Hessenschau“), werden der Sendung zugeordnet (Ausgaben mit Sendedatum) und nicht mit Filmdatenbanken abgeglichen. Der Durchlauf läuft einmal über den ganzen Katalog.
+- **Erkennungsrate je Sender und Medienart:** Die Tabelle „Erkennungsquote je Sender“ zeigt zusätzlich die Quote für Filme und Serien sowie die Zahl der Clips und Extras, darunter eine Tabelle „Nach Medienart“.
+- **Live-TV:** Der Fehlalarm „0 Sender bei aktivem Filter“ in der Diagnose ist weg. Er kam von der Live-Leiste der Joyn-Plattform, solange Joyn noch keine Sender hatte; die Sender selbst waren nie betroffen.
+- **Windows und Linux:** `MediathekAtlas_v0.5.80-Windows-Setup.exe` (Installation ohne Administratorrechte, Startmenü, Desktop, optional Autostart), portable ZIP, `mediathekatlas_0.5.80_all.deb` (Debian, Ubuntu, Mint, Raspberry Pi OS) und `MediathekAtlas_v0.5.80-Linux.tar.gz` mit `install.sh` für alle anderen. Voraussetzung ist Python ab 3.9; unter Windows bietet der Start die Installation über winget an. Gebaut mit `python3 build_desktop.py`.
+
 ## Neu in 0.5.78: Musikvideos laufen auch, wenn YouTube das Einbetten ablehnt
 
 - Lehnt YouTube ein Video im eingebetteten Player ab, schaltet MediathekAtlas automatisch auf den eigenen Player um. Das geht nur mit eingeschaltetem YouTube-Offline-Schalter, weil der Stream dabei wie beim Speichern über yt-dlp geholt wird.
@@ -511,7 +521,7 @@ Noch offen: Abstimmung der Downloads zwischen den Systemen, Signaturen, ein eige
 4. TMDB/OMDb- sowie TVDB-Zugangsdaten bei Bedarf unter Einstellungen hinterlegen. Vorhandene MediathekAtlas-Einstellungen und der alte Katalog werden übernommen; ArchiveMedia-Schlüssel werden nicht ausgelesen.
 5. Film auswählen oder Serie zu ihren Folgen öffnen. Die bevorzugte Fassung prüfen und herunterladen. Andere Sender/Fassungen sind ausklappbar.
 
-Die App ist eine unsignierte Preview mit lokaler Browseroberfläche. Ein echter macOS-Finderstart ist hier weiterhin nicht validiert. Der Source-Ordner enthält zusätzlich `Start.command` und `Start.bat`. Linux: `python3 server.py`.
+Die App ist eine unsignierte Preview mit lokaler Browseroberfläche. Ein echter macOS-Finderstart ist hier weiterhin nicht validiert. Der Source-Ordner enthält zusätzlich `Start.command` und `Start.bat`. Seit 0.5.80 gibt es eigene Pakete für Windows (Setup.exe, ZIP) und Linux (.deb, tar.gz), siehe oben; aus dem Quellordner startet Linux weiter mit `python3 server.py`.
 
 ## Neu in 0.4.0: Zuordnungszentrale und Anbieterstatistik
 
