@@ -1,12 +1,22 @@
 # MediathekAtlas · 0.5.84
 
-## Neu in 0.5.84: Aufgeräumt, ohne sichtbare Änderung
+## Neu in 0.5.84: TOGGO-Katalog repariert, Code aufgeräumt
+
+- **TOGGO lädt wieder Serien.** In 0.5.79 bis 0.5.82 blieb der TOGGO-Katalog leer („nennt in seiner Seitenübersicht keine Folgen“). Die Diagnose vom 13.11.2026 zeigte, dass toggo.de die Folgen unter `/…/serien/<Serie>/folge/<Folge>` führt und nicht unter der erwarteten kürzeren Adresse. Beide Formen werden jetzt gelesen. Nach dem Update unter Plattformen → TOGGO „Katalog laden“ drücken oder den nächsten stündlichen Versuch abwarten.
 
 - Der Programmcode, der für Pluto TV, JustWatch TV, Rakuten TV, Joyn, TOGGO und YouTube jeweils fast gleich kopiert war (Katalogseite, Details, Offline-Liste, Katalogabruf, täglicher Abruf, Werkzuordnung, Offline-Download, Hintergrundaufgaben), steht jetzt einmal in `platform_registry.py`. Alle Adressen und Antworten sind gleich geblieben; ein Fehler wird künftig an einer Stelle behoben und gilt für alle Plattformen.
 - Die 44 alten Installationspakete (625 MB) liegen nicht mehr im Git. Sie bleiben in den Projektdateien unter `releases/` und in der Git-Historie.
-- 0.5.83 ist die Nummer des Threads „Einheitliche Kategorien“ und in diesem Stand nicht enthalten.
+- 0.5.84 enthält auch 0.5.83 (einheitliche Kategorien für Filme und Serien, siehe unten).
 
-## Neu in 0.5.82: Sammelstand, Archive.org erkennt Werke
+## Neu in 0.5.83: einheitliche Kategorien für Filme und Serien
+
+- **Eine feste deutsche Kategorieliste für alle Quellen** (ARD/ZDF, Netzkino, Pluto TV, JustWatch, Rakuten, YouTube, Joyn, TOGGO): Action, Abenteuer, Animation, Biografie, Drama, Erotik, Fantasy, Historie, Horror, Kinder & Familie, Komödie, Krieg, Krimi, Musical, Mystery, Romantik, Science-Fiction, Thriller, Western, Dokumentation, Natur & Tiere, Wissen & Technik, Politik & Gesellschaft, Nachrichten & Magazine, Kultur, Musik, Sport, Reise, Ratgeber & Lifestyle, Talk, Show & Unterhaltung, Reality-TV.
+- **Kategorie erst nach dem Abgleich:** Solange ein Titel nicht mit IMDb/TMDB/TVDB abgeglichen ist, steht er unter „Unklassifiziert“. Danach entscheiden die Genres der Referenz, die des Anbieters ergänzen. Passt nichts, steht er unter „Sonstige“.
+- Dubletten wie „Fantasie“/„Fantasy“ oder „Krimi“/„Kriminalfilms“ und englische Bezeichnungen landen in derselben Kategorie. „Joyn (kostenlos)“, „Joyn+“ und „TOGGOLINO“ sind keine Kategorien mehr, bleiben aber filterbar.
+- Die Original-Genres der Anbieter bleiben gespeichert: auf der Titelseite unter den Anbieterangaben und im klassischen Genre-Baum (Verwaltung → Werkkatalog).
+
+
+## 0.5.82: Sammelstand, Archive.org erkennt Werke
 
 0.5.82 enthält alles aus 0.5.78 (YouTube), 0.5.79 (TOGGO), 0.5.80 (Besetzung mit Fotos, Clips, Windows und Linux) und 0.5.81 (Merkliste, Weiterschauen, Speicher). Neu dazu:
 

@@ -507,8 +507,9 @@ def _summary(root, row, reports=None):
     import joyn_enrichment
     report = (reports if reports is not None else joyn_enrichment.all_cached(root)).get(row['id'])
     out = portal_reference.summary(row.get('genre'), report)
-    # Joyn+ is a visible category of its own, so the free offer can be filtered (Björn has an account).
-    out['categories'] = list(out['categories']) + [PLUS if row.get('offer') == 'plus' else FREE]
+    # 0.5.83: Joyn+ / kostenlos is the offer, not a category; it stays on the card (row['category'])
+    # and as filter value (listing genre=FREE/PLUS), but no longer among the shared category chips.
+    out['offer_label'] = PLUS if row.get('offer') == 'plus' else FREE
     return out
 
 
@@ -538,7 +539,10 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     for row in rows:
         row.update(_summary(root, row, reports))
     counts = portal_reference.facets(rows)
-    rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
+    if genre in (FREE, PLUS):
+        rows = [r for r in rows if r.get('offer_label') == genre and portal_reference.in_collection(r, collection, kind)]
+    else:
+        rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
         rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
     elif sort == 'year':

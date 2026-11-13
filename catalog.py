@@ -332,7 +332,10 @@ def item(c,w):
     if saved:
         import local_library
         file_state=local_library.file_state(saved['path'])
-    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(saved),'file_state':file_state,'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
+    meta=json.loads(w['meta'])
+    import categories
+    checked=bool(w['attempts']) or w['state'] in ('matched','manual','identified','review','format')
+    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':meta,'categories':categories.classify((),meta.get('genres') or [],checked),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(saved),'file_state':file_state,'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
 def media_equivalence_key(row,special_kind='',active=True):
     """Exact playable media identity; do not strip signed URL query strings.
@@ -565,8 +568,8 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     elif state=='format':clauses.append("w.state='format'")
     if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
     if genre:
-        if genre=='Unbekannt':clauses.append('NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)')
-        else:clauses.append('EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre=?)');args.append(genre)
+        clause,values=category_clause(c,genre)
+        clauses.append(clause);args.extend(values)
     if show:clauses.append('w.show_key=?');args.append(show)
     where=' AND '.join(clauses);offset=max(0,int(offset));grouping="CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END" if not show else 'w.id'
     if show:
@@ -588,6 +591,64 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
         entry=item(c,w)
         if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show);out.append(entry)
     return {'items':out,'total':total,'offset':offset}
+
+# 0.5.83: a work counts as classified once the reference check ran (attempts) or produced a state.
+# Before that it is listed under categories.UNCLASSIFIED, regardless of the broadcaster's labels.
+CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','review','format'))"
+
+def category_labels(c):
+    """Fixed category -> raw genres stored in work_genres that name it (genre index, small)."""
+    import categories
+    out={}
+    for (raw,) in c.execute('SELECT DISTINCT genre FROM work_genres'):
+        for name in categories.of_label(raw):out.setdefault(name,[]).append(raw)
+    return out
+
+def category_clause(c,genre):
+    """SQL filter for a fixed category, 'Unklassifiziert', 'Sonstige' or (classic tree in
+    Verwaltung → Werkkatalog) one raw genre exactly as stored."""
+    import categories
+    text=str(genre).strip()
+    if text==categories.LEGACY_UNKNOWN:
+        return 'NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)',[]
+    if text==categories.UNCLASSIFIED:
+        return 'NOT '+CLASSIFIED_SQL,[]
+    labels=category_labels(c)
+    if text==categories.OTHER:
+        known=[raw for names in labels.values() for raw in names]
+        if not known:return CLASSIFIED_SQL,[]
+        return (CLASSIFIED_SQL+' AND NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'
+                %','.join('?'*len(known))),known
+    if text in categories.CATEGORIES:
+        raw=labels.get(text) or []
+        if not raw:return '0',[]
+        return (CLASSIFIED_SQL+' AND EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'
+                %','.join('?'*len(raw))),raw
+    return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre=?)',[text]
+
+def category_tree(c):
+    """[{kind, genre, n}] with the fixed categories (series counted once per show), like tree()."""
+    import categories
+    units={}
+    rows=c.execute("SELECT w.kind,CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END unit,"+CLASSIFIED_SQL+
+                   " classified,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
+                   " WHERE w.kind IN ('movie','series') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)")
+    named={};checked={}
+    for kind,unit,classified,genre in rows:
+        if not classified:names=(categories.UNCLASSIFIED,)
+        else:
+            checked.setdefault(kind,set()).add(unit)
+            names=categories.of_label(genre) if genre else []
+            if names:named.setdefault(kind,set()).add(unit)
+            else:names=(categories.OTHER,)
+        for name in names:units.setdefault((kind,name),set()).add(unit)
+    out=[]
+    for (kind,name),members in units.items():
+        if name==categories.OTHER:members=members-named.get(kind,set())
+        elif name==categories.UNCLASSIFIED:members=members-checked.get(kind,set())   # one checked episode classifies the show
+        if members:out.append({'kind':kind,'genre':name,'n':len(members)})
+    out.sort(key=lambda r:(r['kind'],categories.sort_key(r['genre'])))
+    return out
 
 def tree(c):
     return [dict(r) for r in c.execute("SELECT w.kind,COALESCE(g.genre,'Unbekannt') genre,COUNT(DISTINCT CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END) n FROM works w LEFT JOIN work_genres g ON g.work_id=w.id WHERE EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) GROUP BY w.kind,g.genre")]

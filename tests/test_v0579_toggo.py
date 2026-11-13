@@ -119,12 +119,31 @@ class Fixture(unittest.TestCase):
 class ParsingTests(unittest.TestCase):
     def test_addresses_of_episodes_and_clips(self):
         e = toggo.classify('https://www.toggo.de/toggolino/paw-patrol/folge/der-wetter-zeppelin')
-        self.assertEqual(e, {'prefix': 'toggolino/', 'series': 'paw-patrol', 'clip': False, 'slug': 'der-wetter-zeppelin'})
+        self.assertEqual(e, {'prefix': 'toggolino/', 'series': 'paw-patrol', 'clip': False, 'slug': 'der-wetter-zeppelin',
+                             'url': 'https://www.toggo.de/toggolino/paw-patrol/folge/der-wetter-zeppelin'})
         self.assertTrue(toggo.classify('https://www.toggo.de/paw-patrol/video/clip-1/')['clip'])
-        for bad in ('https://www.toggo.de/paw-patrol', 'https://www.toggo.de/a/b/folge/c', 'http://www.toggo.de/a/folge/b',
+        for bad in ('https://www.toggo.de/paw-patrol', 'https://www.toggo.de/a/b/c/d/e/folge/f', 'https://www.toggo.de/x/serien/folge/c', 'http://www.toggo.de/a/folge/b',
                     'https://www.toggo.de.evil.example/a/folge/b', 'https://www.toggo.de/toggolino/folge/x',
                     'https://www.toggo.de/a/folge/b?x=1', 'https://www.toggo.de/a/folge/b"onload'):
             self.assertIsNone(toggo.classify(bad), bad)
+
+    def test_addresses_as_the_sitemap_lists_them(self):
+        # 0.5.84, Björn's diagnosis of 13.11.2026: 10605 addresses '*/serien/*/folge/*', 4542 'toggolino/*/serien/*/folge/*',
+        # none of the shape 0.5.79 expected, so the catalogue stayed empty.
+        e = toggo.classify('https://www.toggo.de/toggo/serien/paw-patrol/folge/der-wetter-zeppelin')
+        self.assertEqual((e['prefix'], e['series'], e['clip'], e['slug']), ('', 'paw-patrol', False, 'der-wetter-zeppelin'))
+        self.assertEqual(toggo.episode_url(e), 'https://www.toggo.de/toggo/serien/paw-patrol/folge/der-wetter-zeppelin')
+        e = toggo.classify('https://www.toggo.de/toggolino/kinder/serien/peppa-wutz/folge/matsch/')
+        self.assertEqual((e['prefix'], e['series'], e['slug']), ('toggolino/', 'peppa-wutz', 'matsch'))
+        self.assertEqual(toggo.episode_url(e), 'https://www.toggo.de/toggolino/kinder/serien/peppa-wutz/folge/matsch')
+        self.assertIsNone(toggo.classify('https://www.toggo.de/toggo/serien/paw-patrol'))
+        pages = ['https://www.toggo.de/toggo/serien/paw-patrol/folge/a', 'https://www.toggo.de/toggo/serien/paw-patrol/folge/b',
+                 'https://www.toggo.de/toggo/serien/paw-patrol', 'https://www.toggo.de/toggolino/kinder/serien/peppa-wutz/folge/c',
+                 'https://www.toggo.de/paw-patrol/folge/a']
+        found = toggo.catalogue(pages)
+        self.assertEqual(sorted(found), ['paw-patrol', 'toggolino/peppa-wutz'])
+        self.assertEqual(len(found['paw-patrol']['entries']), 2)      # old and new address of episode "a" are one episode
+        self.assertEqual(found['paw-patrol']['web_url'], 'https://www.toggo.de/toggo/serien/paw-patrol')
 
     def test_link_is_encoded_for_the_page(self):
         e = toggo.classify("https://www.toggo.de/grizzy--die-lemminge/folge/rock'n'lemming")
@@ -168,7 +187,8 @@ class CatalogueTests(Fixture):
         paw = self.series('PAW Patrol')
         self.assertEqual((paw['brand'], paw['poster'], paw['web_url']), ('TOGGOLINO', IMG % 'VEP1', 'https://www.toggo.de/serien/paw-patrol'))
         self.assertIn('Kinder & Familie', paw['categories'])
-        self.assertIn('TOGGOLINO', paw['categories'])
+        self.assertNotIn('TOGGOLINO', paw['categories'])   # 0.5.83: brand, not category
+        self.assertEqual(paw['brand_label'], 'TOGGOLINO')
         self.assertEqual(self.series('Weihnachtsmann & Co. KG')['web_url'], 'https://www.toggo.de/weihnachtsmann--co-kg')
         self.assertEqual(toggo.listing(self.root, 'movies')['total'], 0)
         self.assertEqual(toggo.listing(self.root, 'live')['total'], 0)

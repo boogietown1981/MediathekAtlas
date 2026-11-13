@@ -16,6 +16,8 @@ detail sources into one model:
 """
 from __future__ import annotations
 
+import categories
+
 PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
@@ -98,7 +100,7 @@ def _portal(root, source, item_id):
              description=_text(it.get('summary')), poster=_https(it.get('poster')),
              season=it.get('season'), episode=it.get('episode'))
     m['categories'] = [c for c in (it.get('categories') or portal_reference.categories(it.get('genre'), report))
-                       if c != portal_reference.UNKNOWN]
+                       if not categories.is_special(c)]
     if it.get('score'):
         m['rating'] = it['score']
     if parent:
@@ -198,7 +200,7 @@ def _netzkino(root, item_id):
              description=_text(d.get('description')), poster=_https(d.get('poster')),
              playable=True, web_url=_https(data.get('page_url')))
     m['offline'] = {'allowed': True, 'days': OFFLINE_DAYS}
-    m['categories'] = [c for c in portal_reference.categories(d.get('genres'), report) if c != portal_reference.UNKNOWN]
+    m['categories'] = [c for c in portal_reference.categories(d.get('genres'), report) if not categories.is_special(c)]
     # Netzkino's own credits are more complete than most references.
     for key in ('cast', 'directors', 'writers'):
         if d.get(key):
@@ -258,7 +260,7 @@ def _netzkino_series(root, key):
     m = _base('netzkino', key, {'status': 'unchecked'})
     poster = _https(series.get('poster'))
     m.update(kind='series', title=_text(series.get('title'), 200), year=_year(series.get('year')), poster=poster,
-             categories=[c for c in series.get('categories') or [] if c != 'Unbekannt'])
+             categories=[c for c in series.get('categories') or [] if not categories.is_special(c)])
     items = data.get('items') or []
     m['description'] = next((_text(e.get('summary')) for e in items if e.get('summary')), '')
     m['episodes'] = _sort_episodes([_episode('netzkino', e, poster) for e in items])

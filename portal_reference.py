@@ -5,9 +5,8 @@ title, produced by the same ARD/ZDF provider chain (core.candidates) and the sam
 evaluation (netzkino_enrichment.analyze). This module turns such a report into what every
 source shows the same way:
 
-* ``categories``: canonical German genres exactly as in the Mediathek catalogue tree
-  (metadata.genre_names), reference genres first, the portal's own labels as fallback;
-  'Unbekannt' when neither names a genre.
+* ``categories``: since 0.5.83 the fixed German list of categories.py (reference genres first,
+  the portal's own labels as fallback), 'Unklassifiziert' before the reference check.
 * ``rating``: score from the selected reference (IMDb, TMDB …) with its source.
 * ``apply``: job metadata for downloads (genres, description, cast, poster, NFO ids, rating),
   the same fields an ARD/ZDF download carries.
@@ -37,18 +36,41 @@ def split_labels(value):
     return [str(v).strip() for v in value if isinstance(v, (str, int)) and str(v).strip()][:20]
 
 
-def categories(provider_genres, report=None):
+CHECKED = ('candidate', 'review', 'no_match')
+
+
+def checked(report):
+    """The reference check ran for this title (0.5.83): a result, an ambiguous result or no match.
+    'partial' (providers paused) and 'unchecked' are retried later and stay unclassified."""
+    if not isinstance(report, dict):
+        return False
+    return report.get('status') in CHECKED or bool(report.get('reference_genres'))
+
+
+def reference_labels(report):
+    if not isinstance(report, dict):
+        return []
+    # The unique IMDb/TVDB/TMDB reference decides, as for Mediathek works; then the merged report.
+    for ref in (report.get('reference_genres'), (report.get('metadata') or {}).get('genres')):
+        labels = split_labels(ref) if ref else []
+        if labels:
+            return labels
+    return []
+
+
+def categories(provider_genres, report=None, identified=False):
+    """0.5.83: fixed German categories (categories.CATEGORIES) after the reference check,
+    'Unklassifiziert' before it, 'Sonstige' when no label names a category. The provider's raw
+    labels stay in the portal tables and appear as ``source_genres`` on the title page."""
+    import categories as fixed
+    return fixed.classify(reference_labels(report), split_labels(provider_genres), identified or checked(report))
+
+
+def genre_names(provider_genres, report=None):
+    """Canonical genre names for downloads/NFO (metadata.genres); unchanged since 0.5.38."""
     import metadata
-    names = []
-    if isinstance(report, dict):
-        # The unique IMDb/TVDB/TMDB reference decides, as for Mediathek works; then the merged report.
-        for ref in (report.get('reference_genres'), (report.get('metadata') or {}).get('genres')):
-            names = metadata.genres(split_labels(ref)) if ref else []
-            if names:
-                break
-    if not names:
-        names = metadata.genres(split_labels(provider_genres))
-    return names or [UNKNOWN]
+    names = metadata.genres(reference_labels(report)) if isinstance(report, dict) else []
+    return names or metadata.genres(split_labels(provider_genres))
 
 
 def selected(report):
@@ -71,9 +93,13 @@ def rating(report):
     return {'value': round(float(value), 1), 'source': label, 'votes': meta.get('votes')}
 
 
-def summary(provider_genres, report):
-    """Fields a catalogue row gets: categories, score (reference rating), reference status."""
-    out = {'categories': categories(provider_genres, report), 'score': rating(report),
+def summary(provider_genres, report, identified=False):
+    """Fields a catalogue row gets: categories, score (reference rating), reference status.
+
+    ``identified``: the provider itself names the title's IMDb ID (JustWatch), so its genres are
+    already classified data and count without our own reference check (0.5.83)."""
+    out = {'categories': categories(provider_genres, report, identified), 'score': rating(report),
+           'source_genres': split_labels(provider_genres)[:12],
            'reference_status': (report or {}).get('status') or 'unchecked'}
     sel = selected(report)
     if sel:
@@ -114,19 +140,28 @@ def in_collection(row, collection, kind):
 
 
 def matches(row, genre):
+    """Filter by a fixed category; 'Unbekannt' (older links) means 'Unklassifiziert'. A raw provider
+    label that names exactly one category filters by that category."""
     if not genre:
         return True
-    want = str(genre).strip().casefold()
-    return any(c.casefold() == want for c in row.get('categories') or [UNKNOWN])
+    import categories as fixed
+    name, raw = fixed.wanted(genre)
+    cats = row.get('categories') or [fixed.UNCLASSIFIED]
+    if name:
+        return name in cats
+    want = raw.casefold()
+    return any(str(c).casefold() == want for c in cats) or \
+        any(str(c).casefold() == want for c in row.get('source_genres') or [])
 
 
 def facets(rows):
-    """[{'genre','n'}] like catalog.tree, sorted by name, 'Unbekannt' last."""
+    """[{'genre','n'}] in the fixed order of categories.CATEGORIES, 'Unklassifiziert'/'Sonstige' last."""
+    import categories as fixed
     counts = {}
     for row in rows:
-        for name in set(row.get('categories') or [UNKNOWN]):
+        for name in set(row.get('categories') or [fixed.UNCLASSIFIED]):
             counts[name] = counts.get(name, 0) + 1
-    return [{'genre': g, 'n': counts[g]} for g in sorted(counts, key=lambda g: (g == UNKNOWN, g.casefold()))]
+    return [{'genre': g, 'n': counts[g]} for g in sorted(counts, key=fixed.sort_key)]
 
 
 def apply(meta, report, own_provider, *, series_report=False):
@@ -150,9 +185,7 @@ def apply(meta, report, own_provider, *, series_report=False):
     for field in ('directors', 'writers'):
         if not meta.get(field) and ref.get(field):
             meta[field] = split_labels(ref[field])[:12]
-    meta['genres'] = categories(meta.get('genres'), report)
-    if meta['genres'] == [UNKNOWN]:
-        meta['genres'] = []
+    meta['genres'] = genre_names(meta.get('genres'), report)
     sel = selected(report)
     if sel:
         meta.update(provider=sel['provider'], reference_id=sel['reference_id'], source_provider=own_provider)

@@ -2,7 +2,7 @@ import subprocess,sys,types
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality
+import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment
 import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry
 from version import VERSION
@@ -321,7 +321,7 @@ IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
 imdb_archive.ACTIVE=IMDB
 _UNIFIED_SOURCES={k:_SnapshotSource(k,m[0]) for k,m in _PORTAL_MODULES.items()}
 _STATUS_CACHE=(0,{})
-_TREE_CACHE=(float('-inf'),[])
+_TREE_CACHE=(float('-inf'),[],[])
 _TREE_TTL=60
 _TREE_LOCK=threading.Lock()
 _TREE_BUSY=False
@@ -332,20 +332,23 @@ def catalog_tree():
         if not _TREE_BUSY and time.monotonic()-_TREE_CACHE[0]>_TREE_TTL:
             _TREE_BUSY=True
             threading.Thread(target=refresh_tree,daemon=True,name='catalog_categories').start()
-        return {'tree':_TREE_CACHE[1],'loading':_TREE_BUSY,'error':_TREE_ERROR}
+        # 0.5.83: 'categories' = fixed German categories for the shared catalogue; 'tree' = raw genres
+        # for Verwaltung → Werkkatalog (classic tree in the fold-out area).
+        return {'tree':_TREE_CACHE[1],'categories':_TREE_CACHE[2],'loading':_TREE_BUSY,'error':_TREE_ERROR,
+                **categories.describe()}
 def refresh_tree():
     global _TREE_CACHE,_TREE_BUSY,_TREE_ERROR,_TREE_TTL
     started=time.monotonic()
     try:
-        with db() as c:rows=catalog.tree(c)
+        with db() as c:rows=catalog.tree(c);fixed=catalog.category_tree(c)
         seconds=time.monotonic()-started
         # The UI polls every 30 s; a 4 s aggregation every minute kept a core busy. Slow catalogues refresh
         # less often, user edits still invalidate the cache immediately.
-        with _TREE_LOCK:_TREE_CACHE=(time.monotonic(),rows);_TREE_ERROR='';_TREE_TTL=max(60,min(900,seconds*60))
+        with _TREE_LOCK:_TREE_CACHE=(time.monotonic(),rows,fixed);_TREE_ERROR='';_TREE_TTL=max(60,min(900,seconds*60))
         diagnostics.event('catalog_tree_complete',seconds=round(seconds,2),categories=len(rows),next_seconds=round(_TREE_TTL))
     except Exception as e:
         diagnostics.error('catalog_tree_failed',e)
-        with _TREE_LOCK:_TREE_ERROR=core.safe_error(e);_TREE_CACHE=(time.monotonic(),_TREE_CACHE[1])
+        with _TREE_LOCK:_TREE_ERROR=core.safe_error(e);_TREE_CACHE=(time.monotonic(),_TREE_CACHE[1],_TREE_CACHE[2])
     finally:
         with _TREE_LOCK:_TREE_BUSY=False
 _RECOGNITION={'at':float('-inf'),'rows':[],'busy':False,'error':''}
@@ -1057,7 +1060,7 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/search':
                 found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
                 with db() as c:catalog.ingest(c,found['results'])
-                with _TREE_LOCK:_TREE_CACHE=(float('-inf'),_TREE_CACHE[1])
+                with _TREE_LOCK:_TREE_CACHE=(float("-inf"),_TREE_CACHE[1],_TREE_CACHE[2])
                 return self.send({'imported':len(found['results'])})
             if path=='/api/sync':
                 SERVICE.restart.set();SERVICE.wake.set();diagnostics.event('sync_requested');return self.send({'ok':True})
@@ -1123,7 +1126,7 @@ class Handler(BaseHTTPRequestHandler):
                     o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
                     if not o:raise ValueError('Katalogeintrag nicht gefunden')
                     SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
-                _TREE_CACHE=(float('-inf'),[]);_STATUS_CACHE=(0,{})
+                _TREE_CACHE=(float("-inf"),[],[]);_STATUS_CACHE=(0,{})
                 return self.send({'ok':True})
             if path=='/api/candidates':
                 config=settings()

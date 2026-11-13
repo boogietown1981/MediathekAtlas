@@ -122,10 +122,12 @@ class JoynTest(unittest.TestCase):
         movies = {r['id']: r for r in joyn.listing(self.root, 'movies', limit='all')['items']}
         free = movies['m.b_cloverfield01']
         self.assertEqual(free['offer'], 'free')       # free listing wins over the Joyn+ genre page
-        self.assertIn('Joyn (kostenlos)', free['categories'])
+        # 0.5.83: the offer is no category any more, but still a filter value.
+        self.assertNotIn('Joyn (kostenlos)', free['categories'])
+        self.assertEqual(free['offer_label'], 'Joyn (kostenlos)')
         plus = movies['m.b_plus']
         self.assertEqual((plus['offer'], plus['category']), ('plus', 'Joyn+'))
-        self.assertIn('Joyn+', plus['categories'])
+        self.assertEqual(plus['offer_label'], 'Joyn+')
         self.assertEqual(plus['web_url'], 'https://www.joyn.de/filme/plus-film')
         self.assertEqual(plus['rating'], 'FSK 12')
         self.assertEqual((plus['playable'], plus['drm']), (0, 1))

@@ -33,11 +33,14 @@ def imdb_lookup(calls):
 
 class SharedRulesTests(unittest.TestCase):
     def test_categories_are_the_mediathek_genres(self):
-        report = {'metadata': {'genres': ['Comedy', 'Crime']}}
+        # 0.5.83: fixed German categories only after the reference check, 'Unklassifiziert' before.
+        report = {'status': 'candidate', 'metadata': {'genres': ['Comedy', 'Crime']}}
         self.assertEqual(pr.categories('Action', report), ['Komödie', 'Krimi'])  # reference first
-        self.assertEqual(pr.categories('Sci-Fi & Fantasy', None), ['Fantasy', 'Science-Fiction'])
-        self.assertEqual(pr.categories('["Kinderfilm","Familie"]', {}), ['Kinder & Familie'])
-        self.assertEqual(pr.categories('', None), [pr.UNKNOWN])
+        self.assertEqual(pr.categories('Sci-Fi & Fantasy', {'status': 'no_match'}), ['Fantasy', 'Science-Fiction'])
+        self.assertEqual(pr.categories('["Kinderfilm","Familie"]', {'status': 'review'}), ['Kinder & Familie'])
+        self.assertEqual(pr.categories('', {'status': 'no_match'}), ['Sonstige'])
+        self.assertEqual(pr.categories('Action', None), ['Unklassifiziert'])
+        self.assertEqual(pr.categories('Action', {'status': 'partial'}), ['Unklassifiziert'])
 
     def test_facets_and_matching(self):
         rows = [{'categories': ['Drama', 'Krimi']}, {'categories': ['Drama']}, {'categories': [pr.UNKNOWN]}]
@@ -95,8 +98,9 @@ class PlutoReferenceTests(Fixture):
         self.assertEqual(films['genre_counts'][0], {'genre': 'Drama', 'n': 1})
         self.assertEqual(pluto.listing(self.root, 'movies', genre='Mystery')['total'], 1)
         self.assertEqual(pluto.listing(self.root, 'movies', genre='Western')['total'], 0)
-        # Not yet checked: Pluto's own genre label, canonical.
-        self.assertEqual(pluto.listing(self.root, 'series')['items'][0]['categories'], [pr.UNKNOWN])
+        # 0.5.83: not yet checked -> 'Unklassifiziert' (Pluto's own label is no category yet).
+        series = pluto.listing(self.root, 'series')['items'][0]
+        self.assertEqual(series['categories'], ['Unklassifiziert'])
 
     def test_episode_uses_series_report_in_detail_and_episode_list(self):
         self.enrich(EPISODE)  # checks the series
@@ -160,9 +164,12 @@ class NetzkinoCategoryTests(unittest.TestCase):
             data = netzkino.grouped_catalog(root, view='movies', sort='rating')
             first = data['items'][0]
             self.assertEqual((first['title'], first['categories'], first['score']['value']), ('Hin und Weg', ['Romantik'], 6.8))
-            self.assertEqual(data['items'][1]['categories'], ['Horror'])
-            self.assertEqual([g['genre'] for g in data['genre_counts']], ['Horror', 'Romantik'])
-            self.assertEqual(netzkino.grouped_catalog(root, view='movies', genre='horror')['total'], 1)
+            # 0.5.83: Netzkino's own 'Horror' counts only after the reference check.
+            self.assertEqual(data['items'][1]['categories'], ['Unklassifiziert'])
+            self.assertEqual([g['genre'] for g in data['genre_counts']], ['Romantik', 'Unklassifiziert'])
+            self.assertEqual(netzkino.grouped_catalog(root, view='movies', genre='horror')['total'], 0)
+            self.assertEqual(netzkino.grouped_catalog(root, view='movies', genre='unklassifiziert')['total'], 1)
+            self.assertEqual(netzkino.grouped_catalog(root, view='movies', genre='Unbekannt')['total'], 1)
 
 
 class WiringTests(unittest.TestCase):

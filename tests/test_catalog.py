@@ -31,7 +31,13 @@ class CatalogTests(unittest.TestCase):
  def test_archived_preserved(self):
   catalog.ingest(self.c,[row()]);self.c.execute('UPDATE offers SET active=0');self.assertEqual(catalog.listing(self.c)['total'],0);self.assertEqual(catalog.listing(self.c,archive=True)['total'],1)
  def test_tree_and_genre(self):
-  a=row();a['description']='Krimi. '+a['description'];catalog.ingest(self.c,[a]);self.assertEqual(catalog.listing(self.c,genre='Krimi')['total'],1);self.assertTrue(any(r['genre']=='Krimi' for r in catalog.tree(self.c)))
+  a=row();a['description']='Krimi. '+a['description'];catalog.ingest(self.c,[a]);self.assertTrue(any(r['genre']=='Krimi' for r in catalog.tree(self.c)))
+  # 0.5.83: fixed categories only after the reference check; before it the work is 'Unklassifiziert'.
+  self.assertEqual(catalog.listing(self.c,genre='Krimi')['total'],0);self.assertEqual(catalog.listing(self.c,genre='Unklassifiziert')['total'],1)
+  self.assertEqual([(r['genre'],r['n']) for r in catalog.category_tree(self.c)],[('Unklassifiziert',1)])
+  self.c.execute('UPDATE works SET attempts=1')
+  self.assertEqual(catalog.listing(self.c,genre='Krimi')['total'],1);self.assertEqual(catalog.listing(self.c,genre='Unklassifiziert')['total'],0)
+  self.assertEqual([(r['genre'],r['n']) for r in catalog.category_tree(self.c)],[('Krimi',1)])
  def test_automatic_needs_corroboration(self):
   m={'kind':'movie'};a={'kind':'movie','similarity':1,'provider':'TMDB','reference_id':'42'};self.assertIsNone(catalog.auto_choice(m,[a]));a['runtime_agrees']=True;self.assertIsNotNone(catalog.auto_choice(m,[a]));a['year_mismatch']=True;self.assertIsNone(catalog.auto_choice(m,[a]))
  def test_ambiguous_not_auto(self):

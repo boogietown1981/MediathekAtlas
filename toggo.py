@@ -242,15 +242,34 @@ def _own(url):
     return parts.scheme == 'https' and parts.hostname == 'www.toggo.de' and not parts.port and not parts.username
 
 
+SECTION_WORDS = ('toggolino', 'folge', 'video', 'serien', 'serie', 'videos', 'spiele', 'live-tv', 'tv')
+
+
 def classify(url):
-    """{'brand','series','clip','slug'} for an episode/clip address, else None."""
-    m = EPISODE_URL.fullmatch(str(url or '').strip())
-    if not m:
+    """{'prefix','series','clip','slug','url'} for an episode/clip address, else None.
+
+    0.5.79 knew ``/[toggolino/]<serie>/folge/<folge>`` only. Björn's diagnosis of 13.11.2026 showed
+    what the sitemap really lists: ``/<bereich>/serien/<serie>/folge/<folge>`` (10605 addresses)
+    and ``/toggolino/<bereich>/serien/<serie>/folge/<folge>`` (4542), so no episode was found.
+    Now the series is the part in front of ``folge``/``video``, with at most two section parts
+    before it; the address itself is kept and never rebuilt."""
+    url = str(url or '').strip()
+    if not _own(url) or re.search(r'[\s<>"\\]', url):
         return None
-    series, slug = urllib.parse.unquote(m.group(2)), urllib.parse.unquote(m.group(4))
-    if not series or not slug or series in ('toggolino', 'folge', 'video') or re.search(r'[/?#\s<>"\\]', series + slug):
+    split = urllib.parse.urlsplit(url)
+    if split.query or split.fragment:
         return None
-    return {'prefix': m.group(1) or '', 'series': series, 'clip': m.group(3) == 'video', 'slug': slug}
+    parts = [urllib.parse.unquote(p) for p in split.path.split('/') if p]
+    page = SITE + '/' + '/'.join(_q(p) for p in parts)      # as listed, encoded for use in a link
+    prefix = ''
+    if parts and parts[0] == 'toggolino':
+        prefix, parts = 'toggolino/', parts[1:]
+    if not 3 <= len(parts) <= 5 or parts[-2] not in ('folge', 'video'):
+        return None
+    series, slug = parts[-3], parts[-1]
+    if series in SECTION_WORDS or len(series) > 200 or len(slug) > 200 or re.search(r'[/?#\s<>"\\]', series + slug):
+        return None
+    return {'prefix': prefix, 'series': series, 'clip': parts[-2] == 'video', 'slug': slug, 'url': page}
 
 
 def _q(part):
@@ -258,6 +277,8 @@ def _q(part):
 
 
 def episode_url(entry):
+    if entry.get('url'):
+        return entry['url']
     return '%s/%s%s/%s/%s' % (SITE, entry['prefix'], _q(entry['series']), 'video' if entry['clip'] else 'folge', _q(entry['slug']))
 
 
@@ -266,7 +287,7 @@ def shapes(urls):
     counts = {}
     for url in urls:
         parts = [p for p in urllib.parse.urlsplit(url).path.split('/') if p]
-        key = '/'.join(p if p in ('toggolino', 'folge', 'video', 'serien', 'serie', 'videos', 'spiele', 'live-tv', 'tv') else '*'
+        key = '/'.join(p if p in SECTION_WORDS else '*'
                        for p in parts[:5]) or '/'
         counts[key] = counts.get(key, 0) + 1
     return dict(sorted(counts.items(), key=lambda kv: -kv[1])[:12])
@@ -628,9 +649,12 @@ def _summary(root, row, reports=None):
     import toggo_enrichment
     report = (reports if reports is not None else toggo_enrichment.all_cached(root)).get(row['id'])
     out = portal_reference.summary(row.get('genre') or GENRE, report)
-    # TOGGO and TOGGOLINO (pre-school) are categories of their own, so parents can filter by age group.
-    brand = row.get('brand') or 'TOGGO'
-    out['categories'] = [c for c in out['categories'] if c != portal_reference.UNKNOWN] + [brand]
+    # 0.5.83: TOGGO is a children's platform, so every title is 'Kinder & Familie' even before the
+    # reference check; TOGGO/TOGGOLINO (pre-school) is the brand, kept as filter value, not a category.
+    import categories as fixed
+    out['categories'] = sorted({c for c in out['categories'] if not fixed.is_special(c)} | {'Kinder & Familie'},
+                               key=fixed.sort_key)
+    out['brand_label'] = row.get('brand') or 'TOGGO'
     return out
 
 
@@ -659,7 +683,10 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         row['playable'] = 0
         row['seasons'] = None
     counts = portal_reference.facets(rows)
-    rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, 'series')]
+    if str(genre).upper() in ('TOGGO', 'TOGGOLINO'):
+        rows = [r for r in rows if str(r.get('brand_label')).upper() == str(genre).upper()]
+    else:
+        rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, 'series')]
     if sort == 'rating':
         rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,

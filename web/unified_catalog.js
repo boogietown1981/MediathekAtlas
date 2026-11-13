@@ -17,6 +17,13 @@
   let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
   let medGenres=[],medTree=[],collection='';
+  // Fixed list of categories.py (the server sends it with the category tree; this is the fallback).
+  let CATEGORY_NAMES=['Action','Abenteuer','Animation','Biografie','Drama','Erotik','Fantasy','Historie','Horror',
+    'Kinder & Familie','Komödie','Krieg','Krimi','Musical','Mystery','Romantik','Science-Fiction','Thriller','Western',
+    'Dokumentation','Natur & Tiere','Wissen & Technik','Politik & Gesellschaft','Nachrichten & Magazine','Kultur','Musik',
+    'Sport','Reise','Ratgeber & Lifestyle','Talk','Show & Unterhaltung','Reality-TV'];
+  const SPECIAL=['Unklassifiziert','Sonstige','Unbekannt'];
+  const catOrder=name=>{const i=CATEGORY_NAMES.indexOf(name);return i>=0?i:SPECIAL.includes(name)?1000+SPECIAL.indexOf(name):500;};
   let pendingTries=0;
   const heading=() => ({all:'Alle Plattformen',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
@@ -234,7 +241,7 @@
     return {source:'mediatheken',id:item.work_id||'',raw:item,kind:m.kind||'',
       title:m.title||r.title||'Ohne Titel',year:m.year||null,
       poster:m.poster||'',description:m.description||m.show_description||r.description||'',
-      genres:m.genres||[],duration:m.source_duration_seconds||r.duration||null,
+      genres:Array.isArray(item.categories)?item.categories.filter(c=>!SPECIAL.includes(c)):m.genres||[],duration:m.source_duration_seconds||r.duration||null,
       score:medScore(m),pick:['matched','manual','identified'].includes(item.state),
       state:item.state,series_parent:!!item.series_parent,
       episode_count:item.episodes||0,available:!!item.available};
@@ -256,7 +263,7 @@
   function nkRow(item) {
     return {source:'netzkino',id:item.id||'',raw:item,kind:item.media_type||'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',
-      description:item.summary||'',genres:(item.categories||[]).filter(c=>c!=='Unbekannt').length?item.categories.filter(c=>c!=='Unbekannt'):item.genres||'',
+      description:item.summary||'',genres:(item.categories||[]).filter(c=>!SPECIAL.includes(c)),
       score:item.score||null,duration:item.duration||null,
       episode_count:item.episode_count||0,access_hint:item.access_hint||'',
       season:item.season,episode:item.episode,series_key:item.series_key};
@@ -265,7 +272,7 @@
   function plRow(item,src='pluto') {
     return {source:src,night:!!item.night,offline:src==='youtube'?!!item.offline:undefined,playable:item.playable!==0&&item.playable!==false,web_url:item.web_url||'',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',description:item.summary||'',
-      genres:(item.categories||[]).filter(c=>c!=='Unbekannt'),score:item.score||null,duration:item.duration||null,
+      genres:(item.categories||[]).filter(c=>!SPECIAL.includes(c)),score:item.score||null,duration:item.duration||null,
       season:item.season,episode:item.episode};
   }
   function genreList(value) {
@@ -415,7 +422,8 @@
       const name=String(c.genre||'').trim();if(!name) continue;
       merged.set(name,(merged.get(name)||0)+(Number(c.n)||0));
     }
-    const list=[...merged].map(([g,n])=>({genre:g,n})).sort((a,b)=>(a.genre==='Unbekannt')-(b.genre==='Unbekannt')||a.genre.localeCompare(b.genre,'de'));
+    // 0.5.83: only the fixed German categories (categories.py); 'Unklassifiziert'/'Sonstige' last.
+    const list=[...merged].map(([g,n])=>({genre:g,n})).filter(c=>c.genre!=='Unbekannt').sort((a,b)=>catOrder(a.genre)-catOrder(b.genre)||a.genre.localeCompare(b.genre,'de'));
     window.AtlasPortalCategories?.render($('atlas-cross-categories'),seriesKey?[]:list,genre,value=>{
       genre=value;offset=0;$('atlas-cross-genre').value=value;refresh();
     });
@@ -424,12 +432,8 @@
     const host=$('atlas-cross-items');host.replaceChildren();
     if (!sorted) sortRows(rows);
     const genreSelect=$('atlas-cross-genre'),previous=genreSelect.value;
-    const labels=new Map();
-    for(const raw of facets){
-      const label=String(raw).trim(), key=label.toLocaleLowerCase('de');
-      if(label && (!labels.has(key) || labels.get(key)===key)) labels.set(key,label);
-    }
-    const options=['',...labels.values()].sort((a,b)=>a.localeCompare(b,'de'));
+    // 0.5.83: the genre selection offers the fixed category list instead of every provider label.
+    const options=['',...CATEGORY_NAMES,...SPECIAL.filter(x=>x!=='Unbekannt')];
     genreSelect.replaceChildren();
     for (const name of options) {
       const option=el('option',name||'Alle Genres');option.value=name;genreSelect.append(option);
@@ -634,8 +638,10 @@
   function loadTree(attempt=0) {
     window.api('catalog-tree').then(data => {
       const before=medTree.length;
-      medTree=(data.tree||[]).filter(entry=>entry&&entry.genre);
+      // 0.5.83: fixed categories for the shared catalogue; the raw genre tree stays in Verwaltung.
+      medTree=(data.categories||[]).filter(entry=>entry&&entry.genre);
       medGenres=medTree.map(entry=>entry.genre);
+      if (Array.isArray(data.category_names)&&data.category_names.length) CATEGORY_NAMES=data.category_names;
       // 0.5.55: only repaint when the genre tree arrived; every retry used to reload the catalogue.
       if(medTree.length!==before&&(source==='all'||source==='mediatheken')) refresh();
       if((data.loading||!medTree.length) && attempt<20) setTimeout(()=>loadTree(attempt+1),3000);
