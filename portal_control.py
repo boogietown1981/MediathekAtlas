@@ -210,7 +210,7 @@ def fetch_scope_page(scope):
     page=int(scope['cursor'])
     params=[('q',query),('output','json'),('rows',str(PER_PAGE)),('page',str(page))]
     params.extend(('fl[]',field) for field in
-                  ('identifier','title','year','date','description','language','licenseurl','rights'))
+                  ('identifier','title','year','date','description','language','licenseurl','rights',portals.UPLOADER_FIELD))
     url='https://archive.org/advancedsearch.php?'+urllib.parse.urlencode(params)
     with core.open_url(url,timeout=25) as response:
         data=response.read(portals.MAX_RESPONSE_BYTES+1)

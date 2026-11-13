@@ -28,6 +28,7 @@ import time
 from collections import Counter
 from pathlib import Path
 
+import diagnostics
 import portal_enrichment as engine
 from vendor.archive_portals import anime_match
 from vendor.archive_portals import catalog_identity as identity_rules
@@ -333,6 +334,11 @@ def loop(root, settings, slots, stop, main_db, *, gap=6.0, idle=1800.0):
     def todo(r, *a, **kw):
         with main_db() as c:
             sync(r, c)
+            # ArchiveMedia uploader_priority: note the accounts of recognised works (paused).
+            import archive_uploaders
+            noted = archive_uploaders.background(r, c)
+        if noted and noted['new']:
+            diagnostics.event('archive_uploaders_noted', new=noted['new'], works=noted['works'])
         return pending(r, *a, **kw)
     return shared.loop(root, settings, slots, stop, gap=gap, idle=idle,
                        enrich_one=lambda r, i, s, **kw: enrich(r, i, s, **kw), pending_fn=todo, name='archive')

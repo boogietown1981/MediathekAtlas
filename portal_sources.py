@@ -149,6 +149,16 @@ def manual_netzkino(title,url,year=None):
                  evidence='manually_entered_film_link')
 
 
+UPLOADER_FIELD='_uploader_useritem'
+
+
+def uploader_account(value):
+    """Public Archive.org account of an upload ('@name') or ''. Never the uploader's e-mail."""
+    if isinstance(value,list):value=value[0] if len(value)==1 else ''
+    value=str(value or '').strip()
+    return value if re.fullmatch(r'@[A-Za-z0-9_.-]{2,80}',value) else ''
+
+
 def archive_query(query,rows=20):
     raw=text(query,120)
     words=re.findall(r'[\w-]{2,}',raw,flags=re.UNICODE)
@@ -160,7 +170,7 @@ def archive_query(query,rows=20):
     n=max(1,min(MAX_SEARCH_RESULTS,int(rows)))
     params=[('q',clause),('output','json'),('rows',str(n)),('page','1')]
     params.extend(('fl[]',field) for field in (
-        'identifier','title','year','date','description','language','licenseurl','rights'))
+        'identifier','title','year','date','description','language','licenseurl','rights',UPLOADER_FIELD))
     return 'https://archive.org/advancedsearch.php?'+urllib.parse.urlencode(params)
 
 
@@ -185,6 +195,7 @@ def archive_document(doc):
                    raw.get('rights'),evidence='official_archive_search_metadata')
         item['language_claim']=text(raw.get('language'),120)
         item['language_evidence']='archive_search_metadata' if item['language_claim'] else 'unavailable'
+        item['uploader_account']=uploader_account(raw.get(UPLOADER_FIELD))
         results.append(item)
     return results
 
@@ -256,6 +267,13 @@ def _archive_video_url(identifier,filename):
     filename=_safe_archive_filename(filename)
     quoted='/'.join(urllib.parse.quote(piece,safe='') for piece in filename.split('/'))
     return ('https://archive.org/download/'+urllib.parse.quote(identifier,safe='')+'/'+quoted)
+
+
+def _pixels(value):
+    """Picture height or width as Archive.org reports it for a file; None when absent or absurd."""
+    try:n=int(float(str(value).strip()))
+    except (TypeError,ValueError):return None
+    return n if 0<n<=20000 else None
 
 
 def archive_detail_document(identifier,doc):
@@ -341,6 +359,7 @@ def archive_detail_document(identifier,doc):
             'format':text(raw.get('format'),100),
             'size_bytes':_file_size(raw.get('size')),
             'duration_seconds':duration,
+            'height':_pixels(raw.get('height')),'width':_pixels(raw.get('width')),
             'duration_source':'Internet Archive file metadata' if duration is not None else None,
             'source':text(raw.get('source'),30),
             'original':text(raw.get('original'),400),
@@ -364,6 +383,7 @@ def archive_detail_document(identifier,doc):
         'year':year_number(meta.get('year') or meta.get('date')),
         'description':archive_identity.clean(meta.get('description'))[:2000],
         'license_url':text(meta.get('licenseurl'),500),
+        'uploader_account':uploader_account(meta.get(UPLOADER_FIELD) or doc.get(UPLOADER_FIELD)),
         'rights':text(meta.get('rights'),500),
         'upload_language_codes':hints['archive_language_codes'].split(',') if hints['archive_language_codes'] else [],
         'upload_audio_hint_languages':hints['audio_hint_languages'].split(',') if hints['audio_hint_languages'] else [],

@@ -710,6 +710,86 @@ function archiveDownloadButton(itemId,v,manifest){
   wrap.append(btn,state);
   return wrap;
 }
+// 0.5.88 (ArchiveMedia selection_matrix): one file per episode, chosen by wishes, loaded in one go.
+const ARCHIVE_LANGUAGE_NAMES={de:'Deutsch',en:'Englisch',fr:'Französisch',es:'Spanisch',it:'Italienisch',ja:'Japanisch',ru:'Russisch',pl:'Polnisch',nl:'Niederländisch',pt:'Portugiesisch',tr:'Türkisch',sv:'Schwedisch'};
+function archiveSizeLabel(bytes){
+  if(!bytes)return 'Größe unbekannt';
+  return bytes>=1073741824?(bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:1})+' GiB':(bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:0})+' MiB';
+}
+function archiveSelectionPanel(itemId,manifest){
+  const variants=manifest.video_variants||[];
+  const panel=document.createElement('details');panel.className='archive-selection';
+  const series=variants.some(v=>v.kind==='series');
+  panel.append(el('summary',series?'Staffeln und Folgen auswählen ('+variants.length+' Dateien)':'Mehrere Dateien auswählen ('+variants.length+')'));
+  panel.append(el('p','Sag, was du möchtest. Je Folge wird die beste passende Datei genommen; du siehst vorher, welche das ist und warum andere nicht passen.','muted'));
+  const form=el('div',undefined,'archive-selection-form');
+  const field=(label,node,hint)=>{const wrap=el('label',undefined,'archive-selection-field');wrap.append(el('span',label),node);if(hint)wrap.title=hint;form.append(wrap);return node;};
+  const select=(options)=>{const node=document.createElement('select');for(const [value,text] of options){const o=el('option',text);o.value=value;node.append(o);}return node;};
+  const known=new Set(['de','en']);
+  for(const v of variants)for(const code of [...(v.audio_hint_languages||[]),...(v.subtitle_hint_languages||[]),...(v.sidecar_subtitles||[]).map(x=>x.language)])if(code)known.add(String(code).toLowerCase());
+  for(const code of manifest.upload_audio_hint_languages||[])known.add(String(code).toLowerCase());
+  const languages=[['','egal'],...[...known].sort().map(code=>[code,ARCHIVE_LANGUAGE_NAMES[code]||code.toUpperCase()])];
+  const audio=field('Tonsprache',select(languages));
+  const subtitle=field('Untertitel',select(languages));
+  const mode=field('Auflösung',select([['any','beste verfügbare'],['at_least','mindestens'],['exact','genau'],['at_most','höchstens']]));
+  const height=field('Bildhöhe',select([['0','–'],['480','SD (480p)'],['720','HD (720p)'],['1080','Full HD (1080p)'],['1440','1440p'],['2160','4K (2160p)']]));
+  const format=field('Dateiformat',select([['','egal'],['.mkv','MKV'],['.mp4','MP4'],['.avi','AVI'],['.webm','WebM'],['.m4v','M4V'],['.mov','MOV'],['.ts','TS'],['.mpg','MPG'],['.ogv','OGV']]));
+  const season=field('Staffel',select([['','alle']]));
+  season.parentNode.hidden=!series;
+  const tick=(text,hint)=>{const wrap=el('label',undefined,'archive-selection-tick');const box=document.createElement('input');box.type='checkbox';wrap.append(box,document.createTextNode(' '+text));wrap.title=hint;form.append(wrap);return box;};
+  const verified=tick('Sprache muss durch die Tonspur belegt sein','Ohne Haken genügt die Sprachangabe im Dateinamen. Mit Haken zählen nur Dateien, deren Spuren mit „Format und Tonspuren prüfen“ gelesen wurden.');
+  const originals=tick('Nur Originaldateien','Lässt Fassungen weg, die Archive.org selbst umgerechnet hat.');
+  mode.onchange=()=>{height.disabled=mode.value==='any';if(mode.value!=='any'&&height.value==='0')height.value='720';if(mode.value==='any')height.value='0';};
+  mode.onchange();
+  const wishes=()=>({audio:audio.value?[audio.value]:[],subtitle:subtitle.value?[subtitle.value]:[],resolution_mode:mode.value,height:Number(height.value),format:format.value,
+    verified:verified.checked,originals:originals.checked,season:season.value===''?null:Number(season.value)});
+  const show=el('button','Auswahl anzeigen','portal-verify');show.type='button';form.append(show);
+  panel.append(form);
+  const out=el('div',undefined,'archive-selection-result');panel.append(out);
+  const render=result=>{
+    out.replaceChildren();
+    if(series&&season.options.length===1)for(const n of result.seasons||[]){const o=el('option','Staffel '+n);o.value=String(n);season.append(o);}
+    const head=el('p',countLabel(result.matched)+' von '+countLabel(result.rows.length)+(series?' Folgen':' Filmen')+' mit passender Datei'+
+      (result.unassigned_files?' · '+countLabel(result.unassigned_files)+' Dateien ohne erkennbare Folge (einzeln unten ladbar)':''),'portal-evidence');
+    out.append(head);
+    if(!result.complete)out.append(el('p','Der Dateibestand dieses Uploads ist nur teilweise bekannt; weitere Folgen können fehlen.','portal-warning'));
+    const table=el('table',undefined,'archive-selection-table');
+    const top=el('tr');for(const text of ['',series?'Folge':'Film','Datei','Qualität','Ton','Größe'])top.append(el('th',text));
+    const all=document.createElement('input');all.type='checkbox';all.checked=true;all.title='Alle an- oder abwählen';top.firstChild.append(all);
+    table.append(top);
+    const boxes=[];
+    for(const row of result.rows){
+      const tr=el('tr');tr.className=row.filename?'':'archive-selection-missing';
+      const pick=el('td');
+      if(row.filename){const box=document.createElement('input');box.type='checkbox';box.checked=true;box.value=row.filename;box.dataset.bytes=row.size_bytes||0;boxes.push(box);pick.append(box);}
+      tr.append(pick,el('td',series?'S'+String(row.season).padStart(2,'0')+'E'+String(row.episode).padStart(2,'0'):(row.title||'Film')));
+      if(row.filename){
+        tr.append(el('td',row.filename),el('td',[row.quality?row.quality+'p':'Auflösung unbekannt',(row.format||'').replace('.','').toUpperCase()].filter(Boolean).join(' · ')),
+          el('td',row.audio.length?archiveLanguages(row.audio)+(row.audio_proven?' (Tonspur)':' (Dateiname)'):'unbekannt'),el('td',archiveSizeLabel(row.size_bytes)));
+      }else{
+        const why=el('td',Object.entries(row.reasons).map(([text,n])=>n+' × '+text).join(' · ')||'Keine Datei');why.colSpan=4;tr.append(why);
+      }
+      table.append(tr);
+    }
+    out.append(table);
+    const load=el('button','','portal-download');load.type='button';
+    const state=el('small','','muted');
+    const count=()=>{const chosen=boxes.filter(b=>b.checked);const bytes=chosen.reduce((sum,b)=>sum+Number(b.dataset.bytes),0);
+      load.textContent='⬇ '+chosen.length+(chosen.length===1?' Datei':' Dateien')+' herunterladen'+(bytes?' (etwa '+archiveSizeLabel(bytes)+')':'');load.disabled=!chosen.length;};
+    all.onchange=()=>{for(const b of boxes)b.checked=all.checked;count();};
+    for(const b of boxes)b.onchange=count;
+    count();
+    load.onclick=()=>busy(load,async()=>{
+      const r=await api('archive-selection-download',{id:itemId,criteria:result.criteria,picks:boxes.filter(b=>b.checked).map(b=>b.value)});
+      state.textContent=countLabel(r.created)+' vorgemerkt'+(r.existing?', '+countLabel(r.existing)+' waren schon vorhanden oder vorgemerkt':'')+(r.failed.length?', '+r.failed.length+' abgelehnt: '+r.failed[0].error:'')+'.';
+      notice(r.created?countLabel(r.created)+' Archive.org-Downloads vorgemerkt.':'Nichts Neues vorgemerkt.',r.failed.length&&!r.created?'error':'info');
+    }).then(count);
+    out.append(load,state,el('p',result.note,'muted'));
+  };
+  const refresh=()=>busy(show,async()=>render(await api('archive-selection',{id:itemId,criteria:wishes()})));
+  show.onclick=refresh;
+  return panel;
+}
 function showArchiveManifest(host,manifest,probes={},itemId=''){
   host.replaceChildren();
   if(!manifest||typeof manifest!=='object'){
@@ -751,6 +831,7 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
   if(manifest.upload_audio_hint_languages?.length)
     host.append(el('p','Audio-Hinweis aus Upload-Titel: '+
       archiveLanguages(manifest.upload_audio_hint_languages)+' (ungeprüft)','muted'));
+  if(itemId&&(manifest.video_variants||[]).length>1)host.append(archiveSelectionPanel(itemId,manifest));
   const consent=el('label',undefined,'portal-consent');
   const checkbox=document.createElement('input');
   checkbox.type='checkbox';
@@ -884,6 +965,7 @@ function displayPortalControls(data){
   for(const scope of data.archive_scopes||[]){
     const card=el('article',undefined,'platform-scope-item');
     card.append(el('strong',portalScopeTitle(scope.kind)+' · '+scope.scope));
+    if(scope.label&&scope.label!==scope.scope)card.append(el('small',scope.label+' · automatisch vorgemerkt, startet erst auf deinen Klick','muted'));
     card.append(el('small','Status '+scope.state+' · Priorität '+scope.priority+
       ' · Seiten '+scope.pages_done+' · Importiert '+scope.imported));
     card.append(el('small','Nächste Seite '+scope.cursor+' · Budget '+scope.page_budget+' Seiten pro Start'));

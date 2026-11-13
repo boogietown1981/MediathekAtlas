@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.5.85
+# MediathekAtlas · 0.5.88
+
+## Neu in 0.5.88: Ganze Staffeln von Archive.org laden, Uploader erkannter Werke vormerken
+
+- **Staffeln und Folgen auswählen.** Bisher musste bei einem Upload mit vielen Dateien jede Folge einzeln angeklickt werden. In der Detailansicht eines Archive.org-Uploads (Plattformen → Internet Archive → „Dateibestand prüfen“) gibt es jetzt den Bereich „Staffeln und Folgen auswählen“: Tonsprache, Untertitel, Auflösung, Dateiformat und Staffel wählen, „Auswahl anzeigen“ zeigt je Folge die beste passende Datei und bei fehlenden Folgen den Grund. Mit einem Klick werden die angehakten Dateien vorgemerkt (höchstens 300 auf einmal). Eine Sprache aus dem Dateinamen gilt als Hinweis; mit „Sprache muss durch die Tonspur belegt sein“ zählen nur Dateien, deren Spuren geprüft wurden.
+- **Uploader erkannter Werke.** Wer einen erkannten Film oder eine erkannte Serie hochgeladen hat, hat oft mehr davon. Das öffentliche Archive.org-Konto solcher Uploads wird als Scanquelle vorgemerkt (Plattformen → Internet Archive → Scanquellen, mit dem Hinweis „Uploader von …“). Vorgemerkte Konten sind pausiert und werden erst durchsucht, wenn du sie startest; ein entferntes Konto kommt nicht wieder. E-Mail-Adressen von Uploadern werden nie gelesen oder gespeichert.
+- 0.5.86 und 0.5.87 sind von anderen Arbeitssträngen reserviert und noch nicht erschienen; 0.5.88 baut auf 0.5.85 auf.
 
 ## Neu in 0.5.85: Joyn lädt den Katalog wieder vollständig
 

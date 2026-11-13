@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.88 – Staffel-Auswahl und Uploader (13. November 2026)
+- Automatisch: gesamte Python-Suite (SUITE_COUNT Tests); neu `tests/test_v0588_archive_selection.py` (13 Tests): Wünsche und Ablehnung falscher Werte, eine Datei je Folge, Gründe bei fehlenden Folgen, belegte Tonspur vor Dateiname, Filme je Dateifamilie, nur Gewinner werden vorgemerkt (auch bei fremden Dateinamen in der Auswahl), Obergrenze 300, Bildhöhe und öffentliches Konto aus dem Manifest (E-Mail landet nicht im Ergebnis), Konten einmalig und pausiert, entfernte Konten bleiben weg, eigene Quellen behalten ihre Einstellungen, Hintergrundlauf gedrosselt.
+- Im Browser (Chromium): CLICK_RESULT
+- Nicht geprüft: gegen Archive.org selbst (aus der Bauumgebung gesperrt). Offen ist damit, ob die Suche das Feld `_uploader_useritem` über `fl[]` tatsächlich liefert (Archive Media fragt es über die Scrape-Schnittstelle ab) und wie oft Archive.org die Bildhöhe je Datei angibt. Fehlt das Konto, wird nichts vorgemerkt; fehlt die Höhe, gilt die Auflösung als unbekannt. Safari, Firefox, echtes Windows, NAS-Hardware wie bisher ungeprüft.
+
 ## 0.5.85 – Joyn-Abruf (13. November 2026)
 - Automatisch: gesamte Python-Suite (948 Tests); neu `JoynRetry` in `tests/test_v0565_joyn.py` (eine Seite fällt einmal aus, ein Genre fällt zweimal aus, dauerhafter Ausfall mit Grund und Wiederholung nach einer Stunde).
 - Nicht geprüft: gegen Joyn selbst (aus der Bauumgebung gesperrt). Ob der Katalog bei Björn wieder vollständig lädt, zeigt sein nächster Abruf; warum Joyn am 12.11. langsam antwortete, ist aus der Diagnose nicht erkennbar.

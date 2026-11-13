@@ -25,7 +25,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 
 ## Fehlend aus Archive Media 0.10.53 (17 von 36 Modulen)
 
-selection_matrix (Staffel-Auswahl), uploader_priority und discovery_queue (Uploader weiterverfolgen), clean_scan, scan_recovery, catalog_fallback, catalog_transfer, bluray_playlist, multi_catalog, catalog_taxonomy, catalog_enrichment (Audio, Bücher, Software), clean_rebuild, live_telemetry (entfällt, als Protokoll vorhanden). `container_tracks` liegt bei, wird aber nicht aufgerufen.
+Übernommen in 0.5.88: selection_matrix (Staffel-Auswahl, `archive_selection.py`), uploader_priority (Uploader erkannter Werke vormerken, `archive_uploaders.py`; discovery_queue entspricht den vorhandenen Scanquellen in `portal_control`). Noch offen: clean_scan, scan_recovery, catalog_fallback, catalog_transfer, bluray_playlist, multi_catalog, catalog_taxonomy, catalog_enrichment (Audio, Bücher, Software), clean_rebuild, live_telemetry (entfällt, als Protokoll vorhanden). `container_tracks` liegt bei, wird aber nicht aufgerufen.
 
 ## Fehlend aus HomeTube 0.1.0-dev.1, MeshSync und Jellyfin Encoder
 
