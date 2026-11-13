@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.104 – Korrekturen nach Diagnose (13. November 2026)
+- Grundlage: Björns Diagnose (0.5.102, macOS): Plex 0 Titel (`/library/sections` → 404), RTL+ 144 Titel „teilweise“ (404), ServusTV-Abruf lief gerade, alter WordPress-Fehler stand noch da; alle Hosts per DNS/TLS erreichbar. Björns Bildschirmfoto: RTL+-Filmlink endet auf „Diese Seite existiert nicht“.
+- Automatisch: gesamte Python-Suite (1121 Tests, 3 übersprungen), dazu Node-Smoke-Tests und Klicktest Chromium (siehe Commit). Neue Fälle gegen nachgebaute Antworten.
+- Nicht geprüft: echte Plex-Hubs, echte RTL+-Linkadressen (kein Mitschnitt von plus.rtl.de; die Bauumgebung erreicht plus.rtl.de nicht).
+
 ## 0.5.102 – RTL+ als Katalog, ServusTV nach HAR (13. November 2026)
 - Automatisch: gesamte Python-Suite (1118 Tests, 3 übersprungen; der Bündeltest `test_runtime` braucht den neu gebauten macOS-Ordner), alle Node-Smoke-Tests, Klicktest `tests/browser/click_all.cjs` in Chromium (ohne Befund). `tests/test_v0601_servustv.py` (11 Tests) gegen Antworten im Aufbau von Björns Mitschnitt: Katalog über Seiten, Leisten und Sendungen mit Seitenwechsel (Offset 0/20), `reference`-Leiste übersprungen, Bildvorlage, Sendungs-Ids aus Karte bzw. Name, Clips ausgelassen, Fehler behält den Katalog, Live-Rückfall; Wiedergabe (Jugendschutz, Geosperre, Kopierschutz gemerkt, Live-Kanal), `streaming.resolve`, Titelseite. `tests/test_v0602_rtlplus.py` (9 Tests): Gast-Zugang, Ordner und Folgeseiten, Premium nur gezählt, Genres, Links, signierte Bilder, Erneuerung nach 401, Teilfehler und Ausfall behalten den Katalog, nie abspielbar, nur RTL-Hosts.
 - Im Browser (Chromium, echter Server, Kataloge aus den nachgebauten Schnittstellen): Reiter ServusTV mit 1 Film, 2 Sendungen, 2 Live-Sendern („Live ansehen“); Reiter RTL+ mit 2 Filmen und 3 Serien, Kacheln mit „Bei RTL+ ansehen“ statt „Ansehen“, Titelseite mit „🔒 Kopiergeschützt · nur bei RTL+“; Dashboard-Quellen ServusTV (mit Live-Leiste) und RTL+; Reiter Live-TV mit ServusTV · 2. Keine Skriptfehler, keine fehlgeschlagenen Anfragen.

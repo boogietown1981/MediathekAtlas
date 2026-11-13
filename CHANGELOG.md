@@ -1,3 +1,9 @@
+## 0.5.104 – Plex, RTL+ und ServusTV nach Björns Diagnose (13.11.2026)
+- Plex: `/library/sections` antwortet Gästen mit 404 → Katalog aus `/hubs` und `/hubs/promoted`, jede Leiste über `X-Plex-Container-Start` geblättert (`_read_hubs`, auch für den bisherigen Bereichs-Rückfall). Leisten-Schlüssel mit voller `vod.provider.plex.tv`-Adresse werden angenommen.
+- RTL+: Kachel mit Ziel `video` verweist auf das Programm (`parent.id`/`parent.seo`); Folgeseiten eines Blocks mit 404 beenden nur diesen Block; Unterordner (Ziel `folder`) werden mitgelesen (bis 60 Ordner, verschwundene Unterordner still übersprungen); Fehlermeldung nennt den Ordner; Diagnose-Ereignis mit Ordnerzahl und 404-Zählern.
+- ServusTV: veraltete WordPress-/Sitemap-Fehler von 0.5.101 werden beim Start gelöscht; Fortschrittsereignis `servustv_sync_progress` alle 200 Anfragen (nur Zahlen).
+- Tests: Plex (Hubs bei 404), RTL+ (Video-Kachel, Unterordner, Block-404, Ordnername), ServusTV (alter Fehler gelöscht).
+
 ## 0.5.102 – RTL+ als Katalog mit Links, ServusTV auf den echten Schnittstellen
 - Björn (13.11.2026, Entscheidung „Beides“): RTL+ als Katalog mit Links; ServusTV nach Björns HAR von servustv.com (13.11.2026) ausgerichtet.
 - `servustv.py` neu geschrieben: Katalog aus `tv-api.redbull.com/products/v5.3/stv/de/de/<id>` (Seite/Sendung → `collections`) und `/collections/v5.3/stv/de/de/<id>?offset=<n>` (`cards`, 20 je Seite, `meta.total`/`meta.next`). Start bei `sendungen` und `discover`, folgt Unterseiten (Kategorien) und Sendungen; `reference`-Leisten werden übersprungen. Karten `show`/`episode`/`film` werden Sendungen, Folgen (Staffel/Folge) und Filme; Folgen ohne Sendungs-Id werden über `show_name` gruppiert (`s.n-<name>`). Clips, Trailer und kurze Videos ohne Sendung bleiben draußen. Bilder aus `resources.redbull.tv` (`{im}` → `im:i:w_480,q_70`). Grenzen: 600 Seiten/Sendungen, 1500 Leisten, 60 Seiten je Leiste.

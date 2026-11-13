@@ -68,7 +68,12 @@ class FakeRtl:
                 raise urllib.error.HTTPError(url, 500, 'Server Error', {}, None)
             return json.dumps({'blocks': [block('shows', [entry(301, 'Eine Show', highlight='Reality')])]}).encode()
         if path == '/folder/148/layout':
-            return json.dumps({'blocks': [block('kids', [entry(201, 'Freie Serie'), entry(401, 'Kinderserie', highlight='Zeichentrick')])]}).encode()
+            return json.dumps({'blocks': [block('kids', [entry(201, 'Freie Serie'), entry(401, 'Kinderserie', highlight='Zeichentrick'),
+                                                         entry(777, 'Genre Zeichentrick', 'folder'), entry(778, 'Alter Ordner', 'folder')], 5)]}).encode()
+        if path == '/service/rtlplus_root/block/kids':
+            raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)     # Björn's diagnosis: 404 on a further page
+        if path == '/folder/777/layout':
+            return json.dumps({'blocks': [block('genre-777', [entry(402, 'Genre-Serie'), entry(4, 'Filme', 'folder')])]}).encode()
         raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
 
     @staticmethod
@@ -88,18 +93,26 @@ class RtlPlusTest(unittest.TestCase):
     def test_catalogue_lists_free_titles_and_counts_premium(self):
         fake = FakeRtl()
         result = rtlplus.sync(self.root, opener=fake, now=NOW)
-        self.assertEqual(result, {'ok': True, 'partial': False, 'movies': 2, 'series': 3, 'premium': 2})
+        self.assertEqual(result, {'ok': True, 'partial': False, 'movies': 2, 'series': 4, 'premium': 2})
         movies = rtlplus.listing(self.root, 'movies')
         self.assertEqual([i['title'] for i in movies['items']], ['Ein freier Film', 'Zweiter freier Film'])
         series = {i['id']: i for i in rtlplus.listing(self.root, 'series')['items']}
-        self.assertEqual(set(series), {'s.201', 's.301', 's.401'})
+        self.assertEqual(set(series), {'s.201', 's.301', 's.401', 's.402'})   # 402 from the linked genre folder
+        self.assertEqual(sum(1 for c in fake.calls if '/folder/4/layout' in c), 1)
         self.assertEqual(series['s.301']['web_url'], 'https://plus.rtl.de/video-tv/shows/titel-301-301')
         self.assertIn('Kinder', series['s.401']['genre'])
         self.assertNotIn('2024', series['s.201']['genre'])
         self.assertTrue(all(i['playable'] == 0 and i['drm'] == 1 for i in series.values()))
         self.assertTrue(any('/service/rtlplus_root/block/filme-neu' in c for c in fake.calls))
         state = rtlplus.state(self.root)
-        self.assertEqual((state['movies'], state['series'], state['premium'], state['last_result']), (2, 3, 2, 'complete'))
+        self.assertEqual((state['movies'], state['series'], state['premium'], state['last_result']), (2, 4, 2, 'complete'))
+
+    def test_video_tile_links_to_its_programme(self):
+        tile = entry(1417600, 'Ein Film', 'video')
+        tile['itemContent']['action']['target']['value_layout']['parent'] = {'id': '9001', 'seo': 'ein-film'}
+        it, locked = rtlplus.item_from(tile, 'movie', 'filme')
+        self.assertEqual((it['id'], it['path'], locked), ('m.9001', '9001', False))
+        self.assertEqual(it['web_url'], 'https://plus.rtl.de/video-tv/filme/ein-film-9001')
 
     def test_signed_images(self):
         url = rtlplus.image_url('img101')
@@ -121,7 +134,7 @@ class RtlPlusTest(unittest.TestCase):
         self.assertTrue(result['ok'] and result['partial'])
         state = rtlplus.state(self.root)
         self.assertEqual(state['last_result'], 'partial')
-        self.assertIn('HTTP 500', state['last_error'])
+        self.assertIn('Shows: RTL+ antwortet mit HTTP 500', state['last_error'])
         # The show from the earlier full load stays visible.
         self.assertIn('s.301', {i['id'] for i in rtlplus.listing(self.root, 'series')['items']})
 

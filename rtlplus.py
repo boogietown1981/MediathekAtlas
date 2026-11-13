@@ -51,9 +51,11 @@ API_HOSTS = frozenset({'auth.rtl.de', 'front-auth.rtlde.bedrock.tech', 'layout.r
 # folder id -> (catalogue kind, path segment on plus.rtl.de, provider genre)
 FOLDERS = (('4', 'movie', 'filme', ''), ('3', 'series', 'serien', ''), ('1', 'series', 'shows', 'Show'),
            ('148', 'series', 'serien', 'Kinder'))
+FOLDER_NAMES = {'4': 'Filme', '3': 'Serien', '1': 'Shows', '148': 'Kids'}
 MAX_ANSWER = 16 * 1024 * 1024
 MAX_ITEMS = 20000
 MAX_BLOCK_PAGES = 40
+MAX_FOLDERS = 60            # main folders plus the genre folders they link to
 REQUEST_GAP = 0.4
 USER_AGENT = 'Mozilla/5.0 (Windows NT 10.0; Win64; x64; rv:140.0) Gecko/20100101 Firefox/140.0'
 VALID_ID = re.compile(r'[ms]\.\d{1,12}')
@@ -245,7 +247,12 @@ def item_from(entry, kind, section, genre=''):
     layout, locked = _target(content)
     if layout.get('type') not in ('program', 'video'):
         return None
-    ident = str(layout.get('id') or '')
+    ident, seo = str(layout.get('id') or ''), str(layout.get('seo') or '')
+    parent = layout.get('parent') if isinstance(layout.get('parent'), dict) else {}
+    if layout.get('type') == 'video' and re.fullmatch(r'\d{1,12}', str(parent.get('id') or '')):
+        # 0.5.104 (Björn: film links ended on "Diese Seite existiert nicht"): a tile that leads to a
+        # video names the video, but plus.rtl.de pages belong to the programme (``parent``).
+        ident, seo = str(parent['id']), str(parent.get('seo') or '')
     title = _text(content.get('title') or content.get('extraTitle') or '', 200)
     if not re.fullmatch(r'\d{1,12}', ident) or not title:
         return None
@@ -253,7 +260,6 @@ def item_from(entry, kind, section, genre=''):
     genres = [g.strip() for g in highlight.split('•') if g.strip() and not re.search(r'\d', g)][:4]
     if genre and genre not in genres:
         genres.append(genre)
-    seo = str(layout.get('seo') or '')
     return {'id': ('m.' if kind == 'movie' else 's.') + ident, 'kind': kind, 'title': title, 'path': ident,
             'series_id': '', 'season': None, 'episode': None, 'year': None, 'duration': None, 'rating': '',
             'genre': ', '.join(genres), 'summary': _text(content.get('description') or content.get('subtitle'), 1600),
@@ -281,9 +287,25 @@ def _next_page(block):
     return _int(pagination.get('nextPage'), 1, 100000)
 
 
-def load_folder(api, folder, kind, section, genre, gap, found, locked_ids):
-    """All titles of one folder, block by block; False when it stopped early."""
+def folder_target(entry):
+    """Id of a sub-folder (e.g. a genre) an item leads to, or ''."""
+    if not isinstance(entry, dict) or entry.get('itemType') != 'classic':
+        return ''
+    content = entry.get('itemContent') if isinstance(entry.get('itemContent'), dict) else {}
+    layout, _ = _target(content)
+    ident = str(layout.get('id') or '')
+    if layout.get('type') == 'folder' and re.fullmatch(r'\d{1,9}', ident):
+        return ident
+    return ''
+
+
+def load_folder(api, folder, kind, section, genre, gap, found, locked_ids, subfolders=None, stats=None):
+    """All titles of one folder, block by block; False when it stopped early.
+
+    A further block page that answers 404 ends that block (0.5.104, Björn's diagnosis: one 404 made
+    the whole run "partial"); sub-folders the folder links to are collected in ``subfolders``."""
     complete = True
+    stats = stats if stats is not None else {}
     answer = api.layout('/folder/%s/layout' % folder, {'blockPage': 1, 'nbPages': 3}, SITE + '/video-tv/' + section)
     for block in _blocks(answer):
         if block.get('type') not in (None, 'bffPaginated'):
@@ -292,6 +314,10 @@ def load_folder(api, folder, kind, section, genre, gap, found, locked_ids):
         block_id = str(block.get('id') or block.get('blockId') or '')
         while True:
             for entry in entries:
+                sub = folder_target(entry)
+                if sub and subfolders is not None:
+                    subfolders.append(sub)
+                    continue
                 got = item_from(entry, kind, section, genre)
                 if not got:
                     continue
@@ -307,7 +333,13 @@ def load_folder(api, folder, kind, section, genre, gap, found, locked_ids):
                 break
             if gap:
                 time.sleep(gap)
-            more = api.layout('/service/rtlplus_root/block/%s' % block_id, {'nbPages': 3, 'page': page})
+            try:
+                more = api.layout('/service/rtlplus_root/block/%s' % block_id, {'nbPages': 3, 'page': page})
+            except urllib.error.HTTPError as exc:
+                if exc.code != 404:
+                    raise
+                stats['block_404'] = stats.get('block_404', 0) + 1
+                break
             pages += 1
             inner = _blocks(more)
             entries = [e for b in inner for e in _items(b)]
@@ -343,13 +375,27 @@ def sync(root, opener=None, now=None, gap=None):
     try:
         api = Api(opener)
         api.login()
-        found, locked, partial, notes = {}, set(), False, []
-        for folder, kind, section, genre in FOLDERS:
+        found, locked, partial, notes, stats = {}, set(), False, [], {}
+        queue = [(folder, kind, section, genre, FOLDER_NAMES.get(folder, folder)) for folder, kind, section, genre in FOLDERS]
+        visited = set()
+        while queue and len(visited) < MAX_FOLDERS and len(found) < MAX_ITEMS:
+            folder, kind, section, genre, name = queue.pop(0)
+            if folder in visited:
+                continue
+            visited.add(folder)
+            subfolders = []
             try:
-                partial |= not load_folder(api, folder, kind, section, genre, gap, found, locked)
+                partial |= not load_folder(api, folder, kind, section, genre, gap, found, locked, subfolders, stats)
             except Exception as exc:
+                code = getattr(exc, 'code', None)
+                if code == 404 and folder not in FOLDER_NAMES:
+                    stats['folder_404'] = stats.get('folder_404', 0) + 1   # a linked genre folder that is gone
+                    continue
                 partial = True
-                notes.append(_error(exc))
+                notes.append('%s: %s' % (name, _error(exc)))
+                continue
+            queue += [(sub, kind, section, genre, '%s (Unterordner %s)' % (FOLDER_NAMES.get(folder, name), sub))
+                      for sub in subfolders if sub not in visited]
         locked -= set(found)
         if not found:
             raise ValueError(notes[0] if notes else 'RTL+ lieferte keine kostenlosen Titel')
@@ -369,7 +415,7 @@ def sync(root, opener=None, now=None, gap=None):
                     _set(db, key, value)
         finally:
             db.close()
-        _notify('rtlplus_sync_completed', partial=partial, **counts)
+        _notify('rtlplus_sync_completed', partial=partial, folders=len(visited), **stats, **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)

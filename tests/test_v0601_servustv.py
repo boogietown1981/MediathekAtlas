@@ -228,6 +228,15 @@ class PlaybackTests(Base):
 
 
 class WiringTests(unittest.TestCase):
+    def test_stale_wordpress_error_cleared_on_start(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            db = servustv._connect(tmp)
+            with db:
+                servustv._set(db, 'last_error', 'WordPress: ServusTV ist nicht erreichbar')
+            db.close()
+            servustv.sync(tmp, opener=FakeServus(), now=NOW)
+            self.assertEqual(servustv.state(tmp)['last_error'], '')
+
     def test_wiring(self):
         here = Path(__file__).resolve().parent.parent
         server = (here / 'server.py').read_text(encoding='utf-8')

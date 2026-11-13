@@ -261,6 +261,10 @@ class Crawl:
 
     def _pause(self):
         self.requests += 1
+        if self.requests % 200 == 0:
+            # 0.5.104: progress in the diagnosis (counts only, no titles or addresses)
+            _notify('servustv_sync_progress', requests=self.requests, items=len(self.items),
+                    shows=len(self.shows), errors=len(self.errors))
         if self.gap:
             time.sleep(self.gap)
 
@@ -447,6 +451,9 @@ def sync(root, opener=None, now=None, gap=None):
         with db:
             _set(db, 'last_attempt', now)
             _set(db, 'last_result', 'running')
+            # 0.5.104: errors of the WordPress/sitemap reader of 0.5.101 no longer apply (Björn's diagnosis).
+            if re.match(r'(WordPress|Sitemap)', _get(db, 'last_error')):
+                _set(db, 'last_error', '')
     finally:
         db.close()
     _notify('servustv_sync_started')

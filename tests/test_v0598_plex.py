@@ -31,8 +31,9 @@ def movie(key, title, **extra):
 class FakePlex:
     """Answers of plex.tv, vod.provider.plex.tv and epg.provider.plex.tv."""
 
-    def __init__(self, all_works=True, total=3):
+    def __init__(self, all_works=True, total=3, sections_work=True):
         self.calls, self.tokens, self.all_works, self.total = [], 0, all_works, total
+        self.sections_work = sections_work
         self.refuse_token = None
 
     def fetch_token(self, cid):
@@ -46,6 +47,20 @@ class FakePlex:
         if self.refuse_token and headers.get('X-Plex-Token') == self.refuse_token:
             raise urllib.error.HTTPError(url, 401, 'no', {}, io.BytesIO(b''))
         path = parts.path
+        if path == '/library/sections' and not self.sections_work:
+            raise urllib.error.HTTPError(url, 404, 'no', {}, io.BytesIO(b''))
+        if path == '/hubs':
+            return self.json({'MediaContainer': {'Hub': [
+                {'key': 'https://vod.provider.plex.tv/hubs/home/neu?x=1', 'more': True, 'size': 1,
+                 'Metadata': [movie('top001', 'Top Film')]},
+                {'key': '/hubs/home/serien', 'size': 1, 'Metadata': [
+                    {'ratingKey': 'show002', 'type': 'show', 'title': 'Hub Serie', 'slug': 'hub-serie'}]}]}})
+        if path == '/hubs/promoted':
+            raise urllib.error.HTTPError(url, 404, 'no', {}, io.BytesIO(b''))
+        if path == '/hubs/home/neu':
+            start = int(q['X-Plex-Container-Start'])
+            rows = [movie('top%03d' % i, 'Top Film %d' % i) for i in range(2, 5)] if start == 1 else []
+            return self.json({'MediaContainer': {'Metadata': rows}})
         if path == '/library/sections':
             return self.json({'MediaContainer': {'Directory': [{'key': 'movies-1', 'type': 'movie', 'title': 'Filme'},
                                                                {'key': '/library/sections/shows-1', 'type': 'show', 'title': 'Serien'},
@@ -127,6 +142,13 @@ class PlexTest(unittest.TestCase):
         _, result = self.load(FakePlex(all_works=False))
         self.assertTrue(result['ok'])
         self.assertEqual({r['title'] for r in plex.listing(self.root, 'movies')['items']}, {'Hub Film', 'Hub Film 2'})
+
+    def test_top_level_hubs_when_sections_answer_404(self):
+        # Björn's diagnosis 13.11.2026: /library/sections answered 404, the catalogue stayed empty.
+        fake, result = self.load(FakePlex(sections_work=False))
+        self.assertEqual(result, {'ok': True, 'partial': False, 'movies': 4, 'series': 1, 'channels': 1})
+        self.assertIn(('vod.provider.plex.tv', '/hubs/home/neu'), [c[:2] for c in fake.calls])
+        self.assertNotIn('/hubs/home/serien', [c[1] for c in fake.calls])   # complete preview, no extra page
 
     def test_token_renewed_once_on_401(self):
         fake = FakePlex()

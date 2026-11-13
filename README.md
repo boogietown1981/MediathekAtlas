@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.102
+# MediathekAtlas · 0.5.104
+
+## Neu in 0.5.104: Korrekturen nach Björns Diagnose vom 13.11.
+
+- **Plex** zeigt wieder Filme und Serien: Plex beantwortet die Bereichsliste für Gäste mit „HTTP 404“. Dann liest MediathekAtlas jetzt die Startseiten-Leisten von Plex (wie die Plex-Web-App) und blättert sie vollständig durch.
+- **RTL+**: Kacheln, die direkt auf ein Video zeigen, verlinken jetzt auf die Seite der Sendung bzw. des Films. Weitere Seiten einer Leiste, die RTL+ nicht mehr kennt (HTTP 404), machen den Abruf nicht mehr „teilweise“. Genre-Unterordner werden mitgelesen (mehr Titel). Fehler nennen den Ordner (z. B. „Kids: …“).
+- **ServusTV**: Der alte Hinweis „WordPress: … nicht erreichbar“ aus 0.5.101 verschwindet beim nächsten Abruf. Der erste vollständige Abruf dauert einige Minuten; in der Diagnose steht dabei der Fortschritt.
+- Nicht geprüft: echte Antworten von Plex und RTL+ (aus der Bauumgebung gesperrt). Ob RTL+-Filmlinks jetzt stimmen, zeigt erst der Test bei Björn.
+- 0.5.103 ist vom Kategorien-Thread belegt.
+
 
 ## Neu in 0.5.102: RTL+ als Katalog, ServusTV nach Björns Mitschnitt
 

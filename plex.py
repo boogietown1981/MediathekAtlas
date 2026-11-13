@@ -14,6 +14,8 @@ environment):
   ``/library/sections`` lists the sections (``Directory`` with ``key`` and ``type`` movie/show);
   ``/library/sections/<key>/all`` pages through a section with ``X-Plex-Container-Start/Size``.
   If a section does not answer ``/all``, its hubs (``/hubs/sections/<key>``) are read instead.
+  If ``/library/sections`` itself answers 404 (Björn's diagnosis, 13.11.2026), the top-level hubs
+  ``/hubs`` and ``/hubs/promoted`` are read and paged (0.5.104).
   Episodes: ``/library/metadata/<ratingKey>/allLeaves``. Streams: ``/library/metadata/<ratingKey>``
   -> ``Media[].Part[].key`` (mostly DASH, ``container`` mpd). A part with a ``license`` (Widevine)
   or ``drm`` is protected: no player, no offline copy, only "Bei Plex ansehen". Every other stream
@@ -437,31 +439,63 @@ def _page_all(api, key, gap, found):
     return False
 
 
-def _page_hubs(api, key, gap, found):
-    """Fallback: every hub of a section, each paged."""
-    hubs = _list(_container(api.get(VOD, '/hubs/sections/%s' % key, {'count': PAGE})), 'Hub')
-    for hub in hubs[:60]:
-        for node in _list(hub, 'Metadata'):
-            it = item_from(node)
-            if it:
-                found.setdefault(it['id'], it)
-        path = str(hub.get('key') or '').split('?')[0]
-        if not re.fullmatch(r'/[A-Za-z0-9\-_./]{1,200}', path) or not hub.get('more'):
+def _hub_path(hub):
+    path = str(hub.get('key') or '')
+    if path.startswith(VOD + '/'):
+        path = path[len(VOD):]
+    path = path.split('?')[0]
+    return path if re.fullmatch(r'/[A-Za-z0-9\-_./]{1,200}', path) and '..' not in path else ''
+
+
+def _read_hubs(api, paths, gap, found, query=None):
+    """Every hub of the given hub lists, each paged until it runs dry."""
+    seen = set()
+    for list_path in paths:
+        try:
+            hubs = _list(_container(api.get(VOD, list_path, query)), 'Hub')
+        except urllib.error.HTTPError as exc:
+            if exc.code not in (400, 404) or list_path == paths[0] and len(paths) == 1:
+                raise
             continue
-        start = len(_list(hub, 'Metadata'))
-        for _ in range(40):
-            if gap:
-                time.sleep(gap)
-            entries = _list(_container(api.get(VOD, path, {'X-Plex-Container-Start': start,
-                                                            'X-Plex-Container-Size': PAGE})), 'Metadata')
-            for node in entries:
+        for hub in hubs[:60]:
+            if not isinstance(hub, dict) or len(found) >= MAX_ITEMS:
+                continue
+            listed = _list(hub, 'Metadata')
+            for node in listed:
                 it = item_from(node)
                 if it:
                     found.setdefault(it['id'], it)
-            start += len(entries)
-            if len(entries) < PAGE or len(found) >= MAX_ITEMS:
-                break
+            path = _hub_path(hub)
+            if not path or path in seen:
+                continue
+            seen.add(path)
+            # Paged when Plex says there is more, or when the hub only carries a preview.
+            if listed and not hub.get('more') and len(listed) < PAGE and _int(hub.get('size'), 0) == len(listed):
+                continue
+            start = len(listed)
+            for _ in range(40):
+                if gap:
+                    time.sleep(gap)
+                try:
+                    entries = _list(_container(api.get(VOD, path, {'X-Plex-Container-Start': start,
+                                                                    'X-Plex-Container-Size': PAGE})), 'Metadata')
+                except urllib.error.HTTPError as exc:
+                    if exc.code in (400, 404):
+                        break
+                    raise
+                for node in entries:
+                    it = item_from(node)
+                    if it:
+                        found.setdefault(it['id'], it)
+                start += len(entries)
+                if len(entries) < PAGE or len(found) >= MAX_ITEMS:
+                    break
     return True
+
+
+def _page_hubs(api, key, gap, found):
+    """Fallback: every hub of a section, each paged."""
+    return _read_hubs(api, ['/hubs/sections/%s' % key], gap, found, {'count': PAGE})
 
 
 def _load_live(api):
@@ -490,7 +524,19 @@ def sync(root, opener=None, fetch_token=None, now=None, gap=None):
         api = Api(root, opener, fetch_token)
         found, partial, notes = {}, False, []
         try:
-            for key, _ in sections(api):
+            try:
+                keys = sections(api)
+            except urllib.error.HTTPError as exc:
+                # 0.5.104: Björn's diagnosis – /library/sections answers 404 for guests (13.11.2026).
+                # The free catalogue is then read from the hubs, as the Plex web app does.
+                if exc.code not in (400, 403, 404):
+                    raise
+                keys = []
+                _read_hubs(api, ['/hubs', '/hubs/promoted'], gap, found)
+                if not found:
+                    partial = True
+                    notes.append('Filme/Serien: Plex nennt weder Bereiche (HTTP %d) noch Hubs' % exc.code)
+            for key, _ in keys:
                 try:
                     try:
                         complete = _page_all(api, key, gap, found)
