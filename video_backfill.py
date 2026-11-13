@@ -6,7 +6,6 @@ Only adds evidence to already automatically classified works. No network/ffprobe
 from __future__ import annotations
 import json
 import time
-import sqlite3
 import catalog
 import video_causality
 

@@ -7,6 +7,7 @@
   <button type="button" class="admin-tab" data-view="admin" title="Hintergrundaufgaben starten, pausieren und priorisieren">Aufgaben</button>
   <button type="button" class="admin-tab" data-view="status" title="Bestand, Scan und Werkzuordnung aller Quellen">Status &amp; Abgleich</button>
   <button type="button" class="admin-tab" data-view="display" title="Was Kacheln und Titelseiten zeigen">Darstellung</button>
+  <button type="button" class="admin-tab" data-view="storage" title="Belegter Platz der Downloads, Platzbudget und Aufräum-Vorschlag">Speicher</button>
   <button type="button" class="admin-tab" data-view="review" title="Unklare Zuordnungen prüfen">Zuordnung</button>
   <button type="button" class="admin-tab" data-view="subscriptions">Download-Abos</button>
   <button type="button" class="admin-tab" data-view="legacy" title="Werkkatalog ARD, ZDF &amp; Co. mit Genre-Baum und Zuordnungsfiltern">Werkkatalog</button>
@@ -32,6 +33,21 @@
   <p id="display-status" class="muted" role="status"></p>
   <div class="display-layout"><form id="display-form" class="display-form"></form>
     <div class="display-preview"><h3>Vorschau</h3><div id="display-preview" class="atlas-uc-grid"></div></div></div>
+</section>
+<section id="storage" hidden>
+  <div class="sectionhead"><div><h2>Speicher</h2>
+    <p class="muted">Zeigt, wie viel Platz die Downloads belegen, und schlägt bei gesetztem Platzbudget vor, was gehen kann. MediathekAtlas löscht hier nichts von selbst: Eine Datei verschwindet erst, wenn du sie in dieser Liste löschst und bestätigst. Nie vorgeschlagen werden Titel der Merkliste, angeheftete Titel, innerhalb der Schutzfrist gesehene Titel und neue Downloads, die noch nicht zu Ende gesehen sind. Die 30-Tage-Frist der Plattform-Kopien gilt unabhängig davon weiter.</p></div>
+    <button type="button" id="storage-refresh">Neu messen</button></div>
+  <div id="storage-metrics" class="storage-metrics"></div>
+  <form id="storage-form" class="storage-form" aria-label="Speicherregeln">
+    <label><span>Platzbudget in GB</span><input id="storage-budget" inputmode="decimal" maxlength="9" placeholder="leer = kein Budget" title="So viel Platz dürfen alle Downloads zusammen belegen. Leer oder 0: kein Budget, kein Vorschlag."></label>
+    <label><span>Schutzfrist in Tagen</span><input id="storage-days" type="number" min="7" max="3650" step="1" value="90" title="So lange nach dem Ansehen bzw. nach dem Download wird ein Titel nicht vorgeschlagen."></label>
+    <button type="submit" id="storage-save" class="primary">Speichern</button>
+  </form>
+  <p id="storage-status" class="muted" role="status"></p>
+  <div id="storage-sources" class="storage-sources" aria-label="Belegung je Quelle"></div>
+  <div class="storage-tablewrap"><table class="storage-table"><thead><tr><th>Titel</th><th>Quelle</th><th class="num">Größe</th><th>Geladen</th><th>Zuletzt gesehen</th><th>Status</th><th>Aktionen</th></tr></thead><tbody id="storage-rows"></tbody></table></div>
+  <p id="storage-more" class="muted"></p>
 </section>
 <section id="legacy" hidden>
   <div class="sectionhead"><div><h2>Werkkatalog ARD, ZDF &amp; Co.</h2>
@@ -466,4 +482,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script></body></html>

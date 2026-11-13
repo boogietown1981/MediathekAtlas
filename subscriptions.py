@@ -5,10 +5,8 @@ metadata. All enqueues are atomic and deduplicated by the confirmed media identi
 """
 import datetime
 import json
-import os
 import secrets
 import time
-from pathlib import Path
 
 import catalog
 import core

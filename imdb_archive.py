@@ -1,5 +1,5 @@
 """Personal IMDb dataset snapshot: bounded imports and atomic publication."""
-import csv,gzip,io,json,os,re,shutil,sqlite3,threading,time,unicodedata,urllib.error,socket
+import csv,gzip,json,os,re,shutil,sqlite3,threading,time,unicodedata,urllib.error
 from pathlib import Path
 import core,diagnostics
 WEEK=7*86400

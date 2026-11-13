@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.81 – Merkliste, Weiterschauen, Speicherübersicht (13. November 2026)
+- Automatisch: gesamte Python-Suite; neu `tests/test_v0581_watch_storage.py` (18 Tests): Abspielstand und Merkliste, Abschluss in den letzten 45 Sekunden, ungültige Schlüssel und Werte, Schutzgründe, Reihenfolge und Umfang des Vorschlags, Einstellungen, Löschen genau einer Datei, Ablehnung bei Anheftung und bei Dateien außerhalb des Auftragsordners.
+- Im Browser (Chromium, Testbestand mit 60 Mediathek-Filmen, 449 Netzkino-Titeln und 4 Download-Dateien): Merken in der Kachel, Merkliste und „Weiterschauen“ erscheinen, Stand bleibt nach geleertem Browserspeicher und Neuladen erhalten, „Fortsetzen“ öffnet den Player, „Öffnen“ die Titelseite, „Entfernen“ wirkt; Speicher: Belegung je Quelle, Budget setzt den Vorschlag, Anheften nimmt eine Datei aus dem Vorschlag und sperrt „Löschen“, Löschen entfernt Datei und Ordner, falsche Budget-Eingabe wird abgelehnt; schmale Ansicht (600 px). Keine Skriptfehler.
+- Nicht geprüft: Safari und Firefox (hier läuft nur Chromium); die Rückfälle für ältere Browser sind nur gelesen, nicht in einem alten Browser angesehen. Fortsetzen eines echten Streams (Anbieter aus der Bauumgebung gesperrt). Speicherübersicht mit einer großen echten Bibliothek und auf NAS-Hardware.
+
 ## 0.5.78 – YouTube im eigenen Player, Musikvideos im Katalog (13. November 2026)
 - Automatisch: gesamte Python-Suite; neu in `tests/test_v0571_youtube_music.py`: eigener Player nur mit Schalter (yt-dlp wird sonst nicht gestartet), Aufruf ohne Cookies, Zwischenspeicher, Altersbeschränkung, Fehlermeldung „kein Bot“, ffmpeg-Aufruf mit zwei Eingaben; Auswege im Player, Katalog-Eintrag.
 - Mit echtem ffmpeg: Bild (H.264) und Ton (AAC) von zwei HTTP-Adressen werden beim Abspielen zusammengeführt, auch nach dem Spulen (beide Spuren starten gleich).

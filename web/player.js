@@ -19,7 +19,18 @@ const position=()=>S.mode==='embed'?S.embedPos||0:S.mode==='remux'?S.offset+(vid
 const duration=()=>S.mode==='embed'?S.info?.duration||0:S.mode==='remux'?S.info?.duration||0:(Number.isFinite(video.duration)?video.duration:S.info?.duration||0);
 function episodeKey(item){return item.work_id||item.id;}
 function say(text){status.textContent=text||'';status.hidden=!text;}
-function save(final){if(!S.key||S.info?.live)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});return;}if(p>20)remember(S.key,{pos:p,at:Date.now()});}
+// 0.5.81: the position also goes to the server (watch_state), so "Weiterschauen" works in every browser
+// and on every device that uses this MediathekAtlas; the copy in this browser stays as a fast first answer.
+const REF_SOURCE={offer:'mediatheken',job:'download'};
+function push(key,pos,dur,done){
+ if(!key||key.startsWith('live:')||typeof api!=='function')return;
+ const ref=S.ref||{},name=Object.keys(ref).find(k=>k!=='direct')||'';
+ const info={title:$('player-title').textContent||'',ref,source:REF_SOURCE[name]||name};
+ api('watch-progress',{key,pos:Math.round(pos*10)/10,duration:Math.round((dur||0)*10)/10,done:!!done,info}).then(()=>window.AtlasWatch?.changed?.()).catch(()=>{});
+}
+function save(final){if(!S.key||S.info?.live)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});push(S.key,p,d,true);return;}if(p>20){remember(S.key,{pos:p,at:Date.now()});push(S.key,p,d,false);}}
+// Positions known to the server replace older ones of this browser (called by web/watchlist.js at the start).
+window.AtlasPlayerSync=function(progress){for(const [k,v] of Object.entries(progress||{})){const mine=store(k);if(!mine||(mine.at||0)<(v.at||0))remember(k,v.done?{done:true,at:v.at}:{pos:v.pos,at:v.at});}};
 function streamUrl(t){return S.info.remux+'&'+new URLSearchParams({t:t.toFixed(1),session:S.session,token,quality:S.level||wish()});}
 // 0.5.63: quality of the playback. The wish ('auto', 'max' or a picture height) is remembered on this
 // device. "Automatisch" loads at most 720p and steps down one level when the stream keeps waiting.
@@ -209,6 +220,8 @@ window.playJustWatch=function(id,label){S.list=[];S.index=-1;return open({justwa
 window.playYouTube=function(id,label){S.direct=false;S.list=[];S.index=-1;return open({youtube:id},label||'YouTube','youtube:'+id);};
 // 0.5.71: a music playlist plays video after video (embedded player or offline copy), with "Nächstes Video".
 window.playYouTubeList=function(items,start){S.direct=false;S.list=(items||[]).filter(x=>x&&x.id).map(x=>({youtube:x.id,label:x.label}));if(!S.list.length)return;return playIndex(Math.min(Math.max(0,start|0),S.list.length-1));};
+// 0.5.81: "Weiterschauen" opens a title again by the reference and key the player stored for it.
+window.playRef=function(ref,label,key){S.direct=false;S.list=[];S.index=-1;return open(ref,label||'Video',key);};
 window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:id},label||'Rakuten TV','rakuten:'+id);};
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};
@@ -216,7 +229,7 @@ window.playable=function(item){return !!(item&&(item.series_parent||item.downloa
 function close(){S.call++;save();sendStats();stopVideo();qualityBox.hidden=true;S.key='';if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(dialog.open)dialog.close();}
 $('player-close').onclick=close;dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
 $('player-next').onclick=()=>{save('ended');playIndex(S.index+1);};
-$('player-restart').onclick=()=>{remember(S.key,null);$('player-restart').hidden=true;if(S.mode==='embed'){startEmbed(S.info,0);return;}S.mode==='remux'?startRemux(0):seek(0);};
+$('player-restart').onclick=()=>{remember(S.key,null);if(S.key&&typeof api==='function')api('watch-forget',{key:S.key}).then(()=>window.AtlasWatch?.changed?.()).catch(()=>{});$('player-restart').hidden=true;if(S.mode==='embed'){startEmbed(S.info,0);return;}S.mode==='remux'?startRemux(0):seek(0);};
 toggle.onclick=()=>video.paused?video.play().catch(()=>{}):video.pause();
 $('player-mute').onclick=()=>{video.muted=!video.muted;$('player-mute').textContent=video.muted?'🔇':'🔊';};
 $('player-full').onclick=()=>{const box=$('player-stage');document.fullscreenElement?document.exitFullscreen().catch(()=>{}):(box.requestFullscreen?box.requestFullscreen().catch(()=>{}):video.webkitEnterFullscreen?.());};

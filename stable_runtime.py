@@ -1,5 +1,5 @@
 """Copy executable resources out of transient macOS app locations before launch."""
-import hashlib,os,shutil,sys,tempfile
+import hashlib,shutil,sys,tempfile
 from pathlib import Path
 
 def prepare(source,state):

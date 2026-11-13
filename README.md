@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.5.78
+# MediathekAtlas · 0.5.81
+
+## Neu in 0.5.81: Merkliste, „Weiterschauen“ auf jedem Gerät und Speicherübersicht
+
+- Jede Film- und Serienkachel hat den Schalter „☆ Merken“. Gemerkte Titel stehen im Dashboard unter „Merkliste“.
+- „Weiterschauen“ im Dashboard zeigt angefangene Titel mit Fortschritt. Der Abspielstand liegt jetzt in MediathekAtlas statt nur im Browser; ein anderer Browser oder ein anderes Gerät setzt an derselben Stelle fort.
+- Verwaltung → Speicher: belegter Platz je Quelle, freier Platz auf dem Laufwerk, ein Platzbudget und ein Vorschlag, was gehen kann. MediathekAtlas löscht dort nichts von selbst. Gemerkte, angeheftete, kürzlich gesehene und neu geladene Titel werden nie vorgeschlagen.
+- Ältere Browser ohne Container-Abfragen (Safari vor 16, Firefox vor 110) zeigen die Statusübersicht wieder passend zur Fensterbreite; die Unschärfe hinter Dialogen wirkt auch in Safari vor 18.
+- Merkliste und Speicherregeln stammen aus HomeTube. Der vollständige Review und die Lückenanalyse gegen HomeTube und Archive Media stehen in `docs/REVIEW_0577.md`.
 
 ## Neu in 0.5.78: Musikvideos laufen auch, wenn YouTube das Einbetten ablehnt
 

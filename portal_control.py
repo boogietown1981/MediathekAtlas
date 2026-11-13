@@ -9,11 +9,9 @@ A user may pause each scope and prioritize specific archive IDs/uploaders.
 """
 import json
 import re
-import sqlite3
 import threading
 import time
 import urllib.parse
-from urllib.error import HTTPError,URLError
 
 import core
 import portal_sources as portals

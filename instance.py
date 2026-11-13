@@ -1,5 +1,5 @@
 """One running server per local catalogue; lock is released by the OS on exit."""
-import json,os,time,urllib.parse
+import json,os,urllib.parse
 class Instance:
     def __init__(self,root):
         self.root=root;self.handle=None

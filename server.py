@@ -3,8 +3,8 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, portal_reference, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment
-import page_scripts
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment
+import page_scripts,watch_state,storage_policy
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -637,7 +637,7 @@ class Handler(BaseHTTPRequestHandler):
             # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
             try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
             except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
         if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
         if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
         if path=='/api/subscriptions':
@@ -658,6 +658,12 @@ class Handler(BaseHTTPRequestHandler):
                           for k in portal_metadata_policy.PROVENANCE},
                           'filename':portal_metadata_policy.filename_rules(),
                           'reference_order':portal_metadata_policy.PRIORITY})
+        if path=='/api/watch':
+            # 0.5.81: Merkliste, Weiterschauen and playback positions, kept on the server (watch_state).
+            return self.send(watch_state.overview(ROOT))
+        if path=='/api/storage':
+            # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
+            with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
         if path=='/api/tasks':return self.send(tasks_overview())
         if path=='/api/unified':
             # 0.5.55: dashboard "Alle" – one merged, globally sorted index of all sources.
@@ -1229,7 +1235,6 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/candidates':
                 config=settings()
                 cachekey=hashlib.sha256(json.dumps(['v045',config.get('imdb_generation'),d['id'],d['metadata'],config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True).encode()).hexdigest()
-                with db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(cachekey,time.time()-86400)).fetchone()
                 # A user-triggered search must bypass old provider results and negative caches.
                 # The automatic worker still uses the separate 24h metadata cache.
                 result=core.candidates(record(d['id']),d['metadata'],{**config,'_force_provider_refresh':True})
@@ -1389,6 +1394,25 @@ class Handler(BaseHTTPRequestHandler):
                 # 0.5.43: same job again (one card), earlier failed twins disappear.
                 with db() as c:job_queue.retry(c,str(d.get('id','')))
                 return self.send({'ok':True})
+            if path=='/api/watch-progress':
+                return self.send(watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info')))
+            if path=='/api/watch-mark':
+                result=watch_state.mark(ROOT,d.get('key'),d.get('favorite') if isinstance(d.get('favorite'),bool) else None,
+                                        d.get('pinned') if isinstance(d.get('pinned'),bool) else None,d.get('info'))
+                diagnostics.event('watch_mark',favorite=result['favorite'],pinned=result['pinned'])
+                return self.send(result)
+            if path=='/api/watch-forget':return self.send(watch_state.forget(ROOT,d.get('key')))
+            if path=='/api/storage-settings':
+                values=storage_policy.save(ROOT,d)
+                diagnostics.event('storage_settings',budget_gb=values['budget_gb'],protect_days=values['protect_days'])
+                with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
+            if path=='/api/storage-delete':
+                # One file per request, only after the user's confirmation in the page; pinned titles are refused.
+                if d.get('confirm') is not True:raise ValueError('Löschen nur nach Bestätigung')
+                with db() as c:result=storage_policy.delete(c,str(d.get('id','')),watch_state.states(ROOT),netzkino_downloads.remove_files)
+                catalog.invalidate_listings(drop=True);unified_index.invalidate()
+                diagnostics.event('storage_delete',freed_mb=round(result['freed_bytes']/1048576),files=result['removed_files'])
+                with db() as c:return self.send({**result,'storage':storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT))})
             if path=='/api/job-remove':
                 with db() as c:job_queue.remove(c,str(d.get('id','')))
                 return self.send({'ok':True})
@@ -1411,7 +1435,7 @@ class Handler(BaseHTTPRequestHandler):
         diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js')
+SCRIPTS=('/app.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

@@ -368,6 +368,8 @@
     if (description) text.append(el('p',description.slice(0,220),'atlas-uc-desc'));
     const actions=el('div',undefined,'atlas-uc-actions');
     actions.append(...actionNodes(main,true,offers));
+    // 0.5.81: Merkliste in every tile (web/watchlist.js); a series is marked as a whole.
+    const mark=window.AtlasWatch?.button(main);if(mark)actions.append(mark);
     text.append(actions);
     if (offers.length>1) {
       const more=el('details',undefined,'atlas-uc-more');

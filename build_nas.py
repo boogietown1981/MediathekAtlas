@@ -7,7 +7,7 @@ Pure Python, therefore one architecture-independent package per platform
   python3 build_nas.py --qbuild /path/qbuild  # additionally the .qpkg via QNAP's QDK
 Build-only dependency: Pillow (icons).
 """
-import argparse,hashlib,io,shutil,subprocess,sys,tarfile,time
+import argparse,hashlib,io,shutil,subprocess,tarfile,time
 from pathlib import Path
 from version import VERSION
 ROOT=Path(__file__).resolve().parent

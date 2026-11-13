@@ -1,6 +1,5 @@
 """Reviewable, atomic batch queueing for recognized series episodes."""
 import json,hashlib,secrets,time
-from pathlib import Path
 import core,catalog
 
 def plan(c,show,root):

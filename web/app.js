@@ -34,8 +34,8 @@ async function busy(button,fn){const old=button.textContent;button.disabled=true
 // 0.5.55: Dashboard (films and series only), Plattformen, Live-TV, Downloads and one area
 // "Verwaltung" whose tabs hold everything that manages the app (tasks, status, presentation,
 // assignment, subscriptions, work catalogue, log, settings).
-const ATLAS_VIEWS=['discover','portals','livetv','queue','admin','status','display','review','subscriptions','legacy','logs','settings'];
-const ATLAS_ADMIN_VIEWS=['admin','status','display','review','subscriptions','legacy','logs','settings'];
+const ATLAS_VIEWS=['discover','portals','livetv','queue','admin','status','display','storage','review','subscriptions','legacy','logs','settings'];
+const ATLAS_ADMIN_VIEWS=['admin','status','display','storage','review','subscriptions','legacy','logs','settings'];
 const ATLAS_HEADINGS={discover:['DASHBOARD','Filme und Serien aller Plattformen'],portals:['PLATTFORMEN','Kataloge der einzelnen Anbieter'],livetv:['LIVE-TV','Live-Sender aller Anbieter'],queue:['DOWNLOADS','Downloads und Offline-Kopien']};
 let atlasView='discover';
 window.atlasCurrentView=()=>atlasView;
