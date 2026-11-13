@@ -115,7 +115,7 @@ class LibraryNamingTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as tmp:
             m = {'kind': 'movie', 'title': 'Spellbound', 'year': 2024}
             planned = core.target(tmp, m, 'x')
-            self.assertEqual(planned.relative_to(tmp).as_posix(), 'Filme/Spellbound (2024)/Spellbound - (2024).mkv')
+            self.assertEqual(planned.resolve().relative_to(Path(tmp).resolve()).as_posix(), 'Filme/Spellbound (2024)/Spellbound - (2024).mkv')
             final = core.final_target(planned, {'streams': [{'codec_type': 'video', 'codec_name': 'h264', 'width': 1920, 'height': 1080},
                                                             {'codec_type': 'audio', 'codec_name': 'eac3'}]})
             self.assertEqual(final.name, 'Spellbound - (2024) - 1080p - H264 E-AC-3.mkv')
