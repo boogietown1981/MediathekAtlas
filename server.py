@@ -1276,7 +1276,8 @@ class Handler(BaseHTTPRequestHandler):
                     diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
                                       wish=str(d.get('wish',''))[:6],quality_level=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
                                       watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
-                                      stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),agent=str(self.headers.get('User-Agent',''))[:160])
+                                      stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),
+                                      frames=int(num('frames',10**7)),dropped_frames=int(num('dropped',10**7)),gates=int(num('gates',9999)),agent=str(self.headers.get('User-Agent',''))[:160])
                 return self.send({'ok':True})
             if path=='/api/client-error':
                 # 0.5.57: script errors of the web interface reach the diagnosis (at most 40 per run).

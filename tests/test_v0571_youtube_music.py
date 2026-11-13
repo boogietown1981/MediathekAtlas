@@ -169,14 +169,15 @@ class MusicTests(unittest.TestCase):
         self.assertEqual(len(calls), 2)
         args = calls[0]
         self.assertIn('--no-cookies-from-browser', args)
-        self.assertIn('-g', args)
+        self.assertIn('-j', args)                        # 0.5.86: JSON with addresses and request headers
         self.assertEqual(args[-1], yt.video_url(vid(20)))
         self.assertIn('height<=720', args[args.index('-f') + 1])
         self.assertEqual((src['audio_url'][-8:], src['hls'], src['remux'], src['provider'], again['url']),
                          ('itag=140', False, True, 'youtube', src['url']))
         plan = streaming.plan(src)
         self.assertEqual((plan['mode'], plan['origin'], 'url' in plan), ('remux', 'online', False))
-        with mock.patch.object(streaming, 'tool', return_value='ffmpeg'):
+        with mock.patch.object(streaming, 'tool', return_value='ffmpeg'), \
+                mock.patch('range_relay.local', side_effect=lambda u, h=None: 'http://127.0.0.1:1/r/' + u[-8:]):
             cmd = streaming.command(src, start=30)
         self.assertEqual(cmd.count('-i'), 2)
         self.assertEqual(cmd[cmd.index('-map'):cmd.index('-map') + 4], ['-map', '0:v:0', '-map', '1:a:0'])

@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.86 – Flüssige Wiedergabe (13. November 2026)
+- Automatisch: gesamte Python-Suite; neu `tests/test_v0586_smooth_playback.py` (Relay gegen gedrosselten Testserver: 12 MB vollständig und schnell, nur begrenzte Range-Anfragen, Range/Suffix/416/404, kein Wiederholen bei 403; echter ffmpeg-Lauf: nach dem Spulen beginnt das Bild nicht nach dem Ton; yt-dlp-JSON mit Headern ohne Cookies; Relay nur für `ranged`-Quellen, keine Header/Adressen an den Browser; Player/App/CSS/Diagnose).
+- Manuell in Chromium (Playwright): Bild-/Uhrabgleich per requestVideoFrameCallback, Puffermeldung bei umgewandelten Streams, echte Seite mit Teststream vorher/nachher (Zahlen im CHANGELOG).
+- Nicht geprüft: gegen YouTube selbst (aus der Bauumgebung gesperrt), Safari und Firefox (hier nur Chromium). Safari und Firefox beachten MP4-Editlisten ebenfalls; bestätigen muss das Björns Test.
+
 ## 0.5.85 – Joyn-Abruf (13. November 2026)
 - Automatisch: gesamte Python-Suite (948 Tests); neu `JoynRetry` in `tests/test_v0565_joyn.py` (eine Seite fällt einmal aus, ein Genre fällt zweimal aus, dauerhafter Ausfall mit Grund und Wiederholung nach einer Stunde).
 - Nicht geprüft: gegen Joyn selbst (aus der Bauumgebung gesperrt). Ob der Katalog bei Björn wieder vollständig lädt, zeigt sein nächster Abruf; warum Joyn am 12.11. langsam antwortete, ist aus der Diagnose nicht erkennbar.
