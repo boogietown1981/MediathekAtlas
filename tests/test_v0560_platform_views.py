@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 
 import portal_snapshot  # noqa: E402
 import unified_index  # noqa: E402
@@ -182,7 +183,7 @@ class InterfaceTests(unittest.TestCase):
     def test_platform_routes_use_the_stored_views(self):
         server = self.read('server.py')
         for name in ('pluto', 'justwatch', 'rakuten', 'youtube'):
-            self.assertIn("portal_page('%s',%s,q)" % (name, name), server)
+            self.assertTrue(__import__('_wiring').wired("portal_page('%s',%s,q)" % (name, name)), name)
         self.assertIn("portal_snapshot.page('netzkino',view,", server)
         self.assertIn('modules=_UNIFIED_SOURCES', server)
         self.assertIn("portal_snapshot.invalidate(source)", server)

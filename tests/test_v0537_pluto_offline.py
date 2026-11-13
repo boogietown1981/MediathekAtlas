@@ -13,6 +13,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core, downloads, pluto, pluto_downloads as pd, netzkino_downloads as nd  # noqa: E402
 from test_v0536_pluto import Fixture, MOVIE, SERIES, TOKEN  # noqa: E402
@@ -183,7 +184,7 @@ class HlsDownloadTests(OfflineFixture):
 class WiringTests(unittest.TestCase):
     def test_server_and_ui(self):
         s = (ROOT / 'server.py').read_text()
-        self.assertIn('pluto_downloads.enqueue(c,ROOT,', s)
+        self.assertTrue(__import__('_wiring').wired('pluto_downloads.enqueue(c,ROOT,'))
         self.assertIn("'/api/offline-download-action'", s)
         # 0.5.40: the panel is the shared portal_panel.js, pluto.js configures it with key 'pluto'.
         js = (ROOT / 'web' / 'portal_panel.js').read_text()

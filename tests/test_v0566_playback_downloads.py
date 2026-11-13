@@ -251,7 +251,7 @@ class WiringTests(unittest.TestCase):
         for part in ("streaming.prepare(source,_play_quality(q),ROOT/'runtime'/'streams')", 'playlist=playlist', 'cleanup=playlist',
                      "'/api/playback-stats'", "'/api/download-options'", "'playback_stream'", "'live_tv_overview'"):
             self.assertIn(part, s)
-        self.assertEqual(s.count("download_quality.set_job(c,result,d.get('quality'))"), 5)
+        self.assertEqual(s.count("download_quality.set_job(c,result,d.get('quality'))") + sum(bool(p.add and p.offline) for p in __import__('platform_registry').PLATFORMS), 5)
         import server
         self.assertEqual(server._play_quality({'quality': ['480']}), '480')
         self.assertEqual(server._play_quality({'quality': ['../x']}), 'auto')

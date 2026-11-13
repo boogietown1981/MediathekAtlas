@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 
 SERIES = '5f1a2b3c4d5e6f7a8b9c0d10'
 
@@ -103,7 +104,7 @@ class WiringTests(unittest.TestCase):
 
     def test_server_accepts_episode_id_lists(self):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
-        self.assertEqual(server.count('item_id=job_ids(q)'), 7)   # + Rakuten TV (0.5.49), YouTube (0.5.53), Joyn (0.5.65), TOGGO (0.5.79)
+        self.assertEqual(server.count('item_id=job_ids(q)') + sum(p.jobs for p in __import__('_wiring').registry.PLATFORMS), 7)   # + Rakuten TV (0.5.49), YouTube (0.5.53), Joyn (0.5.65), TOGGO (0.5.79)
 
 
 if __name__ == '__main__':

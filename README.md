@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.5.82
+# MediathekAtlas · 0.5.84
+
+## Neu in 0.5.84: Aufgeräumt, ohne sichtbare Änderung
+
+- Der Programmcode, der für Pluto TV, JustWatch TV, Rakuten TV, Joyn, TOGGO und YouTube jeweils fast gleich kopiert war (Katalogseite, Details, Offline-Liste, Katalogabruf, täglicher Abruf, Werkzuordnung, Offline-Download, Hintergrundaufgaben), steht jetzt einmal in `platform_registry.py`. Alle Adressen und Antworten sind gleich geblieben; ein Fehler wird künftig an einer Stelle behoben und gilt für alle Plattformen.
+- Die 44 alten Installationspakete (625 MB) liegen nicht mehr im Git. Sie bleiben in den Projektdateien unter `releases/` und in der Git-Historie.
+- 0.5.83 ist die Nummer des Threads „Einheitliche Kategorien“ und in diesem Stand nicht enthalten.
 
 ## Neu in 0.5.82: Sammelstand, Archive.org erkennt Werke
 

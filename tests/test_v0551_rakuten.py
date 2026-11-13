@@ -15,6 +15,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 import hls_guard, portal_title, streaming  # noqa: E402
 import rakuten as rk, rakuten_downloads as rd, rakuten_enrichment as re_  # noqa: E402
 import netzkino_downloads as nd  # noqa: E402
@@ -293,7 +294,7 @@ class WiringTests(unittest.TestCase):
         for needle in ("path=='/api/rakuten'", "'/api/rakuten-details'", "'/api/rakuten-download-add'", "'/api/rakuten-downloads'",
                        "'/api/rakuten-sync'", "'/api/rakuten-auto'", "'/api/rakuten-enrich'", 'rakuten_enrichment.loop',
                        'rakuten.loop', "rakuten=q.get('rakuten',[''])[0]", "'/rakuten.js'", "'rakuten':rakuten.state(ROOT)"):
-            self.assertIn(needle, s)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text()
         for needle in ('id="rakuten"', 'data-platform="rakuten"', 'data-catalog-source="rakuten"', 'id="rakuten-offline-jobs"',
                        'id="rakuten-sync"', 'id="rakuten-view-live"', '<script src="/rakuten.js"></script>'):

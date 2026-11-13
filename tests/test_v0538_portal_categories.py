@@ -9,6 +9,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core, pluto, pluto_downloads, pluto_enrichment, portal_reference as pr  # noqa: E402
 from test_v0536_pluto import Fixture, MOVIE, SERIES  # noqa: E402
@@ -169,7 +170,7 @@ class WiringTests(unittest.TestCase):
         s = (ROOT / 'server.py').read_text()
         for needle in ("'/api/pluto-details'", "'/api/pluto-enrich'", 'pluto_enrichment.loop', "'film_platforms'",
                        "pluto_enrichment.enrich(ROOT,item_id,settings())", "netzkino_enrichment.enrich(ROOT,item_id,settings())"):
-            self.assertIn(needle, s)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text()
         # 0.5.42: details on the shared title page (portal_title.js) instead of a Pluto dialog.
         for needle in ('<script src="/portal_title.js"></script>', 'id="pluto-categories"', 'id="netzkino-categories"',

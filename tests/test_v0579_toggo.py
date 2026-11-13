@@ -14,6 +14,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 import hls_guard, portal_title, streaming, unified_index  # noqa: E402
 import toggo, toggo_enrichment  # noqa: E402
 
@@ -367,7 +368,7 @@ class IntegrationTests(Fixture):
         for needle in ("path=='/api/toggo'", "path=='/api/toggo-details'", "path=='/api/toggo-sync'", "path=='/api/toggo-auto'",
                        "path=='/api/toggo-enrich'", "toggo=q.get('toggo',[''])[0]", "'/toggo.js'", 'toggo_catalog_scheduler',
                        "'toggo':toggo.state(ROOT)"):
-            self.assertIn(needle, server)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text(encoding='utf-8')
         for needle in ('data-catalog-source="toggo"', 'data-platform="toggo"', '<section id="toggo"', '<script src="/toggo.js">',
                        'id="toggo-sync"', 'id="toggo-items"'):

@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.84 – Plattform-Registratur (13. November 2026)
+- Automatisch: gesamte Python-Suite (933 Tests); neu `tests/test_v0584_platform_registry.py` (9 Tests): die Registratur beantwortet genau die 38 Adressen, die 0.5.82 ausgeschrieben hatte, und keine der plattformeigenen; Katalogseite, Folgen, Details mit 404, Offline-Liste auch ohne Offline-Kopien, Katalogabruf, täglicher Abruf, Werkzuordnung, Offline-Download trotz Anbieterfehler, Ereignisnamen, Hintergrund-Threads.
+- Alt gegen neu: 0.5.82 und 0.5.84 mit demselben Testbestand gestartet und 106 Anfragen an alle Plattform-Routen gestellt (Katalogseiten mit Filtern, Folgen, Details, Offline-Listen, tägliche Abrufe ein/aus, Werkzuordnung und Offline-Download mit unbekanntem Titel, unbekannte Adressen). 104 Antworten sind Zeichen für Zeichen gleich (ohne Zeitstempel), 2 unterscheiden sich nur im Installationspfad des Testaufbaus.
+- Im Browser (Chromium): alle Plattform-Reiter geöffnet, keine Skriptfehler.
+- Nicht geprüft: echte Kataloge und Streams der Anbieter (aus der Bauumgebung gesperrt; die Plattformen außer Netzkino waren im Vergleich leer), Safari und Firefox, echtes Windows, NAS-Hardware.
+
 ## 0.5.82 – Sammelstand und Werkerkennung für Archive.org (13. November 2026)
 - Automatisch: gesamte Python-Suite auf dem zusammengeführten Stand (924 Tests, darunter die Tests aus 0.5.79, 0.5.80 und 0.5.81); neu `tests/test_v0582_archive_recognition.py` (15 Tests): Suchtitel, Jahr aus dem Titel, Namen wie „1984“ oder „007 Dr. No“ bleiben, Serie nur mit Folgenangabe, mehrere Uploads ein Werk, Prüfung und Liste, Jahresreparatur und ihr Ausbleiben, Zusammenführen über Titel und Kennung, entfernte Uploads, AniList (Treffer, kein Hinweis, Netzfehler, mehrdeutig), Abgleich mit der Hauptdatenbank.
 - Im Browser (Chromium, 8 Test-Uploads mit nachgestellten Datenbankantworten): Werkzeile an jedem Upload (erkannt, Jahr aus der Datenbank, Staffel/Folge, AniList, kein Treffer), Ansicht „Werke“ mit 5 Werken, „Alle 3 Uploads zeigen“ filtert und lässt sich zurücknehmen, „Neu prüfen“ ohne erreichbare Datenbanken meldet „gerade nicht erreichbar“, Aufgabe „Internet Archive · Werkzuordnung“ in der Aufgabenliste. Keine Skriptfehler.

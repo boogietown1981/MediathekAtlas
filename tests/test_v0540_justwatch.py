@@ -17,6 +17,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 import core, downloads, hls_guard, justwatch as jw, justwatch_downloads as jd, justwatch_enrichment as je  # noqa: E402
 import netzkino_downloads as nd, portal_reference as pr  # noqa: E402
 
@@ -297,7 +298,7 @@ class WiringTests(unittest.TestCase):
         for needle in ("path=='/api/justwatch'", "'/api/justwatch-details'", "'/api/justwatch-download-add'",
                        "'/api/justwatch-sync'", "'/api/justwatch-enrich'", 'justwatch_enrichment.loop', 'justwatch.loop',
                        "justwatch=q.get('justwatch',[''])[0]", "'/justwatch.js'", "'/portal_panel.js'"):
-            self.assertIn(needle, s)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text()
         for needle in ('id="justwatch"', 'data-platform="justwatch"', 'data-catalog-source="justwatch"',
                        '<script src="/portal_title.js"></script>', 'id="justwatch-offline-jobs"', '<script src="/justwatch.js"></script>'):

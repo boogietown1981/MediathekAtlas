@@ -15,6 +15,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 import portal_title  # noqa: E402
 import youtube as yt, youtube_downloads as yd, youtube_enrichment as ye  # noqa: E402
 import netzkino_downloads as nd  # noqa: E402
@@ -376,7 +377,7 @@ class WiringTests(unittest.TestCase):
                        "'/api/youtube-sync'", "'/api/youtube-auto'", "'/api/youtube-enrich'", "'/api/youtube-sources'",
                        "'/api/youtube-key'", "'/api/youtube-offline'", "'/api/youtube-ytdlp-install'", 'youtube_enrichment.loop',
                        'youtube.loop', 'youtube.play_info', "'/youtube.js'", 'youtube.configure', "stored.get('youtube')"):
-            self.assertIn(needle, s)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text()
         for needle in ('id="youtube"', 'data-platform="youtube"', 'data-catalog-source="youtube"', 'id="youtube-offline-switch"',
                        'id="youtube-key-form"', 'id="player-embed"', 'referrerpolicy="strict-origin-when-cross-origin"',

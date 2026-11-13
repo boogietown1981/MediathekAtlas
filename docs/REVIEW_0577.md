@@ -14,13 +14,13 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 | 1 | `/api/candidates` liest den Cache und verwirft das Ergebnis | behoben in 0.5.81 |
 | 1 | 20 ungenutzte Importe | behoben in 0.5.81; `core.py` bleibt, dort sind es Weitergaben an andere Module |
 | 1 | 4 Funktionen ohne Aufrufer, 4 ungenutzte Konstanten | offen |
-| 2 | Je Plattform fünf fast gleiche Routen und ein eigener Thread-Start in `server.py` | offen (Plattform-Registratur) |
+| 2 | Je Plattform fünf fast gleiche Routen und ein eigener Thread-Start in `server.py` | behoben in 0.5.84 (`platform_registry.py`) |
 | 2 | `netzkino.js` und `netzkino_detail.js` neben dem gemeinsamen `portal_panel.js` | offen |
 | 2 | `vendor/archivemedia` (0.10.12) und `vendor/archive_portals` (0.10.53) doppelt | offen |
 | 2 | `netzkino_downloads` und `netzkino_enrichment.analyze` bedienen alle Plattformen | offen (neutrale Namen) |
 | 2 | Netzwerkmodus: Sitzungen nur im Arbeitsspeicher, nur HTTP | offen |
 | 2 | Kein Klicktest der Oberfläche in der CI, Safari und Firefox nie geprüft | offen |
-| 3 | 44 Pakete (625 MB) in `downloads/` im Git, alter Bausatz in `integration/preview` | braucht Freigabe |
+| 3 | 44 Pakete (625 MB) in `downloads/` im Git, alter Bausatz in `integration/preview` | Pakete in 0.5.84 aus dem Git genommen (Historie unverändert); `integration/preview` offen |
 | 3 | Gestapelte offene Pull Requests, `main` bei 0.5.40 | braucht Freigabe |
 
 ## Fehlend aus Archive Media 0.10.53 (17 von 36 Modulen)
@@ -45,7 +45,7 @@ selection_matrix (Staffel-Auswahl), uploader_priority und discovery_queue (Uploa
 2. Speicherübersicht (0.5.81)
 3. Archive.org-Erkennung: Jahr, Suchtitel, Serien zusammenführen, Anime (0.5.82, `archive_recognition.py`); Spuren vor dem Download waren schon aktiv
 4. Staffel-Auswahl für Archive.org, Uploader weiterverfolgen
-5. Plattform-Registratur, Netzkino auf das gemeinsame Panel
+5. Plattform-Registratur (0.5.84, `platform_registry.py`); Netzkino auf das gemeinsame Panel noch offen
 6. Umwandeln (Encoder)
 7. Archivkopie im Verbund mit Prüfsumme und Nachweis
 8. Helles Design, Systemmonitor, Klicktest in der CI mit Firefox und WebKit
