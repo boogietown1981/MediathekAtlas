@@ -17,17 +17,18 @@ def channel(provider, name):
 class BudgetTests(unittest.TestCase):
     def setUp(self):
         self.saved = (live_tv.mediathek_channels, live_tv.pluto_channels, live_tv.rakuten_channels, live_tv.joyn_channels,
-                      live_tv.samsung_channels)
+                      live_tv.samsung_channels, live_tv.plex_channels)
         live_tv._LAST.clear()
         live_tv.mediathek_channels = lambda c: [channel('mediathek', 'Das Erste')]
         live_tv.pluto_channels = lambda root: [channel('pluto', 'Pluto Krimi')]
         live_tv.rakuten_channels = lambda root: [channel('rakuten', 'Rakuten Action')]
         live_tv.joyn_channels = lambda root: []
         live_tv.samsung_channels = lambda root: []   # 0.5.97
+        live_tv.plex_channels = lambda root: []      # 0.5.100
 
     def tearDown(self):
         (live_tv.mediathek_channels, live_tv.pluto_channels, live_tv.rakuten_channels, live_tv.joyn_channels,
-         live_tv.samsung_channels) = self.saved
+         live_tv.samsung_channels, live_tv.plex_channels) = self.saved
         live_tv._LAST.clear()
 
     def test_all_providers_answer(self):

@@ -74,7 +74,7 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex=''):
     """Best playable source: a finished local download wins over the online stream."""
     if samsung:
         # 0.5.97: Samsung TV Plus live channel (HLS without copy protection, see samsung_tvplus.py)
@@ -86,6 +86,11 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         if root is None:raise ValueError('YouTube-Katalog nicht verfügbar')
         import youtube_downloads
         return youtube_downloads.play_source(root,youtube,quality)
+    if plex:
+        # 0.5.98: Plex film, episode or live channel, only without copy protection (plex.py)
+        if root is None:raise ValueError('Plex-Katalog nicht verfügbar')
+        import plex as plex_tv
+        return plex_tv.play_source(root,plex)
     if crunchyroll:
         # Crunchyroll: Widevine only, never a source (crunchyroll.py names the reason)
         if root is None:raise ValueError('Crunchyroll-Katalog nicht verfügbar')

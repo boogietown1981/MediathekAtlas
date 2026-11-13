@@ -31,6 +31,7 @@ import rakuten, rakuten_downloads, rakuten_enrichment
 import joyn, joyn_enrichment
 import toggo, toggo_enrichment
 import crunchyroll, crunchyroll_enrichment
+import plex, plex_enrichment
 import youtube, youtube_downloads, youtube_enrichment
 
 
@@ -71,6 +72,8 @@ PLATFORMS = (
     Platform('toggo', toggo, toggo_enrichment),
     # 0.5.96: catalogue with links only (Widevine, subscription since 1.1.2026).
     Platform('crunchyroll', crunchyroll, crunchyroll_enrichment),
+    # 0.5.98: no offline copies (Plex itself offers no download of its free titles).
+    Platform('plex', plex, plex_enrichment),
 )
 BY_KEY = {p.key: p for p in PLATFORMS}
 KEYS = tuple(p.key for p in PLATFORMS)
@@ -131,7 +134,7 @@ def handle_get(ctx, path, q):
         except ValueError as e:
             return {'error': str(e)}, 404
     if action == 'downloads' and p.jobs:
-        # Platforms without offline copies (Joyn, TOGGO, Crunchyroll) answer with the shared, empty list.
+        # Platforms without offline copies (Joyn, TOGGO, Crunchyroll, Plex) answer with the shared, empty list.
         with ctx.db() as c:
             result = netzkino_downloads.listing(c, item_id=ctx.job_ids(q), origin=p.key)
         result['ffmpeg'] = bool(downloads.tool('ffmpeg'))

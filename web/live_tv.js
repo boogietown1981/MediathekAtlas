@@ -195,7 +195,7 @@
 
   // Live strip at the provider (0.5.50): the catalogue source "ARD, ZDF & Co." and "Pluto TV" show their
   // live stations above the search, collapsed by default. Sources without live channels show nothing.
-  const STRIP = {mediatheken: 'mediathek', pluto: 'pluto', rakuten: 'rakuten', joyn: 'joyn'};
+  const STRIP = {mediatheken: 'mediathek', pluto: 'pluto', rakuten: 'rakuten', joyn: 'joyn', plex: 'plex'};
   let stripSeq = 0;
   async function strip() {
     const discover = $('discover'), anchor = $('atlas-cross-search');

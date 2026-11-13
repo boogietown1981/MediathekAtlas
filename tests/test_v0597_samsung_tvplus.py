@@ -147,7 +147,7 @@ class SamsungTvPlusTest(unittest.TestCase):
     def test_wiring(self):
         here = Path(__file__).resolve().parent.parent
         server = (here / 'server.py').read_text(encoding='utf-8')
-        for needle in ("'toggo','crunchyroll','samsung')", "samsung=q.get('samsung',[''])[0]", "path=='/api/samsung-sync'",
+        for needle in ("'toggo','crunchyroll','samsung','plex')", "samsung=q.get('samsung',[''])[0]", "path=='/api/samsung-sync'",
                        "samsung_tvplus.loop", "'samsung':samsung_tvplus.summary(ROOT)", "spec.get('portal')=='samsung'"):
             self.assertIn(needle, server)
         self.assertIn("'samsung_tvplus.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))

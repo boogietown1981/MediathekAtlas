@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.99
+# MediathekAtlas · 0.5.100
+
+## Neu in 0.5.100: Plex – kostenlose Filme, Serien und Live-Sender
+
+- **Neuer Plattform-Reiter „Plex“** mit dem kostenlosen Angebot von Plex (mit Werbung, ohne Plex-Konto): Filme, Serien mit Staffeln und Folgen, Live-Sender. Wie bei den anderen Plattformen mit einheitlichen Kategorien, Bewertung, Titel- und Serienseite, Suche, Merkliste und im Dashboard unter „Alle“ oder „Plex“. Die Live-Sender stehen zusätzlich im Reiter **Live-TV**.
+- **Kopierschutz wird je Titel geprüft.** Viele Plex-Titel kommen ohne Kopierschutz und laufen im MediathekAtlas-Player (über ffmpeg, weil Plex sie als DASH ausliefert). Manche liefert Plex nur mit Widevine aus: Das zeigt sich beim ersten „Ansehen“, danach steht dort „Bei Plex ansehen“. Nichts wird umgangen.
+- **Kein Offline-Speichern**: Plex selbst bietet für seine Gratis-Titel keinen Download an.
+- Der Katalog lädt sich beim ersten Start von selbst; danach auf Wunsch alle 24 Stunden (Schalter im Reiter). Welche Titel Plex anbietet, hängt vom Land der Internetverbindung ab.
+- Nicht geprüft: Plex selbst (aus der Bauumgebung gesperrt). Die Schnittstellen stammen aus öffentlich verfügbaren Plex-Programmen (Kodi-Erweiterungen, python-plexapi) und sind mit nachgebauten Antworten getestet. Falls der Katalog leer bleibt oder ein Titel nicht startet, hilft ein HAR-Mitschnitt von watch.plex.tv.
+- Sammelstand: 0.5.100 enthält 0.5.99 (helles Design, Systemmonitor), 0.5.98 (Plex, bisher einzeln), 0.5.97 (Samsung TV Plus), 0.5.96 (Crunchyroll), 0.5.95 (Archivnachweise) und alles davor.
 
 ## Neu in 0.5.99: Helles Design, Systemmonitor, Klicktest in echten Browsern
 
@@ -6,7 +15,7 @@
 - **Systemmonitor.** Verwaltung → „System“ zeigt Prozessorlast, freien Arbeitsspeicher, Speicherbedarf von MediathekAtlas, Temperatur (wo das System sie meldet), freien Platz auf den Laufwerken von Daten und Downloads, die Größe der Datenbanken und was gerade läuft (Downloads, Umwandlungen, Dateiprüfung, Verbund). Dazu Hinweise in Klartext, wenn Prozessor, Speicher, Temperatur oder Platz knapp werden. Gemessen wird nur, solange die Ansicht offen ist.
 - **Klicktest in der CI.** Bei jedem Pull Request öffnet ein Test alle Hauptansichten, alle Bereiche der Verwaltung und alle Plattform-Reiter in Chromium, Firefox und WebKit (steht für Safari) und schlägt bei jedem Skriptfehler oder fehlgeschlagenen Aufruf an.
 - Die Reiter der Verwaltung sind etwas schmaler, damit der neue Reiter „System“ in die Zeile passt.
-- Sammelstand: 0.5.99 enthält 0.5.97 (Samsung TV Plus), 0.5.96 (Crunchyroll), 0.5.95 (Archivnachweise), 0.5.94 (Umwandeln) und alles davor. 0.5.98 ist nicht enthalten (in Arbeit in einem anderen Thread).
+- Sammelstand: 0.5.99 enthält 0.5.97 (Samsung TV Plus), 0.5.96 (Crunchyroll), 0.5.95 (Archivnachweise), 0.5.94 (Umwandeln) und alles davor. 0.5.98 (Plex) folgt in 0.5.100.
 
 ## Neu in 0.5.97: Samsung TV Plus im Reiter Live-TV
 
