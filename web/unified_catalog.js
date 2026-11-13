@@ -8,11 +8,11 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn'];
-  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn'};
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo'];
+  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
-  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null};
-  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen'};
+  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo};
+  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen'};
   const TYPES = ['movies','series'];
   let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0;
   let seriesKey='',seriesTitle='';
@@ -107,7 +107,7 @@
   // recognition board; Netzkino, Pluto TV and JustWatch TV get their own catalogue, scan and
   // work-assignment progress; "Gesamt" shows the ARD/ZDF board plus all portal catalogues.
   let portalTimer=0,portalSeq=0;
-  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync',youtube:'youtube-sync',joyn:'joyn-sync'};
+  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync',youtube:'youtube-sync',joyn:'joyn-sync',toggo:'toggo-sync'};
   const num=n=>Number(n||0).toLocaleString('de-DE');
   const when=t=>t?new Date(t*1000).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'noch nie';
   function portalBoard() {
@@ -538,6 +538,7 @@
     const rkNeeded=(source==='all'||source==='rakuten') && !seriesKey;
     const ytNeeded=(source==='all'||source==='youtube') && !seriesKey;
     const jyNeeded=(source==='all'||source==='joyn') && !seriesKey;
+    const tgNeeded=(source==='all'||source==='toggo') && !seriesKey && kind!=='movies';   // TOGGO: series only
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -561,6 +562,9 @@
     }))});
     if (jyNeeded)requests.push({source:'joyn',req:window.api('joyn?'+new URLSearchParams({
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
+    }))});
+    if (tgNeeded)requests.push({source:'toggo',req:window.api('toggo?'+new URLSearchParams({
+      view:'series',q:search,genre,sort:'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));
     if (seq!==sequence) return;

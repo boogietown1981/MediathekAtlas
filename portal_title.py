@@ -16,7 +16,7 @@ detail sources into one model:
 """
 from __future__ import annotations
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -137,6 +137,19 @@ def _portal(root, source, item_id):
             facts.append(['Staffeln laut Joyn', str(it['seasons'])])
         facts.append(['Stream', 'nur im Joyn-Player (in der Regel mit Kopierschutz) – bei Joyn ansehen, kein Offline-Speichern'])
         m['notes'].append('Joyn spielt Titel nur im eigenen Player ab; MediathekAtlas meldet sich bei Joyn nicht an und umgeht keinen Kopierschutz.')
+    if source == 'toggo':
+        facts.append(['Angebot', 'TOGGOLINO (Vorschule), kostenlos' if it.get('brand') == 'TOGGOLINO' else 'TOGGO (Super RTL), kostenlos'])
+        if m['kind'] == 'series' and it.get('number'):
+            facts[:] = [f for f in facts if f[0] != 'Sendernummer']
+            facts.append(['Folgen und Clips laut TOGGO', str(it['number'])])
+        if m['kind'] != 'series':
+            m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # 0.5.79: no offline copies of TOGGO
+            state = it.get('protection') or ''
+            facts.append(['Stream', 'ohne Kopierschutz – läuft im MediathekAtlas-Player' if it.get('drm') == 0 else
+                          'nur mit Kopierschutz (Widevine/FairPlay) – bei TOGGO ansehen' if (it.get('drm') == 1 or state == 'drm') else
+                          'noch nicht geprüft – „Ansehen“ prüft, ob TOGGO die Folge ohne Kopierschutz ausliefert'])
+        if not m['playable'] and m['kind'] != 'series':
+            m['notes'].append('TOGGO liefert diese Folge nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. Auf toggo.de läuft sie im Browser.')
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
@@ -215,7 +228,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source == 'toggo' else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url'))}
 
 

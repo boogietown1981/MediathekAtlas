@@ -51,6 +51,7 @@
   <button type="button" data-catalog-source="rakuten">Rakuten TV</button>
   <button type="button" data-catalog-source="youtube">YouTube</button>
   <button type="button" data-catalog-source="joyn">Joyn</button>
+  <button type="button" data-catalog-source="toggo">TOGGO</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Alle Plattformen · Filme</h2>
@@ -87,6 +88,7 @@
     <button class="platform-tab" type="button" data-platform="rakuten">Rakuten TV</button>
     <button class="platform-tab" type="button" data-platform="youtube">YouTube</button>
     <button class="platform-tab" type="button" data-platform="joyn">Joyn</button>
+    <button class="platform-tab" type="button" data-platform="toggo">TOGGO</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -204,6 +206,32 @@
   <div class="netzkino-pages"><button type="button" id="joyn-prev">← Zurück</button>
     <span id="joyn-page-label" class="muted"></span>
     <button type="button" id="joyn-next">Weiter →</button></div>
+</section>
+<section id="toggo" class="pluto-panel toggo-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>TOGGO · Kinderserien von toggo.de (mit TOGGOLINO)</h3>
+    <p class="muted">Alle Serien von TOGGO und TOGGOLINO (Vorschule) mit ihren Folgen und Clips. Über die Kategorien „TOGGO“ und „TOGGOLINO“ lässt sich nach Altersgruppe filtern.
+       Eine Folge läuft im MediathekAtlas-Player, wenn TOGGO sie ohne Kopierschutz ausliefert. Liefert TOGGO nur mit Kopierschutz (Widevine/FairPlay), umgeht MediathekAtlas ihn nicht: Die Folge öffnet dann toggo.de.
+       Titel und Nummern der Folgen einer Serie werden beim ersten Öffnen der Serie geladen. Offline-Speichern gibt es für TOGGO nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="toggo-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="toggo-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="toggo-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="TOGGO-Ansicht">
+    <button type="button" id="toggo-view-series" class="primary">Serien</button>
+    <button type="button" id="toggo-back" hidden>← Zur Serienübersicht</button>
+    <span id="toggo-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>TOGGO-Serie suchen<input type="search" id="toggo-filter" placeholder="Titel"></label>
+    <label>Sortierung<select id="toggo-sort"><option value="title">Titel</option><option value="rating">Bewertung</option></select></label></div>
+  <div id="toggo-categories" class="portal-categories" role="group" aria-label="TOGGO-Kategorien" hidden></div>
+  <p id="toggo-status" class="muted" role="status"></p>
+  <details id="toggo-offline" class="nk-offline toggo-offline" hidden><summary>Offline-Kopien von TOGGO <span id="toggo-offline-count" class="muted"></span></summary>
+    <div id="toggo-offline-jobs"></div></details>
+  <div id="toggo-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="toggo-prev">← Zurück</button>
+    <span id="toggo-page-label" class="muted"></span>
+    <button type="button" id="toggo-next">Weiter →</button></div>
 </section>
 <section id="youtube" class="pluto-panel youtube-panel">
   <div class="panel netzkino-sync-panel">
@@ -466,4 +494,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script></body></html>

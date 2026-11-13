@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.79 – TOGGO (13. November 2026)
+- Automatisch: gesamte Python-Suite (877 Tests); neu `tests/test_v0579_toggo.py` (26 Tests) mit nachgestellten Antworten in den dokumentierten Formaten: Adressmuster, Sitemap-Index, robots.txt, fremde Hosts werden nie abgerufen, Katalogaufbau, zweiter Lauf behält geladene Details, leere Sitemap und nicht erreichbare Seite, Folgen auf Abruf, Kopierschutz wird abgelehnt und gemerkt, keine `/clear/`-Adresse wird gebildet, ungeschützter Stream wird abgespielt, MP4-Auswahl, Policy-Key aus dem Player-Skript, Titelseitenmodell, Einbindung.
+- Im Browser (Chromium, Testdaten): Reiter „TOGGO“ unter Plattformen (Kacheln, Kategorien TOGGO/TOGGOLINO, Statuszeile), Serienseite mit Staffeln und Folgen, Katalog-Quelle „TOGGO“ unter „Serien“, gemeinsamer Index „Alle“; Zustand „kopiergeschützt“ zeigt nur „Bei TOGGO ansehen“, Zustand „frei“ zeigt „▶ Abspielen“ und den Link; der Player meldet einen Netzfehler verständlich. Keine Skriptfehler.
+- Nicht geprüft: alles gegen das echte toggo.de (aus der Bauumgebung gesperrt). Offen ist, ob die Sitemap die Folgen nennt, ob die Asset-API noch so antwortet und ob TOGGO ungeschützte Streams ausliefert. Safari und Firefox nicht geprüft. NAS-Pakete nur gebaut, nicht auf Geräten installiert.
+
 ## 0.5.78 – YouTube im eigenen Player, Musikvideos im Katalog (13. November 2026)
 - Automatisch: gesamte Python-Suite; neu in `tests/test_v0571_youtube_music.py`: eigener Player nur mit Schalter (yt-dlp wird sonst nicht gestartet), Aufruf ohne Cookies, Zwischenspeicher, Altersbeschränkung, Fehlermeldung „kein Bot“, ffmpeg-Aufruf mit zwei Eingaben; Auswege im Player, Katalog-Eintrag.
 - Mit echtem ffmpeg: Bild (H.264) und Ton (AAC) von zwei HTTP-Adressen werden beim Abspielen zusammengeführt, auch nach dem Spulen (beide Spuren starten gleich).

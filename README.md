@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.5.78
+# MediathekAtlas · 0.5.79
+
+## Neu in 0.5.79: TOGGO (Kinderserien von toggo.de, mit TOGGOLINO)
+
+- Neue Quelle **TOGGO**: Reiter „TOGGO“ unter „Plattformen“ und im Katalog (Dashboard, „Serien“). Alle Serien von TOGGO und TOGGOLINO mit Serienseite, Staffeln, Folgen und Clips; Genre „Kinder & Familie“, dazu die Kategorien „TOGGO“ und „TOGGOLINO“ (Vorschule) zum Filtern nach Altersgruppe.
+- Der Katalog entsteht aus der Seitenübersicht (Sitemap) von toggo.de. Titel, Nummer und Bild der Folgen einer Serie werden beim ersten Öffnen der Serie nachgeladen.
+- **Wiedergabe:** Eine Folge läuft im MediathekAtlas-Player, wenn TOGGO sie ohne Kopierschutz ausliefert. Liefert TOGGO nur mit Kopierschutz (Widevine/FairPlay), umgeht MediathekAtlas ihn nicht; die Folge öffnet dann toggo.de („Bei TOGGO ansehen“). Nach dem Katalogabruf prüft MediathekAtlas an je einer Folge von bis zu drei Serien, welcher Fall vorliegt, und zeigt danach den passenden Knopf.
+- Kein Offline-Speichern für TOGGO in dieser Version, kein Live-TV.
+- **Wichtig:** toggo.de war aus der Bauumgebung nicht erreichbar. Die Anbindung beruht auf öffentlich dokumentierten Formaten und ist nicht live geprüft. Lädt der Katalog nicht, bitte die Diagnose schicken (Einträge `toggo_sitemap`, `toggo_sync_failed`) oder einen HAR-Mitschnitt von toggo.de.
 
 ## Neu in 0.5.78: Musikvideos laufen auch, wenn YouTube das Einbetten ablehnt
 

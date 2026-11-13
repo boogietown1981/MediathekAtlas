@@ -103,7 +103,7 @@ class WiringTests(unittest.TestCase):
 
     def test_server_accepts_episode_id_lists(self):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
-        self.assertEqual(server.count('item_id=job_ids(q)'), 6)   # + Rakuten TV (0.5.49), YouTube (0.5.53), Joyn (0.5.65)
+        self.assertEqual(server.count('item_id=job_ids(q)'), 7)   # + Rakuten TV (0.5.49), YouTube (0.5.53), Joyn (0.5.65), TOGGO (0.5.79)
 
 
 if __name__ == '__main__':
