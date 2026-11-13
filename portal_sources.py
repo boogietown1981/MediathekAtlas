@@ -399,6 +399,8 @@ def archive_detail_document(identifier,doc):
         'video_families_found':len({e[6] for e in eligible}),
         'video_files_eligible':len(eligible),
         'files_in_manifest':len(raw_files),
+        # 0.5.92 (ArchiveMedia multi_catalog, bluray_playlist): what the upload holds besides videos.
+        **__import__('archive_extras').collect(identifier,meta,raw_files[:MAX_ARCHIVE_FILES]),
         'files_inspected':min(len(raw_files),MAX_ARCHIVE_FILES),
         'variants_displayed':len(variants),
         'hidden_short_clips':hidden_short,

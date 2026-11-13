@@ -1,4 +1,15 @@
-# MediathekAtlas · 0.5.91
+# MediathekAtlas · 0.5.92
+
+## Neu in 0.5.92: Archive.org-Scan wird verlässlich, Listen-Austausch, Blu-ray-Abbilder (aus Archive Media)
+
+- **Der Scan zählt nur noch, was Archive.org wirklich geliefert hat.** Sammlungen und Uploader werden sortiert abgefragt, und jede Seite muss nachweislich die angefragte sein. Bisher konnte eine still wiederholte erste Seite als Fortschritt gelten.
+- **Große Sammlungen werden vollständig gelesen.** Archive.org beantwortet höchstens 10 000 Treffer je Frage; größere Quellen blieben bisher dort stehen. Jetzt werden sie nach Veröffentlichungsdatum in Zeitfenster geteilt und Fenster für Fenster gelesen.
+- **Fehler werden unterschieden.** Netzprobleme werden mit wachsender Pause wiederholt und nach acht Versuchen angehalten statt endlos weiterzulaufen. Liefert Archive.org dreimal nicht die angefragte Seite, stellt der Scan von Seiten auf Zeitfenster um. Eine abgelehnte Anfrage hält die Quelle an. Die Position bleibt immer erhalten; „Start / Fortsetzen“ macht dort weiter.
+- **„Neu durchsuchen“** liest eine Quelle von vorn. Bereits Gefundenes bleibt, die Zähler des alten Laufs werden aufbewahrt. Jede Quelle zeigt, wie viel Archive.org nennt und wie viel gelesen wurde (ein Anhaltspunkt, kein Beweis).
+- **Liste austauschen** (Plattformen → Internet Archive → Scanquellen → „Gefundene Uploads mit einer anderen Installation austauschen“): „Liste speichern“ schreibt alle bekannten Uploads in eine Datei, „Liste einlesen“ übernimmt auf einer anderen Installation nur die, die dort fehlen. Die Datei hat das Format von ArchiveMedia, Listen gehen also in beide Richtungen. Sie enthält nur Archive.org-Kennungen, Titel und Dateinamen.
+- **Blu-ray-Abbilder.** Besteht ein Upload aus nummerierten Blu-ray-Clips, zeigt die Detailansicht die Playlists. „Hauptfilm suchen“ liest sie (je höchstens 256 KiB) und nennt den längsten Titel, dessen Clips alle im Upload liegen, mit Reihenfolge, Laufzeit und Größe. Geladen und zusammengefügt werden die Clips noch nicht.
+- **Weitere Inhalte eines Uploads.** Musik, Hörbücher, Bücher, Comics oder Programme, die neben dem Film im Upload liegen, werden mit vorsichtiger Einordnung und Begründung aufgeführt; die Links öffnen die Datei bei Archive.org. Nennt der Uploader eine ISBN oder eine MusicBrainz-Kennung, lässt sie sich auf Klick bei Open Library bzw. MusicBrainz nachschlagen.
+- Bei Uploads, deren Dateibestand schon vor dem Update gelesen wurde, zeigt die Detailansicht jetzt „Dateibestand neu von Archive.org lesen“. Erst danach erscheinen dort Bildhöhe (für die Staffel-Auswahl), Blu-ray-Struktur und weitere Inhalte.
 
 ## Neu in 0.5.91: Videos bei Rakuten TV, Joyn, TOGGO und JustWatch TV starten schneller
 
