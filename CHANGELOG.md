@@ -1,3 +1,10 @@
+## 0.5.107 – RTL+ aus dem Gratisbereich, „Meine Abos“ für RTL+ und Crunchyroll
+- Björn: „+“-Titel bei RTL+ laufen ohne Abo nicht; Accounts bei RTL+ und Crunchyroll sollen mitgenutzt werden.
+- `rtlplus.py`: Katalog aus Ordner 193 „Kostenlose Inhalte“ (`X-Location …/rtlplus-root/kostenlose-inhalte-main-root-service-f_193`), Layout-Seiten über `blockPage`/`pagination.nextPage`, Block-Seiten über `/folder/<id>/block/<blockId>` (statt `service/rtlplus_root`, das 404 lieferte), Unterordner. Film/Serie aus `extraDetails` („Film …“), Folgen-Kacheln über `parent` zur Serie. Hauptordner nur noch zum Zählen; Titel außerhalb des Gratisbereichs als `offer='abo'` gespeichert (neue Spalte, Umstellung beim Start). Erster Lauf im Gratisbereich blendet ältere Abo-Einträge sofort aus (`free_v1`), einmaliger Neuabruf nach dem Update.
+- `ui_prefs`: Gruppe „Meine Abos“ mit `abo_rtlplus`, `abo_crunchyroll` (Standard aus, nur Ja/Nein, keine Zugangsdaten); `describe()` liefert Standardwerte, `web/admin.js` nutzt sie (Zurücksetzen, Hinweistext).
+- RTL+-Liste: Abo-Titel nur mit `abo_rtlplus`, Kennzeichen „In deinem RTL+ Abo“; Titelseite „RTL+, nur mit Abo (in deinem Abo)“. Crunchyroll: mit `abo_crunchyroll` „In deinem Abo“.
+- Tests: RTL+ (Gratisbereich, Folgeseiten, Abo-Titel, Umstellung), Crunchyroll (Kennzeichen).
+
 ## 0.5.106 – RTL+-Links nach bestätigtem Schema
 - `rtlplus.web_url`: `https://plus.rtl.de/<seo>-p_<id>` (Björns Beispiel `plus.rtl.de/kurbis-chaos-in-der-heimat-p_1068`, 13.11.2026) statt `/video-tv/<bereich>/<seo>-<id>`. Einmalige Umschreibung gespeicherter Links in `rtlplus.sqlite3` (Merker `links_v2`).
 - ServusTV: `REQUEST_GAP` 0,5 s, nach 403/429/503 zwei weitere Versuche nach 4 und 15 s (`RETRY_WAITS`); Diagnose zählt abgewiesene und gerettete Abrufe, Hinweis nennt „x von y Abrufen“.

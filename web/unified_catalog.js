@@ -674,6 +674,6 @@
   };
   if (window.AtlasDisplay?.ready) {
     window.AtlasDisplay.ready.then(start,()=>start({}));
-    window.AtlasDisplay.onChange((now,before)=>{ if (now.merge_duplicates!==before.merge_duplicates && source==='all') refresh(); });
+    window.AtlasDisplay.onChange((now,before)=>{ if ((now.merge_duplicates!==before.merge_duplicates && source==='all') || now.abo_rtlplus!==before.abo_rtlplus || now.abo_crunchyroll!==before.abo_crunchyroll) refresh(); });
   } else start({});
 })();

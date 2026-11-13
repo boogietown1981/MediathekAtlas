@@ -303,6 +303,8 @@ window.AtlasPortalPanel = function (cfg) {
   // Details (0.5.42): the shared title page (web/portal_title.js), same as in the catalogue.
   // A tile started or finished a copy: keep the list "Offline gespeichert" in step.
   window.AtlasOffline?.onChange(K, () => { if (visible()) refreshOffline(); });
+  // 0.5.107: "Meine Abos" changes which titles this platform lists.
+  window.AtlasDisplay?.onChange((now, before) => { if (now['abo_' + K] !== before['abo_' + K]) { offset = 0; refresh(); } });
   const openDetail = id => window.AtlasPortalTitle?.open(K, id);
   // 0.5.76: the dashboard's "Musikvideos" opens a playlist here (play all, save all / selection).
   const openAlbum = item => {

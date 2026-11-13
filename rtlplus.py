@@ -53,6 +53,11 @@ API_HOSTS = frozenset({'auth.rtl.de', 'front-auth.rtlde.bedrock.tech', 'layout.r
 FOLDERS = (('4', 'movie', 'filme', ''), ('3', 'series', 'serien', ''), ('1', 'series', 'shows', 'Show'),
            ('148', 'series', 'serien', 'Kinder'))
 FOLDER_NAMES = {'4': 'Filme', '3': 'Serien', '1': 'Shows', '148': 'Kids'}
+# 0.5.107: the guest area "Kostenlose Inhalte" (folder 193) holds what RTL+ shows without an
+# subscription; everything else in the main folders needs RTL+ (Björn: "+" titles do not play).
+# Source: the RTL+ Free scraper of moviescout-modules (folder id, X-Location, block paging).
+FREE_FOLDER = '193'
+FREE_LOCATION = SITE + '/rtlplus-root/kostenlose-inhalte-main-root-service-f_' + FREE_FOLDER
 MAX_ANSWER = 16 * 1024 * 1024
 MAX_ITEMS = 20000
 MAX_BLOCK_PAGES = 40
@@ -75,7 +80,8 @@ CREATE TABLE IF NOT EXISTS rtlplus_items(
   rating TEXT NOT NULL DEFAULT '', genre TEXT NOT NULL DEFAULT '', summary TEXT NOT NULL DEFAULT '',
   poster TEXT NOT NULL DEFAULT '', imdb_id TEXT NOT NULL DEFAULT '', imdb_score REAL, imdb_votes INTEGER,
   number INTEGER, category TEXT NOT NULL DEFAULT '', playable INTEGER NOT NULL DEFAULT 0,
-  drm INTEGER NOT NULL DEFAULT 1, web_url TEXT NOT NULL DEFAULT '', seen REAL NOT NULL, updated REAL NOT NULL);
+  drm INTEGER NOT NULL DEFAULT 1, web_url TEXT NOT NULL DEFAULT '', seen REAL NOT NULL, updated REAL NOT NULL,
+  offer TEXT NOT NULL DEFAULT 'free');
 CREATE INDEX IF NOT EXISTS rtlplus_items_kind ON rtlplus_items(kind, seen);
 CREATE TABLE IF NOT EXISTS rtlplus_state(name TEXT PRIMARY KEY, value TEXT NOT NULL);
 '''
@@ -96,6 +102,8 @@ def _connect(root):
     db.row_factory = sqlite3.Row
     db.execute('PRAGMA busy_timeout=5000')
     db.executescript(SCHEMA)
+    if 'offer' not in {r[1] for r in db.execute('PRAGMA table_info(rtlplus_items)')}:
+        db.execute("ALTER TABLE rtlplus_items ADD COLUMN offer TEXT NOT NULL DEFAULT 'free'")   # 0.5.107
     _migrate_links(db)
     return db
 
@@ -261,7 +269,9 @@ def _migrate_links(db):
 
 
 def item_from(entry, kind, section, genre=''):
-    """(item, locked) from a ``classic`` block item that leads to a programme or film; None otherwise."""
+    """(item, locked) from a ``classic`` block item that leads to a programme or film; None otherwise.
+
+    ``kind`` None (free area, 0.5.107): a film when ``extraDetails`` starts with "Film", else a series."""
     if not isinstance(entry, dict) or entry.get('itemType') != 'classic':
         return None
     content = entry.get('itemContent') if isinstance(entry.get('itemContent'), dict) else {}
@@ -270,13 +280,18 @@ def item_from(entry, kind, section, genre=''):
         return None
     ident, seo = str(layout.get('id') or ''), str(layout.get('seo') or '')
     parent = layout.get('parent') if isinstance(layout.get('parent'), dict) else {}
-    if layout.get('type') == 'video' and re.fullmatch(r'\d{1,12}', str(parent.get('id') or '')):
+    if layout.get('type') == 'video':
         # 0.5.104 (Björn: film links ended on "Diese Seite existiert nicht"): a tile that leads to a
         # video names the video, but plus.rtl.de pages belong to the programme (``parent``).
+        if not re.fullmatch(r'\d{1,12}', str(parent.get('id') or '')):
+            return None
         ident, seo = str(parent['id']), str(parent.get('seo') or '')
     title = _text(content.get('title') or content.get('extraTitle') or '', 200)
     if not re.fullmatch(r'\d{1,12}', ident) or not title:
         return None
+    if kind is None:
+        kind = 'movie' if str(content.get('extraDetails') or '').strip().lower().startswith('film') else 'series'
+        section = 'filme' if kind == 'movie' else 'serien'
     highlight = _text(content.get('highlight'), 200)
     genres = [g.strip() for g in highlight.split('•') if g.strip() and not re.search(r'\d', g)][:4]
     if genre and genre not in genres:
@@ -286,7 +301,7 @@ def item_from(entry, kind, section, genre=''):
             'genre': ', '.join(genres), 'summary': _text(content.get('description') or content.get('subtitle'), 1600),
             'poster': _image(content), 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
             'category': genres[0] if genres else '', 'playable': 0, 'drm': 1,
-            'web_url': web_url(section, seo, ident)}, locked
+            'web_url': web_url(section, seo, ident), 'offer': 'free'}, locked
 
 
 def _blocks(answer):
@@ -320,15 +335,26 @@ def folder_target(entry):
     return ''
 
 
-def load_folder(api, folder, kind, section, genre, gap, found, locked_ids, subfolders=None, stats=None):
+def load_folder(api, folder, kind, section, genre, gap, found, locked_ids, subfolders=None, stats=None, location=None,
+                locked_items=None):
     """All titles of one folder, block by block; False when it stopped early.
 
-    A further block page that answers 404 ends that block (0.5.104, Björn's diagnosis: one 404 made
-    the whole run "partial"); sub-folders the folder links to are collected in ``subfolders``."""
+    Further layout pages come with ``blockPage``, further pages of a block from
+    ``/folder/<id>/block/<blockId>`` (0.5.107; the ``service/rtlplus_root`` path of 0.5.102 answered
+    404 in Björn's diagnosis). A 404 there ends only that block. Sub-folders go to ``subfolders``."""
     complete = True
     stats = stats if stats is not None else {}
-    answer = api.layout('/folder/%s/layout' % folder, {'blockPage': 1, 'nbPages': 3}, SITE + '/video-tv/' + section)
-    for block in _blocks(answer):
+    location = location or SITE + '/video-tv/' + section
+    path = '/folder/%s' % folder
+    answer = api.layout(path + '/layout', {'blockPage': 1, 'nbPages': 2}, location)
+    blocks, layout_page, layout_pages = _blocks(answer), _top_next(answer), 0
+    while layout_page and layout_pages < 10:
+        if gap:
+            time.sleep(gap)
+        more = api.layout(path + '/layout', {'blockPage': layout_page, 'nbPages': 2}, location)
+        blocks += _blocks(more)
+        layout_page, layout_pages = _top_next(more), layout_pages + 1
+    for block in blocks:
         if block.get('type') not in (None, 'bffPaginated'):
             continue
         entries, page, pages = _items(block), _next_page(block), 0
@@ -345,6 +371,8 @@ def load_folder(api, folder, kind, section, genre, gap, found, locked_ids, subfo
                 it, locked = got
                 if locked:
                     locked_ids.add(it['id'])
+                    if locked_items is not None:
+                        locked_items.setdefault(it['id'], it)
                 else:
                     found.setdefault(it['id'], it)
             if not page or not BLOCK_ID.fullmatch(block_id) or len(found) >= MAX_ITEMS:
@@ -355,7 +383,7 @@ def load_folder(api, folder, kind, section, genre, gap, found, locked_ids, subfo
             if gap:
                 time.sleep(gap)
             try:
-                more = api.layout('/service/rtlplus_root/block/%s' % block_id, {'nbPages': 3, 'page': page})
+                more = api.layout('%s/block/%s' % (path, block_id), {'nbPages': 3, 'page': page}, location)
             except urllib.error.HTTPError as exc:
                 if exc.code != 404:
                     raise
@@ -368,8 +396,16 @@ def load_folder(api, folder, kind, section, genre, gap, found, locked_ids, subfo
     return complete
 
 
+def _top_next(answer):
+    pagination = answer.get('pagination') if isinstance(answer, dict) and isinstance(answer.get('pagination'), dict) else {}
+    return _int(pagination.get('nextPage'), 2, 1000)
+
+
 FIELDS = ('kind', 'title', 'path', 'series_id', 'season', 'episode', 'year', 'duration', 'rating', 'genre',
-          'summary', 'poster', 'imdb_id', 'imdb_score', 'imdb_votes', 'number', 'category', 'playable', 'drm', 'web_url')
+          'summary', 'poster', 'imdb_id', 'imdb_score', 'imdb_votes', 'number', 'category', 'playable', 'drm', 'web_url',
+          'offer')
+ABO = 'Nur mit RTL+ Abo'
+FREE = 'Kostenlos'
 
 
 def _store(db, items, now):
@@ -382,7 +418,7 @@ def _store(db, items, now):
 
 
 def sync(root, opener=None, now=None, gap=None):
-    """Load the RTL+ Free titles of the four folders; Premium titles are only counted."""
+    """Load the free RTL+ titles (guest area); titles that need RTL+ are only counted."""
     now = time.time() if now is None else float(now)
     gap = (REQUEST_GAP if opener is None else 0) if gap is None else gap
     db = _connect(root)
@@ -397,42 +433,58 @@ def sync(root, opener=None, now=None, gap=None):
         api = Api(opener)
         api.login()
         found, locked, partial, notes, stats = {}, set(), False, [], {}
-        queue = [(folder, kind, section, genre, FOLDER_NAMES.get(folder, folder)) for folder, kind, section, genre in FOLDERS]
-        visited = set()
+        # 1) the free guest area with its sub-folders: this is the catalogue.
+        queue, visited = [(FREE_FOLDER, 'Kostenlose Inhalte')], set()
         while queue and len(visited) < MAX_FOLDERS and len(found) < MAX_ITEMS:
-            folder, kind, section, genre, name = queue.pop(0)
+            folder, name = queue.pop(0)
             if folder in visited:
                 continue
             visited.add(folder)
             subfolders = []
             try:
-                partial |= not load_folder(api, folder, kind, section, genre, gap, found, locked, subfolders, stats)
+                partial |= not load_folder(api, folder, None, '', '', gap, found, locked, subfolders, stats,
+                                           location=FREE_LOCATION)
             except Exception as exc:
-                code = getattr(exc, 'code', None)
-                if code == 404 and folder not in FOLDER_NAMES:
-                    stats['folder_404'] = stats.get('folder_404', 0) + 1   # a linked genre folder that is gone
+                if folder == FREE_FOLDER:
+                    raise
+                if getattr(exc, 'code', None) == 404:
+                    stats['folder_404'] = stats.get('folder_404', 0) + 1   # a linked folder that is gone
                     continue
                 partial = True
                 notes.append('%s: %s' % (name, _error(exc)))
                 continue
-            queue += [(sub, kind, section, genre, '%s (Unterordner %s)' % (FOLDER_NAMES.get(folder, name), sub))
-                      for sub in subfolders if sub not in visited]
-        locked -= set(found)
+            queue += [(sub, 'Kostenlose Inhalte (Unterordner %s)' % sub) for sub in subfolders if sub not in visited]
         if not found:
-            raise ValueError(notes[0] if notes else 'RTL+ lieferte keine kostenlosen Titel')
-        items = list(found.values())
-        counts = {'movies': sum(1 for i in items if i['kind'] == 'movie'),
-                  'series': sum(1 for i in items if i['kind'] == 'series'), 'premium': len(locked)}
+            raise ValueError('RTL+ lieferte keine kostenlosen Titel')
+        # 2) the main folders only to count what needs RTL+ (never listed, Björn: "+" titles do not play).
+        paid, free_paths = {}, {i['path'] for i in found.values()}
+        for folder, kind, section, genre in FOLDERS:
+            try:
+                load_folder(api, folder, kind, section, genre, gap, paid, locked, None, stats, locked_items=paid)
+            except Exception as exc:
+                stats['premium_folder_errors'] = stats.get('premium_folder_errors', 0) + 1
+                _notify('rtlplus_premium_count_failed', folder=folder, http_status=getattr(exc, 'code', 0) or 0)
+        # Kept as "Nur mit RTL+ Abo"; listed only when "Meine Abos → RTL+" is ticked (0.5.107).
+        abo = {}
+        for it in paid.values():
+            if it['path'] not in free_paths and it['id'] not in found:
+                abo.setdefault(it['id'], {**it, 'offer': 'abo'})
+        items = list(found.values()) + list(abo.values())
+        counts = {'movies': sum(1 for i in found.values() if i['kind'] == 'movie'),
+                  'series': sum(1 for i in found.values() if i['kind'] == 'series'),
+                  'premium': len({i['path'] for i in abo.values()})}
         db = _connect(root)
         try:
             with db:
                 _store(db, items, now)
                 previous = float(_get(db, 'last_success', '0') or 0)
-                visible_since = previous if partial and previous else now
+                # The first run on the free area hides the subscription titles of 0.5.102–0.5.106 at once.
+                first_free = _get(db, 'free_v1') != '1'
+                visible_since = previous if partial and previous and not first_free else now
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'),
                                    ('last_error', ('Katalog nur teilweise geladen' + (': ' + notes[0] if notes else '')) if partial else ''),
-                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), *counts.items()]:
+                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), ('free_v1', 1), *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()
@@ -485,6 +537,17 @@ def episodes(root, series_id, now=None):
             'note': 'Die Folgen stehen bei RTL+ (kostenlos mit Werbung, je nach Folge auch nur mit RTL+ Premium).'}
 
 
+def has_abo(root):
+    import ui_prefs
+    return bool(ui_prefs.load(root).get('abo_rtlplus'))
+
+
+def _labels(row, abo):
+    paid = row.get('offer') == 'abo'
+    return {'offer_label': ABO if paid else FREE,
+            'badge': ('In deinem RTL+ Abo' if abo else ABO) if paid else 'kostenlos'}
+
+
 def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection=''):
     import rtlplus_enrichment
     kind = {'movies': 'movie', 'series': 'series'}.get(view, 'movie')
@@ -495,6 +558,8 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         last = float(_get(db, 'last_success', '0') or 0)
         sql = 'FROM rtlplus_items WHERE kind=? AND seen>=?'
         args = [kind, last]
+        if not has_abo(root):
+            sql += " AND offer='free'"   # 0.5.107: subscription titles only with "Meine Abos → RTL+"
         if query:
             sql += ' AND (title LIKE ? OR genre LIKE ?)'
             like = '%' + str(query)[:100] + '%'
@@ -503,8 +568,10 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     finally:
         db.close()
     reports = rtlplus_enrichment.all_cached(root)
+    abo = has_abo(root)
     for row in rows:
         row.update(_summary(root, row, reports))
+        row.update(_labels(row, abo))
     counts = portal_reference.facets(rows)
     rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
@@ -524,7 +591,8 @@ def item(root, item_id):
     if not row:
         raise ValueError('RTL+-Titel nicht im Katalog; bitte Katalog neu laden')
     report = rtlplus_enrichment.cached(root, item_id)
-    return {'item': {**row, **_summary(root, row, {row['id']: report}), 'playable': 0}, 'series': None, 'reference': report}
+    return {'item': {**row, **_summary(root, row, {row['id']: report}), **_labels(row, has_abo(root)), 'playable': 0},
+            'series': None, 'reference': report}
 
 
 def state(root):
@@ -539,7 +607,8 @@ def state(root):
             'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
-            'premium': _int(_get(db, 'premium', '0')) or 0, 'channels': 0}
+            'premium': _int(_get(db, 'premium', '0')) or 0, 'channels': 0,
+            'free_catalog': _get(db, 'free_v1') == '1'}
     finally:
         db.close()
 
@@ -582,6 +651,8 @@ def loop(root, stop):
             continue
         current = state(root)
         if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
+                current['last_success'] and not current['running'] and not current.get('free_catalog')
+                and time.time() - current['last_attempt'] > 600) or (
                 current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 

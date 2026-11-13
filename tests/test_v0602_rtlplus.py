@@ -1,8 +1,8 @@
-"""0.5.102: RTL+ – the free part of RTL+ as a catalogue with links, never played (Widevine).
+"""0.5.102/0.5.107: RTL+ – the free guest area as a catalogue with links, never played (Widevine).
 
 Answers have the shape the public open-source RTL+ clients read (OIDC token, Bedrock token, Bedrock
-layout API with ``bffPaginated`` blocks of ``classic`` items, further pages via
-``service/rtlplus_root/block``). Titles and ids are made up; RTL+ is blocked in the build environment."""
+layout API with ``bffPaginated`` blocks of ``classic`` items; the free area is folder 193, further
+block pages via ``/folder/<id>/block/<blockId>``). Titles and ids are made up; RTL+ is blocked here."""
 import json
 import tempfile
 import unittest
@@ -18,12 +18,15 @@ import streaming
 NOW = 1794556800
 
 
-def entry(ident, title, kind='program', locked=False, seo=None, highlight='Krimi • 2024'):
-    target = {'type': 'layout', 'value_layout': {'type': kind, 'id': str(ident), 'seo': seo or 'titel-%s' % ident}}
+def entry(ident, title, kind='program', locked=False, seo=None, highlight='Krimi • 2024', details='', parent=None):
+    layout = {'type': kind, 'id': str(ident), 'seo': seo or 'titel-%s' % ident}
+    if parent:
+        layout['parent'] = {'type': 'program', 'id': str(parent), 'seo': 'titel-%s' % parent}
+    target = {'type': 'layout', 'value_layout': layout}
     if locked:
         target = {'type': 'lock', 'value_lock': {'originalTarget': target}}
     return {'itemType': 'classic', 'itemContent': {
-        'title': title, 'description': 'Über ' + title, 'highlight': highlight,
+        'title': title, 'description': 'Über ' + title, 'highlight': highlight, 'extraDetails': details,
         'image': {'idsByRatio': {'2:3': 'img%s' % ident}}, 'action': {'target': target}}}
 
 
@@ -52,28 +55,35 @@ class FakeRtl:
             self.deny_layout -= 1
             raise urllib.error.HTTPError(url, 401, 'Unauthorized', {}, None)
         path = parts.path.split('token-web-31', 1)[1]
-        if path == '/folder/4/layout':
-            return json.dumps({'blocks': [
-                block('filme-neu', [entry(101, 'Ein freier Film', 'video'), entry(102, 'Premium-Film', 'video', locked=True)], 2),
-                {'id': 'hero', 'type': 'hero', 'content': {'items': [entry(999, 'Banner', 'video')]}}]}).encode()
-        if path == '/service/rtlplus_root/block/filme-neu':
+        if path == '/folder/193/layout':
+            assert headers['X-Location'] == rtlplus.FREE_LOCATION
+            if query['blockPage'] == '1':
+                return json.dumps({'pagination': {'nextPage': 2}, 'blocks': [
+                    block('frei-filme', [entry(101, 'Ein freier Film', details='Film • 2019'),
+                                         entry(555, 'Folge 3', 'video', details='Serie', parent=201)], 2),
+                    {'id': 'hero', 'type': 'hero', 'content': {'items': [entry(999, 'Banner', 'video')]}}]}).encode()
+            return json.dumps({'blocks': [block('frei-serien', [entry(301, 'Eine Show', highlight='Reality'),
+                                                                entry(777, 'Kostenlose Kinderserien', 'folder'),
+                                                                entry(778, 'Alter Ordner', 'folder')], 4)]}).encode()
+        if path == '/folder/193/block/frei-filme':
             assert query['page'] == '2'
-            return json.dumps({'id': 'filme-neu', 'type': 'bffPaginated', 'content': {
-                'items': [entry(103, 'Zweiter freier Film', 'video')], 'pagination': {}}}).encode()
-        if path == '/folder/3/layout':
-            return json.dumps({'blocks': [block('serien', [entry(201, 'Freie Serie'), entry(202, 'Premium-Serie', locked=True),
-                                                         {'itemType': 'promo'}])]}).encode()
-        if path == '/folder/1/layout':
-            if self.fail_folder == '1':
-                raise urllib.error.HTTPError(url, 500, 'Server Error', {}, None)
-            return json.dumps({'blocks': [block('shows', [entry(301, 'Eine Show', highlight='Reality')])]}).encode()
-        if path == '/folder/148/layout':
-            return json.dumps({'blocks': [block('kids', [entry(201, 'Freie Serie'), entry(401, 'Kinderserie', highlight='Zeichentrick'),
-                                                         entry(777, 'Genre Zeichentrick', 'folder'), entry(778, 'Alter Ordner', 'folder')], 5)]}).encode()
-        if path == '/service/rtlplus_root/block/kids':
+            return json.dumps({'id': 'frei-filme', 'type': 'bffPaginated', 'content': {
+                'items': [entry(103, 'Zweiter freier Film', details='Film')], 'pagination': {}}}).encode()
+        if path == '/folder/193/block/frei-serien':
             raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)     # Björn's diagnosis: 404 on a further page
         if path == '/folder/777/layout':
-            return json.dumps({'blocks': [block('genre-777', [entry(402, 'Genre-Serie'), entry(4, 'Filme', 'folder')])]}).encode()
+            if self.fail_folder == '777':
+                raise urllib.error.HTTPError(url, 500, 'Server Error', {}, None)
+            return json.dumps({'blocks': [block('kinder', [entry(401, 'Kinderserie', highlight='Zeichentrick'),
+                                                         entry(193, 'Zurück', 'folder')])]}).encode()
+        # main folders: only counted (free titles appear there too)
+        if path == '/folder/4/layout':
+            return json.dumps({'blocks': [block('filme', [entry(101, 'Ein freier Film'), entry(102, 'Abo-Film'),
+                                                        entry(104, 'Gesperrter Film', locked=True)])]}).encode()
+        if path == '/folder/3/layout':
+            return json.dumps({'blocks': [block('serien', [entry(201, 'Freie Serie'), entry(202, 'Abo-Serie')])]}).encode()
+        if path == '/folder/1/layout':
+            raise urllib.error.HTTPError(url, 500, 'Server Error', {}, None)  # counting may fail quietly
         raise urllib.error.HTTPError(url, 404, 'Not Found', {}, None)
 
     @staticmethod
@@ -93,19 +103,47 @@ class RtlPlusTest(unittest.TestCase):
     def test_catalogue_lists_free_titles_and_counts_premium(self):
         fake = FakeRtl()
         result = rtlplus.sync(self.root, opener=fake, now=NOW)
-        self.assertEqual(result, {'ok': True, 'partial': False, 'movies': 2, 'series': 4, 'premium': 2})
+        # Free area only; 102, 104 and 202 need RTL+ and are only counted.
+        self.assertEqual(result, {'ok': True, 'partial': False, 'movies': 2, 'series': 3, 'premium': 3})
         movies = rtlplus.listing(self.root, 'movies')
         self.assertEqual([i['title'] for i in movies['items']], ['Ein freier Film', 'Zweiter freier Film'])
         series = {i['id']: i for i in rtlplus.listing(self.root, 'series')['items']}
-        self.assertEqual(set(series), {'s.201', 's.301', 's.401', 's.402'})   # 402 from the linked genre folder
-        self.assertEqual(sum(1 for c in fake.calls if '/folder/4/layout' in c), 1)
+        self.assertEqual(set(series), {'s.201', 's.301', 's.401'})   # 201 from an episode tile, 401 from a sub-folder
         self.assertEqual(series['s.301']['web_url'], 'https://plus.rtl.de/titel-301-p_301')
-        self.assertIn('Kinder', series['s.401']['genre'])
-        self.assertNotIn('2024', series['s.201']['genre'])
+        self.assertEqual(series['s.201']['web_url'], 'https://plus.rtl.de/titel-201-p_201')
         self.assertTrue(all(i['playable'] == 0 and i['drm'] == 1 for i in series.values()))
-        self.assertTrue(any('/service/rtlplus_root/block/filme-neu' in c for c in fake.calls))
+        self.assertTrue(any('/folder/193/block/frei-filme' in c for c in fake.calls))
+        self.assertFalse(any('/service/' in c for c in fake.calls))
+        self.assertEqual(sum(1 for c in fake.calls if '/folder/193/layout' in c), 2)   # layout page 2 as well
         state = rtlplus.state(self.root)
-        self.assertEqual((state['movies'], state['series'], state['premium'], state['last_result']), (2, 4, 2, 'complete'))
+        self.assertEqual((state['movies'], state['series'], state['premium'], state['last_result']), (2, 3, 3, 'complete'))
+        self.assertTrue(state['free_catalog'])
+
+    def test_my_subscription_shows_abo_titles(self):
+        # Björn 13.11.2026: "für Dienste, die einen Account brauchen ... RTL+ hätte ich"
+        import ui_prefs
+        rtlplus.sync(self.root, opener=FakeRtl(), now=NOW)
+        self.assertNotIn('m.102', {i['id'] for i in rtlplus.listing(self.root, 'movies')['items']})
+        ui_prefs.save(self.root, {'abo_rtlplus': True})
+        movies = {i['id']: i for i in rtlplus.listing(self.root, 'movies')['items']}
+        self.assertEqual(set(movies), {'m.101', 'm.102', 'm.103', 'm.104'})
+        self.assertEqual((movies['m.102']['badge'], movies['m.101']['badge']), ('In deinem RTL+ Abo', 'kostenlos'))
+        self.assertEqual(movies['m.104']['web_url'], 'https://plus.rtl.de/titel-104-p_104')
+        model = portal_title.model(self.root, 'rtlplus', 'm.102')
+        self.assertIn(['Angebot', 'RTL+, nur mit Abo (in deinem Abo)'], model['provider_facts'])
+        with self.assertRaises(hls_guard.DrmProtected):
+            rtlplus.play_source(self.root, 'm.102')                  # still played only at RTL+
+        self.assertFalse(any('pass' in k for k in ui_prefs.load(self.root)))   # no login data anywhere
+
+    def test_subscription_titles_of_older_versions_disappear(self):
+        db = rtlplus._connect(self.root)
+        with db:
+            rtlplus._store(db, [dict(rtlplus.item_from(entry(102, 'Abo-Film'), 'movie', 'filme')[0])], NOW - 100)
+            rtlplus._set(db, 'last_success', NOW - 100)
+        db.close()
+        self.assertFalse(rtlplus.state(self.root)['free_catalog'])
+        rtlplus.sync(self.root, opener=FakeRtl(fail_folder='777'), now=NOW)          # even a partial first run
+        self.assertNotIn('m.102', {i['id'] for i in rtlplus.listing(self.root, 'movies')['items']})
 
     def test_video_tile_links_to_its_programme(self):
         tile = entry(1417600, 'Ein Film', 'video')
@@ -145,13 +183,13 @@ class RtlPlusTest(unittest.TestCase):
 
     def test_failed_folder_keeps_rest_and_old_catalogue(self):
         rtlplus.sync(self.root, opener=FakeRtl(), now=NOW)
-        result = rtlplus.sync(self.root, opener=FakeRtl(fail_folder='1'), now=NOW + 100)
+        result = rtlplus.sync(self.root, opener=FakeRtl(fail_folder='777'), now=NOW + 100)
         self.assertTrue(result['ok'] and result['partial'])
         state = rtlplus.state(self.root)
         self.assertEqual(state['last_result'], 'partial')
-        self.assertIn('Shows: RTL+ antwortet mit HTTP 500', state['last_error'])
-        # The show from the earlier full load stays visible.
-        self.assertIn('s.301', {i['id'] for i in rtlplus.listing(self.root, 'series')['items']})
+        self.assertIn('Unterordner 777): RTL+ antwortet mit HTTP 500', state['last_error'])
+        # The series from the earlier full load stays visible.
+        self.assertIn('s.401', {i['id'] for i in rtlplus.listing(self.root, 'series')['items']})
 
     def test_unreachable_keeps_catalogue(self):
         rtlplus.sync(self.root, opener=FakeRtl(), now=NOW)

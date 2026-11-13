@@ -230,9 +230,10 @@
     for (const sw of meta.switches || []) { if (!groups.has(sw.group)) groups.set(sw.group, []); groups.get(sw.group).push(sw); }
     for (const [group, list] of groups) {
       const set = make('fieldset'); set.append(make('legend', group === 'Kachel' ? 'Jede Film- und Serienkachel zeigt' : group === 'Titelseite' ? 'Die Titelseite zeigt' : group));
+      if (group === 'Meine Abos') set.append(make('p', 'MediathekAtlas speichert keine Zugangsdaten. „Bei … ansehen“ öffnet den Anbieter in diesem Browser; dort einmal anmelden. Abgespielt wird beim Anbieter (Kopierschutz).', 'hint'));
       for (const sw of list) {
         const l = make('label', undefined, 'check'), box = make('input');
-        box.type = 'checkbox'; box.checked = prefs[sw.key] !== false;
+        box.type = 'checkbox'; box.checked = typeof prefs[sw.key] === 'boolean' ? prefs[sw.key] : sw.default !== false;
         box.onchange = () => change({[sw.key]: box.checked});
         l.append(box, document.createTextNode(' ' + sw.label)); set.append(l);
       }
@@ -243,7 +244,7 @@
   if ($('display-reset')) $('display-reset').onclick = async () => {
     const D = window.AtlasDisplay; if (!D) return;
     const reset = {card_size: 'normal', start_source: 'all', start_kind: 'movies', theme: 'dark'};
-    for (const sw of D.meta().switches || []) reset[sw.key] = true;
+    for (const sw of D.meta().switches || []) reset[sw.key] = sw.default !== false;
     try { await D.save(reset); say('display-status', 'Standard wiederhergestellt.'); renderDisplay(); }
     catch (e) { say('display-status', e.message, true); }
   };

@@ -237,6 +237,15 @@ class CatalogueTests(Fixture):
         self.assertIn('Animation', row['categories'])
         self.assertEqual((row['badge'], row['playable']), ('Nur mit Abo · Deutsch', 0))
 
+    def test_my_subscription_relabels_abo_titles(self):
+        # 0.5.107, Björn: "Crunchyroll hätte ich ein Account" – only the label changes, no login data.
+        import ui_prefs
+        self.load()
+        ui_prefs.save(self.root, {'abo_crunchyroll': True})
+        row = crunchyroll.listing(self.root, 'series', query='Frieren')['items'][0]
+        self.assertEqual(row['badge'], 'In deinem Abo · Deutsch')
+        self.assertEqual(len(self.titles('series', genre='Nur mit Abo')), 3)   # the filter keeps its name
+
     def test_episodes_on_demand_mark_free_ones(self):
         site, _ = self.load()
         data = crunchyroll.episodes(self.root, 's.GY19NQ2QR', fetch=site, now=time.time())

@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.5.106
+# MediathekAtlas · 0.5.107
+
+## Neu in 0.5.107: RTL+ nur noch kostenlos, „Meine Abos“
+
+- **RTL+ zeigt nur noch, was ohne Abo läuft.** Der Katalog kommt jetzt aus dem Gastbereich „Kostenlose Inhalte“ von RTL+. Titel, die RTL+ nur mit Abo zeigt („+“), werden gezählt und ausgeblendet; die frühere Liste mit Abo-Titeln verschwindet beim ersten Abruf von selbst. Weitere Seiten werden jetzt über den richtigen Pfad geladen (keine „HTTP 404“ mehr).
+- **Neu: Verwaltung → Darstellung → „Meine Abos“.** Je Anbieter ein Haken „Ich habe ein Abo“:
+  - RTL+: zeigt zusätzlich die Abo-Titel, markiert mit „In deinem RTL+ Abo“.
+  - Crunchyroll: Abo-Titel heißen dann „In deinem Abo“ statt „Nur mit Abo“.
+  - MediathekAtlas speichert keine Zugangsdaten. „Bei … ansehen“ öffnet den Anbieter in deinem Browser; dort einmal anmelden, die Chrome-Erweiterung drückt auf Wunsch „Abspielen“. Abgespielt wird beim Anbieter (Kopierschutz).
+- Nicht geprüft: echter Gastbereich von RTL+ (aus der Bauumgebung gesperrt). Ordner und Pfade stammen aus einem öffentlichen RTL+-Free-Client.
 
 ## Neu in 0.5.106: RTL+-Links führen auf die richtige Seite
 

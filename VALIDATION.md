@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.107 – RTL+ Gratisbereich, Meine Abos (13. November 2026)
+- Automatisch: gesamte Python-Suite (1135 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund); im Browser: „Meine Abos“ in Verwaltung → Darstellung, Haken RTL+ zeigt sofort auch Abo-Titel mit „In deinem RTL+ Abo“, ohne Fehler. RTL+ gegen nachgebaute Antworten im Aufbau eines öffentlichen RTL+-Free-Clients (Ordner 193, Block-Pfade).
+- Nicht geprüft: echter RTL+-Gastbereich und ob er alle kostenlosen Titel enthält; Anmeldung bei RTL+/Crunchyroll im Browser (liegt bei Björn).
+
 ## 0.5.106 – RTL+-Links (13. November 2026)
 - Automatisch: gesamte Python-Suite (1132 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund). Link-Schema aus Björns echter Adresse; ob jede Kachel den richtigen Namensteil (`seo`) liefert, prüft erst der Test bei Björn.
 

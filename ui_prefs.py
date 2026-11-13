@@ -31,6 +31,10 @@ SWITCHES = {
     'title_cast': ('Titelseite', 'Besetzung und Stab', True),
     'title_info': ('Titelseite', 'Angaben wie Sender, Laufzeit und Quelle', True),
     'title_versions': ('Titelseite', 'Fassungen und Dateien', True),
+    # 0.5.107 (Björn: "Accounts bei RTL+ und Crunchyroll mitnutzen"): only a yes/no per provider.
+    # No login data is stored; the provider's page opens in the own browser where one is signed in.
+    'abo_rtlplus': ('Meine Abos', 'RTL+: Ich habe ein Abo – auch Titel zeigen, die RTL+ nur mit Abo zeigt', False),
+    'abo_crunchyroll': ('Meine Abos', 'Crunchyroll: Ich habe ein Abo – Abo-Titel als „In deinem Abo“ zeigen', False),
 }
 DEFAULTS = {'card_size': 'normal', 'start_source': 'all', 'start_kind': 'movies', 'theme': 'dark',
             **{key: value[2] for key, value in SWITCHES.items()}}
@@ -72,6 +76,7 @@ def save(root, data):
 
 
 def describe():
-    return {'switches': [{'key': key, 'group': group, 'label': label} for key, (group, label, _) in SWITCHES.items()],
+    return {'switches': [{'key': key, 'group': group, 'label': label, 'default': default}
+                         for key, (group, label, default) in SWITCHES.items()],
             'sizes': [{'key': 'compact', 'label': 'Kompakt'}, {'key': 'normal', 'label': 'Normal'},
                       {'key': 'large', 'label': 'Groß'}]}

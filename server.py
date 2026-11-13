@@ -345,7 +345,9 @@ unified_index.ON_BUILD=_unified_built
 portal_snapshot.configure(ROOT/'snapshots')
 def _snapshot_stamp(status):
     # Changes when a catalogue run starts or ends; then the stored view is built anew.
-    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))
+    # 0.5.107: "Meine Abos" changes what RTL+ lists and how Crunchyroll labels it.
+    prefs=ui_prefs.load(ROOT)
+    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))+'|abo:%d%d'%(bool(prefs.get('abo_rtlplus')),bool(prefs.get('abo_crunchyroll')))
 def platform_context():
     """What platform_registry needs from the running server (read at call time, tests swap ROOT)."""
     return types.SimpleNamespace(root=ROOT,db=db,settings=settings,slots=SERVICE.provider_slots,portal_page=portal_page,job_ids=job_ids)

@@ -743,9 +743,13 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     finally:
         db.close()
     reports = crunchyroll_enrichment.all_cached(root)
+    import ui_prefs
+    mine = bool(ui_prefs.load(root).get('abo_crunchyroll'))   # 0.5.107: "Meine Abos"
     for row in rows:
         row.update(_summary(root, row, reports))
         row.update(_labels(row))
+        if mine and row.get('offer') != 'free':
+            row['badge'] = row['badge'].replace(PAID, 'In deinem Abo', 1)
         row['playable'] = 0
     counts = portal_reference.facets(rows)
     if genre in FILTERS:

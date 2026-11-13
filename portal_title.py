@@ -188,7 +188,8 @@ def _portal(root, source, item_id):
             m['notes'].append('Plex liefert diesen Titel nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht.')
     if source == 'rtlplus':
         # 0.5.102: catalogue with links only; every RTL+ stream uses Widevine.
-        facts.append(['Angebot', 'RTL+ Free, kostenlos mit Werbung (Folgen teils nur mit RTL+ Premium)'])
+        facts.append(['Angebot', 'RTL+, nur mit Abo' + (' (in deinem Abo)' if it.get('badge', '').startswith('In deinem') else '')
+                      if it.get('offer') == 'abo' else 'RTL+, kostenlos mit Werbung (Gastbereich)'])
         facts.append(['Stream', 'nur mit Kopierschutz (Widevine) – bei RTL+ ansehen'])
         m['offline'] = {'allowed': False, 'days': 0, 'night': False}
         m['notes'].append('RTL+ liefert alle Videos nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. '
@@ -206,7 +207,10 @@ def _portal(root, source, item_id):
     if source == 'crunchyroll':
         # 0.5.96: catalogue with links only. Free ad-supported plan ended 31.12.2025; streams use Widevine.
         free = it.get('offer') == 'free'
-        facts.append(['Angebot', 'Crunchyroll, kostenlos' if free else 'Crunchyroll, nur mit Abo'])
+        import ui_prefs
+        mine = ui_prefs.load(root).get('abo_crunchyroll')   # 0.5.107: "Meine Abos"
+        facts.append(['Angebot', 'Crunchyroll, kostenlos' if free else
+                      'Crunchyroll, in deinem Abo' if mine else 'Crunchyroll, nur mit Abo'])
         if it.get('language_labels'):
             facts.append(['Sprache', ', '.join(_text(a, 60) for a in it['language_labels'])])
         if it.get('rating'):
