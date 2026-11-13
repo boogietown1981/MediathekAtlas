@@ -7,7 +7,20 @@
 - Die Auswahl „Angebot“ filtert nach **Kostenlos / Nur mit Abo / Deutsche Synchronfassung / Deutsche Untertitel**. Sollte Crunchyroll wieder Folgen ohne Abo freigeben, erscheinen sie automatisch als „Kostenlos“.
 - **Gratis-Folgen:** Der offizielle YouTube-Kanal „Crunchyroll auf Deutsch“ (@CrunchyrollDE) ist unter YouTube als Vorschlag eingetragen (ganze Folgen ab 20 Minuten, Trailer und Clips bleiben draußen). Er läuft im MediathekAtlas-Player, braucht aber den YouTube-API-Schlüssel.
 - Nicht live geprüft: crunchyroll.com ist aus der Bauumgebung gesperrt. Crunchyroll schützt die Seite mit Cloudflare; blockiert es den Abruf, sagt die Katalog-Karte das im Klartext.
-- Basis ist 0.5.94; 0.5.95 (Verbund-Quittung) entsteht parallel und wird später zusammengeführt.
+- Sammelstand: 0.5.96 enthält 0.5.95 (Archivnachweis) und alles davor.
+
+## Neu in 0.5.95: Prüfsumme und Archivnachweis für Archive.org-Downloads, Zweitkopie im Verbund
+
+- **Jeder Archive.org-Download wird beim Laden geprüft.** Archive.org nennt zu jeder Datei eine Prüfsumme. Stimmt die geladene Datei nicht damit überein, wird sie verworfen statt gespeichert. Dafür muss der Dateibestand des Uploads mit dieser Version gelesen sein („Dateibestand neu von Archive.org lesen“ in der Detailansicht); bei älteren Einträgen wird nur gemessen.
+- **Archivnachweis je Datei.** Nach dem Download entsteht ein signierter Nachweis: welche Datei von welchem Upload, Prüfsumme der geladenen und der gespeicherten Datei, Datum. Jedes System hat dafür einen eigenen Schlüssel, der das Gerät nicht verlässt.
+- **Zweitkopie im Verbund.** Im Verbund tauschen die Systeme ihre Nachweise aus. Verwaltung → Speicher → „Archivnachweise“ zeigt je Datei: nur hier, Zweitkopie belegt (mit Name des anderen Systems und Datum) oder nur auf einem anderen System. Nachweise mit ungültiger Signatur werden nicht angenommen. Meldet ein System später unter einem anderen Schlüssel, steht „Schlüssel geändert“ da und die Kopie zählt nicht.
+- **„Hier ebenfalls laden“** holt eine Datei, die nur ein anderes System hat, von Archive.org auf dieses System. So entsteht gezielt eine zweite Kopie; sie wird wie jeder Download geprüft.
+- **„Erneut prüfen“** liest die Datei vollständig und vergleicht sie mit ihrem Nachweis. Das erkennt beschädigte oder veränderte Dateien. Fehlt die Datei, wird der Nachweis zurückgezogen. Wer eine Datei unter „Speicher“ löscht, zieht ihren Nachweis ebenfalls zurück; die anderen Systeme erfahren das.
+- **„Fehlende Nachweise erstellen“** holt den Nachweis für Downloads aus früheren Versionen nach (ohne Prüfung der Quelle, weil die geladenen Daten nicht mehr vorliegen).
+- Ein Nachweis ist eine Aussage mit Datum, keine laufende Überwachung. MediathekAtlas löscht deshalb auch bei belegter Zweitkopie nichts von selbst.
+- Ohne Verbund bleiben die Nachweise auf dem System und werden veröffentlicht, sobald ein Verbund eingerichtet ist. Systeme mit älterer Version überspringen die Nachweise.
+- Nicht geprüft: echte Downloads von Archive.org (aus der Bauumgebung gesperrt), zwei echte Geräte über MeshSync oder Tailscale. Getestet sind zwei Installationen auf einem Rechner mit gemeinsamem Verbundordner.
+- Sammelstand: 0.5.95 enthält 0.5.94 (Umwandeln) und alles davor.
 
 
 ## Neu in 0.5.94: Umwandeln auf 1080p, 720p oder 480p (Encoder)

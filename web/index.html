@@ -55,6 +55,14 @@
     <p id="encoder-status" class="muted" role="status"></p>
     <div id="encoder-jobs" class="encoder-jobs"></div>
   </div>
+  <div id="receipts-box" class="encoder-box" aria-label="Archivnachweise">
+    <div class="sectionhead"><div><h3>Archivnachweise (Archive.org-Downloads)</h3>
+      <p class="muted">Jeder Archive.org-Download wird beim Laden mit der Prüfsumme von Archive.org verglichen und bekommt einen signierten Nachweis mit der Prüfsumme der gespeicherten Datei. Im Verbund sehen die Systeme die Nachweise der anderen: „Zweitkopie belegt“ heißt, ein anderes System hat dieselbe Datei mit gültiger Signatur gemeldet. Ein Nachweis ist eine Aussage mit Datum, keine laufende Überwachung. Gelöscht wird hier nichts.</p></div>
+      <div><button type="button" id="receipts-create" hidden title="Für Archive.org-Downloads aus früheren Versionen die gespeicherte Datei einlesen und einen Nachweis erstellen. Das dauert je nach Größe einige Minuten.">Fehlende Nachweise erstellen</button>
+      <button type="button" id="receipts-refresh">Aktualisieren</button></div></div>
+    <p id="receipts-status" class="muted" role="status"></p>
+    <div class="storage-tablewrap" id="receipts-wrap" hidden><table class="storage-table"><thead><tr><th>Datei</th><th>Dieses System</th><th>Weitere Kopien im Verbund</th><th>Stand</th><th>Aktionen</th></tr></thead><tbody id="receipts-rows"></tbody></table></div>
+  </div>
 </section>
 <dialog id="encoder-dialog" aria-label="Download umwandeln"><div class="modalhead"><h2>Umwandeln</h2><button type="button" id="encoder-close">Schließen</button></div>
   <p id="encoder-what"></p>

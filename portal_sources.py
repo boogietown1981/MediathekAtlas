@@ -360,6 +360,8 @@ def archive_detail_document(identifier,doc):
             'size_bytes':_file_size(raw.get('size')),
             'duration_seconds':duration,
             'height':_pixels(raw.get('height')),'width':_pixels(raw.get('width')),
+            # 0.5.95: the checksums Archive.org publishes for the file; a download is compared with them (archive_receipts)
+            'md5':text(raw.get('md5'),32).lower(),'sha1':text(raw.get('sha1'),40).lower(),
             'duration_source':'Internet Archive file metadata' if duration is not None else None,
             'source':text(raw.get('source'),30),
             'original':text(raw.get('original'),400),

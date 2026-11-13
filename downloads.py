@@ -189,7 +189,7 @@ def run(row,meta,root,quality,update,cancelled):
     fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)
     try:
         with tempfile.TemporaryDirectory(prefix='.mediathekatlas-',suffix='.partial',dir=dest.parent) as work:
-            src=Path(work)/'original.bin.partial';out=Path(work)/'tagged.mkv.partial'
+            src=Path(work)/'original.bin.partial';out=Path(work)/'tagged.mkv.partial';checked={}
             reserve=256*1024*1024
             if fetcher:
                 import youtube_downloads
@@ -206,6 +206,11 @@ def run(row,meta,root,quality,update,cancelled):
                     ctype=response.headers.get('Content-Type','').lower()
                     if any(x in ctype for x in ('text/html','mpegurl','dash+xml')):raise ValueError('Server liefert keine direkte Videodatei')
                     total=max(0,int(response.headers.get('Content-Length') or 0));received=0;last=0
+                    # 0.5.95: Archive.org downloads are hashed while they arrive and compared with the published checksum.
+                    expect=row.get('_expect') if isinstance(row.get('_expect'),dict) else None
+                    if expect is not None:
+                        import archive_receipts
+                        digests=archive_receipts.hashers()
                     started=time.monotonic();reserve=256*1024*1024
                     require_space(dest.parent,2*total+reserve)
                     update('downloading',0,total,speed=0,eta=None)
@@ -214,13 +219,16 @@ def run(row,meta,root,quality,update,cancelled):
                         chunk=response.read(1024*1024)
                         if not chunk:break
                         f.write(chunk);received+=len(chunk)
+                        if expect is not None:
+                            for digest in digests.values():digest.update(chunk)
                         if time.monotonic()-last>.5:
                             speed=received/max(.001,time.monotonic()-started)
                             require_space(dest.parent,max(0,2*total-received)+reserve if total else received+reserve)
                             update('downloading',received,total,speed=speed,eta=max(0,(total-received)/speed) if total and speed else None);last=time.monotonic()
                     if total and received!=total:raise ValueError('Download unvollständig')
+                    if expect is not None:checked['source_check']=archive_receipts.source_check(expect,digests,received)
             require_space(dest.parent,int(received*1.05)+reserve)
-            update('tagging',received,total,speed=0,eta=None)
+            update('tagging',received,total,speed=0,eta=None,**checked)
             if cancelled():raise ValueError('Download abgebrochen')
             original_probe=probe(src)
             if meta.get('kind')=='series':

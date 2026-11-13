@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment, crunchyroll, crunchyroll_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -268,6 +268,9 @@ def worker():
         except Exception as e:
             diagnostics.error('download_failed',e,job_id=j['id'])
             if not cancelled():j.update(state='error',error=core.safe_error(e));put_job(j)
+        if j.get('state')=='done' and j.get('origin')==archive_downloads.ORIGIN:
+            # 0.5.95: signed receipt with checksum for the Verbund; runs beside the queue, a large file takes a while to read.
+            threading.Thread(target=archive_receipt,args=(dict(j),),daemon=True,name='archive_receipt').start()
         if j.get('state')=='done' and not local_only:
             try:SERVICE.mesh_done(j)
             except OSError as e:diagnostics.error('mesh_done_failed',e,job_id=j['id'])
@@ -275,6 +278,30 @@ def worker():
 
 SERVICE=catalog_service.Service(db,settings,STOP,ROOT)
 def encoder_tools():return {'ffmpeg':runtime_tools.resolve('ffmpeg'),'ffprobe':runtime_tools.resolve('ffprobe')}
+RECEIPT_TASK={'running':False,'label':'','done':0,'total':0,'result':None}
+RECEIPT_LOCK=threading.Lock()
+def archive_receipt(job,converted=False):
+    """0.5.95: measure a finished Archive.org download, sign its receipt and announce it to the Verbund."""
+    try:
+        data=archive_receipts.issue(ROOT,job,converted=converted,cancelled=STOP.is_set);SERVICE.mesh_receipts()
+        diagnostics.event('archive_receipt_issued',source_check=data['source_check'] or 'none',converted=data['converted'],size_mb=round(data['stored_size']/1048576))
+        return True
+    except Exception as e:
+        diagnostics.error('archive_receipt_failed',e);return False
+def receipt_task(label,total,work):
+    """One reading job at a time (creating missing receipts, re-checking a file): large files take minutes on a NAS."""
+    with RECEIPT_LOCK:
+        if RECEIPT_TASK['running']:raise ValueError('Es läuft bereits eine Prüfung. Bitte warten, bis sie fertig ist.')
+        RECEIPT_TASK.update(running=True,label=label,done=0,total=total,result=None)
+    def run():
+        try:RECEIPT_TASK['result']=work(lambda:RECEIPT_TASK.__setitem__('done',RECEIPT_TASK['done']+1))
+        except Exception as e:
+            diagnostics.error('archive_receipt_task_failed',e);RECEIPT_TASK['result']={'state':'error','message':core.safe_error(e)}
+        finally:RECEIPT_TASK['running']=False
+    threading.Thread(target=run,daemon=True,name='archive_receipt_task').start()
+def receipts_overview():
+    with db() as c:pending=len(archive_receipts.missing(c,ROOT))
+    return {**archive_receipts.overview(ROOT,SERVICE.mesh_names,pending,SERVICE.mesh_status.get('enabled') is True),'task':dict(RECEIPT_TASK)}
 def encoder_replaced(job_id,old,new):
     """0.5.94: after a checked conversion replaced the original, the download points to the new file."""
     with db() as c:
@@ -285,6 +312,8 @@ def encoder_replaced(job_id,old,new):
                 if job.get(key)==old:job[key]=new
             job['encoded']={'at':time.time(),'from':Path(old).name}
             c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(job,ensure_ascii=False),str(job_id)))
+            # 0.5.95: the receipt described the original; the converted file gets a new one, marked as converted.
+            if job.get('origin')==archive_downloads.ORIGIN:threading.Thread(target=archive_receipt,args=(dict(job),True),daemon=True,name='archive_receipt').start()
     local_library.invalidate(old,new);catalog.invalidate_listings(drop=True);unified_index.invalidate()
 ENCODER=encoder.Worker(ROOT,encoder_tools,encoder_replaced,diagnostics.event,diagnostics.error)
 catalog.LISTING_DB=db
@@ -633,6 +662,7 @@ class Handler(BaseHTTPRequestHandler):
         if path=='/api/watch':
             # 0.5.81: Merkliste, Weiterschauen and playback positions, kept on the server (watch_state).
             return self.send(watch_state.overview(ROOT))
+        if path=='/api/archive-receipts':return self.send(receipts_overview())
         if path=='/api/encoder':return self.send(encoder.listing(ROOT,encoder_tools()))
         if path=='/api/storage':
             # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
@@ -1383,6 +1413,44 @@ class Handler(BaseHTTPRequestHandler):
                 values=storage_policy.save(ROOT,d)
                 diagnostics.event('storage_settings',budget_gb=values['budget_gb'],protect_days=values['protect_days'])
                 with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
+            if path=='/api/archive-receipts-create':
+                # 0.5.95: receipts for Archive.org downloads from before this version (stored file only; the loaded bytes are gone).
+                with db() as c:jobs_missing=archive_receipts.missing(c,ROOT)
+                if not jobs_missing:raise ValueError('Alle Archive.org-Downloads haben bereits einen Nachweis')
+                def create(step):
+                    made=0
+                    for job in jobs_missing:
+                        if STOP.is_set():break
+                        made+=1 if archive_receipt(job) else 0;step()
+                    return {'state':'ok','message':'%d von %d Nachweisen erstellt.'%(made,len(jobs_missing))}
+                receipt_task('Nachweise erstellen',len(jobs_missing),create)
+                return self.send(receipts_overview())
+            if path=='/api/archive-receipt-check':
+                identifier,name=str(d.get('identifier') or ''),str(d.get('file') or '')
+                def check(step):
+                    result=archive_receipts.recheck(ROOT,identifier,name,cancelled=STOP.is_set)
+                    if result['state']=='missing':SERVICE.mesh_receipts()
+                    diagnostics.event('archive_receipt_checked',state=result['state']);step()
+                    return result
+                receipt_task('Datei erneut prüfen',1,check)
+                return self.send(receipts_overview())
+            if path=='/api/archive-receipt-fetch':
+                # 0.5.95: load the file another system vouches for from Archive.org here as well (a second copy). Only known receipts.
+                identifier,name=str(d.get('identifier') or ''),str(d.get('file') or '')
+                proof=archive_receipts.remote(ROOT,identifier,name)
+                if not proof:raise ValueError('Für diese Datei liegt kein gültiger Nachweis eines anderen Systems vor')
+                row=portal_sources.entry('internet_archive',identifier,proof['title'] or identifier,'https://archive.org/details/'+urllib.parse.quote(identifier,safe=''),evidence='verbund_receipt')
+                with db() as c:
+                    c.execute('INSERT OR IGNORE INTO portal_items(id,source,external_id,title,title_key,year,page_url,metadata,discovered,updated) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                              (row['id'],row['source'],row['external_id'],row['title'],portal_sources.title_key(row['title']),None,row['page_url'],json.dumps(row,ensure_ascii=False),time.time(),time.time()))
+                    saved=portal_sources.archive_saved_detail(c,row['id']).get('detail')
+                if not saved or not any(v.get('filename')==name for v in saved.get('video_variants') or []):
+                    try:detail=portal_sources.fetch_archive_detail(identifier)
+                    except OSError as e:raise ValueError('Archive.org ist gerade nicht erreichbar; der Dateibestand des Uploads konnte nicht gelesen werden ('+core.safe_error(e)+'). Bitte später erneut versuchen.') from None
+                    with db() as c:portal_sources.save_archive_detail(c,row['id'],detail)
+                with db() as c:result=archive_downloads.enqueue(c,settings()['download_dir'],row['id'],name)
+                diagnostics.event('archive_receipt_fetch_queued',created=result.get('created'))
+                return self.send({**result,'receipts':receipts_overview()})
             if path=='/api/encoder-add':
                 # 0.5.94: convert one finished download to a smaller picture (encoder.py). Replacing the original needs the confirmation.
                 replace=d.get('replace') is True
@@ -1399,7 +1467,11 @@ class Handler(BaseHTTPRequestHandler):
             if path=='/api/storage-delete':
                 # One file per request, only after the user's confirmation in the page; pinned titles are refused.
                 if d.get('confirm') is not True:raise ValueError('Löschen nur nach Bestätigung')
-                with db() as c:result=storage_policy.delete(c,str(d.get('id','')),watch_state.states(ROOT),netzkino_downloads.remove_files)
+                with db() as c:
+                    gone=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(str(d.get('id','')),)).fetchone()
+                    result=storage_policy.delete(c,str(d.get('id','')),watch_state.states(ROOT),netzkino_downloads.remove_files)
+                # 0.5.95: this system no longer vouches for the deleted file; the Verbund learns it at once.
+                if gone and archive_receipts.withdraw_job(ROOT,json.loads(gone[0])):SERVICE.mesh_receipts()
                 catalog.invalidate_listings(drop=True);unified_index.invalidate()
                 diagnostics.event('storage_delete',freed_mb=round(result['freed_bytes']/1048576),files=result['removed_files'])
                 with db() as c:return self.send({**result,'storage':storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT))})
