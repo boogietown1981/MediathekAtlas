@@ -24,7 +24,7 @@ class ExtensionPackageTests(unittest.TestCase):
         self.assertNotIn('host_permissions', manifest)
         self.assertEqual(len(manifest['content_scripts']), 1)
         script = manifest['content_scripts'][0]
-        self.assertEqual(sorted(script['matches']), ['https://www.joyn.de/*', 'https://www.justwatch.com/*',
+        self.assertEqual(sorted(script['matches']), ['https://www.crunchyroll.com/*', 'https://www.joyn.de/*', 'https://www.justwatch.com/*',
                                                      'https://www.rakuten.tv/*', 'https://www.toggo.de/*'])
         self.assertEqual(script['js'], ['autostart.js'])
         for path in list(manifest['icons'].values()) + [manifest['action']['default_popup']]:

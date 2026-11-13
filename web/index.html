@@ -84,6 +84,7 @@
   <button type="button" data-catalog-source="youtube">YouTube</button>
   <button type="button" data-catalog-source="joyn">Joyn</button>
   <button type="button" data-catalog-source="toggo">TOGGO</button>
+  <button type="button" data-catalog-source="crunchyroll">Crunchyroll</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
   <div class="sectionhead"><div><h2 id="atlas-cross-title">Alle Plattformen · Filme</h2>
@@ -121,6 +122,7 @@
     <button class="platform-tab" type="button" data-platform="youtube">YouTube</button>
     <button class="platform-tab" type="button" data-platform="joyn">Joyn</button>
     <button class="platform-tab" type="button" data-platform="toggo">TOGGO</button>
+    <button class="platform-tab" type="button" data-platform="crunchyroll">Crunchyroll</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -266,6 +268,34 @@
   <div class="netzkino-pages"><button type="button" id="toggo-prev">← Zurück</button>
     <span id="toggo-page-label" class="muted"></span>
     <button type="button" id="toggo-next">Weiter →</button></div>
+</section>
+<section id="crunchyroll" class="pluto-panel crunchyroll-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Crunchyroll · Anime-Serien und Filme von crunchyroll.com</h3>
+    <p class="muted">Der Crunchyroll-Katalog mit Staffeln, Folgen, deutscher Synchronfassung bzw. Untertiteln, Altersfreigabe und Bewertung.
+       Crunchyroll hat das kostenlose Angebot mit Werbung zum 31.12.2025 eingestellt: Titel laufen nur noch mit Crunchyroll-Abo und nur mit Kopierschutz (Widevine). MediathekAtlas umgeht nichts: „Bei Crunchyroll ansehen“ öffnet den Titel auf crunchyroll.com.
+       Ganze Folgen gratis gibt es auf dem offiziellen YouTube-Kanal „Crunchyroll auf Deutsch“ (unter YouTube als Vorschlag eingetragen). Offline-Speichern gibt es für Crunchyroll nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="crunchyroll-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="crunchyroll-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="crunchyroll-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Crunchyroll-Ansicht">
+    <button type="button" id="crunchyroll-view-series" class="primary">Serien</button>
+    <button type="button" id="crunchyroll-view-movies">Filme</button>
+    <button type="button" id="crunchyroll-back" hidden>← Zur Serienübersicht</button>
+    <span id="crunchyroll-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Crunchyroll-Titel suchen<input type="search" id="crunchyroll-filter" placeholder="Titel"></label>
+    <label>Angebot<select id="crunchyroll-pick"><option value="">Alles</option><option value="Kostenlos">Nur Kostenloses</option><option value="Nur mit Abo">Nur mit Abo</option><option value="Deutsche Synchronfassung">Deutsche Synchronfassung</option><option value="Deutsche Untertitel">Deutsche Untertitel</option></select></label>
+    <label>Sortierung<select id="crunchyroll-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="crunchyroll-categories" class="portal-categories" role="group" aria-label="Crunchyroll-Kategorien" hidden></div>
+  <p id="crunchyroll-status" class="muted" role="status"></p>
+  <details id="crunchyroll-offline" class="nk-offline crunchyroll-offline" hidden><summary>Offline-Kopien von Crunchyroll <span id="crunchyroll-offline-count" class="muted"></span></summary>
+    <div id="crunchyroll-offline-jobs"></div></details>
+  <div id="crunchyroll-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="crunchyroll-prev">← Zurück</button>
+    <span id="crunchyroll-page-label" class="muted"></span>
+    <button type="button" id="crunchyroll-next">Weiter →</button></div>
 </section>
 <section id="youtube" class="pluto-panel youtube-panel">
   <div class="panel netzkino-sync-panel">
@@ -542,4 +572,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script></body></html>
