@@ -1,3 +1,12 @@
+## 0.6.3 – Plex offline (30 Tage), Netzprüfung mit dem richtigen Zertifikatsspeicher
+- `plex_downloads.py` (nach dem Muster von `rakuten_downloads.py`): `build_job` lehnt `drm=1`, Serien, Live-Sender und unbekannte IDs ab; ein ungeprüfter Titel (`drm=-1`) wird vorher über `plex.play_source` geprüft (setzt `drm`). Lizenz `plex_offline`, 30 Tage. `resolve` holt die Stream-Adresse mit Plex-Token erst beim Download; im Auftrag und in `metadata.json` steht kein Token (`public_url`).
+- `platform_registry`: Plex mit `offline=plex_downloads` → `POST /api/plex-download-add`. `netzkino_downloads`: `PORTAL_LICENSES`/`PORTAL_NAMES`/`portal_days`, eigener Hinweistext (persönliche Nutzung, ohne Kopierschutz), `plex_id` in der Liste, `plex.tv` als eigene Quelle bei Fremd-Lizenzdateien gesperrt. `downloads`: Resolver `plex`, in `HLS_RESOLVERS` (ffmpeg kopiert HLS und DASH).
+- `portal_title`: Plex-Film/-Folge `offline.allowed`, solange nicht als kopiergeschützt bekannt; Folgen in der Serienansicht wie bei den anderen Plattformen. `server`: Katalogkarte mit 30 Offline-Tagen, Plex in der Download-Übersicht.
+- Oberfläche: Plex in `offline_button.js` (Kachel-Knopf), `portal_title.js` (`plex-download-add`), `plex.js` (`offlineNote`), Bereich „Offline-Kopien von Plex“ sichtbar, Herkunft „Plex“ in der Download-Liste.
+- `netcheck._check`: `ssl._create_default_https_context()` statt `ssl.create_default_context()`, damit die Diagnose den Ersatz-Zertifikatsspeicher von `ensure_trust_store()` nutzt (Björns Diagnose vom 14.11.2026: 21 von 21 Servern „certificate“, Kataloge trotzdem geladen).
+- Tests: `tests/test_v0603_plex_offline.py`; angepasst: Registry-Routen, Plex-Titelseite, Zahl der Download-Plattformen.
+- 0.6.2 ist für API v1 reserviert (anderer Arbeitsstrang) und in 0.6.3 nicht enthalten.
+
 ## 0.6.2 – Phase C, Teil 1: API v1 und Geräteschlüssel
 - `api_keys.py`: Geräteschlüssel (`atlas_…`, 256 Bit Zufall; gespeichert als SHA-256 in `api_keys.json`, 0600, höchstens 50, Name eindeutig, `last_used` höchstens alle fünf Minuten geschrieben) und Tickets (`<Ablauf>.<HMAC-SHA256>`, zwölf Stunden, Geheimnis des laufenden Servers).
 - `routing.py`: Stufe `v1`. `server.py`: `Handler.v1_allowed` (Geräteschlüssel in `Authorization: Bearer`, oder Anmeldung + Seitentoken, oder Ticket für `/api/v1/stream` und `/api/v1/file`), `Handler.v1`; der Zweig steht in GET und POST vor der Anmeldeprüfung, nach der Host-Prüfung. Falsche Schlüssel zählen im Netzwerkmodus in die Sperre der Anmeldung (`ACCESS.blocked`).

@@ -9,6 +9,7 @@
     pluto: {name: 'Pluto TV', action: 'offline-download-action'},
     justwatch: {name: 'JustWatch TV', action: 'offline-download-action'},
     rakuten: {name: 'Rakuten TV', action: 'offline-download-action'},
+    plex: {name: 'Plex', action: 'offline-download-action'},   // 0.6.3: only titles without copy protection
     youtube: {name: 'YouTube', action: 'offline-download-action'}};
   const ACTIVE = ['queued', 'downloading', 'tagging'], FAILED = ['error', 'cancelled', 'interrupted'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar',

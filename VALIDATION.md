@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.3 – Plex offline (14. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Smoke-Tests, Klicktest Chromium, `ruff` (F, E9) für die geänderten Module.
+- Neu: `tests/test_v0603_plex_offline.py` (Film ohne Kopierschutz in der gemeinsamen Warteschlange, Folge als Serienfolge benannt, Ablehnung von kopiergeschützten Titeln/Serien/Live-Sendern, kein Token im Auftrag, Adresse erst beim Download, Titelseite, Route, Netzprüfung mit gepatchtem Kontext).
+- Browser (Chromium, nachgestellter Plex-Katalog ohne Netz): Kachel zeigt „⬇ Offline speichern (30 Tage)“ nur bei Titeln ohne bekannten Kopierschutz, kopiergeschützter Titel nur „Bei Plex ansehen“; Auswahl-Dialog → „Vorgemerkt“; Bereich „Offline-Kopien von Plex“ zeigt den Auftrag. Der Download selbst scheiterte erwartungsgemäß am fehlenden Netz („Plex ist nicht erreichbar“).
+- Nicht geprüft: echter Plex-Download (Plex ist in der Bauumgebung gesperrt), DASH-Kopie mit ffmpeg gegen echte Plex-Streams, Safari/Firefox, echte NAS.
+
 ## 0.6.2 – API v1 und Geräteschlüssel (14. November 2026)
 - Automatisch: gesamte Python-Suite (1181 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium inklusive Schlüssel anlegen, `/api/v1` mit Schlüssel aufrufen, Schlüssel löschen (ohne Befund).
 - Echter Server, Einzelplatz: ohne Schlüssel 401 auf allen v1-Adressen (auch unbekannten), mit Schlüssel Katalog, Live, Merkliste, Downloads; Schlüssel öffnet keine andere Adresse (403); Merkliste schreiben und in der Weboberfläche wiederfinden; fertiger Download: Liste, Wiedergabe-Auskunft, Datei nur mit Ticket ohne Kopfzeile; verfälschtes Ticket 401; Ticket öffnet nur die Medienadressen; gelöschter Schlüssel 401; Schlüssel und Ticket stehen nicht im Protokoll.
