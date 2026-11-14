@@ -106,12 +106,16 @@ function startHls(url,t){stopHls();gateOff();S.gated=false;S.fresh=true;S.mode='
  hls.on(H.Events.MANIFEST_PARSED,()=>{if(S.hls!==hls)return;
   const seen=new Map();for(const l of hls.levels)if(l.height&&(!seen.has(l.height)||l.bitrate<seen.get(l.height)))seen.set(l.height,l.bitrate);
   if(seen.size)S.info.levels=[...seen].map(([height,bandwidth])=>({id:String(height),label:height+'p',height,bandwidth}));
-  hls.currentLevel=hlsLevel(wish());renderQuality();video.play().catch(()=>{});});
+  hls.currentLevel=hlsLevel(wish());renderQuality();video.play().catch(()=>{});reportLanguages(hls);});
  hls.on(H.Events.LEVEL_SWITCHED,(e,d)=>{const l=hls.levels[d.level];S.hlsHeight=l&&l.height||0;if(S.stats)S.stats.switches=(S.stats.switches||0)+1;renderQuality();});
  hls.on(H.Events.ERROR,(e,d)=>{if(S.hls!==hls||!d.fatal)return;
   if(d.type===H.ErrorTypes.MEDIA_ERROR&&recovered<2){recovered++;hls.recoverMediaError();return;}
   fallback(d.type===H.ErrorTypes.NETWORK_ERROR?'Anbieter nicht direkt erreichbar':String(d.details||d.type));});
  hls.loadSource(url);hls.attachMedia(video);}
+// 0.6.5: tell the server which audio and subtitle tracks the provider's playlist names (languages.py).
+function reportLanguages(h){try{const pick=t=>({lang:String(t.lang||''),name:String(t.name||''),characteristics:String(t.characteristics||'')});
+ const audio=(h.audioTracks||[]).slice(0,16).map(pick),subtitles=(h.subtitleTracks||[]).slice(0,16).map(pick);
+ if(S.ref&&(audio.length||subtitles.length))api('language-observe',{...S.ref,audio,subtitles}).catch(()=>{});}catch(e){}}
 function startDirect(src,t){gateOff();S.gated=false;S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
 function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode==='direct'){video.currentTime=t;return;}
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.

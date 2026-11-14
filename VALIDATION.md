@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.5 – Sprachen je Titel (14. November 2026)
+- Automatisch: gesamte Python-Suite (1188 Tests, 4 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium (ohne Befund), `ruff` (F, E9) für alle geänderten Module.
+- Sichtprüfung mit Testdaten (Chromium): Katalog mit Filter „Originalfassung“, Kachel „🗣 DE · OV · UT DE“, Titelseite eines Mediathek-Films mit regulärer Fassung + OmU, Titelseite eines Pluto-TV-Films mit im Stream erkannten Spuren.
+- Nicht geprüft: echte Anbieter (kein Netz zu den Anbietern in der Testumgebung). Ob Pluto TV, Rakuten TV, Joyn, TOGGO, Plex und RTL+ in ihren Katalogantworten Sprachfelder liefern, ist ungeklärt; ohne Felder bleibt es bei Stream-Prüfung, Titelzusätzen und Annahme. Ob die HLS-Listen der Anbieter `LANGUAGE` setzen, zeigt erst das Abspielen. JustWatch-Sprachen (GraphQL `audioLanguages`) bewusst nicht abgefragt, um die Katalogabfrage nicht zu gefährden. Laufzeit des Sprachfilters mit dem vollen Mediathek-Katalog (~700.000 Werke) auf NAS ungemessen. Firefox/WebKit nur in der CI.
+
 ## 0.6.1 – Routen-Tabelle (14. November 2026)
 - Automatisch: gesamte Python-Suite (1171 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund), `ruff` (F, E9) für `server.py` und `routing.py`.
 - Vergleich alt gegen neu: Server 0.6.0 und 0.6.1 nebeneinander gestartet, 327 gleiche Aufrufe (56 GET-Adressen mit/ohne Parameter und mit/ohne Token, 51 POST-Adressen mit zwei Eingaben). Statuscodes und Antworten gleich; 12 Abweichungen nur durch Zeitstempel, Geräteschlüssel, Pfade.

@@ -40,6 +40,7 @@ import urllib.request
 import uuid
 
 import portal_reference
+import languages
 import provider_base
 
 API = 'https://gizmo.rakuten.tv/v3/'
@@ -268,6 +269,7 @@ def item_from(node):
     score, votes, imdb_id = _imdb(node)
     duration = _int(node.get('duration'), 1, 1440)
     return {
+        'languages': languages.harvest(node),
         'id': KIND_PREFIX[kind] + '.' + slug, 'kind': kind, 'title': title, 'path': slug, 'series_id': '',
         'season': None, 'episode': None, 'year': _int(node.get('year'), 1880, 2100),
         'duration': duration * 60 if duration and kind == 'movie' else None, 'rating': _rating(node),
@@ -364,6 +366,7 @@ def _store(db, items, now):
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)), ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)),
                    (item['id'], *[item[f] for f in FIELDS], now, now))
+    languages.remember_from_db(db, 'rakuten', items, now)   # 0.6.5: languages named by the provider
 
 
 def _load_list(request, ident, gap, found):

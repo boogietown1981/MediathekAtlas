@@ -82,9 +82,9 @@ function renderShow(){
  const dl=el('button','↓ Folgen auswählen & herunterladen',canPlay()?'':'primary');dl.onclick=()=>openSeries(s.show_key);actions.push(dl);
  const sync=el('button','↻ Metadaten abgleichen');sync.title='Diese Serie bevorzugt mit TMDB, TVDB, IMDb und den Mediatheken abgleichen';sync.onclick=e=>busy(e.target,async()=>{await api('metadata-priority',{show:s.show_key});if(d.work_ids.length)await api('artwork-priority',{ids:d.work_ids.slice(0,3)});notice('Abgleich vorgemerkt. Die Seite zeigt neue Daten beim nächsten Öffnen.');});actions.push(sync);
  const years=s.year?String(s.year):'';const nSeasons=s.seasons.filter(x=>x.season!==null).length;
- const facts=[years,ratingFact(s),...extraRatings(s),nSeasons?nSeasons+(nSeasons===1?' Staffel':' Staffeln'):'',s.episode_count+(s.episode_count===1?' Folge':' Folgen')+' verfügbar',s.downloaded?s.downloaded+' heruntergeladen (Dateipfade ggf. prüfen)':'',(s.genres||[]).slice(0,3).join(' · ')];
+ const facts=[years,ratingFact(s),...extraRatings(s),nSeasons?nSeasons+(nSeasons===1?' Staffel':' Staffeln'):'',s.episode_count+(s.episode_count===1?' Folge':' Folgen')+' verfügbar',s.downloaded?s.downloaded+' heruntergeladen (Dateipfade ggf. prüfen)':'',(s.genres||[]).slice(0,3).join(' · '),AtlasLanguages.chip(s.languages)];
  const hint=s.state==='format'?'Sendung mit einzelnen Beiträgen. Sendungsbeiträge werden nicht mit Filmdatenbanken abgeglichen.':!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Noch keine Serienbeschreibung. Mit einem TMDB- oder TVDB-Zugang in den Einstellungen werden Beschreibung und Hintergrundbild ergänzt.':'Serienbeschreibung wird beim nächsten Abgleich ergänzt.';
- const info=[['Genres',(s.genres||[]).join(', ')],['Sender',s.channels.join(', ')],['Netzwerk',(s.networks||[]).join(', ')],['Studios',(s.studios||[]).join(', ')],...creditInfo(credits),matchInfo(s.state,s.provider,s.reference_id)];
+ const info=[['Genres',(s.genres||[]).join(', ')],['Sender',s.channels.join(', ')],['Netzwerk',(s.networks||[]).join(', ')],['Studios',(s.studios||[]).join(', ')],...creditInfo(credits),...AtlasLanguages.rows(s.languages),matchInfo(s.state,s.provider,s.reference_id)];
  host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast,castRef:{...castContext(s),kind:'series'}}));
  const sec=el('section',undefined,'tv-section');const head=el('div',undefined,'tv-sectionhead');head.append(el('h2','Staffeln & Folgen'));
  const tabs=el('div',undefined,'tv-tabs');tabs.setAttribute('role','tablist');
@@ -134,14 +134,17 @@ async function openMovie(item){
  if((item.offer_count||1)>1){try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));if(seq!==titleSequence||!titleState)return;titleState.versions=d.items;titleState.selected=d.items.find(a=>a.offer_ids?.includes(item.id))||d.items[0]||item;renderMovie();}catch(e){notice(e.message,'error');}}
  const m=item.metadata;if(!m.fanart||!m.poster)api('artwork-priority',{ids:[item.work_id]}).catch(()=>{});
 }
+// 0.6.5: audio/subtitle languages of a title (languages.py: rows with the evidence of each statement)
+window.AtlasLanguages={rows(model){return model&&Array.isArray(model.rows)?model.rows.filter(r=>Array.isArray(r)&&r.length===2):[['Tonspuren','unbekannt']];},
+ chip(model){return model&&model.short?'🗣 '+model.short:'';}};
 function renderMovie(){
  const {item,selected,versions}=titleState,m=item.metadata,r=selected.source||item.source,host=$('title-view');
  const actions=[];if(canPlay()&&selected.available!==false)actions.push(playButton({...item,...selected,metadata:m},'Abspielen',true));
  const load=el('button',selected.available===false?'Metadaten ansehen':'↓ Prüfen & herunterladen',canPlay()?'':'primary');load.onclick=()=>edit({...item,...selected,metadata:m});actions.push(load);
  if(versions&&versions.length>1){const label=el('label',undefined,'tv-select');label.append('Fassung ');const sel=el('select');sel.setAttribute('aria-label','Fassung wählen');versions.forEach((a,i)=>{const o=el('option',versionLabel(a));o.value=String(i);if(a.id===selected.id)o.selected=true;sel.append(o);});sel.onchange=()=>{titleState.selected=versions[Number(sel.value)];renderMovie();};label.append(sel);actions.push(label);}
- const facts=[m.year?String(m.year):'',minutes(r.duration),ratingFact(m),...extraRatings(m),(m.genres||[]).slice(0,3).join(' · '),item.downloaded?(item.file_state==='missing'?'⚠ Lokale Datei verschoben':'✓ Heruntergeladen'):'',pickLabel(m,item.state)?pickLabel(m,item.state):''];
+ const facts=[m.year?String(m.year):'',minutes(r.duration),ratingFact(m),...extraRatings(m),(m.genres||[]).slice(0,3).join(' · '),item.downloaded?(item.file_state==='missing'?'⚠ Lokale Datei verschoben':'✓ Heruntergeladen'):'',pickLabel(m,item.state)?pickLabel(m,item.state):'',AtlasLanguages.chip(item.languages)];
  const hint=item.state==='format'?'Beitrag einer Sendung.':(r.description?'':'Noch keine Beschreibung vorhanden.');
- const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],matchInfo(item.state,m.provider,m.reference_id)];
+ const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],...AtlasLanguages.rows(item.languages),matchInfo(item.state,m.provider,m.reference_id)];
  host.replaceChildren(...hero({meta:m,type:'Film',facts,overview:m.description||r.description||'',overviewHint:hint,actions,info,cast:m.cast}));
  const sec=el('section',undefined,'tv-section tv-section-versions');sec.append(el('h2','Fassungen & Dateien'));
  if(selected.available!==false){const quick=downloadVersions({...item,...selected,metadata:m});if(quick)sec.append(quick);}

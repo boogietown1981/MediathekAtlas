@@ -95,6 +95,7 @@ def _portal(root, source, item_id):
     data = mod.item(root, item_id)
     it, parent, report = data.get('item') or {}, data.get('series'), data.get('reference') or {}
     m = _base(source, item_id, report)
+    m['_row'] = {k: it.get(k) for k in ('id', 'title', 'raw_title', 'language', 'languages') if it.get(k) is not None}
     m.update(kind=it.get('kind') or 'movie', title=_text(it.get('title'), 200), year=_year(it.get('year')),
              duration=it.get('duration') or None, age_rating=_text(it.get('rating'), 20),
              description=_text(it.get('summary')), poster=_https(it.get('poster')),
@@ -354,6 +355,19 @@ def model(root, source, item_id):
                 m['notes'].append(_text(data['note'], 300))
     if not m['title']:
         raise ValueError('Titel nicht im Katalog; bitte Katalog neu laden')
+    # 0.6.5: audio and subtitle languages (languages.py), with where each statement comes from
+    try:
+        import languages
+        row = {'id': str(item_id), 'title': m['title'], **(m.pop('_row', None) or {})}
+        if m.get('series') and m['kind'] == 'episode':
+            extra = (m['series'].get('id') or '',)
+        else:
+            extra = tuple(e['id'] for e in m.get('episodes') or [] if e.get('id'))
+        m['languages'] = languages.for_portal(root, source, {**row, 'original_language': m.get('language') or ''},
+                                              extra_ids=extra, name=PROVIDERS[source])
+    except Exception:
+        m.pop('_row', None)
+        m['languages'] = None
     m['kind_label'] = KIND_LABEL.get(m['kind'], 'Titel')
     if m['original_title'] and m['original_title'] != m['title']:
         m['provider_facts'].insert(0, ['Originaltitel', m['original_title']])

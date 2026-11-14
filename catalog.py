@@ -335,7 +335,12 @@ def item(c,w):
     meta=json.loads(w['meta'])
     import categories
     checked=bool(w['attempts']) or w['state'] in ('matched','manual','identified','review','format')
-    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':meta,'categories':categories.classify((),meta.get('genres') or [],checked),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(saved),'file_state':file_state,'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
+    # 0.6.5: audio/subtitle languages of all listed versions (regular, OmU, ARTE.FR …) of this work
+    versions=[(o['id'],json.loads(o['payload'])) for o in c.execute('SELECT id,payload FROM offers WHERE work_id=? AND active=1 LIMIT 40',(w['id'],))] or [(r['id'],row)]
+    import languages
+    try:langs=languages.for_mediathek(None,versions,meta)
+    except Exception:langs=None
+    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':meta,'categories':categories.classify((),meta.get('genres') or [],checked),'offer_count':count,'languages':langs,'available':bool(r['active']),'state':w['state'],'downloaded':bool(saved),'file_state':file_state,'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
 def media_equivalence_key(row,special_kind='',active=True):
     """Exact playable media identity; do not strip signed URL query strings.
@@ -407,6 +412,8 @@ def show_detail(c,show,archive=False,limit=1000):
     for (payload,) in c.execute('SELECT o.payload FROM offers o JOIN works w ON w.id=o.work_id WHERE '+where+('' if archive else ' AND o.active=1'),(show,)):
         channel=json.loads(payload).get('channel')
         if channel:channels.add(channel)
+    import languages
+    summary['languages']=languages.combine([e.get('languages') for e in episodes])   # 0.6.5
     summary.update(state=ranked[0][0]['state'],episode_count=len(rows),downloaded=sum(1 for e in episodes if e['downloaded']),available=sum(1 for e in episodes if e['available']),
                    channels=sorted(channels),seasons=[{'season':k,'episodes':v} for k,v in sorted(seasons.items(),key=lambda kv:(kv[0] is None,kv[0] or 0))],truncated=len(rows)>limit)
     return {'show':summary,'episodes':episodes,'work_ids':[w['id'] for w,_ in ranked[:48]]}
@@ -542,6 +549,9 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
 def invalidate_listings(drop=False):
     """After an import, a download or a manual change: renew on next use. Slow aggregations keep
     answering from memory while they are renewed in the background."""
+    if drop:
+        import languages
+        languages.forget_filters()   # 0.6.5: language filter of the unified catalogue
     with _LISTING_LOCK:
         _LISTING_FAILED.clear()
         if drop:_LISTING.clear()

@@ -41,6 +41,7 @@ import urllib.parse
 import urllib.request
 
 import portal_reference
+import languages
 import provider_base
 
 API = 'https://api.joyn.de/graphql'
@@ -281,6 +282,7 @@ def item_from(node, plus_page=False):
     age = _int((node.get('ageRating') or {}).get('minAge') if isinstance(node.get('ageRating'), dict) else None, 0, 21)
     brands = _names(node.get('brands'), 'title', 4)
     return {
+        'languages': languages.harvest(node, extra_audio=('languages',)),
         'id': KIND_PREFIX[kind] + '.' + ident, 'kind': kind, 'title': title, 'path': _text(node.get('path'), 200),
         'series_id': '', 'season': None, 'episode': None, 'year': None, 'duration': None,
         'rating': ('FSK %d' % age) if age is not None else '', 'genre': ', '.join(_names(node.get('genres'))),
@@ -357,6 +359,7 @@ def _store(db, items, now):
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)), ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)),
                    (item['id'], *[item[f] for f in FIELDS], now, now))
+    languages.remember_from_db(db, 'joyn', items, now)   # 0.6.5: languages named by the provider
 
 
 def _merge(found, item):

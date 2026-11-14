@@ -1,4 +1,17 @@
-# MediathekAtlas · 0.6.1
+# MediathekAtlas · 0.6.5
+
+## Neu in 0.6.5: Sprachen je Film und Serie
+
+- **Titelseite:** Neue Zeilen *Tonspuren*, *Untertitel*, *Barrierefreiheit* (Audiodeskription, Gebärdensprache, Klare/Leichte Sprache) und *Sprachangaben*. Die letzte Zeile sagt immer, woher die Angabe stammt: „im Stream geprüft am …“, „laut Anbieter“, „laut Titel bzw. Sender“ oder „vermutet: deutschsprachiges Angebot, nicht geprüft“. Ohne Beleg steht „unbekannt“.
+- **Kacheln:** Ein kleines Feld wie „🗣 OmU“, „🗣 DE · EN · UT DE“ oder „🗣 FR“ erscheint, sobald die Sprache mehr sagt als „deutsch“. Der Tooltip nennt die Quelle.
+- **Filter „Sprache“** im gemeinsamen Katalog: Deutsch, Englisch, Französisch, Originalfassung (OV/OmU), Mit Untertiteln. Wirkt für alle Quellen, auch wenn nur eine Plattform gewählt ist.
+- **Woher die Sprachen kommen:**
+  - *Beim Abspielen:* Nennt die HLS-Wiedergabeliste des Anbieters Ton- oder Untertitelspuren, merkt sich MediathekAtlas sie (Server bei ffmpeg, Browser bei hls.js). Das gilt für jede Quelle mit HLS-Stream, z. B. Pluto TV, Plex, ServusTV, Samsung TV Plus und viele Mediatheken.
+  - *Mediatheken:* Fassungen eines Werks werden zusammengefasst (regulär, OmU, Audiodeskription). ARTE.FR/EN/ES/IT/PL gelten als Sprachfassung des Senders, eine Untertiteldatei des Senders als Untertitel.
+  - *Anbieterangaben:* Crunchyroll (deutsche Synchronfassung/Untertitel), YouTube (Tonsprache des Videos). Pluto TV, Rakuten TV, Joyn, TOGGO, Plex und RTL+ werden beim Katalogabruf nach Sprachfeldern durchsucht.
+  - *Titelzusätze:* OmU, OV, Originalfassung, „mit Untertiteln“, „(Englisch)“, „English version“ usw.
+- Nicht geraten wird: Ohne Anbieterangabe, Titelzusatz oder geprüften Stream bleibt die Sprache „unbekannt“. Nur bei deutschsprachigen Angeboten (ARD/ZDF & Co., Netzkino, Joyn, TOGGO, RTL+, ServusTV) steht „Deutsch (vermutlich)“.
+
 
 ## Neu in 0.6.1: Routen-Tabelle im Server (Umbau ohne sichtbare Änderung)
 

@@ -21,6 +21,7 @@ import urllib.request
 import uuid
 
 import portal_reference
+import languages
 import provider_base
 
 BOOT_URL = 'https://boot.pluto.tv/v4/start'
@@ -245,6 +246,7 @@ def item_from(node, kind, category='', series_id='', season=None):
     if isinstance(genre, list):
         genre = ', '.join(str(g) for g in genre[:6])
     return {
+        'languages': languages.harvest(node),
         'id': item_id, 'kind': kind, 'title': title, 'slug': _text(node.get('slug'), 200),
         'series_id': series_id, 'season': season if season is not None else _int(node.get('season'), 0, 999),
         'episode': _int(node.get('number') if kind == 'episode' else None, 0, 9999),
@@ -320,6 +322,7 @@ def _store(db, items, now):
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)),
                       ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)),
                    (item['id'], *[item[f] for f in FIELDS], now, now))
+    languages.remember_from_db(db, 'pluto', items, now)   # 0.6.5: languages named by the provider
 
 
 def sync(root, fetch=None, now=None, gap=None):

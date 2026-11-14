@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -336,6 +336,7 @@ def encoder_replaced(job_id,old,new):
     local_library.invalidate(old,new);catalog.invalidate_listings(drop=True);unified_index.invalidate()
 ENCODER=encoder.Worker(ROOT,encoder_tools,encoder_replaced,diagnostics.event,diagnostics.error)
 catalog.LISTING_DB=db
+languages.DEFAULT_ROOT=ROOT   # 0.6.5: catalog.item() reads observed stream languages
 catalog.load_listings(ROOT/'listing-cache.json')   # 0.5.57: grouped lists of the last run, shown at once after a start
 def _unified_built(key,index,seconds):
     # Only slow builds are worth a line; the per-source seconds show which source held it up.
@@ -580,6 +581,10 @@ class Handler(BaseHTTPRequestHandler):
         # 0.5.63: ffmpeg gets one quality level instead of the whole master playlist (starts sooner,
         # loads what the connection carries). Without a list (no levels, provider not reachable) as before.
         began=time.monotonic();playlist,level=streaming.prepare(source,_play_quality(q),ROOT/'runtime'/'streams')
+        if source.get('kind')=='url' and source.get('hls'):
+            # 0.6.5: the master playlist is in the cache now; keep the tracks it names (languages.py)
+            try:languages.observe_hls(ROOT,{k:q.get(k,[''])[0] for k in languages.REF_SOURCE},source['url'])
+            except Exception:pass
         try:
             proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist),q.get('session',[''])[0][:64],cleanup=playlist)
         except RuntimeError as e:
@@ -1021,7 +1026,8 @@ def get_unified(self,path):
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
     return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
         genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
-        offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES))
+        offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES,
+        language=q.get('lang',[''])[0],only=q.get('only',[''])[0]))
 
 @ROUTES.get('/api/display')
 def get_display(self,path):
@@ -1700,6 +1706,19 @@ def post_cancel(self,path,d):
 @ROUTES.post('/api/task-action')
 def post_task_action(self,path,d):
     return self.send(task_action(str(d.get('task',''))[:40],str(d.get('action',''))[:20],d.get('value')))
+
+# 0.6.5: the player reports the audio and subtitle tracks hls.js found in the provider's playlist.
+@ROUTES.post('/api/language-observe')
+def post_languages_observe(self,path,d):
+    ref={k:str(d.get(k) or '')[:languages.MAX_ID] for k in languages.REF_SOURCE}
+    key=languages.ref_key(ref)
+    if not key:return self.send({'ok':False})
+    found=languages.tracks_from_player(d.get('audio') if isinstance(d.get('audio'),list) else [],d.get('subtitles') if isinstance(d.get('subtitles'),list) else [])
+    return self.send({'ok':languages.remember(ROOT,key[0],key[1],found,'stream') if found else False,'found':found})
+
+@ROUTES.get('/api/language-filters')
+def get_languages_filters(self,path):
+    return self.send({'filters':[{'value':v,'label':l} for v,l in languages.FILTERS],'counts':languages.counts(ROOT)})
 
 @ROUTES.post('/api/playback-stats')
 def post_playback_stats(self,path,d):
