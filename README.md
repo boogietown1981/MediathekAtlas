@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.5
+# MediathekAtlas · 0.6.6
+
+## Neu in 0.6.6: Untertitel und Tonspur im Player wählen
+
+- **Auswahl „Untertitel“ und „Ton“** oben im Player, sobald der Titel mehr als eine Tonspur bzw. Untertitel hat. „Aus“ schaltet Untertitel ab. Die Wahl (Sprache) merkt sich das Gerät und gilt beim nächsten Titel wieder.
+- **Woher die Untertitel kommen:** aus der HLS-Wiedergabeliste (im Browser über hls.js), aus der DASH-Beschreibung (z. B. Plex), als Untertiteldatei des Anbieters (Plex, Untertiteldatei der Mediathek-Sender), aus lokalen Dateien (eingebettete Text-Untertitel, `.srt`/`.vtt` daneben). TTML/EBU-TT der Sender und SRT werden in WebVTT umgewandelt. Bild-Untertitel (PGS, DVB) werden nicht angeboten.
+- **Tonspur:** bei hls.js direkt im Browser; bei Strömen über MediathekAtlas (ffmpeg, z. B. Plex-DASH, lokale MKV) startet der Stream an derselben Stelle mit der gewählten Spur neu.
+- **OmU-Korrektur:** Nennt der Titel „OmU“, der Stream hat aber nur deutschen Ton, zeigt MediathekAtlas nach dem ersten Abspielen kein „OmU“ mehr, sondern z. B. „DE · UT DE“ und vermerkt den Widerspruch in den Sprachangaben.
+
 
 ## Neu in 0.6.5: Sprachen je Film und Serie (Sammelstand: enthält auch 0.6.2, 0.6.3 und 0.6.4)
 

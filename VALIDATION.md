@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.6 – Untertitel und Tonspur im Player (14. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Smoke-Tests, Klicktest Chromium, neuer Player-Test `tests/browser/player_tracks.cjs` in Chromium (Firefox/WebKit nur in der CI), `ruff` (F, E9).
+- Von Hand in Chromium: echter HLS-Stream mit zwei WebVTT-Untertitelspuren über hls.js (Wahl, Umschalten, „Aus“, Merken); lokale MKV mit zwei Tonspuren und eingebetteten SRT-Untertiteln (Spurenliste per ffprobe, WebVTT-Ausgabe, ffmpeg-Ausgabe mit englischer Spur).
+- Nicht geprüft: echte Plex-Streams und -Untertitel (kein Zugang zu Anbietern in der Testumgebung), ob Plex die Untertitel als Begleitdatei (`key`) oder nur eingebettet liefert; Untertiteldateien von ARD/ZDF/arte live; Safari.
+
 ## 0.6.5 – Sprachen je Titel (14. November 2026)
 - Sammelstand (0.6.1 + 0.6.2 + 0.6.3 + 0.6.4 + Sprachen) automatisch: gesamte Python-Suite (1210 Tests, 3 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium (ohne Befund), `ruff` (F, E9) für alle geänderten Module.
 - Sichtprüfung mit Testdaten (Chromium): Katalog mit Filter „Originalfassung“, Kachel „🗣 DE · OV · UT DE“, Titelseite eines Mediathek-Films mit regulärer Fassung + OmU, Titelseite eines Pluto-TV-Films mit im Stream erkannten Spuren.

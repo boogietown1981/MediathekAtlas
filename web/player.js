@@ -31,7 +31,7 @@ function push(key,pos,dur,done){
 function save(final){if(!S.key||S.info?.live)return;const d=duration(),p=position();if(final==='ended'||(d&&p>d-45)){remember(S.key,{done:true,at:Date.now()});push(S.key,p,d,true);return;}if(p>20){remember(S.key,{pos:p,at:Date.now()});push(S.key,p,d,false);}}
 // Positions known to the server replace older ones of this browser (called by web/watchlist.js at the start).
 window.AtlasPlayerSync=function(progress){for(const [k,v] of Object.entries(progress||{})){const mine=store(k);if(!mine||(mine.at||0)<(v.at||0))remember(k,v.done?{done:true,at:v.at}:{pos:v.pos,at:v.at});}};
-function streamUrl(t){return S.info.remux+'&'+new URLSearchParams({t:t.toFixed(1),session:S.session,token,quality:S.level||wish()});}
+function streamUrl(t){return S.info.remux+'&'+new URLSearchParams({t:t.toFixed(1),session:S.session,token,quality:S.level||wish(),...(S.audio?{audio:S.audio}:{})});}
 // 0.5.63: quality of the playback. The wish ('auto', 'max' or a picture height) is remembered on this
 // device. "Automatisch" loads at most 720p and steps down one level when the stream keeps waiting.
 // 0.5.72: the two elements are created when the page does not have them (an older page kept open
@@ -76,7 +76,7 @@ function frames(){try{const q=video.getVideoPlaybackQuality?.();return q?{frames
 function sendStats(){const st=S.stats,info=S.info;if(!st||st.sent||!info)return;stallEnd();if(st.playing)st.watched+=(Date.now()-st.playing)/1000;st.playing=0;
  if(st.watched<5&&!st.stalls)return;st.sent=true;
  api('playback-stats',{mode:S.mode,provider:info.provider||'mediathek',live:!!info.live,wish:wish(),level:String((S.mode==='hls'?S.hlsHeight:currentHeight())||''),native:!!(info.hls&&S.mode==='direct'),fallback:S.hlsFailed||'',switches:st.switches||0,...frames(),gates:st.gates||0,watched:st.watched,first:st.first,stalls:st.stalls,stall_seconds:st.stallSeconds,reduced:st.reduced}).catch(()=>{});}
-function startRemux(t){gateOff();S.gated=false;if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');}
+function startRemux(t){gateOff();S.gated=false;if(S.stats)S.stats.stallAt=0;S.fresh=true;S.mode='remux';S.offset=Math.max(0,t||0);video.controls=false;bar.hidden=false;slider.hidden=!S.info.duration;slider.max=S.info.duration||0;video.src=streamUrl(S.offset);video.play().catch(()=>{});say('Stream wird vorbereitet …');showCues();if(!S.tracks)loadTracks();}
 // 0.5.68 (Björn, 12.11.2026: on the providers' own sites the stations run clearly smoother than in the
 // app): HLS is played by hls.js inside the browser, as those sites do - it loads the segments itself,
 // keeps a buffer ahead, adapts the quality to the connection and keeps picture and sound together.
@@ -96,7 +96,7 @@ function hlsLevel(w){const all=S.hls?S.hls.levels:[];if(!all.length||w==='auto')
 function stopHls(){if(S.hls){try{S.hls.destroy();}catch{}S.hls=null;}}
 // 0.5.72: /api/play no longer asks the provider for the levels when hls.js can read them; the ffmpeg path fetches them afterwards.
 function probeLevels(){const info=S.info;if(!info||!info.hls||(info.levels||[]).length)return;api('play?'+new URLSearchParams({...S.ref,quality:wish(),probe:'1'})).then(r=>{if(S.info===info&&r.levels?.length){info.levels=r.levels;renderQuality();}}).catch(()=>{});}
-function startHls(url,t){stopHls();gateOff();S.gated=false;S.fresh=true;S.mode='hls';video.controls=true;bar.hidden=true;say('Stream wird geladen …');
+function startHls(url,t){stopHls();gateOff();S.cues=null;S.sub='';showCues();S.gated=false;S.fresh=true;S.mode='hls';video.controls=true;bar.hidden=true;say('Stream wird geladen …');
  const live=!!S.info.live,H=window.Hls,hls=new H({startPosition:live||!t?-1:t,maxBufferLength:30,maxMaxBufferLength:60,backBufferLength:30,liveSyncDurationCount:3,liveMaxLatencyDurationCount:10,
   manifestLoadingMaxRetry:1,levelLoadingMaxRetry:3,fragLoadingMaxRetry:4,capLevelToPlayerSize:false});
  S.hls=hls;let recovered=0;
@@ -106,7 +106,8 @@ function startHls(url,t){stopHls();gateOff();S.gated=false;S.fresh=true;S.mode='
  hls.on(H.Events.MANIFEST_PARSED,()=>{if(S.hls!==hls)return;
   const seen=new Map();for(const l of hls.levels)if(l.height&&(!seen.has(l.height)||l.bitrate<seen.get(l.height)))seen.set(l.height,l.bitrate);
   if(seen.size)S.info.levels=[...seen].map(([height,bandwidth])=>({id:String(height),label:height+'p',height,bandwidth}));
-  hls.currentLevel=hlsLevel(wish());renderQuality();video.play().catch(()=>{});reportLanguages(hls);});
+  hls.currentLevel=hlsLevel(wish());renderQuality();video.play().catch(()=>{});reportLanguages(hls);hlsPrefs(hls);});
+ for(const e of ['AUDIO_TRACKS_UPDATED','SUBTITLE_TRACKS_UPDATED','AUDIO_TRACK_SWITCHED','SUBTITLE_TRACK_SWITCH'])if(H.Events[e])hls.on(H.Events[e],()=>{if(S.hls===hls)renderTracks();});
  hls.on(H.Events.LEVEL_SWITCHED,(e,d)=>{const l=hls.levels[d.level];S.hlsHeight=l&&l.height||0;if(S.stats)S.stats.switches=(S.stats.switches||0)+1;renderQuality();});
  hls.on(H.Events.ERROR,(e,d)=>{if(S.hls!==hls||!d.fatal)return;
   if(d.type===H.ErrorTypes.MEDIA_ERROR&&recovered<2){recovered++;hls.recoverMediaError();return;}
@@ -116,12 +117,75 @@ function startHls(url,t){stopHls();gateOff();S.gated=false;S.fresh=true;S.mode='
 function reportLanguages(h){try{const pick=t=>({lang:String(t.lang||''),name:String(t.name||''),characteristics:String(t.characteristics||'')});
  const audio=(h.audioTracks||[]).slice(0,16).map(pick),subtitles=(h.subtitleTracks||[]).slice(0,16).map(pick);
  if(S.ref&&(audio.length||subtitles.length))api('language-observe',{...S.ref,audio,subtitles}).catch(()=>{});}catch(e){}}
-function startDirect(src,t){gateOff();S.gated=false;S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
+// 0.6.6 (Björn, 14.11.2026: a Plex title marked OmU played with German sound and subtitles that were
+// neither shown nor selectable): choice of the audio track and the subtitles. hls.js names the tracks
+// of the provider's playlist itself. For files, MP4 streams and streams converted by MediathekAtlas the
+// server names them (/api/play-tracks, tracks.py) and delivers a chosen subtitle as WebVTT
+// (/api/subtitle); it is shown as cues of an own text track, shifted by the start position of a
+// converted stream (its time starts at 0 after every seek). The choice is remembered on this device.
+function trackBox(id,text,title){const box=$(id+'-box')||Object.assign(document.createElement('label'),{id:id+'-box',className:'player-quality',hidden:true,title});
+ const sel=$(id)||box.appendChild(Object.assign(document.createElement('select'),{id}));sel.setAttribute('aria-label',text);
+ if(!box.isConnected){box.prepend(text+' ');document.querySelector('.player-actions')?.prepend(box);}return [box,sel];}
+const [subBox,subSelect]=trackBox('player-subs','Untertitel','Untertitel ein- oder ausschalten');
+const [audioBox,audioSelect]=trackBox('player-audio','Ton','Tonspur bzw. Sprache');
+const pref=k=>{try{return localStorage.getItem('atlas-play-'+k)||'';}catch{return '';}};
+const setPref=(k,v)=>{try{localStorage.setItem('atlas-play-'+k,v||'');}catch{}};
+const lang2=v=>String(v||'').toLowerCase().slice(0,2);
+let ownTrack=null;
+function showCues(){if(!ownTrack){if(!S.cues)return;ownTrack=video.addTextTrack('subtitles','MediathekAtlas','de');}
+ const tr=ownTrack;tr.mode='hidden';for(const c of [...(tr.cues||[])])tr.removeCue(c);
+ if(!S.cues||S.mode==='hls'||S.mode==='embed'){tr.mode='disabled';return;}
+ const shift=S.mode==='remux'?S.offset:0,Cue=window.VTTCue||window.TextTrackCue;
+ for(const [a,b,body] of S.cues){if(b-shift<=0)continue;try{tr.addCue(new Cue(Math.max(0,a-shift),b-shift,body));}catch{}}
+ tr.mode='showing';}
+function vttCues(text){const out=[],sec=v=>{const m=String(v).trim().match(/^(?:(\d+):)?(\d\d):(\d\d)[.,](\d{3})/);return m?(+(m[1]||0))*3600+(+m[2])*60+(+m[3])+(+m[4])/1000:NaN;};
+ for(const block of String(text).replace(/\r/g,'').split(/\n{2,}/)){const lines=block.split('\n'),i=lines.findIndex(l=>l.includes('-->'));if(i<0)continue;
+  const [a,b]=lines[i].split('-->'),start=sec(a),end=sec(b),body=lines.slice(i+1).join('\n').trim();if(Number.isFinite(start)&&Number.isFinite(end)&&end>start&&body)out.push([start,end,body]);}
+ return out;}
+function hlsName(t,i){const n=String(t.name||t.lang||'Spur '+(i+1));return n+(/describes-video/.test(t.characteristics||'')?' (Audiodeskription)':'')+(t.forced?' (nur fremdsprachige Stellen)':'');}
+function renderTracks(){
+ if(S.mode==='hls'&&S.hls){const h=S.hls,subs=h.subtitleTracks||[],aud=h.audioTracks||[];
+  subBox.hidden=!subs.length;audioBox.hidden=aud.length<2;
+  subSelect.replaceChildren(new Option('Aus',''),...subs.map((t,i)=>new Option(hlsName(t,i),'h'+i)));subSelect.value=h.subtitleTrack>=0&&h.subtitleDisplay!==false?'h'+h.subtitleTrack:'';
+  audioSelect.replaceChildren(...aud.map((t,i)=>new Option(hlsName(t,i),'h'+i)));audioSelect.value='h'+Math.max(0,h.audioTrack);return;}
+ const t=S.tracks&&S.tracks.subtitles?S.tracks:{audio:[],subtitles:[]};
+ subBox.hidden=!S.info||!t.subtitles.length;audioBox.hidden=!S.info||t.audio.length<2;
+ subSelect.replaceChildren(new Option('Aus',''),...t.subtitles.map(s=>new Option(s.label,s.id)));subSelect.value=S.sub||'';
+ audioSelect.replaceChildren(...t.audio.map(a=>new Option(a.label,a.id)));audioSelect.value=S.audio||'a0';}
+// remembered choice for a stream played by hls.js
+function hlsPrefs(h){try{const sp=pref('subs'),ap=pref('audio');
+ if(ap){const i=(h.audioTracks||[]).findIndex(t=>lang2(t.lang)===ap);if(i>=0&&i!==h.audioTrack)h.audioTrack=i;}
+ if(sp==='off'){h.subtitleTrack=-1;}else if(sp){const i=(h.subtitleTracks||[]).findIndex(t=>lang2(t.lang)===sp&&!t.forced);if(i>=0){h.subtitleDisplay=true;h.subtitleTrack=i;}}
+ }catch{}renderTracks();}
+async function loadTracks(){const call=S.call,info=S.info;if(!info||info.live||info.mode==='embed'||!S.ref)return;S.tracks={pending:true};
+ let r;try{r=await api('play-tracks?'+new URLSearchParams(S.ref));}catch{r={audio:[],subtitles:[]};}
+ if(call!==S.call)return;S.tracks={audio:r.audio||[],subtitles:r.subtitles||[]};
+ const sp=pref('subs'),ap=pref('audio');
+ const pick=sp==='off'?null:S.tracks.subtitles.find(s=>sp&&s.lang===sp&&!s.forced)||S.tracks.subtitles.find(s=>s.forced);
+ const a=ap&&S.tracks.audio.find(x=>x.lang===ap);
+ renderTracks();
+ if(a&&a.id!=='a0'&&S.mode==='remux'&&info.ffmpeg){S.audio=a.id;renderTracks();startRemux(position());}
+ if(pick)chooseSub(pick.id);}
+async function chooseSub(id){S.sub=id;S.cues=null;showCues();renderTracks();if(!id)return;const call=S.call;
+ try{const r=await request('subtitle?'+new URLSearchParams({...S.ref,track:id}));
+  if(!r.ok){let m='';try{m=(await r.json()).error;}catch{}throw Error(m||'Untertitel nicht ladbar');}
+  const text=await r.text();if(call!==S.call||S.sub!==id)return;
+  const cues=vttCues(text);if(!cues.length)throw Error('Die Untertitel enthalten keinen Text.');S.cues=cues;showCues();}
+ catch(e){if(call===S.call&&S.sub===id){S.sub='';renderTracks();if(typeof notice==='function')notice('Untertitel: '+e.message,'error');}}}
+subSelect.onchange=()=>{const v=subSelect.value;
+ if(S.mode==='hls'&&S.hls){const i=v?Number(v.slice(1)):-1;S.hls.subtitleDisplay=i>=0;S.hls.subtitleTrack=i;setPref('subs',i>=0?lang2(S.hls.subtitleTracks[i]?.lang)||'':'off');renderTracks();return;}
+ const s=(S.tracks?.subtitles||[]).find(x=>x.id===v);setPref('subs',s?s.lang||'':'off');chooseSub(v);};
+audioSelect.onchange=()=>{const v=audioSelect.value;
+ if(S.mode==='hls'&&S.hls){const i=Number(v.slice(1));S.hls.audioTrack=i;setPref('audio',lang2(S.hls.audioTracks[i]?.lang));renderTracks();return;}
+ const a=(S.tracks?.audio||[]).find(x=>x.id===v);setPref('audio',a?.lang||'');
+ if(!S.info?.ffmpeg){audioSelect.value=S.audio||'a0';say('Für die Wahl der Tonspur wird ffmpeg benötigt.');return;}
+ const t=position();S.audio=v==='a0'?'':v;startRemux(t);describe(S.info);};
+function startDirect(src,t){gateOff();S.gated=false;S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');showCues();if(!S.tracks&&!S.info?.hls)loadTracks();}
 function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode==='direct'){video.currentTime=t;return;}
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.
  S.offset=t;slider.value=t;time.textContent=fmt(t)+' / '+fmt(d);clearTimeout(S.seekTimer);S.seekTimer=setTimeout(()=>startRemux(t),350);}
 async function open(ref,label,key,start){
- const call=++S.call;save();sendStats();S.retried=false;S.embedAlt=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;S.hlsFailed='';S.hlsHeight=0;renderQuality();
+ const call=++S.call;save();sendStats();S.retried=false;S.embedAlt=false;S.key=key||'';S.session=Math.random().toString(36).slice(2);stopVideo();S.ref=ref;S.level='';S.stats=null;S.info=null;S.hlsFailed='';S.hlsHeight=0;S.tracks=null;S.sub='';S.audio='';S.cues=null;showCues();renderQuality();renderTracks();
  $('player-title').textContent=label||'Wird geladen …';$('player-meta').textContent='';$('player-restart').hidden=true;
  if(!dialog.open)dialog.showModal();say('Quelle wird ermittelt …');renderNext();
  let info;try{info=await api('play?'+new URLSearchParams({...ref,quality:wish(),...(hlsWanted()?{levels:'0'}:{})}));}catch(e){if(call===S.call)say(e.message+(ref.direct?' Auf youtube.com lässt sich das Video weiterhin ansehen.':''));return;}
@@ -244,7 +308,7 @@ window.playServusTV=function(id,label){S.list=[];S.index=-1;return open({servust
 window.playNetzkino=function(id,label){S.list=[];S.index=-1;return open({netzkino:id},label||'Netzkino','netzkino:'+id);};
 window.playJob=function(job){S.list=[];S.index=-1;const m=job.metadata||{};return open({job:job.id},episodeLabel({metadata:m,source:job.source}),'job:'+job.id);};
 window.playable=function(item){return !!(item&&(item.series_parent||item.downloaded||(item.links||[]).some(l=>/^https?:\/\//i.test(l.url)&&!/\.mpd(\?|$)/i.test(l.url))));};
-function close(){S.call++;save();sendStats();stopVideo();qualityBox.hidden=true;S.key='';if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(dialog.open)dialog.close();}
+function close(){S.call++;save();sendStats();stopVideo();qualityBox.hidden=true;S.cues=null;S.tracks=null;showCues();renderTracks();S.key='';if(document.fullscreenElement)document.exitFullscreen().catch(()=>{});if(dialog.open)dialog.close();}
 $('player-close').onclick=close;dialog.addEventListener('cancel',e=>{e.preventDefault();close();});
 $('player-next').onclick=()=>{save('ended');playIndex(S.index+1);};
 $('player-restart').onclick=()=>{remember(S.key,null);if(S.key&&typeof api==='function')api('watch-forget',{key:S.key}).then(()=>window.AtlasWatch?.changed?.()).catch(()=>{});$('player-restart').hidden=true;if(S.mode==='embed'){startEmbed(S.info,0);return;}S.mode==='remux'?startRemux(0):seek(0);};
