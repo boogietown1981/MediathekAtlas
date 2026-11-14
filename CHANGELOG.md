@@ -4,6 +4,7 @@
 - 13 Adressen: `/api/v1` (Beschreibung aus der Routen-Tabelle und den Docstrings), `catalog`, `title`, `show`, `live`, `play`, `stream`, `file`, `downloads`, `watch`, `watch-progress`, `watch-mark`, `watch-forget`. Sie rufen die vorhandenen Funktionen auf; `play` liefert Adressen unter `/api/v1/stream` und ein Ticket; `downloads` ist eine schlanke Liste ohne Ordner und Aufräum-Einstellungen.
 - Verwaltung der Schlüssel nur aus der Seite (Stufe `api`): `/api/api-keys`, `/api/api-key-create`, `/api/api-key-revoke`; Oberfläche in `web/system.js`.
 - `Handler.stream` und `Handler.download_file` haben `checked=False`; das Verhalten der bisherigen Adressen ist unverändert.
+- Nach dem Paketbau (CI, Python 3.9): `api_keys._load` erkannte eine geänderte Schlüsseldatei nur an der Änderungszeit; bei gleicher Zeit blieb der alte Stand im Speicher. Jetzt zählen Zeit, Größe und Inode. Betrifft nur von Hand geänderte Dateien, die Oberfläche schreibt über `_store` und leert den Speicher. Die Pakete 0.6.2 in `releases/0.6.2/` enthalten diese Korrektur noch nicht; sie kommt mit dem nächsten Paket.
 - Tests: `tests/test_v0602_api_v1.py` (Schlüssel, Tickets, Reihenfolge im Handler, echter Server im Einzelplatz- und im Netzwerkmodus inklusive Datei-Wiedergabe per Ticket und Sperre nach falschen Schlüsseln); Klicktest legt einen Schlüssel an, ruft `/api/v1` damit auf und löscht ihn. Beschreibung: `docs/API_V1.md`.
 
 ## 0.6.1 – Phase B, Teil 2: Routen-Tabelle statt if-Kette

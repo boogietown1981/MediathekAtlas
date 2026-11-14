@@ -33,7 +33,7 @@ PREFIX = 'atlas_'
 MAX_KEYS = 50
 TICKET_SECONDS = 12 * 3600
 _LOCK = threading.Lock()
-_CACHE = {}          # path -> (mtime_ns, items)
+_CACHE = {}          # path -> ((mtime_ns, size, inode), items)
 _USED = {}           # key id -> time of the last write of 'last_used'
 
 
@@ -44,7 +44,8 @@ def _path(root):
 def _load(root):
     path = _path(root)
     try:
-        stamp = path.stat().st_mtime_ns
+        st = path.stat()
+        stamp = (st.st_mtime_ns, st.st_size, st.st_ino)     # the time alone is too coarse on some file systems
     except OSError:
         return []
     hit = _CACHE.get(str(path))

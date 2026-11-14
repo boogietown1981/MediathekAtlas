@@ -77,7 +77,10 @@ class KeyTests(unittest.TestCase):
         api_keys.revoke(self.root, a['id'])
         self.assertIsNone(api_keys.verify(self.root, a['key']))
         self.assertEqual(api_keys.verify(self.root, b['key'])['name'], 'B')
-        (self.root / 'api_keys.json').write_text('{kaputt', encoding='utf-8')
+        path = self.root / 'api_keys.json'
+        stamp = path.stat().st_mtime_ns
+        path.write_text('{kaputt', encoding='utf-8')
+        os.utime(path, ns=(stamp, stamp))       # same time as before, as on a file system with a coarse clock
         self.assertIsNone(api_keys.verify(self.root, b['key']), 'a damaged file opens nothing')
         self.assertEqual(api_keys.listing(self.root), [])
 
