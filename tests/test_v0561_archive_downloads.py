@@ -121,8 +121,8 @@ class ArchiveDownloadTests(unittest.TestCase):
 
     def test_server_and_ui_wiring(self):
         server = (ROOT / 'server.py').read_text()
-        self.assertIn("path=='/api/archive-download'", server)
-        self.assertIn("path=='/api/archive-downloads'", server)
+        self.assertIn("@ROUTES.post('/api/archive-download')", server)
+        self.assertIn("@ROUTES.get('/api/archive-downloads')", server)
         self.assertIn('archive_downloads.fetch_sidecars', server)
         app = (ROOT / 'web' / 'app.js').read_text()
         self.assertIn("api('archive-download'", app)

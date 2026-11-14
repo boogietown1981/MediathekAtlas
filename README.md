@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.0
+# MediathekAtlas · 0.6.1
+
+## Neu in 0.6.1: Routen-Tabelle im Server (Umbau ohne sichtbare Änderung)
+
+- Für die Bedienung ändert sich nichts. Jede Adresse der Oberfläche antwortet wie in 0.6.0.
+- Entwicklung: `server.py` beantwortete bisher rund 130 Adressen in zwei langen if-Ketten. Jetzt ist jede Adresse eine eigene Funktion in einer Routen-Tabelle (`routing.py`). Die Tabelle kennt drei Stufen: offen (vor der Anmeldung), angemeldet und angemeldet mit Sitzungs-Token. Doppelt vergebene Adressen fallen beim Start auf. Die Tabelle ist die Grundlage für die spätere API-Beschreibung (Phase C).
 
 ## Neu in 0.6.0: Ein Planer für alle Anbieter, Profil für schwache Hardware
 

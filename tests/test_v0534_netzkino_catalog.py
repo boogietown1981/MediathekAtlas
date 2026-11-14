@@ -170,7 +170,7 @@ class RelatedAndRecordingTests(Fixture):
 
     def test_server_and_ui_wiring(self):
         server = (ROOT / 'server.py').read_text('utf-8')
-        self.assertIn("path=='/api/netzkino-recording'", server)
+        self.assertIn("@ROUTES.post('/api/netzkino-recording')", server)
         ui = (ROOT / 'web' / 'netzkino.js').read_text('utf-8')
         self.assertIn("endpoint('netzkino-recording'", ui)
         self.assertNotIn('e.request?.headers', ui)

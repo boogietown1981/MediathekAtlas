@@ -17,7 +17,7 @@ Stand 14. November 2026. Ausführliche Fassung mit Schaubildern: https://claude.
 | 2 | Elf Anbieter-Module kopieren dasselbe Gerüst (`_connect`, `_get/_set`, `state`, `start_sync`, `loop`, `_run`) | Datenbank und Startregel gemeinsam seit 0.6.0 (`provider_base.py`); `state`/`start_sync` noch je Modul |
 | 2 | 23 SQLite-Dateien, nur `catalog.db` und YouTube mit WAL | Anbieter-Datenbanken mit WAL seit 0.6.0 |
 | 2 | Je Anbieter ein Schleifen-Thread (52 Threads im Leerlauf) | behoben in 0.6.0 (`planner.py`, 31 Threads) |
-| 2 | `server.py` mit rund 130 Pfaden in einer if-Kette | Phase B |
+| 2 | `server.py` mit rund 130 Pfaden in einer if-Kette | erledigt in 0.6.1 (`routing.py`) |
 | 2 | Startseite 511 KB, alle Skripte eingebettet (Notlösung aus 0.5.77) | Phase B |
 | 2 | Netzwerkmodus nur HTTP, Sitzungen im Speicher | Phase C |
 | 2 | `vendor/archivemedia` neben `vendor/archive_portals` (Überschneidung: `catalog_identity.py`, `media_probe.py`, verschiedene Fassungen in Gebrauch) | Phase B |

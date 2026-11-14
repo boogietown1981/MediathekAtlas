@@ -174,9 +174,11 @@ class IntegrationContractTests(unittest.TestCase):
         page=(root/'web/index.html').read_text()
         js=(root/'web/app.js').read_text()
         bundle=(root/'build_macos.py').read_text()
-        self.assertLess(server.index("if not self.authorized():"),server.index("if path=='/api/portals':"))
-        self.assertIn("if path=='/api/portal-netzkino-add':",server)
-        self.assertIn("if path=='/api/portal-search':",server)
+        import _wiring
+        # 0.6.1: route table; stage 'api' = after the login and the page token
+        self.assertTrue(_wiring.routed('/api/portals','GET','api'))
+        self.assertTrue(_wiring.routed('/api/portal-netzkino-add','POST','api'))
+        self.assertTrue(_wiring.routed('/api/portal-search','POST','api'))
         self.assertIn('portal_sources.initialize(c)',server)
         self.assertIn("'portal_sources.py'",bundle)
         self.assertIn('data-view="portals"',page)

@@ -437,8 +437,8 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("platform-admin", (ROOT / 'web' / 'admin.js').read_text())
 
     def test_server_endpoints_and_loops(self):
-        for needle in ("path=='/api/tasks'", "path=='/api/task-action'", "path=='/api/display'", "path=='/api/unified'",
-                       "path=='/api/job-control'", "'/admin.js','/display.js'", "task_control.paused('downloads')",
+        for needle in ("@ROUTES.get('/api/tasks')", "@ROUTES.post('/api/task-action')", "@ROUTES.get('/api/display')", "@ROUTES.get('/api/unified')",
+                       "@ROUTES.post('/api/job-control')", "'/admin.js','/display.js'", "task_control.paused('downloads')",
                        'catalog.LISTING_DB=db', 'prewarm_listing'):
             self.assertIn(needle, self.server, needle)
         service = (ROOT / 'catalog_service.py').read_text()

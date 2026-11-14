@@ -60,9 +60,10 @@ class ExtensionPackageTests(unittest.TestCase):
 
 class WebWiringTests(unittest.TestCase):
     def test_route_script_and_panel(self):
-        self.assertIn("if path=='/api/browser-extension':return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')", SERVER)
-        # hinter der Token-Prüfung wie alle /api-Routen
-        self.assertLess(SERVER.index("if self.headers.get('X-Atlas-Token')!=TOKEN"), SERVER.index("path=='/api/browser-extension'"))
+        self.assertIn("return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')", SERVER)
+        # hinter der Token-Prüfung wie alle /api-Routen (0.6.1: Stufe 'api' der Routen-Tabelle)
+        import _wiring
+        self.assertTrue(_wiring.routed('/api/browser-extension', 'GET', 'api'))
         self.assertIn('/direct_start.js', SCRIPTS)
         html = (ROOT / 'web' / 'index.html').read_text(encoding='utf-8')
         self.assertIn('<script src="/direct_start.js"></script>', html)
