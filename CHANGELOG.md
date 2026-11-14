@@ -1,3 +1,10 @@
+## 0.6.4 – YouTube „Filme & TV“: kostenlose Filme mit Werbung
+- `youtube_store.py` (neu): liest YouTubes kostenlose Filme über die öffentliche JustWatch-GraphQL-API (`popularTitles`, Pakete per Namenssuche „YouTube…“ über `packages`, Rückfall `yfr`/`yot`; `monetizationTypes` FREE/ADS, nur `MOVIE`). Angenommen werden nur https-Links auf youtube.com/watch bzw. youtu.be mit gültiger Video-ID. Höchstens 150 Seiten zu 40 Titeln, 1 s Abstand; bricht JustWatch mittendrin ab, bleibt das Gelesene erhalten (`partial`).
+- `youtube.py`: Quelle `store:free` (auch aus `youtube.com/feed/storefront…` und `/movies`), nur Art „Filme“. `sync()` liest sie über `_store_source`; ein JustWatch-Fehler steht als „Filme & TV: …“ an der Quelle, die übrigen Quellen laufen weiter. Die Data API liefert nur noch, ob ein Video eingebettet werden darf.
+- Die Titel tragen `drm=1`: `offline_flag` ist 0, `youtube_downloads.build_job` und `play_source` lehnen sie ab (kein Offline, kein eigener Player), der Werbefilter-Hinweis entfällt.
+- Oberfläche: Knopf `youtube-store-add` in den YouTube-Einstellungen (verschwindet, sobald die Quelle besteht), Quellenzeile „Liste über JustWatch · kopiergeschützt, läuft bei YouTube“.
+- Tests: `tests/test_v064_youtube_store.py`.
+
 ## 0.6.3 – Plex offline (30 Tage), Netzprüfung mit dem richtigen Zertifikatsspeicher
 - `plex_downloads.py` (nach dem Muster von `rakuten_downloads.py`): `build_job` lehnt `drm=1`, Serien, Live-Sender und unbekannte IDs ab; ein ungeprüfter Titel (`drm=-1`) wird vorher über `plex.play_source` geprüft (setzt `drm`). Lizenz `plex_offline`, 30 Tage. `resolve` holt die Stream-Adresse mit Plex-Token erst beim Download; im Auftrag und in `metadata.json` steht kein Token (`public_url`).
 - `platform_registry`: Plex mit `offline=plex_downloads` → `POST /api/plex-download-add`. `netzkino_downloads`: `PORTAL_LICENSES`/`PORTAL_NAMES`/`portal_days`, eigener Hinweistext (persönliche Nutzung, ohne Kopierschutz), `plex_id` in der Liste, `plex.tv` als eigene Quelle bei Fremd-Lizenzdateien gesperrt. `downloads`: Resolver `plex`, in `HLS_RESOLVERS` (ffmpeg kopiert HLS und DASH).

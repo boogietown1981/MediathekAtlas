@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.4 – YouTube „Filme & TV“ (14. November 2026)
+- Automatisch: gesamte Python-Suite (1176 Tests, 3 übersprungen), Node-Smoke-Tests.
+- Im Browser (Chromium, künstliche Daten): Knopf nimmt die Quelle auf und verschwindet; geschützter Film zeigt „↗ Bei YouTube ansehen“ ohne Offline-Knopf, einbettbarer Film „▶ Ansehen“; keine Skriptfehler.
+- Nicht geprüft: echter Abruf bei JustWatch und YouTube (beide aus der Entwicklungsumgebung gesperrt). Unbestätigt sind das Kürzel des JustWatch-Pakets für YouTubes Gratisfilme in Deutschland (deshalb Namenssuche mit Rückfall) und ob JustWatch diese Angebote für Deutschland vollständig führt. Firefox/WebKit nur in der CI; NAS, macOS, Windows ungeprüft.
+
 ## 0.6.3 – Plex offline (14. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Smoke-Tests, Klicktest Chromium, `ruff` (F, E9) für die geänderten Module.
 - Neu: `tests/test_v0603_plex_offline.py` (Film ohne Kopierschutz in der gemeinsamen Warteschlange, Folge als Serienfolge benannt, Ablehnung von kopiergeschützten Titeln/Serien/Live-Sendern, kein Token im Auftrag, Adresse erst beim Download, Titelseite, Route, Netzprüfung mit gepatchtem Kontext).

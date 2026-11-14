@@ -286,6 +286,8 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
         db.close()
     if not row or row['kind'] in ('series', 'album'):
         raise ValueError('YouTube-Video nicht im Katalog; bitte Katalog neu laden')
+    if row.get('drm'):
+        raise ValueError('Kopiergeschützter YouTube-Film: läuft nur bei YouTube')
     if row['reason'].startswith('Altersbeschränkt'):
         raise ValueError('Altersbeschränktes Video: ohne Anmeldung nicht abspielbar')
     # 0.5.89 (Björn, 13.11.2026: smooth now, but only 480p): since 0.5.86 the pieces arrive at full
@@ -447,6 +449,8 @@ def build_job(root, download_dir, item_id, now=None):
         raise ValueError('Bitte eine einzelne Folge auswählen; Serien werden folgenweise geladen')
     if row['kind'] == 'album':
         raise ValueError('Bitte „Ganze Playlist offline speichern“ verwenden')
+    if row.get('drm'):
+        raise ValueError('Kopiergeschützter YouTube-Film: kein Offline-Speichern, läuft nur bei YouTube')
     if row['reason'].startswith('Altersbeschränkt'):
         raise ValueError('Altersbeschränktes Video: ohne Anmeldung nicht ladbar')
     source_id = 'youtube:' + item_id
