@@ -24,7 +24,6 @@ from __future__ import annotations
 import hashlib
 import json
 import re
-import sqlite3
 import sys
 import threading
 import time
@@ -32,9 +31,9 @@ import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from pathlib import Path
 
 import portal_reference
+import provider_base
 
 KEY = 'rtlplus'
 NAME = 'RTL+'
@@ -96,11 +95,7 @@ def _notify(event, **details):
 
 
 def _connect(root):
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    db = sqlite3.connect(str(root / 'rtlplus.sqlite3'), timeout=5)
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA busy_timeout=5000')
+    db = provider_base.connect(root, 'rtlplus.sqlite3')   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
     if 'offer' not in {r[1] for r in db.execute('PRAGMA table_info(rtlplus_items)')}:
         db.execute("ALTER TABLE rtlplus_items ADD COLUMN offer TEXT NOT NULL DEFAULT 'free'")   # 0.5.107
@@ -644,17 +639,22 @@ def start_sync(root):
     return True
 
 
+def should_sync(root, now=None):
+    """Whether the catalogue run should start now (0.6.0: the shared rule in provider_base). Besides:
+    a catalogue loaded before 0.5.107 (not yet from the free area) is reloaded once, 10 min after
+    its last attempt."""
+    current = state(root)
+    now = time.time() if now is None else now
+    if (current['last_success'] and not current['running'] and not current.get('free_catalog')
+            and now - current['last_attempt'] > 600):
+        return True
+    return provider_base.catalog_due(root, sys.modules[__name__], current, now)
+
+
 def loop(root, stop):
-    import task_control
-    while not stop.wait(60):
-        if task_control.paused('catalog:rtlplus'):
-            continue
-        current = state(root)
-        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
-                current['last_success'] and not current['running'] and not current.get('free_catalog')
-                and time.time() - current['last_attempt'] > 600) or (
-                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
-            start_sync(root)
+    """Former own loop thread; the server uses the shared planner (planner.py) instead."""
+    provider_base.loop(root, stop, 'rtlplus', sys.modules[__name__])
+
 
 
 def play_source(root, item_id):

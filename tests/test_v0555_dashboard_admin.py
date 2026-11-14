@@ -437,15 +437,17 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("platform-admin", (ROOT / 'web' / 'admin.js').read_text())
 
     def test_server_endpoints_and_loops(self):
-        for needle in ("path=='/api/tasks'", "path=='/api/task-action'", "path=='/api/display'", "path=='/api/unified'",
-                       "path=='/api/job-control'", "'/admin.js','/display.js'", "task_control.paused('downloads')",
+        for needle in ("@ROUTES.get('/api/tasks')", "@ROUTES.post('/api/task-action')", "@ROUTES.get('/api/display')", "@ROUTES.get('/api/unified')",
+                       "@ROUTES.post('/api/job-control')", "'/admin.js','/display.js'", "task_control.paused('downloads')",
                        'catalog.LISTING_DB=db', 'prewarm_listing'):
             self.assertIn(needle, self.server, needle)
         service = (ROOT / 'catalog_service.py').read_text()
         for task in ('filmlist', 'recognition', 'episodes', 'artwork', 'subscriptions'):
             self.assertIn("'%s'" % task, service)
+        # 0.6.0: the pause switch is asked by the shared planner (and the old per-platform loop in provider_base).
+        self.assertIn("task_control.paused('catalog:' + job.key)", (ROOT / 'planner.py').read_text())
         for module in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube'):
-            self.assertIn("task_control.paused('catalog:%s')" % module, (ROOT / (module + '.py')).read_text())
+            self.assertIn("provider_base.loop(root, stop, '%s'" % module, (ROOT / (module + '.py')).read_text())
         for name in ('task_control.py', 'ui_prefs.py', 'unified_index.py'):
             self.assertIn("'%s'" % name, (ROOT / 'build_macos.py').read_text())
 

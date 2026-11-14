@@ -1,3 +1,19 @@
+## 0.6.1 – Phase B, Teil 2: Routen-Tabelle statt if-Kette
+- `routing.py`: `Table` mit `get(*paths, stage=)`, `post(...)`, `find(method, path, stage)`, `listing()`; Stufen `open` (nur Host geprüft), `signed` (Anmeldung; Seite, Skripte, `/api/stream`, `/api/download-file` prüfen das Token aus der Adresse selbst), `api` (Anmeldung + `X-Atlas-Token`). Doppelte Adressen, unbekannte Stufen und Adressen ohne `/` lösen beim Import einen Fehler aus.
+- `server.py`: 128 Blöcke der if-Ketten in `Handler.get`/`Handler.post` sind Funktionen `get_<name>(self, path)` bzw. `post_<name>(self, path, d)` mit `@ROUTES.get(...)`/`@ROUTES.post(...)` (133 Adressen: 56 GET, 77 POST; `ROUTES.listing()`). In den Handlern bleiben: Host-/Anmelde-/Token-Prüfung, `/api/peer/…`, `/code/…`, Skriptliste, Anmelden/Abmelden/Passwort, Roh-Uploads, Aufruf von `platform_registry` und der Tabelle.
+- Reihenfolge unverändert: POST fragt zuerst `platform_registry`, dann die Tabelle; GET zuerst die Tabelle, dann `platform_registry`. Keine Adresse steht in beiden (Test).
+- Drei Bedingungen, die vor der Kette standen, stehen jetzt am Anfang ihrer Funktion: NAS-Sperre für `/api/shutdown`, Netzwerk-Sperre für `/api/open-download`, Playlist-Variante von `/api/youtube-download-add`.
+- Geprüft durch Vergleich: alter und neuer Server nebeneinander, 327 Aufrufe (alle GET-Adressen mit und ohne Parameter, mit und ohne Token; 51 POST-Adressen ohne Netz- und Systemwirkung mit je zwei Eingaben), gleiche Statuscodes und Antworten bis auf Zeitstempel, Schlüssel und Pfade.
+- Tests: `tests/test_v0601_routing.py` (Tabelle, Stufen, Reihenfolge, echte Aufrufe gegen einen gestarteten Server, jeder `api('…')`-Aufruf der Oberfläche hat eine Adresse); `tests/_wiring.py` kennt die Tabelle.
+
+## 0.6.0 – Phase B, Teil 1: gemeinsamer Anbieter-Rahmen und ein Planer
+- `provider_base.py`: `connect()` (WAL + `synchronous=NORMAL`, `busy_timeout` 5 s, optional 0600; `MEDIATHEKATLAS_NO_WAL=1` schaltet WAL ab), `catalog_due()` (erster Start, Neuabruf nach Update, täglicher Abruf), `loop()` (bisherige Schleife, für Aufrufer und Tests).
+- Elf Anbieter (Netzkino, Pluto, JustWatch, Rakuten, Joyn, TOGGO, Crunchyroll, Plex, ServusTV, RTL+, YouTube) öffnen ihre Datenbank über `provider_base.connect` und haben `should_sync(root)`; Sonderregeln bleiben im Modul (YouTube nur mit Schlüssel, RTL+ einmaliger Neuabruf vor dem Gratisbereich, Joyn `tick()` für Live-Links). Samsung TV Plus: `should_sync` auf seine 12-Stunden-Regel.
+- `planner.py`: ein Katalog-Thread (`planner_catalog`, jede Minute, höchstens `max_syncs` Läufe zugleich, rotierender Start) und zwei Abgleich-Threads (`planner_reference_1/2`) statt `*_catalog_scheduler`/`*_auto_enrichment` je Plattform sowie `samsung_catalog_scheduler`/`archive_auto_enrichment`. Je Plattform weiter ein Titel je `gap` × Prioritätsfaktor, Listen zu 20 Titeln, Fehlgeschlagene nach der Ruhezeit erneut, Pause/Priorität/„Automatischer Abgleich“ wie bisher. `archive_recognition.background_pending()` ausgelagert.
+- Profile: `normal` (2/2), `low` „Schwache Hardware“ (1/1), `auto` = `low` bei ≤ 2 Kernen oder < 2 GB. Einstellung `background_profile` (`/api/settings`), `MEDIATHEKATLAS_PROFILE` hat Vorrang. Verwaltung → System zeigt Profil und laufende Katalogabrufe.
+- Gemessen (Linux, 4 Kerne, Hintergrund an): 31 statt 52 Threads, RAM unverändert rund 65 MB.
+- Tests: `tests/test_v0600_planner.py`; Klicktest prüft die Profilauswahl. Angepasst: Textprüfungen, die die alten Schleifen in den Modulen suchten.
+
 ## 0.5.108 – Phase A „Konsolidieren“ nach dem Review vom 14.11.2026
 - `main` enthält wieder den vollständigen Stand (PR #50 gemergt, gestapelte PRs #27, #30, #39, #40, #41 geschlossen, Inhalt enthalten).
 - `portal_reference.retry_after_update` jetzt in der Schleife aller Katalog-Anbieter (zusätzlich Pluto, JustWatch, Rakuten, Joyn, TOGGO, Crunchyroll, YouTube, Netzkino).

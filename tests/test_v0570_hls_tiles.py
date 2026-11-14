@@ -15,7 +15,7 @@ class HlsTests(unittest.TestCase):
         data = (ROOT / 'web' / 'hls.min.js').read_bytes()
         self.assertEqual(hashlib.sha256(data).hexdigest(), 'cfc70cc9e9fc63d071919e087670abc760c8fd1bc889b88588026e4d22193bbe')
         self.assertIn('Apache License', text('web/hls.LICENSE.txt'))
-        self.assertIn("if path=='/hls.min.js'", text('server.py'))
+        self.assertIn("@ROUTES.get('/hls.min.js',stage='signed')", text('server.py'))
         # 0.5.72: loaded on demand by the player, no longer a blocking tag in the page
         self.assertNotIn('/hls.min.js', text('web/index.html'))
         self.assertIn("tag.src='/hls.min.js'", text('web/player.js'))

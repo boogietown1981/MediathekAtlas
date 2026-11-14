@@ -344,6 +344,11 @@ def due(current, now=None):
     return bool(current['auto']) and now >= current['next_attempt']
 
 
+def should_sync(root, now=None):
+    """The planner's question (0.6.0); Samsung keeps its own 12-hour rule above."""
+    return due(state(root), now)
+
+
 def loop(root, stop):
     import task_control
     if not stop.wait(20) and due(state(root)):

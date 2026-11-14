@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -35,7 +35,8 @@ metadata.configure_provider_state(ROOT/'provider-pauses.json')
 negative_cache.configure(ROOT/'provider-negative.sqlite')
 diagnostics.event('application_start',version=VERSION,network=NETWORK,managed=MANAGED or None)
 ACCESS=access.Access(ROOT,[DEFAULT_DOWNLOAD_DIR]) if NETWORK else None
-TOKEN=secrets.token_urlsafe(32);STOP=threading.Event()
+TOKEN=secrets.token_urlsafe(32);STOP=threading.Event();PLANNER=[None]   # 0.6.0: the running planner (planner.py)
+ROUTES=routing.Table()   # 0.6.1: every address with a fixed path (see the route table below Handler)
 diagnostics.register_secrets(TOKEN)
 
 def job_ids(q):
@@ -503,296 +504,30 @@ class Handler(BaseHTTPRequestHandler):
     def get(self):
         if not self.valid_host():return self.send({'error':'Ungültiger Host'},403)
         path=urllib.parse.urlsplit(self.path).path
-        if path=='/icon.svg':return self.send((Path(__file__).parent/'assets'/'icon.svg').read_bytes(),ctype='image/svg+xml')
-        if path=='/theme-light.css':
-            # 0.5.99: the light design, computed from style.css (light_theme.py); applies only with data-theme="light"
-            return self.send(light_theme.sheet(Path(__file__).parent/'web'/'style.css'),ctype='text/css')
-        if path in ('/style.css','/login.js'):
-            return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript' if path.endswith('js') else 'text/css')
+        # 0.6.1: routes with a fixed address live in the route table below (routing.py); stage 'open'
+        handler=ROUTES.find('GET',path,'open')
+        if handler:return handler(self,path)
         if path.startswith('/api/peer/'):return self.peer_get(path)
-        if path=='/api/login-state':
-            if not NETWORK:return self.send({'required':False})
-            return self.send({'required':True,'configured':ACCESS.configured(),'setup_files':ACCESS.ensure_setup_code() if not ACCESS.configured() else []})
         if not self.authorized():
             if path=='/':return self.send((Path(__file__).parent/'web'/'login.html').read_text().replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
             return self.send({'error':'Anmeldung erforderlich','login':True},401)
-        if path=='/':
-            body=page_scripts.inline_scripts((Path(__file__).parent/'web'/'index.html').read_text(encoding='utf-8'),Path(__file__).parent/'web',SCRIPTS).replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
-            return self.send(body.encode(),ctype='text/html; charset=utf-8')
+        # 0.6.1: routes with a fixed address live in the route table below (routing.py); stage 'signed'
+        handler=ROUTES.find('GET',path,'signed')
+        if handler:return handler(self,path)
         if path in SCRIPTS:return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript')
-        # 0.5.68: hls.js (Apache-2.0, web/hls.LICENSE.txt) plays HLS in the browser the way the providers' own sites do
-        if path=='/hls.min.js':return self.send((Path(__file__).parent/'web'/'hls.min.js').read_bytes(),ctype='text/javascript')
-        if path=='/titleview.js':return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
         # 0.5.73: second address for the page's own scripts; app.js reloads a script here when its first request failed
         if path.startswith('/code/'):
             # '~' + the name backwards: an address without the file's name, for filters that block by name
             name=path[7:][::-1] if path[6:7]=='~' else path[6:]
             if '/'+name+'.js' in SCRIPTS:return self.send((Path(__file__).parent/'web'/(name+'.js')).read_bytes(),ctype='text/javascript')
-        if path=='/api/download-file':return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
-        if path=='/api/stream':return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Sitzung abgelaufen'},403)
-        if path=='/api/video-audit':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:
-                video_backfill.initialize(c)
-                return self.send(video_backfill.status(c,q.get('offset',['0'])[0]))
-        # 0.5.91: optionale Chrome-Erweiterung für den Videostart bei Anbietern mit Kopierschutz
-        if path=='/api/browser-extension':return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')
-        if path=='/api/live-tv':
-            # 0.5.50: live channels of all sources, merged by station (web/live_tv.js).
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            began=time.monotonic()
-            with db() as c:data=live_tv.overview(c,ROOT,query=q.get('q',[''])[0][:100],
-                                                 provider=q.get('provider',[''])[0][:20],group=q.get('group',[''])[0][:120])
-            try:data['pluto']=pluto.state(ROOT)
-            except Exception:data['pluto']={}   # 0.5.67: a busy Pluto database must not hold back the stations
-            try:data['samsung']=samsung_tvplus.state(ROOT)   # 0.5.97: hint and load button in the tab
-            except Exception:data['samsung']={}
-            # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
-            # platforms still played them): an empty or slow answer leaves a line in the diagnosis.
-            took=round(time.monotonic()-began,2)
-            # 0.5.80 (Björn's diagnosis 0.5.72: dozens of "total 0, filtered" warnings): the live strip of a
-            # platform asks for its own provider, and a provider without channels (Joyn before its first
-            # complete catalogue run) correctly answers 0. Only a real problem is reported now.
-            if live_tv.overview_problem(data,took,query=q.get('q',[''])[0],provider=q.get('provider',[''])[0],group=q.get('group',[''])[0]):
-                diagnostics.event('live_tv_overview',level='WARNING',total=data['total'],seconds=took,filtered=bool(q.get('q',[''])[0] or q.get('provider',[''])[0] or q.get('group',[''])[0]),
-                                  provider=q.get('provider',[''])[0][:20],group_set=bool(q.get('group',[''])[0]),query_set=bool(q.get('q',[''])[0]),
-                                  providers={p['key']:p['channels'] for p in data['providers']},errors={p['key']:p['error'] for p in data['providers'] if p['error']})
-            return self.send(data)
-        if path=='/api/samsung':return self.send(samsung_tvplus.state(ROOT))   # 0.5.97: live channels only
+        # 0.6.1: routes with a fixed address live in the route table below (routing.py); stage 'api'
+        handler=ROUTES.find('GET',path,'api')
+        if handler:return handler(self,path)
         if path.startswith('/api/'):
             # 0.5.84: catalogue page, details and offline list of every film platform (platform_registry).
             hit=platform_registry.handle_get(platform_context(),path,urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
             if hit is not None:return self.send(*hit)
-        if path=='/api/netzkino-details':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
-        if path=='/api/youtube':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            try:
-                if q.get('view',[''])[0]=='episodes':data=youtube.episodes(ROOT,q.get('series',[''])[0])
-                elif q.get('view',[''])[0]=='tracks':data=youtube.tracks(ROOT,q.get('album',[''])[0])   # 0.5.71 music playlist
-                elif q.get('doubtful',['0'])[0]=='1':
-                    # YouTube thread: uploads sorted out as advertising can be shown on request (read directly).
-                    data=youtube.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
-                                          offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
-                                          genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
-                                          collection=q.get('collection',[''])[0][:20],show_doubtful=True)
-                else:return self.send(portal_page('youtube',youtube,q))
-            except ValueError as e:return self.send({'error':str(e)},404)
-            data['status']=portal_snapshot.status('youtube',lambda:youtube.state(ROOT))
-            return self.send(data)
-        if path=='/api/youtube-sources':
-            return self.send({'sources':youtube.sources(ROOT),'status':youtube.state(ROOT),'offline':youtube_downloads.status(ROOT)})
-        if path=='/api/portal-title':
-            # 0.5.42: one title page model for Netzkino, Pluto TV and JustWatch TV.
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            try:return self.send(portal_title.model(ROOT,q.get('source',[''])[0],q.get('id',[''])[0]))
-            except ValueError as e:return self.send({'error':str(e)},404)
-        if path=='/api/netzkino-downloads':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:result=netzkino_downloads.listing(c,item_id=job_ids(q))
-            result['ytdl']=ytdl_bridge.status()
-            return self.send(result)
-        if path=='/api/netzkino-reference-report':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            return self.send(netzkino_enrichment.cached(ROOT,q.get('id',[''])[0]))
-        if path=='/api/netzkino-grouped':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            view=q.get('view',['movies'])[0];series_key=q.get('series_key',[''])[0];origin=q.get('origin',['all'])[0]
-            args=dict(query=q.get('q',[''])[0],genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0],collection=q.get('collection',[''])[0][:20])
-            if series_key or origin!='all' or view not in ('movies','series'):
-                data=netzkino.grouped_catalog(ROOT,view=view,series_key=series_key,origin=origin,
-                    offset=q.get('offset',['0'])[0],limit=q.get('limit',['80'])[0],**args)
-                data['status']=portal_snapshot.status('netzkino',lambda:netzkino.state(ROOT))
-                return self.send(data)
-            # 0.5.60: films and series come from the stored view (portal_snapshot).
-            status=portal_snapshot.status('netzkino',lambda:netzkino.state(ROOT))
-            try:limit=max(1,min(100,int(q.get('limit',['80'])[0])))
-            except ValueError:limit=80
-            data=portal_snapshot.page('netzkino',view,lambda:netzkino.grouped_catalog(ROOT,view=view,series_key='',origin='all',offset=0,limit='all',**args),
-                stamp=_snapshot_stamp(status),offset=q.get('offset',['0'])[0],limit=limit,**args)
-            data['limit']=limit
-            data['status']=status
-            return self.send(data)
-        if path=='/api/netzkino':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
-        if path=='/api/download-options':
-            # 0.5.63: quality levels of one offer for the dialogue before an offline copy
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);source=q.get('source',[''])[0][:20];item=q.get('id',[''])[0][:80]
-            module={'pluto':pluto,'justwatch':justwatch,'rakuten':rakuten}.get(source)
-            return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
-        if path=='/api/play':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')}
-            direct_youtube=q.get('direct',[''])[0]=='1'
-            yt_id=q.get('youtube',[''])[0]
-            if yt_id:
-                # 0.5.53: a finished offline copy plays locally; otherwise the official embedded player.
-                with db() as c:done=[j for j in netzkino_downloads.listing(c,item_id=yt_id,origin='youtube')['items'] if j['state']=='done']
-                if done:ref['job']=done[0]['id']
-                elif direct_youtube:ref['youtube']=yt_id   # 0.5.78: own player, stream resolved by yt-dlp (opt-in switch)
-                else:
-                    try:info=youtube.play_info(ROOT,yt_id)
-                    except ValueError as e:return self.send({'error':str(e)},404)
-                    diagnostics.event('playback_start',mode='embed',origin='online',hls=False,provider='youtube')
-                    return self.send(info)
-            # 0.5.63: the player's wish for the picture size ('auto', 'max' or a height such as '480')
-            quality=_play_quality(q)
-            try:
-                with db() as c:source=streaming.resolve(c,root=ROOT,quality=quality,**ref)
-                info=streaming.plan(source,levels=q.get('levels',[''])[0]!='0')
-            except ValueError as e:return self.send({'error':str(e)},404)
-            if q.get('probe',[''])[0]=='1':return self.send({'levels':info.get('levels') or []})  # 0.5.72: levels only, for the ffmpeg fallback
-            base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
-            if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
-            else:info['src']=info.pop('url') if info['mode']=='direct' else base
-            info['remux']=base;info['ffmpeg']=bool(downloads.tool('ffmpeg'))
-            info['wish']=quality
-            diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False),provider=info.get('provider','mediathek'),
-                              live=bool(info.get('live')),wish=quality,levels=[l['id'] for l in info.get('levels') or []])
-            return self.send(info)
-        if path=='/api/logs':return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
-        if path=='/api/diagnostics':
-            # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
-            try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
-            except Exception as e:overview={'catalog_error':core.safe_error(e)}
-            return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
-        if path=='/api/tools':return self.send(runtime_tools.report(refresh=True))
-        if path=='/api/provider-stats':return self.send(provider_stats.snapshot())
-        if path=='/api/subscriptions':
-            with db() as c:return self.send({'items':subscriptions.get_all(c),'device_time':time.time()})
-        if path=='/api/review':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
-        if path=='/api/backups':return self.send(db_backup.listing(ROOT))
-        if path=='/api/archive-list-export':
-            # 0.5.92 (ArchiveMedia catalog_transfer): the known uploads as one file for another installation.
-            with db() as c:body,facts=archive_transfer.export_bytes(c)
-            diagnostics.event('archive_list_exported',items=facts['items'],files=facts['files'])
-            return self.send(body,ctype='application/zip')
-        if path=='/api/archive-uploaders':
-            with db() as c:return self.send(archive_uploaders.listing(c))
-        if path=='/api/archive-downloads':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:return self.send(archive_downloads.listing(c,item_id=q.get('id',[None])[0]))
-        if path=='/api/archive-companion':
-            status=archive_companion.read_status()
-            if NETWORK:status['ui_url']=None
-            return self.send(status)
-        if path=='/api/portal-policy':
-            return self.send({'sources':{k:portal_metadata_policy.source_policy(k)
-                          for k in portal_metadata_policy.PROVENANCE},
-                          'filename':portal_metadata_policy.filename_rules(),
-                          'reference_order':portal_metadata_policy.PRIORITY})
-        if path=='/api/watch':
-            # 0.5.81: Merkliste, Weiterschauen and playback positions, kept on the server (watch_state).
-            return self.send(watch_state.overview(ROOT))
-        if path=='/api/archive-receipts':return self.send(receipts_overview())
-        if path=='/api/system-monitor':
-            # 0.5.99: one reading of the machine on request (system_monitor); nothing runs while nobody looks.
-            with db() as c:states=dict(c.execute("SELECT state,COUNT(*) FROM jobs WHERE state IN ('queued','downloading','tagging') GROUP BY state").fetchall())
-            mesh=SERVICE.mesh_status
-            return self.send(system_monitor.snapshot(ROOT,settings().get('download_dir'),{
-                'downloads_running':states.get('downloading',0)+states.get('tagging',0),'downloads_waiting':states.get('queued',0),
-                'encoder_active':encoder.listing(ROOT)['active'],'receipt_task':RECEIPT_TASK['running'],
-                'verbund':mesh.get('enabled') is True,'verbund_systems':len(mesh.get('nodes') or []),'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND')}))
-        if path=='/api/encoder':return self.send(encoder.listing(ROOT,encoder_tools()))
-        if path=='/api/storage':
-            # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
-            with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
-        if path=='/api/tasks':return self.send(tasks_overview())
-        if path=='/api/unified':
-            # 0.5.55: dashboard "Alle" – one merged, globally sorted index of all sources.
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
-                genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
-                offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES))
-        if path=='/api/display':return self.send({'display':ui_prefs.load(ROOT),**ui_prefs.describe()})
-        if path=='/api/film-platforms':
-            # Light endpoint for the catalogue header (per-source overview), no portal_sources scan.
-            with db() as c:offline={name:netzkino_downloads.summary(c,name) for name in platform_registry.KEYS}
-            return self.send({'film_platforms':film_platforms(offline)})
-        if path=='/api/portals':
-            with db() as c:
-                result=portal_sources.state(c)
-                result['platform_control']=portal_control.source_status(c)
-                result['archive_scopes']=portal_control.list_scopes(c)
-                offline={name:netzkino_downloads.summary(c,name) for name in platform_registry.KEYS}
-            result['film_platforms']=film_platforms(offline)
-            return self.send(result)
-        if path=='/api/portal-items':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            work=q.get('work',[''])[0]
-            with db() as c:
-                # 0.5.82: works on top of the Archive.org uploads (archive_recognition); ``work`` lists the uploads of one work.
-                try:archive_recognition.sync(ROOT,c)
-                except Exception as e:diagnostics.error('archive_work_sync_failed',e)
-                result=portal_sources.listing(c,source=q.get('source',[''])[0],
-                            query=q.get('query',[''])[0],
-                            offset=q.get('offset',['0'])[0],
-                            locale=q.get('locale',['all'])[0],
-                            ids=archive_recognition.members_of(ROOT,work) if work else None)
-            try:archive_recognition.annotate(ROOT,result['items'])
-            except Exception as e:diagnostics.error('archive_work_annotate_failed',e)
-            return self.send(result)
-        if path=='/api/archive-works':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:archive_recognition.sync(ROOT,c)
-            result=archive_recognition.overview(ROOT,query=q.get('query',[''])[0],offset=q.get('offset',['0'])[0])
-            result['summary']=archive_recognition.summary(ROOT);result['auto']=bool(settings().get('auto_metadata',True))
-            return self.send(result)
-        if path=='/api/portal-archive-detail':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:
-                item_id=q.get('id',[''])[0]
-                result=portal_sources.archive_saved_detail(c,item_id)
-            return self.send(result)
-        if path=='/api/catalog':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:result=catalog.listing(c,query=q.get('query',[''])[0],kind=q.get('kind',[''])[0],genre=q.get('genre',[''])[0],show=q.get('show',[''])[0],offset=q.get('offset',[0])[0],archive=q.get('archive',['0'])[0]=='1',state=q.get('state',[''])[0],sort=q.get('sort',['title'])[0],downloaded=q.get('downloaded',['hide'])[0],collection=q.get('collection',[''])[0])
-            return self.send(result)
-        if path=='/api/catalog-tree':
-            return self.send(catalog_tree())
-        if path=='/api/recognition':return self.send(recognition())
-        if path=='/api/show':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            try:
-                with db() as c:return self.send(catalog.show_detail(c,q.get('show',[''])[0][:200],archive=q.get('archive',['0'])[0]=='1'))
-            except ValueError as e:return self.send({'error':str(e)},404)
-        if path=='/api/alternatives':
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
-        if path=='/api/availability':
-            import broadcaster
-            q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
-            oid=q.get('id',[''])[0][:128]
-            if not oid:return self.send({'error':'Angebot fehlt'},400)
-            with db() as c:
-                raw=c.execute('SELECT payload FROM offers WHERE id=?',(oid,)).fetchone()
-                cached=c.execute('SELECT available_until,source,checked FROM offer_availability WHERE offer_id=?',(oid,)).fetchone()
-            if not raw:return self.send({'error':'Angebot nicht gefunden'},404)
-            row=json.loads(raw[0]);now=time.time()
-            if row.get('available_until'):
-                return self.send({'available_until':row['available_until'],'source':row.get('availability_source','Filmliste'),'known':True,'checked_at':now})
-            if cached and now-cached[2]<(86400 if cached[0] else 21600):
-                return self.send({'available_until':cached[0] or None,'source':cached[1] or None,'known':bool(cached[0]),'checked_at':cached[2]})
-            info=None;error=''
-            try:
-                info=broadcaster.lookup(row)
-            except Exception as e:
-                error=core.safe_error(e)
-            until=info.get('available_until') if info else None
-            # Failed requests are not negative evidence and must not overwrite a known expiry.
-            if not error:
-                with db() as c:c.execute('INSERT OR REPLACE INTO offer_availability VALUES(?,?,?,?)',(oid,until or None,(info or {}).get('provider',''),now))
-            diagnostics.event('offer_availability_checked',provider=(info or {}).get('provider',''),known=bool(until),error=bool(error))
-            return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
-                              'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
-        if path=='/api/state':
-            s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
-                    'tmdb':metadata.network_provider_status('TMDB'),
-                    'wikidata':metadata.network_provider_status('Wikidata')},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
         self.send({'error':'Nicht gefunden'},404)
     # Finished downloads are served over HTTP so a browser on another device can fetch them;
     # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
@@ -969,553 +704,9 @@ class Handler(BaseHTTPRequestHandler):
             # 0.5.84: catalogue run, daily switch, reference check and offline download of every film platform.
             hit=platform_registry.handle_post(platform_context(),path,d)
             if hit is not None:return self.send(hit)
-            # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
-            if path=='/api/samsung-sync':return self.send({'started':samsung_tvplus.start_sync(ROOT),'status':samsung_tvplus.state(ROOT)})
-            if path=='/api/samsung-auto':return self.send({'status':samsung_tvplus.set_auto(ROOT,d.get('enabled'))})
-            if path=='/api/samsung-region':return self.send({'status':samsung_tvplus.set_region(ROOT,d.get('region'))})
-            if path=='/api/youtube-sources':
-                action=str(d.get('action',''))
-                if action=='add':result=youtube.add_source(ROOT,d.get('url',''),str(d.get('kind','movies')),str(d.get('label',''))[:120],d.get('min_minutes'))
-                else:result=youtube.update_source(ROOT,d.get('id'),action)
-                diagnostics.event('youtube_sources_changed',action=action[:10],count=len(result))
-                # 0.5.74 (Björn: added a playlist and nothing appeared): a new or re-enabled source is read
-                # right away when a key is set; a run already going picks it up next time.
-                started=action in ('add','enable') and bool(str(settings().get('youtube','')).strip()) and youtube.start_sync(ROOT,queue=True)
-                return self.send({'sources':result,'status':youtube.state(ROOT),'started':bool(started)})
-            if path=='/api/youtube-key':
-                s=settings();key=str(d.get('key','')).strip()
-                if d.get('clear') is True:s['youtube']=''
-                elif key:
-                    if not __import__('re').fullmatch(r'[A-Za-z0-9_\-]{20,80}',key):raise ValueError('Das sieht nicht wie ein Google-API-Schlüssel aus')
-                    s['youtube']=key
-                with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-                started=bool(s.get('youtube')) and youtube.start_sync(ROOT)
-                return self.send({'status':youtube.state(ROOT),'started':started})
-            if path=='/api/youtube-offline':
-                return self.send(youtube_downloads.set_enabled(ROOT,d.get('enabled'),d.get('confirmed') is True))
-            if path=='/api/youtube-ytdlp-install':
-                try:return self.send(youtube_downloads.install_tool(ROOT))
-                except (OSError,ValueError) as e:return self.send({'error':'yt-dlp konnte nicht eingerichtet werden: '+core.safe_error(e)},502)
-            if path=='/api/youtube-download-add' and (d.get('album') or isinstance(d.get('ids'),list)):
-                # 0.5.71: a whole music playlist ('album') or a selection of its videos ('ids') in one click.
-                album=str(d.get('album') or '')
-                ids=[str(x) for x in d.get('ids')][:youtube.MAX_BATCH] if isinstance(d.get('ids'),list) else None
-                if album:ids=youtube.album_track_ids(ROOT,album,ids)
-                elif any(not youtube.VALID_ID.fullmatch(i) or not i.startswith('t.') for i in ids):raise ValueError('Ungültige Auswahl')
-                if not ids:raise ValueError('Keine speicherbaren Videos ausgewählt')
-                with db() as c:
-                    result=youtube_downloads.enqueue_many(c,ROOT,settings()['download_dir'],ids)
-                    for job_id in result['jobs']:download_quality.set_job(c,{'id':job_id,'created':True},d.get('quality'))
-                diagnostics.event('youtube_download_batch',created=result['created'],existing=result['existing'],failed=result['failed'])
-                return self.send(result)
-            if path=='/api/youtube-download-add':
-                item_id=str(d.get('id',''))
-                try:
-                    if not item_id.startswith('t.'):   # music videos have no film references
-                        with SERVICE.provider_slots:youtube_enrichment.enrich(ROOT,item_id,settings())
-                except Exception as e:diagnostics.error('youtube_download_enrich_failed',e)
-                with db() as c:result=youtube_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
-                diagnostics.event('youtube_download_enqueued',created=result['created'])
-                return self.send(result)
-            if path=='/api/netzkino-recording':
-                return self.send(netzkino.import_recording(ROOT,d.get('entries')))
-            if path=='/api/netzkino-add':
-                return self.send({'item':netzkino.add(ROOT,d.get('title'),d.get('url'))})
-            if path=='/api/netzkino-remove':
-                return self.send({'removed':netzkino.remove(ROOT,d.get('id'))})
-            if path=='/api/netzkino-sync':
-                return self.send({'started':netzkino.start_sync(ROOT)})
-            if path=='/api/netzkino-auto':
-                return self.send({'status':netzkino.set_auto(ROOT,d.get('enabled'))})
-            if path=='/api/shutdown' and MANAGED:raise ValueError('Der Dienst wird vom NAS verwaltet. Bitte im Paket-Zentrum bzw. App Center stoppen.')
-            if path=='/api/shutdown':
-                self.send({'ok':True});STOP.set()
-                threading.Thread(target=self.server.shutdown,daemon=True).start()
-                return
-            if path=='/api/test-tvdb':
-                import tvdb
-                return self.send(tvdb.test_access(settings().get('tvdb',''),settings().get('tvdb_pin','')))
-            if path=='/api/backup-create':return self.send(db_backup.start(ROOT,diagnostics.event,diagnostics.error))
-            if path=='/api/backup-delete':return self.send(db_backup.delete(ROOT,d.get('backups'),d.get('confirm')))
-            if path=='/api/test-omdb':return self.send(metadata.test_omdb(settings().get('omdb','')))
-            if path=='/api/portal-controls':
-                source=d.get('source')
-                if source is not None:source=str(source)
-                with db() as c:
-                    portal_control.set_controls(c,source=source,
-                        enabled=d.get('enabled'),
-                        workers=d.get('workers'),
-                        locale=d.get('locale'),
-                        max_active=d.get('max_active'))
-                    result=portal_control.source_status(c)
-                diagnostics.event('portal_controls_updated',source=source,
-                                  enabled=d.get('enabled'),workers=d.get('workers'))
-                return self.send(result)
-            if path=='/api/portal-scope-add':
-                with db() as c:
-                    scope_id=portal_control.add_scope(c,d.get('kind'),d.get('value'),
-                                 priority=d.get('priority'),page_budget=d.get('page_budget',8))
-                return self.send({'id':scope_id,'ok':True})
-            if path=='/api/portal-scope-control':
-                with db() as c:
-                    portal_control.control_scope(c,d.get('id'),d.get('action'),
-                                                 priority=d.get('priority'))
-                return self.send({'ok':True})
-            if path=='/api/portal-search':
-                if d.get('source')!='internet_archive':
-                    raise ValueError('Nur Internet Archive bietet hier eine dokumentierte Such-API')
-                rows=portal_sources.search_archive(d.get('query',''))
-                with db() as c:
-                    saved=portal_sources.save(c,rows,query=d.get('query',''))
-                diagnostics.event('portal_metadata_import',source='internet_archive',items=len(saved),
-                                  mode='user_activated')
-                return self.send({'added_or_updated':len(saved),
-                                  'access':'official_site_only','download_enabled':False})
-            if path=='/api/portal-archive-inspect':
-                item_id=str(d.get('id') or '')
-                with db() as c:
-                    row=c.execute('SELECT source,external_id FROM portal_items WHERE id=?',
-                                  (item_id,)).fetchone()
-                if not row or row['source']!='internet_archive':
-                    raise ValueError('Gespeicherter Internet-Archive-Eintrag fehlt')
-                detail=portal_sources.fetch_archive_detail(row['external_id'])
-                with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
-                diagnostics.event('portal_archive_manifest_inspected',files=detail['files_in_manifest'],
-                                  variants=detail['variants_displayed'],
-                                  complete=detail['inventory_complete'])
-                return self.send({'detail':detail,'ok':True})
-            if path in ('/api/archive-bluray-playlist','/api/archive-external-id'):
-                # 0.5.92 (ArchiveMedia bluray_playlist, catalog_enrichment): one small look-up on request, stored with the manifest.
-                item_id=str(d.get('id') or '')
-                with db() as c:saved=portal_sources.archive_saved_detail(c,item_id)
-                detail=saved.get('detail')
-                if not detail:raise ValueError('Bitte erst den Archiv-Dateibestand prüfen')
-                if path=='/api/archive-bluray-playlist':
-                    result=archive_extras.read_playlist(detail,str(d.get('filename') or ''))
-                    result['main']=archive_extras.main_playlist(detail)
-                else:
-                    result=archive_extras.lookup(detail,str(d.get('provider') or ''))
-                    detail.setdefault('external_lookups',{})[str(d.get('provider'))]=result
-                with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
-                return self.send(result)
-            if path=='/api/archive-selection':
-                # 0.5.88 (ArchiveMedia selection_matrix): which file of every episode fits the wishes; nothing is fetched or queued.
-                with db() as c:saved=portal_sources.archive_saved_detail(c,str(d.get('id') or ''))
-                if not saved.get('detail'):raise ValueError('Bitte erst den Archiv-Dateibestand prüfen')
-                return self.send(archive_selection.matrix(saved['detail'],saved.get('probes'),d.get('criteria')))
-            if path=='/api/archive-selection-download':
-                with db() as c:result=archive_selection.enqueue(c,settings()['download_dir'],str(d.get('id') or ''),d.get('criteria'),d.get('picks'))
-                diagnostics.event('archive_selection_queued',created=result['created'],existing=result['existing'],failed=len(result['failed']))
-                return self.send(result)
-            if path=='/api/archive-uploaders-follow':
-                with db() as c:result=archive_uploaders.follow(ROOT,c)
-                diagnostics.event('archive_uploaders_noted',new=result['new'],works=result['works'])
-                return self.send(result)
-            if path=='/api/archive-download':
-                with db() as c:
-                    if not c.execute("SELECT 1 FROM portal_items WHERE id=? AND source='internet_archive'",(str(d.get('id') or ''),)).fetchone():
-                        raise ValueError('Archive.org-Eintrag nicht gefunden')
-                    result=archive_downloads.enqueue(c,settings()['download_dir'],d['id'],d.get('filename'),d.get('metadata'))
-                diagnostics.event('archive_download_queued',created=result.get('created'))
-                return self.send(result)
-            if path=='/api/portal-archive-probe':
-                if d.get('acknowledged') is not True:
-                    raise ValueError('Nur nach bestätigter Berechtigung zur technischen Teilprüfung')
-                item_id=str(d.get('id') or '')
-                filename=str(d.get('filename') or '')
-                # Save the result only after a bounded, user-initiated probe.
-                # This route does not enqueue downloads or enumerate an archive.
-                with db() as c:
-                    report=portal_sources.probe_archive_variant(
-                        c,item_id,filename,acknowledged=True)
-                diagnostics.event('portal_video_technical_probe',
-                                  state=report['state'],
-                                  bytes=report['bytes_sampled'],
-                                  audio_tracks=sum(t['type']=='audio' for t in report['tracks']),
-                                  subtitle_tracks=sum(t['type']=='subtitle' for t in report['tracks']))
-                return self.send({'probe':report})
-            if path=='/api/netzkino-download-add':
-                # One queue for everything: same worker, folders and names as Mediathek videos.
-                item_id=str(d.get('id',''));root=settings()['download_dir']
-                if not d.get('file_url'):
-                    # Classification and metadata like an ARD/ZDF download: IMDb/TVDB/TMDB check first
-                    # (cached when fresh), outside any database connection. Failures never block.
-                    try:
-                        with SERVICE.provider_slots:netzkino_enrichment.enrich(ROOT,item_id,settings())
-                    except Exception as e:diagnostics.error('netzkino_download_enrich_failed',e)
-                with db() as c:
-                    if d.get('file_url'):
-                        result=netzkino_downloads.enqueue_file(c,ROOT,root,item_id,d.get('file_url',''),
-                            d.get('rights_basis',''),d.get('rights_note',''),confirmed=d.get('confirmed') is True)
-                    else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id);download_quality.set_job(c,result,d.get('quality'))
-                diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
-                return self.send(result)
-            if path=='/api/archive-work-check':
-                with SERVICE.provider_slots:
-                    result=archive_recognition.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
-                diagnostics.event('archive_reference_check',status=result['status'],candidates=len(result.get('references',[])))
-                return self.send({'status':result['status'],'ok':True})
-            if path in ('/api/netzkino-download-action','/api/offline-download-action'):
-                action=d.get('action','');job_id=str(d.get('id',''))
-                with db() as c:
-                    row=c.execute('SELECT payload FROM jobs WHERE id=?',(job_id,)).fetchone()
-                    if not row or not netzkino_downloads.is_portal(json.loads(row[0])):raise ValueError('Offline-Download nicht gefunden')
-                    if action=='cancel':
-                        c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(job_id,));result={'ok':True,'state':'cancelled'}
-                    elif action=='delete':result=netzkino_downloads.delete_now(c,job_id)
-                    else:raise ValueError('Für diesen Auftrag unzulässige Aktion')
-                diagnostics.event('netzkino_download_control',action=action)
-                return self.send(result)
-            if path=='/api/netzkino-enrich':
-                item_id=str(d.get('id',''))
-                with SERVICE.provider_slots:
-                    result=netzkino_enrichment.enrich(ROOT,item_id,settings(),
-                                                        force=d.get('force') is True)
-                diagnostics.event('netzkino_reference_check',status=result['status'],
-                    candidates=len(result.get('references',[])),
-                    checked_providers=len(result.get('provider_checks',[])))
-                return self.send(result)
-            if path=='/api/netzkino-metadata-probe':
-                item_id=str(d.get('id',''))
-                editorial=netzkino_details.get(ROOT,item_id)
-                result=yt_dlp_probe.probe(editorial['page_url'],editorial['details'])
-                diagnostics.event('netzkino_metadata_validation',status=result['status'],
-                                  conflicts=len(result.get('warnings',[])))
-                return self.send(result)
-            if path=='/api/netzkino-watch':
-                item_id=str(d.get('id',''))
-                page=netzkino_details.find_page(ROOT,item_id)
-                helper=Path(__file__).with_name('netzkino_webplayer')
-                if sys.platform=='darwin' and helper.is_file() and os.access(helper,os.X_OK) and not NETWORK:
-                    subprocess.Popen([str(helper),page],stdin=subprocess.DEVNULL,
-                        stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
-                    diagnostics.event('netzkino_official_player',mode='native_webkit')
-                    return self.send({'mode':'native_webkit'})
-                diagnostics.event('netzkino_official_player',mode='native_unavailable')
-                return self.send({'mode':'native_unavailable'})
-            if path=='/api/portal-netzkino-add':
-                item=portal_sources.manual_netzkino(d.get('title',''),
-                          d.get('url',''),d.get('year'))
-                with db() as c:portal_sources.save(c,[item])
-                diagnostics.event('portal_manual_link_added',source='netzkino')
-                return self.send({'item':item,'ok':True})
-            if path=='/api/search':
-                found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
-                with db() as c:catalog.ingest(c,found['results'])
-                with _TREE_LOCK:_TREE_CACHE=(float("-inf"),_TREE_CACHE[1],_TREE_CACHE[2])
-                return self.send({'imported':len(found['results'])})
-            if path=='/api/sync':
-                SERVICE.restart.set();SERVICE.wake.set();diagnostics.event('sync_requested');return self.send({'ok':True})
-            if path in ('/api/library-locate','/api/library-relink'):
-                job_id=str(d.get('id') or '')[:128]
-                if not job_id:raise ValueError('Download-ID fehlt')
-                approved=local_library.roots(settings())
-                if path.endswith('library-locate'):
-                    with db() as c:job,_=local_library.missing_job(c,job_id)
-                    found=local_library.candidates(job,approved)
-                    diagnostics.event('library_relink_search',matches=len(found['matches']),scanned=found['scanned'],incomplete=found['incomplete'])
-                    if len(found['matches'])==1 and job.get('size_bytes'):
-                        with db() as c:result=local_library.relink(c,job_id,found['matches'][0],approved)
-                        diagnostics.event('library_relinked',job_id=job_id,automatic=True)
-                        return self.send({**result,'found':1,'automatic':True})
-                    return self.send({**found,'ok':False,'requires_selection':True})
-                with db() as c:result=local_library.relink(c,job_id,d.get('path') or '',approved)
-                diagnostics.event('library_relinked',job_id=job_id,automatic=False)
-                return self.send(result)
-            if path=='/api/subscription-add':
-                with db() as c:
-                    c.execute('BEGIN IMMEDIATE')
-                    sub_id=subscriptions.add(c,d)
-                SERVICE.subscription_wake.set()
-                diagnostics.event('subscription_created',id=sub_id,kind=d.get('kind'),
-                                  mode=d.get('mode','availability'))
-                return self.send({'ok':True,'id':sub_id})
-            if path=='/api/subscription-action':
-                with db() as c:
-                    c.execute('BEGIN IMMEDIATE')
-                    subscriptions.change(c,str(d.get('id') or ''),str(d.get('action') or ''))
-                SERVICE.subscription_wake.set()
-                diagnostics.event('subscription_modified',action=d.get('action'))
-                return self.send({'ok':True})
-            if path=='/api/subscription-check':
-                with db() as c:
-                    c.execute('BEGIN IMMEDIATE')
-                    results=subscriptions.run_due(c,settings()['download_dir'],
-                                                  force_id=str(d.get('id') or '') or None)
-                diagnostics.event('subscription_checked',subscriptions=len(results),
-                                  queued=sum(x['queued'] for x in results))
-                return self.send({'ok':True,'items':results})
-            if path=='/api/metadata-priority':
-                ids=d.get('ids',[])
-                if not isinstance(ids,list) or len(ids)>1000:raise ValueError('Ungültige Auswahl')
-                with db() as c:count=catalog.prioritize(c,ids,d.get('show',''))
-                SERVICE.metadata_wake.set();return self.send({'queued':count,'enabled':settings()['auto_metadata']})
-            if path in ('/api/series-plan','/api/series-download'):
-                root=settings()['download_dir']
-                with db() as c:
-                    if path.endswith('series-download'):
-                        if d.get('confirmed') is not True:raise ValueError('Serienvorschau zuerst bestätigen')
-                        c.execute('BEGIN IMMEDIATE')
-                        result=series_download.enqueue(c,d.get('show',''),root,d.get('fingerprint',''),d.get('ids'))
-                        diagnostics.event('series_download_queued',**result)
-                    else:
-                        result=series_download.plan(c,d.get('show',''),root)
-                        result['eligible']=[{'id':x['id'],'title':x['metadata'].get('episode_title') or x['metadata']['title'],'season':x['metadata']['season'],'episode':x['metadata']['episode'],'target':x['target']} for x in result['eligible']]
-                return self.send(result)
-            if path=='/api/save-metadata':
-                m=core.validate_meta(d['metadata'],require_episode=False);m['state']='user_confirmed'
-                with db() as c:
-                    o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
-                    if not o:raise ValueError('Katalogeintrag nicht gefunden')
-                    SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
-                _TREE_CACHE=(float("-inf"),[],[]);_STATUS_CACHE=(0,{})
-                return self.send({'ok':True})
-            if path=='/api/candidates':
-                config=settings()
-                cachekey=hashlib.sha256(json.dumps(['v045',config.get('imdb_generation'),d['id'],d['metadata'],config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True).encode()).hexdigest()
-                # A user-triggered search must bypass old provider results and negative caches.
-                # The automatic worker still uses the separate 24h metadata cache.
-                result=core.candidates(record(d['id']),d['metadata'],{**config,'_force_provider_refresh':True})
-                if not result['warnings'] and not result.get('deferred_providers'):
-                    with db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(cachekey,json.dumps(result),time.time()))
-                return self.send(result)
-            if path=='/api/preview':return self.send({'path':str(core.target(settings()['download_dir'],d['metadata'],d['id']))})
-            if path=='/api/settings':
-                s=settings();previous=dict(s)
-                if d.get('download_dir'):
-                    p=Path(d['download_dir']).expanduser()
-                    if not p.is_absolute():raise ValueError('Bitte absoluten Zielpfad angeben')
-                    s['download_dir']=str(p)
-                for k in ('tmdb','omdb','tvdb','tvdb_pin','youtube','fanart','fanart_personal'):
-                    if k in d and str(d[k] or '').strip():s[k]=str(d[k]).strip()
-                    if d.get('clear_'+k):s[k]=''
-                for k in ('auto_catalog','auto_metadata','complete_series','sender_direct_lookup'):
-                    if k in d:s[k]=bool(d[k])
-                if 'metadata_workers' in d:
-                    try:n=int(d['metadata_workers'])
-                    except (ValueError,TypeError):raise ValueError('Ungültige Workerzahl') from None
-                    if n not in (1,2,4,8):raise ValueError('Erlaubt sind 1, 2, 4 oder 8 Worker')
-                    s['metadata_workers']=n
-                if 'episode_workers' in d:
-                    try:n=int(d['episode_workers'])
-                    except (ValueError,TypeError):raise ValueError('Ungültige Episoden-Workerzahl') from None
-                    if n not in (1,2,4):raise ValueError('Erlaubt sind 1, 2 oder 4 Episoden-Worker')
-                    s['episode_workers']=n
-                if 'library_dirs' in d:
-                    paths=d['library_dirs']
-                    if isinstance(paths,str):paths=paths.splitlines()
-                    if not isinstance(paths,list) or len(paths)>8:raise ValueError('Maximal acht zusätzliche Bibliotheksordner')
-                    cleaned=[]
-                    for value in paths:
-                        p=Path(str(value).strip()).expanduser()
-                        if not str(value).strip():continue
-                        if not p.is_absolute() or p.resolve()==Path(p.anchor):
-                            raise ValueError('Bibliotheksordner müssen absolute Unterordner sein')
-                        cleaned.append(str(p))
-                    s['library_dirs']=cleaned
-                if 'scan_priority' in d:
-                    if d['scan_priority'] not in ('balanced','movies_first','series_first'):
-                        raise ValueError('Unbekannte Scan-Priorität')
-                    s['scan_priority']=d['scan_priority']
-                if 'mesh_dir' in d:
-                    folder=str(d['mesh_dir'] or '').strip()
-                    # Validates mount and marker; only an explicit request prepares a non-MeshSync folder.
-                    if folder:folder=str(meshjournal.check_folder(folder,create=d.get('mesh_init') is True))
-                    s['mesh_dir']=folder
-                if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
-                with db() as c:
-                    c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-                    if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
-                        c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
-                if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
-                return self.send({'ok':True})
-            if path=='/api/mesh-direct':
-                s=settings();action=d.get('action')
-                if action=='share':
-                    if not NETWORK:raise ValueError('Die Mac-/Desktop-App ist nur auf diesem Rechner erreichbar und kann nicht freigegeben werden. Bitte auf dem NAS „Dieses System freigeben“ wählen und den Code hier einfügen.')
-                    if not meshpeer.valid_key(s.get('mesh_key')):s['mesh_key']=meshpeer.new_key()
-                elif action=='rotate':
-                    if not NETWORK:
-                        raise ValueError('Ein neuer Verbund-Schlüssel kann nur auf einem erreichbaren NAS-Dienst erzeugt werden.')
-                    if d.get('confirmed') is not True:
-                        raise ValueError('Schlüsselwechsel bestätigen: Alle bisher verbundenen Clients benötigen danach den neuen Verbindungscode.')
-                    # Rotation changes inbound access only; outbound peer codes
-                    # and the existing journal/counters must remain untouched.
-                    s['mesh_key']=meshpeer.new_key()
-                    diagnostics.event('mesh_key_rotated',outgoing_peers=len(meshpeer.peer_list(s)))
-                elif action=='connect':
-                    url,key=meshpeer.parse_code(d.get('code'))
-                    if not key:raise ValueError('Bitte den vollständigen Verbindungscode der Gegenstelle einfügen (Adresse#Schlüssel)')
-                    if key==s.get('mesh_key'):raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
-                    info=meshpeer.Peer(url,key).hello()
-                    if SERVICE.mesh is not None and info.get('node')==SERVICE.mesh.node:raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
-                    peers=[p for p in meshpeer.peer_list(s) if p['url']!=url]+[{'url':url,'key':key}]
-                    s['mesh_peers']=peers;s.pop('mesh_peer',None)
-                elif action=='remove':
-                    url=str(d.get('url') or '').rstrip('/')
-                    s['mesh_peers']=[p for p in meshpeer.peer_list(s) if p['url']!=url];s.pop('mesh_peer',None)
-                elif action=='unshare':s['mesh_peers']=meshpeer.peer_list(s);s.pop('mesh_peer',None);s.pop('mesh_key',None)
-                elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None);s.pop('mesh_peers',None)
-                else:raise ValueError('Unbekannte Aktion')
-                with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-                diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
-                threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
-                out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}
-                if action=='connect':out['peer']=str(info.get('name') or '')[:80]
-                return self.send(out)
-            if path=='/api/download':
-                if d.get('confirmed') is not True:raise ValueError('Metadaten zuerst prüfen und bestätigen')
-                m=core.validate_meta(d['metadata']);m['state']='user_confirmed';m['confirmed_at']=time.time()
-                row=record(d['id'])
-                choices=catalog.links(row)
-                if d.get('quality','best')=='best' and choices:row['_download_url']=choices[0]['url']
-                with db() as c:
-                    # Another instance of the Verbund loads or already shared this title: no second download.
-                    o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
-                    blocked=SERVICE.mesh_download_block(c,m,o and o[0])
-                    if blocked:raise ValueError(blocked)
-                    if o:SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
-                dest=str(core.target(settings()['download_dir'],m,d['id']))
-                with db() as c:duplicate=c.execute("SELECT 1 FROM jobs WHERE state IN ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1",(dest,)).fetchone()
-                if duplicate:raise ValueError('Dieses Ziel ist bereits in der Warteschlange oder fertig')
-                j={'id':secrets.token_hex(8),'source':row,'metadata':m,'root':settings()['download_dir'],'quality':d.get('quality','best'),'target':dest,'state':'queued','received':0,'total':0}
-                put_job(j);return self.send({'ok':True})
-            if path=='/api/imdb-update':return self.send({'queued':IMDB.request()})
-            if path=='/api/cast-photos':
-                # 0.5.80: photos for the cast row of a title page (TMDB only, see cast_photos.py).
-                import cast_photos
-                people=d.get('people',[]);context=d.get('context',{})
-                if not isinstance(people,list) or not isinstance(context,dict):raise ValueError('Ungültige Besetzung')
-                return self.send(cast_photos.lookup(ROOT,settings().get('tmdb',''),people[:cast_photos.MAX_PEOPLE],context))
-            if path=='/api/artwork-priority':
-                ids=d.get('ids',[])
-                if not isinstance(ids,list) or any(not isinstance(i,str) for i in ids):raise ValueError('Ungültige Auswahl')
-                with db() as c:
-                    for wid in ids[:48]:c.execute('INSERT OR IGNORE INTO artwork_checks SELECT id,? FROM works WHERE id=?',(-time.time(),wid))
-                return self.send({'ok':True})
-            if path=='/api/open-download' and NETWORK:raise ValueError('Die Datei liegt auf dem NAS. Bitte über File Station bzw. die Netzwerkfreigabe öffnen.')
-            if path=='/api/open-download':
-                with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(d['id'],)).fetchone()
-                if not row:raise ValueError('Nur abgeschlossene Downloads können geöffnet werden')
-                job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
-                if not target.is_file():raise ValueError('Datei wurde verschoben oder ist nicht verfügbar')
-                if sys.platform=='darwin':subprocess.Popen(['/usr/bin/open',str(target)])
-                elif os.name=='nt':os.startfile(str(target))
-                else:subprocess.Popen(['xdg-open',str(target)])
-                return self.send({'ok':True})
-            if path=='/api/cancel':
-                with db() as c:c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(d['id'],))
-                return self.send({'ok':True})
-            if path=='/api/task-action':
-                return self.send(task_action(str(d.get('task',''))[:40],str(d.get('action',''))[:20],d.get('value')))
-            if path=='/api/playback-stats':
-                # 0.5.63: what the player saw (waiting pauses, chosen level) for the diagnosis; numbers only.
-                def num(key,top):
-                    try:return max(0,min(round(float(d.get(key) or 0),1),top))
-                    except (TypeError,ValueError):return 0
-                if _PLAYBACK_STATS[0]<200:
-                    _PLAYBACK_STATS[0]+=1
-                    diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
-                                      wish=str(d.get('wish',''))[:6],quality_level=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
-                                      watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
-                                      stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),
-                                      frames=int(num('frames',10**7)),dropped_frames=int(num('dropped',10**7)),gates=int(num('gates',9999)),agent=str(self.headers.get('User-Agent',''))[:160])
-                return self.send({'ok':True})
-            if path=='/api/client-error':
-                # 0.5.57: script errors of the web interface reach the diagnosis (at most 40 per run).
-                if _CLIENT_ERRORS[0]<40:
-                    _CLIENT_ERRORS[0]+=1
-                    diagnostics.event('client_error',message=str(d.get('message',''))[:300],source=str(d.get('source',''))[:120],
-                                      line=str(d.get('line',''))[:12],view=str(d.get('view',''))[:30],agent=str(self.headers.get('User-Agent',''))[:160])
-                return self.send({'ok':True})
-            if path=='/api/display':
-                value=ui_prefs.save(ROOT,d.get('display'));unified_index.invalidate();diagnostics.event('display_settings_changed')
-                return self.send({'display':value})
-            if path=='/api/job-control':
-                with db() as c:job=job_queue.control(c,str(d.get('id',''))[:128],str(d.get('action',''))[:20])
-                diagnostics.event('download_queue_control',action=str(d.get('action',''))[:20])
-                return self.send({'ok':True,'priority':job.get('priority',0),'hold':bool(job.get('hold'))})
-            if path=='/api/retry':
-                # 0.5.43: same job again (one card), earlier failed twins disappear.
-                with db() as c:job_queue.retry(c,str(d.get('id','')))
-                return self.send({'ok':True})
-            if path=='/api/watch-progress':
-                return self.send(watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info')))
-            if path=='/api/watch-mark':
-                result=watch_state.mark(ROOT,d.get('key'),d.get('favorite') if isinstance(d.get('favorite'),bool) else None,
-                                        d.get('pinned') if isinstance(d.get('pinned'),bool) else None,d.get('info'))
-                diagnostics.event('watch_mark',favorite=result['favorite'],pinned=result['pinned'])
-                return self.send(result)
-            if path=='/api/watch-forget':return self.send(watch_state.forget(ROOT,d.get('key')))
-            if path=='/api/storage-settings':
-                values=storage_policy.save(ROOT,d)
-                diagnostics.event('storage_settings',budget_gb=values['budget_gb'],protect_days=values['protect_days'])
-                with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
-            if path=='/api/archive-receipts-create':
-                # 0.5.95: receipts for Archive.org downloads from before this version (stored file only; the loaded bytes are gone).
-                with db() as c:jobs_missing=archive_receipts.missing(c,ROOT)
-                if not jobs_missing:raise ValueError('Alle Archive.org-Downloads haben bereits einen Nachweis')
-                def create(step):
-                    made=0
-                    for job in jobs_missing:
-                        if STOP.is_set():break
-                        made+=1 if archive_receipt(job) else 0;step()
-                    return {'state':'ok','message':'%d von %d Nachweisen erstellt.'%(made,len(jobs_missing))}
-                receipt_task('Nachweise erstellen',len(jobs_missing),create)
-                return self.send(receipts_overview())
-            if path=='/api/archive-receipt-check':
-                identifier,name=str(d.get('identifier') or ''),str(d.get('file') or '')
-                def check(step):
-                    result=archive_receipts.recheck(ROOT,identifier,name,cancelled=STOP.is_set)
-                    if result['state']=='missing':SERVICE.mesh_receipts()
-                    diagnostics.event('archive_receipt_checked',state=result['state']);step()
-                    return result
-                receipt_task('Datei erneut prüfen',1,check)
-                return self.send(receipts_overview())
-            if path=='/api/archive-receipt-fetch':
-                # 0.5.95: load the file another system vouches for from Archive.org here as well (a second copy). Only known receipts.
-                identifier,name=str(d.get('identifier') or ''),str(d.get('file') or '')
-                proof=archive_receipts.remote(ROOT,identifier,name)
-                if not proof:raise ValueError('Für diese Datei liegt kein gültiger Nachweis eines anderen Systems vor')
-                row=portal_sources.entry('internet_archive',identifier,proof['title'] or identifier,'https://archive.org/details/'+urllib.parse.quote(identifier,safe=''),evidence='verbund_receipt')
-                with db() as c:
-                    c.execute('INSERT OR IGNORE INTO portal_items(id,source,external_id,title,title_key,year,page_url,metadata,discovered,updated) VALUES (?,?,?,?,?,?,?,?,?,?)',
-                              (row['id'],row['source'],row['external_id'],row['title'],portal_sources.title_key(row['title']),None,row['page_url'],json.dumps(row,ensure_ascii=False),time.time(),time.time()))
-                    saved=portal_sources.archive_saved_detail(c,row['id']).get('detail')
-                if not saved or not any(v.get('filename')==name for v in saved.get('video_variants') or []):
-                    try:detail=portal_sources.fetch_archive_detail(identifier)
-                    except OSError as e:raise ValueError('Archive.org ist gerade nicht erreichbar; der Dateibestand des Uploads konnte nicht gelesen werden ('+core.safe_error(e)+'). Bitte später erneut versuchen.') from None
-                    with db() as c:portal_sources.save_archive_detail(c,row['id'],detail)
-                with db() as c:result=archive_downloads.enqueue(c,settings()['download_dir'],row['id'],name)
-                diagnostics.event('archive_receipt_fetch_queued',created=result.get('created'))
-                return self.send({**result,'receipts':receipts_overview()})
-            if path=='/api/encoder-add':
-                # 0.5.94: convert one finished download to a smaller picture (encoder.py). Replacing the original needs the confirmation.
-                replace=d.get('replace') is True
-                if replace and d.get('confirm') is not True:raise ValueError('Original ersetzen nur nach Bestätigung')
-                with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(str(d.get('id','')),)).fetchone()
-                if not row:raise ValueError('Nur fertige Downloads können umgewandelt werden')
-                result=encoder.add(ROOT,json.loads(row[0]),str(d.get('profile','')),encoder_tools(),speed=str(d.get('speed') or 'fast'),replace=replace)
-                diagnostics.event('encoder_queued',profile=str(d.get('profile','')),replace=replace,source_height=result['source_height'])
-                return self.send({**result,'encoder':encoder.listing(ROOT,encoder_tools())})
-            if path=='/api/encoder-cancel':
-                encoder.cancel(ROOT,d.get('id'));return self.send(encoder.listing(ROOT,encoder_tools()))
-            if path=='/api/encoder-clear':
-                encoder.clear(ROOT);return self.send(encoder.listing(ROOT,encoder_tools()))
-            if path=='/api/storage-delete':
-                # One file per request, only after the user's confirmation in the page; pinned titles are refused.
-                if d.get('confirm') is not True:raise ValueError('Löschen nur nach Bestätigung')
-                with db() as c:
-                    gone=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(str(d.get('id','')),)).fetchone()
-                    result=storage_policy.delete(c,str(d.get('id','')),watch_state.states(ROOT),netzkino_downloads.remove_files)
-                # 0.5.95: this system no longer vouches for the deleted file; the Verbund learns it at once.
-                if gone and archive_receipts.withdraw_job(ROOT,json.loads(gone[0])):SERVICE.mesh_receipts()
-                catalog.invalidate_listings(drop=True);unified_index.invalidate()
-                diagnostics.event('storage_delete',freed_mb=round(result['freed_bytes']/1048576),files=result['removed_files'])
-                with db() as c:return self.send({**result,'storage':storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT))})
-            if path=='/api/job-remove':
-                with db() as c:job_queue.remove(c,str(d.get('id','')))
-                return self.send({'ok':True})
+            # 0.6.1: routes with a fixed address live in the route table below (routing.py); stage 'api'
+            handler=ROUTES.find('POST',path,'api')
+            if handler:return handler(self,path,d)
             self.send({'error':'Nicht gefunden'},404)
         except Exception as e:
             diagnostics.error('http_post_failed',e,endpoint=urllib.parse.urlsplit(self.path).path)
@@ -1533,6 +724,1125 @@ class Handler(BaseHTTPRequestHandler):
         except (ValueError,TypeError,AttributeError) as e:
             diagnostics.event('access_login_failed');return self.send({'error':str(e) if isinstance(e,ValueError) else 'Ungültige Anfrage'},403)
         diagnostics.event('access_login');return self.send({'ok':True},cookies=[self.session_cookie(token)])
+
+# ----------------------------------------------------------------------------------------------------
+# 0.6.1: route table. Every address with a fixed path is one function, registered with its method and
+# stage ('open' = before the login, 'signed' = after the login without the page token in a header,
+# 'api' = with the page token). Handler.get/post look the path up at the place where the chain of
+# `if path==...` used to stand for that stage; prefixes, the platform registry and requests that
+# need the raw body stay in Handler. GET handlers take (self,path), POST handlers (self,path,d).
+# ----------------------------------------------------------------------------------------------------
+
+@ROUTES.get('/icon.svg',stage='open')
+def get_icon_svg(self,path):
+    return self.send((Path(__file__).parent/'assets'/'icon.svg').read_bytes(),ctype='image/svg+xml')
+
+@ROUTES.get('/theme-light.css',stage='open')
+def get_theme_light_css(self,path):
+    # 0.5.99: the light design, computed from style.css (light_theme.py); applies only with data-theme="light"
+    return self.send(light_theme.sheet(Path(__file__).parent/'web'/'style.css'),ctype='text/css')
+
+@ROUTES.get('/style.css','/login.js',stage='open')
+def get_style_css(self,path):
+    return self.send((Path(__file__).parent/'web'/path[1:]).read_bytes(),ctype='text/javascript' if path.endswith('js') else 'text/css')
+
+@ROUTES.get('/api/login-state',stage='open')
+def get_login_state(self,path):
+    if not NETWORK:return self.send({'required':False})
+    return self.send({'required':True,'configured':ACCESS.configured(),'setup_files':ACCESS.ensure_setup_code() if not ACCESS.configured() else []})
+
+@ROUTES.get('/',stage='signed')
+def get_index(self,path):
+    body=page_scripts.inline_scripts((Path(__file__).parent/'web'/'index.html').read_text(encoding='utf-8'),Path(__file__).parent/'web',SCRIPTS).replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
+    return self.send(body.encode(),ctype='text/html; charset=utf-8')
+
+# 0.5.68: hls.js (Apache-2.0, web/hls.LICENSE.txt) plays HLS in the browser the way the providers' own sites do
+@ROUTES.get('/hls.min.js',stage='signed')
+def get_hls_min_js(self,path):
+    return self.send((Path(__file__).parent/'web'/'hls.min.js').read_bytes(),ctype='text/javascript')
+
+@ROUTES.get('/titleview.js',stage='signed')
+def get_titleview_js(self,path):
+    return self.send((Path(__file__).parent/'web'/'titleview.js').read_bytes(),ctype='text/javascript')
+
+@ROUTES.get('/api/download-file',stage='signed')
+def get_download_file(self,path):
+    return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+
+@ROUTES.get('/api/stream',stage='signed')
+def get_stream(self,path):
+    return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query))
+
+@ROUTES.get('/api/video-audit')
+def get_video_audit(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:
+        video_backfill.initialize(c)
+        return self.send(video_backfill.status(c,q.get('offset',['0'])[0]))
+
+# 0.5.91: optionale Chrome-Erweiterung für den Videostart bei Anbietern mit Kopierschutz
+@ROUTES.get('/api/browser-extension')
+def get_browser_extension(self,path):
+    return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')
+
+@ROUTES.get('/api/live-tv')
+def get_live_tv(self,path):
+    # 0.5.50: live channels of all sources, merged by station (web/live_tv.js).
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    began=time.monotonic()
+    with db() as c:data=live_tv.overview(c,ROOT,query=q.get('q',[''])[0][:100],
+                                         provider=q.get('provider',[''])[0][:20],group=q.get('group',[''])[0][:120])
+    try:data['pluto']=pluto.state(ROOT)
+    except Exception:data['pluto']={}   # 0.5.67: a busy Pluto database must not hold back the stations
+    try:data['samsung']=samsung_tvplus.state(ROOT)   # 0.5.97: hint and load button in the tab
+    except Exception:data['samsung']={}
+    # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
+    # platforms still played them): an empty or slow answer leaves a line in the diagnosis.
+    took=round(time.monotonic()-began,2)
+    # 0.5.80 (Björn's diagnosis 0.5.72: dozens of "total 0, filtered" warnings): the live strip of a
+    # platform asks for its own provider, and a provider without channels (Joyn before its first
+    # complete catalogue run) correctly answers 0. Only a real problem is reported now.
+    if live_tv.overview_problem(data,took,query=q.get('q',[''])[0],provider=q.get('provider',[''])[0],group=q.get('group',[''])[0]):
+        diagnostics.event('live_tv_overview',level='WARNING',total=data['total'],seconds=took,filtered=bool(q.get('q',[''])[0] or q.get('provider',[''])[0] or q.get('group',[''])[0]),
+                          provider=q.get('provider',[''])[0][:20],group_set=bool(q.get('group',[''])[0]),query_set=bool(q.get('q',[''])[0]),
+                          providers={p['key']:p['channels'] for p in data['providers']},errors={p['key']:p['error'] for p in data['providers'] if p['error']})
+    return self.send(data)
+
+@ROUTES.get('/api/samsung')
+def get_samsung(self,path):
+    return self.send(samsung_tvplus.state(ROOT))   # 0.5.97: live channels only
+
+@ROUTES.get('/api/netzkino-details')
+def get_netzkino_details(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    return self.send(netzkino_details.get(ROOT,q.get('id',[''])[0]))
+
+@ROUTES.get('/api/youtube')
+def get_youtube(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    try:
+        if q.get('view',[''])[0]=='episodes':data=youtube.episodes(ROOT,q.get('series',[''])[0])
+        elif q.get('view',[''])[0]=='tracks':data=youtube.tracks(ROOT,q.get('album',[''])[0])   # 0.5.71 music playlist
+        elif q.get('doubtful',['0'])[0]=='1':
+            # YouTube thread: uploads sorted out as advertising can be shown on request (read directly).
+            data=youtube.listing(ROOT,view=q.get('view',['movies'])[0],query=q.get('q',[''])[0],
+                                  offset=q.get('offset',['0'])[0],limit=q.get('limit',['60'])[0],
+                                  genre=q.get('genre',[''])[0][:80],sort=q.get('sort',['title'])[0],
+                                  collection=q.get('collection',[''])[0][:20],show_doubtful=True)
+        else:return self.send(portal_page('youtube',youtube,q))
+    except ValueError as e:return self.send({'error':str(e)},404)
+    data['status']=portal_snapshot.status('youtube',lambda:youtube.state(ROOT))
+    return self.send(data)
+
+@ROUTES.get('/api/youtube-sources')
+def get_youtube_sources(self,path):
+    return self.send({'sources':youtube.sources(ROOT),'status':youtube.state(ROOT),'offline':youtube_downloads.status(ROOT)})
+
+@ROUTES.get('/api/portal-title')
+def get_portal_title(self,path):
+    # 0.5.42: one title page model for Netzkino, Pluto TV and JustWatch TV.
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    try:return self.send(portal_title.model(ROOT,q.get('source',[''])[0],q.get('id',[''])[0]))
+    except ValueError as e:return self.send({'error':str(e)},404)
+
+@ROUTES.get('/api/netzkino-downloads')
+def get_netzkino_downloads(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:result=netzkino_downloads.listing(c,item_id=job_ids(q))
+    result['ytdl']=ytdl_bridge.status()
+    return self.send(result)
+
+@ROUTES.get('/api/netzkino-reference-report')
+def get_netzkino_reference_report(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    return self.send(netzkino_enrichment.cached(ROOT,q.get('id',[''])[0]))
+
+@ROUTES.get('/api/netzkino-grouped')
+def get_netzkino_grouped(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    view=q.get('view',['movies'])[0];series_key=q.get('series_key',[''])[0];origin=q.get('origin',['all'])[0]
+    args=dict(query=q.get('q',[''])[0],genre=q.get('genre',[''])[0],sort=q.get('sort',['updated'])[0],collection=q.get('collection',[''])[0][:20])
+    if series_key or origin!='all' or view not in ('movies','series'):
+        data=netzkino.grouped_catalog(ROOT,view=view,series_key=series_key,origin=origin,
+            offset=q.get('offset',['0'])[0],limit=q.get('limit',['80'])[0],**args)
+        data['status']=portal_snapshot.status('netzkino',lambda:netzkino.state(ROOT))
+        return self.send(data)
+    # 0.5.60: films and series come from the stored view (portal_snapshot).
+    status=portal_snapshot.status('netzkino',lambda:netzkino.state(ROOT))
+    try:limit=max(1,min(100,int(q.get('limit',['80'])[0])))
+    except ValueError:limit=80
+    data=portal_snapshot.page('netzkino',view,lambda:netzkino.grouped_catalog(ROOT,view=view,series_key='',origin='all',offset=0,limit='all',**args),
+        stamp=_snapshot_stamp(status),offset=q.get('offset',['0'])[0],limit=limit,**args)
+    data['limit']=limit
+    data['status']=status
+    return self.send(data)
+
+@ROUTES.get('/api/netzkino')
+def get_netzkino(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    return self.send({'items':netzkino.list_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0],80,q.get('offset',['0'])[0]),'status':netzkino.state(ROOT),'total':netzkino.count_links(ROOT,q.get('q',[''])[0],q.get('origin',['all'])[0])})
+
+@ROUTES.get('/api/download-options')
+def get_download_options(self,path):
+    # 0.5.63: quality levels of one offer for the dialogue before an offline copy
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);source=q.get('source',[''])[0][:20];item=q.get('id',[''])[0][:80]
+    module={'pluto':pluto,'justwatch':justwatch,'rakuten':rakuten}.get(source)
+    return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
+
+@ROUTES.get('/api/play')
+def get_play(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')}
+    direct_youtube=q.get('direct',[''])[0]=='1'
+    yt_id=q.get('youtube',[''])[0]
+    if yt_id:
+        # 0.5.53: a finished offline copy plays locally; otherwise the official embedded player.
+        with db() as c:done=[j for j in netzkino_downloads.listing(c,item_id=yt_id,origin='youtube')['items'] if j['state']=='done']
+        if done:ref['job']=done[0]['id']
+        elif direct_youtube:ref['youtube']=yt_id   # 0.5.78: own player, stream resolved by yt-dlp (opt-in switch)
+        else:
+            try:info=youtube.play_info(ROOT,yt_id)
+            except ValueError as e:return self.send({'error':str(e)},404)
+            diagnostics.event('playback_start',mode='embed',origin='online',hls=False,provider='youtube')
+            return self.send(info)
+    # 0.5.63: the player's wish for the picture size ('auto', 'max' or a height such as '480')
+    quality=_play_quality(q)
+    try:
+        with db() as c:source=streaming.resolve(c,root=ROOT,quality=quality,**ref)
+        info=streaming.plan(source,levels=q.get('levels',[''])[0]!='0')
+    except ValueError as e:return self.send({'error':str(e)},404)
+    if q.get('probe',[''])[0]=='1':return self.send({'levels':info.get('levels') or []})  # 0.5.72: levels only, for the ffmpeg fallback
+    base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
+    if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
+    else:info['src']=info.pop('url') if info['mode']=='direct' else base
+    info['remux']=base;info['ffmpeg']=bool(downloads.tool('ffmpeg'))
+    info['wish']=quality
+    diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False),provider=info.get('provider','mediathek'),
+                      live=bool(info.get('live')),wish=quality,levels=[l['id'] for l in info.get('levels') or []])
+    return self.send(info)
+
+@ROUTES.get('/api/logs')
+def get_logs(self,path):
+    return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
+
+@ROUTES.get('/api/diagnostics')
+def get_diagnostics(self,path):
+    # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
+    try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
+    except Exception as e:overview={'catalog_error':core.safe_error(e)}
+    return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+
+@ROUTES.get('/api/tools')
+def get_tools(self,path):
+    return self.send(runtime_tools.report(refresh=True))
+
+@ROUTES.get('/api/provider-stats')
+def get_provider_stats(self,path):
+    return self.send(provider_stats.snapshot())
+
+@ROUTES.get('/api/subscriptions')
+def get_subscriptions(self,path):
+    with db() as c:return self.send({'items':subscriptions.get_all(c),'device_time':time.time()})
+
+@ROUTES.get('/api/review')
+def get_review(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:return self.send(catalog.review_listing(c,query=q.get('query',[''])[0],state=q.get('state',['open'])[0],offset=q.get('offset',[0])[0]))
+
+@ROUTES.get('/api/backups')
+def get_backups(self,path):
+    return self.send(db_backup.listing(ROOT))
+
+@ROUTES.get('/api/archive-list-export')
+def get_archive_list_export(self,path):
+    # 0.5.92 (ArchiveMedia catalog_transfer): the known uploads as one file for another installation.
+    with db() as c:body,facts=archive_transfer.export_bytes(c)
+    diagnostics.event('archive_list_exported',items=facts['items'],files=facts['files'])
+    return self.send(body,ctype='application/zip')
+
+@ROUTES.get('/api/archive-uploaders')
+def get_archive_uploaders(self,path):
+    with db() as c:return self.send(archive_uploaders.listing(c))
+
+@ROUTES.get('/api/archive-downloads')
+def get_archive_downloads(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:return self.send(archive_downloads.listing(c,item_id=q.get('id',[None])[0]))
+
+@ROUTES.get('/api/archive-companion')
+def get_archive_companion(self,path):
+    status=archive_companion.read_status()
+    if NETWORK:status['ui_url']=None
+    return self.send(status)
+
+@ROUTES.get('/api/portal-policy')
+def get_portal_policy(self,path):
+    return self.send({'sources':{k:portal_metadata_policy.source_policy(k)
+                  for k in portal_metadata_policy.PROVENANCE},
+                  'filename':portal_metadata_policy.filename_rules(),
+                  'reference_order':portal_metadata_policy.PRIORITY})
+
+@ROUTES.get('/api/watch')
+def get_watch(self,path):
+    # 0.5.81: Merkliste, Weiterschauen and playback positions, kept on the server (watch_state).
+    return self.send(watch_state.overview(ROOT))
+
+@ROUTES.get('/api/archive-receipts')
+def get_archive_receipts(self,path):
+    return self.send(receipts_overview())
+
+@ROUTES.get('/api/system-monitor')
+def get_system_monitor(self,path):
+    # 0.5.99: one reading of the machine on request (system_monitor); nothing runs while nobody looks.
+    with db() as c:states=dict(c.execute("SELECT state,COUNT(*) FROM jobs WHERE state IN ('queued','downloading','tagging') GROUP BY state").fetchall())
+    mesh=SERVICE.mesh_status
+    return self.send(system_monitor.snapshot(ROOT,settings().get('download_dir'),{
+        'downloads_running':states.get('downloading',0)+states.get('tagging',0),'downloads_waiting':states.get('queued',0),
+        'encoder_active':encoder.listing(ROOT)['active'],'receipt_task':RECEIPT_TASK['running'],
+        'verbund':mesh.get('enabled') is True,'verbund_systems':len(mesh.get('nodes') or []),'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'),
+        # 0.6.0: planner profile (Normal / Schwache Hardware) and running catalogue runs
+        'planner':PLANNER[0].status() if PLANNER[0] else dict(planner.profile(settings()),catalog_running=[])}))
+
+@ROUTES.get('/api/encoder')
+def get_encoder(self,path):
+    return self.send(encoder.listing(ROOT,encoder_tools()))
+
+@ROUTES.get('/api/storage')
+def get_storage(self,path):
+    # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
+    with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
+
+@ROUTES.get('/api/tasks')
+def get_tasks(self,path):
+    return self.send(tasks_overview())
+
+@ROUTES.get('/api/unified')
+def get_unified(self,path):
+    # 0.5.55: dashboard "Alle" – one merged, globally sorted index of all sources.
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
+        genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
+        offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES))
+
+@ROUTES.get('/api/display')
+def get_display(self,path):
+    return self.send({'display':ui_prefs.load(ROOT),**ui_prefs.describe()})
+
+@ROUTES.get('/api/film-platforms')
+def get_film_platforms(self,path):
+    # Light endpoint for the catalogue header (per-source overview), no portal_sources scan.
+    with db() as c:offline={name:netzkino_downloads.summary(c,name) for name in platform_registry.KEYS}
+    return self.send({'film_platforms':film_platforms(offline)})
+
+@ROUTES.get('/api/portals')
+def get_portals(self,path):
+    with db() as c:
+        result=portal_sources.state(c)
+        result['platform_control']=portal_control.source_status(c)
+        result['archive_scopes']=portal_control.list_scopes(c)
+        offline={name:netzkino_downloads.summary(c,name) for name in platform_registry.KEYS}
+    result['film_platforms']=film_platforms(offline)
+    return self.send(result)
+
+@ROUTES.get('/api/portal-items')
+def get_portal_items(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    work=q.get('work',[''])[0]
+    with db() as c:
+        # 0.5.82: works on top of the Archive.org uploads (archive_recognition); ``work`` lists the uploads of one work.
+        try:archive_recognition.sync(ROOT,c)
+        except Exception as e:diagnostics.error('archive_work_sync_failed',e)
+        result=portal_sources.listing(c,source=q.get('source',[''])[0],
+                    query=q.get('query',[''])[0],
+                    offset=q.get('offset',['0'])[0],
+                    locale=q.get('locale',['all'])[0],
+                    ids=archive_recognition.members_of(ROOT,work) if work else None)
+    try:archive_recognition.annotate(ROOT,result['items'])
+    except Exception as e:diagnostics.error('archive_work_annotate_failed',e)
+    return self.send(result)
+
+@ROUTES.get('/api/archive-works')
+def get_archive_works(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:archive_recognition.sync(ROOT,c)
+    result=archive_recognition.overview(ROOT,query=q.get('query',[''])[0],offset=q.get('offset',['0'])[0])
+    result['summary']=archive_recognition.summary(ROOT);result['auto']=bool(settings().get('auto_metadata',True))
+    return self.send(result)
+
+@ROUTES.get('/api/portal-archive-detail')
+def get_portal_archive_detail(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:
+        item_id=q.get('id',[''])[0]
+        result=portal_sources.archive_saved_detail(c,item_id)
+    return self.send(result)
+
+@ROUTES.get('/api/catalog')
+def get_catalog(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:result=catalog.listing(c,query=q.get('query',[''])[0],kind=q.get('kind',[''])[0],genre=q.get('genre',[''])[0],show=q.get('show',[''])[0],offset=q.get('offset',[0])[0],archive=q.get('archive',['0'])[0]=='1',state=q.get('state',[''])[0],sort=q.get('sort',['title'])[0],downloaded=q.get('downloaded',['hide'])[0],collection=q.get('collection',[''])[0])
+    return self.send(result)
+
+@ROUTES.get('/api/catalog-tree')
+def get_catalog_tree(self,path):
+    return self.send(catalog_tree())
+
+@ROUTES.get('/api/recognition')
+def get_recognition(self,path):
+    return self.send(recognition())
+
+@ROUTES.get('/api/show')
+def get_show(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    try:
+        with db() as c:return self.send(catalog.show_detail(c,q.get('show',[''])[0][:200],archive=q.get('archive',['0'])[0]=='1'))
+    except ValueError as e:return self.send({'error':str(e)},404)
+
+@ROUTES.get('/api/alternatives')
+def get_alternatives(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:return self.send({'items':catalog.alternatives(c,q.get('work_id',[''])[0])})
+
+@ROUTES.get('/api/availability')
+def get_availability(self,path):
+    import broadcaster
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    oid=q.get('id',[''])[0][:128]
+    if not oid:return self.send({'error':'Angebot fehlt'},400)
+    with db() as c:
+        raw=c.execute('SELECT payload FROM offers WHERE id=?',(oid,)).fetchone()
+        cached=c.execute('SELECT available_until,source,checked FROM offer_availability WHERE offer_id=?',(oid,)).fetchone()
+    if not raw:return self.send({'error':'Angebot nicht gefunden'},404)
+    row=json.loads(raw[0]);now=time.time()
+    if row.get('available_until'):
+        return self.send({'available_until':row['available_until'],'source':row.get('availability_source','Filmliste'),'known':True,'checked_at':now})
+    if cached and now-cached[2]<(86400 if cached[0] else 21600):
+        return self.send({'available_until':cached[0] or None,'source':cached[1] or None,'known':bool(cached[0]),'checked_at':cached[2]})
+    info=None;error=''
+    try:
+        info=broadcaster.lookup(row)
+    except Exception as e:
+        error=core.safe_error(e)
+    until=info.get('available_until') if info else None
+    # Failed requests are not negative evidence and must not overwrite a known expiry.
+    if not error:
+        with db() as c:c.execute('INSERT OR REPLACE INTO offer_availability VALUES(?,?,?,?)',(oid,until or None,(info or {}).get('provider',''),now))
+    diagnostics.event('offer_availability_checked',provider=(info or {}).get('provider',''),known=bool(until),error=bool(error))
+    return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
+                      'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
+
+@ROUTES.get('/api/state')
+def get_state(self,path):
+    s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
+            'tmdb':metadata.network_provider_status('TMDB'),
+            'wikidata':metadata.network_provider_status('Wikidata')},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+
+# 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
+@ROUTES.post('/api/samsung-sync')
+def post_samsung_sync(self,path,d):
+    return self.send({'started':samsung_tvplus.start_sync(ROOT),'status':samsung_tvplus.state(ROOT)})
+
+@ROUTES.post('/api/samsung-auto')
+def post_samsung_auto(self,path,d):
+    return self.send({'status':samsung_tvplus.set_auto(ROOT,d.get('enabled'))})
+
+@ROUTES.post('/api/samsung-region')
+def post_samsung_region(self,path,d):
+    return self.send({'status':samsung_tvplus.set_region(ROOT,d.get('region'))})
+
+@ROUTES.post('/api/youtube-sources')
+def post_youtube_sources(self,path,d):
+    action=str(d.get('action',''))
+    if action=='add':result=youtube.add_source(ROOT,d.get('url',''),str(d.get('kind','movies')),str(d.get('label',''))[:120],d.get('min_minutes'))
+    else:result=youtube.update_source(ROOT,d.get('id'),action)
+    diagnostics.event('youtube_sources_changed',action=action[:10],count=len(result))
+    # 0.5.74 (Björn: added a playlist and nothing appeared): a new or re-enabled source is read
+    # right away when a key is set; a run already going picks it up next time.
+    started=action in ('add','enable') and bool(str(settings().get('youtube','')).strip()) and youtube.start_sync(ROOT,queue=True)
+    return self.send({'sources':result,'status':youtube.state(ROOT),'started':bool(started)})
+
+@ROUTES.post('/api/youtube-key')
+def post_youtube_key(self,path,d):
+    s=settings();key=str(d.get('key','')).strip()
+    if d.get('clear') is True:s['youtube']=''
+    elif key:
+        if not __import__('re').fullmatch(r'[A-Za-z0-9_\-]{20,80}',key):raise ValueError('Das sieht nicht wie ein Google-API-Schlüssel aus')
+        s['youtube']=key
+    with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+    started=bool(s.get('youtube')) and youtube.start_sync(ROOT)
+    return self.send({'status':youtube.state(ROOT),'started':started})
+
+@ROUTES.post('/api/youtube-offline')
+def post_youtube_offline(self,path,d):
+    return self.send(youtube_downloads.set_enabled(ROOT,d.get('enabled'),d.get('confirmed') is True))
+
+@ROUTES.post('/api/youtube-ytdlp-install')
+def post_youtube_ytdlp_install(self,path,d):
+    try:return self.send(youtube_downloads.install_tool(ROOT))
+    except (OSError,ValueError) as e:return self.send({'error':'yt-dlp konnte nicht eingerichtet werden: '+core.safe_error(e)},502)
+
+@ROUTES.post('/api/youtube-download-add')
+def post_youtube_download_add(self,path,d):
+    if d.get('album') or isinstance(d.get('ids'),list):
+        # 0.5.71: a whole music playlist ('album') or a selection of its videos ('ids') in one click.
+        album=str(d.get('album') or '')
+        ids=[str(x) for x in d.get('ids')][:youtube.MAX_BATCH] if isinstance(d.get('ids'),list) else None
+        if album:ids=youtube.album_track_ids(ROOT,album,ids)
+        elif any(not youtube.VALID_ID.fullmatch(i) or not i.startswith('t.') for i in ids):raise ValueError('Ungültige Auswahl')
+        if not ids:raise ValueError('Keine speicherbaren Videos ausgewählt')
+        with db() as c:
+            result=youtube_downloads.enqueue_many(c,ROOT,settings()['download_dir'],ids)
+            for job_id in result['jobs']:download_quality.set_job(c,{'id':job_id,'created':True},d.get('quality'))
+        diagnostics.event('youtube_download_batch',created=result['created'],existing=result['existing'],failed=result['failed'])
+        return self.send(result)
+    item_id=str(d.get('id',''))
+    try:
+        if not item_id.startswith('t.'):   # music videos have no film references
+            with SERVICE.provider_slots:youtube_enrichment.enrich(ROOT,item_id,settings())
+    except Exception as e:diagnostics.error('youtube_download_enrich_failed',e)
+    with db() as c:result=youtube_downloads.enqueue(c,ROOT,settings()['download_dir'],item_id);download_quality.set_job(c,result,d.get('quality'))
+    diagnostics.event('youtube_download_enqueued',created=result['created'])
+    return self.send(result)
+
+@ROUTES.post('/api/netzkino-recording')
+def post_netzkino_recording(self,path,d):
+    return self.send(netzkino.import_recording(ROOT,d.get('entries')))
+
+@ROUTES.post('/api/netzkino-add')
+def post_netzkino_add(self,path,d):
+    return self.send({'item':netzkino.add(ROOT,d.get('title'),d.get('url'))})
+
+@ROUTES.post('/api/netzkino-remove')
+def post_netzkino_remove(self,path,d):
+    return self.send({'removed':netzkino.remove(ROOT,d.get('id'))})
+
+@ROUTES.post('/api/netzkino-sync')
+def post_netzkino_sync(self,path,d):
+    return self.send({'started':netzkino.start_sync(ROOT)})
+
+@ROUTES.post('/api/netzkino-auto')
+def post_netzkino_auto(self,path,d):
+    return self.send({'status':netzkino.set_auto(ROOT,d.get('enabled'))})
+
+@ROUTES.post('/api/shutdown')
+def post_shutdown(self,path,d):
+    if MANAGED:raise ValueError('Der Dienst wird vom NAS verwaltet. Bitte im Paket-Zentrum bzw. App Center stoppen.')
+    self.send({'ok':True});STOP.set()
+    threading.Thread(target=self.server.shutdown,daemon=True).start()
+    return
+
+@ROUTES.post('/api/test-tvdb')
+def post_test_tvdb(self,path,d):
+    import tvdb
+    return self.send(tvdb.test_access(settings().get('tvdb',''),settings().get('tvdb_pin','')))
+
+@ROUTES.post('/api/backup-create')
+def post_backup_create(self,path,d):
+    return self.send(db_backup.start(ROOT,diagnostics.event,diagnostics.error))
+
+@ROUTES.post('/api/backup-delete')
+def post_backup_delete(self,path,d):
+    return self.send(db_backup.delete(ROOT,d.get('backups'),d.get('confirm')))
+
+@ROUTES.post('/api/test-omdb')
+def post_test_omdb(self,path,d):
+    return self.send(metadata.test_omdb(settings().get('omdb','')))
+
+@ROUTES.post('/api/portal-controls')
+def post_portal_controls(self,path,d):
+    source=d.get('source')
+    if source is not None:source=str(source)
+    with db() as c:
+        portal_control.set_controls(c,source=source,
+            enabled=d.get('enabled'),
+            workers=d.get('workers'),
+            locale=d.get('locale'),
+            max_active=d.get('max_active'))
+        result=portal_control.source_status(c)
+    diagnostics.event('portal_controls_updated',source=source,
+                      enabled=d.get('enabled'),workers=d.get('workers'))
+    return self.send(result)
+
+@ROUTES.post('/api/portal-scope-add')
+def post_portal_scope_add(self,path,d):
+    with db() as c:
+        scope_id=portal_control.add_scope(c,d.get('kind'),d.get('value'),
+                     priority=d.get('priority'),page_budget=d.get('page_budget',8))
+    return self.send({'id':scope_id,'ok':True})
+
+@ROUTES.post('/api/portal-scope-control')
+def post_portal_scope_control(self,path,d):
+    with db() as c:
+        portal_control.control_scope(c,d.get('id'),d.get('action'),
+                                     priority=d.get('priority'))
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/portal-search')
+def post_portal_search(self,path,d):
+    if d.get('source')!='internet_archive':
+        raise ValueError('Nur Internet Archive bietet hier eine dokumentierte Such-API')
+    rows=portal_sources.search_archive(d.get('query',''))
+    with db() as c:
+        saved=portal_sources.save(c,rows,query=d.get('query',''))
+    diagnostics.event('portal_metadata_import',source='internet_archive',items=len(saved),
+                      mode='user_activated')
+    return self.send({'added_or_updated':len(saved),
+                      'access':'official_site_only','download_enabled':False})
+
+@ROUTES.post('/api/portal-archive-inspect')
+def post_portal_archive_inspect(self,path,d):
+    item_id=str(d.get('id') or '')
+    with db() as c:
+        row=c.execute('SELECT source,external_id FROM portal_items WHERE id=?',
+                      (item_id,)).fetchone()
+    if not row or row['source']!='internet_archive':
+        raise ValueError('Gespeicherter Internet-Archive-Eintrag fehlt')
+    detail=portal_sources.fetch_archive_detail(row['external_id'])
+    with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
+    diagnostics.event('portal_archive_manifest_inspected',files=detail['files_in_manifest'],
+                      variants=detail['variants_displayed'],
+                      complete=detail['inventory_complete'])
+    return self.send({'detail':detail,'ok':True})
+
+@ROUTES.post('/api/archive-bluray-playlist','/api/archive-external-id')
+def post_archive_bluray_playlist(self,path,d):
+    # 0.5.92 (ArchiveMedia bluray_playlist, catalog_enrichment): one small look-up on request, stored with the manifest.
+    item_id=str(d.get('id') or '')
+    with db() as c:saved=portal_sources.archive_saved_detail(c,item_id)
+    detail=saved.get('detail')
+    if not detail:raise ValueError('Bitte erst den Archiv-Dateibestand prüfen')
+    if path=='/api/archive-bluray-playlist':
+        result=archive_extras.read_playlist(detail,str(d.get('filename') or ''))
+        result['main']=archive_extras.main_playlist(detail)
+    else:
+        result=archive_extras.lookup(detail,str(d.get('provider') or ''))
+        detail.setdefault('external_lookups',{})[str(d.get('provider'))]=result
+    with db() as c:portal_sources.save_archive_detail(c,item_id,detail)
+    return self.send(result)
+
+@ROUTES.post('/api/archive-selection')
+def post_archive_selection(self,path,d):
+    # 0.5.88 (ArchiveMedia selection_matrix): which file of every episode fits the wishes; nothing is fetched or queued.
+    with db() as c:saved=portal_sources.archive_saved_detail(c,str(d.get('id') or ''))
+    if not saved.get('detail'):raise ValueError('Bitte erst den Archiv-Dateibestand prüfen')
+    return self.send(archive_selection.matrix(saved['detail'],saved.get('probes'),d.get('criteria')))
+
+@ROUTES.post('/api/archive-selection-download')
+def post_archive_selection_download(self,path,d):
+    with db() as c:result=archive_selection.enqueue(c,settings()['download_dir'],str(d.get('id') or ''),d.get('criteria'),d.get('picks'))
+    diagnostics.event('archive_selection_queued',created=result['created'],existing=result['existing'],failed=len(result['failed']))
+    return self.send(result)
+
+@ROUTES.post('/api/archive-uploaders-follow')
+def post_archive_uploaders_follow(self,path,d):
+    with db() as c:result=archive_uploaders.follow(ROOT,c)
+    diagnostics.event('archive_uploaders_noted',new=result['new'],works=result['works'])
+    return self.send(result)
+
+@ROUTES.post('/api/archive-download')
+def post_archive_download(self,path,d):
+    with db() as c:
+        if not c.execute("SELECT 1 FROM portal_items WHERE id=? AND source='internet_archive'",(str(d.get('id') or ''),)).fetchone():
+            raise ValueError('Archive.org-Eintrag nicht gefunden')
+        result=archive_downloads.enqueue(c,settings()['download_dir'],d['id'],d.get('filename'),d.get('metadata'))
+    diagnostics.event('archive_download_queued',created=result.get('created'))
+    return self.send(result)
+
+@ROUTES.post('/api/portal-archive-probe')
+def post_portal_archive_probe(self,path,d):
+    if d.get('acknowledged') is not True:
+        raise ValueError('Nur nach bestätigter Berechtigung zur technischen Teilprüfung')
+    item_id=str(d.get('id') or '')
+    filename=str(d.get('filename') or '')
+    # Save the result only after a bounded, user-initiated probe.
+    # This route does not enqueue downloads or enumerate an archive.
+    with db() as c:
+        report=portal_sources.probe_archive_variant(
+            c,item_id,filename,acknowledged=True)
+    diagnostics.event('portal_video_technical_probe',
+                      state=report['state'],
+                      bytes=report['bytes_sampled'],
+                      audio_tracks=sum(t['type']=='audio' for t in report['tracks']),
+                      subtitle_tracks=sum(t['type']=='subtitle' for t in report['tracks']))
+    return self.send({'probe':report})
+
+@ROUTES.post('/api/netzkino-download-add')
+def post_netzkino_download_add(self,path,d):
+    # One queue for everything: same worker, folders and names as Mediathek videos.
+    item_id=str(d.get('id',''));root=settings()['download_dir']
+    if not d.get('file_url'):
+        # Classification and metadata like an ARD/ZDF download: IMDb/TVDB/TMDB check first
+        # (cached when fresh), outside any database connection. Failures never block.
+        try:
+            with SERVICE.provider_slots:netzkino_enrichment.enrich(ROOT,item_id,settings())
+        except Exception as e:diagnostics.error('netzkino_download_enrich_failed',e)
+    with db() as c:
+        if d.get('file_url'):
+            result=netzkino_downloads.enqueue_file(c,ROOT,root,item_id,d.get('file_url',''),
+                d.get('rights_basis',''),d.get('rights_note',''),confirmed=d.get('confirmed') is True)
+        else:result=netzkino_downloads.enqueue(c,ROOT,root,item_id);download_quality.set_job(c,result,d.get('quality'))
+    diagnostics.event('netzkino_download_enqueued',created=result['created'],licensed_file=bool(d.get('file_url')))
+    return self.send(result)
+
+@ROUTES.post('/api/archive-work-check')
+def post_archive_work_check(self,path,d):
+    with SERVICE.provider_slots:
+        result=archive_recognition.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+    diagnostics.event('archive_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+    return self.send({'status':result['status'],'ok':True})
+
+@ROUTES.post('/api/netzkino-download-action','/api/offline-download-action')
+def post_netzkino_download_action(self,path,d):
+    action=d.get('action','');job_id=str(d.get('id',''))
+    with db() as c:
+        row=c.execute('SELECT payload FROM jobs WHERE id=?',(job_id,)).fetchone()
+        if not row or not netzkino_downloads.is_portal(json.loads(row[0])):raise ValueError('Offline-Download nicht gefunden')
+        if action=='cancel':
+            c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(job_id,));result={'ok':True,'state':'cancelled'}
+        elif action=='delete':result=netzkino_downloads.delete_now(c,job_id)
+        else:raise ValueError('Für diesen Auftrag unzulässige Aktion')
+    diagnostics.event('netzkino_download_control',action=action)
+    return self.send(result)
+
+@ROUTES.post('/api/netzkino-enrich')
+def post_netzkino_enrich(self,path,d):
+    item_id=str(d.get('id',''))
+    with SERVICE.provider_slots:
+        result=netzkino_enrichment.enrich(ROOT,item_id,settings(),
+                                            force=d.get('force') is True)
+    diagnostics.event('netzkino_reference_check',status=result['status'],
+        candidates=len(result.get('references',[])),
+        checked_providers=len(result.get('provider_checks',[])))
+    return self.send(result)
+
+@ROUTES.post('/api/netzkino-metadata-probe')
+def post_netzkino_metadata_probe(self,path,d):
+    item_id=str(d.get('id',''))
+    editorial=netzkino_details.get(ROOT,item_id)
+    result=yt_dlp_probe.probe(editorial['page_url'],editorial['details'])
+    diagnostics.event('netzkino_metadata_validation',status=result['status'],
+                      conflicts=len(result.get('warnings',[])))
+    return self.send(result)
+
+@ROUTES.post('/api/netzkino-watch')
+def post_netzkino_watch(self,path,d):
+    item_id=str(d.get('id',''))
+    page=netzkino_details.find_page(ROOT,item_id)
+    helper=Path(__file__).with_name('netzkino_webplayer')
+    if sys.platform=='darwin' and helper.is_file() and os.access(helper,os.X_OK) and not NETWORK:
+        subprocess.Popen([str(helper),page],stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL,close_fds=True)
+        diagnostics.event('netzkino_official_player',mode='native_webkit')
+        return self.send({'mode':'native_webkit'})
+    diagnostics.event('netzkino_official_player',mode='native_unavailable')
+    return self.send({'mode':'native_unavailable'})
+
+@ROUTES.post('/api/portal-netzkino-add')
+def post_portal_netzkino_add(self,path,d):
+    item=portal_sources.manual_netzkino(d.get('title',''),
+              d.get('url',''),d.get('year'))
+    with db() as c:portal_sources.save(c,[item])
+    diagnostics.event('portal_manual_link_added',source='netzkino')
+    return self.send({'item':item,'ok':True})
+
+@ROUTES.post('/api/search')
+def post_search(self,path,d):
+    global _TREE_CACHE
+    found=core.search(d.get('query',''),d.get('channel',''),d.get('offset',0))
+    with db() as c:catalog.ingest(c,found['results'])
+    with _TREE_LOCK:_TREE_CACHE=(float("-inf"),_TREE_CACHE[1],_TREE_CACHE[2])
+    return self.send({'imported':len(found['results'])})
+
+@ROUTES.post('/api/sync')
+def post_sync(self,path,d):
+    SERVICE.restart.set();SERVICE.wake.set();diagnostics.event('sync_requested');return self.send({'ok':True})
+
+@ROUTES.post('/api/library-locate','/api/library-relink')
+def post_library_locate(self,path,d):
+    job_id=str(d.get('id') or '')[:128]
+    if not job_id:raise ValueError('Download-ID fehlt')
+    approved=local_library.roots(settings())
+    if path.endswith('library-locate'):
+        with db() as c:job,_=local_library.missing_job(c,job_id)
+        found=local_library.candidates(job,approved)
+        diagnostics.event('library_relink_search',matches=len(found['matches']),scanned=found['scanned'],incomplete=found['incomplete'])
+        if len(found['matches'])==1 and job.get('size_bytes'):
+            with db() as c:result=local_library.relink(c,job_id,found['matches'][0],approved)
+            diagnostics.event('library_relinked',job_id=job_id,automatic=True)
+            return self.send({**result,'found':1,'automatic':True})
+        return self.send({**found,'ok':False,'requires_selection':True})
+    with db() as c:result=local_library.relink(c,job_id,d.get('path') or '',approved)
+    diagnostics.event('library_relinked',job_id=job_id,automatic=False)
+    return self.send(result)
+
+@ROUTES.post('/api/subscription-add')
+def post_subscription_add(self,path,d):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        sub_id=subscriptions.add(c,d)
+    SERVICE.subscription_wake.set()
+    diagnostics.event('subscription_created',id=sub_id,kind=d.get('kind'),
+                      mode=d.get('mode','availability'))
+    return self.send({'ok':True,'id':sub_id})
+
+@ROUTES.post('/api/subscription-action')
+def post_subscription_action(self,path,d):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        subscriptions.change(c,str(d.get('id') or ''),str(d.get('action') or ''))
+    SERVICE.subscription_wake.set()
+    diagnostics.event('subscription_modified',action=d.get('action'))
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/subscription-check')
+def post_subscription_check(self,path,d):
+    with db() as c:
+        c.execute('BEGIN IMMEDIATE')
+        results=subscriptions.run_due(c,settings()['download_dir'],
+                                      force_id=str(d.get('id') or '') or None)
+    diagnostics.event('subscription_checked',subscriptions=len(results),
+                      queued=sum(x['queued'] for x in results))
+    return self.send({'ok':True,'items':results})
+
+@ROUTES.post('/api/metadata-priority')
+def post_metadata_priority(self,path,d):
+    ids=d.get('ids',[])
+    if not isinstance(ids,list) or len(ids)>1000:raise ValueError('Ungültige Auswahl')
+    with db() as c:count=catalog.prioritize(c,ids,d.get('show',''))
+    SERVICE.metadata_wake.set();return self.send({'queued':count,'enabled':settings()['auto_metadata']})
+
+@ROUTES.post('/api/series-plan','/api/series-download')
+def post_series_plan(self,path,d):
+    root=settings()['download_dir']
+    with db() as c:
+        if path.endswith('series-download'):
+            if d.get('confirmed') is not True:raise ValueError('Serienvorschau zuerst bestätigen')
+            c.execute('BEGIN IMMEDIATE')
+            result=series_download.enqueue(c,d.get('show',''),root,d.get('fingerprint',''),d.get('ids'))
+            diagnostics.event('series_download_queued',**result)
+        else:
+            result=series_download.plan(c,d.get('show',''),root)
+            result['eligible']=[{'id':x['id'],'title':x['metadata'].get('episode_title') or x['metadata']['title'],'season':x['metadata']['season'],'episode':x['metadata']['episode'],'target':x['target']} for x in result['eligible']]
+    return self.send(result)
+
+@ROUTES.post('/api/save-metadata')
+def post_save_metadata(self,path,d):
+    global _STATUS_CACHE,_TREE_CACHE
+    m=core.validate_meta(d['metadata'],require_episode=False);m['state']='user_confirmed'
+    with db() as c:
+        o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
+        if not o:raise ValueError('Katalogeintrag nicht gefunden')
+        SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
+    _TREE_CACHE=(float("-inf"),[],[]);_STATUS_CACHE=(0,{})
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/candidates')
+def post_candidates(self,path,d):
+    config=settings()
+    cachekey=hashlib.sha256(json.dumps(['v045',config.get('imdb_generation'),d['id'],d['metadata'],config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True).encode()).hexdigest()
+    # A user-triggered search must bypass old provider results and negative caches.
+    # The automatic worker still uses the separate 24h metadata cache.
+    result=core.candidates(record(d['id']),d['metadata'],{**config,'_force_provider_refresh':True})
+    if not result['warnings'] and not result.get('deferred_providers'):
+        with db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(cachekey,json.dumps(result),time.time()))
+    return self.send(result)
+
+@ROUTES.post('/api/preview')
+def post_preview(self,path,d):
+    return self.send({'path':str(core.target(settings()['download_dir'],d['metadata'],d['id']))})
+
+@ROUTES.post('/api/settings')
+def post_settings(self,path,d):
+    s=settings();previous=dict(s)
+    if d.get('download_dir'):
+        p=Path(d['download_dir']).expanduser()
+        if not p.is_absolute():raise ValueError('Bitte absoluten Zielpfad angeben')
+        s['download_dir']=str(p)
+    for k in ('tmdb','omdb','tvdb','tvdb_pin','youtube','fanart','fanart_personal'):
+        if k in d and str(d[k] or '').strip():s[k]=str(d[k]).strip()
+        if d.get('clear_'+k):s[k]=''
+    for k in ('auto_catalog','auto_metadata','complete_series','sender_direct_lookup'):
+        if k in d:s[k]=bool(d[k])
+    if 'background_profile' in d:
+        # 0.6.0: planner profile (Verwaltung → System); auto = by cores and memory
+        if d['background_profile'] not in planner.CHOICES:raise ValueError('Unbekanntes Profil')
+        s['background_profile']=d['background_profile']
+    if 'metadata_workers' in d:
+        try:n=int(d['metadata_workers'])
+        except (ValueError,TypeError):raise ValueError('Ungültige Workerzahl') from None
+        if n not in (1,2,4,8):raise ValueError('Erlaubt sind 1, 2, 4 oder 8 Worker')
+        s['metadata_workers']=n
+    if 'episode_workers' in d:
+        try:n=int(d['episode_workers'])
+        except (ValueError,TypeError):raise ValueError('Ungültige Episoden-Workerzahl') from None
+        if n not in (1,2,4):raise ValueError('Erlaubt sind 1, 2 oder 4 Episoden-Worker')
+        s['episode_workers']=n
+    if 'library_dirs' in d:
+        paths=d['library_dirs']
+        if isinstance(paths,str):paths=paths.splitlines()
+        if not isinstance(paths,list) or len(paths)>8:raise ValueError('Maximal acht zusätzliche Bibliotheksordner')
+        cleaned=[]
+        for value in paths:
+            p=Path(str(value).strip()).expanduser()
+            if not str(value).strip():continue
+            if not p.is_absolute() or p.resolve()==Path(p.anchor):
+                raise ValueError('Bibliotheksordner müssen absolute Unterordner sein')
+            cleaned.append(str(p))
+        s['library_dirs']=cleaned
+    if 'scan_priority' in d:
+        if d['scan_priority'] not in ('balanced','movies_first','series_first'):
+            raise ValueError('Unbekannte Scan-Priorität')
+        s['scan_priority']=d['scan_priority']
+    if 'mesh_dir' in d:
+        folder=str(d['mesh_dir'] or '').strip()
+        # Validates mount and marker; only an explicit request prepares a non-MeshSync folder.
+        if folder:folder=str(meshjournal.check_folder(folder,create=d.get('mesh_init') is True))
+        s['mesh_dir']=folder
+    if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
+    with db() as c:
+        c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+        if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
+            c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
+    if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/mesh-direct')
+def post_mesh_direct(self,path,d):
+    s=settings();action=d.get('action')
+    if action=='share':
+        if not NETWORK:raise ValueError('Die Mac-/Desktop-App ist nur auf diesem Rechner erreichbar und kann nicht freigegeben werden. Bitte auf dem NAS „Dieses System freigeben“ wählen und den Code hier einfügen.')
+        if not meshpeer.valid_key(s.get('mesh_key')):s['mesh_key']=meshpeer.new_key()
+    elif action=='rotate':
+        if not NETWORK:
+            raise ValueError('Ein neuer Verbund-Schlüssel kann nur auf einem erreichbaren NAS-Dienst erzeugt werden.')
+        if d.get('confirmed') is not True:
+            raise ValueError('Schlüsselwechsel bestätigen: Alle bisher verbundenen Clients benötigen danach den neuen Verbindungscode.')
+        # Rotation changes inbound access only; outbound peer codes
+        # and the existing journal/counters must remain untouched.
+        s['mesh_key']=meshpeer.new_key()
+        diagnostics.event('mesh_key_rotated',outgoing_peers=len(meshpeer.peer_list(s)))
+    elif action=='connect':
+        url,key=meshpeer.parse_code(d.get('code'))
+        if not key:raise ValueError('Bitte den vollständigen Verbindungscode der Gegenstelle einfügen (Adresse#Schlüssel)')
+        if key==s.get('mesh_key'):raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
+        info=meshpeer.Peer(url,key).hello()
+        if SERVICE.mesh is not None and info.get('node')==SERVICE.mesh.node:raise ValueError('Das ist der Verbindungscode dieses Systems selbst. Bitte den Code eines anderen Systems einfügen.')
+        peers=[p for p in meshpeer.peer_list(s) if p['url']!=url]+[{'url':url,'key':key}]
+        s['mesh_peers']=peers;s.pop('mesh_peer',None)
+    elif action=='remove':
+        url=str(d.get('url') or '').rstrip('/')
+        s['mesh_peers']=[p for p in meshpeer.peer_list(s) if p['url']!=url];s.pop('mesh_peer',None)
+    elif action=='unshare':s['mesh_peers']=meshpeer.peer_list(s);s.pop('mesh_peer',None);s.pop('mesh_key',None)
+    elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None);s.pop('mesh_peers',None)
+    else:raise ValueError('Unbekannte Aktion')
+    with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+    diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
+    threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
+    out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}
+    if action=='connect':out['peer']=str(info.get('name') or '')[:80]
+    return self.send(out)
+
+@ROUTES.post('/api/download')
+def post_download(self,path,d):
+    if d.get('confirmed') is not True:raise ValueError('Metadaten zuerst prüfen und bestätigen')
+    m=core.validate_meta(d['metadata']);m['state']='user_confirmed';m['confirmed_at']=time.time()
+    row=record(d['id'])
+    choices=catalog.links(row)
+    if d.get('quality','best')=='best' and choices:row['_download_url']=choices[0]['url']
+    with db() as c:
+        # Another instance of the Verbund loads or already shared this title: no second download.
+        o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
+        blocked=SERVICE.mesh_download_block(c,m,o and o[0])
+        if blocked:raise ValueError(blocked)
+        if o:SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
+    dest=str(core.target(settings()['download_dir'],m,d['id']))
+    with db() as c:duplicate=c.execute("SELECT 1 FROM jobs WHERE state IN ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1",(dest,)).fetchone()
+    if duplicate:raise ValueError('Dieses Ziel ist bereits in der Warteschlange oder fertig')
+    j={'id':secrets.token_hex(8),'source':row,'metadata':m,'root':settings()['download_dir'],'quality':d.get('quality','best'),'target':dest,'state':'queued','received':0,'total':0}
+    put_job(j);return self.send({'ok':True})
+
+@ROUTES.post('/api/imdb-update')
+def post_imdb_update(self,path,d):
+    return self.send({'queued':IMDB.request()})
+
+@ROUTES.post('/api/cast-photos')
+def post_cast_photos(self,path,d):
+    # 0.5.80: photos for the cast row of a title page (TMDB only, see cast_photos.py).
+    import cast_photos
+    people=d.get('people',[]);context=d.get('context',{})
+    if not isinstance(people,list) or not isinstance(context,dict):raise ValueError('Ungültige Besetzung')
+    return self.send(cast_photos.lookup(ROOT,settings().get('tmdb',''),people[:cast_photos.MAX_PEOPLE],context))
+
+@ROUTES.post('/api/artwork-priority')
+def post_artwork_priority(self,path,d):
+    ids=d.get('ids',[])
+    if not isinstance(ids,list) or any(not isinstance(i,str) for i in ids):raise ValueError('Ungültige Auswahl')
+    with db() as c:
+        for wid in ids[:48]:c.execute('INSERT OR IGNORE INTO artwork_checks SELECT id,? FROM works WHERE id=?',(-time.time(),wid))
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/open-download')
+def post_open_download(self,path,d):
+    if NETWORK:raise ValueError('Die Datei liegt auf dem NAS. Bitte über File Station bzw. die Netzwerkfreigabe öffnen.')
+    with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(d['id'],)).fetchone()
+    if not row:raise ValueError('Nur abgeschlossene Downloads können geöffnet werden')
+    job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
+    if not target.is_file():raise ValueError('Datei wurde verschoben oder ist nicht verfügbar')
+    if sys.platform=='darwin':subprocess.Popen(['/usr/bin/open',str(target)])
+    elif os.name=='nt':os.startfile(str(target))
+    else:subprocess.Popen(['xdg-open',str(target)])
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/cancel')
+def post_cancel(self,path,d):
+    with db() as c:c.execute("UPDATE jobs SET state='cancelled' WHERE id=? AND state IN ('queued','downloading','tagging')",(d['id'],))
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/task-action')
+def post_task_action(self,path,d):
+    return self.send(task_action(str(d.get('task',''))[:40],str(d.get('action',''))[:20],d.get('value')))
+
+@ROUTES.post('/api/playback-stats')
+def post_playback_stats(self,path,d):
+    # 0.5.63: what the player saw (waiting pauses, chosen level) for the diagnosis; numbers only.
+    def num(key,top):
+        try:return max(0,min(round(float(d.get(key) or 0),1),top))
+        except (TypeError,ValueError):return 0
+    if _PLAYBACK_STATS[0]<200:
+        _PLAYBACK_STATS[0]+=1
+        diagnostics.event('playback_stats',mode=str(d.get('mode',''))[:10],provider=str(d.get('provider',''))[:20],live=bool(d.get('live')),
+                          wish=str(d.get('wish',''))[:6],quality_level=str(d.get('level',''))[:6],native=bool(d.get('native')),fallback=str(d.get('fallback',''))[:60],switches=int(num('switches',9999)),
+                          watched_seconds=num('watched',86400),first_picture_seconds=num('first',600),stalls=int(num('stalls',9999)),
+                          stall_seconds=num('stall_seconds',86400),reduced=int(num('reduced',20)),
+                          frames=int(num('frames',10**7)),dropped_frames=int(num('dropped',10**7)),gates=int(num('gates',9999)),agent=str(self.headers.get('User-Agent',''))[:160])
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/client-error')
+def post_client_error(self,path,d):
+    # 0.5.57: script errors of the web interface reach the diagnosis (at most 40 per run).
+    if _CLIENT_ERRORS[0]<40:
+        _CLIENT_ERRORS[0]+=1
+        diagnostics.event('client_error',message=str(d.get('message',''))[:300],source=str(d.get('source',''))[:120],
+                          line=str(d.get('line',''))[:12],view=str(d.get('view',''))[:30],agent=str(self.headers.get('User-Agent',''))[:160])
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/display')
+def post_display(self,path,d):
+    value=ui_prefs.save(ROOT,d.get('display'));unified_index.invalidate();diagnostics.event('display_settings_changed')
+    return self.send({'display':value})
+
+@ROUTES.post('/api/job-control')
+def post_job_control(self,path,d):
+    with db() as c:job=job_queue.control(c,str(d.get('id',''))[:128],str(d.get('action',''))[:20])
+    diagnostics.event('download_queue_control',action=str(d.get('action',''))[:20])
+    return self.send({'ok':True,'priority':job.get('priority',0),'hold':bool(job.get('hold'))})
+
+@ROUTES.post('/api/retry')
+def post_retry(self,path,d):
+    # 0.5.43: same job again (one card), earlier failed twins disappear.
+    with db() as c:job_queue.retry(c,str(d.get('id','')))
+    return self.send({'ok':True})
+
+@ROUTES.post('/api/watch-progress')
+def post_watch_progress(self,path,d):
+    return self.send(watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info')))
+
+@ROUTES.post('/api/watch-mark')
+def post_watch_mark(self,path,d):
+    result=watch_state.mark(ROOT,d.get('key'),d.get('favorite') if isinstance(d.get('favorite'),bool) else None,
+                            d.get('pinned') if isinstance(d.get('pinned'),bool) else None,d.get('info'))
+    diagnostics.event('watch_mark',favorite=result['favorite'],pinned=result['pinned'])
+    return self.send(result)
+
+@ROUTES.post('/api/watch-forget')
+def post_watch_forget(self,path,d):
+    return self.send(watch_state.forget(ROOT,d.get('key')))
+
+@ROUTES.post('/api/storage-settings')
+def post_storage_settings(self,path,d):
+    values=storage_policy.save(ROOT,d)
+    diagnostics.event('storage_settings',budget_gb=values['budget_gb'],protect_days=values['protect_days'])
+    with db() as c:return self.send(storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT)))
+
+@ROUTES.post('/api/archive-receipts-create')
+def post_archive_receipts_create(self,path,d):
+    # 0.5.95: receipts for Archive.org downloads from before this version (stored file only; the loaded bytes are gone).
+    with db() as c:jobs_missing=archive_receipts.missing(c,ROOT)
+    if not jobs_missing:raise ValueError('Alle Archive.org-Downloads haben bereits einen Nachweis')
+    def create(step):
+        made=0
+        for job in jobs_missing:
+            if STOP.is_set():break
+            made+=1 if archive_receipt(job) else 0;step()
+        return {'state':'ok','message':'%d von %d Nachweisen erstellt.'%(made,len(jobs_missing))}
+    receipt_task('Nachweise erstellen',len(jobs_missing),create)
+    return self.send(receipts_overview())
+
+@ROUTES.post('/api/archive-receipt-check')
+def post_archive_receipt_check(self,path,d):
+    identifier,name=str(d.get('identifier') or ''),str(d.get('file') or '')
+    def check(step):
+        result=archive_receipts.recheck(ROOT,identifier,name,cancelled=STOP.is_set)
+        if result['state']=='missing':SERVICE.mesh_receipts()
+        diagnostics.event('archive_receipt_checked',state=result['state']);step()
+        return result
+    receipt_task('Datei erneut prüfen',1,check)
+    return self.send(receipts_overview())
+
+@ROUTES.post('/api/archive-receipt-fetch')
+def post_archive_receipt_fetch(self,path,d):
+    # 0.5.95: load the file another system vouches for from Archive.org here as well (a second copy). Only known receipts.
+    identifier,name=str(d.get('identifier') or ''),str(d.get('file') or '')
+    proof=archive_receipts.remote(ROOT,identifier,name)
+    if not proof:raise ValueError('Für diese Datei liegt kein gültiger Nachweis eines anderen Systems vor')
+    row=portal_sources.entry('internet_archive',identifier,proof['title'] or identifier,'https://archive.org/details/'+urllib.parse.quote(identifier,safe=''),evidence='verbund_receipt')
+    with db() as c:
+        c.execute('INSERT OR IGNORE INTO portal_items(id,source,external_id,title,title_key,year,page_url,metadata,discovered,updated) VALUES (?,?,?,?,?,?,?,?,?,?)',
+                  (row['id'],row['source'],row['external_id'],row['title'],portal_sources.title_key(row['title']),None,row['page_url'],json.dumps(row,ensure_ascii=False),time.time(),time.time()))
+        saved=portal_sources.archive_saved_detail(c,row['id']).get('detail')
+    if not saved or not any(v.get('filename')==name for v in saved.get('video_variants') or []):
+        try:detail=portal_sources.fetch_archive_detail(identifier)
+        except OSError as e:raise ValueError('Archive.org ist gerade nicht erreichbar; der Dateibestand des Uploads konnte nicht gelesen werden ('+core.safe_error(e)+'). Bitte später erneut versuchen.') from None
+        with db() as c:portal_sources.save_archive_detail(c,row['id'],detail)
+    with db() as c:result=archive_downloads.enqueue(c,settings()['download_dir'],row['id'],name)
+    diagnostics.event('archive_receipt_fetch_queued',created=result.get('created'))
+    return self.send({**result,'receipts':receipts_overview()})
+
+@ROUTES.post('/api/encoder-add')
+def post_encoder_add(self,path,d):
+    # 0.5.94: convert one finished download to a smaller picture (encoder.py). Replacing the original needs the confirmation.
+    replace=d.get('replace') is True
+    if replace and d.get('confirm') is not True:raise ValueError('Original ersetzen nur nach Bestätigung')
+    with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(str(d.get('id','')),)).fetchone()
+    if not row:raise ValueError('Nur fertige Downloads können umgewandelt werden')
+    result=encoder.add(ROOT,json.loads(row[0]),str(d.get('profile','')),encoder_tools(),speed=str(d.get('speed') or 'fast'),replace=replace)
+    diagnostics.event('encoder_queued',profile=str(d.get('profile','')),replace=replace,source_height=result['source_height'])
+    return self.send({**result,'encoder':encoder.listing(ROOT,encoder_tools())})
+
+@ROUTES.post('/api/encoder-cancel')
+def post_encoder_cancel(self,path,d):
+    encoder.cancel(ROOT,d.get('id'));return self.send(encoder.listing(ROOT,encoder_tools()))
+
+@ROUTES.post('/api/encoder-clear')
+def post_encoder_clear(self,path,d):
+    encoder.clear(ROOT);return self.send(encoder.listing(ROOT,encoder_tools()))
+
+@ROUTES.post('/api/storage-delete')
+def post_storage_delete(self,path,d):
+    # One file per request, only after the user's confirmation in the page; pinned titles are refused.
+    if d.get('confirm') is not True:raise ValueError('Löschen nur nach Bestätigung')
+    with db() as c:
+        gone=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(str(d.get('id','')),)).fetchone()
+        result=storage_policy.delete(c,str(d.get('id','')),watch_state.states(ROOT),netzkino_downloads.remove_files)
+    # 0.5.95: this system no longer vouches for the deleted file; the Verbund learns it at once.
+    if gone and archive_receipts.withdraw_job(ROOT,json.loads(gone[0])):SERVICE.mesh_receipts()
+    catalog.invalidate_listings(drop=True);unified_index.invalidate()
+    diagnostics.event('storage_delete',freed_mb=round(result['freed_bytes']/1048576),files=result['removed_files'])
+    with db() as c:return self.send({**result,'storage':storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT))})
+
+@ROUTES.post('/api/job-remove')
+def post_job_remove(self,path,d):
+    with db() as c:job_queue.remove(c,str(d.get('id','')))
+    return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
 SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js','/crunchyroll.js')
@@ -1567,10 +1877,11 @@ if __name__=='__main__':
     threading.Thread(target=netzkino_downloads.loop,args=(db,STOP),daemon=True,name='netzkino_offline_expiry').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         # Reference check and daily catalogue run of every film platform (0.5.84: platform_registry).
-        platform_registry.start_background(platform_context(),STOP)
-        threading.Thread(target=samsung_tvplus.loop,args=(ROOT,STOP),daemon=True,name='samsung_catalog_scheduler').start()
-        threading.Thread(target=archive_recognition.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP,db),
-                         daemon=True,name='archive_auto_enrichment').start()
+        # 0.6.0: one planner (planner.py) instead of two threads per platform; Samsung TV Plus and
+        # the Archive.org recognition join it (formerly samsung_tvplus.loop, archive_recognition.loop).
+        PLANNER[0]=platform_registry.start_background(platform_context(),STOP,
+            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus)],
+            extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
         SERVICE.start()

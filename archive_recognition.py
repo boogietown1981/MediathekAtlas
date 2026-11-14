@@ -327,10 +327,10 @@ def metrics(root):
     return engine.metrics(SPEC, root)
 
 
-def loop(root, settings, slots, stop, main_db, *, gap=6.0, idle=1800.0):
-    """Background check like every platform; ``main_db`` is the server's connection context."""
-    import netzkino_enrichment as shared
-
+def background_pending(main_db):
+    """The list of titles to check, after taking over new Archive.org items into the work list and
+    noting the uploaders of recognised works (``main_db`` is the server's connection context). Used
+    by the shared planner (0.6.0) and by ``loop``."""
     def todo(r, *a, **kw):
         with main_db() as c:
             sync(r, c)
@@ -340,8 +340,14 @@ def loop(root, settings, slots, stop, main_db, *, gap=6.0, idle=1800.0):
         if noted and noted['new']:
             diagnostics.event('archive_uploaders_noted', new=noted['new'], works=noted['works'])
         return pending(r, *a, **kw)
+    return todo
+
+
+def loop(root, settings, slots, stop, main_db, *, gap=6.0, idle=1800.0):
+    """Background check like every platform; ``main_db`` is the server's connection context."""
+    import netzkino_enrichment as shared
     return shared.loop(root, settings, slots, stop, gap=gap, idle=idle,
-                       enrich_one=lambda r, i, s, **kw: enrich(r, i, s, **kw), pending_fn=todo, name='archive')
+                       enrich_one=lambda r, i, s, **kw: enrich(r, i, s, **kw), pending_fn=background_pending(main_db), name='archive')
 
 
 def _load(root):

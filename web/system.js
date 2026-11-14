@@ -42,7 +42,15 @@
     list($('system-activity'), [
       ['Downloads laufen', a.downloads_running || 0], ['Downloads warten', a.downloads_waiting || 0], ['Umwandlungen', a.encoder_active || 0],
       ['Dateiprüfung (Archivnachweise)', a.receipt_task ? 'läuft' : 'nein'], ['Verbund', a.verbund ? a.verbund_systems + (a.verbund_systems === 1 ? ' System' : ' Systeme') : 'aus'],
-      ['Hintergrundaufgaben', a.background === false ? 'abgeschaltet' : 'aktiv']]);
+      ['Hintergrundaufgaben', a.background === false ? 'abgeschaltet' : 'aktiv'],
+      ['Katalogabrufe laufen', a.planner && a.planner.catalog_running && a.planner.catalog_running.length ? a.planner.catalog_running.join(', ') : 'keine']]);
+    // 0.6.0: planner profile (planner.py)
+    const p = a.planner || {};
+    const pick = $('system-profile');
+    if (pick && document.activeElement !== pick) pick.value = p.choice || 'auto';
+    if ($('system-profile-note')) $('system-profile-note').textContent = p.label
+      ? 'Aktiv: ' + p.label + ' · höchstens ' + p.max_syncs + (p.max_syncs === 1 ? ' Katalogabruf' : ' Katalogabrufe') + ' und ' + p.enrich_workers + (p.enrich_workers === 1 ? ' Abgleich' : ' Abgleiche') + ' gleichzeitig. Von Hand gestartete Abrufe laufen immer sofort.'
+      : '';
     list($('system-facts'), [['Betriebssystem', d.system + ' ' + d.release], ['Bauart', d.machine || 'unbekannt'], ['Python', d.python], ['Prozessorkerne', d.cores]]);
     const db = d.databases || {files: []};
     list($('system-databases'), [['Zusammen (' + (db.count || 0) + ')', size(db.total_bytes || 0)], ...db.files.map(f => [f.name, size(f.bytes)])]);
@@ -57,6 +65,10 @@
     if (!box.hidden && !document.hidden) timer = setTimeout(load, 5000);
   }
   $('system-refresh').onclick = () => load();
+  if ($('system-profile')) $('system-profile').onchange = async e => {
+    try { await window.api('settings', {background_profile: e.target.value}); load(); }
+    catch (err) { $('system-status').textContent = 'Profil konnte nicht gespeichert werden: ' + err.message; $('system-status').className = 'notice-error'; }
+  };
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
   document.addEventListener('atlas-view', e => { if (e.detail && e.detail.view === 'system') load(); else clearTimeout(timer); });
 })();

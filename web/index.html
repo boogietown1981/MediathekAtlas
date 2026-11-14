@@ -84,6 +84,12 @@
   <div class="system-columns"><div><h3>MediathekAtlas gerade</h3><dl id="system-activity" class="system-list"></dl></div>
     <div><h3>Gerät</h3><dl id="system-facts" class="system-list"></dl></div>
     <div><h3>Datenbanken</h3><dl id="system-databases" class="system-list"></dl></div></div>
+  <div class="system-profile"><label for="system-profile">Hintergrundarbeit</label>
+    <select id="system-profile" title="Wie viele Katalogabrufe und Abgleiche gleichzeitig laufen dürfen">
+      <option value="auto">Automatisch (nach Prozessor und Arbeitsspeicher)</option>
+      <option value="normal">Normal: 2 Katalogabrufe, 2 Abgleiche gleichzeitig</option>
+      <option value="low">Schwache Hardware: je 1 gleichzeitig</option></select>
+    <small id="system-profile-note" class="muted"></small></div>
   <p id="system-status" class="muted" role="status"></p>
 </section>
 <section id="legacy" hidden>

@@ -26,11 +26,11 @@ class _OneRound:
 
 class RetryAfterUpdateTests(unittest.TestCase):
     def test_every_platform_loop_asks_for_the_reload(self):
+        # 0.6.0: the rule lives once in provider_base.catalog_due; every platform asks it.
+        self.assertIn('portal_reference.retry_after_update(root, module, current)', (ROOT / 'provider_base.py').read_text())
         for name in PLATFORMS:
             source = (ROOT / (name + '.py')).read_text(encoding='utf-8')
-            loop = source[source.index('\ndef loop('):]
-            loop = loop[:loop.index('\n\n\n')]
-            self.assertIn('portal_reference.retry_after_update(root, sys.modules[__name__], current)', loop, name)
+            self.assertIn('provider_base.catalog_due(root, sys.modules[__name__], ', source, name)
 
     def test_partial_catalogue_starts_once_per_version(self):
         import portal_reference

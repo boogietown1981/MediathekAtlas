@@ -196,7 +196,9 @@ class PlaybackTests(Fixture):
         self.assertEqual((body['gdpr_consent'], body['gdpr_consent_opt_out']), ('', '1'))
         for private in ('ip', 'ua', 'publisher_provided_id', 'gam_correlator', 'requestedContent'):
             self.assertNotIn(private, body)
-        self.assertNotIn('ads.did', (self.root / 'rakuten.sqlite3').read_bytes().decode('latin-1'))
+        # 0.6.0: WAL mode - recent writes may still sit in rakuten.sqlite3-wal, so every file is read.
+        for stored in self.root.glob('rakuten.sqlite3*'):
+            self.assertNotIn('ads.did', stored.read_bytes().decode('latin-1'), stored.name)
 
     def test_live_with_licence_or_protected_playlist_refused(self):
         def licensed(path, query=None, body=None):

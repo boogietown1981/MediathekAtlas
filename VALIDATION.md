@@ -1,5 +1,17 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.1 – Routen-Tabelle (14. November 2026)
+- Automatisch: gesamte Python-Suite (1171 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund), `ruff` (F, E9) für `server.py` und `routing.py`.
+- Vergleich alt gegen neu: Server 0.6.0 und 0.6.1 nebeneinander gestartet, 327 gleiche Aufrufe (56 GET-Adressen mit/ohne Parameter und mit/ohne Token, 51 POST-Adressen mit zwei Eingaben). Statuscodes und Antworten gleich; 12 Abweichungen nur durch Zeitstempel, Geräteschlüssel, Pfade.
+- Echte Aufrufe im Test: Stufen (offen, angemeldet, mit Token), 404 für unbekannte Adressen und falsche Methode, jede GET-Adresse antwortet ohne Programmfehler.
+- Nicht geprüft: POST-Adressen mit Netz- oder Systemwirkung (Abrufe, Updates, Beenden) im Vergleich; Netzwerkmodus mit Anmeldung nur über die vorhandenen Tests; Firefox/WebKit nur in der CI; echte NAS.
+
+## 0.6.0 – Planer und Anbieter-Rahmen (14. November 2026)
+- Automatisch: gesamte Python-Suite (1155 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium inkl. Profilauswahl in Verwaltung → System (ohne Befund).
+- Start mit Hintergrundarbeit (70 s, ohne Netz zu den Anbietern): 31 Threads statt 52, `/api/system-monitor` meldet Profil; Profil „low“ per `/api/settings` übernommen, unbekanntes Profil abgelehnt.
+- WAL: jede Anbieter-Datenbank nach dem Öffnen im Modus `wal` (Test); Rakuten-Test prüft jetzt auch die `-wal`-Datei auf Werbe-IDs.
+- Nicht geprüft: echte NAS (Profil „Schwache Hardware“ wird dort automatisch gewählt), Datenordner auf Netzwerkfreigabe mit WAL, echte Katalogabrufe.
+
 ## 0.5.108 – Konsolidierung (14. November 2026)
 - Automatisch: gesamte Python-Suite (1140 Tests, 4 übersprungen: macOS-Build, yt-dlp), Node-Smoke-Tests, Syntaxprüfung, Klicktest Chromium (ohne Befund). Im Browser (Chromium): Kachel mit Bild blendet den Titeltext aus, ohne Bild nicht; Haken „Besetzung“/„Fassungen“ ausblenden greift über die neuen Klassen.
 - Neuabruf nach Update: Schleife jedes Anbieters einmal mit teilweisem Katalog laufen lassen → genau ein Abruf je Version (Test).

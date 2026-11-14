@@ -33,17 +33,15 @@ from __future__ import annotations
 import sys
 
 import json
-import os
 import re
-import sqlite3
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
 import portal_reference
+import provider_base
 
 API = 'https://api.joyn.de/graphql'
 SITE = 'https://www.joyn.de'
@@ -114,17 +112,7 @@ def _notify(event, **details):
 
 
 def _connect(root):
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / 'joyn.sqlite3'
-    db = sqlite3.connect(str(path), timeout=5)
-    if os.name != 'nt':
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA busy_timeout=5000')
+    db = provider_base.connect(root, 'joyn.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
     return db
 
@@ -760,20 +748,32 @@ def start_sync(root):
     return True
 
 
+def should_sync(root, now=None):
+    """Whether the catalogue run should start now (0.6.0: the shared rule in provider_base)."""
+    return provider_base.catalog_due(root, sys.modules[__name__], state(root), now)
+
+
+def tick(root):
+    """Small regular work besides the catalogue run: the live links (asked by the planner every minute)."""
+    current = state(root)
+    if _links_due(root, current):
+        try:
+            refresh_live_links(root)
+        except Exception:  # a local database problem must not end the planner
+            pass
+
+
 def loop(root, stop):
+    """Former own loop thread; the server uses the shared planner (planner.py) instead."""
     import task_control
     while not stop.wait(60):
         if task_control.paused('catalog:joyn'):
             continue
-        current = state(root)
-        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
-                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
+        if should_sync(root):
             start_sync(root)
-        elif _links_due(root, current):
-            try:
-                refresh_live_links(root)
-            except Exception:  # a local database problem must not end the loop
-                pass
+        else:
+            tick(root)
+
 
 
 def play_source(root, item_id, **_):

@@ -14,9 +14,26 @@ import platform_registry as registry  # noqa: E402
 
 SERVER = (ROOT / 'server.py').read_text(encoding='utf-8')
 
+# 0.6.1: addresses with a fixed path are functions in the route table (routing.py), written as
+# ``@ROUTES.get('/api/x')`` / ``@ROUTES.post('/api/x','/api/y',stage='open')`` in server.py.
+ROUTES = {}
+for _m in re.finditer(r"^@ROUTES\.(get|post)\(([^\n]*)\)$", SERVER, re.M):
+    _stage = re.search(r"stage='([a-z]+)'", _m.group(2))
+    for _path in re.findall(r"'(/[^']*)'", _m.group(2)):
+        ROUTES[(_m.group(1).upper(), _path)] = _stage.group(1) if _stage else 'api'
+
+
+def routed(path, method=None, stage=None):
+    """True when server.py registers the address (optionally: with this method and stage)."""
+    return any(p == path and (method is None or m == method) and (stage is None or s == stage)
+               for (m, p), s in ROUTES.items())
+
 
 def wired(needle):
     if needle in SERVER:
+        return True
+    old = re.fullmatch(r"(?:if )?path=='(/[^']*)':?", needle)      # the wording of the former if-chain
+    if old and routed(old.group(1)):
         return True
     route = re.search(r"'(/api/[a-z]+(?:-[a-z-]+)?)'", needle)
     if route:

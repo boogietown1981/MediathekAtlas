@@ -60,7 +60,7 @@ class StaticLayoutTests(unittest.TestCase):
         js = (ROOT / 'web' / 'unified_catalog.js').read_text(encoding='utf-8')
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
         self.assertIn("/api/client-error", app)
-        self.assertIn("path=='/api/client-error'", server)
+        self.assertTrue(__import__('_wiring').routed('/api/client-error', 'POST'))
         self.assertIn('data.pending', js)
         self.assertIn("catalog.load_listings(ROOT/'listing-cache.json')", server)
 
