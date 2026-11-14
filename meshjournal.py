@@ -20,8 +20,9 @@ SEGMENT_AGE = 300           # bounded file count for MeshSync: at most 288 segme
 MAX_LINE = 256 * 1024
 READ_LIMIT = 5000           # events per import round, keeps weak NAS responsive
 HEARTBEAT = 300
-TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release')
-DOWNLOAD_TYPES = TYPES[2:]
+RECEIPT = 'archive.receipt'   # 0.5.95: signed proof of an Archive.org copy (archive_receipts); older versions skip the unknown type
+TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release', RECEIPT)
+DOWNLOAD_TYPES = TYPES[2:5]
 CLAIM_SECONDS = 7200          # a claim expires unless renewed, so a crashed node never blocks a title for long
 CLAIM_RENEW = 1800
 _HEX64 = re.compile(r'^[0-9a-f]{64}$')
@@ -157,6 +158,9 @@ def valid_event(event, node):
     if not isinstance(event.get('seq'), int) or not isinstance(event.get('hlc'), int): return False
     d = event['data']
     if event['type'] in DOWNLOAD_TYPES: return valid_download(event['type'], d)
+    if event['type'] == RECEIPT:
+        import archive_receipts
+        return archive_receipts.valid_data(d)
     if not isinstance(d.get('work'), str) or not 0 < len(d['work']) <= 64: return False
     if d.get('outcome') not in RANK or clean_meta(d.get('meta')) is None: return False
     if d.get('dest') is not None and (not isinstance(d['dest'], str) or len(d['dest']) > 64): return False

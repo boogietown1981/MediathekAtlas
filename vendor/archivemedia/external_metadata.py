@@ -30,7 +30,7 @@ CREATE TABLE IF NOT EXISTS external_catalog_state(key TEXT PRIMARY KEY,value TEX
 CREATE TABLE IF NOT EXISTS external_title_cache(cache_key TEXT PRIMARY KEY,payload TEXT,checked TEXT DEFAULT CURRENT_TIMESTAMP);
 '''
 
-UA='ArchiveMedia/0.10.12 (https://github.com/boogietown1981/ArchiveMedia; local personal media catalog)'
+UA='ArchiveMedia/0.10.23 (https://github.com/boogietown1981/ArchiveMedia; local personal media catalog)'
 WD='https://www.wikidata.org/w/api.php'
 FILM={'Q11424','Q932586','Q24869','Q202866'}
 SERIES={'Q5398426','Q15416','Q21191270','Q1259759','Q117467246','Q11266439','Q581714'}
@@ -55,7 +55,7 @@ def safe_year(value):
 def fetch_json(url,params=None,timeout=15):
     if params:url+='?'+urllib.parse.urlencode(params)
     host=urllib.parse.urlparse(url).hostname
-    if host not in ('www.wikidata.org','www.omdbapi.com') or not url.startswith('https://'):
+    if host not in ('www.wikidata.org','www.omdbapi.com','de.wikipedia.org','en.wikipedia.org') or not url.startswith('https://'):
         raise ValueError('Nicht erlaubter Metadatenserver')
     req=urllib.request.Request(url,headers={'User-Agent':UA,'Accept':'application/json'})
     with urllib.request.urlopen(req,timeout=timeout) as response:
@@ -152,6 +152,50 @@ def wikidata_lookup(title,kind,year=None,fetch=fetch_json):
     top['reason']='Titel/Typ eindeutig; weiterhin kein Nachweis der Videodatei' if strong else 'Mehrdeutige oder unvollständige Titel-/Typbelege'
     top['alternatives']=len(candidates)-1
     return top
+
+
+def wikipedia_lookup(title,kind,year=None,fetch=fetch_json):
+    """Automatically query official Wikipedia Search API, not Google scraping.
+
+    Wikipedia article title + encyclopaedic type are only candidate evidence;
+    never infer that an Internet Archive file contains the same work.
+    """
+    term=str(title or '').strip()[:140]
+    if len(term)<4 or kind not in ('movie','series'):return None
+    candidates=[]
+    for lang in ('de','en'):
+        host='https://'+lang+'.wikipedia.org/w/rest.php/v1/search/page'
+        data=fetch(host,{'q':term+' '+('Film' if kind=='movie' and lang=='de' else 'film' if kind=='movie' else 'Fernsehserie' if lang=='de' else 'TV series'),'limit':6})
+        for page in (data.get('pages') or []):
+            if not isinstance(page,dict):continue
+            raw=str(page.get('title') or '')[:180]
+            desc=str(page.get('description') or '').casefold()
+            # Disambiguation / wrong media type protection.
+            if 'begriffsklärung' in desc or 'disambiguation' in desc:continue
+            normalized_title=re.sub(r'\s*\((?:\d{4}\s+)?(?:film|movie|fernsehfilm|tv series|television series|fernsehserie|serie|film \d{4})\)$','',raw,flags=re.I).strip()
+            score=max(title_similarity(term,raw),title_similarity(term,normalized_title))
+            kind_words=('film','movie','motion picture','spielfilm','fernsehfilm') if kind=='movie' else ('series','serie','television','fernsehserie','anime')
+            wrong_words=('tv series','television series','fernsehserie') if kind=='movie' else ('feature film','spielfilm','film directed')
+            typed=any(w in desc for w in kind_words) or (kind=='movie' and bool(re.search(r'\((?:\d{4} )?film\)',raw,re.I)))
+            if any(w in desc for w in wrong_words) or not typed or score<.94:continue
+            page_id=page.get('id')
+            try:page_id=int(page_id)
+            except (ValueError,TypeError):continue
+            candidates.append((score,{'provider':'Wikipedia','candidate_id':str(page_id),
+               'candidate_title':raw,'candidate_kind':kind,'candidate_year':None,
+               'confidence':'possible','reason':'Wikipedia-Titel und Werktyp stimmen überein; Videoinhalt ungeprüft',
+               'url':'https://'+lang+'.wikipedia.org/wiki/'+urllib.parse.quote(raw.replace(' ','_')),
+               'similarity':round(score,4)}))
+        if candidates:break
+    if not candidates:return None
+    candidates.sort(key=lambda x:x[0],reverse=True)
+    score,best=candidates[0]
+    # Do not mark a Wikipedia-only result high when multiple plausible articles
+    # exist. External reference is useful even when uncertain.
+    if score>=.985 and (len(candidates)==1 or score-candidates[1][0]>=.08):
+        best['confidence']='high'
+        best['reason']='Wikipedia: eindeutiger Titel und Werktyp; Videoinhalt ungeprüft'
+    return best
 
 
 def omdb_lookup(title,kind,api_key,year=None,fetch=fetch_json):

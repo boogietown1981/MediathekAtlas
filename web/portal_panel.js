@@ -1,9 +1,9 @@
 /* Shared platform panel for film portals with own catalogue (0.5.40): Pluto TV (0.5.36–0.5.38) and
    JustWatch TV use the same cards, categories, ratings, detail dialog, playback and offline list.
-   cfg: {key, name, idPrefix, dialogPrefix, dialogId, live, play(id,label), externalLink, offlineNote, summary(st)} */
+   cfg: {key, name, short, idPrefix, live, play(), externalLink, notPlayable, offlineNote}. Details: web/portal_title.js (0.5.42). */
 window.AtlasPortalPanel = function (cfg) {
   'use strict';
-  const K = cfg.key, P = cfg.idPrefix || K, D = cfg.dialogPrefix, NAME = cfg.name, SHORT = cfg.short || cfg.name;
+  const K = cfg.key, P = cfg.idPrefix || K, NAME = cfg.name, SHORT = cfg.short || cfg.name;
   const $ = id => document.getElementById(id);
   const make = (tag, value, cls) => {
     const n = document.createElement(tag);
@@ -13,8 +13,11 @@ window.AtlasPortalPanel = function (cfg) {
   };
   if (!$(K)) return null;
   const pageSize = 60;
-  let view = 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
-  let offline = new Map(), offlineDays = 30, ffmpeg = true, genre = '';
+  let view = cfg.startView || 'movies', series = null, offset = 0, seq = 0, timer = 0, poll = 0, offlinePoll = 0;
+  // 0.5.71 (cfg.music, YouTube): music videos – playlists ('album') with their videos ('track').
+  let album = null, picked = new Set(), offlineOn = false, lastTracks = [];
+  const LIST_VIEWS = ['episodes', 'tracks'];
+  let genre = '';
   const cats = () => window.AtlasPortalCategories;
   const ACTIVE = ['queued', 'downloading', 'tagging'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar', error: 'Fehler',
@@ -27,33 +30,45 @@ window.AtlasPortalPanel = function (cfg) {
   const visible = () => !$('portals').hidden && $('portals').dataset.platform === K;
   const say = (text, error) => { $(P + '-status').textContent = text || ''; $(P + '-status').classList.toggle('netzkino-error', !!error); };
 
+  let autoHold = 0;
   function summary(st) {
-    $(P + '-auto').checked = !!st.auto;
+    // 0.5.60: an answer that was requested before the click must not undo the switch on screen.
+    if (Date.now() > autoHold) $(P + '-auto').checked = !!st.auto;
     $(P + '-sync').disabled = !!st.running;
     $(P + '-sync').textContent = st.running ? 'Katalog wird geladen …' : '↻ Katalog jetzt laden';
+    // The catalogue is stored locally and survives restarts; only a new run replaces it.
+    const stored = (st.movies || 0) + (st.series || 0) + (st.channels || 0) + (st.music || 0) > 0;
+    offlineOn = !!st.offline_enabled;
     const phase = st.running ? 'Läuft' : st.last_result === 'complete' ? 'Aktuell' : st.last_result === 'partial' ? 'Teilweise geladen' :
-      st.last_result === 'failed' ? 'Fehlgeschlagen' : 'Noch nicht geladen';
+      st.last_result === 'interrupted' ? (stored ? 'Abruf unterbrochen · gespeicherter Bestand' : 'Abruf unterbrochen') :
+      st.last_result === 'failed' ? (stored ? 'Abruf fehlgeschlagen · gespeicherter Bestand' : 'Fehlgeschlagen') :
+      stored ? 'Gespeicherter Bestand' : 'Noch nicht geladen';
     $(P + '-summary').textContent = `${st.movies || 0} Filme · ${st.series || 0} Serien · ` +
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
+      (cfg.music ? `${st.music || 0} Musik-Playlists/-Videos (${st.tracks || 0} Videos) · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +
-      `Letzter Abruf: ${date(st.last_success)}` + (st.last_error ? ` · Hinweis: ${st.last_error}` : '');
+      `Stand: ${date(st.last_success)}` + (stored ? ' · bleibt nach Neustart erhalten' : '') +
+      (st.running && st.progress ? ` · ${st.progress}` : '') +
+      (st.last_error ? ` · Hinweis: ${st.last_error}` : '');
     $(P + '-summary').dataset.phase = st.last_result || 'never';
     clearTimeout(poll);
     if (st.running && visible()) poll = setTimeout(refresh, 4000);
   }
 
   function card(item) {
-    const box = make('article', undefined, 'netzkino-item pluto-item');
+    const box = make('article', undefined, 'netzkino-item pluto-item' + (item.kind === 'album' || item.kind === 'track' ? ' youtube-music-item' : ''));
     if (item.poster) {
       const img = make('img', undefined, 'netzkino-poster' + (item.kind === 'channel' ? ' pluto-logo' : ''));
       img.src = item.poster; img.alt = ''; img.loading = 'lazy'; box.append(img);
     }
-    const label = item.kind === 'episode' && item.season !== null && item.episode !== null ?
+    const label = item.kind === 'track' && view === 'tracks' && item.number !== null && item.number !== undefined ? `${item.number + 1}. ${item.title}` :
+      item.kind === 'episode' && item.season !== null && item.episode !== null ?
       `S${String(item.season).padStart(2, '0')}E${String(item.episode).padStart(2, '0')} · ${item.title}` :
       item.kind === 'channel' && item.number ? `${item.number} · ${item.title}` : item.title;
     box.append(make('h3', label));
-    const meta = [item.year, minutes(item.duration), item.rating,
-      item.kind === 'channel' ? item.genre || item.category : null].filter(Boolean).join(' · ');
+    const music = item.kind === 'album' || item.kind === 'track';
+    const meta = (music ? [item.category, item.kind === 'album' ? item.number + ' Videos' : null, minutes(item.duration), item.rating] :
+      [item.year, minutes(item.duration), item.rating, item.badge, item.kind === 'channel' ? item.genre || item.category : null]).filter(Boolean).join(' · ');
     if (meta) box.append(make('small', meta, 'pluto-meta'));
     const stars = item.kind !== 'channel' && cats()?.rating(item.score);
     if (stars) box.append(stars);
@@ -61,32 +76,61 @@ window.AtlasPortalPanel = function (cfg) {
     if (line) box.append(line);
     if (item.summary) box.append(make('p', item.summary.length > 260 ? item.summary.slice(0, 257) + '…' : item.summary, 'netzkino-description'));
     const actions = make('div', undefined, 'netzkino-actions');
-    if (item.kind !== 'channel') {
+    if (item.kind === 'track' && view === 'tracks' && item.offline) {
+      const pick = make('label', undefined, 'check atlas-music-pick'), box2 = make('input');
+      box2.type = 'checkbox'; box2.checked = picked.has(item.id);
+      box2.onchange = () => { box2.checked ? picked.add(item.id) : picked.delete(item.id); musicTools(); };
+      pick.append(box2, ' Auswählen'); actions.append(pick);
+    }
+    if (item.kind === 'album') {
+      const open = make('button', 'Playlist öffnen', 'primary'); open.type = 'button';
+      open.onclick = () => { album = item; picked.clear(); view = 'tracks'; offset = 0; refresh(); };
+      actions.append(open);
+      if (offlineOn) {
+        const all = make('button', '⬇ Ganze Playlist offline'); all.type = 'button';
+        all.onclick = () => saveMany({album: item.id}, item.title, all);
+        actions.append(all);
+      }
+      if (cfg.externalLink && item.web_url) actions.append(externalLink(item));
+      box.append(actions);
+      return box;
+    }
+    if (item.kind !== 'channel' && !music) {
       const more = make('button', 'Details'); more.type = 'button';
       more.onclick = () => openDetail(item.id);
       actions.append(more);
     }
     if (item.kind === 'series') {
       const open = make('button', 'Folgen anzeigen', 'primary'); open.type = 'button';
-      open.onclick = () => { series = item; view = 'episodes'; offset = 0; refresh(); };
+      // 0.5.45: the series opens its title page with all episodes, as in the catalogue.
+      open.onclick = () => openDetail(item.id) || (() => { series = item; view = 'episodes'; offset = 0; refresh(); })();
       actions.append(open);
     } else if (!playable(item)) {
       actions.append(externalLink(item));
+      // 0.5.48: released by the provider only at night (youth protection) -> reserve the download.
+      // 0.5.52: only with a real time window (item.night); otherwise the title is copy protected.
+      const night = cfg.nightOffline && item.kind !== 'channel' && (item.night ? window.AtlasOffline?.control(K, item.id, label, {night: true}) : window.AtlasOffline?.protectedNote());
+      if (night) actions.append(night);
+      // 0.5.53: YouTube videos that refuse embedding can still be saved (opt-in switch).
+      const keep = cfg.offlineFlag && item.offline && window.AtlasOffline?.control(K, item.id, label);
+      if (keep) actions.append(keep);
     } else {
       const play = make('button', item.kind === 'channel' ? '▶ Live ansehen' : '▶ Ansehen', 'primary'); play.type = 'button';
       play.onclick = () => {
-        if (typeof cfg.play() !== 'function') { say('Der Player ist nicht geladen; Seite neu laden.', true); return; }
+        if (typeof cfg.play() !== 'function') { say(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', true); return; }
+        if (item.kind === 'track' && view === 'tracks' && window.playYouTubeList) {
+          const list = lastTracks.filter(playable), at = list.findIndex(t => t.id === item.id);
+          window.playYouTubeList(list.map(t => ({id: t.id, label: t.title})), Math.max(0, at));
+          return;
+        }
         cfg.play()(item.id, item.kind === 'episode' && series ? series.title + ' · ' + label : label);
       };
       actions.append(play);
-      if (item.kind !== 'channel') actions.append(offlineButton(item));
+      const off = item.kind !== 'channel' && (!cfg.offlineFlag || item.offline) && window.AtlasOffline?.control(K, item.id, label);
+      if (off) actions.append(off);
       if (cfg.externalLink && item.web_url) actions.append(externalLink(item));
     }
     box.append(actions);
-    if (item.kind !== 'channel' && item.kind !== 'series' && playable(item)) {
-      const state = make('small', '', 'pluto-offline-state'); state.dataset.portalId = item.id;
-      box.append(state); paintState(state, offline.get(item.id));
-    }
     return box;
   }
 
@@ -95,40 +139,9 @@ window.AtlasPortalPanel = function (cfg) {
   const safeLink = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\//i.test(v) && !/[\s<>'"]/.test(v);
   function externalLink(item) {
     const a = make('a', cfg.externalLink || ('Bei ' + NAME + ' ansehen'), 'button');
-    if (safeLink(item.web_url)) { a.href = item.web_url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
+    if (safeLink(item.web_url)) { a.href = window.AtlasDirect ? window.AtlasDirect.href(K, item.web_url) : item.web_url; a.target = '_blank'; a.rel = 'noopener noreferrer'; }
     else a.setAttribute('aria-disabled', 'true');
     return a;
-  }
-  function offlineButton(item) {
-    const b = make('button', `⬇ Offline speichern (${offlineDays} Tage)`); b.type = 'button'; b.dataset.portalOffline = item.id;
-    paintButton(b, offline.get(item.id));
-    b.onclick = async () => {
-      b.disabled = true;
-      try {
-        const r = await window.api(K + '-download-add', {id: item.id});
-        say(r.created ? `„${item.title}“ ist eingereiht. Gespeichert wird wie bei Mediathek-Videos; nach ${offlineDays} Tagen wird die Datei entfernt.` :
-          `„${item.title}“ ist bereits eingereiht oder offline verfügbar.`);
-        await refreshOffline();
-      } catch (e) { say('Kein Download gestartet: ' + e.message, true); b.disabled = false; }
-    };
-    return b;
-  }
-  function paintButton(b, job) {
-    const busy = job && (ACTIVE.includes(job.state) || job.state === 'done');
-    b.disabled = !!busy || !ffmpeg;
-    b.title = !ffmpeg ? 'ffmpeg fehlt in dieser Installation' : busy ? 'Bereits eingereiht oder offline verfügbar' :
-      `${NAME} erlaubt ${offlineDays} Tage Offline-Nutzung; Werbung bleibt enthalten`;
-  }
-  function paintState(node, job) {
-    node.className = 'pluto-offline-state muted';
-    if (!job) { node.textContent = ''; return; }
-    if (job.state === 'done' && job.offline_until) {
-      node.textContent = `Offline bis ${day(job.offline_until)} · ${daysText(job.days_left)}`;
-      if (job.days_left <= 3) node.className = 'pluto-offline-state nk-warning';
-    } else if (job.state === 'downloading') node.textContent = 'Lädt · ' + mib(job.received);
-    else if (ACTIVE.includes(job.state)) node.textContent = LABELS[job.state];
-    else if (job.state === 'error') { node.textContent = 'Offline-Speicherung fehlgeschlagen'; node.className = 'pluto-offline-state nk-warning'; }
-    else node.textContent = '';
   }
   function jobAction(label, job, action) {
     const b = make('button', label); b.type = 'button';
@@ -137,21 +150,44 @@ window.AtlasPortalPanel = function (cfg) {
       try {
         if (action === 'retry') await window.api('retry', {id: job.id});
         else await window.api('offline-download-action', {id: job.id, action});
-        await refreshOffline();
+        await refreshOffline(); window.AtlasOffline?.refresh(K);
       } catch (e) { say(e.message, true); b.disabled = false; }
     };
     return b;
   }
+  /* 0.5.71: whole playlist or the ticked videos in one click; each video becomes its own job. */
+  function quality() { const v = $(P + '-music-quality')?.value || (() => { try { return localStorage.getItem('atlas-download-quality'); } catch (e) { return ''; } })(); return /^(best|\d{3,4})$/.test(v || '') ? v : 'best'; }
+  async function saveMany(body, title, button) {
+    if (button) button.disabled = true;
+    try {
+      const q = quality(); try { localStorage.setItem('atlas-download-quality', q); } catch (e) { /* private mode */ }
+      const r = await window.api(K + '-download-add', {...body, quality: q});
+      const n = v => v + (v === 1 ? ' Video' : ' Videos');
+      const text = (r.created === 1 ? '1 Video wird' : `${r.created} Videos werden`) + ' offline gespeichert' + (r.existing ? `, ${n(r.existing)} schon gespeichert oder eingereiht` : '') +
+        (r.failed ? `, ${r.failed} nicht möglich (${(r.errors || [])[0] || 'Fehler'})` : '') + '.';
+      say(text, !r.created && !!r.failed); window.notice?.('„' + (title || 'Playlist') + '“: ' + text);
+      picked.clear(); musicTools(); refreshOffline(); window.AtlasOffline?.refresh(K);
+      $(P + '-items').querySelectorAll('.atlas-music-pick input').forEach(i => { i.checked = false; });
+    } catch (e) { say('Kein Download gestartet: ' + e.message, true); }
+    if (button) button.disabled = false;
+  }
+  function musicTools() {
+    const host = $(P + '-music-tools'); if (!host) return;
+    host.hidden = view !== 'tracks';
+    if (host.hidden) return;
+    const savable = lastTracks.filter(t => t.offline);
+    $(P + '-music-play').disabled = !lastTracks.some(playable);
+    for (const id of [P + '-music-all', P + '-music-pick', P + '-music-toggle', P + '-music-quality']) if ($(id)) $(id).hidden = !offlineOn || !savable.length;
+    $(P + '-music-pick').disabled = !picked.size;
+    $(P + '-music-pick').textContent = `⬇ Auswahl offline speichern (${picked.size})`;
+    $(P + '-music-toggle').textContent = picked.size && picked.size === savable.length ? 'Auswahl aufheben' : 'Alle auswählen';
+    $(P + '-music-hint').textContent = offlineOn ? (savable.length ? '' : 'Keine Videos dieser Playlist sind speicherbar (z. B. altersbeschränkt).') :
+      'Offline-Speichern ist ausgeschaltet. Einschalten unter „YouTube-Kanäle & API-Schlüssel“.';
+  }
   async function refreshOffline() {
     let data;
     try { data = await window.api(K + '-downloads'); } catch (e) { return; }
-    offlineDays = data.offline_days || offlineDays; ffmpeg = data.ffmpeg !== false;
     const items = data.items || [];
-    // Newest job per title decides the card state (listing is newest first).
-    offline = new Map();
-    for (const job of items) if (job[K + '_id'] && !offline.has(job[K + '_id'])) offline.set(job[K + '_id'], job);
-    for (const node of document.querySelectorAll('#' + P + '-items [data-portal-id]')) paintState(node, offline.get(node.dataset.portalId));
-    for (const b of document.querySelectorAll('#' + P + '-items [data-portal-offline]')) paintButton(b, offline.get(b.dataset.portalOffline));
     const shown = items.filter(j => !['expired', 'removed'].includes(j.state));
     $(P + '-offline-count').textContent = shown.length ? `· ${shown.filter(j => j.state === 'done').length} verfügbar, ${shown.filter(j => ACTIVE.includes(j.state)).length} in Arbeit` : '· keine';
     const host = $(P + '-offline-jobs'); host.replaceChildren();
@@ -172,39 +208,77 @@ window.AtlasPortalPanel = function (cfg) {
   }
 
   async function refresh() {
+    window.AtlasPlatformBoard?.mount(K);   // same overview as in the catalogue (0.5.50)
     refreshOffline();
     const call = ++seq;
     const q = $(P + '-filter').value.trim();
-    const params = view === 'episodes' ? {view, series: series?.id || ''} :
-      {view, q, offset, limit: pageSize, genre: view === 'live' ? '' : genre, sort: $(P + '-sort')?.value || 'title'};
+    const params = view === 'tracks' ? {view, album: album?.id || ''} : view === 'episodes' ? {view, series: series?.id || ''} :
+      {view, q, offset, limit: pageSize, genre: view === 'live' ? '' : ($(P + '-pick')?.value || genre), sort: $(P + '-sort')?.value || 'title'};
     let data;
+    // 0.5.41: a slow answer is shown with its waiting time; an error also replaces the status line.
+    const waiting = window.atlasWaiting?.($(P + '-summary'), 'Katalogstatus wird geladen');
     try { data = await window.api(K + '?' + new URLSearchParams(params)); }
-    catch (e) { if (call === seq) say(SHORT + '-Katalog nicht verfügbar: ' + e.message, true); return; }
+    catch (e) {
+      waiting?.();
+      if (call !== seq) return;
+      const text = SHORT + '-Katalog nicht verfügbar: ' + e.message;
+      say(text, true); $(P + '-summary').textContent = text + ' · neuer Versuch in 15 s'; $(P + '-summary').dataset.phase = 'ui-error';
+      clearTimeout(poll); poll = setTimeout(() => { if (visible()) refresh(); }, 15000);
+      return;
+    }
+    waiting?.();
     if (call !== seq) return;
     summary(data.status || {});
-    for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live']])
-      if ($(id)) $(id).classList.toggle('primary', view === v || (view === 'episodes' && v === 'series'));
-    $(P + '-back').hidden = view !== 'episodes';
-    $(P + '-heading').textContent = view === 'episodes' ? (data.series?.title || '') + ' · ' + (data.items || []).length + ' Folgen' : '';
-    cats()?.render($(P + '-categories'), view === 'live' || view === 'episodes' ? [] : data.genre_counts, genre,
+    for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live'], [P + '-view-music', 'music']])
+      if ($(id)) $(id).classList.toggle('primary', view === v || (view === 'episodes' && v === 'series') || (view === 'tracks' && v === 'music'));
+    $(P + '-back').hidden = !LIST_VIEWS.includes(view);
+    $(P + '-back').textContent = view === 'tracks' ? '← Zur Musikübersicht' : '← Zur Serienübersicht';
+    if ($(P + '-live-all')) $(P + '-live-all').hidden = view !== 'live';  // 0.5.50: Live-TV tab by station
+    $(P + '-heading').textContent = LIST_VIEWS.includes(view) ? (data.series?.title || '') + ' · ' + (data.items || []).length + (view === 'tracks' ? ' Videos' : ' Folgen') : '';
+    cats()?.render($(P + '-categories'), ['live', 'music', ...LIST_VIEWS].includes(view) ? [] : data.genre_counts, genre,
       value => { genre = value; offset = 0; refresh(); });
     let items = data.items || [];
-    if (view === 'episodes' && q) items = items.filter(i => i.title.toLowerCase().includes(q.toLowerCase()));
+    if (view === 'tracks') lastTracks = data.items || [];
+    if (LIST_VIEWS.includes(view) && q) items = items.filter(i => (i.title + ' ' + (i.category || '')).toLowerCase().includes(q.toLowerCase()));
+    musicTools();
     const host = $(P + '-items'); host.replaceChildren();
-    for (const item of items) host.append(card(item));
-    const total = view === 'episodes' ? items.length : Number(data.total || 0);
-    $(P + '-prev').disabled = view === 'episodes' || offset === 0;
-    $(P + '-next').disabled = view === 'episodes' || offset + pageSize >= total;
-    $(P + '-page-label').textContent = view === 'episodes' ? '' : `${total ? offset + 1 : 0}–${Math.min(offset + pageSize, total)} von ${total}`;
+    // 0.5.55: films and series use the same tile as the dashboard (web/unified_catalog.js), so
+    // presentation and buttons are identical everywhere. Live channels and the episode list of the
+    // tab keep their compact cards.
+    const shared = (view === 'movies' || view === 'series') && window.AtlasCards;
+    host.classList.toggle('atlas-uc-grid', !!shared);
+    for (const item of items) host.append(shared ? shared.card(shared.portalRow(item, K)) : card(item));
+    const listed = LIST_VIEWS.includes(view);
+    const total = listed ? items.length : Number(data.total || 0);
+    $(P + '-prev').disabled = listed || offset === 0;
+    $(P + '-next').disabled = listed || offset + pageSize >= total;
+    $(P + '-page-label').textContent = listed ? '' : `${total ? offset + 1 : 0}–${Math.min(offset + pageSize, total)} von ${total}`;
     const st = data.status || {};
     say(data.error ? 'Folgen konnten nicht aktualisiert werden: ' + data.error :
       !total && !st.last_success ? 'Noch kein ' + SHORT + '-Katalog geladen. „↻ Katalog jetzt laden“ startet den Abruf.' :
+      !total && view === 'music' && !q ? (st.running ? 'Abruf läuft – die Musikvideos erscheinen, sobald er fertig ist.' :
+        'Noch keine Musikvideos. Unter „YouTube-Kanäle & API-Schlüssel“ eine Playlist oder ein Video mit der Art „Musikvideos“ eintragen.') :
       !total ? 'Keine passenden Einträge.' : '', !!data.error);
   }
 
-  for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live']])
-    if ($(id)) $(id).onclick = () => { view = v; series = null; offset = 0; genre = ''; refresh(); };
-  $(P + '-back').onclick = () => { view = 'series'; series = null; refresh(); };
+  for (const [id, v] of [[P + '-view-movies', 'movies'], [P + '-view-series', 'series'], [P + '-view-live', 'live'], [P + '-view-music', 'music']])
+    if ($(id)) $(id).onclick = () => { view = v; series = null; album = null; offset = 0; genre = ''; refresh(); };
+  $(P + '-back').onclick = () => { view = view === 'tracks' ? 'music' : 'series'; series = null; album = null; refresh(); };
+  if ($(P + '-music-tools')) {
+    $(P + '-music-play').onclick = () => {
+      const list = lastTracks.filter(playable);
+      if (list.length && window.playYouTubeList) window.playYouTubeList(list.map(t => ({id: t.id, label: t.title})), 0);
+    };
+    $(P + '-music-all').onclick = ev => saveMany({album: album?.id || ''}, album?.title, ev.target);
+    $(P + '-music-pick').onclick = ev => saveMany({album: album?.id || '', ids: [...picked]}, album?.title, ev.target);
+    $(P + '-music-toggle').onclick = () => {
+      const savable = lastTracks.filter(t => t.offline);
+      if (picked.size === savable.length) picked.clear(); else savable.forEach(t => picked.add(t.id));
+      $(P + '-items').querySelectorAll('.atlas-music-pick input').forEach(i => { i.checked = picked.size > 0; });
+      musicTools();
+    };
+    try { const v = localStorage.getItem('atlas-download-quality'); if (v && [...$(P + '-music-quality').options].some(o => o.value === v)) $(P + '-music-quality').value = v; } catch (e) { /* private mode */ }
+  }
   $(P + '-filter').oninput = () => { offset = 0; clearTimeout(timer); timer = setTimeout(refresh, 250); };
   if ($(P + '-sort')) $(P + '-sort').onchange = () => { offset = 0; refresh(); };
   $(P + '-prev').onclick = () => { offset = Math.max(0, offset - pageSize); refresh(); };
@@ -215,94 +289,29 @@ window.AtlasPortalPanel = function (cfg) {
     catch (e) { say('Abruf nicht gestartet: ' + e.message, true); $(P + '-sync').disabled = false; }
   };
   $(P + '-auto').onchange = async () => {
-    try { summary((await window.api(K + '-auto', {enabled: $(P + '-auto').checked})).status || {}); }
-    catch (e) { say(e.message, true); }
+    const box = $(P + '-auto'), wanted = box.checked;
+    autoHold = Date.now() + 60000; box.disabled = true;
+    try {
+      const st = (await window.api(K + '-auto', {enabled: wanted})).status || {};
+      autoHold = 0; summary(st);
+      if (!!st.auto !== wanted) throw Error('Die Einstellung wurde nicht übernommen.');
+      say(wanted ? 'Gespeichert: Der Katalog wird alle 24 Stunden automatisch aktualisiert.'
+                 : 'Gespeichert: Der Katalog wird nur noch auf Knopfdruck aktualisiert.');
+    } catch (e) { autoHold = 0; box.checked = !wanted; say('Nicht gespeichert: ' + e.message, true); }
+    finally { box.disabled = false; }
   };
-  // Detail view (0.5.38): same layout as the Netzkino details, reference check, playback, offline copy.
-  let detailId = null;
-  const field = (host, name, value) => {
-    if (value === null || value === undefined || value === '' || (Array.isArray(value) && !value.length)) return;
-    const row = make('div', undefined, 'nk-detail-field');
-    row.append(make('dt', name), make('dd', Array.isArray(value) ? value.join(' · ') : String(value)));
-    host.append(row);
+  // Details (0.5.42): the shared title page (web/portal_title.js), same as in the catalogue.
+  // A tile started or finished a copy: keep the list "Offline gespeichert" in step.
+  window.AtlasOffline?.onChange(K, () => { if (visible()) refreshOffline(); });
+  // 0.5.107: "Meine Abos" changes which titles this platform lists.
+  window.AtlasDisplay?.onChange((now, before) => { if (now['abo_' + K] !== before['abo_' + K]) { offset = 0; refresh(); } });
+  const openDetail = id => window.AtlasPortalTitle?.open(K, id);
+  // 0.5.76: the dashboard's "Musikvideos" opens a playlist here (play all, save all / selection).
+  const openAlbum = item => {
+    document.querySelector('[data-view="portals"]')?.click();
+    document.querySelector('.platform-tab[data-platform="' + K + '"]')?.click();
+    album = item; picked.clear(); view = 'tracks'; offset = 0; $(P + '-filter').value = '';
+    return refresh();
   };
-  const refLabels = {unchecked: 'Noch nicht abgeglichen; der Abgleich läuft automatisch im Hintergrund.',
-    candidate: 'Eindeutige Referenz gefunden', review: 'Widersprüchliche Referenzen · keine automatische Zuordnung',
-    no_match: 'Keine ausreichend eindeutige Referenz gefunden', partial: 'Einige Anbieter waren nicht erreichbar; später erneut prüfen'};
-  function paintReference(report) {
-    const area = $(D + '-reference'), facts = $(D + '-reference-facts');
-    area.replaceChildren(); facts.replaceChildren();
-    area.append(make('h3', 'IMDb / TVDB / TMDB / OMDb / Wikidata'), make('p', refLabels[report.status] || 'Wird geprüft'));
-    const m = report.metadata || {}, src = report.field_sources || {};
-    for (const [key, label] of [['genres', 'Genres'], ['cast', 'Besetzung'], ['directors', 'Regie'], ['writers', 'Drehbuch'], ['rating', 'Bewertung']]) {
-      if (!m[key] || src[key] === NAME) continue;
-      field(facts, label + ' · ' + src[key], key === 'rating' ? m[key] + ' / 10' : m[key]);
-    }
-    for (const r of (report.references || []).slice(0, 6))
-      area.append(make('small', [r.provider, r.title, r.year, r.reference_id, r.eligible ? 'passt' : (r.issues || []).join(' / ')].filter(Boolean).join(' · '), 'nk-ref-candidate'));
-  }
-  async function openDetail(id) {
-    const dialog = $(cfg.dialogId); if (!dialog) return;
-    detailId = id;
-    $(D + '-title').textContent = NAME + ' · Details werden geladen …';
-    for (const host of ['-quickfacts', '-facts', '-actions', '-reference', '-reference-facts', '-offline-slot'].map(x => D + x))
-      $(host).replaceChildren();
-    $(D + '-description').textContent = ''; $(D + '-offline-status').textContent = ''; $(D + '-image').hidden = true;
-    if (!dialog.open) dialog.showModal();
-    let data;
-    try { data = await window.api(K + '-details?id=' + encodeURIComponent(id)); }
-    catch (e) { $(D + '-title').textContent = 'Details nicht verfügbar'; $(D + '-description').textContent = e.message; return; }
-    if (detailId !== id) return;
-    const it = data.item || {}, parent = data.series, report = data.reference || {};
-    const label = it.kind === 'episode' && it.season !== null && it.episode !== null ?
-      `S${String(it.season).padStart(2, '0')}E${String(it.episode).padStart(2, '0')} · ${it.title}` : it.title;
-    $(D + '-title').textContent = parent ? parent.title + ' · ' + label : label;
-    const ref = report.metadata || {};
-    $(D + '-description').textContent = it.summary || (it.kind !== 'episode' && ref.description) || 'Keine Inhaltsangabe veröffentlicht.';
-    const poster = it.poster || ref.poster;
-    if (poster && /^https:\/\//.test(poster)) { const img = $(D + '-image'); img.onerror = () => { img.hidden = true; }; img.referrerPolicy = 'no-referrer'; img.src = poster; img.hidden = false; }
-    const q = $(D + '-quickfacts');
-    field(q, 'Art', {movie: 'Film', series: 'Serie', episode: 'Folge'}[it.kind] || it.kind);
-    field(q, 'Jahr', it.year); field(q, 'Laufzeit', minutes(it.duration)); field(q, 'Altersfreigabe', it.rating);
-    if (it.score) field(q, 'Bewertung', it.score.value.toLocaleString('de-DE') + ' / 10 · ' + it.score.source);
-    const f = $(D + '-facts');
-    field(f, 'Kategorien', (it.categories || []).filter(c => c !== 'Unbekannt'));
-    field(f, SHORT + '-Genre', it.genre); field(f, SHORT + '-Kategorie', it.category);
-    paintReference(report);
-    const actions = $(D + '-actions');
-    if (it.kind === 'series') {
-      const open = make('button', 'Folgen anzeigen', 'primary'); open.type = 'button';
-      open.onclick = () => {
-        dialog.close(); series = it; view = 'episodes'; offset = 0;
-        if (!visible()) { document.querySelector('button.nav[data-view="portals"]')?.click(); document.querySelector('' + '.platform-tab[data-platform="' + K + '"]' + '')?.click(); }
-        refresh();
-      };
-      actions.append(open);
-      $(D + '-offline-status').textContent = `Folgen einzeln speichern (je ${offlineDays} Tage offline).`;
-    } else if (!playable(it)) {
-      actions.append(externalLink(it));
-      $(D + '-offline-status').textContent = cfg.notPlayable || 'Für diesen Titel gibt es keinen Stream für externe Player.';
-    } else {
-      const play = make('button', '▶ Ansehen', 'primary'); play.type = 'button';
-      play.onclick = () => { dialog.close(); cfg.play()?.(it.id, $(D + '-title').textContent); };
-      actions.append(play);
-      $(D + '-offline-slot').append(offlineButton(it));
-      if (cfg.externalLink && it.web_url) actions.append(externalLink(it));
-      const job = offline.get(it.id);
-      $(D + '-offline-status').textContent = job && job.state === 'done' && job.offline_until ?
-        `Offline verfügbar bis ${day(job.offline_until)} · ${daysText(job.days_left)}` :
-        job && ACTIVE.includes(job.state) ? LABELS[job.state] :
-        cfg.offlineNote(offlineDays);
-    }
-    const check = make('button', 'Mit IMDb, TVDB, TMDB und Co. abgleichen'); check.type = 'button';
-    check.onclick = async () => {
-      check.disabled = true; $(D + '-reference').textContent = 'Referenzen werden geprüft …';
-      try { const r = await window.api(K + '-enrich', {id: it.id, force: true}); if (detailId === id) { paintReference(r); refresh(); } }
-      catch (e) { if (detailId === id) $(D + '-reference').textContent = 'Abgleich nicht möglich: ' + e.message; }
-      finally { check.disabled = false; }
-    };
-    actions.append(check);
-  }
-  $(D + '-close')?.addEventListener('click', () => { detailId = null; $(cfg.dialogId).close(); });
-  return {refresh, openDetail};
+  return {refresh, openDetail, openAlbum};
 };

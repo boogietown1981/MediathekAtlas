@@ -11,14 +11,14 @@ class GenreSpellingTests(unittest.TestCase):
         same={'Dokumentation':['Dokumentarfilm','Documentary','dokumentation','Doku'],'Drama':['Filmdrama','Dramaserie','drama'],
               'Komödie':['Filmkomödie','Comedy','Comedy-Serie','komödie'],'Krimi':['Kriminalfilm','Krimiserie','Crime','KRIMI'],
               'Romantik':['Liebesfilm','Romance'],'Mystery':['Mysteryfilm'],'Biografie':['Biography','Biographie'],
-              'Kinder & Familie':['Familie','Kinder und Familie','Family','Kids'],'Science-Fiction':['Science Fiction','science-fiction','Sci-Fi','Science-Fiction-Film'],
+              'Familie':['Familie','Kinder und Familie','Family','Kinder & Familie'],'Kinder':['Kids','Kinderfilm','Children'],  # 0.5.103 getrennt'Science-Fiction':['Science Fiction','science-fiction','Sci-Fi','Science-Fiction-Film'],
               'Historie':['History','Historienfilm'],'Animation':['Animationsfilm','Zeichentrickfilm'],'Talk':['Talk-Show','Talkshow']}
         for name,variants in same.items():
             for v in variants:self.assertEqual(metadata.genre_names(v),[name],v)
     def test_compound_provider_genres_split_and_media_words_drop(self):
         self.assertEqual(metadata.genres(['Action & Adventure','Sci-Fi & Fantasy']),['Abenteuer','Action','Fantasy','Science-Fiction'])
         self.assertEqual(metadata.genres(['Fernsehserie','Spielfilm','N/A','']),[])
-        self.assertEqual(metadata.genres(['Kinder & Familie']),['Kinder & Familie'])
+        self.assertEqual(metadata.genres(['Kinder & Familie']),['Familie'])   # 0.5.103: altes Mischlabel → Familie
         self.assertEqual(metadata.genres(['heimatfilm']),['Heimatfilm'])
 
     def test_stored_genres_are_merged_once(self):

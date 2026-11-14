@@ -1,19 +1,118 @@
-<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="atlas-token" content="__TOKEN__"><title>MediathekAtlas</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"></head><body>
-<aside><div class="brand"><img src="/icon.svg" width="34" height="34" alt=""> MediathekAtlas</div><span class="eyebrow">DEINE MEDIATHEKEN. GEORDNET.</span><nav><button class="nav active" data-view="discover">▤ &nbsp; Katalog</button><button class="nav" data-view="portals">◎ &nbsp; Plattformen</button><button class="nav" data-view="review">✓ &nbsp; Zuordnung</button><button class="nav" data-view="subscriptions">↻ &nbsp; Download-Abos</button><button class="nav" data-view="queue">↓ &nbsp; Downloads <span id="jobcount">0</span></button><button class="nav" data-view="logs">≡ &nbsp; Live-Protokoll</button><button class="nav" data-view="settings">⚙ &nbsp; Einstellungen</button></nav><div class="asidebottom">MEDIATHEKATLAS · LOKAL<br><small id="edition">v__VERSION__ · Lokale Bibliothek</small><button id="quit-app" type="button">App beenden</button><button id="logout" type="button" hidden>Abmelden</button><p id="tools">System wird geprüft …</p></div></aside>
-<main><header><div><span class="eyebrow">MEDIATHEKVIEWWEB → DEINE BIBLIOTHEK</span><h1 id="heading">Serien entdecken. Sauber archivieren.</h1></div><span class="pill" id="location-pill">● Lokal auf deinem Rechner</span></header>
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="atlas-token" content="__TOKEN__"><title>MediathekAtlas</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/style.css"><link rel="stylesheet" href="/theme-light.css"><script>try{var t=localStorage.getItem("atlas-theme");if(t==="light"||(t==="auto"&&matchMedia("(prefers-color-scheme: light)").matches))document.documentElement.dataset.theme="light"}catch(e){}</script></head><body>
+<aside><div class="brand"><img src="/icon.svg" width="34" height="34" alt=""> MediathekAtlas</div><span class="eyebrow">DEINE MEDIATHEKEN. GEORDNET.</span><nav><button class="nav active" data-view="discover">▤ &nbsp; Dashboard</button><button class="nav" data-view="portals">◎ &nbsp; Plattformen</button><button class="nav" data-view="livetv">◉ &nbsp; Live-TV</button><button class="nav" data-view="queue">↓ &nbsp; Downloads <span id="jobcount">0</span></button><button class="nav" data-view="admin" data-admin-root="1">⚙ &nbsp; Verwaltung</button></nav><div class="asidebottom">MEDIATHEKATLAS · LOKAL<br><small id="edition">v__VERSION__ · Lokale Bibliothek</small><button id="quit-app" type="button">App beenden</button><button id="logout" type="button" hidden>Abmelden</button><p id="tools">System wird geprüft …</p></div></aside>
+<main><header><div><span class="eyebrow" id="heading-eyebrow">DASHBOARD</span><h1 id="heading">Filme und Serien aller Plattformen</h1></div><span class="pill" id="location-pill">● Lokal auf deinem Rechner</span></header>
 <div id="connection-status" role="status" hidden></div>
 <div id="notice" role="status" hidden></div>
+<div id="admin-tabs" class="admin-tabs" role="group" aria-label="Bereiche der Verwaltung" hidden>
+  <button type="button" class="admin-tab" data-view="admin" title="Hintergrundaufgaben starten, pausieren und priorisieren">Aufgaben</button>
+  <button type="button" class="admin-tab" data-view="status" title="Bestand, Scan und Werkzuordnung aller Quellen">Status &amp; Abgleich</button>
+  <button type="button" class="admin-tab" data-view="display" title="Was Kacheln und Titelseiten zeigen">Darstellung</button>
+  <button type="button" class="admin-tab" data-view="storage" title="Belegter Platz der Downloads, Platzbudget und Aufräum-Vorschlag">Speicher</button>
+  <button type="button" class="admin-tab" data-view="system" title="Auslastung, Arbeitsspeicher, Laufwerke und Temperatur dieses Geräts">System</button>
+  <button type="button" class="admin-tab" data-view="review" title="Unklare Zuordnungen prüfen">Zuordnung</button>
+  <button type="button" class="admin-tab" data-view="subscriptions">Download-Abos</button>
+  <button type="button" class="admin-tab" data-view="legacy" title="Werkkatalog ARD, ZDF &amp; Co. mit Genre-Baum und Zuordnungsfiltern">Werkkatalog</button>
+  <button type="button" class="admin-tab" data-view="logs">Protokoll</button>
+  <button type="button" class="admin-tab" data-view="settings">Einstellungen</button>
+</div>
+<section id="admin" hidden>
+  <div class="sectionhead"><div><h2>Hintergrundaufgaben</h2>
+    <p class="muted">Alles, was MediathekAtlas im Hintergrund erledigt: Katalogabrufe, Werkzuordnung und Downloads. Pausieren hält eine Aufgabe an, ohne Einstellungen zu ändern; ein laufender Schritt wird noch beendet. Die Auswahl bleibt nach einem Neustart erhalten.</p></div>
+    <div class="admin-all"><button type="button" id="tasks-pause-all">Alle pausieren</button><button type="button" id="tasks-resume-all" class="primary">Alle fortsetzen</button></div></div>
+  <p id="tasks-status" class="muted" role="status"></p>
+  <div id="tasks-list" class="tasks-list" aria-live="polite"></div>
+</section>
+<section id="status" hidden>
+  <div class="sectionhead"><div><h2>Status &amp; Abgleich</h2>
+    <p class="muted">Bestand, Scan und Werkzuordnung aller Quellen. Die Filme und Serien selbst stehen im Dashboard.</p></div></div>
+  <div id="status-boards"><section id="atlas-main-dashboard" class="background-status atlas-main-dashboard" aria-label="Mediatheken-Scanner und Metadatenabgleich"><h2 class="atlas-dashboard-heading">ARD, ZDF &amp; Co. · Scan &amp; Erkennung</h2><div class="atlas-status-toolbar"><div><strong id="catalog-phase">Katalog wird geladen …</strong><small id="catalog-progress-text"></small></div><button id="sync-now">Filmliste aktualisieren</button></div><div id="catalog-status" class="atlas-status-grid" aria-label="Katalogkennzahlen"></div><div id="catalog-import-summary" class="atlas-import-summary" aria-label="Änderungen im letzten Katalogabgleich"></div><div class="atlas-status-bottom"><section class="atlas-status-panel"><div class="atlas-status-heading"><h3>Aktuelle Erkennung</h3><button id="priority-metadata">Diese Ansicht abgleichen</button></div><p id="metadata-status" role="status"></p><div id="metadata-workers-status" class="muted">Worker werden gestartet …</div></section><section class="atlas-status-panel"><h3>Anbieter &amp; letzte Abfrage</h3><div id="provider-status"></div><details class="atlas-imdb-details"><summary>IMDb-Archiv <span id="imdb-dashboard-summary">Datenstand wird geprüft …</span></summary><div id="imdb-dashboard-info"></div><div id="imdb-dataset-grid" class="atlas-imdb-datasets" aria-label="IMDb-Datensatzübersicht"></div><p class="atlas-imdb-source-note">Datensatzzeitpunkte zeigen den lokalen Abruf bzw. die Übernahme an, nicht den Veröffentlichungszeitpunkt bei IMDb. Ältere Archivversionen speichern diese Detailinformationen noch nicht.</p></details></section></div></section></div>
+</section>
+<section id="display" hidden>
+  <div class="sectionhead"><div><h2>Darstellung</h2>
+    <p class="muted">Legt fest, was jede Film- und Serienkachel und die Titelseite zeigen. Die Auswahl gilt für alle Plattformen gleich und wird sofort übernommen.</p></div>
+    <button type="button" id="display-reset">Standard wiederherstellen</button></div>
+  <p id="display-status" class="muted" role="status"></p>
+  <div class="display-layout"><form id="display-form" class="display-form"></form>
+    <div class="display-preview"><h3>Vorschau</h3><div id="display-preview" class="atlas-uc-grid"></div></div></div>
+</section>
+<section id="storage" hidden>
+  <div class="sectionhead"><div><h2>Speicher</h2>
+    <p class="muted">Zeigt, wie viel Platz die Downloads belegen, und schlägt bei gesetztem Platzbudget vor, was gehen kann. MediathekAtlas löscht hier nichts von selbst: Eine Datei verschwindet erst, wenn du sie in dieser Liste löschst und bestätigst. Nie vorgeschlagen werden Titel der Merkliste, angeheftete Titel, innerhalb der Schutzfrist gesehene Titel und neue Downloads, die noch nicht zu Ende gesehen sind. Die 30-Tage-Frist der Plattform-Kopien gilt unabhängig davon weiter.</p></div>
+    <button type="button" id="storage-refresh">Neu messen</button></div>
+  <div id="storage-metrics" class="storage-metrics"></div>
+  <form id="storage-form" class="storage-form" aria-label="Speicherregeln">
+    <label><span>Platzbudget in GB</span><input id="storage-budget" inputmode="decimal" maxlength="9" placeholder="leer = kein Budget" title="So viel Platz dürfen alle Downloads zusammen belegen. Leer oder 0: kein Budget, kein Vorschlag."></label>
+    <label><span>Schutzfrist in Tagen</span><input id="storage-days" type="number" min="7" max="3650" step="1" value="90" title="So lange nach dem Ansehen bzw. nach dem Download wird ein Titel nicht vorgeschlagen."></label>
+    <button type="submit" id="storage-save" class="primary">Speichern</button>
+  </form>
+  <p id="storage-status" class="muted" role="status"></p>
+  <div id="storage-sources" class="storage-sources" aria-label="Belegung je Quelle"></div>
+  <div class="storage-tablewrap"><table class="storage-table"><thead><tr><th>Titel</th><th>Quelle</th><th class="num">Größe</th><th>Geladen</th><th>Zuletzt gesehen</th><th>Status</th><th>Aktionen</th></tr></thead><tbody id="storage-rows"></tbody></table></div>
+  <p id="storage-more" class="muted"></p>
+  <div id="encoder-box" class="encoder-box" aria-label="Umwandeln">
+    <div class="sectionhead"><div><h3>Umwandeln (kleinere Bildgröße)</h3>
+      <p class="muted">Rechnet einen fertigen Download mit ffmpeg auf 1080p, 720p oder 480p herunter (H.264 in MKV). Ton und Untertitel bleiben unverändert. Es läuft immer nur eine Umwandlung, mit gesenkter Priorität. Das Original bleibt erhalten, außer du wählst ausdrücklich „Original ersetzen“; dann wird es erst nach bestandener Prüfung des Ergebnisses entfernt. Start über „Umwandeln“ in der Liste oben.</p></div>
+      <button type="button" id="encoder-clear" hidden title="Fertige, abgebrochene und fehlgeschlagene Einträge aus dieser Liste nehmen. Dateien werden nicht angefasst.">Liste leeren</button></div>
+    <p id="encoder-status" class="muted" role="status"></p>
+    <div id="encoder-jobs" class="encoder-jobs"></div>
+  </div>
+  <div id="receipts-box" class="encoder-box" aria-label="Archivnachweise">
+    <div class="sectionhead"><div><h3>Archivnachweise (Archive.org-Downloads)</h3>
+      <p class="muted">Jeder Archive.org-Download wird beim Laden mit der Prüfsumme von Archive.org verglichen und bekommt einen signierten Nachweis mit der Prüfsumme der gespeicherten Datei. Im Verbund sehen die Systeme die Nachweise der anderen: „Zweitkopie belegt“ heißt, ein anderes System hat dieselbe Datei mit gültiger Signatur gemeldet. Ein Nachweis ist eine Aussage mit Datum, keine laufende Überwachung. Gelöscht wird hier nichts.</p></div>
+      <div><button type="button" id="receipts-create" hidden title="Für Archive.org-Downloads aus früheren Versionen die gespeicherte Datei einlesen und einen Nachweis erstellen. Das dauert je nach Größe einige Minuten.">Fehlende Nachweise erstellen</button>
+      <button type="button" id="receipts-refresh">Aktualisieren</button></div></div>
+    <p id="receipts-status" class="muted" role="status"></p>
+    <div class="storage-tablewrap" id="receipts-wrap" hidden><table class="storage-table"><thead><tr><th>Datei</th><th>Dieses System</th><th>Weitere Kopien im Verbund</th><th>Stand</th><th>Aktionen</th></tr></thead><tbody id="receipts-rows"></tbody></table></div>
+  </div>
+</section>
+<dialog id="encoder-dialog" aria-label="Download umwandeln"><div class="modalhead"><h2>Umwandeln</h2><button type="button" id="encoder-close">Schließen</button></div>
+  <p id="encoder-what"></p>
+  <form id="encoder-form" class="encoder-form">
+    <label><span>Zielgröße</span><select id="encoder-profile"></select></label>
+    <label><span>Tempo</span><select id="encoder-speed" title="Schnell: weniger Rechenzeit, etwas größere Datei. Ausgewogen: kleinere Datei, deutlich längere Rechenzeit."></select></label>
+    <label class="check"><input type="checkbox" id="encoder-replace"> Original ersetzen (erst nach bestandener Prüfung des Ergebnisses)</label>
+    <p class="muted">Ohne Haken entsteht eine zweite Datei neben dem Original, z. B. „Titel [720p].mkv“. Auf älteren Geräten und NAS kann eine Umwandlung mehrere Stunden dauern.</p>
+    <button type="submit" id="encoder-submit" class="primary">In die Warteschlange</button>
+  </form></dialog>
+<section id="system" hidden>
+  <div class="sectionhead"><div><h2>System</h2>
+    <p class="muted">Wie es dem Gerät geht, auf dem MediathekAtlas läuft. Gemessen wird nur, solange diese Ansicht offen ist. Werte, die das System nicht liefert, stehen als „unbekannt“ da.</p></div>
+    <button type="button" id="system-refresh">Neu messen</button></div>
+  <div id="system-hints"></div>
+  <div id="system-metrics" class="storage-metrics"></div>
+  <div id="system-drives" class="storage-sources" aria-label="Laufwerke"></div>
+  <div class="system-columns"><div><h3>MediathekAtlas gerade</h3><dl id="system-activity" class="system-list"></dl></div>
+    <div><h3>Gerät</h3><dl id="system-facts" class="system-list"></dl></div>
+    <div><h3>Datenbanken</h3><dl id="system-databases" class="system-list"></dl></div></div>
+  <p id="system-status" class="muted" role="status"></p>
+</section>
+<section id="legacy" hidden>
+  <div class="sectionhead"><div><h2>Werkkatalog ARD, ZDF &amp; Co.</h2>
+    <p class="muted">Arbeitsansicht mit Genre-Baum, Zuordnungs- und Download-Filtern. Zum Stöbern ist das Dashboard gedacht.</p></div></div>
+  <div id="legacy-body"><p class="muted">Serie suchen → Folgen prüfen → Für deine Mediathek herunterladen.</p>
+<div class="type-tabs"><button id="browse-series" class="primary">Serien</button><button id="browse-movies">Filme</button></div><form id="search"><input id="query" aria-label="Im lokalen Katalog suchen" placeholder="Serientitel suchen, z. B. Bibi und Tina"><button class="primary">Suchen</button><button type="button" id="remote-search">Online ergänzen</button></form>
+<div class="catalog-filters"><label>Downloads <select id="download-filter"><option value="hide">Noch nicht geladen</option><option value="all">Alle anzeigen</option><option value="only">Heruntergeladen</option></select></label><label>Zuordnung <select id="state-filter"><option value="">Alle Zuordnungen</option><option value="recognized">Erkannte Werke</option><option value="pending">Vorgemerkt / Wiederholung</option><option value="review">Zu prüfen</option><option value="format">Sendungsbeiträge</option></select></label><label>Entdecken <select id="collection-filter" title="Mindestens 7,5 / 10; mindestens 10.000 IMDb- oder 1.000 TMDB-Stimmen. Automatische Auswahl, keine Kino-Umsatzwertung."><option value="">Alle Werke</option><option value="cinema">Großes Kino</option><option value="series">Serienfavoriten</option></select></label><label>Sortierung <select id="sort-filter"><option value="title">Werktitel A–Z</option><option value="year">Erscheinungsjahr</option><option value="recognized">Bestätigte Werke zuerst</option></select></label><button type="button" id="reset-filters">Filter zurücksetzen</button></div>
+<div class="cataloglayout"><div><h3>Filme, Serien & Genres</h3><div id="catalog-tree" class="catalogtree" aria-label="Kategorienbaum"></div><p id="tree-status" role="status"></p><button id="tree-retry">Kategorien aktualisieren</button></div><div class="catalogcontent"><div class="sectionhead"><h2 id="results-title">Lokaler Katalog</h2><div><button id="catalog">Alle Werke</button><button id="back" disabled>←</button><button id="more" disabled>→</button></div></div><p id="filter-label" class="muted">Filme und Serien · weitere Kandidaten unter „Noch zuordnen“</p><div id="series-actions" hidden><button id="series-pick" class="primary">Folgen auswählen & herunterladen</button></div><div id="results" class="grid"></div></div></div></div>
+</section>
 <section id="discover" data-source="mediatheken"><div class="atlas-source-switch" role="group" aria-label="Katalogquelle">
-  <strong>Katalog</strong>
-  <button type="button" data-catalog-source="all">Gesamt</button>
-  <button type="button" data-catalog-source="mediatheken" class="primary">Mediatheken</button>
+  <strong>Quelle</strong>
+  <button type="button" data-catalog-source="all" class="primary">Alle</button>
+  <button type="button" data-catalog-source="mediatheken" title="Öffentlich-rechtliche Mediatheken: ARD, ZDF, Arte, 3sat und weitere Sender">ARD, ZDF &amp; Co.</button>
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
   <button type="button" data-catalog-source="pluto">Pluto TV</button>
   <button type="button" data-catalog-source="justwatch">JustWatch TV</button>
+  <button type="button" data-catalog-source="rakuten">Rakuten TV</button>
+  <button type="button" data-catalog-source="youtube">YouTube</button>
+  <button type="button" data-catalog-source="joyn">Joyn</button>
+  <button type="button" data-catalog-source="toggo">TOGGO</button>
+  <button type="button" data-catalog-source="crunchyroll">Crunchyroll</button>
+  <button type="button" data-catalog-source="plex">Plex</button>
+  <button type="button" data-catalog-source="servustv">ServusTV</button>
+  <button type="button" data-catalog-source="rtlplus">RTL+</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
-  <div class="sectionhead"><div><h2 id="atlas-cross-title">Katalog · Serien</h2>
-    <p class="muted">Gleiche Suche, Genres, Karten und Detailansichten für alle Quellen. Angebote und Downloadrechte bleiben getrennt.</p></div></div>
+  <div class="sectionhead"><div><h2 id="atlas-cross-title">Alle Plattformen · Filme</h2>
+    </div></div>
   <form id="atlas-cross-search" aria-label="Katalogsuche und Filter">
     <label><span>Suche</span><input id="atlas-cross-query" aria-label="Film oder Serie suchen" placeholder="Titel oder Serie suchen" maxlength="180"></label>
     <label><span>Genre</span><select id="atlas-cross-genre" aria-label="Nach Genre filtern"><option value="">Alle Genres</option></select></label>
@@ -23,21 +122,19 @@
     <button id="atlas-cross-reset" type="button">Filter zurücksetzen</button>
   </form>
   <div class="atlas-uc-kind-bar" role="group" aria-label="Medienart und Seriennavigation">
-    <button type="button" data-cross-kind="movies">Filme</button>
-    <button type="button" data-cross-kind="series" class="primary">Serien</button>
+    <button type="button" data-cross-kind="movies" class="primary">Filme</button>
+    <button type="button" data-cross-kind="series">Serien</button>
+    <button type="button" data-cross-kind="music" title="Musik-Playlists und Musikvideos von YouTube">Musikvideos</button>
     <button type="button" id="atlas-cross-back-series" hidden>← Zurück zur Serienliste</button>
-    <button type="button" id="atlas-cross-open-portal">Plattformverwaltung</button>
+    <button type="button" id="atlas-cross-open-portal">Zur Plattform</button>
   </div>
   <div id="atlas-cross-categories" class="portal-categories atlas-cross-categories" role="group" aria-label="Genres" hidden></div>
   <p id="atlas-cross-status" role="status"></p>
   <div id="atlas-cross-items" class="atlas-uc-grid" aria-label="Katalogtreffer" aria-live="polite"></div>
   <div class="atlas-cross-pager"><button type="button" id="atlas-cross-prev">← Zurück</button><span id="atlas-cross-page"></span><button type="button" id="atlas-cross-next">Weitere →</button></div>
-  <p class="muted">Gesamt zeigt Quellenangebote gemeinsam, jedoch ohne ungeprüfte Identitätszusammenführung. Die Reihenfolge wird je angezeigter Seite sortiert; Seiten werden pro Quelle getrennt geladen.</p>
+  <p class="muted" id="atlas-cross-note">„Alle“ zeigt die Angebote aller Quellen gemeinsam. Derselbe Titel bei mehreren Anbietern steht in einer Kachel mit einem Knopf je Anbieter.</p>
 </section>
-<p class="muted">Serie suchen → Folgen prüfen → Für deine Mediathek herunterladen.</p><details class="background-status" open><summary>Katalog &amp; Metadatenabgleich</summary><div class="atlas-status-toolbar"><div><strong id="catalog-phase">Katalog wird geladen …</strong><small id="catalog-progress-text"></small></div><button id="sync-now">Filmliste aktualisieren</button></div><div id="catalog-status" class="atlas-status-grid" aria-label="Katalogkennzahlen"></div><div id="catalog-import-summary" class="atlas-import-summary" aria-label="Änderungen im letzten Katalogabgleich"></div><div class="atlas-status-bottom"><section class="atlas-status-panel"><div class="atlas-status-heading"><h3>Aktuelle Erkennung</h3><button id="priority-metadata">Diese Ansicht abgleichen</button></div><p id="metadata-status" role="status"></p><div id="metadata-workers-status" class="muted">Worker werden gestartet …</div></section><section class="atlas-status-panel"><h3>Anbieter &amp; letzte Abfrage</h3><div id="provider-status"></div><details class="atlas-imdb-details"><summary>IMDb-Archiv <span id="imdb-dashboard-summary">Datenstand wird geprüft …</span></summary><div id="imdb-dashboard-info"></div><div id="imdb-dataset-grid" class="atlas-imdb-datasets" aria-label="IMDb-Datensatzübersicht"></div><p class="atlas-imdb-source-note">Datensatzzeitpunkte zeigen den lokalen Abruf bzw. die Übernahme an, nicht den Veröffentlichungszeitpunkt bei IMDb. Ältere Archivversionen speichern diese Detailinformationen noch nicht.</p></details></section></div></details>
-<div class="type-tabs"><button id="browse-series" class="primary">Serien</button><button id="browse-movies">Filme</button></div><form id="search"><input id="query" aria-label="Im lokalen Katalog suchen" placeholder="Serientitel suchen, z. B. Bibi und Tina"><button class="primary">Suchen</button><button type="button" id="remote-search">Online ergänzen</button></form>
-<div class="catalog-filters"><label>Downloads <select id="download-filter"><option value="hide">Noch nicht geladen</option><option value="all">Alle anzeigen</option><option value="only">Heruntergeladen</option></select></label><label>Zuordnung <select id="state-filter"><option value="">Alle Zuordnungen</option><option value="recognized">Erkannte Werke</option><option value="pending">Vorgemerkt / Wiederholung</option><option value="review">Zu prüfen</option><option value="format">Sendungsbeiträge</option></select></label><label>Entdecken <select id="collection-filter" title="Mindestens 7,5 / 10; mindestens 10.000 IMDb- oder 1.000 TMDB-Stimmen. Automatische Auswahl, keine Kino-Umsatzwertung."><option value="">Alle Werke</option><option value="cinema">Großes Kino</option><option value="series">Serienfavoriten</option></select></label><label>Sortierung <select id="sort-filter"><option value="title">Werktitel A–Z</option><option value="year">Erscheinungsjahr</option><option value="recognized">Bestätigte Werke zuerst</option></select></label><button type="button" id="reset-filters">Filter zurücksetzen</button></div>
-<div class="cataloglayout"><div><h3>Filme, Serien & Genres</h3><div id="catalog-tree" class="catalogtree" aria-label="Kategorienbaum"></div><p id="tree-status" role="status"></p><button id="tree-retry">Kategorien aktualisieren</button></div><div class="catalogcontent"><div class="sectionhead"><h2 id="results-title">Lokaler Katalog</h2><div><button id="catalog">Alle Werke</button><button id="back" disabled>←</button><button id="more" disabled>→</button></div></div><p id="filter-label" class="muted">Filme und Serien · weitere Kandidaten unter „Noch zuordnen“</p><div id="series-actions" hidden><button id="series-pick" class="primary">Folgen auswählen & herunterladen</button></div><div id="results" class="grid"></div></div></div></section>
+</section>
 <section id="portals" data-platform="overview" hidden>
   <div class="platform-tabs" role="group" aria-label="Plattform auswählen">
     <button class="platform-tab active" type="button" data-platform="overview">Übersicht</button>
@@ -45,6 +142,14 @@
     <button class="platform-tab" type="button" data-platform="netzkino">Netzkino</button>
     <button class="platform-tab" type="button" data-platform="pluto">Pluto TV</button>
     <button class="platform-tab" type="button" data-platform="justwatch">JustWatch TV</button>
+    <button class="platform-tab" type="button" data-platform="rakuten">Rakuten TV</button>
+    <button class="platform-tab" type="button" data-platform="youtube">YouTube</button>
+    <button class="platform-tab" type="button" data-platform="joyn">Joyn</button>
+    <button class="platform-tab" type="button" data-platform="toggo">TOGGO</button>
+    <button class="platform-tab" type="button" data-platform="crunchyroll">Crunchyroll</button>
+    <button class="platform-tab" type="button" data-platform="plex">Plex</button>
+    <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
+    <button class="platform-tab" type="button" data-platform="rtlplus">RTL+</button>
   </div>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
@@ -62,6 +167,7 @@
     <button type="button" id="pluto-view-series">Serien</button>
     <button type="button" id="pluto-view-live">Live-TV</button>
     <button type="button" id="pluto-back" hidden>← Zur Serienübersicht</button>
+    <button type="button" id="pluto-live-all" class="livetv-jump" hidden>Alle Sender im Reiter Live-TV →</button>
     <span id="pluto-heading" role="status"></span>
   </div>
   <div class="netzkino-toolbar"><label>Pluto-Titel suchen<input type="search" id="pluto-filter" placeholder="Titel, Genre oder Kategorie"></label>
@@ -105,6 +211,260 @@
     <span id="justwatch-page-label" class="muted"></span>
     <button type="button" id="justwatch-next">Weiter →</button></div>
 </section>
+<section id="rakuten" class="pluto-panel rakuten-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Rakuten TV · kostenlose Filme, Serien und Live-Sender</h3>
+    <p class="muted">Nur das kostenlose Angebot von Rakuten TV (mit Werbung); Leih-, Kauf- und Abotitel werden nicht geladen.
+       Rakuten liefert kostenlose Filme und Folgen nur mit Kopierschutz (Widevine) aus. MediathekAtlas umgeht ihn nicht: Diese Titel haben Katalog, Bewertung und Titelseite und öffnen zum Ansehen die offizielle Rakuten-TV-Seite; Abspielen im MediathekAtlas-Player und Offline-Speichern sind dafür nicht möglich.
+       Die kostenlosen Live-Sender laufen ohne Kopierschutz im MediathekAtlas-Player (nur live, nicht speicherbar). Keine Anmeldung, kein Entfernen von Werbung.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="rakuten-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="rakuten-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="rakuten-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Rakuten-Ansicht">
+    <button type="button" id="rakuten-view-movies" class="primary">Filme</button>
+    <button type="button" id="rakuten-view-series">Serien</button>
+    <button type="button" id="rakuten-view-live">Live-TV</button>
+    <button type="button" id="rakuten-back" hidden>← Zur Serienübersicht</button>
+    <span id="rakuten-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Rakuten-Titel suchen<input type="search" id="rakuten-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="rakuten-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="rakuten-categories" class="portal-categories" role="group" aria-label="Rakuten-Kategorien" hidden></div>
+  <p id="rakuten-status" class="muted" role="status"></p>
+  <details id="rakuten-offline" class="nk-offline rakuten-offline"><summary>Offline-Kopien von Rakuten TV <span id="rakuten-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="rakuten-offline-jobs"></div></details>
+  <div id="rakuten-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="rakuten-prev">← Zurück</button>
+    <span id="rakuten-page-label" class="muted"></span>
+    <button type="button" id="rakuten-next">Weiter →</button></div>
+</section>
+<section id="joyn" class="pluto-panel joyn-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Joyn · Filme, Serien und Live-Sender</h3>
+    <p class="muted">Kostenlose Titel (mit Werbung) und – getrennt gekennzeichnet als „Joyn+“ – die Titel und Sender, die ein Joyn+-Konto braucht. Filter über die Kategorien „Joyn (kostenlos)“ und „Joyn+“.
+       Joyn spielt Filme, Folgen und Live-Sender nur im eigenen Player ab, in der Regel mit Kopierschutz (Widevine). MediathekAtlas umgeht ihn nicht und meldet sich nicht bei Joyn an: Die Titel haben Katalog, Bewertung und Titelseite und öffnen zum Ansehen joyn.de, wo du angemeldet bist. Abspielen im MediathekAtlas-Player und Offline-Speichern sind dafür nicht möglich.
+       Die Folgenlisten einzelner Serien zeigt MediathekAtlas noch nicht an.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="joyn-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="joyn-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="joyn-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Joyn-Ansicht">
+    <button type="button" id="joyn-view-movies" class="primary">Filme</button>
+    <button type="button" id="joyn-view-series">Serien</button>
+    <button type="button" id="joyn-view-live">Live-TV</button>
+    <button type="button" id="joyn-back" hidden>← Zur Serienübersicht</button>
+    <span id="joyn-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Joyn-Titel suchen<input type="search" id="joyn-filter" placeholder="Titel, Genre oder Sender"></label>
+    <label>Sortierung<select id="joyn-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="joyn-categories" class="portal-categories" role="group" aria-label="Joyn-Kategorien" hidden></div>
+  <p id="joyn-status" class="muted" role="status"></p>
+  <details id="joyn-offline" class="nk-offline joyn-offline" hidden><summary>Offline-Kopien von Joyn <span id="joyn-offline-count" class="muted"></span></summary>
+    <div id="joyn-offline-jobs"></div></details>
+  <div id="joyn-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="joyn-prev">← Zurück</button>
+    <span id="joyn-page-label" class="muted"></span>
+    <button type="button" id="joyn-next">Weiter →</button></div>
+</section>
+<section id="toggo" class="pluto-panel toggo-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>TOGGO · Kinderserien und Filme von toggo.de (mit TOGGOLINO)</h3>
+    <p class="muted">Alle Serien und Filme von TOGGO und TOGGOLINO (Vorschule) mit Staffeln, Folgen, Altersempfehlung und Bewertung. Die Auswahl „Angebot“ zeigt nur Kostenloses oder nur einen Altersbereich.
+       TOGGO liefert alle Folgen und Filme mit Kopierschutz (Widevine/PlayReady/FairPlay) aus. MediathekAtlas umgeht ihn nicht: „Bei TOGGO ansehen“ öffnet den Titel auf toggo.de, dort läuft er im Browser.
+       Ein Teil des Angebots ist kostenlos (manche Folgen nur einige Tage nach der Ausstrahlung), der Rest nur mit TOGGO-Abo. Offline-Speichern gibt es für TOGGO nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="toggo-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="toggo-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="toggo-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="TOGGO-Ansicht">
+    <button type="button" id="toggo-view-series" class="primary">Serien</button>
+    <button type="button" id="toggo-view-movies">Filme</button>
+    <button type="button" id="toggo-back" hidden>← Zur Serienübersicht</button>
+    <span id="toggo-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>TOGGO-Titel suchen<input type="search" id="toggo-filter" placeholder="Titel"></label>
+    <label>Angebot<select id="toggo-pick"><option value="">Alles</option><option value="Kostenlos">Nur Kostenloses</option><option value="Nur mit Abo">Nur mit Abo</option><option value="TOGGOLINO">TOGGOLINO (Vorschule)</option><option value="TOGGO">TOGGO (Schulkinder)</option></select></label>
+    <label>Sortierung<select id="toggo-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="toggo-categories" class="portal-categories" role="group" aria-label="TOGGO-Kategorien" hidden></div>
+  <p id="toggo-status" class="muted" role="status"></p>
+  <details id="toggo-offline" class="nk-offline toggo-offline" hidden><summary>Offline-Kopien von TOGGO <span id="toggo-offline-count" class="muted"></span></summary>
+    <div id="toggo-offline-jobs"></div></details>
+  <div id="toggo-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="toggo-prev">← Zurück</button>
+    <span id="toggo-page-label" class="muted"></span>
+    <button type="button" id="toggo-next">Weiter →</button></div>
+</section>
+<section id="plex" class="pluto-panel plex-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Plex · kostenlose Filme, Serien und Live-Sender</h3>
+    <p class="muted">Nur das kostenlose Angebot von Plex (mit Werbung, ohne Plex-Konto); welche Titel Plex anbietet, hängt vom Land deiner Internetverbindung ab.
+       Viele Filme und Folgen liefert Plex ohne Kopierschutz aus: Sie laufen im MediathekAtlas-Player. Manche liefert Plex nur mit Kopierschutz (Widevine): Das zeigt sich beim ersten „Ansehen“, danach öffnet der Titel die offizielle Plex-Seite. MediathekAtlas umgeht keinen Kopierschutz und entfernt keine Werbung.
+       Die Live-Sender stehen auch im Reiter Live-TV. Offline-Speichern gibt es für Plex nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="plex-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="plex-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="plex-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Plex-Ansicht">
+    <button type="button" id="plex-view-movies" class="primary">Filme</button>
+    <button type="button" id="plex-view-series">Serien</button>
+    <button type="button" id="plex-view-live">Live-TV</button>
+    <button type="button" id="plex-back" hidden>← Zur Serienübersicht</button>
+    <span id="plex-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Plex-Titel suchen<input type="search" id="plex-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="plex-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="plex-categories" class="portal-categories" role="group" aria-label="Plex-Kategorien" hidden></div>
+  <p id="plex-status" class="muted" role="status"></p>
+  <details id="plex-offline" class="nk-offline plex-offline" hidden><summary>Offline-Kopien von Plex <span id="plex-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="plex-offline-jobs"></div></details>
+  <div id="plex-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="plex-prev">← Zurück</button>
+    <span id="plex-page-label" class="muted"></span>
+    <button type="button" id="plex-next">Weiter →</button></div>
+</section>
+<section id="rtlplus" class="pluto-panel rtlplus-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>RTL+ · kostenlose Filme, Serien und Shows (RTL+ Free)</h3>
+    <p class="muted">Die kostenlosen Titel von RTL+ (mit Werbung, ohne Konto). RTL+ liefert alle Videos nur mit Kopierschutz (Widevine) aus: MediathekAtlas umgeht nichts, „Bei RTL+ ansehen“ öffnet den Titel auf plus.rtl.de (mit der optionalen Chrome-Erweiterung startet er dort von selbst).
+       Titel, die nur mit RTL+ Premium laufen, werden nur gezählt. Offline-Speichern gibt es für RTL+ nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="rtlplus-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="rtlplus-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="rtlplus-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="RTL+-Ansicht">
+    <button type="button" id="rtlplus-view-movies" class="primary">Filme</button>
+    <button type="button" id="rtlplus-view-series">Serien</button>
+    <button type="button" id="rtlplus-back" hidden>← Zur Serienübersicht</button>
+    <span id="rtlplus-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>RTL+-Titel suchen<input type="search" id="rtlplus-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="rtlplus-sort"><option value="title">Titel</option><option value="rating">Bewertung</option></select></label></div>
+  <div id="rtlplus-categories" class="portal-categories" role="group" aria-label="RTL+-Kategorien" hidden></div>
+  <p id="rtlplus-status" class="muted" role="status"></p>
+  <details id="rtlplus-offline" class="nk-offline rtlplus-offline" hidden><summary>Offline-Kopien von RTL+ <span id="rtlplus-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="rtlplus-offline-jobs"></div></details>
+  <div id="rtlplus-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="rtlplus-prev">← Zurück</button>
+    <span id="rtlplus-page-label" class="muted"></span>
+    <button type="button" id="rtlplus-next">Weiter →</button></div>
+</section>
+<section id="servustv" class="pluto-panel servustv-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>ServusTV On · Sendungen, Filme und Live</h3>
+    <p class="muted">Die kostenlose Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen mit allen Folgen, Spielfilme sowie ServusTV Deutschland und Österreich live.
+       ServusTV liefert ohne Kopierschutz aus: Alles läuft im MediathekAtlas-Player. Manche Filme gibt ServusTV aus Jugendschutzgründen nur abends frei, manche nur in Deutschland oder Österreich; der Player nennt dann den Grund.
+       Offline-Speichern gibt es nicht, ServusTV erlaubt Downloads nur in der eigenen App.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="servustv-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="servustv-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="servustv-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="ServusTV-Ansicht">
+    <button type="button" id="servustv-view-movies" class="primary">Filme</button>
+    <button type="button" id="servustv-view-series">Sendungen</button>
+    <button type="button" id="servustv-view-live">Live-TV</button>
+    <button type="button" id="servustv-back" hidden>← Zur Serienübersicht</button>
+    <span id="servustv-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>ServusTV-Videos suchen<input type="search" id="servustv-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="servustv-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="servustv-categories" class="portal-categories" role="group" aria-label="ServusTV-Kategorien" hidden></div>
+  <p id="servustv-status" class="muted" role="status"></p>
+  <details id="servustv-offline" class="nk-offline servustv-offline" hidden><summary>Offline-Kopien von ServusTV <span id="servustv-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="servustv-offline-jobs"></div></details>
+  <div id="servustv-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="servustv-prev">← Zurück</button>
+    <span id="servustv-page-label" class="muted"></span>
+    <button type="button" id="servustv-next">Weiter →</button></div>
+</section>
+<section id="crunchyroll" class="pluto-panel crunchyroll-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Crunchyroll · Anime-Serien und Filme von crunchyroll.com</h3>
+    <p class="muted">Der Crunchyroll-Katalog mit Staffeln, Folgen, deutscher Synchronfassung bzw. Untertiteln, Altersfreigabe und Bewertung.
+       Crunchyroll hat das kostenlose Angebot mit Werbung zum 31.12.2025 eingestellt: Titel laufen nur noch mit Crunchyroll-Abo und nur mit Kopierschutz (Widevine). MediathekAtlas umgeht nichts: „Bei Crunchyroll ansehen“ öffnet den Titel auf crunchyroll.com.
+       Ganze Folgen gratis gibt es auf dem offiziellen YouTube-Kanal „Crunchyroll auf Deutsch“ (unter YouTube als Vorschlag eingetragen). Offline-Speichern gibt es für Crunchyroll nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="crunchyroll-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="crunchyroll-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="crunchyroll-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Crunchyroll-Ansicht">
+    <button type="button" id="crunchyroll-view-series" class="primary">Serien</button>
+    <button type="button" id="crunchyroll-view-movies">Filme</button>
+    <button type="button" id="crunchyroll-back" hidden>← Zur Serienübersicht</button>
+    <span id="crunchyroll-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Crunchyroll-Titel suchen<input type="search" id="crunchyroll-filter" placeholder="Titel"></label>
+    <label>Angebot<select id="crunchyroll-pick"><option value="">Alles</option><option value="Kostenlos">Nur Kostenloses</option><option value="Nur mit Abo">Nur mit Abo</option><option value="Deutsche Synchronfassung">Deutsche Synchronfassung</option><option value="Deutsche Untertitel">Deutsche Untertitel</option></select></label>
+    <label>Sortierung<select id="crunchyroll-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="crunchyroll-categories" class="portal-categories" role="group" aria-label="Crunchyroll-Kategorien" hidden></div>
+  <p id="crunchyroll-status" class="muted" role="status"></p>
+  <details id="crunchyroll-offline" class="nk-offline crunchyroll-offline" hidden><summary>Offline-Kopien von Crunchyroll <span id="crunchyroll-offline-count" class="muted"></span></summary>
+    <div id="crunchyroll-offline-jobs"></div></details>
+  <div id="crunchyroll-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="crunchyroll-prev">← Zurück</button>
+    <span id="crunchyroll-page-label" class="muted"></span>
+    <button type="button" id="crunchyroll-next">Weiter →</button></div>
+</section>
+<section id="youtube" class="pluto-panel youtube-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>YouTube · kostenlose Filme und Serien offizieller Kanäle</h3>
+    <p class="muted">Nur Kanäle und Playlists aus deiner Liste (Studios und Verleiher, die ganze Filme selbst hochladen) – keine beliebigen Uploads.
+       Aus Kanälen werden nur vollständige Filme übernommen (Mindestlänge, ohne Trailer, Clips und Livestreams); eine Playlist kann als Serie eingetragen werden.
+       Abgespielt wird im offiziellen YouTube-Player mit der Werbung, die YouTube zeigt. In Deutschland gesperrte Videos werden ausgelassen.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="youtube-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="youtube-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="youtube-summary" class="muted">Katalogstatus wird geladen …</p>
+    <details id="youtube-setup" class="youtube-setup"><summary>YouTube-Kanäle &amp; API-Schlüssel <span id="youtube-setup-state" class="muted"></span></summary>
+      <div class="youtube-setup-body">
+        <h4>1 · API-Schlüssel (kostenlos)</h4>
+        <p class="muted">Der Katalog kommt über die offizielle YouTube Data API v3. In der <a href="https://console.cloud.google.com/apis/library/youtube.googleapis.com" target="_blank" rel="noopener noreferrer">Google Cloud Console</a> ein Projekt anlegen, „YouTube Data API v3“ aktivieren und unter „Anmeldedaten“ einen API-Schlüssel erstellen. Das kostenlose Tageskontingent reicht für viele tausend Filme. Der Schlüssel bleibt lokal gespeichert.</p>
+        <form id="youtube-key-form" class="youtube-row"><input id="youtube-key" type="password" autocomplete="off" placeholder="API-Schlüssel einfügen"><button class="primary">Speichern &amp; laden</button><button type="button" id="youtube-key-clear">Schlüssel löschen</button></form>
+        <h4>2 · Kanäle und Playlists</h4>
+        <div id="youtube-sources" class="youtube-sources"></div>
+        <form id="youtube-source-form" class="youtube-row">
+          <input id="youtube-source-url" placeholder="youtube.com/@Kanal, youtube.com/playlist?list=… oder youtube.com/watch?v=…" required>
+          <select id="youtube-source-kind" aria-label="Art"><option value="movies">Filme (ganzer Kanal / Playlist)</option><option value="series">Serie (eine Playlist)</option><option value="music">Musikvideos (Playlist, Kanal oder einzelnes Video)</option></select>
+          <input id="youtube-source-label" placeholder="Name (optional)" maxlength="120">
+          <label class="youtube-min">Mindestlänge <input id="youtube-source-min" type="number" min="1" max="600" placeholder="60"> Min.</label>
+          <button class="primary">Hinzufügen</button></form>
+        <p class="muted">Mindestlänge leer lassen: Filme ab 60 Minuten, Serienfolgen ab 10 Minuten. Serien bitte als Playlist eintragen (eine Playlist = eine Serie).</p>
+        <p id="youtube-sources-status" class="muted" role="status"></p>
+        <h4>3 · Offline speichern (Standard aus)</h4>
+        <p id="youtube-offline-policy" class="muted"></p>
+        <label class="check"><input type="checkbox" id="youtube-offline-switch"> YouTube-Filme 30 Tage offline speichern erlauben (auf eigene Verantwortung)</label>
+        <p id="youtube-offline-tool" class="muted"></p><button type="button" id="youtube-ytdlp-install" hidden>yt-dlp einrichten</button>
+      </div></details>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="YouTube-Ansicht">
+    <button type="button" id="youtube-view-movies" class="primary">Filme</button>
+    <button type="button" id="youtube-view-series">Serien</button>
+    <button type="button" id="youtube-view-music">Musikvideos</button>
+    <button type="button" id="youtube-back" hidden>← Zur Serienübersicht</button>
+    <span id="youtube-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>YouTube-Titel suchen<input type="search" id="youtube-filter" placeholder="Titel, Genre oder Kanal"></label>
+    <label>Sortierung<select id="youtube-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="youtube-categories" class="portal-categories" role="group" aria-label="YouTube-Kategorien" hidden></div>
+  <p id="youtube-status" class="muted" role="status"></p>
+  <details id="youtube-offline" class="nk-offline youtube-offline"><summary>Offline-Kopien von YouTube <span id="youtube-offline-count" class="muted"></span></summary>
+    <p class="muted">Nur wenn oben eingeschaltet. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO), 30 Tage.</p>
+    <div id="youtube-offline-jobs"></div></details>
+  <div id="youtube-music-tools" class="youtube-music-tools" hidden>
+    <button type="button" id="youtube-music-play" class="primary">▶ Playlist abspielen</button>
+    <button type="button" id="youtube-music-all">⬇ Ganze Playlist offline speichern</button>
+    <button type="button" id="youtube-music-toggle">Alle auswählen</button>
+    <button type="button" id="youtube-music-pick" disabled>⬇ Auswahl offline speichern (0)</button>
+    <label>Auflösung <select id="youtube-music-quality"><option value="best">Beste verfügbare</option><option value="1080">höchstens 1080p</option><option value="720">höchstens 720p</option><option value="480">höchstens 480p</option><option value="360">höchstens 360p</option></select></label>
+    <span id="youtube-music-hint" class="muted" role="status"></span></div>
+  <div id="youtube-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="youtube-prev">← Zurück</button>
+    <span id="youtube-page-label" class="muted"></span>
+    <button type="button" id="youtube-next">Weiter →</button></div>
+</section>
   <div id="portal-platform-overview" class="platform-summary">
     <div id="platform-dashboard" class="platform-stats-grid" aria-label="Status je Plattform"></div>
     <form id="platform-global-controls" class="panel platform-global">
@@ -145,6 +505,16 @@
     </form>
     <p class="muted">Es wird nichts automatisch gestartet: Zuerst die Plattform aktivieren, danach den gewünschten Scanbereich mit „Start“ freigeben. Maximal 25 Ergebnisse je Seite; kein globales Archive.org-Crawling.</p>
     <div id="archive-scope-results" class="platform-scope-list" aria-live="polite"></div>
+    <details class="archive-list-transfer">
+      <summary>Gefundene Uploads mit einer anderen Installation austauschen</summary>
+      <p class="muted">Die Liste enthält nur Archive.org-Kennungen, Titel und öffentlich gelistete Dateinamen – keine Videos, Pfade, Einstellungen oder Schlüssel. Sie passt auch zu ArchiveMedia. Beim Einlesen kommen nur Uploads dazu, die hier noch fehlen.</p>
+      <div class="platform-scope-actions">
+        <button type="button" id="archive-list-export">Liste speichern</button>
+        <button type="button" id="archive-list-import">Liste einlesen …</button>
+        <input type="file" id="archive-list-file" accept=".zip,application/zip" hidden>
+      </div>
+      <small id="archive-list-status" class="muted" aria-live="polite"></small>
+    </details>
   </div>
   <div class="portal-dashboard">
     <div class="panel portal-card">
@@ -222,6 +592,9 @@
         <select id="portal-source" aria-label="Filmanbieter">
           <option value="">Alle Portale</option><option value="internet_archive">Internet Archive</option><option value="netzkino">Netzkino</option>
         </select>
+        <select id="portal-view" aria-label="Uploads oder erkannte Werke zeigen" title="Werke: Uploads desselben Films oder derselben Serie bei Archive.org sind zu einem Eintrag zusammengefasst">
+          <option value="uploads">Einzelne Uploads</option><option value="works">Werke (Archive.org)</option>
+        </select>
         <select id="portal-language" aria-label="Sprachansicht dieses Portals">
           <option value="de">Deutsch/Unbekannt</option><option value="all">Alle Sprachen</option>
         </select>
@@ -229,12 +602,23 @@
         <button id="portal-filter-run" type="button">Filtern</button>
       </div>
     </div>
+    <p id="portal-work-filter" class="portal-work-filter" hidden></p>
     <div id="portal-items" class="portal-results" aria-live="polite"></div>
     <div class="portal-pager"><button id="portal-prev" type="button" disabled>← Zurück</button><button id="portal-next" type="button" disabled>Weitere →</button></div>
   </div>
   <p class="muted portal-rights-note">Kostenlose Wiedergabe bedeutet nicht automatisch Downloadrecht. Externe Portalangebote werden weder in die Downloadwarteschlange übernommen noch als verifizierte vollständige Filme markiert. Ein exakter Titel-/Jahrestreffer im lokalen Katalog ist nur ein Hinweis.</p>
 </section>
 <section id="title-view" class="title-view" hidden aria-live="polite"></section>
+<section id="livetv" class="livetv" hidden aria-label="Live-TV nach Sendern">
+  <div class="sectionhead"><div><h2>Live-TV nach Sendern</h2>
+    <p class="muted">Alle Live-Sender deiner Quellen an einem Ort: die offiziellen Livestreams von ARD, ZDF &amp; Co. aus der Filmliste und die Live-Sender von Pluto TV, Samsung TV Plus, Rakuten TV und Joyn (mit Werbung wie beim Anbieter; Joyn nur als Link). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Live-Sender lassen sich nicht offline speichern.</p></div>
+    <button type="button" id="livetv-reload">↻ Aktualisieren</button></div>
+  <div class="livetv-toolbar"><label>Sender suchen<input type="search" id="livetv-filter" placeholder="z. B. ZDF, arte, Krimi" autocomplete="off"></label></div>
+  <div id="livetv-providers" class="portal-categories" role="group" aria-label="Anbieter"></div>
+  <div id="livetv-groups" class="portal-categories" role="group" aria-label="Sendergruppen"></div>
+  <p id="livetv-status" class="muted" role="status">Live-Sender werden geladen …</p>
+  <div id="livetv-list" aria-live="polite"></div>
+</section>
 <section id="review" hidden><div class="panel atlas-video-audit" id="video-audit-panel">
   <div class="sectionhead"><h3>Altbestandsprüfung · Videoformate</h3><button type="button" id="video-audit-refresh">↻ Aktualisieren</button></div>
   <p class="muted">Prüft auch bereits erkannte Werke. Automatisch bestätigte Treffer bleiben erhalten und werden bei Laufzeitkonflikten markiert. Manuelle Zuordnungen werden nicht verändert.</p>
@@ -243,7 +627,7 @@
   <div id="video-audit-results" class="atlas-audit-results"></div>
 </div><h2>Zuordnungszentrale</h2><p class="muted">Quelltitel und Katalogtitel vergleichen. Jede Folge wird einzeln angezeigt. Vorschläge sind erst nach Prüfung bestätigt.</p>
 <details class="provider-panel"><summary>Metadatenquellen · Statistik seit App-Start</summary><p class="muted">Titelabfragen zählen Anbieterprüfungen inklusive interner Antwortcaches, keine einzelnen HTTP-Aufrufe. Treffer sind Kandidaten, keine bestätigten Zuordnungen.</p><div class="table-scroll"><table><thead><tr><th>Quelle</th><th>Status</th><th>Prüfungen</th><th>Mit Treffern</th><th>Kandidaten</th><th>Fehler</th><th>Pausiert übersprungen</th><th>Aus Nichttreffer-Cache</th><th>Letzte erfolgreiche Prüfung</th></tr></thead><tbody id="provider-table"></tbody></table></div></details>
-<details class="provider-panel"><summary>Erkennungsquote je Sender</summary><p class="muted">Erkannt = Werk bei TMDB, TVDB, IMDb oder als Sendereihe gefunden (vollständig zugeordnet oder Werk erkannt). Sendungsbeiträge (Nachrichten, Magazine) sind ihrer Sendung zugeordnet, werden nicht abgefragt und zählen nicht in die Quote.</p><p id="recognition-status" class="muted" role="status"></p><div class="table-scroll"><table><thead><tr><th>Sender</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th></tr></thead><tbody id="recognition-table"></tbody></table></div></details>
+<details class="provider-panel"><summary>Erkennungsquote je Sender</summary><p class="muted">Erkannt = Werk bei TMDB, TVDB, IMDb oder als Sendereihe gefunden (vollständig zugeordnet oder Werk erkannt). Sendungsbeiträge (Nachrichten, Magazine) sind ihrer Sendung zugeordnet, werden nicht abgefragt und zählen nicht in die Quote.</p><p id="recognition-status" class="muted" role="status"></p><div class="table-scroll"><table><thead><tr><th>Sender</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th><th>Filme erkannt</th><th>Serien erkannt</th><th>Clips &amp; Extras</th></tr></thead><tbody id="recognition-table"></tbody></table></div><h4>Nach Medienart</h4><div class="table-scroll"><table><thead><tr><th>Medienart</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th></tr></thead><tbody id="recognition-kinds"></tbody></table></div></details>
 <form id="review-search" class="review-toolbar"><input id="review-query" placeholder="Katalogtitel oder Sendungsreihe suchen" aria-label="Zuordnungen durchsuchen"><select id="review-state" aria-label="Zuordnungsstatus"><option value="open">Alle offenen Fälle</option><option value="review">Zu prüfen</option><option value="identified">Werk erkannt · Folge offen</option><option value="pending">Vorgemerkt</option><option value="retry">Wiederholung</option><option value="matched">Automatisch zugeordnet</option><option value="manual">Manuell bestätigt</option><option value="format">Sendungsbeitrag · nicht abgeglichen</option></select><button>Suchen</button></form>
 <div class="sectionhead"><p id="review-count" role="status"></p><div><button id="review-prev">←</button><button id="review-next">→</button></div></div><div class="review-toolbar"><label class="check"><input type="checkbox" id="review-all"> Seite auswählen</label><button id="review-priority">Auswahl erneut abgleichen</button><span id="review-selected">0 ausgewählt</span></div><div id="review-list"></div></section>
 <section id="logs" hidden><div class="sectionhead"><h2>Live-Protokoll</h2><div><button id="pause-log">Ansicht pausieren</button><button id="export-log" class="primary">Diagnose-ZIP herunterladen</button></div></div><p class="muted">Automatische Aktualisierung alle 2,5 Sekunden. Das Protokoll bleibt lokal gespeichert, auch wenn die Ansicht pausiert. Der Export enthält technische Ereignisse, keine Katalogdatenbank oder API-Schlüssel.</p><p id="log-status" role="status"></p><pre id="live-log" tabindex="0">Protokoll wird geladen …</pre></section>
@@ -269,10 +653,10 @@
   <div id="subscription-list" class="atlas-subscription-list" role="status">Abos werden geladen …</div>
 </section>
 <section id="queue" hidden><h2>Deine Downloadwarteschlange</h2><p class="muted">Download → Spuren prüfen → Metadaten einbetten → MKV, NFO und JSON bereitstellen.</p><div id="jobs"></div></section>
-<section id="settings" hidden><div class="atlas-settings-heading"><h2>Einstellungen</h2><p class="muted">Kompakte Bereiche · aufklappen zum Bearbeiten · Einstellungen speichern, wenn du fertig bist.</p></div><div class="atlas-settings-layout"><form id="config" class="panel atlas-settings-card atlas-settings-card-wide"><div class="atlas-settings-card-header"><h3>Grundeinstellungen</h3><p class="muted">Die Bereiche lassen sich unabhängig voneinander aufklappen. Deine gespeicherten Werte bleiben erhalten.</p></div><details class="atlas-settings-submenu" open><summary>Erkennung &amp; Worker<small>Automatik, Prioritäten, Senderabgleich</small></summary><div class="atlas-settings-fields"><label class="check"><input type="checkbox" id="auto_catalog" checked> Katalog automatisch beim Start und alle 12 Stunden aktualisieren</label><label class="check"><input type="checkbox" id="auto_metadata" checked> Fehlende Metadaten automatisch abgleichen</label><label>Metadaten-Worker<select id="metadata_workers"><option value="1">1 · Sparsam</option><option value="2" selected>2 · Ausgewogen</option><option value="4">4 · Leistung (API-Aufrufe bleiben begrenzt)</option><option value="8">8 · Experimentell (IMDb parallel, API max. 2)</option></select></label><label>Episoden-Worker<select id="episode_workers"><option value="1">1 · Sparsam</option><option value="2" selected>2 · Ausgewogen</option><option value="4">4 · Große Serienarchive</option></select></label><label class="check"><input type="checkbox" id="sender_direct_lookup"> Direkte ARD-/ZDF-Sendermetadaten automatisch abfragen (nur mit entsprechender Berechtigung)</label><p class="muted">Standardmäßig aus: Die App nutzt dann nur bereits importierte Senderangaben und das lokale IMDb-Archiv. Live-Abfragen über nicht allgemein freigegebene Webschnittstellen setzen eine passende Erlaubnis voraus und sind auf maximal 120 Abfragen je Stunde und Anbieter begrenzt. Ohne Staffel-/Folgennummer bleibt eine Sendung als Werk erkannt, aber die Episode unbestätigt.</p><label>Reihenfolge der Erkennung<select id="scan_priority"><option value="balanced">Ausgewogen · Filme, Serien und offene Werke</option><option value="movies_first">Filme zuerst · dann Serien und offene Werke</option><option value="series_first">Serien zuerst · dann Filme und offene Werke</option></select></label><label class="check"><input type="checkbox" id="complete_series" checked> Nach erkannter Serie weitere Folgen bevorzugt prüfen (max. 24, begrenzt)</label><p class="muted">Manuelle Prüfaufträge haben immer Vorrang. Die Auswahl betrifft nur die Metadatenerkennung, nicht die Downloads.</p></div></details><details class="atlas-settings-submenu"><summary>Bibliothek &amp; Speicherorte<small>Downloadziel und zusätzliche Ordner</small></summary><div class="atlas-settings-fields"><label>Zielordner<input id="download_dir" required></label><label>Weitere Bibliotheksordner (ein absoluter Pfad pro Zeile)<textarea id="library_dirs" rows="3" placeholder="/Volumes/Filme\n/Volumes/Archiv/Serien"></textarea></label><p class="muted">Wenn du heruntergeladene Filme oder Folgen in einen anderen Ordner verschiebst, füge ihn hier hinzu. Die App durchsucht nur freigegebene Ordner, löscht keine Downloadhistorie und lädt verschobene Dateien nicht erneut herunter.</p></div></details><details class="atlas-settings-submenu"><summary>Metadatenanbieter &amp; Schlüssel<small>TMDB, TVDB und OMDb</small></summary><div class="atlas-settings-fields"><label>TMDB API-Key oder Read Access Token<input id="tmdb" type="password" autocomplete="off" placeholder="Leer lassen, um gespeicherten Wert zu behalten"></label><label>OMDb API-Key<input id="omdb" type="password" autocomplete="off" placeholder="Optional"></label><label>TVDB v4 Projektschlüssel<input id="tvdb" type="password" autocomplete="off" placeholder="Optional – eigener TVDB-Projektschlüssel"></label><label>TVDB Abonnenten-PIN<input id="tvdb_pin" type="password" autocomplete="off" placeholder="Nur bei nutzerfinanziertem API-Zugang erforderlich"></label><button type="button" id="test-tvdb">Gespeicherten TVDB-Zugang testen</button><p id="tvdb-test-result" role="status">Neue Zugangsdaten vorher speichern.</p><p id="key-state"></p><button type="button" id="test-omdb">Gespeicherten OMDb-Schlüssel testen</button><p id="omdb-test-result" role="status">Der Test fragt OMDb direkt ab. Neue Eingaben vorher speichern.</p><p class="muted">TMDB und OMDb benötigen einen eigenen Schlüssel. Ohne Schlüssel wird Wikidata genutzt; dort sind Genres und Episodendaten häufig unvollständig. TVDB ergänzt Serien, Genres und deutsche Episodendaten über die v4 API. Ein TVDB-Projektschlüssel und je nach Zugangsmodell eine Abonnenten-PIN sind erforderlich. Schlüssel werden nur lokal gespeichert, nicht in Downloads exportiert.</p></div></details><div class="atlas-settings-actions"><button class="primary">Einstellungen speichern</button><button type="button" id="clear-keys">Gespeicherte API-Schlüssel löschen</button></div></form><details class="panel atlas-settings-card"><summary>IMDb · Offline-Archiv <small>Index, Aktualisierung und Quellen</small></summary><div class="atlas-settings-body"><p>Automatischer Erstimport und Aktualisierung alle sieben Tage bei laufender App. Verpasste Aktualisierungen werden beim nächsten Start nachgeholt.</p><p id="imdb-status" role="status">Archivstatus wird geladen …</p><div id="imdb-settings-summary" class="atlas-imdb-settings-summary"></div><div id="imdb-settings-datasets" class="atlas-imdb-datasets" aria-label="Verfügbare IMDb-Datensätze"></div><button type="button" id="imdb-update">IMDb-Archiv jetzt aktualisieren</button><p class="muted">Alle sieben freien IMDb-Datensätze: Titel, Bewertungen, Episoden, internationale Alternativtitel, Personen, Hauptbesetzung, Regie und Drehbuch. Der Erstimport ist umfangreich und benötigt mehrere GB freien Speicher; Fortschritt wird hier angezeigt. Keine Poster oder Inhaltsbeschreibungen in den IMDb-Datensätzen. Abgleich: IMDb offline → TVDB → TMDB → OMDb. Weitere Anbieter werden nur bei unzureichenden oder widersprüchlichen Belegen abgefragt.</p><p class="muted">Information courtesy of IMDb (https://www.imdb.com). Used with permission. Nur für persönliche, nichtkommerzielle Nutzung. <a href="https://developer.imdb.com/non-commercial-datasets/" target="_blank" rel="noopener noreferrer">Datensätze und Nutzungsbedingungen</a></p></div></details><details class="panel atlas-settings-card"><summary>FFmpeg · FFprobe · Python <small>Pfad und Funktion prüfen</small></summary><div class="atlas-settings-body"><p class="muted">Die Prüfung startet jedes Werkzeug tatsächlich. Hier siehst du die verwendete Version und den vollständigen Pfad.</p><div id="runtime-details"></div><button type="button" id="recheck-tools">Werkzeuge erneut prüfen</button></div></details><form id="access-panel" class="panel atlas-settings-card" hidden><h3>NAS-Zugang</h3><p class="muted">MediathekAtlas ist im Heimnetz erreichbar und durch dieses Passwort geschützt. Nach einer Änderung werden alle anderen Anmeldungen beendet.</p><label>Aktuelles Passwort<input id="access-current" type="password" autocomplete="current-password" required></label><label>Neues Passwort (mindestens 8 Zeichen)<input id="access-new" type="password" autocomplete="new-password" minlength="8" required></label><button class="primary">Passwort ändern</button><p id="access-result" role="status"></p></form><details class="panel atlas-settings-card atlas-settings-card-wide"><summary>Verbund &amp; andere Systeme<small>MeshSync, NAS und Tailscale-Kopplung</small></summary><form id="mesh-config" class="atlas-settings-body"><h3>Verbund mehrerer Systeme</h3><p class="muted">Mehrere MediathekAtlas-Installationen teilen sich die Metadatenerkennung und tauschen Ergebnisse über einen synchronisierten Ordner (z. B. MeshSync) oder direkt über das Netzwerk aus (unten, z. B. per Tailscale). Jede Installation behält ihre eigene Datenbank und arbeitet auch ohne Verbindung weiter. API-Schlüssel werden nicht geteilt.</p><label>Verbundordner<input id="mesh_dir" placeholder="z. B. /volume1/MediathekAtlasSync – leer lassen zum Ausschalten"></label><label>Name dieses Systems<input id="mesh_name" maxlength="80" placeholder="z. B. DS923 Wohnzimmer"></label><label class="check"><input type="checkbox" id="mesh_init"> Ordner ist kein MeshSync-Ordner – trotzdem als Verbundordner einrichten</label><button class="primary">Verbund speichern</button><p id="mesh-status" role="status">Verbund ist ausgeschaltet.</p><div id="mesh-nodes"></div><div class="mesh-direct"><h4>Direktverbindung, z. B. über Tailscale</h4><p class="muted">Ohne gemeinsamen Ordner: Die Systeme gleichen sich direkt über das Netzwerk ab. Auf dem NAS „Dieses System freigeben“ wählen und den Verbindungscode am anderen System einfügen. Der Mac muss dafür nicht erreichbar sein, er verbindet sich selbst mit dem NAS.</p><p class="muted" id="mesh-share-hint" hidden>Diese App ist nur auf diesem Rechner erreichbar. Gib unten den Verbindungscode deines NAS ein; freigeben lässt sich nur ein NAS.</p><div class="mesh-direct-row"><button type="button" id="mesh-share">Dieses System freigeben</button><button type="button" id="mesh-rotate" hidden>Neuen Verbundschlüssel erzeugen</button><button type="button" id="mesh-off" hidden>Freigabe beenden</button></div><div id="mesh-code-box" hidden><label>Erreichbare Adresse des NAS (bei Tailscale dessen 100.x-Adresse verwenden)<input id="mesh-address" type="text" placeholder="http://192.168.1.10:8730" autocomplete="off" spellcheck="false"></label><label>Verbindungscode dieses Systems<input id="mesh-code" readonly autocomplete="off" spellcheck="false"></label><button type="button" id="mesh-copy">Code kopieren</button><p class="muted" id="mesh-code-hint"></p></div><p class="muted">Wichtig: Für den Verbindungscode zählt der MediathekAtlas-Dienstport (normalerweise 8730), nicht der DSM-/QTS-Anmeldeport 5000, 5001 oder 8080. Bei einem Reverse-Proxy die tatsächlich erreichbare Weiterleitungsadresse eintragen. Schlüsselwechsel macht alte Codes ungültig und erfordert ein erneutes Koppeln der anderen Geräte.</p><label>Verbindungscode eines anderen Systems hinzufügen<input id="mesh-peer-code" placeholder="z. B. http://synology:8730#…" autocomplete="off"></label><button type="button" id="mesh-connect">Verbindung hinzufügen</button><div id="peer-status" role="status" class="muted"></div></div></form></details></div><div class="atlas-settings-footer"><p class="muted">Dieses Produkt nutzt die TMDB API, ist jedoch nicht von TMDB unterstützt oder zertifiziert. Datenquellen: MediathekViewWeb, TMDB, TheTVDB, OMDb und Wikidata. <a href="https://thetvdb.com/" target="_blank" rel="noopener noreferrer">Metadaten von TheTVDB</a>.</p><p>Downloads: direkte Videodateien. Abspielen im Browser: direkte Dateien und HLS-Streams der Sender sowie fertige Downloads (MKV wird über ffmpeg umgewandelt). HLS/DASH-Downloads, externe Untertitel und automatische Serien-Abos folgen.</p></div></section>
+<section id="settings" hidden><div class="atlas-settings-heading"><h2>Einstellungen</h2><p class="muted">Kompakte Bereiche · aufklappen zum Bearbeiten · Einstellungen speichern, wenn du fertig bist.</p></div><div class="atlas-settings-layout"><form id="config" class="panel atlas-settings-card atlas-settings-card-wide"><div class="atlas-settings-card-header"><h3>Grundeinstellungen</h3><p class="muted">Die Bereiche lassen sich unabhängig voneinander aufklappen. Deine gespeicherten Werte bleiben erhalten.</p></div><details class="atlas-settings-submenu" open><summary>Erkennung &amp; Worker<small>Automatik, Prioritäten, Senderabgleich</small></summary><div class="atlas-settings-fields"><label class="check"><input type="checkbox" id="auto_catalog" checked> Katalog automatisch beim Start und alle 12 Stunden aktualisieren</label><label class="check"><input type="checkbox" id="auto_metadata" checked> Fehlende Metadaten automatisch abgleichen</label><label>Metadaten-Worker<select id="metadata_workers"><option value="1">1 · Sparsam</option><option value="2" selected>2 · Ausgewogen</option><option value="4">4 · Leistung (API-Aufrufe bleiben begrenzt)</option><option value="8">8 · Experimentell (IMDb parallel, API max. 2)</option></select></label><label>Episoden-Worker<select id="episode_workers"><option value="1">1 · Sparsam</option><option value="2" selected>2 · Ausgewogen</option><option value="4">4 · Große Serienarchive</option></select></label><label class="check"><input type="checkbox" id="sender_direct_lookup"> Direkte ARD-/ZDF-Sendermetadaten automatisch abfragen (nur mit entsprechender Berechtigung)</label><p class="muted">Standardmäßig aus: Die App nutzt dann nur bereits importierte Senderangaben und das lokale IMDb-Archiv. Live-Abfragen über nicht allgemein freigegebene Webschnittstellen setzen eine passende Erlaubnis voraus und sind auf maximal 120 Abfragen je Stunde und Anbieter begrenzt. Ohne Staffel-/Folgennummer bleibt eine Sendung als Werk erkannt, aber die Episode unbestätigt.</p><label>Reihenfolge der Erkennung<select id="scan_priority"><option value="balanced">Ausgewogen · Filme, Serien und offene Werke</option><option value="movies_first">Filme zuerst · dann Serien und offene Werke</option><option value="series_first">Serien zuerst · dann Filme und offene Werke</option></select></label><label class="check"><input type="checkbox" id="complete_series" checked> Nach erkannter Serie weitere Folgen bevorzugt prüfen (max. 24, begrenzt)</label><p class="muted">Manuelle Prüfaufträge haben immer Vorrang. Die Auswahl betrifft nur die Metadatenerkennung, nicht die Downloads.</p></div></details><details class="atlas-settings-submenu"><summary>Bibliothek &amp; Speicherorte<small>Downloadziel und zusätzliche Ordner</small></summary><div class="atlas-settings-fields"><label>Zielordner<input id="download_dir" required></label><label>Weitere Bibliotheksordner (ein absoluter Pfad pro Zeile)<textarea id="library_dirs" rows="3" placeholder="/Volumes/Filme\n/Volumes/Archiv/Serien"></textarea></label><p class="muted">Wenn du heruntergeladene Filme oder Folgen in einen anderen Ordner verschiebst, füge ihn hier hinzu. Die App durchsucht nur freigegebene Ordner, löscht keine Downloadhistorie und lädt verschobene Dateien nicht erneut herunter.</p></div></details><details class="atlas-settings-submenu"><summary>Metadatenanbieter &amp; Schlüssel<small>TMDB, TVDB, OMDb und Fanart.tv</small></summary><div class="atlas-settings-fields"><label>TMDB API-Key oder Read Access Token<input id="tmdb" type="password" autocomplete="off" placeholder="Leer lassen, um gespeicherten Wert zu behalten"></label><label>OMDb API-Key<input id="omdb" type="password" autocomplete="off" placeholder="Optional"></label><label>TVDB v4 Projektschlüssel<input id="tvdb" type="password" autocomplete="off" placeholder="Optional – eigener TVDB-Projektschlüssel"></label><label>TVDB Abonnenten-PIN<input id="tvdb_pin" type="password" autocomplete="off" placeholder="Nur bei nutzerfinanziertem API-Zugang erforderlich"></label><label>Fanart.tv Projektschlüssel<input id="fanart" type="password" autocomplete="off" placeholder="Optional – Poster, Hintergründe und Logos"></label><label>Fanart.tv persönlicher Schlüssel<input id="fanart_personal" type="password" autocomplete="off" placeholder="Optional – schnellere Aktualisierung neuer Bilder"></label><button type="button" id="test-tvdb">Gespeicherten TVDB-Zugang testen</button><p id="tvdb-test-result" role="status">Neue Zugangsdaten vorher speichern.</p><p id="key-state"></p><button type="button" id="test-omdb">Gespeicherten OMDb-Schlüssel testen</button><p id="omdb-test-result" role="status">Der Test fragt OMDb direkt ab. Neue Eingaben vorher speichern.</p><p class="muted">TMDB und OMDb benötigen einen eigenen Schlüssel. Ohne Schlüssel wird Wikidata genutzt; dort sind Genres und Episodendaten häufig unvollständig. TVDB ergänzt Serien, Genres und deutsche Episodendaten über die v4 API. Ein TVDB-Projektschlüssel und je nach Zugangsmodell eine Abonnenten-PIN sind erforderlich. Fanart.tv liefert zusätzliche Poster, Hintergründe und Logos, aber nur zu bereits erkannten Werken (IMDb-, TVDB- oder TMDB-Kennung); widerspricht die Kennung, werden die Bilder verworfen. Schlüssel werden nur lokal gespeichert, nicht in Downloads exportiert.</p></div></details><div class="atlas-settings-actions"><button class="primary">Einstellungen speichern</button><button type="button" id="clear-keys">Gespeicherte API-Schlüssel löschen</button></div></form><details class="panel atlas-settings-card"><summary>IMDb · Offline-Archiv <small>Index, Aktualisierung und Quellen</small></summary><div class="atlas-settings-body"><p>Automatischer Erstimport und Aktualisierung alle sieben Tage bei laufender App. Verpasste Aktualisierungen werden beim nächsten Start nachgeholt.</p><p id="imdb-status" role="status">Archivstatus wird geladen …</p><div id="imdb-settings-summary" class="atlas-imdb-settings-summary"></div><div id="imdb-settings-datasets" class="atlas-imdb-datasets" aria-label="Verfügbare IMDb-Datensätze"></div><button type="button" id="imdb-update">IMDb-Archiv jetzt aktualisieren</button><p class="muted">Alle sieben freien IMDb-Datensätze: Titel, Bewertungen, Episoden, internationale Alternativtitel, Personen, Hauptbesetzung, Regie und Drehbuch. Der Erstimport ist umfangreich und benötigt mehrere GB freien Speicher; Fortschritt wird hier angezeigt. Keine Poster oder Inhaltsbeschreibungen in den IMDb-Datensätzen. Abgleich: IMDb offline → TVDB → TMDB → OMDb. Weitere Anbieter werden nur bei unzureichenden oder widersprüchlichen Belegen abgefragt.</p><p class="muted">Information courtesy of IMDb (https://www.imdb.com). Used with permission. Nur für persönliche, nichtkommerzielle Nutzung. <a href="https://developer.imdb.com/non-commercial-datasets/" target="_blank" rel="noopener noreferrer">Datensätze und Nutzungsbedingungen</a></p></div></details><details class="panel atlas-settings-card"><summary>FFmpeg · FFprobe · Python <small>Pfad und Funktion prüfen</small></summary><div class="atlas-settings-body"><p class="muted">Die Prüfung startet jedes Werkzeug tatsächlich. Hier siehst du die verwendete Version und den vollständigen Pfad.</p><div id="runtime-details"></div><button type="button" id="recheck-tools">Werkzeuge erneut prüfen</button></div></details><details id="direct-start-panel" class="panel atlas-settings-card"><summary>Videostart bei Anbietern <small>Rakuten TV, Joyn, TOGGO, JustWatch TV schneller starten</small></summary><div class="atlas-settings-body"><p class="muted">Titel mit Kopierschutz laufen nur im Player des Anbieters. MediathekAtlas öffnet dafür, wo bekannt, direkt den Player statt der Detailseite (Joyn). Die optionale Chrome-Erweiterung klickt dort zusätzlich auf „Abspielen“ und bestätigt den HDCP-Hinweis von Rakuten TV. Der Kopierschutz wird nicht umgangen.</p><label class="check"><input type="checkbox" id="direct-start-toggle" checked> Direkt den Player des Anbieters öffnen und Autostart erlauben</label><p id="direct-start-status" class="muted" role="status"></p><div class="atlas-settings-actions"><button type="button" id="direct-start-download" class="primary">Chrome-Erweiterung herunterladen (ZIP)</button></div><details class="direct-start-help"><summary>So installierst du die Erweiterung (einmalig, ca. 1 Minute)</summary><ol class="direct-start-steps"><li>ZIP herunterladen und entpacken (Doppelklick). Den entpackten Ordner an einem festen Ort lassen, z. B. in „Dokumente“.</li><li>In Chrome die Adresse <code>chrome://extensions</code> öffnen.</li><li>Oben rechts den <b>Entwicklermodus</b> einschalten.</li><li><b>Entpackte Erweiterung laden</b> wählen und den entpackten Ordner „MediathekAtlas-Videostart“ auswählen.</li><li>Fertig. Links aus MediathekAtlas starten das Video jetzt selbst. Über das Symbol der Erweiterung lassen sich Autostart und HDCP-Bestätigung einzeln abschalten.</li></ol><p class="muted">Ton beim Autostart: Chrome erlaubt Autoplay mit Ton nur auf Seiten, die du oft nutzt. Falls das Video stumm oder gar nicht startet: beim Anbieter auf das Schloss links in der Adresszeile → Website-Einstellungen → <b>Ton: Zulassen</b>. Die Erweiterung wird nur auf rakuten.tv, joyn.de, toggo.de und justwatch.com aktiv und nur bei Links aus MediathekAtlas. Sie liest keine Passwörter und sendet keine Daten. Edge und Brave laden dieselbe Erweiterung; Safari und Firefox werden nicht unterstützt.</p></details></div></details><details id="backup-panel" class="panel atlas-settings-card"><summary>Datenbanksicherungen <small>Katalogdatenbank sichern und aufräumen</small></summary><div class="atlas-settings-body"><p class="muted">Die Katalogdatenbank wird wöchentlich automatisch und geprüft gesichert (Ordner „Backups“ im Datenordner). Eigene Sicherungen werden nie automatisch gelöscht. Wiederherstellen: App beenden, gewünschte Sicherung als catalog.db in den Datenordner kopieren, App starten.</p><p id="backup-status" role="status">Wird beim Aufklappen geladen …</p><div id="backup-list" class="backup-list"></div><div class="atlas-settings-actions"><button type="button" id="backup-create">Jetzt sichern</button><button type="button" id="backup-delete" disabled>Ausgewählte löschen</button></div></div></details><form id="access-panel" class="panel atlas-settings-card" hidden><h3>NAS-Zugang</h3><p class="muted">MediathekAtlas ist im Heimnetz erreichbar und durch dieses Passwort geschützt. Nach einer Änderung werden alle anderen Anmeldungen beendet.</p><label>Aktuelles Passwort<input id="access-current" type="password" autocomplete="current-password" required></label><label>Neues Passwort (mindestens 8 Zeichen)<input id="access-new" type="password" autocomplete="new-password" minlength="8" required></label><button class="primary">Passwort ändern</button><p id="access-result" role="status"></p></form><details class="panel atlas-settings-card atlas-settings-card-wide"><summary>Verbund &amp; andere Systeme<small>MeshSync, NAS und Tailscale-Kopplung</small></summary><form id="mesh-config" class="atlas-settings-body"><h3>Verbund mehrerer Systeme</h3><p class="muted">Mehrere MediathekAtlas-Installationen teilen sich die Metadatenerkennung und tauschen Ergebnisse über einen synchronisierten Ordner (z. B. MeshSync) oder direkt über das Netzwerk aus (unten, z. B. per Tailscale). Jede Installation behält ihre eigene Datenbank und arbeitet auch ohne Verbindung weiter. API-Schlüssel werden nicht geteilt.</p><label>Verbundordner<input id="mesh_dir" placeholder="z. B. /volume1/MediathekAtlasSync – leer lassen zum Ausschalten"></label><label>Name dieses Systems<input id="mesh_name" maxlength="80" placeholder="z. B. DS923 Wohnzimmer"></label><label class="check"><input type="checkbox" id="mesh_init"> Ordner ist kein MeshSync-Ordner – trotzdem als Verbundordner einrichten</label><button class="primary">Verbund speichern</button><p id="mesh-status" role="status">Verbund ist ausgeschaltet.</p><div id="mesh-nodes"></div><div class="mesh-direct"><h4>Direktverbindung, z. B. über Tailscale</h4><p class="muted">Ohne gemeinsamen Ordner: Die Systeme gleichen sich direkt über das Netzwerk ab. Auf dem NAS „Dieses System freigeben“ wählen und den Verbindungscode am anderen System einfügen. Der Mac muss dafür nicht erreichbar sein, er verbindet sich selbst mit dem NAS.</p><p class="muted" id="mesh-share-hint" hidden>Diese App ist nur auf diesem Rechner erreichbar. Gib unten den Verbindungscode deines NAS ein; freigeben lässt sich nur ein NAS.</p><div class="mesh-direct-row"><button type="button" id="mesh-share">Dieses System freigeben</button><button type="button" id="mesh-rotate" hidden>Neuen Verbundschlüssel erzeugen</button><button type="button" id="mesh-off" hidden>Freigabe beenden</button></div><div id="mesh-code-box" hidden><label>Erreichbare Adresse des NAS (bei Tailscale dessen 100.x-Adresse verwenden)<input id="mesh-address" type="text" placeholder="http://192.168.1.10:8730" autocomplete="off" spellcheck="false"></label><label>Verbindungscode dieses Systems<input id="mesh-code" readonly autocomplete="off" spellcheck="false"></label><button type="button" id="mesh-copy">Code kopieren</button><p class="muted" id="mesh-code-hint"></p></div><p class="muted">Wichtig: Für den Verbindungscode zählt der MediathekAtlas-Dienstport (normalerweise 8730), nicht der DSM-/QTS-Anmeldeport 5000, 5001 oder 8080. Bei einem Reverse-Proxy die tatsächlich erreichbare Weiterleitungsadresse eintragen. Schlüsselwechsel macht alte Codes ungültig und erfordert ein erneutes Koppeln der anderen Geräte.</p><label>Verbindungscode eines anderen Systems hinzufügen<input id="mesh-peer-code" placeholder="z. B. http://synology:8730#…" autocomplete="off"></label><button type="button" id="mesh-connect">Verbindung hinzufügen</button><div id="peer-status" role="status" class="muted"></div></div></form></details></div><div class="atlas-settings-footer"><p class="muted">Dieses Produkt nutzt die TMDB API, ist jedoch nicht von TMDB unterstützt oder zertifiziert. Datenquellen: MediathekViewWeb, TMDB, TheTVDB, OMDb, Fanart.tv und Wikidata. <a href="https://thetvdb.com/" target="_blank" rel="noopener noreferrer">Metadaten von TheTVDB</a>.</p><p>Downloads: direkte Videodateien. Abspielen im Browser: direkte Dateien und HLS-Streams der Sender sowie fertige Downloads (MKV wird über ffmpeg umgewandelt). HLS/DASH-Downloads, externe Untertitel und automatische Serien-Abos folgen.</p></div></section>
 </main>
 <dialog id="series-dialog"><div class="modalhead"><h2>Serie gesammelt herunterladen</h2><button id="series-close">Schließen</button></div><p id="series-summary"></p><p class="muted">MKV mit eingebetteten Metadaten, Episoden-NFO und tvshow.nfo. Nur bestätigte, verfügbare Folgen sind auswählbar.</p><label class="check"><input type="checkbox" id="series-all" checked> Alle ladbaren Folgen auswählen</label><div id="series-plan"></div><label class="check"><input id="series-confirmed" type="checkbox"> Ich habe die aufgeführten Folgen und Zielnamen geprüft.</label><button id="series-submit" class="primary">Geprüfte Folgen einreihen</button></dialog>
-<dialog id="media-detail"><div id="detail-backdrop"></div><button id="detail-close" aria-label="Detailansicht schließen">✕</button><div class="detail-body"><div id="detail-cover"></div><div><p id="detail-type" class="eyebrow"></p><h2 id="detail-title"></h2><p id="detail-facts"></p><p id="detail-plot"></p><div id="detail-rating"></div><dl id="detail-data"></dl><p id="detail-credits" class="muted"></p><p id="detail-art-status" class="muted"></p><div id="detail-play"></div><button id="detail-action" class="primary"></button><button id="detail-subscribe" type="button">↻ Download-Abo erstellen</button><div id="detail-downloads"></div></div></div></dialog><dialog id="editor"><div class="modalhead"><div><span class="eyebrow">METADATEN VOR DEM DOWNLOAD</span><h2>Prüfen & zuordnen</h2></div><button id="close" aria-label="Schließen">✕</button></div><div class="editorgrid"><div><p id="source" class="source"></p><p id="availability-before-download" class="muted" role="status">Ablaufdatum wird geprüft …</p><button id="lookup">Metadaten suchen</button><p id="lookup-status" role="status"></p><div id="candidates"></div><p class="muted">Mehrdeutige Treffer werden nicht automatisch bestätigt. Besonders bei Serien bitte Staffel und Folge vergleichen.</p></div><form id="metadata"><label>Art<select id="kind"><option value="unknown">Noch unklar</option><option value="movie">Film</option><option value="series">Serie</option></select></label><label>Titel / Serienname<input id="title" required></label><div class="fields"><label>Erscheinungsjahr<input id="year" type="number" min="1880" max="2100"></label><label>Staffel<input id="season" type="number" min="0" max="999"></label><label>Folge<input id="episode" type="number" min="1" max="9999"></label></div><label>Episodentitel<input id="episode_title"></label><label>Genres (durch Komma getrennt)<input id="genres" placeholder="z. B. Animation, Kinder & Familie"></label><label>Beschreibung<textarea id="description" rows="4"></textarea></label><label>Qualität<select id="quality"><option value="best">Beste direkt ladbare Qualität</option><option value="hd">HD bevorzugt</option><option value="standard">Standard</option><option value="low">Kleine Datei</option></select></label><div class="path" id="preview">Dateiname wird nach Prüfung angezeigt.</div><button type="button" id="preview-button">Zielnamen prüfen</button><button type="button" id="save-metadata">Im Katalog speichern</button><label class="check"><input type="checkbox" id="confirmed" required> Ich habe Titel, Medienart und ggf. Staffel/Folge geprüft.</label><button class="primary" type="submit">↓ Geprüften Download hinzufügen</button></form></div></dialog><dialog id="player" class="player" aria-label="Wiedergabe"><div class="player-head"><div><h2 id="player-title">Wiedergabe</h2><p id="player-meta" class="muted"></p></div><div class="player-actions"><button id="player-restart" type="button" hidden>Von vorn</button><button id="player-next" type="button" hidden>Nächste Folge ▸</button><button id="player-close" type="button" aria-label="Wiedergabe schließen">✕</button></div></div><div id="player-stage"><video id="player-video" playsinline preload="auto"></video><p id="player-status" role="status" hidden></p><div id="player-bar" hidden><button id="player-toggle" type="button" aria-label="Wiedergabe/Pause">▶</button><button id="player-back" type="button" title="10 Sekunden zurück">↺ 10</button><button id="player-fwd" type="button" title="30 Sekunden vor">30 ↻</button><input id="player-seek" type="range" min="0" step="1" value="0" aria-label="Position"><span id="player-time">0:00</span><button id="player-mute" type="button" aria-label="Ton aus/an">🔊</button><button id="player-full" type="button" aria-label="Vollbild">⛶</button></div></div></dialog><dialog id="atlas-netzkino-detail" aria-label="Netzkino Film- und Seriendetails">
+<dialog id="media-detail"><div id="detail-backdrop"></div><button id="detail-close" aria-label="Detailansicht schließen">✕</button><div class="detail-body"><div id="detail-cover"></div><div><p id="detail-type" class="eyebrow"></p><h2 id="detail-title"></h2><p id="detail-facts"></p><p id="detail-plot"></p><div id="detail-rating"></div><dl id="detail-data"></dl><p id="detail-credits" class="muted"></p><p id="detail-art-status" class="muted"></p><div id="detail-play"></div><button id="detail-action" class="primary"></button><button id="detail-subscribe" type="button">↻ Download-Abo erstellen</button><div id="detail-downloads"></div></div></div></dialog><dialog id="editor"><div class="modalhead"><div><span class="eyebrow">METADATEN VOR DEM DOWNLOAD</span><h2>Prüfen & zuordnen</h2></div><button id="close" aria-label="Schließen">✕</button></div><div class="editorgrid"><div><p id="source" class="source"></p><p id="availability-before-download" class="muted" role="status">Ablaufdatum wird geprüft …</p><button id="lookup">Metadaten suchen</button><p id="lookup-status" role="status"></p><div id="candidates"></div><p class="muted">Mehrdeutige Treffer werden nicht automatisch bestätigt. Besonders bei Serien bitte Staffel und Folge vergleichen.</p></div><form id="metadata"><label>Art<select id="kind"><option value="unknown">Noch unklar</option><option value="movie">Film</option><option value="series">Serie</option></select></label><label>Titel / Serienname<input id="title" required></label><div class="fields"><label>Erscheinungsjahr<input id="year" type="number" min="1880" max="2100"></label><label>Staffel<input id="season" type="number" min="0" max="999"></label><label>Folge<input id="episode" type="number" min="1" max="9999"></label></div><label>Episodentitel<input id="episode_title"></label><label>Genres (durch Komma getrennt)<input id="genres" placeholder="z. B. Animation, Kinder & Familie"></label><label>Beschreibung<textarea id="description" rows="4"></textarea></label><label>Qualität<select id="quality"><option value="best">Beste direkt ladbare Qualität</option><option value="hd">HD bevorzugt</option><option value="standard">Standard</option><option value="low">Kleine Datei</option></select></label><div class="path" id="preview">Dateiname wird nach Prüfung angezeigt.</div><button type="button" id="preview-button">Zielnamen prüfen</button><button type="button" id="save-metadata">Im Katalog speichern</button><label class="check"><input type="checkbox" id="confirmed" required> Ich habe Titel, Medienart und ggf. Staffel/Folge geprüft.</label><button class="primary" type="submit">↓ Geprüften Download hinzufügen</button></form></div></dialog><dialog id="player" class="player" aria-label="Wiedergabe"><div class="player-head"><div><h2 id="player-title">Wiedergabe</h2><p id="player-meta" class="muted"></p></div><div class="player-actions"><label id="player-quality-box" class="player-quality" hidden title="Bildgröße der Wiedergabe. „Automatisch“ lädt höchstens 720p und geht bei Stockungen eine Stufe herunter.">Qualität <select id="player-quality" aria-label="Qualität der Wiedergabe"></select></label><button id="player-restart" type="button" hidden>Von vorn</button><button id="player-next" type="button" hidden>Nächste Folge ▸</button><button id="player-close" type="button" aria-label="Wiedergabe schließen">✕</button></div></div><div id="player-stage"><video id="player-video" playsinline preload="auto"></video><iframe id="player-embed" title="YouTube-Player" hidden allow="autoplay; encrypted-media; picture-in-picture; fullscreen" allowfullscreen referrerpolicy="strict-origin-when-cross-origin"></iframe><p id="player-status" role="status" hidden></p><div id="player-bar" hidden><button id="player-toggle" type="button" aria-label="Wiedergabe/Pause">▶</button><button id="player-back" type="button" title="10 Sekunden zurück">↺ 10</button><button id="player-fwd" type="button" title="30 Sekunden vor">30 ↻</button><input id="player-seek" type="range" min="0" step="1" value="0" aria-label="Position"><span id="player-time">0:00</span><button id="player-mute" type="button" aria-label="Ton aus/an">🔊</button><button id="player-full" type="button" aria-label="Vollbild">⛶</button></div></div></dialog><dialog id="atlas-netzkino-detail" aria-label="Netzkino Film- und Seriendetails">
   <div class="nk-detail-heading"><h2 id="atlas-nk-title">Netzkino-Details</h2><button type="button" id="atlas-nk-close" aria-label="Schließen">✕</button></div>
   <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-nk-image" alt="Filmcover" hidden><dl id="atlas-nk-quickfacts" aria-label="Netzkino-Kurzdaten"></dl></div>
     <div class="nk-detail-main"><p id="atlas-nk-description"></p><dl id="atlas-nk-facts"></dl>
@@ -300,24 +684,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><dialog id="atlas-pluto-detail" class="atlas-pluto-detail" aria-label="Pluto TV Film- und Seriendetails">
-  <div class="nk-detail-heading"><h2 id="atlas-pl-title">Pluto-TV-Details</h2><button type="button" id="atlas-pl-close" aria-label="Schließen">✕</button></div>
-  <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-pl-image" alt="Cover" hidden><dl id="atlas-pl-quickfacts" aria-label="Pluto-Kurzdaten"></dl></div>
-    <div class="nk-detail-main"><p id="atlas-pl-description"></p><dl id="atlas-pl-facts"></dl>
-      <div id="atlas-pl-reference" role="status"></div><dl id="atlas-pl-reference-facts"></dl>
-      <section class="nk-offline" aria-label="Pluto offline">
-        <div class="nk-offline-head"><h3>Offline ansehen</h3><span id="atlas-pl-offline-slot"></span></div>
-        <p id="atlas-pl-offline-status" class="muted" role="status"></p>
-      </section>
-      <div id="atlas-pl-actions" class="netzkino-actions"></div></div></div>
-</dialog><dialog id="atlas-justwatch-detail" class="atlas-justwatch-detail" aria-label="JustWatch TV Film- und Seriendetails">
-  <div class="nk-detail-heading"><h2 id="atlas-jw-title">JustWatch-TV-Details</h2><button type="button" id="atlas-jw-close" aria-label="Schließen">✕</button></div>
-  <div class="nk-detail-layout"><div class="nk-detail-sidebar"><img id="atlas-jw-image" alt="Cover" hidden><dl id="atlas-jw-quickfacts" aria-label="JustWatch-Kurzdaten"></dl></div>
-    <div class="nk-detail-main"><p id="atlas-jw-description"></p><dl id="atlas-jw-facts"></dl>
-      <div id="atlas-jw-reference" role="status"></div><dl id="atlas-jw-reference-facts"></dl>
-      <section class="nk-offline" aria-label="JustWatch offline">
-        <div class="nk-offline-head"><h3>Offline ansehen</h3><span id="atlas-jw-offline-slot"></span></div>
-        <p id="atlas-jw-offline-status" class="muted" role="status"></p>
-      </section>
-      <div id="atlas-jw-actions" class="netzkino-actions"></div></div></div>
-</dialog><script src="/app.js"></script><script src="/titleview.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/unified_catalog.js"></script><script src="/video_audit.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/system.js"></script></body></html>

@@ -23,7 +23,11 @@ def setup(root):
     _root=Path(root);_root.mkdir(parents=True,exist_ok=True)
     for h in list(logger.handlers):logger.removeHandler(h);h.close()
     h=logging.handlers.RotatingFileHandler(_root/'diagnostic.jsonl',maxBytes=2*1024*1024,backupCount=3,encoding='utf-8');logger.addHandler(h)
+_LEVELS=('DEBUG','INFO','WARNING','ERROR','CRITICAL')
 def event(name,level='INFO',**fields):
+    # 0.5.74: a field that happens to be called "level" (e.g. a quality level "1.6 Mbit/s") must never
+    # break the request that logs it: keep it as a field and log at INFO.
+    if level not in _LEVELS:fields['level_value']=str(level)[:40];level='INFO'
     with _lock:logger.log(getattr(logging,level),json.dumps(clean({'time':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'level':level,'event':name,**fields}),ensure_ascii=False))
 def error(name,exc,**fields):
     event(name,'ERROR',error_type=type(exc).__name__,error=str(exc),traceback=''.join(traceback.format_exception(type(exc),exc,exc.__traceback__)),**fields)

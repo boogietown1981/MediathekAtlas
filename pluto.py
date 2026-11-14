@@ -22,6 +22,8 @@ import urllib.request
 import uuid
 from pathlib import Path
 
+import portal_reference
+
 BOOT_URL = 'https://boot.pluto.tv/v4/start'
 VOD_URL = 'https://service-vod.clusters.pluto.tv/v4/vod'
 CHANNELS_URL = 'https://service-channels.clusters.pluto.tv/v2/guide/channels'
@@ -258,7 +260,7 @@ def item_from(node, kind, category='', series_id='', season=None):
         'series_id': series_id, 'season': season if season is not None else _int(node.get('season'), 0, 999),
         'episode': _int(node.get('number') if kind == 'episode' else None, 0, 9999),
         'number': _int(node.get('number') if kind == 'channel' else None, 0, 100000),
-        'year': _year(node), 'duration': _seconds(node.get('duration') or node.get('originalContentDuration')),
+        'year': _year(node), 'duration': _seconds(node.get('originalContentDuration') or node.get('duration')),  # without ad breaks (0.5.43)
         'rating': _text(node.get('rating'), 20), 'genre': _text(genre, 120),
         'summary': _text(node.get('description') or node.get('summary'), 1200),
         'poster': _image(node), 'path': path if kind != 'series' else '',
@@ -365,7 +367,9 @@ def sync(root, fetch=None, now=None, gap=None):
             with db:
                 _store(db, vod + channels, now)
                 counts = {k: sum(1 for i in vod + channels if i['kind'] == k) for k in ('movie', 'series', 'channel')}
-                for key, value in [('last_success', now), ('last_result', 'partial' if channel_error else 'complete'),
+                # Live channels failed: keep the previous stock (incl. channels) visible.
+                previous = float(_get(db, 'last_success', '0') or 0)
+                for key, value in [('last_success', previous if channel_error and previous else now), ('last_loaded', now), ('last_result', 'partial' if channel_error else 'complete'),
                                    ('last_error', channel_error), ('movies', counts['movie']),
                                    ('series', counts['series']), ('channels', counts['channel']),
                                    ('next_attempt', now + 24 * 3600)]:
@@ -385,7 +389,8 @@ def sync(root, fetch=None, now=None, gap=None):
                     _set(db, key, value)
         finally:
             db.close()
-        _notify('pluto_sync_failed', http_status=getattr(exc, 'code', 0) or 0)
+        import netcheck
+        _notify('pluto_sync_failed', http_status=getattr(exc, 'code', 0) or 0, error_type=netcheck.kind(exc))
         return {'ok': False, 'error': message}
 
 
@@ -396,7 +401,8 @@ def _error(exc):
     if code:
         return 'Pluto TV antwortet mit HTTP %d' % code
     if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
-        return 'Pluto TV ist nicht erreichbar (Netzwerk/Proxy prüfen)'
+        import netcheck
+        return netcheck.with_cause('Pluto TV ist nicht erreichbar', exc)
     if isinstance(exc, ValueError):
         return str(exc)[:200]
     return 'Pluto-Katalog konnte nicht geladen werden'
@@ -443,7 +449,8 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     import portal_reference, pluto_enrichment
     kind = {'movies': 'movie', 'series': 'series', 'live': 'channel'}.get(view, 'movie')
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
-    limit = max(1, min(_int(limit, 1) or 60, 200))
+    # 'all': the merged dashboard index (unified_index.py) reads every row once and pages itself.
+    limit = 1000000 if limit == 'all' else max(1, min(_int(limit, 1) or 60, 200))
     db = _connect(root)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
@@ -462,7 +469,7 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
                 'genre_counts': []}
     reports = pluto_enrichment.all_cached(root)
     for row in rows:
-        row.update(portal_reference.summary(row.get('genre'), reports.get(row['id'])))
+        row.update(portal_reference.summary(row.get('genre'), reports.get(row['id']), age=portal_reference.age_of(row)))
     counts = portal_reference.facets(rows)
     rows = [r for r in rows if portal_reference.matches(r, genre)
             and portal_reference.in_collection(r, collection, kind)]
@@ -472,6 +479,18 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         rows.sort(key=lambda r: (-(r.get('year') or 0), r['title'].casefold()))
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view,
             'genre_counts': counts}
+
+
+def channels(root):
+    """All live channels of the latest successful catalogue run (for the Live-TV tab, 0.5.50)."""
+    db = _connect(root)
+    try:
+        last = float(_get(db, 'last_success', '0') or 0)
+        return [dict(r) for r in db.execute(
+            "SELECT id,title,number,genre,category,summary,poster FROM pluto_items "
+            "WHERE kind='channel' AND seen>=? ORDER BY number,title", (last,))]
+    finally:
+        db.close()
 
 
 def item(root, item_id):
@@ -492,7 +511,7 @@ def item(root, item_id):
         db.close()
     report = pluto_enrichment.cached(root, item_id) if row['kind'] != 'channel' else dict(pluto_enrichment.UNCHECKED)
     genre = row.get('genre') or (parent or {}).get('genre')
-    return {'item': {**row, **portal_reference.summary(genre, report),
+    return {'item': {**row, **portal_reference.summary(genre, report, age=portal_reference.age_of(row)),
                      'poster': row.get('poster') or (parent or {}).get('poster') or ''},
             'series': parent, 'reference': report}
 
@@ -505,7 +524,8 @@ def state(root):
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0),
             'last_success': float(_get(db, 'last_success', '0') or 0),
             'next_attempt': float(_get(db, 'next_attempt', '0') or 0),
-            'last_result': _get(db, 'last_result', 'never'), 'last_error': _get(db, 'last_error'),
+            'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _ACTIVE),
+            'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'channels': _int(_get(db, 'channels', '0')) or 0,
@@ -546,9 +566,13 @@ def start_sync(root):
 
 
 def loop(root, stop):
+    import task_control
     while not stop.wait(60):
+        if task_control.paused('catalog:pluto'):
+            continue
         current = state(root)
-        if current['auto'] and not current['running'] and time.time() >= current['next_attempt']:
+        if portal_reference.first_load_due(current) or (
+                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 
 

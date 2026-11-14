@@ -17,6 +17,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 import core, downloads, hls_guard, justwatch as jw, justwatch_downloads as jd, justwatch_enrichment as je  # noqa: E402
 import netzkino_downloads as nd, portal_reference as pr  # noqa: E402
 
@@ -107,7 +108,7 @@ class CatalogueTests(Fixture):
         self.assertEqual(arrival['score'], {'value': 7.9, 'source': 'IMDb', 'votes': 750000})
         self.assertEqual(jw.listing(self.root, 'movies', collection='cinema')['total'], 1)
         series = jw.listing(self.root, 'series')['items'][0]
-        self.assertEqual(series['categories'], ['Kriegsfilm', 'Mystery', 'Thriller'])
+        self.assertEqual(series['categories'], ['Krieg', 'Mystery', 'Thriller'])
         # No stream address is stored anywhere in the database.
         dump = '\n'.join(sqlite3.connect(self.root / 'justwatch.sqlite3').iterdump())
         self.assertNotIn('manifest/external', dump)
@@ -130,7 +131,7 @@ class CatalogueTests(Fixture):
         data = jw.episodes(self.root, 'ts200', post=self.api, now=1500)
         self.assertEqual([(e['id'], e['season'], e['episode'], e['playable']) for e in data['items']],
                          [('tse301', 1, 1, 1), ('tse302', 1, 2, 0)])
-        self.assertEqual(data['items'][0]['categories'], ['Kriegsfilm', 'Mystery', 'Thriller'])
+        self.assertEqual(data['items'][0]['categories'], ['Krieg', 'Mystery', 'Thriller'])
         detail = jw.item(self.root, 'tse301')
         self.assertEqual((detail['series']['title'], detail['item']['web_url']),
                          ('Spy City', 'https://www.justwatch.com/de/Serie/Spy-City?package=jwt'))
@@ -160,7 +161,7 @@ class PlaybackTests(Fixture):
     def test_title_without_external_stream(self):
         self.sync()
         api = lambda q, v: {'data': {'urlV2': {'node': {'watchNowOffer': offer('jwt', None), 'offers': []}}}}
-        with self.assertRaisesRegex(ValueError, 'keinen Stream für externe Player'):
+        with self.assertRaisesRegex(ValueError, 'kopiergeschützten Player'):
             jw.play_source(self.root, 'tm101', post=api, check=lambda u: None)
         with self.assertRaisesRegex(ValueError, 'Folge'):
             jw.play_source(self.root, 'ts200', post=self.api, check=lambda u: None)
@@ -211,7 +212,7 @@ class OfflineTests(Fixture):
     def test_film_job_like_mediathek_with_thirty_days(self):
         r, job = self.job()
         self.assertTrue(r['created'])
-        self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(), 'Filme/Arrival (2016)/Arrival (2016).mkv')
+        self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(), 'Filme/Arrival (2016)/Arrival - (2016).mkv')
         self.assertEqual((job['origin'], job['justwatch_id'], job['source']['_resolver']), ('justwatch', 'tm100', 'justwatch'))
         self.assertEqual((job['license']['kind'], job['license']['days']), ('justwatch_offline', 30))
         meta = job['metadata']
@@ -229,8 +230,7 @@ class OfflineTests(Fixture):
         _, job = self.job('tse301')
         self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(), 'Serien/Spy City/Season 01/Spy City - S01E01.mkv')
         self.assertEqual(job['metadata']['show_imdb_id'], 'tt2543164')
-        for item, text in (('tm101', 'externe Player'), ('tse302', 'externe Player'), ('ts200', 'einzelne Folge'),
-                           ('tm999', 'nicht im Katalog'), ('../x', 'Ungültig')):
+        for item, text in (('ts200', 'einzelne Folge'), ('tm999', 'nicht im Katalog'), ('../x', 'Ungültig')):
             with self.assertRaisesRegex(ValueError, text):
                 jd.enqueue(self.c, self.root, self.media, item)
 
@@ -266,8 +266,8 @@ class HlsDownloadTests(OfflineTests):
         url = 'http://127.0.0.1:%d/master.m3u8?sec=secret' % server.server_address[1]
         with mock.patch.object(jd, 'resolve', return_value=url), mock.patch('artwork.save_image', return_value=True):
             downloads.run(job['source'], job['metadata'], job['root'], job['quality'], lambda *a, **k: None, lambda: False)
-        target = Path(job['target'])
-        self.assertTrue(target.is_file())
+        target = core.existing_download(job['target'])   # 0.5.42: name + resolution/codec
+        self.assertTrue(target and target.is_file())
         self.assertIn(b'tt2543164', target.with_suffix('.nfo').read_bytes())
         self.assertNotIn('secret', target.with_suffix('.metadata.json').read_text())
 
@@ -298,10 +298,10 @@ class WiringTests(unittest.TestCase):
         for needle in ("path=='/api/justwatch'", "'/api/justwatch-details'", "'/api/justwatch-download-add'",
                        "'/api/justwatch-sync'", "'/api/justwatch-enrich'", 'justwatch_enrichment.loop', 'justwatch.loop',
                        "justwatch=q.get('justwatch',[''])[0]", "'/justwatch.js'", "'/portal_panel.js'"):
-            self.assertIn(needle, s)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text()
         for needle in ('id="justwatch"', 'data-platform="justwatch"', 'data-catalog-source="justwatch"',
-                       'id="atlas-justwatch-detail"', 'id="justwatch-offline-jobs"', '<script src="/justwatch.js"></script>'):
+                       '<script src="/portal_title.js"></script>', 'id="justwatch-offline-jobs"', '<script src="/justwatch.js"></script>'):
             self.assertIn(needle, html)
         self.assertNotIn('id="justwatch-view-live"', html)
         build = (ROOT / 'build_macos.py').read_text()

@@ -1,0 +1,319 @@
+"""0.5.65: Joyn (films, series, live channels; free and Joyn+). Answers have the shape recorded in
+Björn's HAR (12.11.2026, api.joyn.de/graphql: Navigation, PageOverviewGenre); values are synthetic.
+Playback was not recorded: every title and channel links to joyn.de, nothing plays or is stored."""
+import json
+import sys
+import tempfile
+import unittest
+import urllib.parse
+from pathlib import Path
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+import hls_guard, live_tv, portal_title, streaming  # noqa: E402
+import joyn, joyn_enrichment  # noqa: E402
+
+IMG = 'https://img.joyn.de/ingest/t_001/i_%s.jpg/profile:nextgen-web-heroportrait-243x365'
+
+
+def card(typename, ident, title, path, licences=('AVOD',), genres=('Horror',), markings=(), seasons=None):
+    node = {'id': ident, 'title': title, '__typename': typename, 'description': title + ' Inhalt',
+            'primaryImage': {'id': 'p', 'url': IMG % ident}, 'heroPortrait': {'id': 'h', 'url': IMG % (ident + 'h')},
+            'genres': [{'name': g, 'type': g.upper(), '__typename': 'Genre'} for g in genres],
+            'brands': [{'id': '1', 'title': 'ProSieben', 'logo': {'type': 'BRAND_LOGO', 'url': IMG % 'logo'}}],
+            'path': path, 'licenseTypes': list(licences), 'markings': list(markings), 'languages': [],
+            'ageRating': {'minAge': 12}}
+    if seasons is not None:
+        node['numberOfSeasons'] = seasons
+    return node
+
+
+def brand(title, live_id, path='/channels/x', groups=(), markings=(), quality='HD', radio=False, brand_id='1'):
+    return {'id': brand_id, 'title': title, '__typename': 'Brand', 'path': path, 'isRadio': radio,
+            'logo': {'type': 'BRAND_LOGO', 'url': IMG % live_id},
+            'livestream': {'id': live_id, 'title': title, 'quality': quality, 'liveStreamGroups': list(groups),
+                           'markings': list(markings)} if live_id else None, 'audioStreams': []}
+
+
+def lane(*paths):
+    return {'blocks': [{'headline': 'Genres', 'assets': [{'__typename': 'GenreItem', 'path': p, 'title': p} for p in paths]}]}
+
+
+NAVIGATION = {'data': {'navigation': [], 'mediatheken': {'blocks': []},
+                       'liveTv': [brand('Das Erste', 'daserste-de-hd', '/channels/das-erste', ['PUBLIC_VALUE'], brand_id='165'),
+                                  brand('ProSieben', 'prosieben-de', '/mediatheken/prosieben', quality='SD'),
+                                  brand('ProSieben FUN', 'prosiebenfun-de-hd', None, markings=['PLUS'], brand_id='1000'),
+                                  brand('Radio', 'radio-x', radio=True),
+                                  brand('DYN Sport Mix', None, '/channels/dyn')],
+                       'movieGenre': lane('/filme/genre/horror'),
+                       'seriesGenre': lane('/serien/genre/comedy', '/bad/path')}}
+GENRES_PATHS = {'data': {'movies': lane('/filme/genre/horror'), 'series': {'blocks': []},
+                         'plusMovies': lane('/plus/filme/genre/thriller'), 'plusSeries': None}}
+
+
+def page(path, assets):
+    return {'data': {'page': {'id': 'o1', 'path': path, 'title': 'x', 'blocks': [{'assets': assets}]}}}
+
+
+HORROR_1 = [card('Movie', 'b_cloverfield%02d' % i, 'Film %02d' % i, '/filme/film-%02d' % i) for i in range(32)]
+HORROR_2 = [card('Movie', 'b_last', 'Letzter Film', '/filme/letzter'),
+            card('Compilation', 'c_x', 'Sammlung', '/compilation/x'),
+            card('Movie', 'b_rent', 'Unbekannte Lizenz', '/filme/rent', licences=('OTHER',))]
+COMEDY = [card('Series', 'a_stromberg', 'Stromberg', '/serien/stromberg', genres=('Comedy',), seasons=5),
+          card('Movie', 'b_cloverfield00', 'Film 00', '/filme/film-00', genres=('Komödie',))]
+THRILLER = [card('Movie', 'b_plus', 'Plus-Film', '/filme/plus-film', licences=('SVOD',), genres=('Thriller',)),
+            card('Movie', 'b_cloverfield01', 'Film 01', '/filme/film-01', licences=('SVOD',))]
+
+
+class Api:
+    def __init__(self, fail=None):
+        self.calls, self.fail = [], fail or {}
+
+    def __call__(self, operation, variables=None):
+        self.calls.append((operation, variables))
+        if operation in self.fail:
+            return self.fail[operation]
+        if operation == 'Navigation':
+            return NAVIGATION
+        if operation == 'GenresPaths':
+            return GENRES_PATHS
+        path, offset = variables['path'], variables['offset']
+        assert variables['first'] == 32
+        return page(path, {('/filme/genre/horror', 0): HORROR_1, ('/filme/genre/horror', 32): HORROR_2,
+                           ('/serien/genre/comedy', 0): COMEDY,
+                           ('/plus/filme/genre/thriller', 0): THRILLER}.get((path, offset), []))
+
+
+class JoynTest(unittest.TestCase):
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def load(self, api=None):
+        return joyn.sync(self.root, request=api or Api(), now=1794500000.0, gap=0)
+
+    def test_query_url_is_built_like_the_website(self):
+        url = joyn.query_url('PageOverviewGenre', {'first': 32, 'path': '/filme/genre/horror', 'offset': 0})
+        q = urllib.parse.parse_qs(urllib.parse.urlsplit(url).query)
+        self.assertTrue(url.startswith('https://api.joyn.de/graphql?operationName=PageOverviewGenre'))
+        self.assertEqual(json.loads(q['variables'][0]), {'first': 32, 'path': '/filme/genre/horror', 'offset': 0})
+        self.assertEqual(json.loads(q['extensions'][0])['persistedQuery']['sha256Hash'], joyn.HASHES['PageOverviewGenre'])
+        self.assertEqual(q['enable_user_location'], ['true'])
+        self.assertNotIn('variables', urllib.parse.parse_qs(urllib.parse.urlsplit(joyn.query_url('Navigation')).query))
+        h = joyn.headers()
+        self.assertEqual((h['Joyn-Platform'], h['Joyn-Country'], h['x-api-key']), ('web', 'DE', joyn.API_KEY))
+        with self.assertRaises(ValueError):
+            joyn.query_url('Unbekannt')
+
+    def test_sync_free_and_plus_catalogue_and_channels(self):
+        api = Api()
+        result = self.load(api)
+        self.assertTrue(result['ok'], result)
+        self.assertFalse(result['partial'])
+        # 33 free films (2 pages, compilation and unknown licence dropped) + 1 Joyn+ film; 1 series
+        self.assertEqual((result['movies'], result['series'], result['channels']), (34, 1, 3))
+        self.assertEqual(result['plus'], 2)            # Plus film + Plus channel
+        paths = [v['path'] for op, v in api.calls if op == 'PageOverviewGenre']
+        self.assertNotIn('/bad/path', paths)
+        self.assertEqual(paths.count('/filme/genre/horror'), 2)    # navigation and GenresPaths deduplicated
+        movies = {r['id']: r for r in joyn.listing(self.root, 'movies', limit='all')['items']}
+        free = movies['m.b_cloverfield01']
+        self.assertEqual(free['offer'], 'free')       # free listing wins over the Joyn+ genre page
+        # 0.5.83: the offer is no category any more, but still a filter value.
+        self.assertNotIn('Joyn (kostenlos)', free['categories'])
+        self.assertEqual(free['offer_label'], 'Joyn (kostenlos)')
+        plus = movies['m.b_plus']
+        self.assertEqual((plus['offer'], plus['category']), ('plus', 'Joyn+'))
+        self.assertEqual(plus['offer_label'], 'Joyn+')
+        self.assertEqual(plus['web_url'], 'https://www.joyn.de/filme/plus-film')
+        self.assertEqual(plus['rating'], 'FSK 12')
+        self.assertEqual((plus['playable'], plus['drm']), (0, 1))
+        self.assertTrue(plus['poster'].startswith('https://img.joyn.de/'))
+        self.assertIn('Komödie', movies['m.b_cloverfield00']['genre'])   # genres of all pages collected
+        only_plus = joyn.listing(self.root, 'movies', genre='Joyn+', limit='all')
+        self.assertEqual([r['id'] for r in only_plus['items']], ['m.b_plus'])
+        series = joyn.listing(self.root, 'series')['items'][0]
+        self.assertEqual((series['id'], series['seasons'], series['brand']), ('s.a_stromberg', 5, 'ProSieben'))
+        live = joyn.listing(self.root, 'live')['items']
+        self.assertEqual([c['id'] for c in live], ['c.daserste-de-hd', 'c.prosieben-de', 'c.prosiebenfun-de-hd'])
+        # 0.5.90: every channel opens its own player page (channel_id = Brand.id), never the bare live page.
+        self.assertEqual([c['web_url'] for c in live], ['https://www.joyn.de/play/live-tv?channel_id=165',
+                                                         'https://www.joyn.de/play/live-tv?channel_id=1',
+                                                         'https://www.joyn.de/play/live-tv?channel_id=1000'])
+        self.assertEqual(live[2]['offer'], 'plus')
+        st = joyn.state(self.root)
+        self.assertEqual((st['last_result'], st['movies'], st['playable']), ('complete', 34, 0))
+
+    def test_unknown_persisted_query_is_explained(self):
+        api = Api({'Navigation': {'errors': [{'message': 'PersistedQueryNotFound'}]}})
+        result = self.load(api)
+        self.assertFalse(result['ok'])
+        self.assertIn('PersistedQueryNotFound', result['error'])
+        self.assertEqual(joyn.state(self.root)['last_result'], 'failed')
+
+    def test_failed_genre_page_keeps_the_rest(self):
+        class Broken(Api):
+            def __call__(self, operation, variables=None):
+                if variables and variables.get('path') == '/serien/genre/comedy':
+                    raise OSError('timeout')
+                return super().__call__(operation, variables)
+        result = self.load(Broken())
+        self.assertTrue(result['ok'])
+        self.assertTrue(result['partial'])
+        self.assertEqual(result['series'], 0)
+        self.assertIn('teilweise', joyn.state(self.root)['last_error'])
+
+    def test_rotation_hides_titles_of_older_runs(self):
+        self.load()
+        later = Api()
+        later_horror = page('/filme/genre/horror', HORROR_2[:1])
+        later.fail = {}
+        orig = later.__call__
+
+        def call(operation, variables=None):
+            if variables and variables.get('path') == '/filme/genre/horror':
+                return later_horror
+            return orig(operation, variables)
+        joyn.sync(self.root, request=call, now=1794600000.0, gap=0)
+        ids = {r['id'] for r in joyn.listing(self.root, 'movies', limit='all')['items']}
+        self.assertIn('m.b_last', ids)
+        self.assertNotIn('m.b_cloverfield05', ids)
+
+    def test_playback_is_refused_and_details_link_to_joyn(self):
+        self.load()
+        with self.assertRaises(hls_guard.DrmProtected):
+            joyn.play_source(self.root, 'm.b_plus')
+        with self.assertRaises(hls_guard.DrmProtected):
+            streaming.resolve(None, joyn='c.prosieben-de', root=self.root)
+        with self.assertRaises(ValueError):
+            joyn.play_source(self.root, '../etc')
+        m = portal_title.model(self.root, 'joyn', 'm.b_plus')
+        self.assertFalse(m['playable'])
+        self.assertFalse(m['offline']['allowed'])
+        self.assertEqual(m['web_url'], 'https://www.joyn.de/filme/plus-film')
+        self.assertIn(['Angebot', 'Joyn+ (mit Joyn-Konto)'], m['provider_facts'])
+        channel = portal_title.model(self.root, 'joyn', 'c.daserste-de-hd')
+        self.assertFalse(channel['playable'])
+        series = portal_title.model(self.root, 'joyn', 's.a_stromberg')
+        self.assertEqual(series['episodes'], [])
+        self.assertTrue(any('bei Joyn ansehen' in n for n in series['notes']))
+
+    def test_live_tv_tab_merges_joyn_by_station_as_link(self):
+        self.load()
+        found = live_tv.joyn_channels(self.root)
+        first = found[0]
+        self.assertEqual((first['key'], first['play'], first['link']),
+                         ('daserste', None, 'https://www.joyn.de/play/live-tv?channel_id=165'))
+        self.assertIn('Joyn+', next(c for c in found if c['id'] == 'c.prosiebenfun-de-hd')['quality'])
+        self.assertIn(('joyn', 'Joyn'), live_tv.PROVIDERS)
+
+    def test_image_and_link_guards(self):
+        self.assertEqual(joyn.image('https://evil.example/x.jpg'), '')
+        self.assertEqual(joyn.image('http://img.joyn.de/x.jpg'), '')
+        self.assertEqual(joyn.web_url('/filme/../../x'), '')
+        self.assertEqual(joyn.web_url('javascript:alert(1)'), '')
+        self.assertIsNone(joyn.item_from(card('Movie', 'b_x', 'X', '/filme/x', licences=())))
+        self.assertEqual(joyn.item_from(card('Movie', 'b_x', 'X', '/filme/x', licences=()), plus_page=True)['offer'], 'plus')
+
+    def test_enrichment_spec_uses_joyn_tables(self):
+        self.load()
+        self.assertEqual(joyn_enrichment.SPEC.items, 'joyn_items')
+        pending = joyn_enrichment.pending(self.root, limit=5)
+        self.assertTrue(pending)
+        self.assertTrue(all(not str(p).startswith('c.') for p in pending))
+
+
+class JoynProgress(unittest.TestCase):
+    """0.5.68: Björn saw an empty Joyn platform while the first catalogue run was still loading."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def test_channels_and_titles_are_visible_during_the_run(self):
+        seen = []
+
+        class Watch(Api):
+            def __call__(inner, operation, variables=None):
+                if operation == 'PageOverviewGenre' and variables['path'] == '/serien/genre/comedy':
+                    seen.append((len(joyn.listing(self.root, 'live')['items']),
+                                 joyn.listing(self.root, 'movies', limit='all')['total']))
+                return super().__call__(operation, variables)
+        joyn.sync(self.root, request=Watch(), now=1794500000.0, gap=0)
+        self.assertEqual(seen, [(3, 33)])
+
+    def test_ignored_offset_ends_the_genre_after_one_repeat(self):
+        class Same(Api):
+            def __call__(inner, operation, variables=None):
+                if operation == 'PageOverviewGenre':
+                    inner.calls.append((operation, variables))
+                    return page(variables['path'], HORROR_1)
+                return super().__call__(operation, variables)
+        api = Same()
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertTrue(result['ok'])
+        per_path = {}
+        for op, v in api.calls:
+            if op == 'PageOverviewGenre':
+                per_path[v['path']] = per_path.get(v['path'], 0) + 1
+        self.assertTrue(all(n == 2 for n in per_path.values()), per_path)   # not MAX_PAGES
+
+
+
+class JoynRetry(unittest.TestCase):
+    """0.5.85: Björn's diagnosis of 13.11.2026: one film genre stopped early (step 2 of 15 took 85 s),
+    the catalogue counted as "nur teilweise geladen" and lost 70 films, without a reason."""
+
+    def setUp(self):
+        self.tmp = tempfile.TemporaryDirectory()
+        self.root = Path(self.tmp.name)
+
+    def tearDown(self):
+        self.tmp.cleanup()
+
+    def flaky(self, failures):
+        """Api whose second horror page fails the first ``failures`` times it is asked."""
+        class Flaky(Api):
+            left = failures
+
+            def __call__(inner, operation, variables=None):
+                if operation == 'PageOverviewGenre' and variables['path'] == '/filme/genre/horror' and variables['offset'] == 32 and inner.left:
+                    inner.left -= 1
+                    inner.calls.append((operation, variables))
+                    raise TimeoutError('timed out')
+                return super().__call__(operation, variables)
+        return Flaky()
+
+    def test_one_failed_page_is_asked_again_at_once(self):
+        api = self.flaky(1)
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertEqual((result['partial'], result['movies']), (False, 34))
+        self.assertEqual(joyn.state(self.root)['last_result'], 'complete')
+
+    def test_a_genre_that_failed_twice_runs_again_at_the_end(self):
+        api = self.flaky(2)
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertEqual((result['partial'], result['movies']), (False, 34))
+        order = [v['path'] for op, v in api.calls if op == 'PageOverviewGenre']
+        self.assertEqual(order[-2:], ['/filme/genre/horror', '/filme/genre/horror'])     # after every other genre
+        self.assertEqual(joyn.state(self.root)['last_error'], '')
+
+    def test_what_still_fails_is_named_and_tried_again_within_the_hour(self):
+        api = self.flaky(99)
+        result = joyn.sync(self.root, request=api, now=1794500000.0, gap=0)
+        self.assertTrue(result['partial'])
+        self.assertEqual(result['movies'], 33)          # first page of the genre and the rest stay
+        state = joyn.state(self.root)
+        self.assertEqual(state['last_result'], 'partial')
+        self.assertRegex(state['last_error'], r'^Katalog nur teilweise geladen: Genre-Seite \d+ von \d+ \(Seite 2: Joyn ist nicht erreichbar')
+        self.assertEqual(state['next_attempt'], 1794500000.0 + 3600)
+
+
+if __name__ == '__main__':
+    unittest.main()

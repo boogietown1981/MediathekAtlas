@@ -7,3 +7,5 @@ __pycache__/
 *.log
 build/
 dist/
+# Installationspakete gehören nicht ins Git (0.5.84); sie liegen in den Projektdateien unter releases/<Version>/.
+downloads/

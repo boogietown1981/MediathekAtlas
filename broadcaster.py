@@ -27,7 +27,7 @@ GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau|tagesthemen|nachrichten|aktuell|h
              (re.compile(r'(?i)\b(?:doku\w*|dokumentation\w*|reportage\w*|terra x|planet e)\b'),'Dokumentation'),
              (re.compile(r'(?i)\b(?:magazin\w*|servicezeit|ratgeber|verbraucher\w*|markt)\b'),'Magazin'),
              (re.compile(r'(?i)\b(?:talk\w*|gespräch\w*|interview\w*|stöckl|lanz|maischberger|illner)\b'),'Talk'),
-             (re.compile(r'(?i)\b(?:kinder\w*|kika|logo!|sendung mit der maus)\b'),'Kinder & Familie'),
+             (re.compile(r'(?i)\b(?:kinder\w*|kika|logo!|sendung mit der maus)\b'),'Kinder'),
              (re.compile(r'(?i)\b(?:kultur\w*|literatur\w*|philosophie|scobel|musik\w*|konzert\w*)\b'),'Kultur')]
 _CACHE={};_LOCK=threading.Lock();_REQUEST_LOCK=threading.Lock();_PAUSED={};_TOKEN={};_LAST=[0.0]
 CACHE_SECONDS=86400;PAUSE_SECONDS=900;MIN_INTERVAL=.5

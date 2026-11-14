@@ -4,9 +4,10 @@
 (() => {
   'use strict';
   window.MediathekAtlasJustWatch = window.AtlasPortalPanel?.({
-    key: 'justwatch', name: 'JustWatch TV', dialogPrefix: 'atlas-jw', dialogId: 'atlas-justwatch-detail', short: 'JustWatch', live: false,
+    key: 'justwatch', name: 'JustWatch TV', short: 'JustWatch', live: false,
     play: () => window.playJustWatch, externalLink: 'Bei JustWatch ansehen',
-    notPlayable: 'JustWatch gibt diesen Titel nicht für externe Player frei; Ansehen und Speichern nur auf der JustWatch-Seite.',
+    nightOffline: true,
+    notPlayable: 'JustWatch gibt diesen Titel gerade nicht frei (oft Jugendschutz: nur 0 bis 6 Uhr). Der Download lässt sich für heute Nacht vormerken.',
     offlineNote: days => `JustWatch TV erlaubt ${days} Tage Offline-Nutzung. Die Datei enthält die Werbung, die JustWatch ausliefert.`
   }) || undefined;
 })();

@@ -13,6 +13,7 @@ from unittest import mock
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import core, downloads, pluto, pluto_downloads as pd, netzkino_downloads as nd  # noqa: E402
 from test_v0536_pluto import Fixture, MOVIE, SERIES, TOKEN  # noqa: E402
@@ -54,7 +55,7 @@ class QueueTests(OfflineFixture):
         self.assertTrue(r['created'])
         self.assertEqual(job['target'], str(core.target(self.media, job['metadata'], 'pluto:' + MOVIE['_id'])))
         self.assertEqual(Path(job['target']).relative_to(self.media.resolve()).as_posix(),
-                         'Filme/Arrival (2015)/Arrival (2015).mkv')
+                         'Filme/Arrival (2015)/Arrival - (2015).mkv')
         self.assertEqual((job['origin'], job['pluto_id'], job['source']['_resolver']), ('pluto', MOVIE['_id'], 'pluto'))
         self.assertEqual((job['license']['kind'], job['license']['days']), ('pluto_offline', 30))
         self.assertEqual(job['metadata']['provider'], 'Pluto TV')
@@ -148,8 +149,8 @@ class HlsDownloadTests(OfflineFixture):
         with mock.patch.object(pd, 'resolve', return_value=url), mock.patch('artwork.save_image', return_value=True):
             downloads.run(job['source'], job['metadata'], job['root'], job['quality'],
                           lambda state, *a, **k: states.append(state), lambda: False)
-        target = Path(job['target'])
-        self.assertTrue(target.is_file())
+        target = core.existing_download(job['target'])   # 0.5.42: name + resolution/codec
+        self.assertTrue(target and target.is_file())
         self.assertTrue(target.with_suffix('.nfo').is_file())
         info = downloads.probe(target)
         self.assertEqual(sorted(s['codec_type'] for s in info['streams']), ['audio', 'video'])
@@ -183,12 +184,14 @@ class HlsDownloadTests(OfflineFixture):
 class WiringTests(unittest.TestCase):
     def test_server_and_ui(self):
         s = (ROOT / 'server.py').read_text()
-        self.assertIn('pluto_downloads.enqueue(c,ROOT,', s)
+        self.assertTrue(__import__('_wiring').wired('pluto_downloads.enqueue(c,ROOT,'))
         self.assertIn("'/api/offline-download-action'", s)
         # 0.5.40: the panel is the shared portal_panel.js, pluto.js configures it with key 'pluto'.
         js = (ROOT / 'web' / 'portal_panel.js').read_text()
         self.assertIn("key: 'pluto'", (ROOT / 'web' / 'pluto.js').read_text())
-        self.assertIn("K + '-download-add'", js)
+        # 0.5.47: the tile control is the shared offline_button.js.
+        self.assertIn("AtlasOffline?.control(K, item.id", js)
+        self.assertIn("source + '-download-add'", (ROOT / 'web' / 'offline_button.js').read_text())
         self.assertIn("'offline-download-action'", js)
         self.assertIn("item.kind !== 'channel'", js)
         self.assertIn('id="pluto-offline-jobs"', (ROOT / 'web' / 'index.html').read_text())

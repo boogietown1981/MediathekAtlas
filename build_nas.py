@@ -7,14 +7,14 @@ Pure Python, therefore one architecture-independent package per platform
   python3 build_nas.py --qbuild /path/qbuild  # additionally the .qpkg via QNAP's QDK
 Build-only dependency: Pillow (icons).
 """
-import argparse,hashlib,io,shutil,subprocess,sys,tarfile,time
+import argparse,hashlib,io,shutil,subprocess,tarfile,time
 from pathlib import Path
 from version import VERSION
 ROOT=Path(__file__).resolve().parent
 PACKAGING=ROOT/'packaging'
 NAME='MediathekAtlas';PORT=8730;SPK_BUILD='0001'
 # Everything the server needs at runtime; build helpers stay out of packages.
-BUILD_ONLY={'build_icons.py','build_macos.py','build_nas.py'}
+BUILD_ONLY={'build_icons.py','build_macos.py','build_nas.py','build_desktop.py'}
 APP_DIRS=('web','vendor','assets')
 
 def app_files():

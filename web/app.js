@@ -1,3 +1,19 @@
+// 0.5.57: script errors are sent to the local diagnosis, so a view that stays empty can be explained.
+(()=>{let sent=0;const report=(message,source,line)=>{if(sent>=5)return;sent+=1;try{fetch('/api/client-error',{method:'POST',headers:{'Content-Type':'application/json','X-Atlas-Token':document.querySelector('meta[name=atlas-token]')?.content||''},body:JSON.stringify({message:String(message||''),source:String(source||'').split('/').pop(),line:String(line||''),view:String(window.atlasCurrentView?.()||'')})}).catch(()=>{});}catch(e){}};
+window.atlasReportError=m=>report(m,'','');
+// 0.5.72: the first script error is kept, so a message such as "Der Player ist nicht geladen" can name its cause.
+window.atlasScriptErrors=[];const keep=(m,f,l)=>{if(window.atlasScriptErrors.length<5)window.atlasScriptErrors.push(String(m||'')+(f?' ('+String(f).split('/').pop()+(l?':'+l:'')+')':''));};
+// 0.5.73: a script of the page that did not arrive is fetched again (up to three times, with a pause) from its second
+// address /code/<name>; only when that fails as well the cause is kept for the message.
+const tries={},again=tag=>{let name;try{const u=new URL(tag.src,location.href);if(u.origin!==location.origin)return false;name=tag.dataset.name||(u.pathname.match(/^\/([a-z_.]+?)\.js$/)||[])[1];}catch(e){return false;}
+ if(!name||name==='hls.min')return false;tries[name]=(tries[name]||0)+1;if(tries[name]>3)return false;
+ setTimeout(()=>{const s=document.createElement('script');s.src='/code/'+(tries[name]>1?'~'+[...name].reverse().join(''):name)+'?r='+tries[name];s.dataset.name=name;s.async=false;s.onload=()=>report('Skript nachgeladen: '+name+'.js (Versuch '+tries[name]+')','','');document.head.appendChild(s);},300*tries[name]);return true;};
+window.addEventListener('error',e=>{if(e.message)keep(e.message,e.filename,e.lineno);else if(e.target&&e.target.tagName==='SCRIPT'&&!again(e.target)){const src=e.target.src,i=window.atlasScriptErrors.length;keep('Skript nicht ladbar',(e.target.dataset.name?e.target.dataset.name+'.js':src),'');
+ // why: the server's answer, or the browser's refusal (an extension or security program blocks the address)
+ fetch(src,{cache:'no-store'}).then(r=>r.ok?'Server liefert die Datei, der Browser führt sie nicht aus':'Server antwortet mit HTTP '+r.status,x=>'Anfrage vom Browser abgelehnt: '+(x&&x.message||x)+' – blockiert eine Erweiterung oder ein Schutzprogramm die Adresse?').then(why=>{if(window.atlasScriptErrors[i])window.atlasScriptErrors[i]+=' – '+why;report('Skript nicht ladbar: '+(e.target.dataset.name||src.split('/').pop())+' – '+why,'','');});}},true);
+window.atlasPlayerMissing=()=>'Der Player ist nicht geladen'+(window.atlasScriptErrors.length?' (Ursache: '+window.atlasScriptErrors[0]+')':'')+'. Bitte die Seite neu laden; bleibt es dabei, Diagnose senden.';
+window.addEventListener('error',e=>report(e.message,e.filename,e.lineno));
+window.addEventListener('unhandledrejection',e=>report('Promise: '+(e.reason?.message||e.reason),'',''));})();
 let providerPauses={},lastArtwork=-1;const artworkRequested=new Set();
 function visibleWarnings(warnings){return (warnings||[]).filter(w=>!(providerPauses.omdb?.paused&&/^OMDb(?::| HTTP)/i.test(w)));}
 function countLabel(value){return typeof value==='number'&&Number.isFinite(value)?value.toLocaleString('de-DE'):'–';}
@@ -7,10 +23,40 @@ function el(tag,text,cls){const n=document.createElement(tag);if(text!==undefine
 // Confirmations disappear on their own; errors stay until closed or the cause is gone.
 let noticeTimer=0,noticeSource='';
 function notice(s,kind='info',source=''){clearTimeout(noticeTimer);const box=$('notice');box.replaceChildren();noticeSource=s?source:'';box.hidden=!s;if(!s)return;box.className=kind==='error'?'notice-error':'';box.append(el('span',s));const close=el('button','×','notice-close');close.type='button';close.title='Hinweis schließen';close.setAttribute('aria-label','Hinweis schließen');close.onclick=()=>notice('');box.append(close);if(kind!=='error')noticeTimer=setTimeout(()=>notice(''),7000);}
-async function request(path,data){const control=new AbortController(),timer=setTimeout(()=>control.abort(),60000);try{return await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Atlas-Token':token},body:data?JSON.stringify(data):undefined,signal:control.signal});}catch(e){throw Error(e.name==='AbortError'?'Der lokale Dienst antwortet seit 60 Sekunden nicht. Erneuter Versuch folgt.':'Verbindung zum lokalen Dienst unterbrochen. Falls sie nicht zurückkehrt: MediathekAtlas erneut öffnen.');}finally{clearTimeout(timer);}}
+// 0.5.41: open requests are tracked so a waiting panel can say what the local service is still busy with.
+const pendingRequests=new Map();let pendingSeq=0;
+window.atlasPendingRequests=()=>[...pendingRequests.values()].map(r=>({path:r.path,seconds:Math.round((Date.now()-r.started)/1000)})).sort((a,b)=>b.seconds-a.seconds);
+// Shows in `node` how long a panel has been waiting and which other requests are still open.
+window.atlasWaiting=(node,label)=>{const started=Date.now();let stopped=false;const tick=()=>{if(stopped||!node)return;const secs=Math.round((Date.now()-started)/1000);if(secs>=4){const others=window.atlasPendingRequests().filter(r=>r.seconds>=4).slice(0,4).map(r=>r.path+' '+r.seconds+' s').join(', ');node.textContent=label+' … wartet seit '+secs+' s auf den lokalen Dienst'+(others?' · noch offen: '+others:'');node.dataset.phase='waiting';}};const id=setInterval(tick,1000);return ()=>{stopped=true;clearInterval(id);};};
+async function request(path,data){const control=new AbortController(),timer=setTimeout(()=>control.abort(),60000),pid=++pendingSeq;pendingRequests.set(pid,{path:String(path).split('?')[0],started:Date.now()});try{return await fetch('/api/'+path,{method:data?'POST':'GET',headers:{'Content-Type':'application/json','X-Atlas-Token':token},body:data?JSON.stringify(data):undefined,signal:control.signal});}catch(e){throw Error(e.name==='AbortError'?'Der lokale Dienst antwortet seit 60 Sekunden nicht. Erneuter Versuch folgt.':'Verbindung zum lokalen Dienst unterbrochen. Falls sie nicht zurückkehrt: MediathekAtlas erneut öffnen.');}finally{clearTimeout(timer);pendingRequests.delete(pid);}}
 async function api(path,data){const r=await request(path,data);const d=await r.json();if(r.status===401&&d.login){location.reload();throw Error('Anmeldung abgelaufen. Bitte erneut anmelden.');}if(!r.ok)throw Error(d.error||'Anfrage fehlgeschlagen');return d;}
 async function busy(button,fn){const old=button.textContent;button.disabled=true;button.textContent='Bitte warten …';try{await fn();}catch(e){notice(e.message,'error');if($('editor').open)$('lookup-status').textContent=e.message;}finally{button.disabled=false;button.textContent=old;}}
-for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>{for(const v of ['discover','portals','review','queue','subscriptions','settings','logs'])$(v).hidden=v!==b.dataset.view;$('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n===b));if(b.dataset.view==='review'){loadReview();loadProviderStats();loadRecognition();}if(b.dataset.view==='subscriptions')loadSubscriptions();if(b.dataset.view==='portals')loadPortals();};
+// 0.5.55: Dashboard (films and series only), Plattformen, Live-TV, Downloads and one area
+// "Verwaltung" whose tabs hold everything that manages the app (tasks, status, presentation,
+// assignment, subscriptions, work catalogue, log, settings).
+const ATLAS_VIEWS=['discover','portals','livetv','queue','admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
+const ATLAS_ADMIN_VIEWS=['admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
+const ATLAS_HEADINGS={discover:['DASHBOARD','Filme und Serien aller Plattformen'],portals:['PLATTFORMEN','Kataloge der einzelnen Anbieter'],livetv:['LIVE-TV','Live-Sender aller Anbieter'],queue:['DOWNLOADS','Downloads und Offline-Kopien']};
+let atlasView='discover';
+window.atlasCurrentView=()=>atlasView;
+function showView(name){
+ if(!ATLAS_VIEWS.includes(name))return;
+ atlasView=name;const inAdmin=ATLAS_ADMIN_VIEWS.includes(name);
+ for(const v of ATLAS_VIEWS)if($(v))$(v).hidden=v!==name;
+ $('title-view').hidden=true;$('title-view').replaceChildren();document.body.classList.remove('title-open');
+ document.querySelectorAll('.nav').forEach(n=>n.classList.toggle('active',n.dataset.view===name||(inAdmin&&n.dataset.adminRoot==='1')));
+ if($('admin-tabs')){$('admin-tabs').hidden=!inAdmin;document.querySelectorAll('.admin-tab').forEach(n=>{const on=n.dataset.view===name;n.classList.toggle('primary',on);n.setAttribute('aria-pressed',String(on));});}
+ const head=inAdmin?['VERWALTUNG','Einstellungen, Darstellung und Aufgaben']:ATLAS_HEADINGS[name];
+ if(head){if($('heading-eyebrow'))$('heading-eyebrow').textContent=head[0];$('heading').textContent=head[1];}
+ if(name==='review'){loadReview();loadProviderStats();loadRecognition();}
+ if(name==='subscriptions')loadSubscriptions();
+ if(name==='livetv')window.AtlasLiveTV?.refresh();
+ if(name==='portals')portalView($('portals').dataset.platform||'overview');
+ if(name==='legacy'){catalogKey='';loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
+ document.dispatchEvent(new CustomEvent('atlas-view',{detail:{view:name}}));
+}
+window.atlasShowView=showView;
+for(const b of document.querySelectorAll('[data-view]'))b.onclick=()=>showView(b.dataset.view);
 function openSubscriptionView(){
  const tab=document.querySelector('[data-view="subscriptions"]');
  if(tab)tab.click();
@@ -100,6 +146,12 @@ function availabilityLabel(source){
  return (date.getTime()-Date.now()<=3*86400000?'Bald nicht mehr verfügbar · bis ':'Verfügbar bis ')+label+provenance;
 }
 function linkQuality(link){return link.quality+' (Senderangabe)'+(link.height_hint?' · '+link.height_hint+'p laut Dateiname':' · Pixelauflösung nicht angegeben');}
+// 0.5.70 (Björn, 12.11.2026): the versions of a broadcaster title as buttons - one click opens the
+// download dialogue with this version chosen. Files only; streams cannot be saved by the app.
+function downloadVersions(item){const box=el('div',undefined,'download-versions');const KEY={HD:'hd',Standard:'standard',Klein:'low'};
+ const usable=(item.links||[]).filter(l=>l.supported&&/^https?:\/\//.test(l.url));
+ usable.forEach((l,i)=>{const b=el('button','⬇ '+linkQuality(l));b.type='button';b.title='Diese Fassung prüfen und herunterladen';b.onclick=()=>edit(item,i===0?'best':KEY[l.quality]||'best');box.append(b);});
+ return usable.length?box:null;}
 function sourceLinks(links){const box=el('div',undefined,'source-links');box.append(el('strong','Verfügbare Dateien'));
  for(const link of links||[]){if(!/^https?:\/\//.test(link.url))continue;
  const row=el('div',undefined,'source-link'),a=el('a',linkQuality(link));a.href=link.url;a.target='_blank';a.rel='noopener noreferrer';a.title=link.url;
@@ -129,6 +181,7 @@ else{const files=el('details',undefined,'file-details');files.append(el('summary
 const details=el('details',undefined,'alternatives');details.append(el('summary','Weitere Fassungen ('+item.offer_count+')'));details.ontoggle=async()=>{if(!details.open||details.dataset.loaded)return;try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));for(const a of d.items){const box=el('div',undefined,'alternative');box.append(el('strong',a.source.channel+' · '+(a.special||'Regulär')+(a.available?'':' · nicht mehr gelistet')+(a.same_media_count>1?' · '+a.same_media_count+' identische Einträge gebündelt':'')));if(a.source.available_until)box.append(el('small',availabilityLabel(a.source)));for(const l of a.links){const line=el('p',linkQuality(l)+' · '+(l.supported?'Direktdatei':'Stream, derzeit kein Download'));if(/^https?:\/\//.test(l.url)){const link=el('a','Quelllink');link.href=l.url;link.target='_blank';link.rel='noopener noreferrer';line.append(' · ',link);}box.append(line);}const choose=el('button','Diese Fassung prüfen');choose.onclick=()=>edit(a);box.append(choose);details.append(box);}details.dataset.loaded='1';}catch(e){notice(e.message,'error');}};body.append(details);}
 if(playable(item)){const play=el('button',item.series_parent?'▶ Serie abspielen':'▶ Abspielen','play-button');play.title=item.downloaded&&item.file_state!=='missing'?'Lokale Datei abspielen':'Online-Stream des Senders abspielen';play.onclick=()=>playMedia(item,filters.show?items:null);body.append(play);}
 const detail=el('button',item.series_parent?'Serienseite':'Details & Bilder','detail-link');detail.onclick=()=>openTitle(item);body.append(detail);art.classList.add('clickable');art.title='Titelseite öffnen';art.onclick=()=>openTitle(item);heading.classList.add('clickable');heading.onclick=()=>openTitle(item);card.append(art,body);host.append(card);}}
+let catalogReloaded=0;
 async function loadCatalog(){
  const snapshot={...filters},pageOffset=offset;
  const q=new URLSearchParams({query:$('query').value,kind:snapshot.kind,genre:snapshot.genre,show:snapshot.show,archive:snapshot.archive?'1':'0',state:$('state-filter').value,sort:$('sort-filter').value,collection:$('collection-filter').value,downloaded:$('download-filter').value,offset:pageOffset});
@@ -202,7 +255,9 @@ function catalogProgress(c){
    for(const [label,count,key] of values){const tag=importBox.querySelector('[data-import-key="'+key+'"]');if(tag)tag.textContent=label+' · '+countLabel(count||0);}
  }else importBox.replaceChildren();
  const rev=[c.offers,c.matched,c.identified,c.review,c.works,c.formats].join(':');
- if(rev!==catalogRevision&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
+ // 0.5.55: the counters change every few seconds while recognition runs. Reloading the work catalogue on each
+ // change kept one slow /api/catalog request running all the time (diagnosis 12.11.2026: 239 requests of 7-31 s).
+ if(rev!==catalogRevision&&atlasView==='legacy'&&Date.now()-catalogReloaded>60000&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;catalogReloaded=Date.now();loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
  const workers=$('metadata-workers-status');
  if(workers){
    // Keep each status value in a separate adaptive chip.
@@ -245,7 +300,7 @@ function catalogProgress(c){
 const fields=['title','kind','year','season','episode','episode_title','description'];
 function fill(){$('genres').value=(meta.genres||[]).join(', ');for(const f of fields)$(f).value=meta[f]??'';$('confirmed').checked=false;$('preview').textContent='Bitte Zielnamen prüfen.';}
 function readMeta(){const out={...meta};for(const f of fields)out[f]=$(f).value;for(const f of ['year','season','episode'])out[f]=out[f]===''?null:Number(out[f]);out.genres=$('genres').value.split(',').map(x=>x.trim()).filter(Boolean);return out;}
-function edit(item){active=item;meta={...item.metadata};fill();$('source').textContent=[item.source.channel,item.source.topic,item.source.title,item.source.description].filter(Boolean).join(' · ');
+function edit(item,quality){active=item;meta={...item.metadata};fill();if($('quality'))$('quality').value=['best','hd','standard','low'].includes(quality)?quality:'best';$('source').textContent=[item.source.channel,item.source.topic,item.source.title,item.source.description].filter(Boolean).join(' · ');
  const expire=$('availability-before-download');expire.textContent='Ablaufdatum wird, soweit verfügbar, beim Sender geprüft …';
  api('availability?id='+encodeURIComponent(item.id)).then(d=>{
    if(active!==item||!$('editor').open)return;
@@ -257,21 +312,24 @@ for(const f of fields)$(f).addEventListener('input',()=>{$('confirmed').checked=
 function showCandidates(rows){$('candidates').replaceChildren();for(const c of rows){const n=el('div',undefined,'candidate');n.append(el('strong',c.title+' '+(c.year?'('+c.year+')':'')),el('p',c.provider+' · '+(c.kind==='series'?'Serie':'Film')+' · '+c.reason),el('p',evidence(c)+(c.plausibility_issues?.length?' · Prüfung: '+c.plausibility_issues.join('; '):''),'muted'));const b=el('button','Angaben übernehmen');b.onclick=()=>{meta={...c};fill();};n.append(b);$('candidates').append(n);}}
 $('lookup').onclick=e=>busy(e.target,async()=>{$('lookup-status').textContent='Anbieter werden abgefragt …';const d=await api('candidates',{id:active.id,metadata:readMeta()});$('lookup-status').textContent=d.candidates.length+' Kandidaten. '+visibleWarnings(d.warnings).join(' ');showCandidates(d.candidates);});
 $('save-metadata').onclick=e=>busy(e.target,async()=>{await api('save-metadata',{id:active.id,metadata:readMeta()});$('lookup-status').textContent='Metadaten dauerhaft im Katalog gespeichert.';await loadCatalog();await loadTree();if(!$('review').hidden)await loadReview();});
-$('preview-button').onclick=e=>busy(e.target,async()=>{$('preview').textContent=(await api('preview',{id:active.id,metadata:readMeta()})).path;});
+$('preview-button').onclick=e=>busy(e.target,async()=>{$('preview').textContent=(await api('preview',{id:active.id,metadata:readMeta()})).path.replace(/\.mkv$/,' - <Auflösung> - <Codecs>.mkv')+' · Auflösung und Codecs werden nach dem Download gemessen und ergänzt; Cover als „-poster“, Hintergrund als „-backdrop“.';});
 $('metadata').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('download',{id:active.id,metadata:readMeta(),quality:$('quality').value,confirmed:$('confirmed').checked});$('editor').close();notice('Download hinzugefügt. Fortschritt unter Downloads.');await refresh();});};
-$('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked,metadata_workers:Number($('metadata_workers').value),episode_workers:Number($('episode_workers').value),sender_direct_lookup:$('sender_direct_lookup').checked,library_dirs:$('library_dirs').value});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value='';notice('Einstellungen gespeichert.');await refresh();});};
-$('clear-keys').onclick=e=>busy(e.target,async()=>{await api('settings',{clear_tmdb:true,clear_omdb:true,clear_tvdb:true,clear_tvdb_pin:true});await refresh();});
+$('config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{download_dir:$('download_dir').value,tmdb:$('tmdb').value,omdb:$('omdb').value,tvdb:$('tvdb').value,tvdb_pin:$('tvdb_pin').value,fanart:$('fanart').value,fanart_personal:$('fanart_personal').value,auto_catalog:$('auto_catalog').checked,auto_metadata:$('auto_metadata').checked,scan_priority:$('scan_priority').value,complete_series:$('complete_series').checked,metadata_workers:Number($('metadata_workers').value),episode_workers:Number($('episode_workers').value),sender_direct_lookup:$('sender_direct_lookup').checked,library_dirs:$('library_dirs').value});$('tmdb').value=$('omdb').value=$('tvdb').value=$('tvdb_pin').value=$('fanart').value=$('fanart_personal').value='';notice('Einstellungen gespeichert.');await refresh();});};
+$('clear-keys').onclick=e=>busy(e.target,async()=>{await api('settings',{clear_tmdb:true,clear_omdb:true,clear_tvdb:true,clear_tvdb_pin:true,clear_youtube:true,clear_fanart:true,clear_fanart_personal:true});await refresh();});
 const labels={queued:'Wartet',downloading:'Wird heruntergeladen',tagging:'Spuren prüfen & Metadaten einbetten',done:'Fertig',error:'Fehler',cancelled:'Abgebrochen',interrupted:'Durch Neustart unterbrochen',remote:'Auf anderem System',expired:'Offline-Zeitraum abgelaufen · Datei entfernt',removed:'Offline-Kopie gelöscht'};
 function renderRuntime(r){const host=$('runtime-details');host.replaceChildren();for(const k of ['python','ffmpeg','ffprobe']){const t=r[k],box=el('div',undefined,'runtime-item');box.append(el('strong',k+' · '+(t.ok?'Bereit':t.error)),el('p',t.path||'Kein verwendbarer Pfad'),el('small',t.version||''));if(t.failed_candidates?.length)box.append(el('p','Nicht startbar: '+t.failed_candidates.map(x=>x.path).join(', ')));host.append(box);}}
 $('recheck-tools').onclick=e=>busy(e.target,async()=>renderRuntime(await api('tools')));
 let refreshing=false,appStopped=false;
-async function refresh(){if(refreshing||appStopped)return;refreshing=true;try{const d=await api('state');const finished=d.jobs.filter(j=>j.state==='done').map(j=>j.id).join(':');if(finished!==completedRevision){completedRevision=finished;catalogRevision='';}latestSettings=d.settings;renderServer(d.server||{});if(lastArtwork!==(d.artwork_checked||0)){lastArtwork=d.artwork_checked||0;catalogRevision='';}renderImdb(d.imdb);providerPauses=d.provider_pauses||{};renderMetadata(d.metadata,d.settings,providerPauses);if((d.metadata?.checked_session||0)!==lastMetadataChecks){lastMetadataChecks=d.metadata?.checked_session||0;catalogRevision='';}if(d.reclassification?.phase==='running')$('metadata-status').append(el('small','Neuklassifizierung läuft · '+countLabel(d.reclassification.processed)+' Werke verarbeitet. Die Restlaufzeit kann vorübergehend schwanken.','atlas-current-warning'));$('connection-status').hidden=true;catalogProgress(d.catalog);if(!$('config').contains(document.activeElement)){$('auto_catalog').checked=d.settings.auto_catalog;$('auto_metadata').checked=d.settings.auto_metadata;$('scan_priority').value=d.settings.scan_priority||'balanced';$('complete_series').checked=d.settings.complete_series!==false;$('metadata_workers').value=String(d.settings.metadata_workers||2);$('episode_workers').value=String(d.settings.episode_workers||2);$('sender_direct_lookup').checked=d.settings.sender_direct_lookup===true;}renderRuntime(d.runtime);renderMesh(d.mesh,d.settings);$('tools').textContent=d.tools.ffmpeg&&d.tools.ffprobe?'● FFmpeg & ffprobe bereit':'○ Werkzeugprüfung: Einstellungen öffnen';$('jobcount').textContent=d.jobs.filter(j=>['queued','downloading','tagging'].includes(j.state)).length;if(document.activeElement!==$('download_dir'))$('download_dir').value=d.settings.download_dir;if(document.activeElement!==$('library_dirs'))$('library_dirs').value=(d.settings.library_dirs||[]).join('\n');$('key-state').textContent='TMDB: '+(d.settings.tmdb_set?'hinterlegt':'nicht eingerichtet')+' · OMDb: '+(d.settings.omdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB: '+(d.settings.tvdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB-PIN: '+(d.settings.tvdb_pin_set?'hinterlegt':'nicht hinterlegt');const host=$('jobs');host.className='grid job-grid';if(document.activeElement?.closest('.job-file-missing'))return;host.replaceChildren();if(!d.jobs.length)host.append(el('div','Noch keine Downloads. Wähle einen Suchtreffer und prüfe seine Metadaten.','empty'));for(const j of d.jobs)host.append(jobCard(j,d.server||{}));}finally{refreshing=false;}}
+// 0.5.86: while a video plays in the player, the page behind it does not reload its state every 2.5 s
+// (rebuilding lists and tables costs the browser and the local service time the video needs).
+const playerOpen=()=>!!document.getElementById('player')?.open;
+async function refresh(){if(refreshing||appStopped||playerOpen())return;refreshing=true;try{const d=await api('state');const finished=d.jobs.filter(j=>j.state==='done').map(j=>j.id).join(':');if(finished!==completedRevision){completedRevision=finished;catalogRevision='';}latestSettings=d.settings;renderServer(d.server||{});if(lastArtwork!==(d.artwork_checked||0)){lastArtwork=d.artwork_checked||0;catalogRevision='';}renderImdb(d.imdb);providerPauses=d.provider_pauses||{};renderMetadata(d.metadata,d.settings,providerPauses);if((d.metadata?.checked_session||0)!==lastMetadataChecks){lastMetadataChecks=d.metadata?.checked_session||0;catalogRevision='';}if(d.reclassification?.phase==='running')$('metadata-status').append(el('small','Neuklassifizierung läuft · '+countLabel(d.reclassification.processed)+' Werke verarbeitet. Die Restlaufzeit kann vorübergehend schwanken.','atlas-current-warning'));$('connection-status').hidden=true;catalogProgress(d.catalog);if(!$('config').contains(document.activeElement)){$('auto_catalog').checked=d.settings.auto_catalog;$('auto_metadata').checked=d.settings.auto_metadata;$('scan_priority').value=d.settings.scan_priority||'balanced';$('complete_series').checked=d.settings.complete_series!==false;$('metadata_workers').value=String(d.settings.metadata_workers||2);$('episode_workers').value=String(d.settings.episode_workers||2);$('sender_direct_lookup').checked=d.settings.sender_direct_lookup===true;}renderRuntime(d.runtime);renderMesh(d.mesh,d.settings);$('tools').textContent=d.tools.ffmpeg&&d.tools.ffprobe?'● FFmpeg & ffprobe bereit':'○ Werkzeugprüfung: Einstellungen öffnen';$('jobcount').textContent=d.jobs.filter(j=>['queued','downloading','tagging'].includes(j.state)).length;if(document.activeElement!==$('download_dir'))$('download_dir').value=d.settings.download_dir;if(document.activeElement!==$('library_dirs'))$('library_dirs').value=(d.settings.library_dirs||[]).join('\n');$('key-state').textContent='TMDB: '+(d.settings.tmdb_set?'hinterlegt':'nicht eingerichtet')+' · OMDb: '+(d.settings.omdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB: '+(d.settings.tvdb_set?'hinterlegt':'nicht eingerichtet')+' · TVDB-PIN: '+(d.settings.tvdb_pin_set?'hinterlegt':'nicht hinterlegt')+' · Fanart.tv: '+(d.settings.fanart_set?'hinterlegt':'nicht eingerichtet')+' · YouTube: '+(d.settings.youtube_set?'hinterlegt':'nicht eingerichtet');const host=$('jobs');host.className='grid job-grid';if(document.activeElement?.closest('.job-file-missing'))return;host.replaceChildren();if(!d.jobs.length)host.append(el('div','Noch keine Downloads. Wähle einen Suchtreffer und prüfe seine Metadaten.','empty'));for(const j of d.jobs)host.append(jobCard(j,d.server||{}));}finally{refreshing=false;}}
 function connectionError(e){$('connection-status').textContent=e.message+' Letzter Versuch: '+new Date().toLocaleTimeString('de-DE');$('connection-status').hidden=false;}
 let logPaused=false,logBusy=false;
-async function refreshLog(){if(appStopped||logBusy||logPaused||$('logs').hidden)return;logBusy=true;try{const d=await api('logs');const box=$('live-log'),atEnd=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.textContent=d.text?d.text.split('\n').map(line=>{try{const r=JSON.parse(line),{time,level,event,traceback,...details}=r;return time+'  '+level+'  '+event+'\n'+JSON.stringify(details,null,2)+(traceback?'\n'+traceback:'');}catch{return line;}}).join('\n\n'):'Noch keine Ereignisse.';if(atEnd)box.scrollTop=box.scrollHeight;$('log-status').textContent='Aktualisiert: '+new Date().toLocaleTimeString('de-DE')+' · letzte 400 Zeilen · Zeitstempel im Log: UTC';}catch(e){$('log-status').textContent=e.message;}finally{logBusy=false;}}
+async function refreshLog(){if(appStopped||playerOpen()||logBusy||logPaused||$('logs').hidden)return;logBusy=true;try{const d=await api('logs');const box=$('live-log'),atEnd=box.scrollTop+box.clientHeight>=box.scrollHeight-40;box.textContent=d.text?d.text.split('\n').map(line=>{try{const r=JSON.parse(line),{time,level,event,traceback,...details}=r;return time+'  '+level+'  '+event+'\n'+JSON.stringify(details,null,2)+(traceback?'\n'+traceback:'');}catch{return line;}}).join('\n\n'):'Noch keine Ereignisse.';if(atEnd)box.scrollTop=box.scrollHeight;$('log-status').textContent='Aktualisiert: '+new Date().toLocaleTimeString('de-DE')+' · letzte 400 Zeilen · Zeitstempel im Log: UTC';}catch(e){$('log-status').textContent=e.message;}finally{logBusy=false;}}
 $('pause-log').onclick=()=>{logPaused=!logPaused;$('pause-log').textContent=logPaused?'Live-Ansicht fortsetzen':'Ansicht pausieren';if(!logPaused)refreshLog();};
 $('export-log').onclick=e=>busy(e.target,async()=>{const r=await request('diagnostics');if(!r.ok)throw Error('Diagnoseexport fehlgeschlagen');const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='MediathekAtlas_Diagnose_'+new Date().toISOString().replace(/[:.]/g,'-')+'.zip';a.click();setTimeout(()=>URL.revokeObjectURL(url),10000);});
-renderTree([]);loadCatalog();loadTree();refresh().catch(connectionError);setInterval(()=>{refresh().catch(connectionError);refreshLog();},2500);
+renderTree([]);refresh().catch(connectionError);setInterval(()=>{refresh().catch(connectionError);refreshLog();},2500);
 
 function renderMetadata(m={},settings={},pauses={}){
  const labels={checking:'Prüft gerade',result:'Letztes Ergebnis',waiting:'Wartet auf fällige Einträge',paused:'Pausiert',error:'Abgleichfehler'};
@@ -290,7 +348,7 @@ function renderMetadata(m={},settings={},pauses={}){
   ['TVDB',settings.tvdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.tvdb_set],
   ['OMDb',pauses.omdb?.paused?'Pausiert: '+({key:'Schlüssel abgelehnt',inactive:'Schlüssel nicht aktiviert',auth:'Zugang abgelehnt',limit:'Anfragelimit',network:'Netzwerk',response:'Ungültige Antwort'}[pauses.omdb.reason]||'Anbieterfehler')+' · '+Math.ceil(pauses.omdb.remaining_seconds/60)+' Min.':settings.omdb_set?'Eingerichtet':'Kein Schlüssel',!!settings.omdb_set&&!pauses.omdb?.paused],
   ['Wikidata',pauses.wikidata?.paused?'Netzwerkpause · '+Math.ceil(pauses.wikidata.remaining_seconds/60)+' Min.':'Kostenlose Rückfallquelle',!pauses.wikidata?.paused],
-  ['IMDb Offline',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
+  ['IMDb',imdbReady?'Lokales Archiv bereit':'Archiv nicht bereit',imdbReady]
  ];
  for(const [label,status,good] of providers){
    const cell=el('span',undefined,'atlas-provider'+(good?' enabled':''));
@@ -308,7 +366,7 @@ async function openSeries(show){try{seriesShow=show;seriesPlan=await api('series
 $('series-close').onclick=()=>$('series-dialog').close();
 $('series-submit').onclick=e=>busy(e.target,async()=>{if(!$('series-confirmed').checked)throw Error('Bitte Folgen und Zielnamen zuerst prüfen und bestätigen.');const d=await api('series-download',{show:seriesShow,fingerprint:seriesPlan.fingerprint,ids:[...document.querySelectorAll('#series-plan input:checked')].map(x=>x.value),confirmed:true});$('series-dialog').close();notice(d.queued+' Folgen in die Downloadwarteschlange aufgenommen.');await refresh();});
 
-setInterval(()=>{if(!appStopped&&!$('discover').hidden)loadTree().catch(()=>{});},30000);
+setInterval(()=>{if(!appStopped&&atlasView==='legacy')loadTree().catch(()=>{});},30000);
 
 $('mesh-config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{mesh_dir:$('mesh_dir').value.trim(),mesh_name:$('mesh_name').value.trim(),mesh_init:$('mesh_init').checked});$('mesh_init').checked=false;notice($('mesh_dir').value.trim()?'Verbund gespeichert. Der Ordner wird geprüft.':'Verbund ausgeschaltet.');await refresh();});};
 let meshServer={};
@@ -379,8 +437,14 @@ if(m.reason)values.push(m.reason);return values.join(' · ')||'Noch keine extern
 async function loadReview(){const sequence=++reviewSequence;try{const d=await api('review?'+new URLSearchParams({query:$('review-query').value,state:$('review-state').value,offset:reviewOffset}));if(sequence!==reviewSequence)return;reviewRows=d.items;reviewSelection.clear();$('review-all').checked=false;selectionStatus();$('review-count').textContent=d.total+' Einträge · Seite '+(Math.floor(reviewOffset/48)+1);$('review-prev').disabled=reviewOffset===0;$('review-next').disabled=reviewOffset+48>=d.total;const host=$('review-list');host.replaceChildren();if(!reviewRows.length)host.append(el('p','Keine Einträge für diese Auswahl.','empty'));
 for(const item of reviewRows){const row=el('article',undefined,'review-row'),check=el('input');check.type='checkbox';check.setAttribute('aria-label','Auswählen: '+item.metadata.title);check.dataset.work=item.work_id;check.onchange=()=>{if(check.checked)reviewSelection.add(item.work_id);else reviewSelection.delete(item.work_id);selectionStatus();};const source=el('div'),target=el('div'),action=el('div');source.append(el('small','QUELLE'),el('h3',item.source.title),el('p',[item.source.topic,item.source.channel].filter(Boolean).join(' · ')));target.append(el('small','KATALOG'),el('h3',item.metadata.title),el('p',(kindLabels[item.metadata.kind]||'Noch unklar')+' · '+(item.metadata.year||'Jahr offen')+' · '+reviewLabels[item.state]),el('p',evidence(item.metadata),'muted'));if(item.metadata.kind==='series')target.append(el('p',item.metadata.episode_title||'Episode offen'));const suggestions=item.metadata.suggestions||[];if(suggestions.length)target.append(el('small',suggestions.length+' Vorschläge im Prüfdialog'));const button=el('button','Vergleichen & korrigieren');button.onclick=()=>edit(item);action.append(button);row.append(check,source,target,action);host.append(row);}}
 catch(e){if(sequence===reviewSequence)$('review-count').textContent=e.message;}}
-async function loadRecognition(){if(appStopped||$('review').hidden)return;try{const d=await api('recognition'),host=$('recognition-table'),total={channel:'Gesamt',works:0,matched:0,identified:0,format:0,review:0,open:0};host.replaceChildren();const pct=(n,of)=>of?(100*n/of).toLocaleString('de-DE',{maximumFractionDigits:1})+' %':'–';for(const r of d.channels)for(const k of ['works','matched','identified','format','review','open'])total[k]+=r[k];for(const r of d.channels.length?[total,...d.channels]:[]){const tr=el('tr',undefined,r===total?'total':''),scan=r.works-r.format;for(const value of [r.channel,countLabel(r.works),countLabel(r.matched),countLabel(r.identified),countLabel(r.format),countLabel(r.review),countLabel(r.open),pct(r.matched+r.identified,scan)])tr.append(el('td',String(value)));host.append(tr);}$('recognition-status').textContent=d.error?'Auswertung fehlgeschlagen: '+d.error:d.loading?(d.channels.length?'Wird aktualisiert …':'Auswertung wird berechnet. Bei großen Katalogen dauert das einige Sekunden.'):'Stand der letzten Auswertung; aktualisiert höchstens alle 10 Minuten.';if(d.loading)setTimeout(loadRecognition,5000);}catch(e){notice(e.message,'error');}}
-async function loadProviderStats(){if(appStopped||$('review').hidden)return;try{const d=await api('provider-stats'),host=$('provider-table');host.replaceChildren();for(const r of d.rows){const tr=el('tr'),field=r.provider.toLowerCase(),sender=/Mediathek$/.test(r.provider),configured=r.provider==='IMDb Offline'?imdbReady:r.provider==='Wikidata'||sender||latestSettings[field+'_set'],paused=Boolean(providerPauses[field]?.paused);for(const value of [r.provider,paused?'Pause · '+Math.ceil(providerPauses[field].remaining_seconds/60)+' Min.':configured?(r.provider==='Wikidata'?'Rückfallquelle':sender?'Senderdaten · ohne Schlüssel':'Eingerichtet'):'Kein Zugang',r.checks,r.with_hits,r.candidates,r.errors,r.paused_skips,r.cached_skips||0,r.last_success?new Date(r.last_success*1000).toLocaleTimeString('de-DE'):'–'])tr.append(el('td',String(value)));host.append(tr);}}catch(e){notice(e.message,'error');}}
+async function loadRecognition(){if(appStopped||$('review').hidden)return;try{const d=await api('recognition'),host=$('recognition-table'),total={channel:'Gesamt',works:0,matched:0,identified:0,format:0,review:0,open:0,clips:0,kinds:{}};host.replaceChildren();const pct=(n,of)=>of?(100*n/of).toLocaleString('de-DE',{maximumFractionDigits:1})+' %':'–';
+ // 0.5.80: rate per media type (films, series) next to the channel's overall rate; clips/extras are only counted.
+ const rate=k=>k?pct(k.matched+k.identified,k.works-k.format):'–';
+ for(const r of d.channels){for(const k of ['works','matched','identified','format','review','open','clips'])total[k]+=r[k]||0;for(const [kind,v] of Object.entries(r.kinds||{})){const t=total.kinds[kind]||(total.kinds[kind]={works:0,matched:0,identified:0,format:0,review:0,open:0});for(const f in t)t[f]+=v[f]||0;}}
+ for(const r of d.channels.length?[total,...d.channels]:[]){const tr=el('tr',undefined,r===total?'total':''),scan=r.works-r.format;for(const value of [r.channel,countLabel(r.works),countLabel(r.matched),countLabel(r.identified),countLabel(r.format),countLabel(r.review),countLabel(r.open),pct(r.matched+r.identified,scan),rate(r.kinds?.movie),rate(r.kinds?.series),countLabel(r.clips||0)])tr.append(el('td',String(value)));host.append(tr);}
+ const kinds=$('recognition-kinds');if(kinds){kinds.replaceChildren();for(const k of d.kinds||[]){const tr=el('tr');for(const value of [kindLabels[k.kind]||k.kind,countLabel(k.works),countLabel(k.matched),countLabel(k.identified),countLabel(k.format),countLabel(k.review),countLabel(k.open),k.kind==='other'?'– (wird nicht abgeglichen)':rate(k)])tr.append(el('td',String(value)));kinds.append(tr);}}
+ $('recognition-status').textContent=d.error?'Auswertung fehlgeschlagen: '+d.error:d.loading?(d.channels.length?'Wird aktualisiert …':'Auswertung wird berechnet. Bei großen Katalogen dauert das einige Sekunden.'):'Stand der letzten Auswertung; aktualisiert höchstens alle 10 Minuten.';if(d.loading)setTimeout(loadRecognition,5000);}catch(e){notice(e.message,'error');}}
+async function loadProviderStats(){if(appStopped||playerOpen()||$('review').hidden)return;try{const d=await api('provider-stats'),host=$('provider-table');host.replaceChildren();for(const r of d.rows){const tr=el('tr'),field=r.provider.toLowerCase(),sender=/Mediathek$/.test(r.provider),configured=r.provider==='IMDb Offline'?imdbReady:r.provider==='Wikidata'||sender||latestSettings[field+'_set'],paused=Boolean(providerPauses[field]?.paused);for(const value of [r.provider,paused?'Pause · '+Math.ceil(providerPauses[field].remaining_seconds/60)+' Min.':configured?(r.provider==='Wikidata'?'Rückfallquelle':sender?'Senderdaten · ohne Schlüssel':'Eingerichtet'):'Kein Zugang',r.checks,r.with_hits,r.candidates,r.errors,r.paused_skips,r.cached_skips||0,r.last_success?new Date(r.last_success*1000).toLocaleTimeString('de-DE'):'–'])tr.append(el('td',String(value)));host.append(tr);}}catch(e){notice(e.message,'error');}}
 $('review-search').onsubmit=e=>{e.preventDefault();reviewOffset=0;loadReview();};$('review-state').onchange=()=>{reviewOffset=0;loadReview();};$('review-prev').onclick=()=>{reviewOffset=Math.max(0,reviewOffset-48);loadReview();};$('review-next').onclick=()=>{reviewOffset+=48;loadReview();};$('review-all').onchange=()=>{reviewSelection=new Set($('review-all').checked?reviewRows.map(x=>x.work_id):[]);for(const c of $('review-list').querySelectorAll('input[type=checkbox]'))c.checked=$('review-all').checked;selectionStatus();};$('review-priority').onclick=e=>busy(e.target,async()=>{const d=await api('metadata-priority',{ids:[...reviewSelection]});notice(d.queued+' Einträge für den Abgleich priorisiert.'+(d.enabled?'':' Automatischen Abgleich in Einstellungen einschalten.'));});
 setInterval(loadProviderStats,5000);
 
@@ -452,7 +516,7 @@ function renderImdb(s={}){
 }
 $('imdb-update').onclick=e=>busy(e.target,async()=>{const d=await api('imdb-update',{});notice(d.queued?'IMDb-Aktualisierung angefordert.':'IMDb-Aktualisierung läuft bereits.');await refresh();});
 
-function safeArt(url){try{const u=new URL(url);return u.protocol==='https:'&&['image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'].includes(u.hostname);}catch{return false;}}
+function safeArt(url){try{const u=new URL(url);return u.protocol==='https:'&&['assets.fanart.tv','image.tmdb.org','artworks.thetvdb.com','www.thetvdb.com','m.media-amazon.com','ia.media-imdb.com','api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'].includes(u.hostname);}catch{return false;}}
 function openDetail(item){const m=item.metadata;$('detail-title').textContent=m.title||item.source.title;$('detail-type').textContent=m.kind==='series'?'Serie':'Film';$('detail-facts').textContent=[m.year,(m.genres||[]).join(' · '),'',item.series_parent?item.episodes+' angebotene Folgen':''].filter(Boolean).join(' · ');$('detail-plot').textContent=m.description||item.source.description||'Noch keine Beschreibung vorhanden.';const credits=m.show_credits||m;$('detail-credits').textContent=[credits.directors?.length?'Regie: '+credits.directors.join(', '):'',credits.cast?.length?'Besetzung: '+credits.cast.slice(0,8).map(x=>x.name).join(', '):''].filter(Boolean).join(' · ');$('detail-art-status').textContent=(m.artwork_provider?'Bilder: '+m.artwork_provider:(!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Für zusätzliche Bilder einen TMDB- oder TVDB-Zugang in Einstellungen hinterlegen.':latestSettings.auto_metadata===false?'Automatische Bildergänzung ist mit dem Metadatenabgleich pausiert.':'Bilder werden bei eindeutiger Zuordnung ergänzt.'))+(!m.poster||!m.fanart?' · Noch nicht alle Bildtypen vorhanden.':'');for(const [id,url] of [['detail-cover',m.poster],['detail-backdrop',m.fanart]]){const box=$(id);box.replaceChildren();if(safeArt(url)){const img=el('img');img.src=url;img.alt=id==='detail-cover'?'Cover: '+m.title:'';img.onerror=()=>{img.remove();$('detail-art-status').textContent='Bild derzeit nicht abrufbar. Metadaten bleiben verfügbar.';};box.append(img);}else if(id==='detail-cover')box.append(el('span','Cover folgt'));}const subscribe=$('detail-subscribe');
  subscribe.onclick=()=>{
    $('media-detail').close();
@@ -504,8 +568,8 @@ art.append(el('strong',m.kind==='series'?'SERIE':m.kind==='movie'?'FILM':'DOWNLO
 const body=el('div',undefined,'cardbody'),episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
 const heading=el('h3',(m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;
 body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading);if(episode)body.append(el('p',episode,'episode-heading'));
-body.append(el('p',(j.state==='done'?(j.file_state==='missing'?'⚠ ':'✓ '):j.state==='error'?'⚠ ':'◌ ')+(j.state==='done'&&j.file_state==='missing'?'Datei verschoben / derzeit nicht erreichbar':(labels[j.state]||j.state))+(m.provider?' · '+m.provider:''),'badge'));
-if(j.state==='done'&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));body.append(el('small',({pluto:'Pluto TV',justwatch:'JustWatch TV'}[j.origin]||'Netzkino')+' offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage')+'; danach automatische Entfernung',left<=3?'atlas-current-warning':'muted'));}
+body.append(el('p',(j.state==='done'?(j.file_state==='missing'?'⚠ ':'✓ '):j.state==='error'?'⚠ ':'◌ ')+(j.state==='done'&&j.file_state==='missing'?'Datei verschoben / derzeit nicht erreichbar':(j.state==='queued'&&j.not_before*1000>Date.now()?'Geplant für '+new Date(j.not_before*1000).toLocaleString('de-DE',{weekday:'short',hour:'2-digit',minute:'2-digit'})+' Uhr':(labels[j.state]||j.state)))+(m.provider?' · '+m.provider:''),'badge'));if(j.state==='queued'&&j.not_before*1000>Date.now()&&j.note)body.append(el('small',j.note+'. Startet von selbst, wenn MediathekAtlas dann läuft.','muted'));
+if(j.state==='done'&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));body.append(el('small',({pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube'}[j.origin]||'Netzkino')+' offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage')+'; danach automatische Entfernung',left<=3?'atlas-current-warning':'muted'));}
 if(j.state==='downloading'){const p=el('progress');p.max=j.total||1;if(j.total)p.value=j.received||0;body.append(p,el('small',((j.received||0)/1048576).toFixed(1)+' MiB'+(j.total?' / '+(j.total/1048576).toFixed(1)+' MiB':'')+' · '+(Number(j.speed)>0?(j.speed/1048576).toFixed(1)+' MiB/s':'Geschwindigkeit wird ermittelt')+(Number.isFinite(j.eta)?' · ca. '+Math.ceil(j.eta/60)+' Min.':'')));}
 if(j.error||j.note)body.append(el('small',j.error||j.note,'job-note'));
 const details=el('details',undefined,'file-details');details.open=openJobDetails.has(j.id);details.ontoggle=()=>details.open?openJobDetails.add(j.id):openJobDetails.delete(j.id);details.append(el('summary',j.state==='done'&&j.size_bytes?'Datei & Qualität · '+(j.size_bytes/1048576).toFixed(0)+' MiB':'Datei & Speicherort'));
@@ -536,6 +600,15 @@ if(j.state==='done'&&j.file_state!=='missing'){const save=el('a','Herunterladen'
  if(!server.network){const b=el('button','Filmdatei öffnen');b.onclick=()=>busy(b,async()=>{await api('open-download',{id:j.id});});body.append(b);}
  const play=el('button','▶ Abspielen','play-button');play.title='Im Browser abspielen';play.onclick=()=>playJob(j);body.insertBefore(play,save);}
 const action=['error','cancelled','interrupted','remote'].includes(j.state)?'retry':['queued','downloading','tagging'].includes(j.state)?'cancel':null;if(action){const b=el('button',action==='retry'?'Erneut versuchen':'Abbrechen');b.onclick=()=>busy(b,async()=>{await api(action,{id:j.id});await refresh();});body.append(b);}
+// 0.5.55: order of the waiting jobs (Verwaltung → Aufgaben pauses the whole queue).
+if(j.state==='queued'){const ctl=(label,act,title)=>{const b=el('button',label,'job-control');b.title=title;b.onclick=()=>busy(b,async()=>{await api('job-control',{id:j.id,action:act});await refresh();});body.append(b);};
+ if(j.hold){body.append(el('small','Zurückgestellt · startet erst nach „Freigeben“','job-hold'));ctl('Freigeben','release','Auftrag wieder in die Warteschlange stellen');}
+ else{if(j.not_before&&j.not_before*1000>Date.now()){body.append(el('small','Vorgemerkt ab '+new Date(j.not_before*1000).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'}),'job-hold'));ctl('Jetzt versuchen','now','Nicht auf das Zeitfenster warten; der Anbieter kann den Titel tagsüber ablehnen');}
+  if((j.priority||0)<2)ctl('Als Nächstes laden','first','Vor allen anderen wartenden Aufträgen starten');
+  if((j.priority||0)>0)ctl('Normale Reihenfolge','normal','Priorität zurücknehmen');
+  ctl('Zurückstellen','hold','In der Liste behalten, aber vorerst nicht laden');}}
+// 0.5.43: failed, cancelled or interrupted orders can be removed from the list (no media file is touched).
+if(action==='retry'){const rm=el('button','Aus Liste entfernen');rm.title='Auftrag löschen; heruntergeladene Dateien gibt es für diesen Auftrag nicht';rm.onclick=()=>busy(rm,async()=>{await api('job-remove',{id:j.id});await refresh();});body.append(rm);}
 card.append(art,body);return card;}
 
 function ratingSource(m){return m.rating_source||(['OMDb','IMDb Offline'].includes(m.provider)?'IMDb':m.provider||'Quelle unbekannt');}
@@ -564,12 +637,13 @@ function portalItemCard(item){
   const detail=el('p',(item.year?item.year+' · ':'')+portalLabel(item.source),'muted');
   card.append(detail);
   if(item.description)card.append(el('p',item.description.length>380?item.description.slice(0,380)+' …':item.description,'portal-description'));
+  if(item.work)card.append(portalWorkLine(item.work,!portalWork));
   if(item.local_work_id){
     card.append(el('small','Möglicher Eintrag im Hauptkatalog (gleicher Titel und Jahr). Keine automatische Zusammenführung.','portal-match'));
   }
   if(item.license_url)card.append(el('p','Gemeldete Lizenz: '+item.license_url,'portal-licence'));
   if(item.rights)card.append(el('p','Rechtehinweis: '+item.rights.slice(0,240),'portal-licence'));
-  card.append(el('small','Nur Originalseite · Rechte und Verfügbarkeit nicht geprüft · kein Download','portal-rights'));
+  card.append(el('small',item.source==='internet_archive'?'Download über „Fassungen, Folgen und Sprachen prüfen“ · Lizenzangabe des Uploaders, nicht geprüft':'Nur Originalseite · Rechte und Verfügbarkeit nicht geprüft · kein Download','portal-rights'));
   const target=portalPageUrl(item);
   if(target){
     const link=el('a','Originalseite beim Anbieter öffnen','portal-link');
@@ -619,6 +693,182 @@ function archiveProbeSummary(probe){
   part.append(el('small',probe.detail||probe.note||'Nur partielle Spurdaten.','portal-warning'));
   return part;
 }
+// 0.5.61: Archive.org-Downloads wie in ArchiveMedia (Björn, 12.11.2026) – dauerhaft, Lizenz nur angezeigt.
+function archiveDownloadButton(itemId,v,manifest){
+  const wrap=el('div',undefined,'portal-archive-download');
+  const btn=el('button','⬇ Herunterladen','portal-download');btn.type='button';
+  const state=el('small','', 'muted');
+  btn.onclick=()=>busy(btn,async()=>{
+    let meta=null;
+    if(v.kind==='series'&&(v.season==null||v.episode==null)){
+      const answer=prompt('Staffel und Folge dieser Datei sind unbekannt. Bitte als „Staffel/Folge“ angeben (z. B. 1/3). Leer lassen, um als Film zu laden.','');
+      if(answer===null)return;
+      const m=String(answer).trim().match(/^(\d{1,3})\s*[\/xXeE ]\s*(\d{1,4})$/);
+      meta=m?{kind:'series',season:Number(m[1]),episode:Number(m[2])}:{kind:'movie',title:v.title||manifest.normalized_title||manifest.title};
+    }
+    const r=await api('archive-download',{id:itemId,filename:v.filename,metadata:meta});
+    state.textContent=r.created===false?'Bereits in der Warteschlange oder geladen ('+r.state+').':'In die Download-Warteschlange gestellt.';
+    notice(r.created===false?'Diese Datei ist bereits vorhanden oder vorgemerkt.':'Archive.org-Download vorgemerkt: '+(v.title||v.filename));
+  });
+  wrap.append(btn,state);
+  return wrap;
+}
+// 0.5.88 (ArchiveMedia selection_matrix): one file per episode, chosen by wishes, loaded in one go.
+const ARCHIVE_LANGUAGE_NAMES={de:'Deutsch',en:'Englisch',fr:'Französisch',es:'Spanisch',it:'Italienisch',ja:'Japanisch',ru:'Russisch',pl:'Polnisch',nl:'Niederländisch',pt:'Portugiesisch',tr:'Türkisch',sv:'Schwedisch'};
+function archiveSizeLabel(bytes){
+  if(!bytes)return 'Größe unbekannt';
+  if(bytes<1048576)return Math.max(1,Math.round(bytes/1024)).toLocaleString('de-DE')+' KiB';
+  return bytes>=1073741824?(bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:1})+' GiB':(bytes/1048576).toLocaleString('de-DE',{maximumFractionDigits:0})+' MiB';
+}
+function archiveSelectionPanel(itemId,manifest){
+  const variants=manifest.video_variants||[];
+  const panel=document.createElement('details');panel.className='archive-selection';
+  const series=variants.some(v=>v.kind==='series');
+  panel.append(el('summary',series?'Staffeln und Folgen auswählen ('+variants.length+' Dateien)':'Mehrere Dateien auswählen ('+variants.length+')'));
+  panel.append(el('p','Sag, was du möchtest. Je Folge wird die beste passende Datei genommen; du siehst vorher, welche das ist und warum andere nicht passen.','muted'));
+  const form=el('div',undefined,'archive-selection-form');
+  const field=(label,node,hint)=>{const wrap=el('label',undefined,'archive-selection-field');wrap.append(el('span',label),node);if(hint)wrap.title=hint;form.append(wrap);return node;};
+  const select=(options)=>{const node=document.createElement('select');for(const [value,text] of options){const o=el('option',text);o.value=value;node.append(o);}return node;};
+  const known=new Set(['de','en']);
+  for(const v of variants)for(const code of [...(v.audio_hint_languages||[]),...(v.subtitle_hint_languages||[]),...(v.sidecar_subtitles||[]).map(x=>x.language)])if(code)known.add(String(code).toLowerCase());
+  for(const code of manifest.upload_audio_hint_languages||[])known.add(String(code).toLowerCase());
+  const languages=[['','egal'],...[...known].sort().map(code=>[code,ARCHIVE_LANGUAGE_NAMES[code]||code.toUpperCase()])];
+  const audio=field('Tonsprache',select(languages));
+  const subtitle=field('Untertitel',select(languages));
+  const mode=field('Auflösung',select([['any','beste verfügbare'],['at_least','mindestens'],['exact','genau'],['at_most','höchstens']]));
+  const height=field('Bildhöhe',select([['0','–'],['480','SD (480p)'],['720','HD (720p)'],['1080','Full HD (1080p)'],['1440','1440p'],['2160','4K (2160p)']]));
+  const format=field('Dateiformat',select([['','egal'],['.mkv','MKV'],['.mp4','MP4'],['.avi','AVI'],['.webm','WebM'],['.m4v','M4V'],['.mov','MOV'],['.ts','TS'],['.mpg','MPG'],['.ogv','OGV']]));
+  const season=field('Staffel',select([['','alle']]));
+  season.parentNode.hidden=!series;
+  const tick=(text,hint)=>{const wrap=el('label',undefined,'archive-selection-tick');const box=document.createElement('input');box.type='checkbox';wrap.append(box,document.createTextNode(' '+text));wrap.title=hint;form.append(wrap);return box;};
+  const verified=tick('Sprache muss durch die Tonspur belegt sein','Ohne Haken genügt die Sprachangabe im Dateinamen. Mit Haken zählen nur Dateien, deren Spuren mit „Format und Tonspuren prüfen“ gelesen wurden.');
+  const originals=tick('Nur Originaldateien','Lässt Fassungen weg, die Archive.org selbst umgerechnet hat.');
+  mode.onchange=()=>{height.disabled=mode.value==='any';if(mode.value!=='any'&&height.value==='0')height.value='720';if(mode.value==='any')height.value='0';};
+  mode.onchange();
+  const wishes=()=>({audio:audio.value?[audio.value]:[],subtitle:subtitle.value?[subtitle.value]:[],resolution_mode:mode.value,height:Number(height.value),format:format.value,
+    verified:verified.checked,originals:originals.checked,season:season.value===''?null:Number(season.value)});
+  const show=el('button','Auswahl anzeigen','portal-verify');show.type='button';form.append(show);
+  panel.append(form);
+  const out=el('div',undefined,'archive-selection-result');panel.append(out);
+  const render=result=>{
+    out.replaceChildren();
+    if(series&&season.options.length===1)for(const n of result.seasons||[]){const o=el('option','Staffel '+n);o.value=String(n);season.append(o);}
+    const head=el('p',countLabel(result.matched)+' von '+countLabel(result.rows.length)+(series?' Folgen':' Filmen')+' mit passender Datei'+
+      (result.unassigned_files?' · '+countLabel(result.unassigned_files)+' Dateien ohne erkennbare Folge (einzeln unten ladbar)':''),'portal-evidence');
+    out.append(head);
+    if(!result.complete)out.append(el('p','Der Dateibestand dieses Uploads ist nur teilweise bekannt; weitere Folgen können fehlen.','portal-warning'));
+    const table=el('table',undefined,'archive-selection-table');
+    const top=el('tr');for(const text of ['',series?'Folge':'Film','Datei','Qualität','Ton','Größe'])top.append(el('th',text));
+    const all=document.createElement('input');all.type='checkbox';all.checked=true;all.title='Alle an- oder abwählen';top.firstChild.append(all);
+    table.append(top);
+    const boxes=[];
+    for(const row of result.rows){
+      const tr=el('tr');tr.className=row.filename?'':'archive-selection-missing';
+      const pick=el('td');
+      if(row.filename){const box=document.createElement('input');box.type='checkbox';box.checked=true;box.value=row.filename;box.dataset.bytes=row.size_bytes||0;boxes.push(box);pick.append(box);}
+      tr.append(pick,el('td',series?'S'+String(row.season).padStart(2,'0')+'E'+String(row.episode).padStart(2,'0'):(row.title||'Film')));
+      if(row.filename){
+        tr.append(el('td',row.filename),el('td',[row.quality?row.quality+'p':'Auflösung unbekannt',(row.format||'').replace('.','').toUpperCase()].filter(Boolean).join(' · ')),
+          el('td',row.audio.length?archiveLanguages(row.audio)+(row.audio_proven?' (Tonspur)':' (Dateiname)'):'unbekannt'),el('td',archiveSizeLabel(row.size_bytes)));
+      }else{
+        const why=el('td',Object.entries(row.reasons).map(([text,n])=>n+' × '+text).join(' · ')||'Keine Datei');why.colSpan=4;tr.append(why);
+      }
+      table.append(tr);
+    }
+    out.append(table);
+    const load=el('button','','portal-download');load.type='button';
+    const state=el('small','','muted');
+    const count=()=>{const chosen=boxes.filter(b=>b.checked);const bytes=chosen.reduce((sum,b)=>sum+Number(b.dataset.bytes),0);
+      load.textContent='⬇ '+chosen.length+(chosen.length===1?' Datei':' Dateien')+' herunterladen'+(bytes?' (etwa '+archiveSizeLabel(bytes)+')':'');load.disabled=!chosen.length;};
+    all.onchange=()=>{for(const b of boxes)b.checked=all.checked;count();};
+    for(const b of boxes)b.onchange=count;
+    count();
+    load.onclick=()=>busy(load,async()=>{
+      const r=await api('archive-selection-download',{id:itemId,criteria:result.criteria,picks:boxes.filter(b=>b.checked).map(b=>b.value)});
+      state.textContent=countLabel(r.created)+' vorgemerkt'+(r.existing?', '+countLabel(r.existing)+' waren schon vorhanden oder vorgemerkt':'')+(r.failed.length?', '+r.failed.length+' abgelehnt: '+r.failed[0].error:'')+'.';
+      notice(r.created?countLabel(r.created)+' Archive.org-Downloads vorgemerkt.':'Nichts Neues vorgemerkt.',r.failed.length&&!r.created?'error':'info');
+    }).then(count);
+    out.append(load,state,el('p',result.note,'muted'));
+  };
+  const refresh=()=>busy(show,async()=>render(await api('archive-selection',{id:itemId,criteria:wishes()})));
+  show.onclick=refresh;
+  // The table needs room: while the panel is open the card takes the full row.
+  panel.ontoggle=()=>{const card=panel.closest('.portal-result');if(card)card.style.gridColumn=panel.open?'1 / -1':'';};
+  return panel;
+}
+// 0.5.92 (ArchiveMedia bluray_playlist, multi_catalog, catalog_enrichment): what the upload holds besides videos.
+function archiveDurationLabel(seconds){
+  const s=Math.round(seconds||0),h=Math.floor(s/3600),m=Math.floor(s%3600/60);
+  return h?h+':'+String(m).padStart(2,'0')+' Std.':m+' Min.';
+}
+function archiveExtrasPanel(itemId,manifest){
+  const wrap=el('div',undefined,'archive-extras');
+  const bluray=manifest.bluray;
+  if(bluray?.playlists?.length){
+    const box=document.createElement('details');box.className='archive-selection';
+    box.append(el('summary','Blu-ray-Abbild: '+countLabel(bluray.playlists.length)+' Playlists, '+countLabel(bluray.clips)+' Clips'));
+    box.append(el('p','Die einzelnen Clips einer Blu-ray sind als technische Dateien ausgeblendet. Eine Playlist sagt, welche Clips in welcher Reihenfolge einen Titel ergeben. '+bluray.note,'muted'));
+    const list=el('div',undefined,'archive-extras-list'),rows=new Map(),main=el('p','','portal-evidence');
+    const show=(row,p)=>{
+      row.info.textContent=countLabel(p.play_items)+(p.play_items===1?' Abschnitt':' Abschnitte')+' · '+archiveDurationLabel(p.duration_seconds)+' · '+
+        (p.clips_present===p.distinct_clips?'alle '+countLabel(p.distinct_clips)+' Clips im Upload ('+archiveSizeLabel(p.bytes)+')':countLabel(p.distinct_clips-p.clips_present)+' von '+countLabel(p.distinct_clips)+' Clips fehlen im Upload');
+      row.info.className=p.clips_present===p.distinct_clips?'muted':'portal-warning';
+      row.clips.textContent=p.clips.map(c=>c.clip+'.m2ts ('+archiveDurationLabel(c.duration_seconds)+')').join(' → ')+(p.play_items>p.clips.length?' …':'');
+    };
+    const mark=name=>{main.textContent=name?'Längster vollständiger Titel bisher: Playlist '+name.split('/').pop()+'. Das ist meist der Hauptfilm, aber kein Beweis.':'';
+      for(const [file,row] of rows)row.node.classList.toggle('archive-extras-main',file===name);};
+    const read=async(p,row)=>{const r=await api('archive-bluray-playlist',{id:itemId,filename:p.filename});bluray.parsed[p.filename]=r;show(row,r);mark(r.main);};
+    for(const p of bluray.playlists){
+      const node=el('div',undefined,'archive-extras-row'),info=el('small','Noch nicht gelesen ('+countLabel(p.size_bytes)+' Bytes)','muted'),clips=el('small','','muted');
+      const button=el('button','Playlist lesen','portal-verify');button.type='button';
+      const row={node,info,clips,button};rows.set(p.filename,row);
+      button.onclick=()=>busy(button,()=>read(p,row));
+      node.append(el('strong',(p.folder?p.folder+' · ':'')+p.number+'.mpls'),info,clips,button);
+      if(bluray.parsed?.[p.filename])show(row,bluray.parsed[p.filename]);
+      list.append(node);
+    }
+    const all=el('button','Hauptfilm suchen (liest bis zu 12 Playlists)','portal-verify');all.type='button';
+    all.onclick=()=>busy(all,async()=>{
+      let done=0;
+      for(const p of bluray.playlists){
+        if(bluray.parsed?.[p.filename])continue;
+        if(done>=12)break;
+        try{await read(p,rows.get(p.filename));}catch(error){rows.get(p.filename).info.textContent=error.message;rows.get(p.filename).info.className='portal-warning';}
+        done+=1;
+      }
+    });
+    box.append(all,main,list);wrap.append(box);
+    const parsed=Object.values(bluray.parsed||{}).filter(p=>p.distinct_clips&&p.clips_present===p.distinct_clips);
+    if(parsed.length)mark(parsed.sort((a,b)=>b.duration_seconds-a.duration_seconds||(a.filename<b.filename?1:-1))[0].filename);
+  }
+  if(manifest.other_media?.length||manifest.external_ids?.length){
+    const box=document.createElement('details');box.className='archive-selection';
+    const total=(manifest.other_media||[]).reduce((n,g)=>n+g.files,0);
+    box.append(el('summary','Weitere Inhalte dieses Uploads'+(total?': '+(manifest.other_media||[]).map(g=>g.label+' ('+countLabel(g.files)+')').join(', '):'')));
+    box.append(el('p','MediathekAtlas verwaltet Filme und Serien. Was der Upload sonst enthält, ist hier aufgeführt; die Links öffnen die Datei bei Archive.org.','muted'));
+    for(const group of manifest.other_media||[]){
+      const node=el('div',undefined,'archive-extras-row');
+      node.append(el('strong',group.label+' · '+group.subtype_label),el('small',countLabel(group.files)+(group.files===1?' Datei':' Dateien')+' · '+archiveSizeLabel(group.bytes)+' · Einordnung: '+group.reason,'muted'));
+      const files=el('div',undefined,'archive-extras-files');
+      for(const file of group.examples){const link=el('a',file.name+(file.size_bytes?' ('+archiveSizeLabel(file.size_bytes)+')':''),'portal-link');link.href=file.url;link.target='_blank';link.rel='noopener noreferrer';files.append(link);}
+      if(group.files>group.examples.length)files.append(el('small','… und '+countLabel(group.files-group.examples.length)+' weitere','muted'));
+      node.append(files);box.append(node);
+    }
+    for(const number of manifest.external_ids||[]){
+      const node=el('div',undefined,'archive-extras-row'),out=el('small','','muted');
+      const service=number.provider==='openlibrary'?'Open Library':'MusicBrainz';
+      const describe=r=>{out.textContent=r.found?service+': „'+r.title+'“'+[r.published,r.pages?r.pages+' Seiten':'',(r.publishers||r.artists||[]).join(', '),r.country].filter(Boolean).map(x=>' · '+x).join(''):service+' kennt diese Kennung nicht.';};
+      const button=el('button','Bei '+service+' nachschlagen','portal-verify');button.type='button';
+      button.title='Fragt nur nach der Kennung, die der Uploader angegeben hat – nie nach dem Titel.';
+      button.onclick=()=>busy(button,async()=>describe(await api('archive-external-id',{id:itemId,provider:number.provider})));
+      node.append(el('strong',number.label),out,button);
+      if(manifest.external_lookups?.[number.provider])describe(manifest.external_lookups[number.provider]);
+      box.append(node);
+    }
+    wrap.append(box);
+  }
+  return wrap;
+}
 function showArchiveManifest(host,manifest,probes={},itemId=''){
   host.replaceChildren();
   if(!manifest||typeof manifest!=='object'){
@@ -629,6 +879,13 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
   heading.append(el('small','Identität: '+(manifest.identity_origin||'unbekannt')+
       ' · '+(manifest.identity_confidence||'unbestätigt')));
   host.append(heading);
+  if(itemId){
+    // 0.5.92: a stored manifest can be read again, so data added by newer versions (picture height, Blu-ray, other media) appears.
+    const again=el('button','Dateibestand neu von Archive.org lesen','portal-verify');again.type='button';
+    again.title='Liest die Dateiliste dieses Uploads erneut (eine Anfrage). Geprüfte Tonspuren bleiben erhalten.';
+    again.onclick=()=>busy(again,async()=>{const fetched=await api('portal-archive-inspect',{id:itemId});showArchiveManifest(host,fetched.detail,probes,itemId);notice('Dateibestand neu gelesen.');});
+    host.append(again);
+  }
   // ArchiveMedia preserves distinct evidence for the title, work, actual
   // episode and video file. A metadata-only light scan never claims content
   // or spoken language has been verified.
@@ -660,6 +917,8 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
   if(manifest.upload_audio_hint_languages?.length)
     host.append(el('p','Audio-Hinweis aus Upload-Titel: '+
       archiveLanguages(manifest.upload_audio_hint_languages)+' (ungeprüft)','muted'));
+  if(itemId&&(manifest.video_variants||[]).length>1)host.append(archiveSelectionPanel(itemId,manifest));
+  if(itemId&&(manifest.bluray||manifest.other_media?.length||manifest.external_ids?.length))host.append(archiveExtrasPanel(itemId,manifest));
   const consent=el('label',undefined,'portal-consent');
   const checkbox=document.createElement('input');
   checkbox.type='checkbox';
@@ -703,6 +962,7 @@ function showArchiveManifest(host,manifest,probes={},itemId=''){
       };
       box.append(btn);
     }
+    box.append(archiveDownloadButton(itemId,v,manifest));
     list.append(box);
   }
   if(!list.childElementCount)
@@ -741,9 +1001,20 @@ function portalView(name){
   if(name==='netzkino')window.MediathekAtlasNetzkino?.refresh?.();
   if(name==='pluto')window.MediathekAtlasPluto?.refresh?.();
   if(name==='justwatch')window.MediathekAtlasJustWatch?.refresh?.();
+  if(name==='rakuten')window.MediathekAtlasRakuten?.refresh?.();
+  if(name==='youtube')window.MediathekAtlasYouTube?.refresh?.();
+  if(name==='joyn')window.MediathekAtlasJoyn?.refresh?.();
+  if(name==='toggo')window.MediathekAtlasToggo?.refresh?.();
+  if(name==='crunchyroll')window.MediathekAtlasCrunchyroll?.refresh?.();
+  if(name==='plex')window.MediathekAtlasPlex?.refresh?.();
+  if(name==='servustv')window.MediathekAtlasServusTV?.refresh?.();
+  if(name==='rtlplus')window.MediathekAtlasRtlPlus?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))
   b.onclick=()=>portalView(b.dataset.platform);
+function portalScopeState(state){
+  return ({queued:'wartet',running:'läuft',paused:'pausiert',complete:'fertig',retry:'neuer Versuch geplant',error:'angehalten nach Fehler',stalled:'angehalten, kein Fortschritt'})[state]||state;
+}
 function portalScopeTitle(kind){
   return ({item:'Einzelne Archive.org-URL',collection:'Sammlung',uploader:'Öffentlicher Uploader'})[kind]||kind;
 }
@@ -767,7 +1038,7 @@ function displayPortalControls(data){
   }
   for(const p of data.film_platforms||[]){
     const card=el('article',undefined,'platform-stat platform-stat-'+p.source);
-    const phase=p.running?'Abgleich läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise':p.last_result==='failed'?'Fehlgeschlagen':'Noch nicht geladen';
+    const phase=p.running?'Abgleich läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise':p.titles?'Gespeicherter Bestand':p.last_result==='failed'?'Fehlgeschlagen':'Noch nicht geladen';
     card.append(el('strong',p.name+' · '+phase));
     card.append(el('small',countLabel(p.titles||0)+' Filme & Serien'+(p.channels?' · '+p.channels+' Live-Sender':'')+(p.playable!==undefined?' · '+(p.playable||0)+' im Player abspielbar':'')+(p.last_success?' · Stand '+new Date(p.last_success*1000).toLocaleString('de-DE'):'')));
     const ref=p.reference||{},by=ref.by_status||{};
@@ -788,15 +1059,25 @@ function displayPortalControls(data){
   for(const scope of data.archive_scopes||[]){
     const card=el('article',undefined,'platform-scope-item');
     card.append(el('strong',portalScopeTitle(scope.kind)+' · '+scope.scope));
-    card.append(el('small','Status '+scope.state+' · Priorität '+scope.priority+
-      ' · Seiten '+scope.pages_done+' · Importiert '+scope.imported));
-    card.append(el('small','Nächste Seite '+scope.cursor+' · Budget '+scope.page_budget+' Seiten pro Start'));
+    if(scope.label&&scope.label!==scope.scope)card.append(el('small',scope.label+' · automatisch vorgemerkt, startet erst auf deinen Klick','muted'));
+    // 0.5.92 (ArchiveMedia clean_scan/scan_recovery): plain state, coverage against Archive.org's own total, time windows.
+    const stopped=['error','stalled'].includes(scope.state),facts=scope.coverage||{};
+    card.append(el('small','Status: '+portalScopeState(scope.state)+' · Priorität '+scope.priority+
+      ' · Seiten '+scope.pages_done+' · Gelesen '+countLabel(scope.imported)+
+      (facts.provider_total!=null?' von '+countLabel(facts.provider_total)+' laut Archive.org':'')));
+    card.append(el('small',(facts.windows?'Große Quelle, in Zeitfenstern gelesen: '+countLabel(facts.windows_done)+' von '+countLabel(facts.windows)+' fertig':'Nächste Seite '+scope.cursor)+
+      ' · Budget '+scope.page_budget+' Seiten pro Start'));
+    if(facts.coverage==='needs_review')card.append(el('small','Fertig, aber '+(facts.windows_failed?'ein Zeitfenster ließ sich nicht lesen'+(facts.gap?' und ':''):'')+
+      (facts.gap?countLabel(facts.gap)+' Uploads weniger gelesen als Archive.org nennt':'')+'. „Neu durchsuchen“ liest die Quelle noch einmal; Gefundenes bleibt.','portal-warning'));
+    if(facts.verified===false&&scope.state!=='complete')card.append(el('small','Dieser Scan wurde vor 0.5.92 begonnen und läuft in der alten Reihenfolge zu Ende. „Neu durchsuchen“ stellt auf die geprüfte Suche um.','muted'));
+    if(scope.state==='stalled')card.append(el('small','Archive.org lieferte wiederholt nicht die angefragte Seite. Die Position ist gemerkt; „Start / Fortsetzen“ versucht es erneut.','portal-warning'));
     if(scope.last_error)card.append(el('small','Letzter Fehler: '+scope.last_error,'portal-warning'));
     const actions=el('div',undefined,'platform-scope-actions');
-    const toggle=el('button',scope.enabled?'Pausieren':'Start / Fortsetzen');
+    const active=scope.enabled&&!stopped;
+    const toggle=el('button',active?'Pausieren':'Start / Fortsetzen');
     toggle.type='button';
     toggle.onclick=()=>busy(toggle,async()=>{
-      await api('portal-scope-control',{id:scope.id,action:scope.enabled?'pause':'start'});
+      await api('portal-scope-control',{id:scope.id,action:active?'pause':'start'});
       await loadPortals();
     });
     actions.append(toggle);
@@ -807,6 +1088,15 @@ function displayPortalControls(data){
       await loadPortals();
     });
     actions.append(promote);
+    if(scope.state!=='running'&&scope.kind!=='item'&&(scope.pages_done||stopped)){
+      const again=el('button','Neu durchsuchen');again.type='button';
+      again.title='Liest die Quelle von vorn. Bereits gefundene Uploads bleiben erhalten, die Zähler des alten Laufs werden aufbewahrt.';
+      again.onclick=()=>busy(again,async()=>{
+        await api('portal-scope-control',{id:scope.id,action:'rescan'});
+        await loadPortals();notice('Quelle wird von vorn gelesen. Bereits Gefundenes bleibt erhalten.');
+      });
+      actions.append(again);
+    }
     if(scope.state!=='running'){
       const remove=el('button','Entfernen');remove.type='button';
       remove.onclick=()=>busy(remove,async()=>{
@@ -818,6 +1108,32 @@ function displayPortalControls(data){
     card.append(actions);host.append(card);
   }
 }
+// 0.5.92 (ArchiveMedia catalog_transfer): hand the found uploads to another installation as one file.
+$('archive-list-export').onclick=e=>busy(e.target,async()=>{
+  const r=await request('archive-list-export');
+  if(!r.ok)throw Error((await r.json().catch(()=>({}))).error||'Die Liste konnte nicht erstellt werden');
+  const url=URL.createObjectURL(await r.blob()),a=el('a');a.href=url;a.download='MediathekAtlas_Archive-Liste_'+new Date().toISOString().slice(0,10)+'.zip';a.click();
+  setTimeout(()=>URL.revokeObjectURL(url),10000);
+  $('archive-list-status').textContent='Liste gespeichert. Auf der anderen Installation über „Liste einlesen“ übernehmen.';
+});
+$('archive-list-import').onclick=()=>$('archive-list-file').click();
+$('archive-list-file').onchange=e=>{
+  const file=e.target.files[0];e.target.value='';
+  if(!file)return;
+  busy($('archive-list-import'),async()=>{
+    $('archive-list-status').textContent='„'+file.name+'“ wird geprüft und eingelesen …';
+    const control=new AbortController(),timer=setTimeout(()=>control.abort(),600000);
+    let r;
+    try{r=await fetch('/api/archive-list-import',{method:'POST',headers:{'Content-Type':'application/zip','X-Atlas-Token':token},body:file,signal:control.signal});}
+    catch(error){$('archive-list-status').textContent='';throw Error('Die Liste konnte nicht übertragen werden.');}
+    finally{clearTimeout(timer);}
+    const d=await r.json().catch(()=>({}));
+    if(!r.ok){$('archive-list-status').textContent='';throw Error(d.error||'Die Liste wurde nicht angenommen');}
+    $('archive-list-status').textContent=(d.added===1?'1 neuer Upload':countLabel(d.added)+' neue Uploads')+' übernommen, '+(d.known===1?'1 war':countLabel(d.known)+' waren')+' schon bekannt (Liste aus '+d.written_by+', '+countLabel(d.items)+' Uploads). '+d.note;
+    notice(countLabel(d.added)+' Uploads aus der Liste übernommen.');
+    await loadPortals();
+  });
+};
 $('platform-global-controls').onsubmit=e=>{
   e.preventDefault();
   const button=$('platform-global-controls').querySelector('button');
@@ -857,12 +1173,88 @@ $('archive-scope-add').onsubmit=e=>{
     notice('Scanbereich gespeichert. Zum tatsächlichen Start Freigabe per Start-Schalter nötig.');
   });
 };
+/* 0.5.82: works on top of the Archive.org uploads (archive_recognition.py, from Archive Media). */
+let portalWork=null;   // {id,title}: only the uploads of this work are listed
+const PORTAL_REF_URL={'IMDb Offline':id=>/^tt\d+$/.test(id)?'https://www.imdb.com/title/'+id+'/':'',IMDb:id=>/^tt\d+$/.test(id)?'https://www.imdb.com/title/'+id+'/':'',
+  TMDB:()=>'',TVDB:()=>'',OMDb:id=>/^tt\d+$/.test(id)?'https://www.imdb.com/title/'+id+'/':'',Wikidata:id=>/^Q\d+$/.test(id)?'https://www.wikidata.org/wiki/'+id:''};
+function portalWorkStatus(work){
+  if(work.reference)return 'Erkannt';
+  if(work.anilist)return 'Anime erkannt (AniList)';
+  return {unchecked:'Noch nicht geprüft',review:'Mehrere mögliche Treffer',no_match:'Kein Treffer in den Datenbanken',partial:'Datenbanken gerade nicht erreichbar'}[work.status]||'Nicht zugeordnet';
+}
+function portalWorkLine(work,withUploads){
+  const box=el('div',undefined,'portal-work'+(work.reference||work.anilist?' known':''));
+  const kind=work.kind==='series'?'Serie':'Film';
+  const name=work.anilist&&!work.reference?(work.anilist.title||work.title):work.title;
+  const head=el('strong',portalWorkStatus(work)+': '+name+(work.year?' ('+work.year+')':'')+' · '+kind);
+  box.append(head);
+  const facts=[];
+  if(work.season||work.episode)facts.push((work.season?'Staffel '+work.season:'')+(work.season&&work.episode?', ':'')+(work.episode?'Folge '+work.episode:''));
+  if(work.reference)facts.push(work.reference.provider.replace(' Offline','')+' '+work.reference.id);
+  if(work.anilist)facts.push('AniList '+work.anilist.id+(work.anilist.episodes?' · '+work.anilist.episodes+' Folgen':''));
+  if(typeof work.rating==='number')facts.push('★ '+work.rating.toLocaleString('de-DE'));
+  if(work.year_source==='reference'&&work.year_upload)facts.push('Jahr aus der Datenbank (Upload nennt '+work.year_upload+')');
+  if(work.year_source==='reference'&&!work.year_upload)facts.push('Jahr aus der Datenbank');
+  if(work.year_source==='anilist')facts.push('Jahr von AniList');
+  if(!work.reference&&!work.anilist&&work.query_title)facts.push('Gesucht als „'+work.query_title+'“');
+  if(facts.length)box.append(el('small',facts.join(' · ')));
+  const row=el('div',undefined,'portal-work-actions');
+  const url=work.reference?(PORTAL_REF_URL[work.reference.provider]||(()=>''))(work.reference.id):work.anilist?'https://anilist.co/anime/'+work.anilist.id:'';
+  if(url){const a=el('a','Eintrag in der Datenbank','portal-link');a.href=url;a.target='_blank';a.rel='noopener noreferrer';row.append(a);}
+  if(withUploads&&work.uploads>1){
+    const all=el('button',work.uploads+' Uploads zu diesem Werk');all.type='button';
+    all.onclick=()=>{portalWork={id:work.group,title:name};portalOffset=0;$('portal-view').value='uploads';$('portal-source').value='internet_archive';$('portal-language').value='all';$('portal-filter').value='';loadPortals();};
+    row.append(all);
+  }
+  const again=el('button',work.status==='unchecked'?'Jetzt prüfen':'Neu prüfen');again.type='button';again.title='Fragt IMDb, TVDB und TMDB für dieses Werk jetzt ab';
+  again.onclick=()=>busy(again,async()=>{await api('archive-work-check',{id:work.id,force:true});await loadPortals();});
+  row.append(again);
+  box.append(row);
+  return box;
+}
+function portalWorkCard(work){
+  const card=el('article',undefined,'portal-result');
+  card.append(el('h4',work.title+(work.year?' ('+work.year+')':'')));
+  card.append(el('p',(work.kind==='series'?'Serie':'Film')+' · '+work.uploads+(work.uploads===1?' Upload':' Uploads')+' bei Archive.org','muted'));
+  if((work.titles||[]).length>1)card.append(el('small','Schreibweisen: '+work.titles.join(' · '),'muted'));
+  card.append(portalWorkLine(work,false));
+  const open=el('button',work.uploads===1?'Upload zeigen':'Alle '+work.uploads+' Uploads zeigen','primary');open.type='button';
+  open.onclick=()=>{portalWork={id:work.group,title:work.title};portalOffset=0;$('portal-view').value='uploads';$('portal-source').value='internet_archive';$('portal-language').value='all';$('portal-filter').value='';loadPortals();};
+  card.append(open);
+  return card;
+}
+function portalWorkFilter(){
+  const box=$('portal-work-filter');box.replaceChildren();box.hidden=!portalWork;
+  if(!portalWork)return;
+  box.append(el('span','Uploads zum Werk „'+portalWork.title+'“'));
+  const all=el('button','Alle Uploads zeigen');all.type='button';all.onclick=()=>{portalWork=null;portalOffset=0;loadPortals();};
+  box.append(all);
+}
+async function loadPortalWorks(){
+  const [state,result]=await Promise.all([api('portals'),api('archive-works?'+new URLSearchParams({query:$('portal-filter').value.trim(),offset:portalOffset}))]);
+  displayPortalControls(state);
+  const sum=result.summary||{};
+  $('portal-total').textContent='('+countLabel(result.total)+' Werke)';
+  $('portal-status').textContent='Internet Archive · '+countLabel(sum.uploads)+' Uploads in '+countLabel(sum.works)+' Werken · '+countLabel(sum.recognised)+' erkannt'+
+    (sum.year_repaired?' · '+countLabel(sum.year_repaired)+' mit berichtigtem Jahr':'')+(sum.works>sum.checked?' · '+countLabel(sum.works-sum.checked)+' noch zu prüfen'+(result.auto?' (läuft im Hintergrund)':' (automatischer Abgleich ist ausgeschaltet)'):'');
+  const host=$('portal-items');host.replaceChildren();
+  if(!result.items.length)host.append(el('p','Noch keine Werke. Oben nach Archivfilmen suchen; gespeicherte Uploads werden hier zu Werken zusammengefasst.','muted'));
+  else for(const work of result.items)host.append(portalWorkCard(work));
+  $('portal-prev').disabled=portalOffset<=0;
+  $('portal-next').disabled=portalOffset+result.items.length>=result.total;
+}
 async function loadPortals(){
   if(appStopped||$('portals').hidden||portalBusy)return;
   portalBusy=true;
   try{
+    const works=$('portal-view').value==='works';
+    $('portal-source').disabled=works;$('portal-language').disabled=works;
+    if(works)portalWork=null;
+    portalWorkFilter();
+    if(works){await loadPortalWorks();return;}
     const filters=new URLSearchParams({source:$('portal-source').value,
       query:$('portal-filter').value.trim(),offset:portalOffset,locale:$('portal-language').value});
+    if(portalWork)filters.set('work',portalWork.id);
     const [state,result]=await Promise.all([api('portals'),api('portal-items?'+filters)]);
     displayPortalControls(state);
     $('portal-total').textContent='('+countLabel(result.total)+')';
@@ -882,7 +1274,7 @@ $('portal-archive-search').onsubmit=e=>{
   busy($('portal-archive-search').querySelector('button'),async()=>{
     const query=$('portal-archive-query').value.trim();
     const result=await api('portal-search',{source:'internet_archive',query});
-    portalOffset=0;$('portal-source').value='internet_archive';$('portal-filter').value='';
+    portalOffset=0;portalWork=null;$('portal-view').value='uploads';$('portal-source').value='internet_archive';$('portal-filter').value='';
     await loadPortals();
     notice(countLabel(result.added_or_updated)+' Archive-Metadatensätze übernommen. Rechte und Downloads bleiben ungeprüft.');
   });
@@ -902,7 +1294,8 @@ $('portal-netzkino-add').onsubmit=e=>{
   });
 };
 $('portal-filter-run').onclick=()=>{portalOffset=0;loadPortals();};
-$('portal-source').onchange=()=>{portalOffset=0;loadPortals();};
+$('portal-source').onchange=()=>{portalOffset=0;portalWork=null;loadPortals();};
+$('portal-view').onchange=()=>{portalOffset=0;loadPortals();};
 $('portal-language').onchange=()=>{portalOffset=0;loadPortals();};
 $('portal-filter').onkeydown=e=>{if(e.key==='Enter'){e.preventDefault();portalOffset=0;loadPortals();}};
 $('portal-prev').onclick=()=>{portalOffset=Math.max(0,portalOffset-40);loadPortals();};

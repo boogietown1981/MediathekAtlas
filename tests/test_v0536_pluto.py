@@ -8,6 +8,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+sys.path.insert(0, str(ROOT / 'tests'))
 import pluto, streaming  # noqa: E402
 
 TOKEN = 'eyJhbGciOiJIUzI1NiJ9.' + 'x' * 40
@@ -151,9 +152,9 @@ class PlaybackTests(Fixture):
 class WiringTests(unittest.TestCase):
     def test_server_ui_and_packages(self):
         server = (ROOT / 'server.py').read_text('utf-8')
-        for needle in ("path=='/api/pluto'", "path=='/api/pluto-sync'", "('offer','job','netzkino','pluto','justwatch')",
+        for needle in ("path=='/api/pluto'", "path=='/api/pluto-sync'", "('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')",
                        "pluto=q.get('pluto',[''])[0]", "'pluto':pluto.state(ROOT)", "'/pluto.js'"):
-            self.assertIn(needle, server)
+            self.assertTrue(__import__('_wiring').wired(needle), needle)
         self.assertIn("'pluto.py'", (ROOT / 'build_macos.py').read_text('utf-8'))
         html = (ROOT / 'web' / 'index.html').read_text('utf-8')
         self.assertIn('<script src="/pluto.js"></script>', html)

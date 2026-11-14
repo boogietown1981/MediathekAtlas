@@ -1,0 +1,17 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><title>MediathekAtlas Videostart</title>
+<style>
+body{font:13px/1.4 system-ui,sans-serif;margin:0;padding:12px 14px;width:280px;color:#1d2330}
+h1{font-size:14px;margin:0 0 8px}
+label{display:flex;gap:8px;align-items:flex-start;margin:7px 0}
+input{margin-top:2px}
+p{color:#5b6475;margin:8px 0 0;font-size:12px}
+</style></head>
+<body>
+<h1>MediathekAtlas Videostart</h1>
+<label><input type="checkbox" id="autoplay"> <span>Video automatisch starten (Abspielknopf klicken)</span></label>
+<label><input type="checkbox" id="hdcp"> <span>HDCP-Hinweis von Rakuten TV automatisch bestätigen</span></label>
+<p>Wirkt nur bei Links, die MediathekAtlas öffnet, und nur auf rakuten.tv, joyn.de, toggo.de, justwatch.com, crunchyroll.com und plus.rtl.de. Kein Umgehen von Kopierschutz, keine Datenübertragung.</p>
+<p id="state"></p>
+<script src="popup.js"></script>
+</body></html>

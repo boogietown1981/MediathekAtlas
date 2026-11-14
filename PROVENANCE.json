@@ -1,27 +1,38 @@
 [
   {
     "path": "vendor/archivemedia/catalog_identity.py",
-    "source": "ArchiveMedia_v0.10.12_Source.zip/app/catalog_identity.py",
-    "sha256": "4c6362dd3ef692c9e62b804b4e3a48345d9fd084ac16f6b9e0e94670051cc13a"
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/catalog_identity.py",
+    "sha256": "cdb4a1dbb5b762af4cbdd55a8e5f445bfcd2b28cabf714a734f5203b61c88294"
   },
   {
     "path": "vendor/archivemedia/external_metadata.py",
-    "source": "ArchiveMedia_v0.10.12_Source.zip/app/external_metadata.py",
-    "sha256": "7410832525946993451f3a1d692ca6fa3d7d7268b1993c2251ef8334825851d9"
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/external_metadata.py",
+    "sha256": "a9ee25c45fa022930f0ab90a338a5a3cc5595ebf9bbb75d2929ef8f1cd1420d8"
   },
   {
     "path": "vendor/archivemedia/linguistics.py",
-    "source": "ArchiveMedia_v0.10.12_Source.zip/app/linguistics.py",
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/linguistics.py",
     "sha256": "471488f9dd0a27ff4357362ba30f0823916e6946130414b1ef415845c0a66268"
   },
   {
     "path": "vendor/archivemedia/media_probe.py",
-    "source": "ArchiveMedia_v0.10.12_Source.zip/app/media_probe.py",
-    "sha256": "cd8c8eb725e3cbf48dcd79ecb1c7f7d65f86072c5fc78164e44d83abe0f29ff0"
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/media_probe.py",
+    "sha256": "648c43134e70da43b64b79bdbb934a6c123c5924b0b344b4c639020412ad4c67",
+    "note": "Importpfade auf vendor.* angepasst (wie vendor/archive_portals/media_probe.py)"
   },
   {
     "path": "vendor/archivemedia/package_media.py",
-    "source": "ArchiveMedia_v0.10.12_Source.zip/app/package_media.py",
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/package_media.py",
     "sha256": "9d4deae3a0507212a42c4d557471210ad6fbe85bf272aa2b61694f309fe6266e"
+  },
+  {
+    "path": "vendor/archive_portals/fanart_client.py",
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/fanart_client.py",
+    "sha256": "c60fa0bb17c95763809cda4bc89fcadd4210305da6bcf420e0a818fc8fb133c9"
+  },
+  {
+    "path": "vendor/archive_portals/backup_manager.py",
+    "source": "ArchiveMedia v0.10.53 (github boogietown1981/ArchiveMedia@e1503fb)/app/backup_manager.py",
+    "sha256": "707af4a890eea718a9bc01f24e27ab370bc399e17496fa3272ad36b0eec11e7b"
   }
 ]

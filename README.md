@@ -1,4 +1,449 @@
-# MediathekAtlas · 0.5.40
+# MediathekAtlas · 0.5.107
+
+## Neu in 0.5.107: RTL+ nur noch kostenlos, „Meine Abos“
+
+- **RTL+ zeigt nur noch, was ohne Abo läuft.** Der Katalog kommt jetzt aus dem Gastbereich „Kostenlose Inhalte“ von RTL+. Titel, die RTL+ nur mit Abo zeigt („+“), werden gezählt und ausgeblendet; die frühere Liste mit Abo-Titeln verschwindet beim ersten Abruf von selbst. Weitere Seiten werden jetzt über den richtigen Pfad geladen (keine „HTTP 404“ mehr).
+- **Neu: Verwaltung → Darstellung → „Meine Abos“.** Je Anbieter ein Haken „Ich habe ein Abo“:
+  - RTL+: zeigt zusätzlich die Abo-Titel, markiert mit „In deinem RTL+ Abo“.
+  - Crunchyroll: Abo-Titel heißen dann „In deinem Abo“ statt „Nur mit Abo“.
+  - MediathekAtlas speichert keine Zugangsdaten. „Bei … ansehen“ öffnet den Anbieter in deinem Browser; dort einmal anmelden, die Chrome-Erweiterung drückt auf Wunsch „Abspielen“. Abgespielt wird beim Anbieter (Kopierschutz).
+- Nicht geprüft: echter Gastbereich von RTL+ (aus der Bauumgebung gesperrt). Ordner und Pfade stammen aus einem öffentlichen RTL+-Free-Client.
+
+## Neu in 0.5.106: RTL+-Links führen auf die richtige Seite
+
+- „Bei RTL+ ansehen“ öffnet jetzt die Seite im Schema, das Björn bestätigt hat (`plus.rtl.de/<titel>-p_<nummer>`), statt „Diese Seite existiert nicht“. Bereits gespeicherte Links werden beim ersten Start einmal umgeschrieben, ein neuer Katalogabruf ist nicht nötig.
+- **ServusTV** ruft langsamer ab (0,5 s statt 0,25 s zwischen den Anfragen) und versucht es nach „HTTP 403“ zweimal mit Pause erneut; die Plattform hatte zu schnelle Abrufe abgewiesen. Bleibt etwas abgewiesen, nennt der Hinweis die Anzahl.
+- **Nach einem Update** lädt MediathekAtlas einen Katalog, der zuletzt nur teilweise oder gar nicht geladen wurde (Plex, ServusTV, RTL+), einmal neu, ohne auf den 24-Stunden-Abruf zu warten.
+- Sonst wie 0.5.105.
+
+## Neu in 0.5.105: Sammelstand
+
+- 0.5.105 = 0.5.104 (Korrekturen Plex, RTL+, ServusTV) + 0.5.103 (Kinder und Familie getrennt) und alles davor. Keine weiteren Änderungen.
+
+## Neu in 0.5.104: Korrekturen nach Björns Diagnose vom 13.11.
+
+- **Plex** zeigt wieder Filme und Serien: Plex beantwortet die Bereichsliste für Gäste mit „HTTP 404“. Dann liest MediathekAtlas jetzt die Startseiten-Leisten von Plex (wie die Plex-Web-App) und blättert sie vollständig durch.
+- **RTL+**: Kacheln, die direkt auf ein Video zeigen, verlinken jetzt auf die Seite der Sendung bzw. des Films. Weitere Seiten einer Leiste, die RTL+ nicht mehr kennt (HTTP 404), machen den Abruf nicht mehr „teilweise“. Genre-Unterordner werden mitgelesen (mehr Titel). Fehler nennen den Ordner (z. B. „Kids: …“).
+- **ServusTV**: Der alte Hinweis „WordPress: … nicht erreichbar“ aus 0.5.101 verschwindet beim nächsten Abruf. Der erste vollständige Abruf dauert einige Minuten; in der Diagnose steht dabei der Fortschritt.
+- Nicht geprüft: echte Antworten von Plex und RTL+ (aus der Bauumgebung gesperrt). Ob RTL+-Filmlinks jetzt stimmen, zeigt erst der Test bei Björn.
+- 0.5.103 kam aus dem Kategorien-Thread und steckt im Sammelstand 0.5.105.
+
+## Neu in 0.5.103: „Kinder“ und „Familie“ getrennt
+
+- Die frühere Kategorie „Kinder & Familie“ ist geteilt. **Kinder** gibt es nur bei eindeutigen Kinder-Angaben (Kinderfilm, Kinderserie, KiKA, TOGGO, Kids) und nie zusammen mit Horror, Thriller, Krimi, Erotik oder Krieg oder ab FSK 12. **Familie** (z. B. TMDB „Family“, Weihnachtsfilme) steht nie neben Horror oder Erotik und gilt bis FSK 12.
+- Bestehende Datenbanken werden beim Start einmal umgestellt.
+
+## 0.5.102: RTL+ als Katalog, ServusTV nach Björns Mitschnitt
+
+- **Neuer Plattform-Reiter „RTL+“** mit dem kostenlosen Teil von RTL+ (RTL+ Free, ohne Konto): Filme, Serien, Shows und Kindersendungen, mit einheitlichen Kategorien, Titel- und Serienseite, Suche, Merkliste und im Dashboard. RTL+ liefert jedes Video nur mit Kopierschutz (Widevine) aus. Deshalb spielt MediathekAtlas RTL+ nie selbst ab: Jeder Titel hat „Bei RTL+ ansehen“, die optionale Chrome-Erweiterung startet dort die Wiedergabe. Titel, die RTL+ Premium brauchen, werden nur gezählt. Kein Offline-Speichern.
+- **ServusTV läuft jetzt über die echten Schnittstellen** aus Björns HAR-Mitschnitt von servustv.com: Katalog aus der Red-Bull-Plattform (alle Sendungen und Kategorien, Sendungen mit Staffeln und Folgen, Filme), Wiedergabe über den Red-Bull-Player (klares HLS, bis 1080p). Live-Sender kommen aus dem Katalog (ServusTV, dazu Red Bull TV und Wetterpanorama, soweit ServusTV sie anbietet). Clips und Trailer bleiben draußen.
+- Nicht geprüft: RTL+ und ServusTV selbst (aus der Bauumgebung gesperrt). Die ServusTV-Antworten sind im Test genau so aufgebaut wie im Mitschnitt; die RTL+-Schnittstelle stammt aus öffentlichen Open-Source-Clients und ist noch nicht mitgeschnitten.
+- Sammelstand: 0.5.102 enthält 0.5.101 und alles davor.
+
+
+## Neu in 0.5.101: ServusTV On
+
+- **Neuer Plattform-Reiter „ServusTV“** mit der kostenlosen Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen wie „Bergwelten“ mit allen Folgen, Spielfilme. Dazu **ServusTV Deutschland und Österreich live**, auch im Reiter Live-TV. Wie bei den anderen Plattformen mit einheitlichen Kategorien, Titel- und Sendungsseite, Suche, Merkliste und im Dashboard.
+- **Alles läuft im MediathekAtlas-Player**: ServusTV liefert ohne Kopierschutz aus (jeder Stream wird trotzdem vorher geprüft). Gibt ServusTV ein Video gerade nicht frei, nennt der Player den Grund, zum Beispiel „Jugendschutz: nur von 22:00 bis 06:00 Uhr“ oder „Geosperre“.
+- **Kein Offline-Speichern**: ServusTV erlaubt Downloads nur in der eigenen App.
+- Überholt durch 0.5.102: Katalog und Wiedergabe laufen jetzt über die Schnittstellen aus Björns HAR-Mitschnitt.
+- Sammelstand: 0.5.101 enthält 0.5.100 (Plex) und alles davor.
+
+## Neu in 0.5.100: Plex – kostenlose Filme, Serien und Live-Sender
+
+- **Neuer Plattform-Reiter „Plex“** mit dem kostenlosen Angebot von Plex (mit Werbung, ohne Plex-Konto): Filme, Serien mit Staffeln und Folgen, Live-Sender. Wie bei den anderen Plattformen mit einheitlichen Kategorien, Bewertung, Titel- und Serienseite, Suche, Merkliste und im Dashboard unter „Alle“ oder „Plex“. Die Live-Sender stehen zusätzlich im Reiter **Live-TV**.
+- **Kopierschutz wird je Titel geprüft.** Viele Plex-Titel kommen ohne Kopierschutz und laufen im MediathekAtlas-Player (über ffmpeg, weil Plex sie als DASH ausliefert). Manche liefert Plex nur mit Widevine aus: Das zeigt sich beim ersten „Ansehen“, danach steht dort „Bei Plex ansehen“. Nichts wird umgangen.
+- **Kein Offline-Speichern**: Plex selbst bietet für seine Gratis-Titel keinen Download an.
+- Der Katalog lädt sich beim ersten Start von selbst; danach auf Wunsch alle 24 Stunden (Schalter im Reiter). Welche Titel Plex anbietet, hängt vom Land der Internetverbindung ab.
+- Nicht geprüft: Plex selbst (aus der Bauumgebung gesperrt). Die Schnittstellen stammen aus öffentlich verfügbaren Plex-Programmen (Kodi-Erweiterungen, python-plexapi) und sind mit nachgebauten Antworten getestet. Falls der Katalog leer bleibt oder ein Titel nicht startet, hilft ein HAR-Mitschnitt von watch.plex.tv.
+- Sammelstand: 0.5.100 enthält 0.5.99 (helles Design, Systemmonitor), 0.5.98 (Plex, bisher einzeln), 0.5.97 (Samsung TV Plus), 0.5.96 (Crunchyroll), 0.5.95 (Archivnachweise) und alles davor.
+
+## Neu in 0.5.99: Helles Design, Systemmonitor, Klicktest in echten Browsern
+
+- **Helles Design.** Verwaltung → Darstellung → „Design“: Dunkel (wie bisher, Standard), Hell oder „Wie das System“. Die Auswahl gilt für alle Browser, die diese Installation öffnen. Das helle Design wird aus dem dunklen berechnet: gleiche Aufteilung, gleiche Akzentfarben, nur die Helligkeit gespiegelt. Player, Hintergrundbilder und alles, was auf einem Bild liegt, bleiben dunkel. Erste Fassung: Ansichten mit echten Covern und Titelseiten konnten hier nicht beurteilt werden, Rückmeldungen zu einzelnen Stellen sind willkommen.
+- **Systemmonitor.** Verwaltung → „System“ zeigt Prozessorlast, freien Arbeitsspeicher, Speicherbedarf von MediathekAtlas, Temperatur (wo das System sie meldet), freien Platz auf den Laufwerken von Daten und Downloads, die Größe der Datenbanken und was gerade läuft (Downloads, Umwandlungen, Dateiprüfung, Verbund). Dazu Hinweise in Klartext, wenn Prozessor, Speicher, Temperatur oder Platz knapp werden. Gemessen wird nur, solange die Ansicht offen ist.
+- **Klicktest in der CI.** Bei jedem Pull Request öffnet ein Test alle Hauptansichten, alle Bereiche der Verwaltung und alle Plattform-Reiter in Chromium, Firefox und WebKit (steht für Safari) und schlägt bei jedem Skriptfehler oder fehlgeschlagenen Aufruf an.
+- Die Reiter der Verwaltung sind etwas schmaler, damit der neue Reiter „System“ in die Zeile passt.
+- Sammelstand: 0.5.99 enthält 0.5.97 (Samsung TV Plus), 0.5.96 (Crunchyroll), 0.5.95 (Archivnachweise), 0.5.94 (Umwandeln) und alles davor. 0.5.98 (Plex) folgt in 0.5.100.
+
+## Neu in 0.5.97: Samsung TV Plus im Reiter Live-TV
+
+- **Rund 200 kostenlose Live-Sender von Samsung TV Plus** (Filme, Serien, Dokus, Kids, Anime, Sport, News …) stehen im Reiter **Live-TV**, mit Logo, Gruppe, Kanalnummer und dem Programm, das **gerade läuft und danach kommt**. Über den Anbieter-Filter „Samsung TV Plus“ siehst du nur diese Sender.
+- Samsung TV Plus hat in Deutschland nur Live-Sender, keine Filme oder Serien zum Abrufen. Deshalb gibt es keinen eigenen Plattform-Reiter und kein Offline-Speichern.
+- **Kopierschutz:** 16 der 216 deutschen Sender liefert Samsung nur mit Widevine aus. Die werden nicht aufgeführt, nur gezählt. Alle anderen Streams werden vor dem Abspielen geprüft und laufen im eigenen Player (mit der Werbung des Senders).
+- Die Senderliste lädt sich beim ersten Start von selbst und danach alle 12 Stunden. Fehlt sie oder schlug der Abruf fehl, steht im Reiter Live-TV ein Knopf zum Laden. Unter Verwaltung → Aufgaben heißt der Abruf „Samsung TV Plus · Senderliste“.
+- Quelle: Samsung hat keine offene Schnittstelle. Die Senderliste kommt aus der öffentlichen Sammlung bei i.mjh.nz, die Wiedergabe-Adresse über deren Weiterleitung jmp2.uk zur offiziellen Samsung-Adresse (wie bei Kodi-Erweiterungen und IPTV-Playern). Fällt eines davon weg, nennt der Reiter den Grund, die anderen Anbieter laufen weiter.
+- Nicht geprüft: Wiedergabe echter Samsung-Streams (aus der Bauumgebung gesperrt). Geprüft ist die Senderliste mit dem echten Stand vom 13.11.2026.
+- Sammelstand: 0.5.97 enthält 0.5.94 und alles davor (0.5.95 und 0.5.96 sind von anderen Threads reserviert).
+
+## Neu in 0.5.96: Crunchyroll
+
+- **Neuer Plattform-Reiter „Crunchyroll“** und Crunchyroll im gemeinsamen Katalog: Anime-Serien mit Staffeln und Folgen sowie Filme, mit deutschen Texten, Altersfreigabe, einheitlichen deutschen Kategorien, Bewertung (IMDb/TMDB-Abgleich wie bei den anderen Plattformen), Merkliste und Weiterschauen.
+- **Wichtig: Crunchyroll hat das kostenlose Angebot mit Werbung zum 31.12.2025 eingestellt.** Seit dem 1.1.2026 braucht man auf crunchyroll.com für jeden Titel ein Abo, und alle Streams sind mit Widevine geschützt. MediathekAtlas umgeht nichts: „Bei Crunchyroll ansehen“ öffnet den Titel auf crunchyroll.com; die optionale Chrome-Erweiterung „Videostart“ klickt dort auf Abspielen. Kein Player, kein Offline-Speichern.
+- Die Auswahl „Angebot“ filtert nach **Kostenlos / Nur mit Abo / Deutsche Synchronfassung / Deutsche Untertitel**. Sollte Crunchyroll wieder Folgen ohne Abo freigeben, erscheinen sie automatisch als „Kostenlos“.
+- **Gratis-Folgen:** Der offizielle YouTube-Kanal „Crunchyroll auf Deutsch“ (@CrunchyrollDE) ist unter YouTube als Vorschlag eingetragen (ganze Folgen ab 20 Minuten, Trailer und Clips bleiben draußen). Er läuft im MediathekAtlas-Player, braucht aber den YouTube-API-Schlüssel.
+- Nicht live geprüft: crunchyroll.com ist aus der Bauumgebung gesperrt. Crunchyroll schützt die Seite mit Cloudflare; blockiert es den Abruf, sagt die Katalog-Karte das im Klartext.
+- Sammelstand: 0.5.96 enthält 0.5.95 (Archivnachweis) und alles davor.
+
+## Neu in 0.5.95: Prüfsumme und Archivnachweis für Archive.org-Downloads, Zweitkopie im Verbund
+
+- **Jeder Archive.org-Download wird beim Laden geprüft.** Archive.org nennt zu jeder Datei eine Prüfsumme. Stimmt die geladene Datei nicht damit überein, wird sie verworfen statt gespeichert. Dafür muss der Dateibestand des Uploads mit dieser Version gelesen sein („Dateibestand neu von Archive.org lesen“ in der Detailansicht); bei älteren Einträgen wird nur gemessen.
+- **Archivnachweis je Datei.** Nach dem Download entsteht ein signierter Nachweis: welche Datei von welchem Upload, Prüfsumme der geladenen und der gespeicherten Datei, Datum. Jedes System hat dafür einen eigenen Schlüssel, der das Gerät nicht verlässt.
+- **Zweitkopie im Verbund.** Im Verbund tauschen die Systeme ihre Nachweise aus. Verwaltung → Speicher → „Archivnachweise“ zeigt je Datei: nur hier, Zweitkopie belegt (mit Name des anderen Systems und Datum) oder nur auf einem anderen System. Nachweise mit ungültiger Signatur werden nicht angenommen. Meldet ein System später unter einem anderen Schlüssel, steht „Schlüssel geändert“ da und die Kopie zählt nicht.
+- **„Hier ebenfalls laden“** holt eine Datei, die nur ein anderes System hat, von Archive.org auf dieses System. So entsteht gezielt eine zweite Kopie; sie wird wie jeder Download geprüft.
+- **„Erneut prüfen“** liest die Datei vollständig und vergleicht sie mit ihrem Nachweis. Das erkennt beschädigte oder veränderte Dateien. Fehlt die Datei, wird der Nachweis zurückgezogen. Wer eine Datei unter „Speicher“ löscht, zieht ihren Nachweis ebenfalls zurück; die anderen Systeme erfahren das.
+- **„Fehlende Nachweise erstellen“** holt den Nachweis für Downloads aus früheren Versionen nach (ohne Prüfung der Quelle, weil die geladenen Daten nicht mehr vorliegen).
+- Ein Nachweis ist eine Aussage mit Datum, keine laufende Überwachung. MediathekAtlas löscht deshalb auch bei belegter Zweitkopie nichts von selbst.
+- Ohne Verbund bleiben die Nachweise auf dem System und werden veröffentlicht, sobald ein Verbund eingerichtet ist. Systeme mit älterer Version überspringen die Nachweise.
+- Nicht geprüft: echte Downloads von Archive.org (aus der Bauumgebung gesperrt), zwei echte Geräte über MeshSync oder Tailscale. Getestet sind zwei Installationen auf einem Rechner mit gemeinsamem Verbundordner.
+- Sammelstand: 0.5.95 enthält 0.5.94 (Umwandeln) und alles davor.
+
+## Neu in 0.5.94: Umwandeln auf 1080p, 720p oder 480p (Encoder)
+
+- **Verwaltung → Speicher → „Umwandeln“** rechnet einen fertigen Download mit ffmpeg auf eine kleinere Bildgröße herunter (H.264 in MKV). Ton und Untertitel bleiben unverändert, Kapitel und Titelangaben auch.
+- **Das Original bleibt erhalten.** Ohne weiteres Zutun entsteht eine zweite Datei daneben, z. B. „Titel [720p].mkv“. Nur mit dem Haken „Original ersetzen“ und einer Bestätigung tritt das Ergebnis an die Stelle des Originals, und auch dann erst, wenn es geprüft ist (Bildhöhe, Laufzeit, Zahl der Tonspuren). Besteht es die Prüfung nicht, bleibt das Original und das Ergebnis wird verworfen.
+- **Schonend für ältere Geräte:** immer nur eine Umwandlung, mit gesenkter Priorität. „Schnell“ braucht weniger Rechenzeit, „Ausgewogen“ ergibt kleinere Dateien. Hochrechnen wird abgelehnt (ein 720p-Video wird nicht zu 1080p).
+- Die Warteschlange steht unter der Dateiliste, mit Fortschritt, „Abbrechen“ und „Liste leeren“. Nach einem Neustart wird eine unterbrochene Umwandlung von vorn begonnen; halbfertige Dateien heißen `.partial` und zählen nie als Ergebnis.
+- Vor dem Start wird der freie Platz geprüft. Fehlen ffmpeg oder ffprobe, sagt die Seite das, statt einen Auftrag anzunehmen.
+- Bewusst ffmpeg statt HandBrake: ffmpeg ist für Downloads ohnehin dabei, auf macOS, Windows, Linux und NAS. Hardware-Beschleunigung (VideoToolbox, Quick Sync) ist noch nicht eingebaut.
+- Nicht geprüft: echte NAS-Hardware, macOS und Windows, sehr lange Filme. Getestet ist mit kurzen echten Videos unter Linux.
+- Sammelstand: 0.5.94 enthält 0.5.93 und alles davor.
+
+
+## Neu in 0.5.93: Videostart auch bei TOGGO und JustWatch, SAT.1 als Joyn+
+
+- Nach Björns Test von 0.5.91: Joyn startet direkt. Bei TOGGO war noch der pinke Play-Knopf zu klicken, bei JustWatch der Play-Knopf im Mini-Player.
+- Die Chrome-Erweiterung klickt jetzt auch **Play-Knöpfe ohne Beschriftung** über dem Player: bekannte Player-Knöpfe (Video.js, JW Player, Bitmovin, Shaka u. a.), Elemente mit „play“ im Klassennamen, und als Letztes die Mitte des Players. Sie klickt wie eine Maus (Zeiger- und Maus-Ereignisse), weil manche Player nicht auf einen einfachen Klick reagieren. Videos, die erst beim Abspielen laden (Mini-Player), startet sie direkt. Sie wirkt auch in eingebetteten Rahmen derselben Seite.
+- **SAT.1 ist als Joyn+ gekennzeichnet** (Live-TV und Reiter Joyn), auch in schon geladenen Katalogen. Joyns eigene Senderliste führt SAT.1 als frei; die Kennzeichnung beruht auf Björns Beobachtung vom 13.11.2026. SAT.1 GOLD, SAT.1 emotions und die Regionalfenster bleiben unverändert.
+- **Erweiterung aktualisieren:** neues ZIP unter Einstellungen → „Videostart bei Anbietern“ herunterladen, den alten Ordner damit ersetzen und unter `chrome://extensions` bei „MediathekAtlas Videostart“ auf ↻ (Neu laden) klicken.
+- Nicht geprüft: die echten Seiten von TOGGO und JustWatch (aus der Bauumgebung gesperrt); getestet mit nachgebauten Seiten. Liegt der Player in einem Rahmen einer anderen Adresse, kommt die Erweiterung dort nicht hin.
+- Sammelstand: 0.5.93 enthält 0.5.92 (Archive-Media-Module) und alles davor.
+
+
+## Neu in 0.5.92: Archive.org-Scan wird verlässlich, Listen-Austausch, Blu-ray-Abbilder (aus Archive Media)
+
+- **Der Scan zählt nur noch, was Archive.org wirklich geliefert hat.** Sammlungen und Uploader werden sortiert abgefragt, und jede Seite muss nachweislich die angefragte sein. Bisher konnte eine still wiederholte erste Seite als Fortschritt gelten.
+- **Große Sammlungen werden vollständig gelesen.** Archive.org beantwortet höchstens 10 000 Treffer je Frage; größere Quellen blieben bisher dort stehen. Jetzt werden sie nach Veröffentlichungsdatum in Zeitfenster geteilt und Fenster für Fenster gelesen.
+- **Fehler werden unterschieden.** Netzprobleme werden mit wachsender Pause wiederholt und nach acht Versuchen angehalten statt endlos weiterzulaufen. Liefert Archive.org dreimal nicht die angefragte Seite, stellt der Scan von Seiten auf Zeitfenster um. Eine abgelehnte Anfrage hält die Quelle an. Die Position bleibt immer erhalten; „Start / Fortsetzen“ macht dort weiter.
+- **„Neu durchsuchen“** liest eine Quelle von vorn. Bereits Gefundenes bleibt, die Zähler des alten Laufs werden aufbewahrt. Jede Quelle zeigt, wie viel Archive.org nennt und wie viel gelesen wurde (ein Anhaltspunkt, kein Beweis).
+- **Liste austauschen** (Plattformen → Internet Archive → Scanquellen → „Gefundene Uploads mit einer anderen Installation austauschen“): „Liste speichern“ schreibt alle bekannten Uploads in eine Datei, „Liste einlesen“ übernimmt auf einer anderen Installation nur die, die dort fehlen. Die Datei hat das Format von ArchiveMedia, Listen gehen also in beide Richtungen. Sie enthält nur Archive.org-Kennungen, Titel und Dateinamen.
+- **Blu-ray-Abbilder.** Besteht ein Upload aus nummerierten Blu-ray-Clips, zeigt die Detailansicht die Playlists. „Hauptfilm suchen“ liest sie (je höchstens 256 KiB) und nennt den längsten Titel, dessen Clips alle im Upload liegen, mit Reihenfolge, Laufzeit und Größe. Geladen und zusammengefügt werden die Clips noch nicht.
+- **Weitere Inhalte eines Uploads.** Musik, Hörbücher, Bücher, Comics oder Programme, die neben dem Film im Upload liegen, werden mit vorsichtiger Einordnung und Begründung aufgeführt; die Links öffnen die Datei bei Archive.org. Nennt der Uploader eine ISBN oder eine MusicBrainz-Kennung, lässt sie sich auf Klick bei Open Library bzw. MusicBrainz nachschlagen.
+- Bei Uploads, deren Dateibestand schon vor dem Update gelesen wurde, zeigt die Detailansicht jetzt „Dateibestand neu von Archive.org lesen“. Erst danach erscheinen dort Bildhöhe (für die Staffel-Auswahl), Blu-ray-Struktur und weitere Inhalte.
+
+## Neu in 0.5.91: Videos bei Rakuten TV, Joyn, TOGGO und JustWatch TV starten schneller
+
+- Titel mit Kopierschutz laufen weiter nur beim Anbieter. Bisher öffnete der Link die Detailseite, dann musste man auf „Ansehen“ klicken und bei Rakuten TV noch den HDCP-Hinweis bestätigen.
+- **Direkter Player-Link:** Bei Joyn öffnet „Bei Joyn ansehen“ jetzt gleich den Player (`joyn.de/play/filme/…` bzw. `/play/serien/…/<folge>`), nicht mehr die Detailseite. Gilt für Kacheln, Titel- und Serienseiten, Plattform-Reiter und Live-TV. Bei Rakuten TV, TOGGO und JustWatch TV bleibt die bisherige Seite, weil deren Player-Adresse nicht belegt ist.
+- **Optionale Chrome-Erweiterung „MediathekAtlas Videostart“:** Verwaltung → Einstellungen → „Videostart bei Anbietern“ → ZIP herunterladen, entpacken, in Chrome unter `chrome://extensions` mit Entwicklermodus → „Entpackte Erweiterung laden“. Danach klickt sie bei Links aus MediathekAtlas den Abspielknopf und bestätigt den HDCP-Hinweis. Kaufen, Leihen, Abo, Anmelden und Cookie-Zustimmung klickt sie nie. Sie wird nur auf rakuten.tv, joyn.de, toggo.de und justwatch.com aktiv, nur bei Links aus MediathekAtlas und höchstens 90 Sekunden lang. Sie verschickt keine Daten.
+- Chrome erlaubt Autoplay mit Ton nur nach einem Klick in die Seite. Lehnt Chrome ab, startet das Video stumm, und der erste Klick schaltet den Ton ein. Dauerhaft mit Ton: beim Anbieter Schloss-Symbol → Website-Einstellungen → Ton: Zulassen.
+- Mit dem Schalter im selben Bereich lässt sich alles abschalten. Der Kopierschutz wird nicht umgangen.
+- **Nicht geprüft:** die echten Seiten von Rakuten TV, Joyn, TOGGO und JustWatch (aus der Bauumgebung gesperrt). Die Erweiterung erkennt Knöpfe an ihrer Beschriftung. Ändert ein Anbieter sie, öffnet der Link die Seite wie bisher, und man klickt selbst.
+- Sammelstand: 0.5.91 enthält 0.5.88, 0.5.89 (YouTube 1080p) und 0.5.90 (Joyn-Sender).
+
+## Neu in 0.5.90: Joyn-Sender öffnen den richtigen Sender
+
+- **Live-TV → Joyn öffnete arte.** Bei 114 von 128 Joyn-Sendern zeigte der Knopf „Joyn“ auf die allgemeine Live-Seite von joyn.de. Joyn spielt dort seinen Standardsender, deshalb landete man z. B. bei Naruto oder SAT.1 auf arte. Jetzt öffnet jeder Knopf die Player-Seite genau dieses Senders, so wie joyn.de selbst verlinkt (`/play/live-tv?channel_id=…`).
+- Ein schon geladener Joyn-Katalog wird kurz nach dem Start mit einer einzigen Anfrage repariert, Filme und Serien bleiben unverändert. Bis dahin zeigen Joyn-Sender keinen falschen Link, sondern „Direktlink folgt nach dem nächsten Joyn-Abruf“.
+- Geprüft: Pluto TV, Rakuten TV und ARD/ZDF & Co. spielen je Sender über die eigene Kennung ab und haben keinen solchen Sammel-Link. Joyns „Hessischer Rundfunk“ steht jetzt beim hr-fernsehen.
+- Sammelstand: 0.5.90 baut auf 0.5.88 auf (enthält 0.5.86 und 0.5.87). 0.5.89 ist für die YouTube-Auflösung reserviert.
+
+## Neu in 0.5.89: YouTube im eigenen Player in 1080p
+
+- Bisher lief YouTube im eigenen Player oft nur in 480p. Ohne Anmeldung bietet YouTube Bild und Ton als getrennte H.264-Dateien häufig nur bis 480p an; die höheren Stufen gibt es als HLS-Stream (Bild und Ton zusammen) oder als VP9. MediathekAtlas nahm die erste passende Variante statt der höchsten.
+- Jetzt wählt MediathekAtlas die höchste Auflösung bis zur Grenze: „Automatisch“ bis 1080p, „Beste“ bis 2160p. Bei gleicher Auflösung wird H.264 vor VP9 bevorzugt, weil Safari H.264 sicher abspielt.
+- Unter „Qualität“ stehen jetzt die Auflösungen, die YouTube für das jeweilige Video anbietet.
+
+## Neu in 0.5.88: Ganze Staffeln von Archive.org laden, Uploader erkannter Werke vormerken
+
+- **Staffeln und Folgen auswählen.** Bisher musste bei einem Upload mit vielen Dateien jede Folge einzeln angeklickt werden. In der Detailansicht eines Archive.org-Uploads (Plattformen → Internet Archive → „Fassungen, Folgen und Sprachen prüfen“) gibt es jetzt den Bereich „Staffeln und Folgen auswählen“: Tonsprache, Untertitel, Auflösung, Dateiformat und Staffel wählen, „Auswahl anzeigen“ zeigt je Folge die beste passende Datei und bei fehlenden Folgen den Grund. Mit einem Klick werden die angehakten Dateien vorgemerkt (höchstens 300 auf einmal). Eine Sprache aus dem Dateinamen gilt als Hinweis; mit „Sprache muss durch die Tonspur belegt sein“ zählen nur Dateien, deren Spuren geprüft wurden.
+- **Uploader erkannter Werke.** Wer einen erkannten Film oder eine erkannte Serie hochgeladen hat, hat oft mehr davon. Das öffentliche Archive.org-Konto solcher Uploads wird als Scanquelle vorgemerkt (Plattformen → Internet Archive → Scanquellen, mit dem Hinweis „Uploader von …“). Vorgemerkte Konten sind pausiert und werden erst durchsucht, wenn du sie startest; ein entferntes Konto kommt nicht wieder. E-Mail-Adressen von Uploadern werden nie gelesen oder gespeichert.
+- Sammelstand: 0.5.88 enthält auch 0.5.86 (flüssige Wiedergabe) und 0.5.87 (TOGGO nach dem Mitschnitt).
+
+## Neu in 0.5.87: TOGGO nach dem echten Angebot von toggo.de
+
+- Grundlage ist Björns Mitschnitt von toggo.de (13.11.2026). TOGGO lädt den Katalog jetzt so, wie die Website selbst: **alle Serien und zusätzlich alle Filme**, mit Titelbild, Beschreibung, Altersempfehlung, Staffeln und Folgen. Die bisherige Ableitung aus der Seitenübersicht (0.5.79 bis 0.5.85) entfällt; der alte TOGGO-Bestand wird beim ersten Start ersetzt, danach bitte einmal „Katalog jetzt laden“.
+- **Kostenlos oder Abo:** Jede Kachel und jede Folge zeigt „kostenlos“ (bei Folgen aus dem Fernsehprogramm mit Enddatum, z. B. „kostenlos bis 20.11.“) oder „Nur mit Abo“. Im Reiter „TOGGO“ gibt es die Auswahl „Angebot“: Alles, nur Kostenloses, nur mit Abo, TOGGOLINO (Vorschule), TOGGO (Schulkinder). Die Serienseite nennt, wie viele Folgen kostenlos sind.
+- **Wiedergabe:** Der Mitschnitt zeigt, dass TOGGO alle Folgen und Filme, auch die kostenlosen, nur mit Kopierschutz (Widevine/PlayReady/FairPlay) ausliefert. MediathekAtlas umgeht ihn nicht. Deshalb gibt es bei TOGGO keinen eigenen Player und kein Offline-Speichern; „Bei TOGGO ansehen“ öffnet genau die Folge oder den Film auf toggo.de. Sollte TOGGO einen Titel einmal ohne Kopierschutz anbieten, erscheint dort „▶ Ansehen“.
+- TOGGO-Filme stehen auch im gemeinsamen Katalog unter „Filme“.
+- **Nicht geprüft:** ein Abruf gegen toggo.de selbst (aus der Bauumgebung gesperrt). Die Anfragen entsprechen dem Mitschnitt; ob das Blättern bei mehr als 500 Titeln je Liste so funktioniert, war im Mitschnitt nicht enthalten (aktuell 182 Serien und 104 Filme, also eine Antwort je Liste).
+- Diese Version baut auf 0.5.85 auf und enthält alles daraus.
+
+## Neu in 0.5.86: Videos laufen im eigenen Player flüssig
+
+- YouTube im eigenen Player: Bild und Ton werden wie auf youtube.com in Stücken von 4 MB geladen, drei gleichzeitig. Bisher kam ein Video nur ungefähr in Abspielgeschwindigkeit an (laut Diagnose 1,8 Mbit/s, erstes Bild nach 8 s, nach dem Spulen 20 s nichts), dadurch stockte es ständig.
+- Alle Streams, die MediathekAtlas umwandelt (YouTube, Pluto TV, Rakuten, Sender-Streams ohne direkten Zugriff, MKV-Dateien): Nach dem Spulen oder beim Weiterschauen startet das Bild jetzt genau an der Stelle. Bisher stand es bis zu einige Sekunden still, während der Ton schon lief.
+- Der Startpuffer aus 0.5.77 gilt nicht mehr für umgewandelte Streams. Chrome meldet bei ihnen nie genug Vorrat, deshalb hielt der Player das Bild nach jedem kurzen Stocken wieder mindestens 3 s an.
+- Während ein Video läuft, lädt die Seite dahinter ihren Stand nicht mehr alle 2,5 s neu. Die Diagnose nennt jetzt auch ausgelassene Bilder je Wiedergabe.
+
+## Neu in 0.5.85: Joyn lädt den Katalog wieder vollständig
+
+- Bisher reichte eine einzige langsame Antwort von Joyn, und der Katalog galt als „nur teilweise geladen“ (in der Diagnose vom 13.11.2026 fehlten dadurch 70 Filme, ohne Angabe eines Grundes). Jetzt wird eine fehlgeschlagene Seite nach kurzer Pause noch einmal abgefragt, und ein Genre, das trotzdem abbricht, läuft am Ende des Abrufs ein zweites Mal.
+- Bleibt danach etwas offen, nennt die Meldung das Genre und den Grund, und der nächste Versuch startet nach einer Stunde statt nach einem Tag (bei eingeschaltetem täglichen Abruf).
+
+## Neu in 0.5.84: TOGGO-Katalog repariert, Code aufgeräumt
+
+- **TOGGO lädt wieder Serien.** In 0.5.79 bis 0.5.82 blieb der TOGGO-Katalog leer („nennt in seiner Seitenübersicht keine Folgen“). Die Diagnose vom 13.11.2026 zeigte, dass toggo.de die Folgen unter `/…/serien/<Serie>/folge/<Folge>` führt und nicht unter der erwarteten kürzeren Adresse. Beide Formen werden jetzt gelesen. Nach dem Update unter Plattformen → TOGGO „Katalog laden“ drücken oder den nächsten stündlichen Versuch abwarten.
+
+- Der Programmcode, der für Pluto TV, JustWatch TV, Rakuten TV, Joyn, TOGGO und YouTube jeweils fast gleich kopiert war (Katalogseite, Details, Offline-Liste, Katalogabruf, täglicher Abruf, Werkzuordnung, Offline-Download, Hintergrundaufgaben), steht jetzt einmal in `platform_registry.py`. Alle Adressen und Antworten sind gleich geblieben; ein Fehler wird künftig an einer Stelle behoben und gilt für alle Plattformen.
+- Die 44 alten Installationspakete (625 MB) liegen nicht mehr im Git. Sie bleiben in den Projektdateien unter `releases/` und in der Git-Historie.
+- 0.5.84 enthält auch 0.5.83 (einheitliche Kategorien für Filme und Serien, siehe unten).
+
+## Neu in 0.5.83: einheitliche Kategorien für Filme und Serien
+
+- **Eine feste deutsche Kategorieliste für alle Quellen** (ARD/ZDF, Netzkino, Pluto TV, JustWatch, Rakuten, YouTube, Joyn, TOGGO): Action, Abenteuer, Animation, Biografie, Drama, Erotik, Fantasy, Historie, Horror, Kinder & Familie, Komödie, Krieg, Krimi, Musical, Mystery, Romantik, Science-Fiction, Thriller, Western, Dokumentation, Natur & Tiere, Wissen & Technik, Politik & Gesellschaft, Nachrichten & Magazine, Kultur, Musik, Sport, Reise, Ratgeber & Lifestyle, Talk, Show & Unterhaltung, Reality-TV.
+- **Kategorie erst nach dem Abgleich:** Solange ein Titel nicht mit IMDb/TMDB/TVDB abgeglichen ist, steht er unter „Unklassifiziert“. Danach entscheiden die Genres der Referenz, die des Anbieters ergänzen. Passt nichts, steht er unter „Sonstige“.
+- Dubletten wie „Fantasie“/„Fantasy“ oder „Krimi“/„Kriminalfilms“ und englische Bezeichnungen landen in derselben Kategorie. „Joyn (kostenlos)“, „Joyn+“ und „TOGGOLINO“ sind keine Kategorien mehr, bleiben aber filterbar.
+- Die Original-Genres der Anbieter bleiben gespeichert: auf der Titelseite unter den Anbieterangaben und im klassischen Genre-Baum (Verwaltung → Werkkatalog).
+
+
+## 0.5.82: Sammelstand, Archive.org erkennt Werke
+
+0.5.82 enthält alles aus 0.5.78 (YouTube), 0.5.79 (TOGGO), 0.5.80 (Besetzung mit Fotos, Clips, Windows und Linux) und 0.5.81 (Merkliste, Weiterschauen, Speicher). Neu dazu:
+
+- **Archive.org-Uploads werden Werken zugeordnet** (aus Archive Media). Bisher stand jeder Upload für sich. Jetzt zeigt jeder gespeicherte Upload, welcher Film oder welche Serie er ist, mit Kennung bei IMDb, TVDB oder TMDB und Bewertung.
+- **Suchtitel:** Zusätze wie `[DVD]`, `1080p`, Upload-Zähler und Folgenangaben werden für die Abfrage entfernt. Der gespeicherte Upload bleibt unverändert.
+- **Jahr berichtigt:** Archive.org nennt oft das Upload-Datum statt des Erscheinungsjahrs. Findet die Abfrage mit dem Jahr nichts, läuft sie einmal ohne; nur ein eindeutiger Treffer liefert dann das Jahr („Jahr aus der Datenbank“).
+- **Serien aus mehreren Uploads** gehören zusammen: gleicher Serienname oder nach der Prüfung dieselbe Kennung. Staffel und Folge aus dem Upload-Titel stehen dabei.
+- **Anime** ohne Treffer in den Filmdatenbanken werden bei AniList gesucht (nur ein eindeutiger, fast wörtlicher Titeltreffer zählt).
+- Plattformen → Internet Archive → Liste: Umschalter „Einzelne Uploads / Werke (Archive.org)“, je Werk „Alle Uploads zeigen“ und „Neu prüfen“. Die Prüfung läuft im Hintergrund wie bei den anderen Plattformen (Verwaltung → Aufgaben: „Internet Archive · Werkzuordnung“).
+- TOGGO-Serien lassen sich merken und erscheinen in „Weiterschauen“.
+
+## Neu in 0.5.81: Merkliste, „Weiterschauen“ auf jedem Gerät und Speicherübersicht
+
+- Jede Film- und Serienkachel hat den Schalter „☆ Merken“. Gemerkte Titel stehen im Dashboard unter „Merkliste“.
+- „Weiterschauen“ im Dashboard zeigt angefangene Titel mit Fortschritt. Der Abspielstand liegt jetzt in MediathekAtlas statt nur im Browser; ein anderer Browser oder ein anderes Gerät setzt an derselben Stelle fort.
+- Verwaltung → Speicher: belegter Platz je Quelle, freier Platz auf dem Laufwerk, ein Platzbudget und ein Vorschlag, was gehen kann. MediathekAtlas löscht dort nichts von selbst. Gemerkte, angeheftete, kürzlich gesehene und neu geladene Titel werden nie vorgeschlagen.
+- Ältere Browser ohne Container-Abfragen (Safari vor 16, Firefox vor 110) zeigen die Statusübersicht wieder passend zur Fensterbreite; die Unschärfe hinter Dialogen wirkt auch in Safari vor 18.
+- Merkliste und Speicherregeln stammen aus HomeTube. Der vollständige Review und die Lückenanalyse gegen HomeTube und Archive Media stehen in `docs/REVIEW_0577.md`.
+
+## Neu in 0.5.80: Besetzung mit Fotos, Clips bei ihrer Sendung, Pakete für Windows und Linux
+
+Baut auf 0.5.78 (YouTube) auf.
+
+- **Besetzung mit Fotos:** Titelseiten zeigen die Darsteller mit Foto und Rolle (TMDB, nur mit hinterlegtem TMDB-Schlüssel). Fotos kommen nur aus den Angaben des Titels selbst oder über die IMDb-Personenkennung, nie aus einer bloßen Namenssuche; ohne Treffer bleiben die Initialen. Antworten werden gemerkt (`people.sqlite`).
+- **Nachrichten- und Magazinclips bei ihrer Sendung:** Clips, die bisher unter „Weitere Sendungen“ lagen, und Ausgaben, die genau wie ihre Sendung heißen („Hessenschau“), werden der Sendung zugeordnet (Ausgaben mit Sendedatum) und nicht mit Filmdatenbanken abgeglichen. Der Durchlauf läuft einmal über den ganzen Katalog.
+- **Erkennungsrate je Sender und Medienart:** Die Tabelle „Erkennungsquote je Sender“ zeigt zusätzlich die Quote für Filme und Serien sowie die Zahl der Clips und Extras, darunter eine Tabelle „Nach Medienart“.
+- **Live-TV:** Der Fehlalarm „0 Sender bei aktivem Filter“ in der Diagnose ist weg. Er kam von der Live-Leiste der Joyn-Plattform, solange Joyn noch keine Sender hatte; die Sender selbst waren nie betroffen.
+- **Windows und Linux:** `MediathekAtlas_v0.5.80-Windows-Setup.exe` (Installation ohne Administratorrechte, Startmenü, Desktop, optional Autostart), portable ZIP, `mediathekatlas_0.5.80_all.deb` (Debian, Ubuntu, Mint, Raspberry Pi OS) und `MediathekAtlas_v0.5.80-Linux.tar.gz` mit `install.sh` für alle anderen. Voraussetzung ist Python ab 3.9; unter Windows bietet der Start die Installation über winget an. Gebaut mit `python3 build_desktop.py`.
+
+## Neu in 0.5.79: TOGGO (Kinderserien von toggo.de, mit TOGGOLINO)
+
+- Neue Quelle **TOGGO**: Reiter „TOGGO“ unter „Plattformen“ und im Katalog (Dashboard, „Serien“). Alle Serien von TOGGO und TOGGOLINO mit Serienseite, Staffeln, Folgen und Clips; Genre „Kinder & Familie“, dazu die Kategorien „TOGGO“ und „TOGGOLINO“ (Vorschule) zum Filtern nach Altersgruppe.
+- Der Katalog entsteht aus der Seitenübersicht (Sitemap) von toggo.de. Titel, Nummer und Bild der Folgen einer Serie werden beim ersten Öffnen der Serie nachgeladen.
+- **Wiedergabe:** Eine Folge läuft im MediathekAtlas-Player, wenn TOGGO sie ohne Kopierschutz ausliefert. Liefert TOGGO nur mit Kopierschutz (Widevine/FairPlay), umgeht MediathekAtlas ihn nicht; die Folge öffnet dann toggo.de („Bei TOGGO ansehen“). Nach dem Katalogabruf prüft MediathekAtlas an je einer Folge von bis zu drei Serien, welcher Fall vorliegt, und zeigt danach den passenden Knopf.
+- Kein Offline-Speichern für TOGGO in dieser Version, kein Live-TV.
+- **Wichtig:** toggo.de war aus der Bauumgebung nicht erreichbar. Die Anbindung beruht auf öffentlich dokumentierten Formaten und ist nicht live geprüft. Lädt der Katalog nicht, bitte die Diagnose schicken (Einträge `toggo_sitemap`, `toggo_sync_failed`) oder einen HAR-Mitschnitt von toggo.de.
+
+## Neu in 0.5.78: Musikvideos laufen auch, wenn YouTube das Einbetten ablehnt
+
+- Lehnt YouTube ein Video im eingebetteten Player ab, schaltet MediathekAtlas automatisch auf den eigenen Player um. Das geht nur mit eingeschaltetem YouTube-Offline-Schalter, weil der Stream dabei wie beim Speichern über yt-dlp geholt wird.
+- Unter dem YouTube-Player stehen immer die Auswege: „Auf YouTube ansehen“, „▶ Im eigenen Player abspielen“ und „⬇ Kurz laden und hier abspielen“.
+- Im Katalog gibt es neben „Filme“ und „Serien“ jetzt „Musikvideos“.
+
+## Neu in 0.5.77: Die Seite bringt alle ihre Teile selbst mit, Streams sammeln erst Puffer
+
+Sammelstand: enthält 0.5.75 (YouTube-Quellen sofort eingelesen) und 0.5.76 (JustWatch-Download).
+
+- **Nichts geht mehr verloren:** Die Seite lädt ihre rund zwanzig Skripte nicht mehr einzeln nach, sie stecken in der Seite selbst. Bisher konnte ein einzelnes Skript ausbleiben, dann fehlte der Player, die Netzkino-Wiedergabe („Cannot read properties of undefined (reading 'play')“) oder ein Plattform-Reiter. Das ist unabhängig vom Browser.
+- **Flüssigere Wiedergabe:** Online-Streams sammeln erst einen Vorrat, bevor sie laufen: 8 Sekunden beim Start, 4 nach dem Spulen, 5 nach jedem Stocken. Der Player zeigt dabei „Puffer wird gefüllt … 3 von 8 s“. Länger als 15 Sekunden wartet er nie, ein Klick auf Wiedergabe startet sofort.
+
+
+## Neu in 0.5.76: JustWatch – Download startet, sobald der Titel abspielbar ist
+
+Enthält alles bis 0.5.73.
+
+- Titel mit Jugendschutz-Zeitfenster: Beim Klick auf „Offline speichern“ fragt MediathekAtlas JustWatch direkt, ob der Stream gerade freigegeben ist. Ist er es, startet der Download sofort (JustWatch gibt ab 16 schon ab 22 Uhr und ab 18 ab 23 Uhr frei). Ist er es nicht, wird er für die Nacht vorgemerkt – auch wenn der Katalog zuletzt nachts gelesen wurde.
+- Die Stream-Adresse wird bei jedem Start und jedem neuen Versuch frisch geholt, nie aus dem Zwischenspeicher.
+
+## Neu in 0.5.75: YouTube-Quellen sofort eingelesen, mit Fortschritt
+
+- Eine neu eingetragene Playlist, ein Kanal oder ein Video wird sofort eingelesen. Läuft gerade ein Abruf, kommt sie direkt danach dran.
+- Während des Abrufs steht im YouTube-Bereich und auf der Plattformkarte, welche Quelle gerade dran ist und wie viele Videos geprüft werden.
+- Die Plattformkarte zeigt Musik-Playlists und Musikvideos in einer eigenen Kachel.
+- Behoben: Ein Protokollfehler konnte Wiedergabe-Statistik und Stream-Ende abbrechen.
+## Neu in 0.5.73: Alle Teile der Seite kommen an
+
+Enthält alles bis 0.5.72.
+
+- **Player lädt:** Die Seite lädt rund zwanzig Skripte gleichzeitig. Der Server nahm bisher nur wenige Verbindungen auf einmal an, einzelne Skripte wie der Player konnten dabei verloren gehen. Er nimmt jetzt deutlich mehr an.
+- **Automatisch nachladen:** Kommt ein Skript trotzdem nicht an, lädt die Seite es bis zu dreimal selbst nach, auch über eine zweite Adresse, falls eine Browser-Erweiterung oder ein Schutzprogramm den Dateinamen sperrt. Das gilt in Chrome, Safari und Firefox gleich.
+- **Ursache sichtbar:** Scheitert auch das, nennt die Meldung, ob der Server nicht antwortet oder der Browser die Anfrage ablehnt.
+
+
+## Neu in 0.5.72: Player startet zuverlässig, der letzte Klick gewinnt
+
+Enthält alles bis 0.5.71 (YouTube-Musikvideos).
+
+- **Player:** Die Wiedergabe-Bibliothek hls.js wird erst geladen, wenn ein Stream sie braucht. Fehlt sie oder lädt sie nicht, läuft der Stream über ffmpeg weiter. Der Player startet auch dann, wenn ein Teil der Seite fehlt.
+- **Richtiger Sender:** Wer kurz nacheinander zwei Sender oder Titel anklickt, bekommt den zuletzt gewählten. Vorher konnte der zuerst gewählte unter dem Namen des zweiten starten.
+- **Schnellerer Start:** MediathekAtlas fragt den Anbieter vor dem Start nicht mehr zusätzlich nach den Qualitätsstufen, wenn der Browser sie selbst liest.
+- **Klare Meldung:** Lädt der Player trotzdem nicht, nennt die Meldung die Ursache, und sie steht in der Diagnose. „▶ Ansehen“ im Katalog zeigt die Meldung jetzt auch, statt nichts zu tun.
+
+
+## Neu in 0.5.71: YouTube-Musikvideos
+
+Enthält alles bis 0.5.70.
+
+- **Musikvideos:** Im YouTube-Bereich unter „YouTube-Kanäle & API-Schlüssel“ eine Playlist, einen Kanal oder ein einzelnes Video mit der Art „Musikvideos“ eintragen. Hier gibt es keine Mindestlänge und keinen Werbefilter.
+- **Abspielen:** Der Reiter „Musikvideos“ zeigt Playlists und einzelne Videos. „▶ Playlist abspielen“ spielt ein Video nach dem anderen im offiziellen YouTube-Player oder aus der Offline-Kopie.
+- **Offline:** „⬇ Ganze Playlist offline speichern“ reiht mit einem Klick alle Videos ein. Mit den Kästchen lässt sich auch nur eine Auswahl speichern. Die Dateien liegen unter `Musikvideos/<Playlist>/`. Das geht wie bei Filmen nur, wenn der YouTube-Offline-Schalter an ist.
+
+
+## Neu in 0.5.70: Streams wie auf den Anbieterseiten, einheitliche Kacheln, Fassungen
+
+Enthält alles bis 0.5.69 (Joyn).
+
+- **Wiedergabe wie auf den Anbieterseiten:** Live-Sender und Streams von Pluto TV, Rakuten TV, JustWatch TV und den Sendern lädt jetzt der Browser selbst (mit der freien Bibliothek hls.js, Apache-2.0, in der App enthalten). Er hält einen Puffer vor, passt die Qualität laufend an die Verbindung an und hält Bild und Ton zusammen. Bisher lief jeder Stream ohne Puffer durch ffmpeg, daher das Anfangspuffern und das Ruckeln. „Qualität“ im Player schaltet jetzt ohne Neustart um.
+- **Rückfall:** Erlaubt ein Anbieter das direkte Laden nicht, läuft der Stream wie bisher über ffmpeg. In der Kopfzeile des Players steht dann „über MediathekAtlas umgewandelt“.
+- **Chrome:** Der neue eingebaute HLS-Player von Chrome wird nicht mehr benutzt. Safari spielt weiter selbst ab.
+- **Einheitliche Kacheln:** Jede Kachel hat dieselben Knöpfe: Details, Ansehen (oder „↗ Bei … ansehen“ als gleich geformter Knopf) und einen Download-Knopf, wenn ein Download möglich ist. Das gilt jetzt auch für ARD, ZDF & Co. („⬇ Herunterladen“). Ist kein Download möglich, steht dort nichts mehr; der Kopierschutz-Hinweis steht nur noch auf der Titelseite.
+- **Fassungen auf der Titelseite:** Film- und Folgenseiten der Plattformen zeigen „Fassungen zum Herunterladen“ mit einem Knopf je Auflösung des Anbieters; ein Klick speichert genau diese Fassung. Bei ARD, ZDF & Co. stehen die Dateien (HD, Standard, Klein) als Knöpfe über der Fassungsliste.
+
+## Neu in 0.5.69: Joyn füllt sich schon beim ersten Laden
+
+- Die Joyn-Sender stehen sofort nach dem Start des Abrufs im Reiter Live-TV und unter Plattformen → Joyn. Filme und Serien kommen Genre für Genre dazu, die Statuszeile zeigt „Genre-Seite n von m“. Vorher erschien alles erst am Ende des mehrminütigen ersten Abrufs.
+
+## Neu in 0.5.67: Live-TV-Reiter bleibt nicht mehr hängen
+
+- Der Reiter Live-TV fragt die Anbieter jetzt nebeneinander und mit einer Zeitgrenze von vier Sekunden ab. Antwortet ein Anbieter nicht rechtzeitig (zum Beispiel, während sein Katalog geladen wird), erscheinen die übrigen Sender sofort und für den langsamen Anbieter der letzte bekannte Stand. Die Statuszeile nennt den Anbieter.
+- Schlägt das Laden fehl, bleiben die schon gezeigten Sender stehen; daneben steht der Grund und „Erneut versuchen“.
+- Ob das die Ursache des leeren Reiters in 0.5.61 war, ist nicht bestätigt: Der Fehler ließ sich mit Testdaten nicht nachstellen.
+
+## Neu in 0.5.66: Wiedergabe, Download-Auswahl, Dubletten, Live-TV
+
+Enthält alles aus 0.5.61 (Archive.org-Downloads) und 0.5.65 (Joyn).
+
+- **Bild und Ton laufen zusammen:** Bei Streams, die MediathekAtlas für den Browser umwandelt (Chrome, Firefox, Edge; Live-TV und Filme von Pluto TV, Rakuten TV, JustWatch TV, Sender-Livestreams), ging bisher der Versatz zwischen Bild- und Tonspur verloren. Im Test lief der Ton dadurch 0,8 Sekunden zu früh, nach dem Spulen das Bild bis zu eine Sekunde. Der Versatz bleibt jetzt erhalten.
+- **Qualität im Player wählbar:** Oben im Player steht „Qualität“. „Automatisch“ lädt höchstens 720p und geht von selbst eine Stufe herunter, wenn der Stream innerhalb einer Minute länger als sechs Sekunden stockt. Feste Stufen (z. B. 480p) und „Beste“ sind wählbar; die Wahl wird auf diesem Gerät gemerkt. Bisher wurde immer die höchste Stufe geladen, egal wie schnell die Verbindung war, und vor dem Start jede Stufe einzeln geprüft.
+- **Safari und die macOS-App** spielen solche Streams selbst ab und passen die Qualität selbst an („Automatisch“). Wer dort eine feste Stufe wählt, bekommt den Stream über MediathekAtlas in genau dieser Stufe.
+- **Offline speichern mit Auswahl:** Vor jedem Offline-Speichern fragt ein kleiner Dialog nach der **Auflösung** (Beste verfügbare, höchstens 2160p, 1080p, 720p, 480p, 360p) und zeigt, welche Stufen der Anbieter für diesen Titel hat. Gibt es denselben Titel bei mehreren Anbietern, lässt sich dort auch der **Anbieter** wählen. Die Auflösung wird für das nächste Mal gemerkt.
+- **Dubletten:** „Ab ins Meer“ (YouTube) und „Ab ins Meer: Auf der Suche nach der verlorenen Perle“ (Netzkino) werden jetzt zusammengeführt, wenn Erscheinungsjahr (höchstens ein Jahr Abstand), Titel der Referenz, Laufzeit oder Beschreibung zusammenpassen. Ein fehlendes Jahr ist kein Widerspruch. Die gespeicherten Plattform-Ansichten werden nach dem Update einmal neu aufgebaut.
+- **Live-TV:** Ein fehlerhafter Sendereintrag leert nicht mehr den ganzen Reiter; der Grund wird angezeigt. Blendet eine Suche oder ein Filter alle Sender aus, steht das dabei, mit „Alle Sender zeigen“. Leere oder langsame Antworten landen im Protokoll.
+- **Nicht änderbar:** Live-Streams über das Internet laufen grundsätzlich 20 bis 40 Sekunden hinter Kabel und Satellit her; das liegt an der Technik der Anbieter.
+
+## Neu in 0.5.65: Joyn
+
+- **Joyn als Plattform:** Neuer Reiter „Joyn“ unter Plattformen und Quelle „Joyn“ im Dashboard. Geladen werden alle Filme und Serien der Joyn-Genreseiten – kostenlos (mit Werbung) und, getrennt gekennzeichnet, Joyn+. Die Kategorien „Joyn (kostenlos)“ und „Joyn+“ filtern danach. Bewertungen, Kategorien und Titelseite wie bei den anderen Plattformen.
+- **Live-TV:** Die rund 125 Joyn-Sender stehen im Reiter Live-TV; Sender, die es auch bei ARD, ZDF & Co. gibt, erscheinen einmal mit beiden Anbietern.
+- **Ansehen:** Joyn spielt nur im eigenen Player ab, in der Regel mit Kopierschutz. MediathekAtlas umgeht ihn nicht und meldet sich nicht bei Joyn an: „Bei Joyn ansehen“ öffnet joyn.de, wo du angemeldet bist. Kein Abspielen im MediathekAtlas-Player, kein Offline-Speichern. Folgenlisten einzelner Serien folgen, sobald ein Mitschnitt die Abfrage zeigt.
+
+## Neu in 0.5.61: Archive.org-Filme und -Folgen herunterladen (wie in ArchiveMedia)
+
+- Unter Plattformen → Internet Archive → „Fassungen, Folgen und Sprachen prüfen“ hat jede angezeigte Videodatei jetzt einen Knopf **„⬇ Herunterladen“**. Die Datei läuft durch die normale Download-Warteschlange: gleiche Ordner und Namen wie bei ARD/ZDF (`Filme/<Titel> (<Jahr>)/…`, `Serien/<Serie>/Season NN/…`), MKV mit Metadaten, NFO.
+- **Dauerhaft:** Anders als bei Netzkino, Pluto & Co. gibt es keine 30-Tage-Frist. Die Lizenzangabe des Uploaders (z. B. „Public Domain“, Creative-Commons-Link) wird mit dem Auftrag gespeichert und angezeigt, aber nicht geprüft (Björns Entscheidung vom 12.11.2026: „alles wie in ArchiveMedia“).
+- **Untertitel:** Im Upload mitgelieferte .srt/.vtt/.ass-Dateien werden nach dem Download neben das Video gelegt (z. B. `….de.srt`), vorhandene Dateien werden nie überschrieben.
+- **Folgen ohne Nummer:** Ist bei einer Serienfolge Staffel oder Folge unbekannt, fragt die App beim Herunterladen danach (oder lädt die Datei als Film). Es wird keine Staffel 1 erfunden.
+- Archive.org-Downloads bleiben auf diesem System (kein Verbund-Austausch) und markieren keine Mediathek-Sendung als geladen.
+
+
+## Neu in 0.5.60: Plattform-Kataloge sofort, aufgeräumte Titelseiten, weniger Dubletten
+
+Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Korrekturen (Werbevideos aussortieren, Einrichtung öffnet sich von selbst).
+
+- **Plattform-Kataloge sofort:** Jede Plattform hält ihre fertig aufbereitete Liste gespeichert (Ordner `snapshots` im Datenordner), bis ein neuer Katalogabruf fertig ist. Reiter und Dashboard zeigen sie sofort, auch direkt nach dem Start und während Abruf oder Werkzuordnung in die Datenbank schreiben. Neue Bewertungen und Kategorien fließen im Hintergrund ein.
+- **„Alle 24 Stunden aktualisieren“:** Über jedem Plattform-Katalog steht jetzt, ob die tägliche Aktualisierung an ist und von wann der Bestand stammt; „Verwalten“ öffnet den Bereich mit dem Schalter. Der Schalter bestätigt das Speichern und springt nicht mehr zurück, wenn gleichzeitig eine ältere Statusantwort eintrifft.
+- **Titelseiten:** Kandidatenlisten mit tt-Nummern, „IMDb Offline“, „Erscheinungsjahr widersprüchlich“, die Zeile „Zuordnung“ und die Anbieterhinweise stehen nicht mehr auf der Seite, sondern im zugeklappten Bereich „Technische Angaben“ am Ende. „IMDb Offline“ heißt überall „IMDb“. Es gibt nur noch einen Offline-Knopf (oben, er speichert direkt); der Abschnitt „Offline ansehen“ erscheint erst, wenn eine Kopie existiert.
+- **Dubletten:** „Ab ins Meer“ (YouTube) und „Ab ins Meer: Auf der Suche nach der verlorenen Perle“ (Netzkino) werden eine Kachel, wenn der Originaltitel des Uploads den Untertitel enthält oder dieselbe Kennung bzw. dieselbe Laufzeit (höchstens zwei Minuten Abstand, Spielfilmlänge) das belegt. Ohne Beleg bleibt es bei zwei Kacheln („Alien“ ist nicht „Alien: Covenant“).
+
+## Neu in 0.5.59: Rakuten-TV-Livesender
+
+- **Livesender:** Die Stream-Anfrage an Rakuten TV enthält jetzt dieselben technischen Felder wie die Website (Sitzungskennung, Player- und Qualitätsangaben). Werbekennungen, IP-Adresse, Browserkennung und eine Werbe-Einwilligung werden weiterhin nicht gesendet; die Einwilligung wird als abgelehnt übermittelt, die Werbung bleibt im Stream.
+- **Stream-Adressen:** Live-Adressen von Werbe-CDNs werden nicht mehr wegen ihres Hosts oder ihrer Länge verworfen; die Kopierschutzprüfung (`hls_guard`) prüft jede Wiedergabeliste weiter.
+- **Fehlermeldung:** Liefert Rakuten trotzdem keinen Stream, nennt die Meldung den Grund (Rakutens Fehlertext oder was in der Antwort fehlt), und die Diagnose enthält den Eintrag `rakuten_live_no_stream`.
+## Neu in 0.5.57: Dashboard ohne Statusblöcke, Katalog sofort nach dem Start
+
+- **Dashboard:** Die Kennzahlen („Katalog & Metadatenabgleich“, „Aktuelle Erkennung“) und der klassische Katalog mit zweiter Suchleiste stehen jetzt fest unter Verwaltung → „Status & Abgleich“ bzw. „Klassischer Katalog“. Bisher verschob sie erst ein Skript nach dem Laden dorthin; startete die App langsam, standen sie so lange doppelt im Dashboard.
+- **Start:** Das Dashboard zeigt sofort die Plattformen (Netzkino, Pluto TV, JustWatch TV, Rakuten TV, YouTube). Der große Bestand von ARD, ZDF & Co. wird im Hintergrund eingelesen und ergänzt die Ansicht von selbst; die Statuszeile sagt das an. Ab dem zweiten Start kommt auch er sofort, weil die zuletzt berechnete Liste gespeichert wird (`listing-cache.json` im Datenordner) und im Hintergrund erneuert wird.
+- **Blättern:** Die zusammengeführte Liste wird nicht mehr alle 45 Sekunden beim nächsten Klick neu aufgebaut, sondern im Hintergrund erneuert.
+- **Diagnose:** Skriptfehler der Oberfläche und langsame Aufbauten der Gesamtliste (mit Sekunden je Quelle) stehen jetzt im Protokoll.
+
+## Neu in 0.5.56: Archive Media Stufe 1 – Fanart.tv und Datenbanksicherungen
+
+- **Fanart.tv:** Zusätzliche Poster, Hintergrundbilder und Titel-Logos für bereits erkannte Filme und Serien (über IMDb-, TVDB- oder TMDB-Kennung). Widerspricht die Kennung bei Fanart.tv, werden die Bilder verworfen. Vorhandene TMDB-/TVDB-Bilder bleiben, Fanart.tv füllt Lücken. Das Logo ersetzt auf der Titelseite den Schriftzug und wird bei Downloads als `clearlogo` für Jellyfin/Kodi abgelegt. Schlüssel unter Verwaltung → Einstellungen → Metadatenanbieter (Projektschlüssel und/oder persönlicher Schlüssel).
+- **Datenbanksicherungen:** Die Katalogdatenbank wird wöchentlich geprüft gesichert (Ordner „Backups“ im Datenordner, SQLite-Online-Sicherung, die App bleibt nutzbar). Vier automatische Sicherungen bleiben erhalten, eigene nie automatisch gelöscht. Unter Verwaltung → Einstellungen → Datenbanksicherungen: Liste, „Jetzt sichern“, Mehrfachauswahl löschen mit Bestätigung. Unter Verwaltung → Aufgaben als „Datenbanksicherung“ pausier- und startbar.
+- **ArchiveMedia v0.10.53:** `fanart_client` und `backup_manager` übernommen, die alten v0.10.12-Kopien angeglichen (Herkunft und Prüfsummen in `PROVENANCE.json`).
+
+
+## Neu in 0.5.55: Dashboard nur mit Filmen und Serien, Bereich „Verwaltung“, schnellere Oberfläche
+
+- **Dashboard:** Die Startseite zeigt nur noch Filme und Serien, standardmäßig aller Plattformen (ARD, ZDF & Co., Netzkino, Pluto TV, JustWatch TV, Rakuten TV, YouTube) in einer gemeinsamen, durchgehend sortierten Liste. Die Statuskarten oben sind in die Verwaltung umgezogen.
+- **Ein Titel, eine Kachel:** Bietet mehr als ein Anbieter denselben Film an, steht er einmal da, mit den Anbietern in der Kopfzeile und unter „Auch bei …“ einem Satz Knöpfe je Anbieter. Zusammengefasst wird vorsichtig (gleicher Titel, passendes Jahr, nie zwei Einträge desselben Anbieters) und nur in der Anzeige; abschaltbar unter Verwaltung → Darstellung.
+- **Verwaltung** (ein Menüpunkt mit Reitern): *Aufgaben* (jede Hintergrundaufgabe pausieren, fortsetzen, von Hand starten; Priorität für die Werkzuordnung je Plattform), *Status & Abgleich* (alle bisherigen Statuskarten), *Darstellung* (was Kacheln und Titelseite zeigen, Kachelgröße, Startansicht), *Zuordnung*, *Download-Abos*, *Werkkatalog* (die klassische Ansicht mit Genre-Baum), *Protokoll*, *Einstellungen*. Nichts wurde entfernt, nur verschoben.
+- **Downloads:** Wartende Aufträge lassen sich vorziehen („Als Nächstes laden“) oder zurückstellen; die ganze Warteschlange lässt sich unter Aufgaben anhalten. Nacht-Vormerkungen zeigen ihre Startzeit und lassen sich sofort versuchen.
+- **Plattform-Reiter:** Der Katalog steht jetzt oben, mit denselben Kacheln und Knöpfen wie im Dashboard. Katalogabruf, Bestand und Werkzuordnung der Plattform stehen eingeklappt darunter.
+- **Tempo:** Laut Diagnose vom 12.11.2026 brauchte jede Katalogabfrage 7 bis 31 Sekunden und lief praktisch ununterbrochen (239-mal in sechs Stunden), weil die alte Katalogansicht bei jeder Zähleränderung neu lud. Dadurch warteten auch Plattform-Reiter, Live-TV und der Start von Streams. Jetzt kommen Katalogseiten aus dem Speicher (mit neuem Datenbankindex), die alte Ansicht lädt nur noch, wenn sie geöffnet ist.
+- **Streams:** Online-Streams (HLS, z. B. Pluto TV und Live-Sender) werden gleichmäßiger an den Browser ausgeliefert (ein Abschnitt je Sekunde statt je Schlüsselbild-Intervall).
+
+## Neu in 0.5.53: YouTube – kostenlose Filme und Serien offizieller Kanäle
+
+- Neue Quelle YouTube: Katalog-Reiter „YouTube“ und Plattform-Reiter mit denselben Kacheln, Kategorien, Bewertungen, Titel- und Serienseiten und derselben Übersichtskarte wie die anderen Anbieter. Der IMDb/TVDB/TMDB-Abgleich läuft über die gemeinsame Werkzuordnung; ein Film, der schon bei einer anderen Plattform geprüft wurde, wird nicht erneut abgefragt.
+- Kuratiert statt Suche: Gelesen werden nur die Kanäle und Playlists aus deiner Liste (Plattformen → YouTube → „YouTube-Kanäle & API-Schlüssel“). Aus Kanälen kommen nur ganze Filme (Mindestlänge, Standard 60 Minuten; ohne Trailer, Clips, Making-of, Livestreams). Eine Playlist kann als Serie eingetragen werden. In Deutschland gesperrte, private und Live-Videos werden ausgelassen. Vorschläge zum Start: FilmRise Movies, Paramount Vault, Popcornflix (englisch, ungeprüft; entfernbar).
+- Benötigt einen kostenlosen API-Schlüssel für die offizielle „YouTube Data API v3“ (Google Cloud Console). Kein Auslesen von youtube.com.
+- Abspielen im offiziellen YouTube-Player im MediathekAtlas-Fenster (mit der Werbung von YouTube), „Weiterschauen“ inklusive. Videos, deren Kanal das Einbetten verbietet oder die altersbeschränkt sind, öffnen „Bei YouTube ansehen“.
+- Offline speichern (30 Tage) ist ein Schalter, **standardmäßig aus**. Die YouTube-Nutzungsbedingungen erlauben das Herunterladen nur über YouTube-eigene Funktionen oder mit Erlaubnis von YouTube und Rechteinhaber; Einschalten nur nach Bestätigung, auf eigene Verantwortung. Geladen wird mit yt-dlp (vorhandene Installation oder „yt-dlp einrichten“), ohne Anmeldung und ohne Umgehen von Alters- oder Regionssperren.
+
+## Neu in 0.5.52: JustWatch – Nacht-Vormerkung nur bei echtem Zeitfenster, Hinweis bei Kopierschutz
+
+- „🌙 Heute Nacht offline speichern“ erscheint nur noch bei Titeln, für die JustWatch selbst ein Jugendschutz-Zeitfenster meldet (FSK 16/18).
+- Titel, die JustWatch nur im eigenen, kopiergeschützten Player (DRM) abspielt – z. B. die Folgen von „Andromeda“ –, zeigen „🔒 Kopiergeschützt (DRM): nur im JustWatch-Player“ und den Knopf „Bei JustWatch ansehen“. Wiedergabe und Offline-Kopie in MediathekAtlas sind dafür nicht möglich; der Kopierschutz wird nicht umgangen.
+- 0.5.52 enthält außerdem alles aus 0.5.50 (Live-TV nach Sendern) und 0.5.51 (Rakuten TV).
+
+## Neu in 0.5.51: Rakuten TV (kostenlose Filme, Serien und Live-Sender)
+
+- Neue Quelle Rakuten TV: Katalog-Reiter „Rakuten TV“ und Plattform-Reiter mit allen kostenlosen Filmen (ca. 1.900) und Serien (ca. 120), gleiche Kacheln, Kategorien, Bewertung, Titel- und Serienseite (alle Staffeln) wie Netzkino, Pluto TV und JustWatch TV.
+- **Wichtig:** Rakuten liefert kostenlose Filme und Folgen nur mit Kopierschutz (Widevine/PlayReady) aus – das zeigt der Mitschnitt von rakuten.tv eindeutig. MediathekAtlas umgeht das nicht. Diese Titel öffnen deshalb „Bei Rakuten TV ansehen“; Abspielen im MediathekAtlas-Player und „Offline speichern (30 Tage)“ gibt es für sie nicht.
+- Die rund 160 kostenlosen **Live-Sender** von Rakuten TV laufen ohne Kopierschutz im MediathekAtlas-Player: im Plattform-Reiter unter „Live-TV“ und im Reiter „Live-TV“ zusammen mit ARD/ZDF und Pluto TV (nur live, nicht speicherbar).
+- Der IMDb/TVDB/TMDB-Abgleich nutzt den gemeinsamen Abgleich: Filme, die schon auf einer anderen Plattform abgeglichen wurden, werden nicht erneut abgefragt.
+
+## Neu in 0.5.50: Live-TV nach Sendern
+
+- Neuer Reiter **„Live-TV“**: alle Live-Sender deiner Quellen an einem Ort, nach Sendern sortiert und gruppiert (Öffentlich-rechtlich, Regional (ARD), Pluto-Kategorien). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Suche, Filter nach Anbieter und Gruppe, Favoriten (★) oben.
+- **ARD, ZDF & Co. live:** die offiziellen Livestreams der Sender kommen aus der Filmliste (Thema „Livestream“). Sie werden nicht mehr als Werke abgeglichen.
+- **Beim Anbieter:** Im Katalog unter „ARD, ZDF & Co.“ und „Pluto TV“ gibt es eine aufklappbare Live-Leiste; unter Plattformen → Pluto TV → Live-TV führt „Alle Sender im Reiter Live-TV →“ in die Senderübersicht.
+- Der Player setzt Live-Sender nicht an einer gespeicherten Position fort. Live-Sender lassen sich nicht offline speichern.
+
+## Neu in 0.5.49: Plattform-Ansicht wie der Katalog, JustWatch-Folgen, geteilter Abgleich
+
+- Die Reiter Netzkino, Pluto TV und JustWatch TV unter „Plattformen“ zeigen oben dieselbe Übersicht wie der Katalog: Bestand, Stand, eindeutig zugeordnet, zu prüfen, ohne Treffer, noch offen, Offline-Kopien.
+- Der Katalog-Reiter „Mediatheken“ heißt jetzt „ARD, ZDF & Co.“.
+- JustWatch-Serien: Liefert die Sammelabfrage keine Folgen (z. B. „Andromeda“), werden die Staffeln einzeln geladen, so wie es die JustWatch-Seite tut.
+- Ein Film, der schon für eine Plattform mit IMDb/TVDB/TMDB abgeglichen wurde, wird für eine andere Plattform nicht erneut abgefragt.
+
+## Neu in 0.5.48: Geplanter Nacht-Download für JustWatch-Titel mit Jugendschutz-Zeitfenster
+
+- Manche kostenlosen JustWatch-Titel (ab 16/18) gibt JustWatch nur von 0 bis 6 Uhr frei. Solche Kacheln haben jetzt „🌙 Heute Nacht offline speichern (30 Tage)“: Der Auftrag wird vorgemerkt („Vorgemerkt für 00:10 Uhr“) und startet im Zeitfenster von selbst, wenn MediathekAtlas dann läuft. Andere Downloads laufen in der Zwischenzeit normal weiter.
+
+## Neu in 0.5.47: „30 Tage offline speichern“ in jeder Kachel
+
+- Netzkino, Pluto TV und JustWatch TV haben in jeder Film-Kachel (Katalog und Plattform-Reiter) und in jeder Folgenzeile denselben Knopf „⬇ Offline speichern (30 Tage)“ mit Status: Vorgemerkt, Lädt mit Fortschritt und „Abbrechen“, „✓ Offline verfügbar bis …“, bei einem Fehler der Grund und „↻ Erneut offline speichern“.
+
+## Neu in 0.5.46: Katalogfehler nennen die Ursache
+
+- Scheitert der Abruf von Netzkino, Pluto TV oder JustWatch TV, steht jetzt dabei, woran es liegt (Name nicht auflösbar/Filter, Zertifikat, Zeitüberschreitung, Proxy, abgelehnt). Der Diagnose-Export prüft zusätzlich jeden Katalogserver (DNS, Verbindung, TLS).
+
+## Neu in 0.5.45: Serienseiten mit allen Folgen – für jeden Anbieter gleich
+
+- Serien von Pluto TV, JustWatch TV und Netzkino öffnen dieselbe Serienseite wie ARD/ZDF: Staffeln als Reiter („Alle · n“, „Staffel 1 · n“), darunter jede Folge mit ▶ Abspielen, ⬇ Offline speichern (mit Status) und Details. Eine Folge führt über „Zur Serie“ zurück, auch bei Netzkino.
+
+## Neu in 0.5.44: Bessere IMDb-Zuordnung bei gleichnamigen Filmen
+
+- Netzkino, Pluto TV und JustWatch TV liefern meist das Erscheinungsjahr mit. Gibt es mehrere Filme gleichen Namens (z. B. sechs IMDb-Treffer für „#Roxy“), gewinnt jetzt der Treffer mit genau diesem Jahr; ein Jahr Abweichung gilt nicht mehr als Widerspruch. Bisher „widersprüchliche“ Titel werden im Hintergrund automatisch neu geprüft.
+
+## Neu in 0.5.43: Dateinamen mit Auflösung und Codecs
+
+- Jeder Download (ARD/ZDF, Netzkino, Pluto TV, JustWatch TV) landet in einem eigenen Ordner und heißt nach dem Muster `Spellbound - (2024) - 1080p - H264 E-AC-3.mkv`. Auflösung und Codecs werden nach dem Download gemessen. Daneben liegen `….nfo`, `….metadata.json`, `…-poster.jpg` und `…-backdrop.jpg`; Serien: `Serien/<Serie> (<Jahr>)/Season 01/<Serie> - (<Jahr>) - S01E02 - 720p - H264 AAC.mkv` mit tvshow.nfo, poster und fanart im Serienordner.
+
+- Download-Warteschlange: fehlgeschlagene Aufträge lassen sich entfernen, „Erneut versuchen“ erzeugt keine Doppelungen mehr, Pluto-Downloads mit Werbepausen gelten nicht mehr fälschlich als unvollständig.
+
+## Neu in 0.5.42: Eine Detailansicht für alle Plattformen
+
+- Netzkino, Pluto TV und JustWatch TV öffnen dieselbe Titelseite wie die ARD/ZDF-Werke (Cover, Jahr, Laufzeit, ★ Bewertung, Kategorien, Inhalt, Besetzung), egal ob aus dem Katalog oder unter Plattformen. Darunter für jede Plattform gleich: Folgen (Serien), Offline ansehen (30 Tage), Werkzuordnung (IMDb/TVDB/TMDB/OMDb/Wikidata) und „Angaben von <Anbieter>“ mit allem, was nur dieser Anbieter liefert.
+- Netzkino-Offline-Download: Dateiadressen mit Leerzeichen („…Teil 1.mp4“) funktionieren wieder; fehlgeschlagene Aufträge mit „Erneut versuchen“ neu starten.
+
+## Neu in 0.5.41: Kataloge bleiben gespeichert
+
+- Netzkino-, Pluto- und JustWatch-Kataloge bleiben nach einem Neustart erhalten und werden als „Gespeicherter Bestand“ angezeigt; ein unterbrochener Abruf wird als solcher gemeldet. Beim allerersten Start werden sie einmal automatisch geladen.
 
 ## Neu in 0.5.40: JustWatch TV
 
@@ -293,7 +738,7 @@ Noch offen: Abstimmung der Downloads zwischen den Systemen, Signaturen, ein eige
 4. TMDB/OMDb- sowie TVDB-Zugangsdaten bei Bedarf unter Einstellungen hinterlegen. Vorhandene MediathekAtlas-Einstellungen und der alte Katalog werden übernommen; ArchiveMedia-Schlüssel werden nicht ausgelesen.
 5. Film auswählen oder Serie zu ihren Folgen öffnen. Die bevorzugte Fassung prüfen und herunterladen. Andere Sender/Fassungen sind ausklappbar.
 
-Die App ist eine unsignierte Preview mit lokaler Browseroberfläche. Ein echter macOS-Finderstart ist hier weiterhin nicht validiert. Der Source-Ordner enthält zusätzlich `Start.command` und `Start.bat`. Linux: `python3 server.py`.
+Die App ist eine unsignierte Preview mit lokaler Browseroberfläche. Ein echter macOS-Finderstart ist hier weiterhin nicht validiert. Der Source-Ordner enthält zusätzlich `Start.command` und `Start.bat`. Seit 0.5.80 gibt es eigene Pakete für Windows (Setup.exe, ZIP) und Linux (.deb, tar.gz), siehe oben; aus dem Quellordner startet Linux weiter mit `python3 server.py`.
 
 ## Neu in 0.4.0: Zuordnungszentrale und Anbieterstatistik
 

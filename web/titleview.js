@@ -8,12 +8,18 @@ function canPlay(){return typeof playMedia==='function';}
 function epCode(m){return Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):Number.isInteger(m.episode)?'Folge '+m.episode:'';}
 function minutes(sec){return sec?Math.round(sec/60)+' Min.':'';}
 function seasonLabel(s){return s===null||s===undefined?'Ohne Staffelangabe':s===0?'Specials':'Staffel '+s;}
+// 0.5.60 (Björn, 12.11.2026): no verification wording on title pages. A recognised work only names
+// where its data comes from ("IMDb", never the internal "IMDb Offline"); an open one says what is pending.
+function providerLabel(p){return p==='IMDb Offline'?'IMDb':(p||'');}
+function matchInfo(state,provider,ref){if(['matched','manual','identified'].includes(state))return ['Datenquelle',provider?providerLabel(provider)+(ref?' · '+ref:''):''];return ['Zuordnung',stateLabel(state).replace(/^[^A-Za-zÄÖÜ]+/,'')];}
 function stateLabel(state){return ({identified:'◐ Werk erkannt · Folge offen',matched:'✓ Zugeordnet',manual:'✓ Manuell geprüft',review:'◌ Zuordnung prüfen',pending:'◌ Vorgemerkt',retry:'◌ Wird wiederholt',format:'◇ Sendungsbeitrag'})[state]||'◌ Offen';}
 function playButton(item,label,primary,list){const b=el('button','▶ '+(label||'Abspielen'),(primary?'primary ':'')+'play-button');b.title='Im Browser abspielen';b.onclick=e=>{e.stopPropagation();list?playMedia(item,list):playMedia(item);};return b;}
 function artImage(url,alt,cls){if(!safeArt(url))return null;const img=el('img',undefined,cls);img.src=url;img.alt=alt||'';img.loading='lazy';img.decoding='async';img.onerror=()=>img.remove();return img;}
 
-function showTitleView(){titleScroll=window.scrollY;$('discover').hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
-function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');$('discover').hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
+let titleReturn='discover';
+// Title pages open from the catalogue or from a platform tab (0.5.42) and return there.
+function showTitleView(){if($('title-view').hidden){titleReturn=(typeof window.atlasCurrentView==='function'&&window.atlasCurrentView())||($('portals')&&!$('portals').hidden?'portals':'discover');titleScroll=window.scrollY;}for(const v of ['discover','portals','livetv','queue','legacy','review','status','admin','display','subscriptions','logs','settings'])if($(v))$(v).hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
+function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');($(titleReturn)||$('discover')).hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
 window.addEventListener('popstate',()=>{if(!$('title-view').hidden)closeTitleView(true);});
 function pushTitle(){if(!(history.state&&history.state.atlasTitle))history.pushState({atlasTitle:1},'');}
 document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('title-view').hidden&&!document.querySelector('dialog[open]'))closeTitleView();});
@@ -21,13 +27,29 @@ document.addEventListener('keydown',e=>{if(e.key==='Escape'&&!$('title-view').hi
 // Entry point from catalogue cards: series (or one of its episodes) open the series page, everything else the film page.
 function openTitle(item){if(item.series_parent||(item.metadata?.kind==='series'&&item.show_key))return openShow(item.show_key,item.series_parent?null:item.work_id);return openMovie(item);}
 
-function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast}){
- const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=artImage(meta.fanart||meta.poster,'');
+// image: optional loader for portal artwork (Netzkino/Pluto/JustWatch hosts, 0.5.42).
+// 0.5.80 (Björn): cast photos from TMDB, loaded after the page is shown; initials stay where none is known.
+function castContext(m){return m?{kind:m.kind,title:m.title,year:m.year,provider:m.provider,reference_id:m.reference_id,imdb_id:m.imdb_id}:null;}
+async function castPhotos(row,cast,context){
+ if(!context||!cast?.length||!latestSettings?.tmdb_set)return;
+ const seq=titleSequence;let d;
+ try{d=await api('cast-photos',{people:cast.slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context});}catch{return;}
+ if(seq!==titleSequence||!row.isConnected)return;
+ for(const box of row.querySelectorAll('.tv-person')){const name=box.dataset.name,url=d.photos?.[name];
+  if(url&&safeArt(url)){const img=artImage(url,name,'tv-avatar tv-photo');if(img){img.onerror=()=>img.replaceWith(el('span',box.dataset.initials,'tv-avatar'));box.querySelector('.tv-avatar')?.replaceWith(img);}}
+  const role=d.roles?.[name];if(role&&!box.querySelector('small'))box.append(el('small',role));}
+}
+function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,image,castRef}){
+ const art=image||artImage;
+ const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=art(meta.fanart||meta.poster,'');
  if(bg){if(!meta.fanart)back.classList.add('blurred');back.append(bg);}wrap.append(back);
- const top=el('div',undefined,'tv-topbar'),close=el('button','← Zurück zum Katalog','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
- const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=artImage(poster||meta.poster,'Poster: '+(meta.title||''));
- if(img)cover.append(img);else cover.append(el('span',type==='Serie'?'SERIE':'FILM'));
- const text=el('div',undefined,'tv-herotext');text.append(el('p',type,'eyebrow'),el('h1',meta.title||'Ohne Titel'));
+ const top=el('div',undefined,'tv-topbar'),close=el('button',titleReturn==='portals'?'← Zurück zur Plattform':titleReturn==='discover'?'← Zurück zum Dashboard':'← Zurück','tv-back');close.onclick=()=>closeTitleView();top.append(close);wrap.append(top);
+ const body=el('div',undefined,'tv-herobody'),cover=el('div',undefined,'tv-poster'),img=art(poster||meta.poster,'Poster: '+(meta.title||''));
+ if(img)cover.append(img);else cover.append(el('span',/^Serie\b/.test(type)?'SERIE':/^Live/.test(type)?'LIVE':/^Folge/.test(type)?'FOLGE':'FILM'));
+ const text=el('div',undefined,'tv-herotext');const h1=el('h1',undefined,'tv-title'),logo=meta.logo?artImage(meta.logo,meta.title||'Ohne Titel','tv-logo'):null;
+ // Fanart.tv logo (0.5.56) replaces the plain title; the title stays as alt text and tooltip.
+ if(logo){logo.onerror=()=>{logo.remove();h1.textContent=meta.title||'Ohne Titel';};logo.title=meta.title||'';h1.append(logo);}else h1.textContent=meta.title||'Ohne Titel';
+ text.append(el('p',type,'eyebrow'),h1);
  const line=el('div',undefined,'tv-facts');for(const f of facts.filter(Boolean)){line.append(typeof f==='string'?el('span',f):f);}text.append(line);
  const buttons=el('div',undefined,'tv-actions');buttons.append(...actions.filter(Boolean));text.append(buttons);
  const plot=el('p',overview||overviewHint,'tv-overview'+(overview?'':' muted'));text.append(plot);
@@ -35,7 +57,7 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast}){
  const dl=el('dl',undefined,'tv-info');for(const [k,v] of info){if(v)dl.append(el('dt',k),el('dd',v));}if(dl.childElementCount)text.append(dl);
  body.append(cover,text);wrap.append(body);
  const out=[wrap];
- if(cast?.length){const sec=el('section',undefined,'tv-section');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person');c.append(el('span',(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join(''),'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);}
+ if(cast?.length){const sec=el('section',undefined,'tv-section');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,cast,castRef===undefined?castContext(meta):castRef);}
  return out;
 }
 function ratingFact(m){const r=Number(m.rating);if(m.rating==null||m.rating===''||!Number.isFinite(r))return null;const s=el('span','★ '+r.toLocaleString('de-DE',{maximumFractionDigits:1}),'tv-rating');s.title=ratingSource(m)+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':'');return s;}
@@ -62,8 +84,8 @@ function renderShow(){
  const years=s.year?String(s.year):'';const nSeasons=s.seasons.filter(x=>x.season!==null).length;
  const facts=[years,ratingFact(s),...extraRatings(s),nSeasons?nSeasons+(nSeasons===1?' Staffel':' Staffeln'):'',s.episode_count+(s.episode_count===1?' Folge':' Folgen')+' verfügbar',s.downloaded?s.downloaded+' heruntergeladen (Dateipfade ggf. prüfen)':'',(s.genres||[]).slice(0,3).join(' · ')];
  const hint=s.state==='format'?'Sendung mit einzelnen Beiträgen. Sendungsbeiträge werden nicht mit Filmdatenbanken abgeglichen.':!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Noch keine Serienbeschreibung. Mit einem TMDB- oder TVDB-Zugang in den Einstellungen werden Beschreibung und Hintergrundbild ergänzt.':'Serienbeschreibung wird beim nächsten Abgleich ergänzt.';
- const info=[['Genres',(s.genres||[]).join(', ')],['Sender',s.channels.join(', ')],['Netzwerk',(s.networks||[]).join(', ')],['Studios',(s.studios||[]).join(', ')],...creditInfo(credits),['Zuordnung',stateLabel(s.state)+(s.provider?' · '+s.provider+(s.reference_id?' '+s.reference_id:''):'')]];
- host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast}));
+ const info=[['Genres',(s.genres||[]).join(', ')],['Sender',s.channels.join(', ')],['Netzwerk',(s.networks||[]).join(', ')],['Studios',(s.studios||[]).join(', ')],...creditInfo(credits),matchInfo(s.state,s.provider,s.reference_id)];
+ host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast,castRef:{...castContext(s),kind:'series'}}));
  const sec=el('section',undefined,'tv-section');const head=el('div',undefined,'tv-sectionhead');head.append(el('h2','Staffeln & Folgen'));
  const tabs=el('div',undefined,'tv-tabs');tabs.setAttribute('role','tablist');
  const options=s.seasons.length>1?[{season:SEASON_ALL,episodes:eps.length},...s.seasons]:s.seasons;
@@ -119,9 +141,10 @@ function renderMovie(){
  if(versions&&versions.length>1){const label=el('label',undefined,'tv-select');label.append('Fassung ');const sel=el('select');sel.setAttribute('aria-label','Fassung wählen');versions.forEach((a,i)=>{const o=el('option',versionLabel(a));o.value=String(i);if(a.id===selected.id)o.selected=true;sel.append(o);});sel.onchange=()=>{titleState.selected=versions[Number(sel.value)];renderMovie();};label.append(sel);actions.push(label);}
  const facts=[m.year?String(m.year):'',minutes(r.duration),ratingFact(m),...extraRatings(m),(m.genres||[]).slice(0,3).join(' · '),item.downloaded?(item.file_state==='missing'?'⚠ Lokale Datei verschoben':'✓ Heruntergeladen'):'',pickLabel(m,item.state)?pickLabel(m,item.state):''];
  const hint=item.state==='format'?'Beitrag einer Sendung.':(r.description?'':'Noch keine Beschreibung vorhanden.');
- const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],['Zuordnung',stateLabel(item.state)+(m.provider?' · '+m.provider+(m.reference_id?' '+m.reference_id:''):'')]];
+ const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],matchInfo(item.state,m.provider,m.reference_id)];
  host.replaceChildren(...hero({meta:m,type:'Film',facts,overview:m.description||r.description||'',overviewHint:hint,actions,info,cast:m.cast}));
  const sec=el('section',undefined,'tv-section');sec.append(el('h2','Fassungen & Dateien'));
+ if(selected.available!==false){const quick=downloadVersions({...item,...selected,metadata:m});if(quick)sec.append(quick);}
  if(versions){const list=el('div',undefined,'tv-versionlist');for(const a of versions)list.append(versionRow(a,a.id===selected.id?null:x=>{titleState.selected=x;renderMovie();window.scrollTo(0,0);}));sec.append(list);}
  else sec.append(sourceLinks(selected.links||item.links),el('p',(item.offer_count||1)>1?'Weitere Fassungen werden geladen …':'Nur eine Fassung im Katalog.','muted'));
  sec.append(el('p','Quelllinks öffnen die Originaldatei. Für saubere Dateinamen, NFO und eingebettete Metadaten den Download über die App starten.','muted'));

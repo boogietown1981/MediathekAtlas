@@ -1,6 +1,5 @@
 """Reviewable, atomic batch queueing for recognized series episodes."""
 import json,hashlib,secrets,time
-from pathlib import Path
 import core,catalog
 
 def plan(c,show,root):
@@ -23,7 +22,7 @@ def plan(c,show,root):
             try:target=str(core.target(root,m,item['id']))
             except ValueError as e:reason=str(e)
         episode=(m.get('season'),m.get('episode'))
-        if not reason and (episode in seen or target in existing or Path(target).exists()):reason='Bereits vorhanden, eingereiht oder doppelte Folge'
+        if not reason and (episode in seen or target in existing or core.existing_download(target)):reason='Bereits vorhanden, eingereiht oder doppelte Folge'
         if reason:skipped.append({'title':m.get('episode_title') or m['title'],'reason':reason});continue
         seen.add(episode);eligible.append({'id':item['id'],'metadata':m,'source':{**item['source'],'_download_url':item['best']['url']},'target':target,'quality':'best','root':str(root)})
     eligible.sort(key=lambda i:(i['metadata']['season'],i['metadata']['episode']))

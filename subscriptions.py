@@ -5,10 +5,8 @@ metadata. All enqueues are atomic and deduplicated by the confirmed media identi
 """
 import datetime
 import json
-import os
 import secrets
 import time
-from pathlib import Path
 
 import catalog
 import core
@@ -206,7 +204,7 @@ def enqueue_due(c,sub,root,now=None,limit=10):
         offer,source,url=selected
         try:target=str(core.target(root,meta,offer['id']))
         except (ValueError,TypeError):continue
-        if Path(target).exists():continue
+        if core.existing_download(target):continue
         if c.execute("""SELECT 1 FROM jobs WHERE state IN
             ('queued','downloading','tagging','done') AND json_extract(payload,'$.target')=? LIMIT 1""",
             (target,)).fetchone():continue

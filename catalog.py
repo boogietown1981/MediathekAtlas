@@ -1,5 +1,5 @@
 """Local work/episode catalogue, alternative offers and conservative matching."""
-import hashlib,json,re,sqlite3,time,unicodedata
+import hashlib,json,re,sqlite3,threading,time,unicodedata
 import core
 SCHEMA='''
 CREATE TABLE IF NOT EXISTS downloaded_items(identity TEXT PRIMARY KEY,path TEXT,finished REAL);
@@ -57,6 +57,7 @@ CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
 CREATE INDEX IF NOT EXISTS work_retry ON works(state,next_try);
 CREATE INDEX IF NOT EXISTS work_show ON works(show_key);
+CREATE INDEX IF NOT EXISTS work_listing ON works(kind,show_key,id,title,year,state);
 CREATE TABLE IF NOT EXISTS work_genres(work_id TEXT,genre TEXT,PRIMARY KEY(work_id,genre));
 CREATE INDEX IF NOT EXISTS genre_index ON work_genres(genre,work_id);
 CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
@@ -67,7 +68,7 @@ CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,pr
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
 SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K|untertitel(?:n)?|UT|OmU|OV|Originalversion(?:\s+mit\s+Untertitel(?:n)?)?|Originalfassung(?:\s+mit\s+Untertitel(?:n)?)?|Original\s+mit\s+Untertitel(?:n)?|VOST(?:F)?|VO-?ST)[)\]]\s*')
 EP=re.compile(r'(?i)\bS(\d{1,2})[\s/._-]*E(\d{1,4})\b|\b(\d{1,2})x(\d{1,4})\b|\bStaffel\s*(\d+)\D{1,20}Folge\s*(\d+)\b')
-GENRES={'Krimi':r'\b(?:krimi|kriminalfilm|krimiserie|tatort|polizeiruf)\b','Komödie':r'\b(?:komödie|comedy|sitcom)\b','Drama':r'\b(?:drama|melodram)\b','Thriller':r'\bthriller\b','Science-Fiction':r'\b(?:science.fiction|sci.fi)\b','Fantasy':r'\bfantasy\b','Animation':r'\b(?:animation|zeichentrick|anime)\b','Dokumentation':r'\b(?:dokumentation|dokumentarfilm|dokumentarserie|doku)\b','Kinder & Familie':r'\b(?:kinderfilm|kinderserie|familienfilm)\b','Romantik':r'\b(?:liebesfilm|romantik|romantische komödie)\b'}
+GENRES={'Krimi':r'\b(?:krimi|kriminalfilm|krimiserie|tatort|polizeiruf)\b','Komödie':r'\b(?:komödie|comedy|sitcom)\b','Drama':r'\b(?:drama|melodram)\b','Thriller':r'\bthriller\b','Science-Fiction':r'\b(?:science.fiction|sci.fi)\b','Fantasy':r'\bfantasy\b','Animation':r'\b(?:animation|zeichentrick|anime)\b','Dokumentation':r'\b(?:dokumentation|dokumentarfilm|dokumentarserie|doku)\b','Kinder':r'\b(?:kinderfilm|kinderserie)\b','Familie':r'\bfamilienfilm\b','Romantik':r'\b(?:liebesfilm|romantik|romantische komödie)\b'}
 
 def key(s):
     s=unicodedata.normalize('NFKD',str(s or '').casefold())
@@ -221,8 +222,21 @@ def ingest(c,rows,seen=None):
                 c.execute("UPDATE works SET state='format' WHERE id=?",(wid,))
             elif template:c.execute("UPDATE works SET state='identified' WHERE id=?",(wid,))
             for genre in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,genre))
+        if str(row.get('topic') or '').strip() in LIVE_TOPICS:mark_live(c,wid)
         c.execute('INSERT INTO offers VALUES(?,?,?,?,?,?,1) ON CONFLICT(id) DO UPDATE SET payload=excluded.payload,special=excluded.special,rank=excluded.rank,seen=excluded.seen,active=1',(oid,wid,json.dumps(row),special(row),ranking(row),seen));ids.append(oid)
     return ids
+
+LIVE_TOPICS=('Livestream','Livestreams','livestream','LIVESTREAM','Live-Stream')
+
+def mark_live(c,wid=None):
+    """Broadcaster live streams (topic "Livestream", 0.5.50) are no works: shown in the Live-TV tab,
+    never sent to TMDB/TVDB/IMDb. Manual and confirmed decisions stay untouched."""
+    sql=("UPDATE works SET kind='other',state='format',next_try=0,meta=json_set(COALESCE(NULLIF(meta,''),'{}'),"
+         "'$.kind','other','$.live',json('true'),'$.reason','Livestream des Senders; erscheint im Reiter Live-TV und wird nicht abgeglichen.') "
+         "WHERE topic IN (%s) AND state NOT IN ('manual','matched','format')"%','.join('?'*len(LIVE_TOPICS)))
+    args=list(LIVE_TOPICS)
+    if wid is not None:sql+=' AND id=?';args.append(wid)
+    return c.execute(sql,args).rowcount
 
 def begin_snapshot(c):
     """Collect feed IDs separately: an interrupted import must never retire existing offers."""
@@ -275,6 +289,7 @@ def download_identity(m):
     return canonical(m) or digest(json.dumps([m.get('kind'),key(m.get('title','')),m.get('year'),m.get('season'),m.get('episode')]))
 
 def mark_downloaded(c,job):
+    invalidate_listings()
     identities={download_identity(job['metadata'])}
     source_id=job.get('source',{}).get('_id')
     found=c.execute('SELECT work_id FROM offers WHERE id=?',(source_id,)).fetchone()
@@ -317,7 +332,10 @@ def item(c,w):
     if saved:
         import local_library
         file_state=local_library.file_state(saved['path'])
-    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':json.loads(w['meta']),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(saved),'file_state':file_state,'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
+    meta=json.loads(w['meta'])
+    import categories
+    checked=bool(w['attempts']) or w['state'] in ('matched','manual','identified','review','format')
+    return {'id':r['id'],'work_id':w['id'],'source':row,'metadata':meta,'categories':categories.classify((),meta.get('genres') or [],checked),'offer_count':count,'available':bool(r['active']),'state':w['state'],'downloaded':bool(saved),'file_state':file_state,'mesh_download':mesh_download(c,json.loads(w['meta']),w['id']),'special':r['special'],'best':links(row)[0] if links(row) else None,'show_key':w['show_key'],'links':links(row)}
 
 def media_equivalence_key(row,special_kind='',active=True):
     """Exact playable media identity; do not strip signed URL query strings.
@@ -393,7 +411,148 @@ def show_detail(c,show,archive=False,limit=1000):
                    channels=sorted(channels),seasons=[{'season':k,'episodes':v} for k,v in sorted(seasons.items(),key=lambda kv:(kv[0] is None,kv[0] or 0))],truncated=len(rows)>limit)
     return {'show':summary,'episodes':episodes,'work_ids':[w['id'] for w,_ in ranked[:48]]}
 
-def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection=''):
+# 0.5.55: grouped catalogue pages from memory. Björn's diagnosis (12.11.2026): /api/catalog took
+# 7-31 s on every call (239 times in six hours) because each page grouped and sorted all ~680,000
+# works again. The grouped order per filter is now computed once, served from memory and renewed
+# in the background (stale-while-revalidate), so paging and returning to the view are immediate.
+LISTING_DB=None            # set by the server: context-manager factory for background refreshes
+LISTING_TTL=600.0
+LISTING_SEARCH_TTL=120.0
+LISTING_SLOW=1.5             # seconds: from here on an outdated page is served while it is renewed
+_LISTING_MAX=32
+_LISTING={}                # key -> {'rows':[(id,episodes)],'built':monotonic,'busy':bool,'used':monotonic}
+_LISTING_LOCK=threading.Lock()
+_LISTING_BUILD=threading.Lock()   # one heavy aggregation at a time
+_LISTING_STATS={'hits':0,'builds':0,'background':0,'last_seconds':0.0,'restored':0,'pending':0}
+# 0.5.57: the slow aggregations survive a restart. Björn (12.11.2026): after the start the
+# catalogues took very long. Every start grouped the whole catalogue again before the first
+# page could be shown. The last result is now read from this file, shown at once and renewed
+# in the background.
+LISTING_FILE=None          # set by the server through load_listings()
+LISTING_WAIT=0.6           # seconds a caller with wait=False gives a first aggregation
+_LISTING_KEEP=6
+_LISTING_QUEUED={}         # key -> Event, first aggregations running in the background
+_LISTING_FAILED={}         # key -> (monotonic, exception) of a failed background aggregation
+
+class ListingPending(Exception):
+    """The grouped list is being computed in the background; ask again in a moment."""
+
+def _listing_build(c,where,args,grouping,order):
+    started=time.monotonic()
+    base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
+    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,w.title,w.year FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
+    seconds=time.monotonic()-started
+    _LISTING_STATS['builds']+=1;_LISTING_STATS['last_seconds']=round(seconds,2)
+    return rows,seconds
+
+def _listing_persist():
+    path=LISTING_FILE
+    if path is None:return
+    with _LISTING_LOCK:
+        keep=sorted(((k,e) for k,e in _LISTING.items() if e['seconds']>=LISTING_SLOW and not e.get('search')),key=lambda ke:-ke[1]['used'])[:_LISTING_KEEP]
+        data=[{'key':[k[0],list(k[1]),k[2],k[3]],'rows':e['rows'],'seconds':e['seconds']} for k,e in keep]
+    try:
+        tmp=path.with_suffix('.tmp');tmp.write_text(json.dumps({'version':1,'saved':time.time(),'entries':data},separators=(',',':')),encoding='utf-8');tmp.replace(path)
+    except OSError:pass   # only the next start is slower
+
+def load_listings(path):
+    """Read the lists of the last run. They count as outdated: shown at once, renewed on first use."""
+    global LISTING_FILE
+    from pathlib import Path
+    LISTING_FILE=Path(path)
+    try:stored=json.loads(LISTING_FILE.read_text(encoding='utf-8'))
+    except (OSError,ValueError):return 0
+    count=0;now=time.monotonic()
+    if not isinstance(stored,dict) or stored.get('version')!=1:return 0
+    with _LISTING_LOCK:
+        for entry in stored.get('entries') or []:
+            try:
+                where,args,grouping,order=entry['key'];rows=[(str(r[0]),int(r[1]),r[2],r[3]) for r in entry['rows']]
+                _LISTING[(where,tuple(args),grouping,order)]={'rows':rows,'built':float('-inf'),'busy':False,'used':now,'seconds':max(float(entry.get('seconds') or 0),LISTING_SLOW),'search':False}
+                count+=1
+            except (KeyError,TypeError,ValueError,IndexError):continue
+    _LISTING_STATS['restored']=count
+    return count
+
+def _listing_store(key,rows,seconds,search=False):
+    now=time.monotonic()
+    with _LISTING_LOCK:
+        _LISTING[key]={'rows':rows,'built':now,'busy':False,'used':now,'seconds':seconds,'search':search}
+        while len(_LISTING)>_LISTING_MAX:
+            _LISTING.pop(min(_LISTING,key=lambda k:_LISTING[k]['used']))
+    if seconds>=LISTING_SLOW and not search:_listing_persist()
+
+def _listing_refresh(key,where,args,grouping,order,search=False):
+    try:
+        with _LISTING_BUILD:
+            with LISTING_DB() as c:rows,seconds=_listing_build(c,where,args,grouping,order)
+        _listing_store(key,rows,seconds,search);_LISTING_STATS['background']+=1
+    except Exception as exc:
+        with _LISTING_LOCK:
+            if key in _LISTING:_LISTING[key]['busy']=False
+            _LISTING_FAILED[key]=(time.monotonic(),exc)   # shown to a caller that does not wait
+            while len(_LISTING_FAILED)>_LISTING_MAX:_LISTING_FAILED.pop(next(iter(_LISTING_FAILED)))
+    finally:
+        with _LISTING_LOCK:done=_LISTING_QUEUED.pop(key,None)
+        if done:done.set()
+
+def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
+    # Without a server (tests, tools) every call reads the database directly.
+    if LISTING_DB is None:return _listing_build(c,where,args,grouping,order)[0]
+    key=(where,tuple(args),grouping,order);now=time.monotonic()
+    with _LISTING_LOCK:
+        entry=_LISTING.get(key)
+        if entry:
+            entry['used']=now;age=now-entry['built']
+            if age<=(LISTING_SEARCH_TTL if search else LISTING_TTL):
+                _LISTING_STATS['hits']+=1;return entry['rows']
+            # Outdated: quick aggregations are simply repeated, slow ones answer from memory
+            # at once and are renewed in the background.
+            if entry['seconds']>=LISTING_SLOW:
+                if not entry['busy']:
+                    entry['busy']=True
+                    threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()
+                _LISTING_STATS['hits']+=1;return entry['rows']
+        if not wait:
+            failed=_LISTING_FAILED.get(key)
+            if failed and now-failed[0]<=30:raise failed[1]   # do not repeat a failing aggregation at once
+            # The caller (merged dashboard) shows the other sources first: compute in the
+            # background, give a quick aggregation a moment, otherwise report "pending".
+            done=_LISTING_QUEUED.get(key)
+            if done is None:
+                done=_LISTING_QUEUED[key]=threading.Event()
+                threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_first').start()
+    if not wait:
+        done.wait(LISTING_WAIT)
+        with _LISTING_LOCK:
+            entry=_LISTING.get(key)
+            if entry:return entry['rows']   # new, or the outdated one while the new one is computed
+            failed=_LISTING_FAILED.get(key)
+        if failed and failed[0]>=now:raise failed[1]
+        _LISTING_STATS['pending']+=1
+        raise ListingPending()
+    with _LISTING_BUILD:
+        with _LISTING_LOCK:
+            entry=_LISTING.get(key)
+            if entry and entry['built']>now:return entry['rows']   # built while waiting
+        rows,seconds=_listing_build(c,where,args,grouping,order)
+    _listing_store(key,rows,seconds,search)
+    return rows
+
+def invalidate_listings(drop=False):
+    """After an import, a download or a manual change: renew on next use. Slow aggregations keep
+    answering from memory while they are renewed in the background."""
+    with _LISTING_LOCK:
+        _LISTING_FAILED.clear()
+        if drop:_LISTING.clear()
+        else:
+            for entry in _LISTING.values():entry['built']=float('-inf')
+
+def listing_cache_stats():
+    with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}
+
+
+def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False,wait=True):
     clauses=[];args=[]
     if downloaded=='hide':clauses.append('NOT EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
     elif downloaded=='only':clauses.append('EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
@@ -409,8 +568,8 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     elif state=='format':clauses.append("w.state='format'")
     if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
     if genre:
-        if genre=='Unbekannt':clauses.append('NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)')
-        else:clauses.append('EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre=?)');args.append(genre)
+        clause,values=category_clause(c,genre)
+        clauses.append(clause);args.extend(values)
     if show:clauses.append('w.show_key=?');args.append(show)
     where=' AND '.join(clauses);offset=max(0,int(offset));grouping="CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END" if not show else 'w.id'
     if show:
@@ -422,15 +581,84 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
             entry=item(c,w)
             if entry:entry.update(episodes=1,series_parent=False);out.append(entry)
         return {'items':out,'total':len(rows),'offset':offset}
-    base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
-    total=c.execute('SELECT COUNT(*) FROM ('+base+')',args).fetchone()[0]
-    rows=c.execute('SELECT g.*,w.title FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+({'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE'))+' LIMIT 48 OFFSET ?',args+[offset]).fetchall();out=[]
+    order={'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE')
+    groups=_listing_groups(c,where,args,grouping,order,bool(query),wait)
+    if index_only:return groups   # (id, episodes, title, year) of every group, for unified_index
+    total=len(groups);rows=[{'id':r[0],'episodes':r[1]} for r in groups[offset:offset+48]];out=[]
     for row in rows:
         w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone()
         if w is None:continue  # merged by another worker after the paged query
         entry=item(c,w)
         if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show);out.append(entry)
     return {'items':out,'total':total,'offset':offset}
+
+# 0.5.83: a work counts as classified once the reference check ran (attempts) or produced a state.
+# Before that it is listed under categories.UNCLASSIFIED, regardless of the broadcaster's labels.
+CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','review','format'))"
+
+def category_labels(c):
+    """Fixed category -> raw genres stored in work_genres that name it (genre index, small)."""
+    import categories
+    out={}
+    for (raw,) in c.execute('SELECT DISTINCT genre FROM work_genres'):
+        for name in categories.of_label(raw):out.setdefault(name,[]).append(raw)
+    return out
+
+def category_clause(c,genre):
+    """SQL filter for a fixed category, 'Unklassifiziert', 'Sonstige' or (classic tree in
+    Verwaltung → Werkkatalog) one raw genre exactly as stored."""
+    import categories
+    text=str(genre).strip()
+    if text==categories.LEGACY_UNKNOWN:
+        return 'NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)',[]
+    if text==categories.UNCLASSIFIED:
+        return 'NOT '+CLASSIFIED_SQL,[]
+    labels=category_labels(c)
+    if text==categories.OTHER:
+        known=[raw for names in labels.values() for raw in names]
+        if not known:return CLASSIFIED_SQL,[]
+        return (CLASSIFIED_SQL+' AND NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'
+                %','.join('?'*len(known))),known
+    def has(names):
+        raw=[r for n in names for r in labels.get(n) or []]
+        if not raw:return '0',[]
+        return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))'%','.join('?'*len(raw)),raw
+    if text in ('Kinder','Familie'):
+        # 0.5.103: same rules as categories.refine (Kinder also for Familie + Animation; never next to
+        # Horror/Thriller/Krimi/Erotik/Krieg, Familie never next to Horror/Erotik).
+        own,own_args=has([text])
+        if text=='Kinder':
+            fam,fam_args=has(['Familie']);ani,ani_args=has(['Animation'])
+            own='(%s OR (%s AND %s))'%(own,fam,ani);own_args=own_args+fam_args+ani_args
+        bad,bad_args=has(categories.NOT_FOR_KIDS if text=='Kinder' else categories.NOT_FOR_FAMILY)
+        return CLASSIFIED_SQL+' AND '+own+' AND NOT '+bad,own_args+bad_args
+    if text in categories.CATEGORIES:
+        clause,raw=has([text])
+        if not raw:return '0',[]
+        return CLASSIFIED_SQL+' AND '+clause,raw
+    return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre=?)',[text]
+
+def category_tree(c):
+    """[{kind, genre, n}] with the fixed categories (series counted once per show), like tree().
+    0.5.103: the rules over the whole title (categories.refine: no 'Kinder' next to Horror/Krimi …)
+    apply to the union of all labels of a film or show."""
+    import categories
+    rows=c.execute("SELECT w.kind,CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END unit,"+CLASSIFIED_SQL+
+                   " classified,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
+                   " WHERE w.kind IN ('movie','series') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)")
+    found={}
+    for kind,unit,classified,genre in rows:
+        entry=found.setdefault((kind,unit),[False,set()])
+        if classified:
+            entry[0]=True
+            if genre:entry[1].update(categories.of_label(genre))
+    counts={}
+    for (kind,unit),(checked,names) in found.items():
+        names=categories.refine(names) if checked else [categories.UNCLASSIFIED]
+        for name in names or [categories.OTHER]:counts[(kind,name)]=counts.get((kind,name),0)+1
+    out=[{'kind':kind,'genre':name,'n':n} for (kind,name),n in counts.items()]
+    out.sort(key=lambda r:(r['kind'],categories.sort_key(r['genre'])))
+    return out
 
 def tree(c):
     return [dict(r) for r in c.execute("SELECT w.kind,COALESCE(g.genre,'Unbekannt') genre,COUNT(DISTINCT CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END) n FROM works w LEFT JOIN work_genres g ON g.work_id=w.id WHERE EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) GROUP BY w.kind,g.genre")]
@@ -709,10 +937,17 @@ def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
     topic=cleaned(source.get('topic'));title=cleaned(source.get('title'))
     import metadata
-    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or key(topic)==key(title) or metadata.RUBRIC.match(topic):return False
+    if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or metadata.RUBRIC.match(topic):return False
     if TRAILER.search(title):return False
-    if FORMAT_WORDS.search(topic):return topic_works>=2
-    return int(source.get('duration') or 0)<600 and topic_works>=3
+    clip=m.get('kind')=='other';duration=int(source.get('duration') or 0)
+    # 0.5.80 (Björn: news and magazine clips belong to their Sendung, not to "Weitere Sendungen"):
+    # editions titled like their Sendung ("Landesschau" / "Landesschau") count once there are several,
+    # and a clip the import already recognised as news/magazine material ('other') joins its Sendung
+    # even as the only edition so far.
+    if key(topic)==key(title):return bool(FORMAT_WORDS.search(topic)) and topic_works>=2
+    if FORMAT_WORDS.search(topic):return topic_works>=(1 if clip else 2)
+    if clip and duration<1200 and topic_works>=2:return True
+    return duration<600 and topic_works>=3
 
 def broadcaster_format(m,source,topic_works):
     """True for an episode of a news or magazine Sendung that only the broadcaster's Mediathek identified.
@@ -817,7 +1052,7 @@ def backfill_film_hints(c,limit=400):
     return len(rows)
 
 # Raise when the format rules change: existing catalogues then get one more format pass.
-FORMAT_REV=3
+FORMAT_REV=4   # 0.5.80: clips ('other') and editions named like their Sendung
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
@@ -856,7 +1091,12 @@ def assign_formats(c,limit=500):
         if not format_contribution(m,source,counts[topic]):continue
         fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
         m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
-        m.update(kind='series',title=fmt,episode_title=cleaned(source.get('title')),year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
+        edition=cleaned(source.get('title'))
+        if key(edition)==key(fmt) and source.get('timestamp'):
+            # Editions named like the Sendung are told apart by their broadcast date.
+            try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
+            except (TypeError,ValueError,OverflowError,OSError):pass
+        m.update(kind='series',title=fmt,episode_title=edition,year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
                  state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
                  reason='Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
         c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
@@ -868,18 +1108,36 @@ def assign_formats(c,limit=500):
 
 def restart_formats(c):set_state(c,'format_cursor',0)
 
+KIND_KEYS=('movie','series','unknown','other')
 def recognition(c):
-    """Recognition per channel and state; formats are counted separately from open works."""
+    """Recognition per channel and state; formats are counted separately from open works.
+
+    0.5.80 (Björn: "Erkennungsrate je Sender/Medienart"): every channel row also carries ``kinds`` with
+    the counters per media type (movie, series, unknown, other). The main counters keep excluding
+    'other' (trailers, clips, live streams), which are not meant to be matched; they are listed as ``clips``."""
     try:
-        rows=c.execute("SELECT COALESCE(json_extract(o.payload,'$.channel'),'') channel,w.state,COUNT(DISTINCT w.id) n FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.kind!='other' GROUP BY channel,w.state").fetchall()
+        rows=c.execute("SELECT COALESCE(json_extract(o.payload,'$.channel'),'') channel,w.kind,w.state,COUNT(DISTINCT w.id) n FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 GROUP BY channel,w.kind,w.state").fetchall()
     except sqlite3.OperationalError:
-        rows=c.execute("SELECT '' channel,w.state,COUNT(*) n FROM works w WHERE w.kind!='other' GROUP BY w.state").fetchall()
+        rows=c.execute("SELECT '' channel,w.kind,w.state,COUNT(*) n FROM works w GROUP BY w.kind,w.state").fetchall()
     out={}
     for r in rows:
-        d=out.setdefault(r['channel'] or 'Unbekannt',{'channel':r['channel'] or 'Unbekannt','works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0})
-        state=r['state'];d['works']+=r['n']
-        key_={'matched':'matched','manual':'matched','identified':'identified','format':'format','review':'review'}.get(state,'open');d[key_]+=r['n']
-    return sorted(out.values(),key=lambda d:-d['works'])
+        d=out.setdefault(r['channel'] or 'Unbekannt',{'channel':r['channel'] or 'Unbekannt','works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0,'clips':0,
+                                                      'kinds':{k:{'works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0} for k in KIND_KEYS}})
+        state=r['state'];kind=r['kind'] if r['kind'] in KIND_KEYS else 'unknown'
+        key_={'matched':'matched','manual':'matched','identified':'identified','format':'format','review':'review'}.get(state,'open')
+        k=d['kinds'][kind];k['works']+=r['n'];k[key_]+=r['n']
+        if kind=='other':d['clips']+=r['n'];continue
+        d['works']+=r['n'];d[key_]+=r['n']
+    return sorted((d for d in out.values() if d['works'] or d['clips']),key=lambda d:-d['works'])
+
+def recognition_totals(rows):
+    """Sum of the channel rows per media type (table "Nach Medienart")."""
+    total={k:{'works':0,'matched':0,'identified':0,'format':0,'open':0,'review':0} for k in KIND_KEYS}
+    for r in rows or []:
+        for k,v in (r.get('kinds') or {}).items():
+            if k in total:
+                for f in total[k]:total[k][f]+=v.get(f,0)
+    return [{'kind':k,**v} for k,v in total.items() if v['works']]
 
 def reclassify_batch(c,limit=500):
     cursor=get_state(c,'reclassify_cursor_v030',0)
@@ -900,6 +1158,24 @@ def reclassify_batch(c,limit=500):
 def normalized_genres(values):
     from metadata import genres
     return genres(values or [])
+
+def split_kids_family(c):
+    """0.5.103 (Björn): the stored label 'Kinder & Familie' mixed TMDB 'Family' with real children's
+    programmes. Labels derived from the broadcaster (KiKA, 'Kinderfilm', 'Kinderserie') become 'Kinder',
+    everything else (reference genres such as TMDB 'Family') 'Familie'. Runs once."""
+    old='Kinder & Familie'
+    ids=[r[0] for r in c.execute('SELECT work_id FROM work_genres WHERE genre=?',(old,))]
+    for wid in ids:
+        row=c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()
+        m=json.loads(row[0] or '{}') if row else {}
+        kids=m.get('genre_source') in ('Senderhinweis','Sender (abgeleitet)')
+        new='Kinder' if kids else 'Familie'
+        c.execute('DELETE FROM work_genres WHERE work_id=? AND genre=?',(wid,old))
+        c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(wid,new))
+        if row:
+            m['genres']=sorted({new if g==old else g for g in (m.get('genres') or [])})
+            c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+    return len(ids)
 
 def merge_genre_spellings(c):
     """Fold genres stored under older or provider-specific spellings into one canonical name."""
@@ -953,7 +1229,9 @@ def initialize(c):
     if not get_state(c,'artwork_discovery_refresh_v047',False):
         c.execute('DELETE FROM artwork_checks');c.execute('DELETE FROM artwork_cache');set_state(c,'artwork_discovery_refresh_v047',True)
     c.execute('CREATE INDEX IF NOT EXISTS work_topic ON works(topic)')
+    mark_live(c)
     if not get_state(c,'genre_spellings_v053',False):merge_genre_spellings(c);set_state(c,'genre_spellings_v053',True)
+    if not get_state(c,'kids_family_split_v0103',False):split_kids_family(c);set_state(c,'kids_family_split_v0103',True)
     # One-time migration of existing identified episodes; no destructive resets.
     if not get_state(c,'episode_queue_migrated_v0528',False):
         c.execute("""INSERT OR IGNORE INTO episode_queue(work_id)

@@ -149,6 +149,16 @@ def manual_netzkino(title,url,year=None):
                  evidence='manually_entered_film_link')
 
 
+UPLOADER_FIELD='_uploader_useritem'
+
+
+def uploader_account(value):
+    """Public Archive.org account of an upload ('@name') or ''. Never the uploader's e-mail."""
+    if isinstance(value,list):value=value[0] if len(value)==1 else ''
+    value=str(value or '').strip()
+    return value if re.fullmatch(r'@[A-Za-z0-9_.-]{2,80}',value) else ''
+
+
 def archive_query(query,rows=20):
     raw=text(query,120)
     words=re.findall(r'[\w-]{2,}',raw,flags=re.UNICODE)
@@ -160,7 +170,7 @@ def archive_query(query,rows=20):
     n=max(1,min(MAX_SEARCH_RESULTS,int(rows)))
     params=[('q',clause),('output','json'),('rows',str(n)),('page','1')]
     params.extend(('fl[]',field) for field in (
-        'identifier','title','year','date','description','language','licenseurl','rights'))
+        'identifier','title','year','date','description','language','licenseurl','rights',UPLOADER_FIELD))
     return 'https://archive.org/advancedsearch.php?'+urllib.parse.urlencode(params)
 
 
@@ -185,6 +195,7 @@ def archive_document(doc):
                    raw.get('rights'),evidence='official_archive_search_metadata')
         item['language_claim']=text(raw.get('language'),120)
         item['language_evidence']='archive_search_metadata' if item['language_claim'] else 'unavailable'
+        item['uploader_account']=uploader_account(raw.get(UPLOADER_FIELD))
         results.append(item)
     return results
 
@@ -256,6 +267,13 @@ def _archive_video_url(identifier,filename):
     filename=_safe_archive_filename(filename)
     quoted='/'.join(urllib.parse.quote(piece,safe='') for piece in filename.split('/'))
     return ('https://archive.org/download/'+urllib.parse.quote(identifier,safe='')+'/'+quoted)
+
+
+def _pixels(value):
+    """Picture height or width as Archive.org reports it for a file; None when absent or absurd."""
+    try:n=int(float(str(value).strip()))
+    except (TypeError,ValueError):return None
+    return n if 0<n<=20000 else None
 
 
 def archive_detail_document(identifier,doc):
@@ -341,6 +359,9 @@ def archive_detail_document(identifier,doc):
             'format':text(raw.get('format'),100),
             'size_bytes':_file_size(raw.get('size')),
             'duration_seconds':duration,
+            'height':_pixels(raw.get('height')),'width':_pixels(raw.get('width')),
+            # 0.5.95: the checksums Archive.org publishes for the file; a download is compared with them (archive_receipts)
+            'md5':text(raw.get('md5'),32).lower(),'sha1':text(raw.get('sha1'),40).lower(),
             'duration_source':'Internet Archive file metadata' if duration is not None else None,
             'source':text(raw.get('source'),30),
             'original':text(raw.get('original'),400),
@@ -364,6 +385,7 @@ def archive_detail_document(identifier,doc):
         'year':year_number(meta.get('year') or meta.get('date')),
         'description':archive_identity.clean(meta.get('description'))[:2000],
         'license_url':text(meta.get('licenseurl'),500),
+        'uploader_account':uploader_account(meta.get(UPLOADER_FIELD) or doc.get(UPLOADER_FIELD)),
         'rights':text(meta.get('rights'),500),
         'upload_language_codes':hints['archive_language_codes'].split(',') if hints['archive_language_codes'] else [],
         'upload_audio_hint_languages':hints['audio_hint_languages'].split(',') if hints['audio_hint_languages'] else [],
@@ -379,6 +401,8 @@ def archive_detail_document(identifier,doc):
         'video_families_found':len({e[6] for e in eligible}),
         'video_files_eligible':len(eligible),
         'files_in_manifest':len(raw_files),
+        # 0.5.92 (ArchiveMedia multi_catalog, bluray_playlist): what the upload holds besides videos.
+        **__import__('archive_extras').collect(identifier,meta,raw_files[:MAX_ARCHIVE_FILES]),
         'files_inspected':min(len(raw_files),MAX_ARCHIVE_FILES),
         'variants_displayed':len(variants),
         'hidden_short_clips':hidden_short,
@@ -530,7 +554,7 @@ def save(c,rows,query=None):
     return ids
 
 
-def listing(c,source='',query='',offset=0,limit=40,locale='all'):
+def listing(c,source='',query='',offset=0,limit=40,locale='all',ids=None):
     if source and source not in SOURCES:raise ValueError('Unbekannte Quelle')
     offset=max(0,min(int(offset),100000))
     limit=max(1,min(int(limit),60))
@@ -549,6 +573,10 @@ def listing(c,source='',query='',offset=0,limit=40,locale='all'):
         where.append('title_key LIKE ?')
         fragment=title_key(query)[:90].replace('\\','\\\\').replace('%','\\%').replace('_','\\_')
         params.append('%'+fragment+'%')
+    if ids is not None:
+        # 0.5.82: the uploads of one recognised work (archive_recognition.members_of).
+        ids=[str(x) for x in ids][:900]
+        where.append('id IN ('+','.join('?' for _ in ids)+')' if ids else '0');params.extend(ids)
     clause=' WHERE '+' AND '.join(where) if where else ''
     count=c.execute('SELECT COUNT(*) FROM portal_items'+clause,params).fetchone()[0]
     rows=c.execute('SELECT metadata FROM portal_items'+clause+

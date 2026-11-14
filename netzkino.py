@@ -314,7 +314,7 @@ def state(root):
             'category_max_items':int(_get(db,'category_max_items','0')),
             'categories_empty':int(_get(db,'categories_empty','0')),
             'category_error_types':json.loads(_get(db,'category_error_types','{}')),
-            'last_result':_get(db,'last_result','never'),
+            'last_result':__import__('portal_reference').stored_result(_get(db,'last_result','never'),_ACTIVE),
             'last_complete_success':float(_get(db,'last_complete_success','0')),
             'time_budget_hit':_get(db,'time_budget_hit','0')=='1',
             'categories_discovered':int(_get(db,'categories_discovered','0')),
@@ -935,7 +935,7 @@ def sync_graphql(root, fetch=None, now=None):
         finally:db.close()
     except Exception as exc:
         if isinstance(exc,urllib.error.HTTPError):msg='Netzkino-Katalog HTTP '+str(exc.code)
-        elif isinstance(exc,(urllib.error.URLError,TimeoutError,OSError)):msg='Netzkino-Katalogserver nicht erreichbar.'
+        elif isinstance(exc,(urllib.error.URLError,TimeoutError,OSError)):msg=__import__('netcheck').with_cause('Netzkino-Katalogserver nicht erreichbar',exc)
         elif isinstance(exc,ValueError):msg=str(exc)[:240]
         else:msg='GraphQL-Katalogabgleich konnte nicht abgeschlossen werden.'
         db=_connect(root)
@@ -945,7 +945,7 @@ def sync_graphql(root, fetch=None, now=None):
                                   ('last_http_status',getattr(exc,'code',0)),('next_attempt',now+3600)]:
                     _set(db,key,value)
         finally:db.close()
-        _notify('netzkino_sync_failed',error_type=_category_failure_type(exc),
+        _notify('netzkino_sync_failed',error_type=_category_failure_type(exc),network=__import__('netcheck').kind(exc),
                 http_status=getattr(exc,'code',0),categories_checked=checked)
         return {'ok':False,'error':msg,'categories_checked':checked}
 
@@ -1096,9 +1096,14 @@ def start_sync(root):
 
 def loop(root, stop):
     """Runs only while the main MediathekAtlas process is alive."""
+    import task_control
     while not stop.wait(60):
+        if task_control.paused('catalog:netzkino'):
+            continue
         current = state(root)
-        if current['auto'] and not current['running'] and time.time() >= current['next_attempt']:
+        import portal_reference
+        if portal_reference.first_load_due(current) or (
+                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 
 
@@ -1126,6 +1131,12 @@ def _series_normalize(value):
     raw=_unicode.normalize('NFKD',str(value or '').casefold())
     raw=''.join(ch for ch in raw if not _unicode.combining(ch))
     return re.sub(r'[^a-z0-9]+',' ',raw).strip()
+
+
+def series_id(series_title):
+    """Deterministic id of a grouped Netzkino series ('' when the title normalises to nothing)."""
+    normalized=_series_normalize(series_title)
+    return 'series-'+hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:24] if normalized else ''
 
 
 def classify_media(item):
@@ -1204,18 +1215,17 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
     def genre_match(row):
         # Canonical categories (IMDb/TVDB/TMDB genres first) as in the Mediathek catalogue.
         return portal_reference.matches(row,genre)
-    limit=max(1,min(100,int(limit)))
+    limit=1000000 if limit=='all' else max(1,min(100,int(limit)))
     offset=max(0,min(1000000,int(offset)))
     movies=[];series={}
     for row in _view_rows(root,origin):
         classification=classify_media(row)
-        enriched={**row,**classification,**portal_reference.summary(row.get('genres'),reports.get(row['id']))}
+        enriched={**row,**classification,**portal_reference.summary(row.get('genres'),reports.get(row['id']),age=portal_reference.age_of(row))}
         if classification['media_type']=='movie':
             movies.append(enriched)
             continue
-        normalized=_series_normalize(classification['series_title'])
-        if not normalized:continue
-        key='series-'+hashlib.sha256(normalized.encode('utf-8')).hexdigest()[:24]
+        key=series_id(classification['series_title'])
+        if not key:continue
         group=series.setdefault(key,{'id':key,'series_key':key,'title':classification['series_title'],
             'kind':'series','media_type':'series','episode_count':0,'seasons':[],
             'poster':'','year':None,'genres':row.get('genres') or '',
@@ -1235,8 +1245,11 @@ def grouped_catalog(root, *, view='movies', series_key='',query='',origin='all',
             if not group['genres']:group['genres']=row.get('genres') or ''
             if not group['year']:group['year']=row.get('year')
     for group in series.values():
-        cats=sorted({c for e in group['children'] for c in e['categories']}-{portal_reference.UNKNOWN},key=str.casefold)
-        group['categories']=cats or portal_reference.categories(group.get('genres'))
+        import categories as fixed
+        found={c for e in group['children'] for c in e['categories']}
+        cats=sorted({c for c in found if not fixed.is_special(c)},key=fixed.sort_key)
+        group['categories']=cats or ([fixed.OTHER] if fixed.OTHER in found else [fixed.UNCLASSIFIED])
+        group['source_genres']=portal_reference.split_labels(group.get('genres'))[:12]
         group.setdefault('score',None)
         group['children'].sort(key=lambda e:(e['season'] or 0,e['episode'] or 0,e['title'].casefold()))
         group['episode_count']=len(group['children'])

@@ -3,7 +3,7 @@ import hashlib,json,time,threading,secrets,sqlite3
 from collections import deque
 import platform
 from pathlib import Path
-import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer
+import core,catalog,filmlist,diagnostics,metadata,broadcaster,meshjournal,meshpeer,task_control,archive_receipts
 
 def retry_delay(attempts,result):
     """Back off stable non-matches; retry genuine network failures sooner."""
@@ -90,6 +90,7 @@ class Service:
             if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
             changes=catalog.finish_snapshot(c,started,changes)
             catalog.set_state(c,'last_complete',time.time())
+        catalog.invalidate_listings()
         self.format_wake.set();self.subscription_wake.set()
         diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
         self.status(phase='complete',processed=count,changes=changes);return count
@@ -97,6 +98,9 @@ class Service:
         retry_after=0
         while not self.stop.wait(2):
             config=self.settings();requested=self.wake.is_set()
+            # 0.5.55: paused under Verwaltung → Aufgaben. An explicit start ("Jetzt starten") lifts the pause.
+            if task_control.paused('filmlist'):
+                task_control.note('filmlist','Pausiert');continue
             if not config.get('auto_catalog',True) and not requested:continue
             with self.db() as c:
                 last=catalog.get_state(c,'last_complete',0)
@@ -107,7 +111,7 @@ class Service:
             interval=2*3600 if has_subscriptions else 12*3600
             if not requested and (time.time()-last<interval or time.time()<retry_after):continue
             self.wake.clear();self.restart.clear();started=time.time()
-            def cancelled():return self.stop.is_set() or self.restart.is_set() or (not requested and not self.settings().get('auto_catalog',True))
+            def cancelled():return self.stop.is_set() or self.restart.is_set() or task_control.paused('filmlist') or (not requested and not self.settings().get('auto_catalog',True))
             try:
                 path=filmlist.download(self.root,self.status,cancelled)
                 self.import_snapshot(path,started,cancelled)
@@ -122,6 +126,7 @@ class Service:
         """Create queued download jobs from user-approved subscriptions."""
         import subscriptions
         while not self.stop.is_set():
+            if not task_control.wait_if_paused('subscriptions',self.stop):return
             try:
                 with self.db() as c:
                     c.execute('BEGIN IMMEDIATE')
@@ -767,7 +772,7 @@ class Service:
     def metadata_loop(self,index=0):
         while not self.stop.is_set():
             requested=max(1,min(MAX_RECOGNITION_WORKERS,int(self.settings().get('metadata_workers',2))))
-            if index>=requested or not self.settings().get('auto_metadata',True):
+            if index>=requested or not self.settings().get('auto_metadata',True) or task_control.paused('recognition'):
                 self.stop.wait(2);continue
             try:busy=self.metadata_once()
             except sqlite3.OperationalError as e:
@@ -782,7 +787,7 @@ class Service:
     def episode_loop(self,index=0):
         while not self.stop.is_set():
             requested=max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2))))
-            if index>=requested or not self.settings().get('auto_metadata',True):
+            if index>=requested or not self.settings().get('auto_metadata',True) or task_control.paused('episodes'):
                 self.stop.wait(2);continue
             try:busy=self.metadata_once('episode')
             except sqlite3.OperationalError as exc:
@@ -794,6 +799,7 @@ class Service:
     def artwork_loop(self):
         import artwork
         while not self.stop.is_set():
+            if not task_control.wait_if_paused('artwork',self.stop):return
             try:artwork.run_once(self)
             except sqlite3.OperationalError as e:
                 if not sqlite_busy(e):raise
@@ -842,6 +848,7 @@ class Service:
                 journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers});self.mesh_beat=time.time()
             # Results from before joining the Verbund are shared once, in batches.
             journal.flush(force=self.mesh_backfill(journal)>0)
+            self.mesh_receipts(journal,folder)
             self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
@@ -894,6 +901,8 @@ class Service:
         return old is None or key>tuple(old),old is not None
     def mesh_apply(self,c,event):
         if event['type'] in meshjournal.DOWNLOAD_TYPES:return self.mesh_download_apply(c,event)
+        # 0.5.95: signed proof of an Archive.org copy on another system; kept in its own database, checked there.
+        if event['type']==meshjournal.RECEIPT:return archive_receipts.accept(self.root,event['node'],event['data'])
         d=event['data'];rank=meshjournal.RANK[d['outcome']]
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
@@ -955,6 +964,26 @@ class Service:
             else:self.mesh_backlog={'done':True,'shared':self.mesh_backlog.get('shared',0)}
         if published:diagnostics.event('mesh_backfill',published=published)
         return published
+    def mesh_receipts(self,journal=None,folder=None):
+        """Announce this system's Archive.org receipts (archive_receipts) the Verbund has not seen yet."""
+        if journal is None:
+            with self.mesh_lock:journal=self.mesh
+            if journal is None:return 0
+        if folder is not None:
+            # Another Verbund folder has not seen any of them: announce all once more.
+            with self.db() as c:
+                if catalog.get_state(c,'mesh_receipt_folder')!=folder:
+                    archive_receipts.republish(self.root);catalog.set_state(c,'mesh_receipt_folder',folder)
+        items=archive_receipts.unpublished(self.root);sent=[]
+        for data in items:
+            try:journal.append(meshjournal.RECEIPT,data);sent.append(data)
+            except (OSError,ValueError) as e:
+                diagnostics.error('mesh_receipt_failed',e);break
+        if sent:
+            try:journal.flush(force=True)
+            except OSError:pass
+            archive_receipts.mark_published(self.root,sent);diagnostics.event('mesh_receipts_published',count=len(sent))
+        return len(sent)
     def mesh_publish(self,c,kind,wid,dest,outcome,meta,providers):
         with self.mesh_lock:journal=self.mesh
         if journal is None:return None

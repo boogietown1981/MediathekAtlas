@@ -30,6 +30,19 @@ PROVIDER_ORDER = ('IMDb Offline', 'TVDB', 'TMDB', 'OMDb', 'Wikidata')
 PROVIDERS = frozenset(PROVIDER_ORDER)
 STATUSES = frozenset(('checked','paused','error','not_configured','negative_cache'))
 GOOD_TTL = 7 * 86400
+# 0.5.43: version of the evaluation rules in analyze(). Reports in 'review' made by an older
+# version are checked again automatically (year preference, one-year tolerance).
+ANALYSIS = 2
+STALE_REVIEW = ("(json_extract(r.payload,'$.status')='review' AND "
+                "IFNULL(json_extract(r.payload,'$.analysis'),1)<%d)" % ANALYSIS)
+
+
+def stale_review(payload):
+    try:
+        r = json.loads(payload) if isinstance(payload, str) else payload
+        return r.get('status') == 'review' and int(r.get('analysis') or 1) < ANALYSIS
+    except (TypeError, ValueError, AttributeError):
+        return False
 RETRY_TTL = 3600
 MAX_REFERENCES = 8
 MAX_STRING = 1800
@@ -114,7 +127,9 @@ def _candidate(src, meta, *, match_issues=None):
     if score < .985:problems.append('Titelähnlichkeit nicht eindeutig')
     source_year=meta.get('year')
     year=_integer(src.get('year'),1880,2100)
-    if source_year and year and source_year!=year:
+    # One year apart is common (festival vs. cinema release, German release); analyze()
+    # still prefers an exact year.
+    if source_year and year and abs(source_year-year)>1:
         problems.append('Erscheinungsjahr widersprüchlich')
     if src.get('runtime_mismatch'):problems.append('Laufzeit widersprüchlich')
     for reason in issues:
@@ -219,13 +234,27 @@ def analyze(meta,editorial,results,*,match_issues=None):
     entries.sort(key=lambda c:(0 if c['eligible'] else 1,
               PROVIDER_ORDER.index(c['provider']), -c['similarity']))
     good=[x for x in entries if x['eligible']]
+    # 0.5.43 (Björn: "#Roxy" 2018 had six IMDb hits of the same name and stayed unassigned):
+    # when the provider publishes a year, a candidate of exactly that year beats candidates
+    # of the same database without a year, and years one apart (TMDB/IMDb release dates)
+    # do not count as a contradiction.
+    year=meta.get('year') if isinstance(meta.get('year'),int) else None
+    if year:
+        tier=lambda x:0 if x['year']==year else 1 if x['year'] is not None else 2
+        best={}
+        for x in good:best[x['provider']]=min(best.get(x['provider'],3),tier(x))
+        for x in good:
+            if tier(x)>best[x['provider']]:
+                x['eligible']=False
+                x['issues']=list(x.get('issues') or [])+['Anderer Treffer passt genauer zum Erscheinungsjahr']
+        good=[x for x in good if x['eligible']]
     # Multiple plausible IDs from the same provider or incompatible release years
     # mean 'review', not a silent arbitrary selection.
     provider_ids={}
     for x in good:provider_ids.setdefault(x['provider'],set()).add(x['reference_id'])
     ambiguous=any(len(ids)>1 for ids in provider_ids.values())
     years={x['year'] for x in good if x['year'] is not None}
-    ambiguous=ambiguous or len(years)>1
+    ambiguous=ambiguous or (max(years)-min(years)>1 if years else False)
     selected=good[0] if good and not ambiguous else None
     status=('review' if ambiguous or (entries and not good) else
             'candidate' if selected else 'partial' if paused else 'no_match')
@@ -245,6 +274,7 @@ def analyze(meta,editorial,results,*,match_issues=None):
         'episode_verified':bool(selected and selected['episode_verified']),
         'download_authorized':False,
         'from_reference':bool(selected),
+        'analysis':ANALYSIS,
     }
 
 
@@ -316,7 +346,7 @@ def enrich(root,item_id,settings,*,lookup=None,fetch=None,now=None,force=False):
         if found and not force and found['identity_hash']==fingerprint:
             try:prev=json.loads(found['payload'])
             except (TypeError,ValueError):prev={}
-            if isinstance(prev,dict) and now-found['checked']<(RETRY_TTL if prev.get('status')=='partial' else GOOD_TTL):
+            if isinstance(prev,dict) and not stale_review(prev) and now-found['checked']<(RETRY_TTL if prev.get('status')=='partial' else GOOD_TTL):
                 return {**prev,'cached':True,'checked_at':found['checked']}
     finally:db.close() # provider traffic never holds a SQLite connection
     if not meta['title']:
@@ -324,6 +354,9 @@ def enrich(root,item_id,settings,*,lookup=None,fetch=None,now=None,force=False):
     if lookup is None:
         import core
         lookup=core.candidates
+    # 0.5.49: a work already checked for another platform is not asked again.
+    import reference_share
+    lookup=reference_share.wrap(root,lookup,'Netzkino',now=now,fresh=force)
     row_arg={'title':row['title'],'topic':meta['title'] if meta['kind']=='series' else '',
              'duration':row.get('duration') or editorial.get('duration_seconds'),
              'channel':'Netzkino'}
@@ -409,8 +442,8 @@ def pending(root, limit=10, now=None):
     try:
         rows=db.execute('''SELECT c.id, r.checked, r.payload FROM netzkino_catalog c
             LEFT JOIN netzkino_reference_checks r ON r.item_id=c.id
-            WHERE r.item_id IS NULL OR r.checked < ?
-            ORDER BY (r.item_id IS NOT NULL), c.updated DESC LIMIT ?''',
+            WHERE r.item_id IS NULL OR r.checked < ? OR '''+STALE_REVIEW+'''
+            ORDER BY (r.item_id IS NOT NULL), NOT IFNULL('''+STALE_REVIEW+''',0), c.updated DESC LIMIT ?''',
             (now-RETRY_TTL, max(1,int(limit))*4)).fetchall()
     finally:db.close()
     out=[]
@@ -418,7 +451,7 @@ def pending(root, limit=10, now=None):
         if checked is not None:
             try:status=json.loads(payload).get('status')
             except (TypeError,ValueError,AttributeError):status=None
-            if status!='partial' and now-checked<GOOD_TTL:continue
+            if status!='partial' and now-checked<GOOD_TTL and not stale_review(payload):continue
         out.append(item_id)
         if len(out)>=limit:break
     return out
@@ -428,7 +461,8 @@ def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None, 
     """Low-priority worker: one title every `gap` seconds, never parallel to
     the user's own provider requests (shared `slots`), pauses when automatic
     metadata is switched off in the settings."""
-    import diagnostics
+    import diagnostics,task_control
+    task='enrich:'+name
     enrich_one=enrich_one or enrich
     pending_fn=pending_fn or pending
     failed=set()
@@ -436,20 +470,30 @@ def loop(root, settings, slots, stop, *, gap=6.0, idle=1800.0, enrich_one=None, 
         try:
             current=settings()
             if not current.get('auto_metadata',True):
+                task_control.note(task,'Automatischer Abgleich ist in den Einstellungen ausgeschaltet')
                 stop.wait(300);continue
+            if not task_control.wait_if_paused(task,stop):return
             todo=[i for i in pending_fn(root,limit=20) if i not in failed]
             if not todo:
-                stop.wait(idle);failed.clear();continue
+                task_control.note(task,'Alle Titel geprüft')
+                # Short steps so that a pause or a new catalogue is noticed without waiting half an hour.
+                waited=0.0
+                while waited<idle and not stop.wait(30):
+                    waited+=30
+                    if task_control.paused(task) or pending_fn(root,limit=1):break
+                failed.clear();continue
             done=0
             for item_id in todo:
                 if stop.is_set():return
+                if task_control.paused(task):break
+                task_control.note(task,'Prüft Titel')
                 try:
                     with slots:enrich_one(root,item_id,current)
                     done+=1
                 except Exception as exc:  # one broken title must not stop the worker
                     failed.add(item_id)
                     diagnostics.error(name+'_auto_enrich_failed',exc)
-                stop.wait(gap)
+                stop.wait(gap*task_control.factor(task))
             if done:diagnostics.event(name+'_auto_enrich_batch',checked=done)
         except Exception as exc:
             diagnostics.error(name+'_auto_enrich_loop',exc)

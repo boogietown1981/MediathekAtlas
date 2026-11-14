@@ -5,9 +5,8 @@ title, produced by the same ARD/ZDF provider chain (core.candidates) and the sam
 evaluation (netzkino_enrichment.analyze). This module turns such a report into what every
 source shows the same way:
 
-* ``categories``: canonical German genres exactly as in the Mediathek catalogue tree
-  (metadata.genre_names), reference genres first, the portal's own labels as fallback;
-  'Unbekannt' when neither names a genre.
+* ``categories``: since 0.5.83 the fixed German list of categories.py (reference genres first,
+  the portal's own labels as fallback), 'Unklassifiziert' before the reference check.
 * ``rating``: score from the selected reference (IMDb, TMDB …) with its source.
 * ``apply``: job metadata for downloads (genres, description, cast, poster, NFO ids, rating),
   the same fields an ARD/ZDF download carries.
@@ -37,18 +36,58 @@ def split_labels(value):
     return [str(v).strip() for v in value if isinstance(v, (str, int)) and str(v).strip()][:20]
 
 
-def categories(provider_genres, report=None):
+CHECKED = ('candidate', 'review', 'no_match')
+
+
+def checked(report):
+    """The reference check ran for this title (0.5.83): a result, an ambiguous result or no match.
+    'partial' (providers paused) and 'unchecked' are retried later and stay unclassified."""
+    if not isinstance(report, dict):
+        return False
+    return report.get('status') in CHECKED or bool(report.get('reference_genres'))
+
+
+def reference_labels(report):
+    if not isinstance(report, dict):
+        return []
+    # The unique IMDb/TVDB/TMDB reference decides, as for Mediathek works; then the merged report.
+    for ref in (report.get('reference_genres'), (report.get('metadata') or {}).get('genres')):
+        labels = split_labels(ref) if ref else []
+        if labels:
+            return labels
+    return []
+
+
+def age_of(row):
+    """Age rating of a portal row (0.5.103): 'fsk' (number) or an FSK text in 'age_rating'/'rating'/
+    'content_rating'. A numeric 'rating' is a score, never an age."""
+    import categories as fixed
+    if not isinstance(row, dict):
+        return None
+    if row.get('fsk') is not None:
+        return fixed.age_of(row.get('fsk'))
+    for field in ('age_rating', 'content_rating', 'rating'):
+        value = row.get(field)
+        if isinstance(value, str) and value.strip():
+            age = fixed.age_of(value)
+            if age is not None:
+                return age
+    return None
+
+
+def categories(provider_genres, report=None, identified=False, age=None):
+    """0.5.83: fixed German categories (categories.CATEGORIES) after the reference check,
+    'Unklassifiziert' before it, 'Sonstige' when no label names a category. The provider's raw
+    labels stay in the portal tables and appear as ``source_genres`` on the title page."""
+    import categories as fixed
+    return fixed.classify(reference_labels(report), split_labels(provider_genres), identified or checked(report), age)
+
+
+def genre_names(provider_genres, report=None):
+    """Canonical genre names for downloads/NFO (metadata.genres); unchanged since 0.5.38."""
     import metadata
-    names = []
-    if isinstance(report, dict):
-        # The unique IMDb/TVDB/TMDB reference decides, as for Mediathek works; then the merged report.
-        for ref in (report.get('reference_genres'), (report.get('metadata') or {}).get('genres')):
-            names = metadata.genres(split_labels(ref)) if ref else []
-            if names:
-                break
-    if not names:
-        names = metadata.genres(split_labels(provider_genres))
-    return names or [UNKNOWN]
+    names = metadata.genres(reference_labels(report)) if isinstance(report, dict) else []
+    return names or metadata.genres(split_labels(provider_genres))
 
 
 def selected(report):
@@ -71,13 +110,23 @@ def rating(report):
     return {'value': round(float(value), 1), 'source': label, 'votes': meta.get('votes')}
 
 
-def summary(provider_genres, report):
-    """Fields a catalogue row gets: categories, score (reference rating), reference status."""
-    out = {'categories': categories(provider_genres, report), 'score': rating(report),
+def summary(provider_genres, report, identified=False, age=None):
+    """Fields a catalogue row gets: categories, score (reference rating), reference status.
+
+    ``identified``: the provider itself names the title's IMDb ID (JustWatch), so its genres are
+    already classified data and count without our own reference check (0.5.83)."""
+    out = {'categories': categories(provider_genres, report, identified, age), 'score': rating(report),
+           'source_genres': split_labels(provider_genres)[:12],
            'reference_status': (report or {}).get('status') or 'unchecked'}
     sel = selected(report)
     if sel:
         out['reference'] = {'provider': sel['provider'], 'id': sel['reference_id']}
+        # 0.5.63: year and title of the reference prove in the merged catalogue that "Ab ins Meer"
+        # (upload without a year) and "Ab ins Meer: Auf der Suche …" (2012) are one film.
+        if isinstance(sel.get('year'), int) and not isinstance(sel.get('year'), bool):
+            out['reference']['year'] = sel['year']
+        if sel.get('title'):
+            out['reference']['title'] = str(sel['title'])[:240]
     return out
 
 
@@ -108,19 +157,28 @@ def in_collection(row, collection, kind):
 
 
 def matches(row, genre):
+    """Filter by a fixed category; 'Unbekannt' (older links) means 'Unklassifiziert'. A raw provider
+    label that names exactly one category filters by that category."""
     if not genre:
         return True
-    want = str(genre).strip().casefold()
-    return any(c.casefold() == want for c in row.get('categories') or [UNKNOWN])
+    import categories as fixed
+    name, raw = fixed.wanted(genre)
+    cats = row.get('categories') or [fixed.UNCLASSIFIED]
+    if name:
+        return name in cats
+    want = raw.casefold()
+    return any(str(c).casefold() == want for c in cats) or \
+        any(str(c).casefold() == want for c in row.get('source_genres') or [])
 
 
 def facets(rows):
-    """[{'genre','n'}] like catalog.tree, sorted by name, 'Unbekannt' last."""
+    """[{'genre','n'}] in the fixed order of categories.CATEGORIES, 'Unklassifiziert'/'Sonstige' last."""
+    import categories as fixed
     counts = {}
     for row in rows:
-        for name in set(row.get('categories') or [UNKNOWN]):
+        for name in set(row.get('categories') or [fixed.UNCLASSIFIED]):
             counts[name] = counts.get(name, 0) + 1
-    return [{'genre': g, 'n': counts[g]} for g in sorted(counts, key=lambda g: (g == UNKNOWN, g.casefold()))]
+    return [{'genre': g, 'n': counts[g]} for g in sorted(counts, key=fixed.sort_key)]
 
 
 def apply(meta, report, own_provider, *, series_report=False):
@@ -144,9 +202,7 @@ def apply(meta, report, own_provider, *, series_report=False):
     for field in ('directors', 'writers'):
         if not meta.get(field) and ref.get(field):
             meta[field] = split_labels(ref[field])[:12]
-    meta['genres'] = categories(meta.get('genres'), report)
-    if meta['genres'] == [UNKNOWN]:
-        meta['genres'] = []
+    meta['genres'] = genre_names(meta.get('genres'), report)
     sel = selected(report)
     if sel:
         meta.update(provider=sel['provider'], reference_id=sel['reference_id'], source_provider=own_provider)
@@ -156,3 +212,35 @@ def apply(meta, report, own_provider, *, series_report=False):
     if rate and meta.get('rating') is None:
         meta.update(rating=rate['value'], votes=ref.get('votes'), rating_source=rate['source'])
     return meta
+
+
+def stored_result(last_result, active):
+    """'running' left behind by an app restart during a catalogue run is reported as
+    'interrupted'; the stored catalogue stays usable (0.5.41)."""
+    return 'interrupted' if last_result == 'running' and not active else last_result
+
+
+def retry_after_update(root, module, current):
+    """0.5.106 (Björn: Plex still showed the 404 of the old version): after an update, a catalogue whose
+    last load failed or was partial is loaded once more with the new code, without waiting 24 hours."""
+    if current.get('running') or current.get('last_result') not in ('partial', 'failed'):
+        return False
+    try:
+        from version import VERSION
+    except ImportError:
+        return False
+    db = module._connect(root)
+    try:
+        if module._get(db, 'retried_with', '') == VERSION:
+            return False
+        with db:
+            module._set(db, 'retried_with', VERSION)
+    finally:
+        db.close()
+    return True
+
+
+def first_load_due(current):
+    """One automatic catalogue load on the very first start (never attempted), so nobody has to
+    press "load" after installing; afterwards only the 24-hour automatic setting reloads."""
+    return not current.get('running') and not current.get('last_success') and not current.get('last_attempt')
