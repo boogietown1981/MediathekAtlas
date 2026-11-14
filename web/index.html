@@ -90,6 +90,16 @@
       <option value="normal">Normal: 2 Katalogabrufe, 2 Abgleiche gleichzeitig</option>
       <option value="low">Schwache Hardware: je 1 gleichzeitig</option></select>
     <small id="system-profile-note" class="muted"></small></div>
+  <div class="system-keys" id="system-keys">
+    <h3>Geräte und Apps (API v1)</h3>
+    <p class="muted">Ein Geräteschlüssel lässt eine App oder ein Gerät außerhalb des Browsers auf Katalog, Wiedergabe, Downloads und Merkliste zugreifen, zum Beispiel einen Abspieler am Fernseher. Einstellungen und Abrufe bleiben gesperrt. Ohne Schlüssel ist die Schnittstelle von außen geschlossen.</p>
+    <form id="system-key-form" class="system-key-form"><label for="system-key-name">Name des Geräts</label>
+      <input id="system-key-name" maxlength="60" placeholder="z. B. Apple TV Wohnzimmer" autocomplete="off">
+      <button type="submit">Schlüssel erstellen</button></form>
+    <div id="system-key-new" class="system-key-new" hidden><strong>Neuer Schlüssel. Er wird nur jetzt angezeigt:</strong>
+      <code id="system-key-value"></code><button type="button" id="system-key-copy">Kopieren</button></div>
+    <div id="system-key-list" class="system-key-list"></div>
+    <p id="system-key-status" class="muted" role="status"></p></div>
   <p id="system-status" class="muted" role="status"></p>
 </section>
 <section id="legacy" hidden>

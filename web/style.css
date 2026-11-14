@@ -990,4 +990,8 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .archive-extras-main{border-left:3px solid #6ee7b7;padding-left:8px}
 .archive-extras-files{display:flex;flex-direction:column;gap:2px;font-size:12px}
 /* 0.6.0: planner profile in Verwaltung → System */
+.system-keys{margin:18px 0 8px;border-top:1px solid #2c3b49;padding-top:6px}.system-keys>p{font-size:12px;max-width:820px}
+.system-key-form{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px}.system-key-form label{font-weight:600}.system-key-form input{flex:1 1 240px;max-width:360px}
+.system-key-new{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:12px 0;border:1px solid #3d7a55;border-radius:12px;background:#10261b;padding:11px 14px}.system-key-new strong{flex-basis:100%}.system-key-new code{user-select:all;overflow-wrap:anywhere;font-size:13px}
+.system-key-list{display:grid;gap:6px;margin-top:12px;max-width:820px}.system-key-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 14px;border:1px solid #2c3b49;border-radius:12px;background:#101d29;padding:9px 14px;font-size:13px}.system-key-row small{color:#adc0d1}
 .system-profile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:16px 0 8px}.system-profile label{font-weight:600}.system-profile small{flex-basis:100%}

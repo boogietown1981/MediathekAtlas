@@ -18,7 +18,7 @@ SERVER = (ROOT / 'server.py').read_text(encoding='utf-8')
 # ``@ROUTES.get('/api/x')`` / ``@ROUTES.post('/api/x','/api/y',stage='open')`` in server.py.
 ROUTES = {}
 for _m in re.finditer(r"^@ROUTES\.(get|post)\(([^\n]*)\)$", SERVER, re.M):
-    _stage = re.search(r"stage='([a-z]+)'", _m.group(2))
+    _stage = re.search(r"stage='([a-z0-9]+)'", _m.group(2))
     for _path in re.findall(r"'(/[^']*)'", _m.group(2)):
         ROUTES[(_m.group(1).upper(), _path)] = _stage.group(1) if _stage else 'api'
 

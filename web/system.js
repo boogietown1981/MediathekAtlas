@@ -64,11 +64,49 @@
     catch (e) { $('system-status').textContent = 'Systemwerte konnten nicht gelesen werden: ' + e.message; $('system-status').className = 'notice-error'; }
     if (!box.hidden && !document.hidden) timer = setTimeout(load, 5000);
   }
+  // 0.6.2: device keys for API v1 (api_keys.py); read when the view opens, not with every measurement
+  const keyStatus = (text, bad) => { const n = $('system-key-status'); if (n) { n.textContent = text; n.className = bad ? 'notice-error' : 'muted'; } };
+  function paintKeys(d) {
+    const node = $('system-key-list');
+    if (!node) return;
+    const day = t => t ? new Date(t * 1000).toLocaleDateString('de-DE') : 'noch nie';
+    node.replaceChildren(...(d.items || []).map(k => {
+      const row = el('div', undefined, 'system-key-row'), del = el('button', 'Löschen');
+      del.type = 'button'; del.title = 'Schlüssel zurückziehen: Das Gerät hat sofort keinen Zugriff mehr';
+      del.onclick = async () => {
+        if (del.dataset.sure !== '1') { del.dataset.sure = '1'; del.textContent = 'Wirklich löschen?'; setTimeout(() => { del.dataset.sure = ''; del.textContent = 'Löschen'; }, 4000); return; }
+        try { paintKeys(await window.api('api-key-revoke', {id: k.id})); keyStatus('Schlüssel „' + k.name + '“ gelöscht.'); }
+        catch (e) { keyStatus('Löschen fehlgeschlagen: ' + e.message, true); }
+      };
+      row.append(el('strong', k.name), el('small', 'erstellt ' + day(k.created) + ' · zuletzt benutzt ' + day(k.last_used)), del);
+      return row;
+    }));
+    if (!(d.items || []).length) node.append(el('p', 'Noch kein Geräteschlüssel. Die Schnittstelle ist von außen geschlossen.', 'muted'));
+  }
+  async function loadKeys() {
+    if (!$('system-keys')) return;
+    try { paintKeys(await window.api('api-keys')); }
+    catch (e) { keyStatus('Geräteschlüssel konnten nicht gelesen werden: ' + e.message, true); }
+  }
+  if ($('system-key-form')) $('system-key-form').onsubmit = async e => {
+    e.preventDefault();
+    const name = $('system-key-name').value.trim();
+    if (!name) { keyStatus('Bitte einen Namen für das Gerät angeben.', true); return; }
+    try {
+      const d = await window.api('api-key-create', {name});
+      $('system-key-value').textContent = d.created.key; $('system-key-new').hidden = false; $('system-key-name').value = '';
+      paintKeys(d); keyStatus('Schlüssel für „' + d.created.name + '“ erstellt. Jetzt im Gerät eintragen; später ist er nicht mehr sichtbar.');
+    } catch (err) { keyStatus('Schlüssel konnte nicht erstellt werden: ' + err.message, true); }
+  };
+  if ($('system-key-copy')) $('system-key-copy').onclick = async () => {
+    try { await navigator.clipboard.writeText($('system-key-value').textContent); keyStatus('Schlüssel kopiert.'); }
+    catch (e) { keyStatus('Kopieren nicht möglich. Bitte den Schlüssel markieren und von Hand kopieren.', true); }
+  };
   $('system-refresh').onclick = () => load();
   if ($('system-profile')) $('system-profile').onchange = async e => {
     try { await window.api('settings', {background_profile: e.target.value}); load(); }
     catch (err) { $('system-status').textContent = 'Profil konnte nicht gespeichert werden: ' + err.message; $('system-status').className = 'notice-error'; }
   };
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
-  document.addEventListener('atlas-view', e => { if (e.detail && e.detail.view === 'system') load(); else clearTimeout(timer); });
+  document.addEventListener('atlas-view', e => { if (e.detail && e.detail.view === 'system') { load(); loadKeys(); $('system-key-new').hidden = true; } else clearTimeout(timer); });
 })();
