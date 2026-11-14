@@ -49,10 +49,10 @@ async function clickThrough(name, url) {
     await window_ready(page);
     const expect = async (what, fn, arg) => { if (!(await page.evaluate(fn, arg))) problems.push('Erwartung nicht erfüllt: ' + what); };
 
-    // Main navigation.
-    const nav = await page.locator('aside nav .nav').count();
+    // Main navigation (0.6.7: the link to the Kinderecke /kinder is a page of its own, not a view).
+    const nav = await page.locator('aside nav button.nav').count();
     if (nav < 5) problems.push('Navigation unvollständig (' + nav + ' Einträge)');
-    for (let i = 0; i < nav; i++) { await page.locator('aside nav .nav').nth(i).click(); await page.waitForTimeout(500); }
+    for (let i = 0; i < nav; i++) { await page.locator('aside nav button.nav').nth(i).click(); await page.waitForTimeout(500); }
 
     // Every area of the Verwaltung.
     await page.locator('aside nav .nav', { hasText: 'Verwaltung' }).click();
