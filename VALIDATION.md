@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.4 – YouTube „Filme & TV“ (14. November 2026)
+- Automatisch: gesamte Python-Suite (1176 Tests, 3 übersprungen), Node-Smoke-Tests.
+- Im Browser (Chromium, künstliche Daten): Knopf nimmt die Quelle auf und verschwindet; geschützter Film zeigt „↗ Bei YouTube ansehen“ ohne Offline-Knopf, einbettbarer Film „▶ Ansehen“; keine Skriptfehler.
+- Nicht geprüft: echter Abruf bei JustWatch und YouTube (beide aus der Entwicklungsumgebung gesperrt). Unbestätigt sind das Kürzel des JustWatch-Pakets für YouTubes Gratisfilme in Deutschland (deshalb Namenssuche mit Rückfall) und ob JustWatch diese Angebote für Deutschland vollständig führt. Firefox/WebKit nur in der CI; NAS, macOS, Windows ungeprüft.
+
 ## 0.6.1 – Routen-Tabelle (14. November 2026)
 - Automatisch: gesamte Python-Suite (1171 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund), `ruff` (F, E9) für `server.py` und `routing.py`.
 - Vergleich alt gegen neu: Server 0.6.0 und 0.6.1 nebeneinander gestartet, 327 gleiche Aufrufe (56 GET-Adressen mit/ohne Parameter und mit/ohne Token, 51 POST-Adressen mit zwei Eingaben). Statuscodes und Antworten gleich; 12 Abweichungen nur durch Zeitstempel, Geräteschlüssel, Pfade.
