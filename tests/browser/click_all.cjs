@@ -72,6 +72,17 @@ async function clickThrough(name, url) {
     await page.selectOption('#system-profile', 'low');
     await page.waitForFunction(() => /Schwache Hardware · höchstens 1 Katalogabruf/.test(document.getElementById('system-profile-note').textContent), null, { timeout: 10000 }).catch(() => problems.push('Profil „Schwache Hardware“ wird nicht übernommen'));
     await page.selectOption('#system-profile', 'auto');
+    // 0.6.2: device key for API v1: create, call the API with it, delete, call again.
+    await page.waitForFunction(() => /Noch kein Geräteschlüssel/.test(document.getElementById('system-key-list').textContent), null, { timeout: 10000 }).catch(() => problems.push('Liste der Geräteschlüssel fehlt'));
+    await page.fill('#system-key-name', 'Klicktest TV');
+    await page.locator('#system-key-form button[type="submit"]').click();
+    await page.waitForFunction(() => /^atlas_/.test(document.getElementById('system-key-value').textContent) && !document.getElementById('system-key-new').hidden, null, { timeout: 10000 }).catch(() => problems.push('Neuer Geräteschlüssel wird nicht angezeigt'));
+    const withKey = () => page.evaluate(async () => (await fetch('/api/v1', { headers: { Authorization: 'Bearer ' + document.getElementById('system-key-value').textContent }, credentials: 'omit' })).status);
+    if (await withKey() !== 200) problems.push('API v1 nimmt den neuen Geräteschlüssel nicht an');
+    await page.locator('#system-key-list .system-key-row button').click();
+    await page.locator('#system-key-list .system-key-row button').click();
+    await page.waitForFunction(() => /Noch kein Geräteschlüssel/.test(document.getElementById('system-key-list').textContent), null, { timeout: 10000 }).catch(() => problems.push('Geräteschlüssel lässt sich nicht löschen'));
+    // (that a deleted key is refused is checked in tests/test_v0602_api_v1.py; a 401 here would count as a page error)
     await page.locator('#admin-tabs .admin-tab[data-view="storage"]').click();
     await page.waitForFunction(() => /Umwandlung/.test(document.getElementById('encoder-status').textContent) || /ffmpeg/.test(document.getElementById('encoder-status').textContent), null, { timeout: 10000 }).catch(() => problems.push('Umwandeln-Block bleibt leer'));
     await page.waitForFunction(() => document.getElementById('receipts-status').textContent.length > 10, null, { timeout: 10000 }).catch(() => problems.push('Archivnachweise bleiben leer'));

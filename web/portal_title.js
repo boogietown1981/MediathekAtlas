@@ -19,7 +19,7 @@
       action: 'offline-download-action', enrich: 'rakuten-enrich', external: 'Bei Rakuten TV ansehen'},
     joyn: {play: () => null, jobs: id => 'joyn-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'joyn-enrich', external: 'Bei Joyn ansehen'},
-    plex: {play: () => window.playPlex, jobs: id => 'plex-downloads?id=' + encodeURIComponent(id), add: '',
+    plex: {play: () => window.playPlex, jobs: id => 'plex-downloads?id=' + encodeURIComponent(id), add: 'plex-download-add',
       action: 'offline-download-action', enrich: 'plex-enrich', external: 'Bei Plex ansehen'},
     servustv: {play: () => window.playServusTV, jobs: id => 'servustv-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'servustv-enrich', external: 'Bei ServusTV ansehen'},
@@ -229,8 +229,11 @@
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : m.source === 'toggo' ? '🔒 Kopiergeschützt · nur bei TOGGO' : m.source === 'crunchyroll' ? '🔒 Kopiergeschützt · nur bei Crunchyroll (Abo)' : m.source === 'rtlplus' ? '🔒 Kopiergeschützt · nur bei RTL+' : 'Nur beim Anbieter abspielbar') : ''];
+    // 0.6.5: audio/subtitle languages with their evidence (languages.py); "Sprache" was the original language only
+    const langRows = window.AtlasLanguages ? window.AtlasLanguages.rows(m.languages) : [];
+    if (window.AtlasLanguages?.chip(m.languages)) facts.push(window.AtlasLanguages.chip(m.languages));
     const info = [['Kategorien', (m.categories || []).join(', ')], ['Regie', (m.directors || []).join(', ')], ['Drehbuch', (m.writers || []).join(', ')],
-      ['Land', m.country], ['Sprache', m.language], ['Altersfreigabe', m.age_rating], ['Anbieter', m.provider]];
+      ['Land', m.country], ...langRows, ...(langRows.some(r => r[0] === 'Originalsprache') ? [] : [['Originalsprache', m.language]]), ['Altersfreigabe', m.age_rating], ['Anbieter', m.provider]];
     host.replaceChildren(...hero({meta: {title: label, poster: m.poster, fanart: m.fanart}, type: m.kind_label + ' · ' + m.provider, facts,
       overview: m.description, overviewHint: 'Keine Inhaltsangabe veröffentlicht.', actions, info,
       cast: (m.cast || []).map(name => ({name})), image,

@@ -47,6 +47,7 @@ import urllib.parse
 import urllib.request
 
 import portal_reference
+import languages
 import provider_base
 
 SITE = 'https://www.toggo.de'
@@ -305,6 +306,7 @@ def item_from(node, series=None):
         poster = _image(node, 'Thumbnail', 'StageThumbnail')
         link = web_url('episode', u_name, series['path'])
     return {
+        'languages': languages.harvest(node),
         'id': KIND_PREFIX[kind] + '.' + ident, 'kind': kind, 'title': title, 'path': u_name,
         'series_id': series['id'] if series else '', 'season': _int(node.get('season_no'), 0, 999) if kind == 'episode' else None,
         'episode': _int(node.get('episode_no'), 0, 9999) if kind == 'episode' else None, 'year': year,
@@ -371,6 +373,7 @@ def _store(db, items, now):
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)), ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)),
                    (item['id'], *[item[f] for f in FIELDS], now, now))
+    languages.remember_from_db(db, 'toggo', items, now)   # 0.6.5: languages named by the provider
 
 
 def _counts(items):

@@ -95,6 +95,7 @@ def _portal(root, source, item_id):
     data = mod.item(root, item_id)
     it, parent, report = data.get('item') or {}, data.get('series'), data.get('reference') or {}
     m = _base(source, item_id, report)
+    m['_row'] = {k: it.get(k) for k in ('id', 'title', 'raw_title', 'language', 'languages') if it.get(k) is not None}
     m.update(kind=it.get('kind') or 'movie', title=_text(it.get('title'), 200), year=_year(it.get('year')),
              duration=it.get('duration') or None, age_rating=_text(it.get('rating'), 20),
              description=_text(it.get('summary')), poster=_https(it.get('poster')),
@@ -178,12 +179,13 @@ def _portal(root, source, item_id):
     if source == 'plex':
         # 0.5.98: copy protection is known per title only after the first play attempt.
         facts.append(['Angebot', 'Plex, kostenlos mit Werbung (ohne Konto)'])
-        m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # Plex offers no download of free titles
+        # 0.6.3: films and episodes without copy protection can be kept offline for 30 days (plex_downloads)
+        m['offline'] = {'allowed': m['kind'] in ('movie', 'episode') and it.get('drm') != 1, 'days': OFFLINE_DAYS, 'night': False}
         if m['kind'] not in ('series', 'channel'):
             drm = it.get('drm')
             facts.append(['Stream', 'nur mit Kopierschutz (Widevine) – bei Plex ansehen' if drm == 1 else
-                          'ohne Kopierschutz – läuft im MediathekAtlas-Player' if drm == 0 else
-                          'noch nicht geprüft – „Ansehen“ prüft, ob Plex den Titel ohne Kopierschutz ausliefert'])
+                          'ohne Kopierschutz – läuft im MediathekAtlas-Player, %d Tage offline speicherbar' % OFFLINE_DAYS if drm == 0 else
+                          'noch nicht geprüft – „Ansehen“ oder „Offline speichern“ prüft, ob Plex den Titel ohne Kopierschutz ausliefert'])
         if not m['playable'] and m['kind'] != 'series':
             m['notes'].append('Plex liefert diesen Titel nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht.')
     if source == 'rtlplus':
@@ -302,7 +304,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'plex', 'servustv', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'servustv', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 
@@ -354,6 +356,19 @@ def model(root, source, item_id):
                 m['notes'].append(_text(data['note'], 300))
     if not m['title']:
         raise ValueError('Titel nicht im Katalog; bitte Katalog neu laden')
+    # 0.6.5: audio and subtitle languages (languages.py), with where each statement comes from
+    try:
+        import languages
+        row = {'id': str(item_id), 'title': m['title'], **(m.pop('_row', None) or {})}
+        if m.get('series') and m['kind'] == 'episode':
+            extra = (m['series'].get('id') or '',)
+        else:
+            extra = tuple(e['id'] for e in m.get('episodes') or [] if e.get('id'))
+        m['languages'] = languages.for_portal(root, source, {**row, 'original_language': m.get('language') or ''},
+                                              extra_ids=extra, name=PROVIDERS[source])
+    except Exception:
+        m.pop('_row', None)
+        m['languages'] = None
     m['kind_label'] = KIND_LABEL.get(m['kind'], 'Titel')
     if m['original_title'] and m['original_title'] != m['title']:
         m['provider_facts'].insert(0, ['Originaltitel', m['original_title']])

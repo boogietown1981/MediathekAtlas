@@ -228,7 +228,7 @@ def _netzkino_offers(netzkino, root, view, query, genre, collection):
 
 
 def build(root, db, kind='movies', query='', genre='', sort='title', collection='', merge_duplicates=True,
-          modules=None):
+          modules=None, language='', only=''):
     """Complete merged index for one filter. ``db`` is the context-manager factory of the main
     catalogue; ``modules`` maps source -> module (tests pass fakes)."""
     import catalog
@@ -248,6 +248,8 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     pending, seconds = [], {}
     started = time.monotonic()
     try:
+        if only and only != 'mediatheken':
+            raise _Skip()
         with db() as c:
             # wait=False: on a cold start the grouping of the whole catalogue runs in the background
             # and the other sources are shown first (0.5.57).
@@ -256,8 +258,16 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
                                      wait=False)
         found = [{'source': 'mediatheken', 'title': g[2] or 'Ohne Titel', 'year': g[3], 'id': g[0], 'episodes': g[1]}
                  for g in groups]
+        if language:
+            # 0.6.5: language filter (languages.mediathek_filter: candidates by text search)
+            import languages
+            with db() as c:
+                mode, works = languages.mediathek_filter(c, language)
+            found = [f for f in found if (f['id'] in works) == (mode == 'include')]
         offers += found
         counts['mediatheken'] = len(found)
+    except _Skip:
+        pass
     except catalog.ListingPending:
         pending.append('mediatheken')
     except Exception as exc:   # one broken source never hides the others
@@ -265,7 +275,7 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     seconds['mediatheken'] = round(time.monotonic() - started, 2)
     for source in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'rtlplus'):
         module = modules.get(source)
-        if module is None:
+        if module is None or (only and only != source):
             continue
         started = time.monotonic()
         try:
@@ -273,6 +283,10 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
                 found, facets = _netzkino_offers(module, root, view, query, genre, collection)
             else:
                 found, facets = _portal_offers(source, module.listing, root, view, query, genre, collection)
+            if language:
+                import languages
+                found = [o for o in found if languages.matches(
+                    languages.for_portal(root, source, o['item'], name=NAMES.get(source, source)), language)]
             offers += found
             counts[source] = len(found)
             add_counts(facets)
@@ -289,6 +303,10 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     return {'entries': entries, 'counts': counts, 'errors': errors, 'pending': pending, 'seconds': seconds,
             'genre_counts': [{'genre': g, 'n': n} for g, n in sorted(genre_counts.items())],
             'merged': sum(1 for e in entries if len(e['offers']) > 1)}
+
+
+class _Skip(Exception):
+    """A source left out by the ``only`` filter."""
 
 
 PENDING_TTL = 2.0
@@ -354,7 +372,7 @@ def invalidate():
 
 
 def page(root, db, kind='movies', query='', genre='', sort='title', collection='', offset=0,
-         merge_duplicates=True, modules=None):
+         merge_duplicates=True, modules=None, language='', only=''):
     """One page of the merged index with the full rows of each offer."""
     import catalog
     kind = 'series' if kind == 'series' else 'movies'
@@ -366,8 +384,12 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
         offset = max(0, min(int(offset), 10000000))
     except (TypeError, ValueError):
         offset = 0
-    key = (str(root), kind, query.casefold(), genre.casefold(), sort, collection, bool(merge_duplicates))
-    index = _cached(key, lambda: build(root, db, kind, query, genre, sort, collection, merge_duplicates, modules))
+    import languages
+    language = languages.valid_filter(language)
+    only = only if only in SOURCES else ''
+    key = (str(root), kind, query.casefold(), genre.casefold(), sort, collection, bool(merge_duplicates), language, only)
+    index = _cached(key, lambda: build(root, db, kind, query, genre, sort, collection, merge_duplicates, modules,
+                                       language, only))
     chosen = index['entries'][offset:offset + PAGE]
     items = []
     with db() as c:
@@ -380,11 +402,20 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                     if not row:
                         continue   # merged or removed since the index was built
                     row.update(episodes=offer['episodes'], series_parent=work['kind'] == 'series')
+                    lang = row.get('languages') or {}
+                    row.update(lang=lang.get('short', ''), lang_text=lang.get('text', ''))
                     out.append({'source': 'mediatheken', 'item': row})
                 else:
-                    out.append({'source': offer['source'], 'item': offer['item']})
+                    item = offer['item']
+                    try:
+                        lang = languages.for_portal(root, offer['source'], item, name=NAMES.get(offer['source'], ''))
+                        item.update(lang=lang['short'], lang_text=lang['text'])
+                    except Exception:
+                        pass
+                    out.append({'source': offer['source'], 'item': item})
             if out:
                 items.append({'title': entry['title'], 'year': entry['year'], 'offers': out})
     return {'items': items, 'total': len(index['entries']), 'offset': offset, 'page': PAGE,
             'counts': index['counts'], 'errors': index['errors'], 'genre_counts': index['genre_counts'],
-            'merged': index['merged'], 'names': NAMES, 'pending': index.get('pending') or []}
+            'merged': index['merged'], 'names': NAMES, 'pending': index.get('pending') or [],
+            'language': language, 'only': only}

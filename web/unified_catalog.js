@@ -14,7 +14,7 @@
   const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,rtlplus:()=>null};
   const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen',servustv:'Bei ServusTV ansehen',rtlplus:'Bei RTL+ ansehen'};
   const TYPES = ['movies','series'];
-  let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0;
+  let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0,lang='';
   let seriesKey='',seriesTitle='';
   let medGenres=[],medTree=[],collection='';
   // Fixed list of categories.py (the server sends it with the category tree; this is the fallback).
@@ -244,7 +244,8 @@
       genres:Array.isArray(item.categories)?item.categories.filter(c=>!SPECIAL.includes(c)):m.genres||[],duration:m.source_duration_seconds||r.duration||null,
       score:medScore(m),pick:['matched','manual','identified'].includes(item.state),
       state:item.state,series_parent:!!item.series_parent,
-      episode_count:item.episodes||0,available:!!item.available};
+      episode_count:item.episodes||0,available:!!item.available,
+      lang:item.lang||item.languages?.short||'',langText:item.lang_text||item.languages?.text||''};
   }
   // Mediathek rating in the same shape as the portal score (portal_reference.rating).
   function medScore(m) {
@@ -266,14 +267,16 @@
       description:item.summary||'',genres:(item.categories||[]).filter(c=>!SPECIAL.includes(c)),
       score:item.score||null,duration:item.duration||null,
       episode_count:item.episode_count||0,access_hint:item.access_hint||'',
-      season:item.season,episode:item.episode,series_key:item.series_key};
+      season:item.season,episode:item.episode,series_key:item.series_key,
+      lang:typeof item.lang==='string'?item.lang:'',langText:typeof item.lang_text==='string'?item.lang_text:''};
   }
   // Pluto TV and JustWatch TV deliver the same row shape (shared portal panel).
   function plRow(item,src='pluto') {
     return {source:src,night:!!item.night,offline:src==='youtube'?!!item.offline:undefined,playable:item.playable!==0&&item.playable!==false,web_url:item.web_url||'',id:item.id||'',raw:item,kind:item.kind==='series'?'series':item.kind==='episode'?'episode':'movie',
       title:item.title||'Ohne Titel',year:item.year||null,poster:item.poster||'',description:item.summary||'',
       genres:(item.categories||[]).filter(c=>!SPECIAL.includes(c)),score:item.score||null,duration:item.duration||null,
-      season:item.season,episode:item.episode,badge:typeof item.badge==='string'?item.badge:''};
+      season:item.season,episode:item.episode,badge:typeof item.badge==='string'?item.badge:'',
+      lang:typeof item.lang==='string'?item.lang:'',langText:typeof item.lang_text==='string'?item.lang_text:''};
   }
   function genreList(value) {
     if (Array.isArray(value)) return value.filter(v=>typeof v==='string');
@@ -366,6 +369,9 @@
       main.kind==='episode'&&main.episode?'S'+(main.season??'?')+' E'+main.episode:null,
       ...genres.slice(0,2),offers.length===1?main.badge:null].filter(Boolean).join(' · ');
     text.append(el('small',facts,'atlas-uc-meta'));
+    // 0.6.5: languages (OmU, DE · EN, UT DE …) when they say more than "German"; the tooltip names the evidence
+    const langOffer=offers.find(o=>o.lang);
+    if (langOffer) {const chip=el('span','🗣 '+langOffer.lang,'atlas-uc-lang');chip.title=(langOffer.langText||'')+(offers.length>1?' ('+labelSource(langOffer)+')':'');text.append(chip);}
     const scored=offers.find(o=>o.score)||main;
     const stars=window.AtlasPortalCategories?.rating(scored.score);
     if (stars) text.append(stars);
@@ -457,7 +463,7 @@
   async function refreshAll(seq) {
     let data;
     try {
-      data=await window.api('unified?'+new URLSearchParams({kind,q:search,genre,sort,collection,offset:String(offset)}));
+      data=await window.api('unified?'+new URLSearchParams({kind,q:search,genre,sort,collection,offset:String(offset),lang,only:source==='all'?'':source}));
     } catch(e) {
       if (seq!==sequence) return;
       $('atlas-cross-items').replaceChildren(el('p','Die Filme und Serien konnten nicht geladen werden: '+e.message,'empty'));
@@ -536,7 +542,8 @@
     $('atlas-cross-items').setAttribute('aria-busy','true');
     $('atlas-cross-status').textContent=kind==='music'?'Musikvideos werden geladen …':'Filme und Serien werden geladen …';
     if (kind==='music') return refreshMusic(seq);
-    if (source==='all' && !seriesKey) return refreshAll(seq);
+    // 0.6.5: the language filter is evaluated on the server for every source (unified index)
+    if ((source==='all'||lang) && !seriesKey) return refreshAll(seq);
     const nkNeeded=(source==='all'||source==='netzkino');
     const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;
     const plNeeded=(source==='all'||source==='pluto') && !seriesKey;
@@ -637,8 +644,10 @@
     seriesKey='';seriesTitle='';offset=0;refresh();
   });
   $('atlas-cross-sort')?.addEventListener('change',event=>{sort=event.target.value;offset=0;refresh();});
+  $('atlas-cross-lang')?.addEventListener('change',event=>{lang=event.target.value;offset=0;refresh();});
   $('atlas-cross-reset')?.addEventListener('click',()=>{
-    search='';genre='';sort='title';offset=0;seriesKey='';seriesTitle='';collection='';
+    search='';genre='';sort='title';offset=0;seriesKey='';seriesTitle='';collection='';lang='';
+    if ($('atlas-cross-lang')) $('atlas-cross-lang').value='';
     if ($('atlas-cross-collection')) $('atlas-cross-collection').value='';
     $('atlas-cross-query').value='';$('atlas-cross-genre').value='';$('atlas-cross-sort').value='title';refresh();
   });

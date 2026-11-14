@@ -33,6 +33,7 @@ import urllib.request
 import uuid
 
 import portal_reference
+import languages
 import provider_base
 
 KEY = 'rtlplus'
@@ -291,7 +292,8 @@ def item_from(entry, kind, section, genre=''):
     genres = [g.strip() for g in highlight.split('•') if g.strip() and not re.search(r'\d', g)][:4]
     if genre and genre not in genres:
         genres.append(genre)
-    return {'id': ('m.' if kind == 'movie' else 's.') + ident, 'kind': kind, 'title': title, 'path': ident,
+    return {'languages': languages.harvest(entry),
+            'id': ('m.' if kind == 'movie' else 's.') + ident, 'kind': kind, 'title': title, 'path': ident,
             'series_id': '', 'season': None, 'episode': None, 'year': None, 'duration': None, 'rating': '',
             'genre': ', '.join(genres), 'summary': _text(content.get('description') or content.get('subtitle'), 1600),
             'poster': _image(content), 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
@@ -410,6 +412,7 @@ def _store(db, items, now):
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)), update),
                    (item['id'], *[item[f] for f in FIELDS], now, now))
+    languages.remember_from_db(db, 'rtlplus', items, now)   # 0.6.5: languages named by the provider
 
 
 def sync(root, opener=None, now=None, gap=None):

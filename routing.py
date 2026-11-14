@@ -15,6 +15,8 @@ address with a fixed path is a function of its own, registered here:
 A route belongs to one stage, which says what the server has checked before the function runs:
 
 - ``open``: nothing but the Host header (icon, style sheet, login state); never private data.
+- ``v1`` (0.6.2): the addresses below ``/api/v1/`` for clients outside the page; the server has checked
+  a device key, the signed-in page with its token, or a ticket (``api_keys.py``).
 - ``signed``: the login (network mode); the page itself and addresses a ``<video>`` or ``<a>``
   element calls, which carry the page token in the query and check it themselves.
 - ``api`` (default): login and the page token in the ``X-Atlas-Token`` header.
@@ -24,7 +26,7 @@ Standard library only.
 """
 from __future__ import annotations
 
-STAGES = ('open', 'signed', 'api')
+STAGES = ('open', 'v1', 'signed', 'api')
 METHODS = ('GET', 'POST')
 
 

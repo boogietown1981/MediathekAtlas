@@ -80,7 +80,9 @@ def _check(host, timeout, out):
         infos = socket.getaddrinfo(host, 443, type=socket.SOCK_STREAM)
         row['dns'] = 'ok'
         row['families'] = sorted({'IPv6' if i[0] == socket.AF_INET6 else 'IPv4' for i in infos})
-        ctx = ssl.create_default_context()
+        # 0.6.3: the same trust store as the catalogue requests (ensure_trust_store may have set the
+        # macOS bundle); with the bare default context every host showed a false certificate error.
+        ctx = ssl._create_default_https_context()
         with socket.create_connection((host, 443), timeout=timeout) as raw:
             row['tcp'] = 'ok'
             with ctx.wrap_socket(raw, server_hostname=host):

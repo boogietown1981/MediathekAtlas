@@ -40,6 +40,7 @@ import urllib.request
 import uuid
 
 import portal_reference
+import languages
 import provider_base
 
 KEY = 'plex'
@@ -335,7 +336,8 @@ def item_from(node):
     duration = _int(node.get('duration'), 1000, 24 * 3600 * 1000)
     genres = _tags(node, 'Genre')
     slug = _slug(node)
-    return {'id': KIND_PREFIX[kind] + '.' + key, 'kind': kind, 'title': title, 'path': key, 'series_id': '',
+    return {'languages': languages.harvest(node),
+            'id': KIND_PREFIX[kind] + '.' + key, 'kind': kind, 'title': title, 'path': key, 'series_id': '',
             'season': None, 'episode': None, 'year': _int(node.get('year'), 1880, 2100),
             'duration': duration // 1000 if duration and kind == 'movie' else None,
             'rating': _age(node.get('contentRating')), 'genre': ', '.join(genres),
@@ -395,6 +397,7 @@ def _store(db, items, now):
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
                    % (','.join(FIELDS), ','.join('?' * len(FIELDS)), update),
                    (item['id'], *[item[f] for f in FIELDS], now, now))
+    languages.remember_from_db(db, 'plex', items, now)   # 0.6.5: languages named by the provider
 
 
 def sections(api):

@@ -1,4 +1,38 @@
-# MediathekAtlas · 0.6.1
+# MediathekAtlas · 0.6.5
+
+## Neu in 0.6.5: Sprachen je Film und Serie (Sammelstand: enthält auch 0.6.2, 0.6.3 und 0.6.4)
+
+- **Titelseite:** Neue Zeilen *Tonspuren*, *Untertitel*, *Barrierefreiheit* (Audiodeskription, Gebärdensprache, Klare/Leichte Sprache) und *Sprachangaben*. Die letzte Zeile sagt immer, woher die Angabe stammt: „im Stream geprüft am …“, „laut Anbieter“, „laut Titel bzw. Sender“ oder „vermutet: deutschsprachiges Angebot, nicht geprüft“. Ohne Beleg steht „unbekannt“.
+- **Kacheln:** Ein kleines Feld wie „🗣 OmU“, „🗣 DE · EN · UT DE“ oder „🗣 FR“ erscheint, sobald die Sprache mehr sagt als „deutsch“. Der Tooltip nennt die Quelle.
+- **Filter „Sprache“** im gemeinsamen Katalog: Deutsch, Englisch, Französisch, Originalfassung (OV/OmU), Mit Untertiteln. Wirkt für alle Quellen, auch wenn nur eine Plattform gewählt ist.
+- **Woher die Sprachen kommen:**
+  - *Beim Abspielen:* Nennt die HLS-Wiedergabeliste des Anbieters Ton- oder Untertitelspuren, merkt sich MediathekAtlas sie (Server bei ffmpeg, Browser bei hls.js). Das gilt für jede Quelle mit HLS-Stream, z. B. Pluto TV, Plex, ServusTV, Samsung TV Plus und viele Mediatheken.
+  - *Mediatheken:* Fassungen eines Werks werden zusammengefasst (regulär, OmU, Audiodeskription). ARTE.FR/EN/ES/IT/PL gelten als Sprachfassung des Senders, eine Untertiteldatei des Senders als Untertitel.
+  - *Anbieterangaben:* Crunchyroll (deutsche Synchronfassung/Untertitel), YouTube (Tonsprache des Videos). Pluto TV, Rakuten TV, Joyn, TOGGO, Plex und RTL+ werden beim Katalogabruf nach Sprachfeldern durchsucht.
+  - *Titelzusätze:* OmU, OV, Originalfassung, „mit Untertiteln“, „(Englisch)“, „English version“ usw.
+- Nicht geraten wird: Ohne Anbieterangabe, Titelzusatz oder geprüften Stream bleibt die Sprache „unbekannt“. Nur bei deutschsprachigen Angeboten (ARD/ZDF & Co., Netzkino, Joyn, TOGGO, RTL+, ServusTV) steht „Deutsch (vermutlich)“.
+
+## Neu in 0.6.4: YouTube „Filme & TV“ – die kostenlosen Filme mit Werbung
+
+- **Neue Quelle mit einem Klick.** YouTube → Einstellungen → „＋ YouTube „Filme & TV“: kostenlose Filme aufnehmen“. Danach stehen die Filme, die YouTube selbst kostenlos mit Werbung anbietet, als Kacheln bei YouTube und im gemeinsamen Katalog (mit Poster, Jahr, Genre, Inhalt, IMDb-Wertung).
+- **Woher die Liste kommt.** Die YouTube Data API gibt den Bereich „Filme & TV“ nicht heraus, und youtube.com selbst liest MediathekAtlas nicht aus. Die Liste kommt deshalb über JustWatch (dieselbe öffentliche Schnittstelle wie bei JustWatch TV): alle YouTube-Angebote für Deutschland mit der Kennzeichnung „kostenlos“ bzw. „mit Werbung“, jeweils mit dem direkten YouTube-Link.
+- **Kopierschutz.** YouTube liefert seine eigenen Filme geschützt und nur im eigenen Player aus. Diese Titel sind deshalb Katalogeinträge mit „↗ Bei YouTube ansehen“. Kein eigener Player, kein Offline-Speichern, auch nicht bei eingeschaltetem Offline-Schalter. Meldet YouTube für einen Film, dass er eingebettet werden darf, erscheint wie bei jedem anderen YouTube-Titel „▶ Ansehen“ (offizieller eingebetteter Player).
+- **Grenzen.** Die Liste ist so vollständig wie JustWatch. Titel, zu denen JustWatch keinen YouTube-Link nennt, fehlen (die Zahl steht in der Quellenzeile). Der Abruf wurde nicht gegen das echte JustWatch und YouTube geprüft, weil beide von der Entwicklungsumgebung aus gesperrt sind.
+
+## Neu in 0.6.3: Plex-Titel 30 Tage offline speichern
+
+- Filme und Folgen von Plex, die ohne Kopierschutz ausgeliefert werden, lassen sich wie bei Pluto TV, JustWatch TV und Rakuten TV mit „⬇ Offline speichern (30 Tage)“ sichern: in der Kachel, auf der Titelseite und im Bereich „Offline-Kopien von Plex“. Gespeichert wird als MKV mit NFO im gewohnten Ordner; nach 30 Tagen entfernt MediathekAtlas die Datei selbst.
+- Kopiergeschützte Titel (Widevine) bleiben ausgenommen und zeigen nur „Bei Plex ansehen“. Ist ein Titel noch nicht geprüft, prüft MediathekAtlas beim Speichern zuerst, ob Plex ihn ohne Kopierschutz liefert. Serien werden folgenweise gespeichert, Live-Sender gar nicht.
+- Plex selbst bietet für seine Gratis-Titel keinen Download an. Die Kopie ist für die persönliche Nutzung gedacht und enthält die Werbung, die Plex ausliefert.
+- Diagnose: Die Netzprüfung nutzt jetzt denselben Zertifikatsspeicher wie die Katalogabrufe. Unter macOS meldete sie bisher bei allen Servern fälschlich einen Zertifikatsfehler, obwohl die Kataloge luden.
+
+## Neu in 0.6.2: Schnittstelle für Geräte und Apps (API v1)
+
+- **Neu: Verwaltung → System → „Geräte und Apps (API v1)“.** Dort entsteht je Gerät ein Geräteschlüssel, zum Beispiel für einen Abspieler am Fernseher. Der Schlüssel wird einmal angezeigt und lässt sich jederzeit löschen; das Gerät hat dann sofort keinen Zugriff mehr.
+- Mit einem Schlüssel erreicht ein Gerät Katalog, Titelseiten, Live-Sender, Wiedergabe, fertige Downloads und die Merkliste mit Abspielpositionen. Einstellungen, Katalogabrufe und die Schlüsselverwaltung bleiben gesperrt.
+- **Ohne Schlüssel ist die Schnittstelle geschlossen.** Wer keinen Schlüssel anlegt, öffnet nichts Neues.
+- Beschreibung für Entwickler: `docs/API_V1.md`; der Server nennt seine Adressen selbst unter `/api/v1`.
+- Noch offen: eigenes HTTPS. Bis dahin Geräteschlüssel nur im Heimnetz oder über VPN verwenden.
 
 ## Neu in 0.6.1: Routen-Tabelle im Server (Umbau ohne sichtbare Änderung)
 
