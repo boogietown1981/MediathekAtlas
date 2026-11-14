@@ -212,7 +212,7 @@ class PlexTest(unittest.TestCase):
         self.assertEqual([s['name'] for s in data['stations']], ['Plex Krimi'])
         self.assertEqual(data['stations'][0]['sources'][0]['play'], {'plex': 'c.5e20b730f2f8d5003d739db7-abc123'})
         m = portal_title.model(self.root, 'plex', 'm.m000abc')
-        self.assertEqual(m['offline']['allowed'], False)
+        self.assertEqual(m['offline']['allowed'], True)   # 0.6.3: unchecked film may be saved (checked on enqueue)
         self.assertIn(['Angebot', 'Plex, kostenlos mit Werbung (ohne Konto)'], m['provider_facts'])
         self.assertTrue(m['playable'])
 
@@ -239,7 +239,7 @@ class PlexTest(unittest.TestCase):
         server = (here / 'server.py').read_text(encoding='utf-8')
         for needle in ("plex=q.get('plex',[''])[0]", "'/plex.js'", "'source':'plex'"):
             self.assertIn(needle, server)
-        self.assertIn("'plex.py','plex_enrichment.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))
+        self.assertIn("'plex.py','plex_downloads.py','plex_enrichment.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))
         index = (here / 'web' / 'index.html').read_text(encoding='utf-8')
         for needle in ('data-platform="plex"', 'data-catalog-source="plex"', '<section id="plex"', 'id="plex-sync"'):
             self.assertIn(needle, index)

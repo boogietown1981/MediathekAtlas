@@ -30,7 +30,7 @@ import rakuten, rakuten_downloads, rakuten_enrichment
 import joyn, joyn_enrichment
 import toggo, toggo_enrichment
 import crunchyroll, crunchyroll_enrichment
-import plex, plex_enrichment
+import plex, plex_downloads, plex_enrichment
 import servustv, servustv_enrichment
 import rtlplus, rtlplus_enrichment
 import youtube, youtube_downloads, youtube_enrichment
@@ -73,8 +73,8 @@ PLATFORMS = (
     Platform('toggo', toggo, toggo_enrichment),
     # 0.5.96: catalogue with links only (Widevine, subscription since 1.1.2026).
     Platform('crunchyroll', crunchyroll, crunchyroll_enrichment),
-    # 0.5.98: no offline copies (Plex itself offers no download of its free titles).
-    Platform('plex', plex, plex_enrichment),
+    # 0.5.98 without, 0.6.3 with offline copies (Björn 14.11.2026); protected titles stay excluded.
+    Platform('plex', plex, plex_enrichment, plex_downloads),
     # 0.5.101: no offline copies (ServusTV allows downloads only in its own app).
     Platform('servustv', servustv, servustv_enrichment),
     # 0.5.102: RTL+ Free as a catalogue with links only (every stream Widevine).
@@ -139,7 +139,7 @@ def handle_get(ctx, path, q):
         except ValueError as e:
             return {'error': str(e)}, 404
     if action == 'downloads' and p.jobs:
-        # Platforms without offline copies (Joyn, TOGGO, Crunchyroll, Plex, ServusTV, RTL+) answer with the shared, empty list.
+        # Platforms without offline copies (Joyn, TOGGO, Crunchyroll, ServusTV, RTL+) answer with the shared, empty list.
         with ctx.db() as c:
             result = netzkino_downloads.listing(c, item_id=ctx.job_ids(q), origin=p.key)
         result['ffmpeg'] = bool(downloads.tool('ffmpeg'))

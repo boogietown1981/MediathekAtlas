@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.3 – Plex offline (14. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Smoke-Tests, Klicktest Chromium, `ruff` (F, E9) für die geänderten Module.
+- Neu: `tests/test_v0603_plex_offline.py` (Film ohne Kopierschutz in der gemeinsamen Warteschlange, Folge als Serienfolge benannt, Ablehnung von kopiergeschützten Titeln/Serien/Live-Sendern, kein Token im Auftrag, Adresse erst beim Download, Titelseite, Route, Netzprüfung mit gepatchtem Kontext).
+- Browser (Chromium, nachgestellter Plex-Katalog ohne Netz): Kachel zeigt „⬇ Offline speichern (30 Tage)“ nur bei Titeln ohne bekannten Kopierschutz, kopiergeschützter Titel nur „Bei Plex ansehen“; Auswahl-Dialog → „Vorgemerkt“; Bereich „Offline-Kopien von Plex“ zeigt den Auftrag. Der Download selbst scheiterte erwartungsgemäß am fehlenden Netz („Plex ist nicht erreichbar“).
+- Nicht geprüft: echter Plex-Download (Plex ist in der Bauumgebung gesperrt), DASH-Kopie mit ffmpeg gegen echte Plex-Streams, Safari/Firefox, echte NAS.
+
 ## 0.6.1 – Routen-Tabelle (14. November 2026)
 - Automatisch: gesamte Python-Suite (1171 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund), `ruff` (F, E9) für `server.py` und `routing.py`.
 - Vergleich alt gegen neu: Server 0.6.0 und 0.6.1 nebeneinander gestartet, 327 gleiche Aufrufe (56 GET-Adressen mit/ohne Parameter und mit/ohne Token, 51 POST-Adressen mit zwei Eingaben). Statuscodes und Antworten gleich; 12 Abweichungen nur durch Zeitstempel, Geräteschlüssel, Pfade.

@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.1
+# MediathekAtlas · 0.6.3
+
+## Neu in 0.6.3: Plex-Titel 30 Tage offline speichern
+
+- Filme und Folgen von Plex, die ohne Kopierschutz ausgeliefert werden, lassen sich wie bei Pluto TV, JustWatch TV und Rakuten TV mit „⬇ Offline speichern (30 Tage)“ sichern: in der Kachel, auf der Titelseite und im Bereich „Offline-Kopien von Plex“. Gespeichert wird als MKV mit NFO im gewohnten Ordner; nach 30 Tagen entfernt MediathekAtlas die Datei selbst.
+- Kopiergeschützte Titel (Widevine) bleiben ausgenommen und zeigen nur „Bei Plex ansehen“. Ist ein Titel noch nicht geprüft, prüft MediathekAtlas beim Speichern zuerst, ob Plex ihn ohne Kopierschutz liefert. Serien werden folgenweise gespeichert, Live-Sender gar nicht.
+- Plex selbst bietet für seine Gratis-Titel keinen Download an. Die Kopie ist für die persönliche Nutzung gedacht und enthält die Werbung, die Plex ausliefert.
+- Diagnose: Die Netzprüfung nutzt jetzt denselben Zertifikatsspeicher wie die Katalogabrufe. Unter macOS meldete sie bisher bei allen Servern fälschlich einen Zertifikatsfehler, obwohl die Kataloge luden.
+
 
 ## Neu in 0.6.1: Routen-Tabelle im Server (Umbau ohne sichtbare Änderung)
 
