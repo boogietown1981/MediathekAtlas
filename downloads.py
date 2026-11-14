@@ -101,13 +101,17 @@ def _source_url(row,quality='best'):
     if row.get('_resolver')=='rakuten':
         import rakuten_downloads
         return rakuten_downloads.resolve(row)
+    if row.get('_resolver')=='plex':
+        # 0.6.3: Plex film or episode without copy protection (HLS or DASH, both copied by ffmpeg)
+        import plex_downloads
+        return plex_downloads.resolve(row)
     if row.get('_resolver')=='youtube':return row.get('url')
     if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
     keys=QUALITY_KEYS
     import download_quality
     return row.get('_download_url') or next((row.get(k) for k in keys.get(download_quality.mediathek_key(quality),keys['hd']) if row.get(k)),None)
 
-HLS_RESOLVERS={'pluto','justwatch','rakuten'}
+HLS_RESOLVERS={'pluto','justwatch','rakuten','plex'}
 
 def public_url(row,url):
     """Address written to metadata.json. Session-bound HLS addresses carry a token in the

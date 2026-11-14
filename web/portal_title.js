@@ -19,7 +19,7 @@
       action: 'offline-download-action', enrich: 'rakuten-enrich', external: 'Bei Rakuten TV ansehen'},
     joyn: {play: () => null, jobs: id => 'joyn-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'joyn-enrich', external: 'Bei Joyn ansehen'},
-    plex: {play: () => window.playPlex, jobs: id => 'plex-downloads?id=' + encodeURIComponent(id), add: '',
+    plex: {play: () => window.playPlex, jobs: id => 'plex-downloads?id=' + encodeURIComponent(id), add: 'plex-download-add',
       action: 'offline-download-action', enrich: 'plex-enrich', external: 'Bei Plex ansehen'},
     servustv: {play: () => window.playServusTV, jobs: id => 'servustv-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'servustv-enrich', external: 'Bei ServusTV ansehen'},
