@@ -19,7 +19,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 import core, downloads, hls_guard, justwatch as jw, justwatch_downloads as jd, justwatch_enrichment as je  # noqa: E402
-import netzkino_downloads as nd, portal_reference as pr  # noqa: E402
+import netzkino_downloads as nd  # noqa: E402
 
 
 def ext(video):

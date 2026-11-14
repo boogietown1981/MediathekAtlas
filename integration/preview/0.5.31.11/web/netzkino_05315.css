@@ -1,8 +1,0 @@
-
-/* 0.5.31.5: independent Netzkino movies and consolidated series. */
-.netzkino-media-tabs{display:flex;align-items:center;flex-wrap:wrap;gap:10px;margin:16px 0 8px}
-.netzkino-media-tabs button{min-width:125px}
-#netzkino-series-heading{font-size:14px;color:#b7d7d1;font-weight:600;overflow-wrap:anywhere}
-.netzkino-episodes{background:#284e47;border-color:#578575;color:#defdf2}
-#netzkino-back-series{background:transparent}
-.netzkino-gaps{color:#f3c687;font-size:11px;line-height:1.5}

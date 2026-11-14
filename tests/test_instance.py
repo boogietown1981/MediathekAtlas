@@ -1,4 +1,4 @@
-import ast,contextlib,json,sys,tempfile,threading,time,types,unittest
+import ast,contextlib,sys,tempfile,threading,time,types,unittest
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
 from instance import Instance

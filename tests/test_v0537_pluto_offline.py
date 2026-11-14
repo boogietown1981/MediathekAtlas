@@ -5,7 +5,6 @@ import json
 import sqlite3
 import subprocess
 import sys
-import tempfile
 import threading
 import unittest
 from pathlib import Path

@@ -159,7 +159,7 @@ function sourceLinks(links){const box=el('div',undefined,'source-links');box.app
  if(!(links||[]).length)box.append(el('small','Keine Dateilinks vorhanden.'));return box;}
 function render(){const host=$('results');host.classList.toggle('episode-list',!!filters.show);host.replaceChildren();if(!items.length){host.append(el('div','Keine Treffer für diese Auswahl. Filter zurücksetzen oder eine andere Kategorie wählen. Der Import läuft im Hintergrund weiter.','empty'));return;}
 for(const item of items){const r=item.source,m=item.metadata,card=el('article',undefined,'card'),art=el('div',undefined,'art');
-if(safeArt(m.poster)){const img=el('img');img.src=m.poster;img.loading='lazy';img.alt='Poster: '+m.title;img.onerror=()=>img.remove();art.append(img);}
+if(safeArt(m.poster)){const img=el('img');img.src=m.poster;img.loading='lazy';img.alt='Poster: '+m.title;img.onerror=()=>{img.remove();art.classList.remove('has-img');};art.append(img);art.classList.add('has-img');}
 art.append(el('strong',m.video_role?'KURZFORMAT':m.kind==='series'?'SERIE':m.kind==='movie'?'FILM':'ZUORDNUNG OFFEN'),el('span',item.series_parent?item.episodes+' Folgen':Math.round(r.duration/60)+' Min.'));
 const body=el('div',undefined,'cardbody'),displayTitle=m.title||r.title,heading=el('h3',displayTitle+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;
 if(m.video_role){
@@ -563,7 +563,7 @@ const openJobDetails=new Set();
 function fileUrl(j,inline){return '/api/download-file?'+new URLSearchParams({id:j.id,token,inline:inline?'1':'0'});}
 // Download cards follow the catalogue cards: cover on top, the essentials below, file details folded away.
 function jobCard(j,server){const m=j.metadata||{},card=el('article',undefined,'card job job-'+j.state),art=el('div',undefined,'art');
-if(safeArt(m.poster)){const img=el('img');img.src=m.poster;img.alt='Cover: '+(m.title||'');img.loading='lazy';img.onerror=()=>img.remove();art.append(img);}
+if(safeArt(m.poster)){const img=el('img');img.src=m.poster;img.alt='Cover: '+(m.title||'');img.loading='lazy';img.onerror=()=>{img.remove();art.classList.remove('has-img');};art.append(img);art.classList.add('has-img');}
 art.append(el('strong',m.kind==='series'?'SERIE':m.kind==='movie'?'FILM':'DOWNLOAD'));if(j.state==='done'&&j.size_bytes)art.append(el('span',(j.size_bytes/1073741824>=1?(j.size_bytes/1073741824).toFixed(1)+' GB':Math.round(j.size_bytes/1048576)+' MB')));
 const body=el('div',undefined,'cardbody'),episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
 const heading=el('h3',(m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;

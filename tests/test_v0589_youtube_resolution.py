@@ -3,7 +3,7 @@
 Until 0.5.88 the format string demanded H.264 as a separate HTTPS file first; without a sign-in
 YouTube often offers those only up to 480p, the higher levels as HLS or VP9.
 """
-import json,shutil,subprocess,sys,tempfile,unittest
+import json,subprocess,sys,tempfile,unittest
 from pathlib import Path
 from unittest import mock
 ROOT=Path(__file__).resolve().parents[1]

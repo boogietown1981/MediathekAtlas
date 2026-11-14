@@ -17,6 +17,7 @@ Endpoints are hard-coded and every answer is size-limited. Titles, tokens and UR
 logs or the diagnosis export.
 """
 from __future__ import annotations
+import sys
 
 import json
 import os
@@ -691,7 +692,7 @@ def loop(root, stop):
         if task_control.paused('catalog:justwatch'):
             continue
         current = state(root)
-        if portal_reference.first_load_due(current) or (
+        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
                 current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
             start_sync(root)
 

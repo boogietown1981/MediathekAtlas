@@ -4,7 +4,7 @@
 - no output '-ss 0' any more: picture starts exactly at the seek position instead of up to a GOP later
 - the start/stall reserve (GATE) no longer applies to streams converted by MediathekAtlas
 """
-import http.server,json,os,re,shutil,socketserver,subprocess,sys,tempfile,threading,time,unittest,urllib.request
+import http.server,json,re,shutil,socketserver,subprocess,sys,tempfile,threading,time,unittest,urllib.request
 from pathlib import Path
 from unittest import mock
 

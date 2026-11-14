@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.5.108 – Konsolidierung (14. November 2026)
+- Automatisch: gesamte Python-Suite (1140 Tests, 4 übersprungen: macOS-Build, yt-dlp), Node-Smoke-Tests, Syntaxprüfung, Klicktest Chromium (ohne Befund). Im Browser (Chromium): Kachel mit Bild blendet den Titeltext aus, ohne Bild nicht; Haken „Besetzung“/„Fassungen“ ausblenden greift über die neuen Klassen.
+- Neuabruf nach Update: Schleife jedes Anbieters einmal mit teilweisem Katalog laufen lassen → genau ein Abruf je Version (Test).
+- Nicht geprüft: echtes Safari < 15.4 / Firefox < 121 (nur Chromium hier, Firefox/WebKit in der CI), echte Anbieter, NAS-Hardware.
+
 ## 0.5.107 – RTL+ Gratisbereich, Meine Abos (13. November 2026)
 - Automatisch: gesamte Python-Suite (1135 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund); im Browser: „Meine Abos“ in Verwaltung → Darstellung, Haken RTL+ zeigt sofort auch Abo-Titel mit „In deinem RTL+ Abo“, ohne Fehler. RTL+ gegen nachgebaute Antworten im Aufbau eines öffentlichen RTL+-Free-Clients (Ordner 193, Block-Pfade).
 - Nicht geprüft: echter RTL+-Gastbereich und ob er alle kostenlosen Titel enthält; Anmeldung bei RTL+/Crunchyroll im Browser (liegt bei Björn).

@@ -1,5 +1,4 @@
 """0.5.92: Archive.org-Liste zwischen Installationen austauschen (ArchiveMedia catalog_transfer)."""
-import io
 import json
 import sqlite3
 import sys

@@ -67,6 +67,8 @@ def _decompress(raw):
         return None
     y = int.from_bytes(raw, 'little')
     sign, y = y >> 255, y & ((1 << 255) - 1)
+    if y >= P:
+        return None                 # 0.5.108: only canonical encodings (RFC 8032, 5.1.3)
     x = _recover_x(y, sign)
     return None if x is None else (x, y, 1, x * y % P)
 

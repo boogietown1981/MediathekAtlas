@@ -1,10 +1,8 @@
 """Regression tests for 0.5.26: careful episode matching, eight workers, SQLite safety."""
 import gzip
-import json
 import sqlite3
 import tempfile
 import threading
-import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path

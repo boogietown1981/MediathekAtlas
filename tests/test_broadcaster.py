@@ -4,7 +4,7 @@ import io,json,sys,unittest,urllib.error
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import artwork,broadcaster,diagnostics,matching,metadata
+import artwork,broadcaster,matching,metadata
 
 ARD_URL='https://www.ardmediathek.de/video/servicezeit/zecken-im-garten/wdr/Y3JpZDovL3dkci5kZS9CZWl0cmFnLXNvcGhvcmEtMTIz'
 ZDF_URL='https://www.zdf.de/video/dokus/terra-x-100/terra-x-history-ein-tag-im-juli-ahrtalflut-100'

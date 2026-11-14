@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.5.107
+# MediathekAtlas · 0.5.108
+
+## Neu in 0.5.108: Aufgeräumt nach dem Review
+
+- **Alle Anbieter laden nach einem Update neu, wenn ihr Katalog vorher unvollständig war.** Bisher taten das nur Plex, ServusTV und RTL+; jetzt auch Joyn, TOGGO, Pluto TV, JustWatch, Rakuten TV, Crunchyroll, YouTube und Netzkino. Das passiert einmal je Version.
+- **Ein- und Ausblenden unter Verwaltung → Darstellung funktioniert auch in älteren Browsern.** Safari vor 15.4 und Firefox vor 121 ignorierten bisher alle Ausblende-Haken, weil eine Regel einen dort unbekannten Selektor enthielt.
+- Archivnachweise: Die Signaturprüfung nimmt nur noch die eindeutige Schreibweise eines Schlüssels an.
+- Entwicklung: Der alte Bausatz `integration/preview` (0.5.31.11) und sein Workflow sind entfernt; seine Tests liefen gegen veraltete Kopien und sind längst in `tests/` übernommen. `main` enthält wieder den vollständigen Stand.
 
 ## Neu in 0.5.107: RTL+ nur noch kostenlos, „Meine Abos“
 

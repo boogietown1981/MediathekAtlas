@@ -58,7 +58,7 @@ class YearTests(unittest.TestCase):
         self.assertIn('shared.stale_review(prev)', (ROOT / 'portal_enrichment.py').read_text())
 
     def test_pending_picks_stale_review(self):
-        import sqlite3, tempfile, time
+        import sqlite3, tempfile
         with tempfile.TemporaryDirectory() as tmp:
             db = ne._conn(Path(tmp))
             cols = [r[1] for r in db.execute('PRAGMA table_info(netzkino_catalog)')]
