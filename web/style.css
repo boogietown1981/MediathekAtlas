@@ -989,3 +989,5 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .archive-extras-row small{overflow-wrap:anywhere}
 .archive-extras-main{border-left:3px solid #6ee7b7;padding-left:8px}
 .archive-extras-files{display:flex;flex-direction:column;gap:2px;font-size:12px}
+/* 0.6.0: planner profile in Verwaltung → System */
+.system-profile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:16px 0 8px}.system-profile label{font-weight:600}.system-profile small{flex-basis:100%}

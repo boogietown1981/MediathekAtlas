@@ -30,17 +30,15 @@ from __future__ import annotations
 import sys
 
 import json
-import os
 import re
-import sqlite3
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
-from pathlib import Path
 
 import portal_reference
+import provider_base
 
 API = 'https://www.googleapis.com/youtube/v3/'
 SITE = 'https://www.youtube.com'
@@ -129,23 +127,7 @@ def _notify(event, **details):
 
 
 def _connect(root):
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / 'youtube.sqlite3'
-    db = sqlite3.connect(str(path), timeout=5)
-    if os.name != 'nt':
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA busy_timeout=5000')
-    # 0.5.74: readers (catalogue tab, dashboard) must not wait while a long catalogue run writes.
-    try:
-        if db.execute('PRAGMA journal_mode').fetchone()[0].lower() != 'wal':
-            db.execute('PRAGMA journal_mode=WAL')
-    except sqlite3.OperationalError:
-        pass   # file system without shared memory (some network shares): stays in the default mode
+    db = provider_base.connect(root, 'youtube.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
     if 'skipped' not in {r[1] for r in db.execute('PRAGMA table_info(youtube_sources)')}:
         db.execute("ALTER TABLE youtube_sources ADD COLUMN skipped TEXT NOT NULL DEFAULT '{}'")   # 0.5.54
@@ -1170,18 +1152,19 @@ def start_sync(root, queue=False):
     return True
 
 
-def loop(root, stop):
+def should_sync(root, now=None):
     """Daily refresh (on by default: the API is quota-limited, not the user's bandwidth). Without a
-    key nothing is requested."""
-    import task_control
-    while not stop.wait(60):
-        if task_control.paused('catalog:youtube'):
-            continue
-        current = state(root)
-        if not current['key_set'] or current['running']:
-            continue
-        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (current['auto'] and time.time() >= current['next_attempt']):
-            start_sync(root)
+    key nothing is requested. 0.6.0: the shared rule in provider_base."""
+    current = state(root)
+    if not current['key_set'] or current['running']:
+        return False
+    return provider_base.catalog_due(root, sys.modules[__name__], current, now)
+
+
+def loop(root, stop):
+    """Former own loop thread; the server uses the shared planner (planner.py) instead."""
+    provider_base.loop(root, stop, 'youtube', sys.modules[__name__])
+
 
 
 # ---------------------------------------------------------------- playback

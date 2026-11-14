@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.5.108
+# MediathekAtlas · 0.6.0
+
+## Neu in 0.6.0: Ein Planer für alle Anbieter, Profil für schwache Hardware
+
+- **Weniger Last im Hintergrund.** Bisher hatte jeder Anbieter zwei eigene Hintergrund-Threads (Katalogabruf und Abgleich mit IMDb/TVDB/TMDB). Jetzt übernimmt ein gemeinsamer Planer beides: ein Thread für die Katalogabrufe, zwei für den Abgleich. Im Leerlauf laufen 31 statt 52 Threads.
+- **Katalogabrufe starten nicht mehr alle gleichzeitig.** Höchstens zwei laufen zugleich (auf schwacher Hardware einer), die übrigen folgen eine Minute später. Von Hand gestartete Abrufe laufen wie bisher sofort.
+- **Neu: Verwaltung → System → „Hintergrundarbeit“.** *Automatisch* (Standard) wählt „Schwache Hardware“ bei höchstens zwei Prozessorkernen oder weniger als 2 GB Arbeitsspeicher, z. B. auf kleinen NAS. Dort läuft je ein Katalogabruf und ein Abgleich zur Zeit. Die Ansicht zeigt auch, welche Katalogabrufe gerade laufen.
+- **Datenbanken der Anbieter im WAL-Modus.** Die Oberfläche wartet nicht mehr, während ein Katalogabruf schreibt. Liegt der Datenordner auf einer Netzwerkfreigabe, schaltet `MEDIATHEKATLAS_NO_WAL=1` das ab.
+- Entwicklung: `provider_base.py` hält den gemeinsamen Rahmen (Datenbank, Regel „Katalog fällig“), `planner.py` den Planer.
 
 ## Neu in 0.5.108: Aufgeräumt nach dem Review
 

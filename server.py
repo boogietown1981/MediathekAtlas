@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor
+import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -35,7 +35,7 @@ metadata.configure_provider_state(ROOT/'provider-pauses.json')
 negative_cache.configure(ROOT/'provider-negative.sqlite')
 diagnostics.event('application_start',version=VERSION,network=NETWORK,managed=MANAGED or None)
 ACCESS=access.Access(ROOT,[DEFAULT_DOWNLOAD_DIR]) if NETWORK else None
-TOKEN=secrets.token_urlsafe(32);STOP=threading.Event()
+TOKEN=secrets.token_urlsafe(32);STOP=threading.Event();PLANNER=[None]   # 0.6.0: the running planner (planner.py)
 diagnostics.register_secrets(TOKEN)
 
 def job_ids(q):
@@ -696,7 +696,9 @@ class Handler(BaseHTTPRequestHandler):
             return self.send(system_monitor.snapshot(ROOT,settings().get('download_dir'),{
                 'downloads_running':states.get('downloading',0)+states.get('tagging',0),'downloads_waiting':states.get('queued',0),
                 'encoder_active':encoder.listing(ROOT)['active'],'receipt_task':RECEIPT_TASK['running'],
-                'verbund':mesh.get('enabled') is True,'verbund_systems':len(mesh.get('nodes') or []),'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND')}))
+                'verbund':mesh.get('enabled') is True,'verbund_systems':len(mesh.get('nodes') or []),'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'),
+                # 0.6.0: planner profile (Normal / Schwache Hardware) and running catalogue runs
+                'planner':PLANNER[0].status() if PLANNER[0] else dict(planner.profile(settings()),catalog_running=[])}))
         if path=='/api/encoder':return self.send(encoder.listing(ROOT,encoder_tools()))
         if path=='/api/storage':
             # 0.5.81: used space of the downloads with a cleanup suggestion (storage_policy); nothing is deleted here.
@@ -1291,6 +1293,10 @@ class Handler(BaseHTTPRequestHandler):
                     if d.get('clear_'+k):s[k]=''
                 for k in ('auto_catalog','auto_metadata','complete_series','sender_direct_lookup'):
                     if k in d:s[k]=bool(d[k])
+                if 'background_profile' in d:
+                    # 0.6.0: planner profile (Verwaltung → System); auto = by cores and memory
+                    if d['background_profile'] not in planner.CHOICES:raise ValueError('Unbekanntes Profil')
+                    s['background_profile']=d['background_profile']
                 if 'metadata_workers' in d:
                     try:n=int(d['metadata_workers'])
                     except (ValueError,TypeError):raise ValueError('Ungültige Workerzahl') from None
@@ -1567,10 +1573,11 @@ if __name__=='__main__':
     threading.Thread(target=netzkino_downloads.loop,args=(db,STOP),daemon=True,name='netzkino_offline_expiry').start()
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         # Reference check and daily catalogue run of every film platform (0.5.84: platform_registry).
-        platform_registry.start_background(platform_context(),STOP)
-        threading.Thread(target=samsung_tvplus.loop,args=(ROOT,STOP),daemon=True,name='samsung_catalog_scheduler').start()
-        threading.Thread(target=archive_recognition.loop,args=(ROOT,settings,SERVICE.provider_slots,STOP,db),
-                         daemon=True,name='archive_auto_enrichment').start()
+        # 0.6.0: one planner (planner.py) instead of two threads per platform; Samsung TV Plus and
+        # the Archive.org recognition join it (formerly samsung_tvplus.loop, archive_recognition.loop).
+        PLANNER[0]=platform_registry.start_background(platform_context(),STOP,
+            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus)],
+            extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
         SERVICE.start()

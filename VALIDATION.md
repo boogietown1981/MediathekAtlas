@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.0 – Planer und Anbieter-Rahmen (14. November 2026)
+- Automatisch: gesamte Python-Suite (1155 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium inkl. Profilauswahl in Verwaltung → System (ohne Befund).
+- Start mit Hintergrundarbeit (70 s, ohne Netz zu den Anbietern): 31 Threads statt 52, `/api/system-monitor` meldet Profil; Profil „low“ per `/api/settings` übernommen, unbekanntes Profil abgelehnt.
+- WAL: jede Anbieter-Datenbank nach dem Öffnen im Modus `wal` (Test); Rakuten-Test prüft jetzt auch die `-wal`-Datei auf Werbe-IDs.
+- Nicht geprüft: echte NAS (Profil „Schwache Hardware“ wird dort automatisch gewählt), Datenordner auf Netzwerkfreigabe mit WAL, echte Katalogabrufe.
+
 ## 0.5.108 – Konsolidierung (14. November 2026)
 - Automatisch: gesamte Python-Suite (1140 Tests, 4 übersprungen: macOS-Build, yt-dlp), Node-Smoke-Tests, Syntaxprüfung, Klicktest Chromium (ohne Befund). Im Browser (Chromium): Kachel mit Bild blendet den Titeltext aus, ohne Bild nicht; Haken „Besetzung“/„Fassungen“ ausblenden greift über die neuen Klassen.
 - Neuabruf nach Update: Schleife jedes Anbieters einmal mit teilweisem Katalog laufen lassen → genau ein Abruf je Version (Test).

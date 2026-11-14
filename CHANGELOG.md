@@ -1,3 +1,11 @@
+## 0.6.0 – Phase B, Teil 1: gemeinsamer Anbieter-Rahmen und ein Planer
+- `provider_base.py`: `connect()` (WAL + `synchronous=NORMAL`, `busy_timeout` 5 s, optional 0600; `MEDIATHEKATLAS_NO_WAL=1` schaltet WAL ab), `catalog_due()` (erster Start, Neuabruf nach Update, täglicher Abruf), `loop()` (bisherige Schleife, für Aufrufer und Tests).
+- Elf Anbieter (Netzkino, Pluto, JustWatch, Rakuten, Joyn, TOGGO, Crunchyroll, Plex, ServusTV, RTL+, YouTube) öffnen ihre Datenbank über `provider_base.connect` und haben `should_sync(root)`; Sonderregeln bleiben im Modul (YouTube nur mit Schlüssel, RTL+ einmaliger Neuabruf vor dem Gratisbereich, Joyn `tick()` für Live-Links). Samsung TV Plus: `should_sync` auf seine 12-Stunden-Regel.
+- `planner.py`: ein Katalog-Thread (`planner_catalog`, jede Minute, höchstens `max_syncs` Läufe zugleich, rotierender Start) und zwei Abgleich-Threads (`planner_reference_1/2`) statt `*_catalog_scheduler`/`*_auto_enrichment` je Plattform sowie `samsung_catalog_scheduler`/`archive_auto_enrichment`. Je Plattform weiter ein Titel je `gap` × Prioritätsfaktor, Listen zu 20 Titeln, Fehlgeschlagene nach der Ruhezeit erneut, Pause/Priorität/„Automatischer Abgleich“ wie bisher. `archive_recognition.background_pending()` ausgelagert.
+- Profile: `normal` (2/2), `low` „Schwache Hardware“ (1/1), `auto` = `low` bei ≤ 2 Kernen oder < 2 GB. Einstellung `background_profile` (`/api/settings`), `MEDIATHEKATLAS_PROFILE` hat Vorrang. Verwaltung → System zeigt Profil und laufende Katalogabrufe.
+- Gemessen (Linux, 4 Kerne, Hintergrund an): 31 statt 52 Threads, RAM unverändert rund 65 MB.
+- Tests: `tests/test_v0600_planner.py`; Klicktest prüft die Profilauswahl. Angepasst: Textprüfungen, die die alten Schleifen in den Modulen suchten.
+
 ## 0.5.108 – Phase A „Konsolidieren“ nach dem Review vom 14.11.2026
 - `main` enthält wieder den vollständigen Stand (PR #50 gemergt, gestapelte PRs #27, #30, #39, #40, #41 geschlossen, Inhalt enthalten).
 - `portal_reference.retry_after_update` jetzt in der Schleife aller Katalog-Anbieter (zusätzlich Pluto, JustWatch, Rakuten, Joyn, TOGGO, Crunchyroll, YouTube, Netzkino).

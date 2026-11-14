@@ -444,8 +444,10 @@ class InterfaceTests(unittest.TestCase):
         service = (ROOT / 'catalog_service.py').read_text()
         for task in ('filmlist', 'recognition', 'episodes', 'artwork', 'subscriptions'):
             self.assertIn("'%s'" % task, service)
+        # 0.6.0: the pause switch is asked by the shared planner (and the old per-platform loop in provider_base).
+        self.assertIn("task_control.paused('catalog:' + job.key)", (ROOT / 'planner.py').read_text())
         for module in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube'):
-            self.assertIn("task_control.paused('catalog:%s')" % module, (ROOT / (module + '.py')).read_text())
+            self.assertIn("provider_base.loop(root, stop, '%s'" % module, (ROOT / (module + '.py')).read_text())
         for name in ('task_control.py', 'ui_prefs.py', 'unified_index.py'):
             self.assertIn("'%s'" % name, (ROOT / 'build_macos.py').read_text())
 

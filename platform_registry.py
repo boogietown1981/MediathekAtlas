@@ -12,7 +12,6 @@ routes) stays in ``server.py``; such a route is switched off here with its flag.
 """
 from __future__ import annotations
 
-import threading
 from dataclasses import dataclass
 from types import ModuleType
 from typing import Callable, Optional
@@ -181,21 +180,28 @@ def handle_post(ctx, path, d):
     return None
 
 
-def thread_names():
+def job_names():
+    """Background jobs of the platforms: a reference check and a catalogue run each (since 0.6.0 run by
+    the shared planner, see planner.py, not by two threads per platform)."""
     return [p.key + '_auto_enrichment' for p in PLATFORMS] + [p.key + '_catalog_scheduler' for p in PLATFORMS]
 
 
-def start_background(ctx, stop):
-    """Reference check and daily catalogue run of every platform (two threads each, as before)."""
-    started = []
-    for p in PLATFORMS:
-        # IMDb/TVDB/TMDB/OMDb/Wikidata for every title, automatically and gently.
-        t = threading.Thread(target=p.enrichment.loop, args=(ctx.root, ctx.settings, ctx.slots, stop),
-                             daemon=True, name=p.key + '_auto_enrichment')
-        t.start()
-        started.append(t)
-    for p in PLATFORMS:
-        t = threading.Thread(target=p.module.loop, args=(ctx.root, stop), daemon=True, name=p.key + '_catalog_scheduler')
-        t.start()
-        started.append(t)
-    return started
+thread_names = job_names   # name until 0.5.108; the wiring tests still ask for it
+
+
+def planner_jobs(extra_catalog=(), extra_enrichment=()):
+    """Catalogue and reference-check jobs of every platform for the planner."""
+    import planner
+    catalog = [planner.CatalogJob(p.key, p.module) for p in PLATFORMS] + list(extra_catalog)
+    enrichment = [planner.EnrichJob(p.key, p.enrichment.pending, p.enrichment.enrich) for p in PLATFORMS] + list(extra_enrichment)
+    return catalog, enrichment
+
+
+def start_background(ctx, stop, extra_catalog=(), extra_enrichment=()):
+    """Reference checks and daily catalogue runs of every platform through one planner (0.6.0):
+    one catalogue thread and two reference-check threads instead of two threads per platform."""
+    import planner
+    catalog, enrichment = planner_jobs(extra_catalog, extra_enrichment)
+    plan = planner.Planner(ctx.root, ctx.settings, ctx.slots, stop, catalog, enrichment)
+    plan.start()
+    return plan

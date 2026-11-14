@@ -68,7 +68,8 @@ class UiTests(unittest.TestCase):
         self.assertIn('bleibt nach Neustart erhalten', panel)
         self.assertIn("'interrupted'", (ROOT / 'web' / 'netzkino.js').read_text())
         for name in ('pluto.py', 'justwatch.py', 'netzkino.py'):
-            self.assertIn('first_load_due', (ROOT / name).read_text())
+            self.assertIn('provider_base.catalog_due', (ROOT / name).read_text())   # 0.6.0: shared rule
+        self.assertIn('first_load_due', (ROOT / 'provider_base.py').read_text())
 
 
 class RequestTimingTests(unittest.TestCase):

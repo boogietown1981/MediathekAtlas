@@ -67,6 +67,11 @@ async function clickThrough(name, url) {
     // System monitor and the blocks of the storage view.
     await page.locator('#admin-tabs .admin-tab[data-view="system"]').click();
     await page.waitForFunction(() => document.querySelectorAll('#system-metrics .storage-metric').length === 4, null, { timeout: 10000 }).catch(() => problems.push('Systemmonitor zeigt keine Werte'));
+    // 0.6.0: profile of the background work (planner.py), switched and shown again.
+    await page.waitForFunction(() => /Aktiv: /.test(document.getElementById('system-profile-note').textContent), null, { timeout: 10000 }).catch(() => problems.push('Profil der Hintergrundarbeit fehlt'));
+    await page.selectOption('#system-profile', 'low');
+    await page.waitForFunction(() => /Schwache Hardware · höchstens 1 Katalogabruf/.test(document.getElementById('system-profile-note').textContent), null, { timeout: 10000 }).catch(() => problems.push('Profil „Schwache Hardware“ wird nicht übernommen'));
+    await page.selectOption('#system-profile', 'auto');
     await page.locator('#admin-tabs .admin-tab[data-view="storage"]').click();
     await page.waitForFunction(() => /Umwandlung/.test(document.getElementById('encoder-status').textContent) || /ffmpeg/.test(document.getElementById('encoder-status').textContent), null, { timeout: 10000 }).catch(() => problems.push('Umwandeln-Block bleibt leer'));
     await page.waitForFunction(() => document.getElementById('receipts-status').textContent.length > 10, null, { timeout: 10000 }).catch(() => problems.push('Archivnachweise bleiben leer'));

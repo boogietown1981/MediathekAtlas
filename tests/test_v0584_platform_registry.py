@@ -56,7 +56,7 @@ class RouteTableTests(unittest.TestCase):
                 self.assertNotIn("path=='%s'" % path, server, path)
         self.assertIn('platform_registry.handle_get(platform_context()', server)
         self.assertIn('platform_registry.handle_post(platform_context()', server)
-        self.assertIn('platform_registry.start_background(platform_context(),STOP)', server)
+        self.assertIn('platform_registry.start_background(platform_context(),STOP,', server)
 
     def test_platforms_match_the_task_list(self):
         import task_control
@@ -153,12 +153,18 @@ class HandlerTests(unittest.TestCase):
                                   ('quality', None), ('pluto_download_enqueued', {'created': 1})])
 
     def test_background_threads(self):
+        # 0.6.0: one planner (one catalogue thread, two reference-check threads) for every platform.
+        stop = threading.Event()
+        self.fake.module.should_sync = lambda root: False
+        self.fake.enrichment.pending = lambda root, limit=10: []
         with mock.patch.object(registry, 'PLATFORMS', (self.platform,)):
-            threads = registry.start_background(self.ctx, threading.Event())
-        for t in threads:
+            plan = registry.start_background(self.ctx, stop)
+        stop.set()
+        for t in plan.started:
             t.join(2)
-        self.assertEqual(sorted(t.name for t in threads), ['pluto_auto_enrichment', 'pluto_catalog_scheduler'])
-        self.assertEqual(sorted(self.fake.calls), [('catalog_loop',), ('enrich_loop',)])
+        self.assertEqual(sorted(t.name for t in plan.started), ['planner_catalog', 'planner_reference_1', 'planner_reference_2'])
+        self.assertEqual([job.key for job in plan.catalog], ['pluto'])
+        self.assertEqual([job.name for job in plan.enrichment], ['pluto'])
 
 
 class BundleTests(unittest.TestCase):

@@ -12,18 +12,16 @@ from __future__ import annotations
 import sys
 
 import json
-import os
 import re
-import sqlite3
 import threading
 import time
 import urllib.error
 import urllib.parse
 import urllib.request
 import uuid
-from pathlib import Path
 
 import portal_reference
+import provider_base
 
 BOOT_URL = 'https://boot.pluto.tv/v4/start'
 VOD_URL = 'https://service-vod.clusters.pluto.tv/v4/vod'
@@ -68,17 +66,7 @@ def _notify(event, **details):
 
 
 def _connect(root):
-    root = Path(root)
-    root.mkdir(parents=True, exist_ok=True)
-    path = root / 'pluto.sqlite3'
-    db = sqlite3.connect(str(path), timeout=5)
-    if os.name != 'nt':
-        try:
-            os.chmod(path, 0o600)
-        except OSError:
-            pass
-    db.row_factory = sqlite3.Row
-    db.execute('PRAGMA busy_timeout=5000')
+    db = provider_base.connect(root, 'pluto.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
     return db
 
@@ -566,15 +554,15 @@ def start_sync(root):
     return True
 
 
+def should_sync(root, now=None):
+    """Whether the catalogue run should start now (0.6.0: the shared rule in provider_base)."""
+    return provider_base.catalog_due(root, sys.modules[__name__], state(root), now)
+
+
 def loop(root, stop):
-    import task_control
-    while not stop.wait(60):
-        if task_control.paused('catalog:pluto'):
-            continue
-        current = state(root)
-        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (
-                current['auto'] and not current['running'] and time.time() >= current['next_attempt']):
-            start_sync(root)
+    """Former own loop thread; the server uses the shared planner (planner.py) instead."""
+    provider_base.loop(root, stop, 'pluto', sys.modules[__name__])
+
 
 
 # ---------------------------------------------------------------- playback
