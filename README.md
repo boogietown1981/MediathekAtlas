@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.1
+# MediathekAtlas · 0.6.2
+
+## Neu in 0.6.2: Schnittstelle für Geräte und Apps (API v1)
+
+- **Neu: Verwaltung → System → „Geräte und Apps (API v1)“.** Dort entsteht je Gerät ein Geräteschlüssel, zum Beispiel für einen Abspieler am Fernseher. Der Schlüssel wird einmal angezeigt und lässt sich jederzeit löschen; das Gerät hat dann sofort keinen Zugriff mehr.
+- Mit einem Schlüssel erreicht ein Gerät Katalog, Titelseiten, Live-Sender, Wiedergabe, fertige Downloads und die Merkliste mit Abspielpositionen. Einstellungen, Katalogabrufe und die Schlüsselverwaltung bleiben gesperrt.
+- **Ohne Schlüssel ist die Schnittstelle geschlossen.** Wer keinen Schlüssel anlegt, öffnet nichts Neues.
+- Beschreibung für Entwickler: `docs/API_V1.md`; der Server nennt seine Adressen selbst unter `/api/v1`.
+- Noch offen: eigenes HTTPS. Bis dahin Geräteschlüssel nur im Heimnetz oder über VPN verwenden.
 
 ## Neu in 0.6.1: Routen-Tabelle im Server (Umbau ohne sichtbare Änderung)
 

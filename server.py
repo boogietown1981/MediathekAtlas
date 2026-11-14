@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment
-import page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing
+import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -508,6 +508,7 @@ class Handler(BaseHTTPRequestHandler):
         handler=ROUTES.find('GET',path,'open')
         if handler:return handler(self,path)
         if path.startswith('/api/peer/'):return self.peer_get(path)
+        if path=='/api/v1' or path.startswith('/api/v1/'):return self.v1('GET',path)   # 0.6.2: device key instead of login and page token
         if not self.authorized():
             if path=='/':return self.send((Path(__file__).parent/'web'/'login.html').read_text().replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
             return self.send({'error':'Anmeldung erforderlich','login':True},401)
@@ -532,8 +533,8 @@ class Handler(BaseHTTPRequestHandler):
     # Finished downloads are served over HTTP so a browser on another device can fetch them;
     # on a NAS the local "open" action cannot reach the viewer's computer. Links carry the page
     # token in the query because a plain <a download> cannot send headers.
-    def download_file(self,q):
-        if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+    def download_file(self,q,checked=False):
+        if not checked and not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
         with db() as c:row=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(q.get('id',[''])[0],)).fetchone()
         if not row:return self.send({'error':'Nur abgeschlossene Downloads können geladen werden'},404)
         job=json.loads(row[0]);target=Path(job.get('path') or job['target']).resolve()
@@ -563,8 +564,8 @@ class Handler(BaseHTTPRequestHandler):
                 self.wfile.write(chunk);left-=len(chunk)
     # Playback for the in-app player. Like download-file, the page token travels in the query
     # because a <video> element cannot send headers. Sources come from the database only.
-    def stream(self,q):
-        if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+    def stream(self,q,checked=False):
+        if not checked and not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
@@ -681,6 +682,7 @@ class Handler(BaseHTTPRequestHandler):
         global _TREE_CACHE,_STATUS_CACHE
         if not self.valid_host():return self.send({'error':'Ungültige Sitzung'},403)
         if NETWORK and self.path=='/api/login':return self.login()
+        if self.path.startswith('/api/v1/'):return self.v1('POST',urllib.parse.urlsplit(self.path).path)   # 0.6.2
         if not self.authorized():return self.send({'error':'Anmeldung erforderlich','login':True},401)
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
         if self.path=='/api/archive-list-import':return self.archive_list_import()
@@ -712,6 +714,35 @@ class Handler(BaseHTTPRequestHandler):
             diagnostics.error('http_post_failed',e,endpoint=urllib.parse.urlsplit(self.path).path)
             self.send({'error':core.safe_error(e)},400)
 
+    # 0.6.2: API v1 for clients outside the page (api_keys.py). Allowed: a device key in
+    # ``Authorization: Bearer …``, the signed-in page with its token, or (only for the addresses a
+    # video player calls itself) a ticket from /api/v1/play. A device key opens nothing but /api/v1.
+    def v1_allowed(self,media=False):
+        if media and api_keys.ticket_valid(TOKEN,urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query).get('ticket',[''])[0]):return True
+        if self.authorized() and self.headers.get('X-Atlas-Token')==TOKEN:return True
+        head=self.headers.get('Authorization') or '';client=self.client_address[0]
+        if not head.startswith('Bearer '):return False
+        if ACCESS and ACCESS.blocked(client):return False     # same limit as wrong passwords
+        if api_keys.verify(ROOT,head[7:].strip()):return True
+        if ACCESS:ACCESS._failed(client)
+        diagnostics.event('api_key_rejected',level='WARNING')
+        return False
+    def v1(self,method,path):
+        if not self.v1_allowed(media=method=='GET' and path in V1_MEDIA):
+            return self.send({'error':'Geräteschlüssel fehlt oder ist ungültig','api':'v1'},401)
+        handler=ROUTES.find(method,path,'v1')
+        if not handler:return self.send({'error':'Nicht gefunden','api':'v1'},404)
+        if method=='GET':return handler(self,path)
+        try:
+            length=int(self.headers.get('Content-Length','0'))
+            if not 0<length<=100000:raise ValueError('Ungültige Anfragegröße')
+            d=json.loads(self.rfile.read(length))
+            if not isinstance(d,dict):raise ValueError('Ungültige Anfrage')
+            return handler(self,path,d)
+        except Exception as e:
+            diagnostics.error('http_post_failed',e,endpoint=path)
+            self.send({'error':core.safe_error(e)},400)
+
     def login(self):
         client=self.client_address[0]
         try:
@@ -732,6 +763,116 @@ class Handler(BaseHTTPRequestHandler):
 # `if path==...` used to stand for that stage; prefixes, the platform registry and requests that
 # need the raw body stay in Handler. GET handlers take (self,path), POST handlers (self,path,d).
 # ----------------------------------------------------------------------------------------------------
+
+# ---- 0.6.2: API v1 – stable addresses for clients outside the page (docs/API_V1.md, api_keys.py).
+# Each address answers with the same model as the page's own address named in its description;
+# the first line of the docstring is the summary shown by GET /api/v1.
+V1_MEDIA=('/api/v1/stream','/api/v1/file')
+
+@ROUTES.get('/api/v1',stage='v1')
+def get_v1(self,path):
+    """Beschreibung der Schnittstelle: Version des Servers und alle Adressen von API v1."""
+    endpoints=[]
+    for method,address,stage,name in ROUTES.listing():
+        if stage!='v1':continue
+        doc=[line.strip() for line in (globals()[name].__doc__ or '').strip().splitlines()]
+        endpoints.append({'method':method,'path':address,'summary':doc[0] if doc else '','parameters':' '.join(doc[1:]).strip()})
+    return self.send({'api':'v1','name':'MediathekAtlas','version':VERSION,'network':NETWORK,
+                      'auth':'Authorization: Bearer <Geräteschlüssel>; für /api/v1/stream und /api/v1/file genügt ?ticket=<ticket aus /api/v1/play>',
+                      'endpoints':endpoints})
+
+@ROUTES.get('/api/v1/catalog',stage='v1')
+def get_v1_catalog(self,path):
+    """Katalog aller Quellen, zusammengeführt und sortiert (wie Start → Alle).
+    Parameter: kind (movies|series), q, genre, sort (title|…), collection, offset."""
+    return get_unified(self,path)
+
+@ROUTES.get('/api/v1/title',stage='v1')
+def get_v1_title(self,path):
+    """Titelseite eines Films oder einer Serie einer Plattform (Beschreibung, Besetzung, Folgen, Fassungen).
+    Parameter: source (z. B. netzkino, pluto, joyn), id."""
+    return get_portal_title(self,path)
+
+@ROUTES.get('/api/v1/show',stage='v1')
+def get_v1_show(self,path):
+    """Serie aus den Mediatheken (ARD, ZDF, …) mit Staffeln und Folgen.
+    Parameter: show (Name der Serie), archive (1 = auch archivierte Folgen)."""
+    return get_show(self,path)
+
+@ROUTES.get('/api/v1/live',stage='v1')
+def get_v1_live(self,path):
+    """Live-Sender aller Quellen, nach Sender zusammengeführt.
+    Parameter: q, provider, group."""
+    return get_live_tv(self,path)
+
+@ROUTES.get('/api/v1/play',stage='v1')
+def get_v1_play(self,path):
+    """Wiedergabe-Auskunft zu einem Eintrag: Art (direkt, HLS, eingebettet, nur Link), Adresse, Qualitätsstufen, Ticket.
+    Parameter: genau eine Kennung (offer, job, netzkino, pluto, justwatch, rakuten, joyn, toggo, crunchyroll, samsung, plex,
+    servustv, rtlplus, youtube), dazu quality (auto|max|Höhe). Adressen, die mit /api/v1/stream beginnen, brauchen
+    zusätzlich &ticket=<ticket>."""
+    return get_play(self,path,v1=True)
+
+@ROUTES.get('/api/v1/stream',stage='v1')
+def get_v1_stream(self,path):
+    """Videodaten zu einer Kennung aus /api/v1/play (MP4, bei raw=1 die lokale Datei mit Bereichsanfragen).
+    Parameter: wie /api/v1/play, dazu t (Startsekunde), session, quality, raw, ticket."""
+    return self.stream(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query),checked=True)
+
+@ROUTES.get('/api/v1/file',stage='v1')
+def get_v1_file(self,path):
+    """Fertigen Download als Datei laden oder abspielen (30-Tage-Offlinekopien nur mit inline=1).
+    Parameter: id (Kennung des Downloads), inline (1 = abspielen statt speichern), ticket."""
+    return self.download_file(urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query),checked=True)
+
+@ROUTES.get('/api/v1/downloads',stage='v1')
+def get_v1_downloads(self,path):
+    """Fertige Downloads auf diesem System: Titel, Quelle, Größe, Merkstatus; abspielen über /api/v1/play?job=<id>."""
+    with db() as c:data=storage_policy.overview(c,ROOT,settings()['download_dir'],watch_state.states(ROOT))
+    keep=('id','title','year','kind','origin','source','file','size_bytes','stored_at','last_watched','watched_done','favorite','pinned','watch_key','offline_until')
+    # no folders of the server and no cleanup settings for a device
+    return self.send({'items':[dict({k:row.get(k) for k in keep},play='/api/v1/play?job='+urllib.parse.quote(str(row['id']))) for row in data['items']],
+                      'files':data['files'],'shown':data['shown'],'used_bytes':data['used_bytes']})
+
+@ROUTES.get('/api/v1/watch',stage='v1')
+def get_v1_watch(self,path):
+    """Merkliste, Weiterschauen und Abspielpositionen."""
+    return get_watch(self,path)
+
+@ROUTES.post('/api/v1/watch-progress',stage='v1')
+def post_v1_watch_progress(self,path,d):
+    """Abspielposition melden.
+    Eingabe: key, pos (Sekunden), duration, done (true = zu Ende gesehen), info (Titel, Bild, Kennung für die Liste)."""
+    return post_watch_progress(self,path,d)
+
+@ROUTES.post('/api/v1/watch-mark',stage='v1')
+def post_v1_watch_mark(self,path,d):
+    """Titel merken oder anheften.
+    Eingabe: key, favorite (true|false), pinned (true|false), info."""
+    return post_watch_mark(self,path,d)
+
+@ROUTES.post('/api/v1/watch-forget',stage='v1')
+def post_v1_watch_forget(self,path,d):
+    """Eintrag aus Weiterschauen entfernen.
+    Eingabe: key."""
+    return post_watch_forget(self,path,d)
+
+# 0.6.2: device keys are managed from the page only (stage 'api'); a device key cannot create keys.
+@ROUTES.get('/api/api-keys')
+def get_api_keys(self,path):
+    return self.send({'items':api_keys.listing(ROOT),'network':NETWORK,'limit':api_keys.MAX_KEYS})
+
+@ROUTES.post('/api/api-key-create')
+def post_api_key_create(self,path,d):
+    item=api_keys.create(ROOT,d.get('name'))
+    diagnostics.event('api_key_created',key_id=item['id'])
+    return self.send({'created':item,'items':api_keys.listing(ROOT)})
+
+@ROUTES.post('/api/api-key-revoke')
+def post_api_key_revoke(self,path,d):
+    if not api_keys.revoke(ROOT,str(d.get('id') or '')):raise ValueError('Diesen Geräteschlüssel gibt es nicht mehr')
+    diagnostics.event('api_key_revoked',key_id=str(d.get('id'))[:12])
+    return self.send({'items':api_keys.listing(ROOT)})
 
 @ROUTES.get('/icon.svg',stage='open')
 def get_icon_svg(self,path):
@@ -890,7 +1031,7 @@ def get_download_options(self,path):
     return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
 
 @ROUTES.get('/api/play')
-def get_play(self,path):
+def get_play(self,path,v1=False):
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')}
     direct_youtube=q.get('direct',[''])[0]=='1'
     yt_id=q.get('youtube',[''])[0]
@@ -911,11 +1052,12 @@ def get_play(self,path):
         info=streaming.plan(source,levels=q.get('levels',[''])[0]!='0')
     except ValueError as e:return self.send({'error':str(e)},404)
     if q.get('probe',[''])[0]=='1':return self.send({'levels':info.get('levels') or []})  # 0.5.72: levels only, for the ffmpeg fallback
-    base='/api/stream?'+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
+    base=('/api/v1/stream?' if v1 else '/api/stream?')+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
     if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
     else:info['src']=info.pop('url') if info['mode']=='direct' else base
     info['remux']=base;info['ffmpeg']=bool(downloads.tool('ffmpeg'))
     info['wish']=quality
+    if v1:info['ticket']=api_keys.ticket(TOKEN)   # 0.6.2: append '&ticket=…' to addresses below /api/v1/stream
     diagnostics.event('playback_start',mode=info['mode'],origin=info['origin'],hls=info.get('hls',False),provider=info.get('provider','mediathek'),
                       live=bool(info.get('live')),wish=quality,levels=[l['id'] for l in info.get('levels') or []])
     return self.send(info)

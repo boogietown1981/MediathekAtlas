@@ -78,23 +78,23 @@ class ServerTableTests(unittest.TestCase):
         self.assertGreaterEqual(len(self.listing), 130)
 
     def test_no_if_chain_left_in_the_handler(self):
-        get = SERVER[SERVER.index('    def get(self):'):SERVER.index('    def download_file(self,q):')]
+        get = SERVER[SERVER.index('    def get(self):'):SERVER.index('    def download_file(self,q')]
         post = SERVER[SERVER.index('    def post(self):'):SERVER.index('    def login(self):')]
         handler = get + post
         left = re.findall(r"if path=='(/[^']*)'", handler)
-        self.assertEqual(left, ['/'], 'only the login page for a visitor who is not signed in')
+        self.assertEqual(left, ['/api/v1', '/'], 'the branch to API v1 (0.6.2) and the login page for a visitor who is not signed in')
         self.assertEqual(handler.count("ROUTES.find('GET',path,"), 3)
         self.assertEqual(handler.count("ROUTES.find('POST',path,'api')"), 1)
         self.assertLess(len(handler), 8000, 'Handler.get and Handler.post stay short')
 
     def test_stage_order_in_the_handler(self):
-        get = SERVER[SERVER.index('    def get(self):'):SERVER.index('    def download_file(self,q):')]
+        get = SERVER[SERVER.index('    def get(self):'):SERVER.index('    def download_file(self,q')]
         marks = [get.index(x) for x in ("ROUTES.find('GET',path,'open')", 'if not self.authorized():', "ROUTES.find('GET',path,'signed')",
                                         "self.headers.get('X-Atlas-Token')!=TOKEN", "ROUTES.find('GET',path,'api')",
                                         'platform_registry.handle_get(')]
         self.assertEqual(marks, sorted(marks))
         post = SERVER[SERVER.index('    def post(self):'):SERVER.index('    def login(self):')]
-        marks = [post.index(x) for x in ("self.headers.get('X-Atlas-Token')", 'platform_registry.handle_post(', "ROUTES.find('POST',path,'api')")]
+        marks = [post.index(x) for x in ("if self.headers.get('X-Atlas-Token')!=TOKEN", 'platform_registry.handle_post(', "ROUTES.find('POST',path,'api')")]
         self.assertEqual(marks, sorted(marks), 'no POST route runs before the page token is checked')
 
     def test_what_is_open_before_the_login(self):
@@ -102,7 +102,8 @@ class ServerTableTests(unittest.TestCase):
         self.assertEqual(opened, ['/api/login-state', '/icon.svg', '/login.js', '/style.css', '/theme-light.css'])
         signed = sorted(p for m, p, s, _ in self.listing if s == 'signed')
         self.assertEqual(signed, ['/', '/api/download-file', '/api/stream', '/hls.min.js', '/titleview.js'])
-        self.assertTrue(all(s == 'api' for m, p, s, _ in self.listing if m == 'POST'))
+        self.assertTrue(all(s == 'api' or p.startswith('/api/v1/') for m, p, s, _ in self.listing if m == 'POST'))
+        self.assertTrue(all((s == 'v1') == (p == '/api/v1' or p.startswith('/api/v1/')) for m, p, s, _ in self.listing))      # 0.6.2
         # the two addresses a <video> or <a download> calls check the token from the query themselves
         for name in ('download_file', 'stream'):
             body = SERVER[SERVER.index('    def %s(self' % name):][:200]
@@ -119,7 +120,8 @@ class ServerTableTests(unittest.TestCase):
         for m, p, _, name in self.listing:
             fn = self.server.ROUTES.find(m, p, self.server.ROUTES.stage(m, p))
             self.assertTrue(name.startswith(m.lower() + '_'), name)
-            self.assertEqual(list(inspect.signature(fn).parameters), ['self', 'path'] + (['d'] if m == 'POST' else []), name)
+            required = [n for n, par in inspect.signature(fn).parameters.items() if par.default is par.empty]
+            self.assertEqual(required, ['self', 'path'] + (['d'] if m == 'POST' else []), name)
 
     def test_guards_that_used_to_stand_in_front_of_the_chain(self):
         s = self.server

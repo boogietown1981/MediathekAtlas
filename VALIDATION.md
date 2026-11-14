@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.2 – API v1 und Geräteschlüssel (14. November 2026)
+- Automatisch: gesamte Python-Suite (1181 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium inklusive Schlüssel anlegen, `/api/v1` mit Schlüssel aufrufen, Schlüssel löschen (ohne Befund).
+- Echter Server, Einzelplatz: ohne Schlüssel 401 auf allen v1-Adressen (auch unbekannten), mit Schlüssel Katalog, Live, Merkliste, Downloads; Schlüssel öffnet keine andere Adresse (403); Merkliste schreiben und in der Weboberfläche wiederfinden; fertiger Download: Liste, Wiedergabe-Auskunft, Datei nur mit Ticket ohne Kopfzeile; verfälschtes Ticket 401; Ticket öffnet nur die Medienadressen; gelöschter Schlüssel 401; Schlüssel und Ticket stehen nicht im Protokoll.
+- Echter Server, Netzwerkmodus mit Anmeldung: Schlüssel ersetzt die Anmeldung nur für `/api/v1`; alle anderen Adressen verlangen weiter die Anmeldung; nach 10 falschen Schlüsseln ist der Aufrufer gesperrt.
+- Im Browser angesehen (Chromium, dunkel und hell): Karte „Geräte und Apps (API v1)“ mit neuem Schlüssel und Liste.
+- Nicht geprüft: echte Clients (tvOS, Android), umgewandelte Streams (ffmpeg) über `/api/v1/stream` mit Ticket, Zugriff von einem zweiten Gerät im Netz, NAS-Hardware, Firefox/WebKit (nur CI).
+
 ## 0.6.1 – Routen-Tabelle (14. November 2026)
 - Automatisch: gesamte Python-Suite (1171 Tests, 3 übersprungen), Node-Smoke-Tests, Klicktest Chromium (ohne Befund), `ruff` (F, E9) für `server.py` und `routing.py`.
 - Vergleich alt gegen neu: Server 0.6.0 und 0.6.1 nebeneinander gestartet, 327 gleiche Aufrufe (56 GET-Adressen mit/ohne Parameter und mit/ohne Token, 51 POST-Adressen mit zwei Eingaben). Statuscodes und Antworten gleich; 12 Abweichungen nur durch Zeitstempel, Geräteschlüssel, Pfade.
