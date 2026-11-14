@@ -1,3 +1,10 @@
+## 0.6.4 – YouTube „Filme & TV“: kostenlose Filme mit Werbung
+- `youtube_store.py` (neu): liest YouTubes kostenlose Filme über die öffentliche JustWatch-GraphQL-API (`popularTitles`, Pakete per Namenssuche „YouTube…“ über `packages`, Rückfall `yfr`/`yot`; `monetizationTypes` FREE/ADS, nur `MOVIE`). Angenommen werden nur https-Links auf youtube.com/watch bzw. youtu.be mit gültiger Video-ID. Höchstens 150 Seiten zu 40 Titeln, 1 s Abstand; bricht JustWatch mittendrin ab, bleibt das Gelesene erhalten (`partial`).
+- `youtube.py`: Quelle `store:free` (auch aus `youtube.com/feed/storefront…` und `/movies`), nur Art „Filme“. `sync()` liest sie über `_store_source`; ein JustWatch-Fehler steht als „Filme & TV: …“ an der Quelle, die übrigen Quellen laufen weiter. Die Data API liefert nur noch, ob ein Video eingebettet werden darf.
+- Die Titel tragen `drm=1`: `offline_flag` ist 0, `youtube_downloads.build_job` und `play_source` lehnen sie ab (kein Offline, kein eigener Player), der Werbefilter-Hinweis entfällt.
+- Oberfläche: Knopf `youtube-store-add` in den YouTube-Einstellungen (verschwindet, sobald die Quelle besteht), Quellenzeile „Liste über JustWatch · kopiergeschützt, läuft bei YouTube“.
+- Tests: `tests/test_v064_youtube_store.py`.
+
 ## 0.6.1 – Phase B, Teil 2: Routen-Tabelle statt if-Kette
 - `routing.py`: `Table` mit `get(*paths, stage=)`, `post(...)`, `find(method, path, stage)`, `listing()`; Stufen `open` (nur Host geprüft), `signed` (Anmeldung; Seite, Skripte, `/api/stream`, `/api/download-file` prüfen das Token aus der Adresse selbst), `api` (Anmeldung + `X-Atlas-Token`). Doppelte Adressen, unbekannte Stufen und Adressen ohne `/` lösen beim Import einen Fehler aus.
 - `server.py`: 128 Blöcke der if-Ketten in `Handler.get`/`Handler.post` sind Funktionen `get_<name>(self, path)` bzw. `post_<name>(self, path, d)` mit `@ROUTES.get(...)`/`@ROUTES.post(...)` (133 Adressen: 56 GET, 77 POST; `ROUTES.listing()`). In den Handlern bleiben: Host-/Anmelde-/Token-Prüfung, `/api/peer/…`, `/code/…`, Skriptliste, Anmelden/Abmelden/Passwort, Roh-Uploads, Aufruf von `platform_registry` und der Tabelle.

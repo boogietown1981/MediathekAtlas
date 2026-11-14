@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.1
+# MediathekAtlas · 0.6.4
+
+## Neu in 0.6.4: YouTube „Filme & TV“ – die kostenlosen Filme mit Werbung
+
+- **Neue Quelle mit einem Klick.** YouTube → Einstellungen → „＋ YouTube „Filme & TV“: kostenlose Filme aufnehmen“. Danach stehen die Filme, die YouTube selbst kostenlos mit Werbung anbietet, als Kacheln bei YouTube und im gemeinsamen Katalog (mit Poster, Jahr, Genre, Inhalt, IMDb-Wertung).
+- **Woher die Liste kommt.** Die YouTube Data API gibt den Bereich „Filme & TV“ nicht heraus, und youtube.com selbst liest MediathekAtlas nicht aus. Die Liste kommt deshalb über JustWatch (dieselbe öffentliche Schnittstelle wie bei JustWatch TV): alle YouTube-Angebote für Deutschland mit der Kennzeichnung „kostenlos“ bzw. „mit Werbung“, jeweils mit dem direkten YouTube-Link.
+- **Kopierschutz.** YouTube liefert seine eigenen Filme geschützt und nur im eigenen Player aus. Diese Titel sind deshalb Katalogeinträge mit „↗ Bei YouTube ansehen“. Kein eigener Player, kein Offline-Speichern, auch nicht bei eingeschaltetem Offline-Schalter. Meldet YouTube für einen Film, dass er eingebettet werden darf, erscheint wie bei jedem anderen YouTube-Titel „▶ Ansehen“ (offizieller eingebetteter Player).
+- **Grenzen.** Die Liste ist so vollständig wie JustWatch. Titel, zu denen JustWatch keinen YouTube-Link nennt, fehlen (die Zahl steht in der Quellenzeile). Der Abruf wurde nicht gegen das echte JustWatch und YouTube geprüft, weil beide von der Entwicklungsumgebung aus gesperrt sind.
 
 ## Neu in 0.6.1: Routen-Tabelle im Server (Umbau ohne sichtbare Änderung)
 
