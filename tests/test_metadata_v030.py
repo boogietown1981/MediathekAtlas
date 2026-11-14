@@ -1,8 +1,8 @@
-import unittest,sys,sqlite3,json,tempfile,threading,time
+import unittest,sys,sqlite3,json,tempfile,threading
 from pathlib import Path
 from unittest.mock import patch
 sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-import core,catalog,metadata,series_download,catalog_service
+import catalog,metadata,series_download,catalog_service
 
 def source(title='Eine tierische Freundschaft'):
  return {'title':title,'topic':'Bibi und Tina','description':'Bibi und Tina helfen ihren Freunden.','channel':'ZDF','duration':1509,'url_video':'https://example.org/'+title+'.mp4'}

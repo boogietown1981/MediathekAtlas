@@ -7,7 +7,7 @@ import sys
 
 ROOT=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
-import netzkino,netzkino_details,netzkino_enrichment as ne
+import netzkino,netzkino_enrichment as ne
 
 class ProviderResults(unittest.TestCase):
     movie={'kind':'movie','title':'Die Probe','year':2008,'season':None,'episode':None}

@@ -3,7 +3,6 @@ import json
 import sqlite3
 import tempfile
 import threading
-import time
 import unittest
 from contextlib import contextmanager
 from html.parser import HTMLParser

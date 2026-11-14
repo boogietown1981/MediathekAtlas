@@ -27,6 +27,7 @@ double look-ups).
 The API key never goes to logs, the diagnosis export or the browser; titles and URLs are not logged.
 """
 from __future__ import annotations
+import sys
 
 import json
 import os
@@ -1179,7 +1180,7 @@ def loop(root, stop):
         current = state(root)
         if not current['key_set'] or current['running']:
             continue
-        if portal_reference.first_load_due(current) or (current['auto'] and time.time() >= current['next_attempt']):
+        if portal_reference.first_load_due(current) or portal_reference.retry_after_update(root, sys.modules[__name__], current) or (current['auto'] and time.time() >= current['next_attempt']):
             start_sync(root)
 
 

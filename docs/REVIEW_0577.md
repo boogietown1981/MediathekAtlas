@@ -10,7 +10,7 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 | --- | --- | --- |
 | 1 | `backdrop-filter` ohne `-webkit-`-Vorsatz | behoben in 0.5.81 |
 | 1 | `@container` ohne Rückfall für Safari vor 16 und Firefox vor 110 | behoben in 0.5.81 |
-| 1 | `:has()` ohne Rückfall (Safari vor 15.4, Firefox vor 121) | offen; betrifft nur das Ausblenden einzelner Kachel- und Titelseitenteile |
+| 1 | `:has()` ohne Rückfall (Safari vor 15.4, Firefox vor 121) | behoben in 0.5.108 (Klassen statt `:has()`) |
 | 1 | `/api/candidates` liest den Cache und verwirft das Ergebnis | behoben in 0.5.81 |
 | 1 | 20 ungenutzte Importe | behoben in 0.5.81; `core.py` bleibt, dort sind es Weitergaben an andere Module |
 | 1 | 4 Funktionen ohne Aufrufer, 4 ungenutzte Konstanten | offen |
@@ -20,8 +20,8 @@ Stand 13. November 2026. Ausführliche Fassung mit allen Tabellen: https://claud
 | 2 | `netzkino_downloads` und `netzkino_enrichment.analyze` bedienen alle Plattformen | offen (neutrale Namen) |
 | 2 | Netzwerkmodus: Sitzungen nur im Arbeitsspeicher, nur HTTP | offen |
 | 2 | Kein Klicktest der Oberfläche in der CI, Safari und Firefox nie geprüft | Klicktest in der CI seit 0.5.99 (Chromium, Firefox, WebKit); echtes Safari weiter ungeprüft |
-| 3 | 44 Pakete (625 MB) in `downloads/` im Git, alter Bausatz in `integration/preview` | Pakete in 0.5.84 aus dem Git genommen (Historie unverändert); `integration/preview` offen |
-| 3 | Gestapelte offene Pull Requests, `main` bei 0.5.40 | braucht Freigabe |
+| 3 | 44 Pakete (625 MB) in `downloads/` im Git, alter Bausatz in `integration/preview` | Pakete in 0.5.84 aus dem Git genommen (Historie unverändert); `integration/preview` entfernt in 0.5.108 |
+| 3 | Gestapelte offene Pull Requests, `main` bei 0.5.40 | erledigt 14.11.2026: PR #50 (0.5.107) in `main`, übrige geschlossen |
 
 ## Fehlend aus Archive Media 0.10.53 (17 von 36 Modulen)
 

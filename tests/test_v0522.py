@@ -2,7 +2,7 @@
 import json,sqlite3,tempfile,threading,time,unittest
 from pathlib import Path
 from unittest.mock import patch
-import catalog,catalog_service,metadata,negative_cache,provider_stats
+import catalog,catalog_service,metadata,negative_cache
 
 def film(title='Movie',channel='ARD',url='https://example.org/movie.mp4'):
     return {'title':title,'topic':'Spielfilm','description':'Spielfilm Deutschland 2020 · Testinhalt',

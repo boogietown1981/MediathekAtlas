@@ -1,13 +1,9 @@
 """Regression tests: accurate episode counts, transparent runtime, outage circuits."""
 import json
-import sqlite3
-import time
 import unittest
 import urllib.error
 from unittest.mock import patch
 
-import catalog_service
-import matching
 import metadata
 import video_causality
 from test_v0531_causality import EpisodeQueueRuntimeTests, offer

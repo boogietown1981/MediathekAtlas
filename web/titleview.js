@@ -57,7 +57,7 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,im
  const dl=el('dl',undefined,'tv-info');for(const [k,v] of info){if(v)dl.append(el('dt',k),el('dd',v));}if(dl.childElementCount)text.append(dl);
  body.append(cover,text);wrap.append(body);
  const out=[wrap];
- if(cast?.length){const sec=el('section',undefined,'tv-section');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,cast,castRef===undefined?castContext(meta):castRef);}
+ if(cast?.length){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,cast,castRef===undefined?castContext(meta):castRef);}
  return out;
 }
 function ratingFact(m){const r=Number(m.rating);if(m.rating==null||m.rating===''||!Number.isFinite(r))return null;const s=el('span','★ '+r.toLocaleString('de-DE',{maximumFractionDigits:1}),'tv-rating');s.title=ratingSource(m)+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':'');return s;}
@@ -143,7 +143,7 @@ function renderMovie(){
  const hint=item.state==='format'?'Beitrag einer Sendung.':(r.description?'':'Noch keine Beschreibung vorhanden.');
  const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],matchInfo(item.state,m.provider,m.reference_id)];
  host.replaceChildren(...hero({meta:m,type:'Film',facts,overview:m.description||r.description||'',overviewHint:hint,actions,info,cast:m.cast}));
- const sec=el('section',undefined,'tv-section');sec.append(el('h2','Fassungen & Dateien'));
+ const sec=el('section',undefined,'tv-section tv-section-versions');sec.append(el('h2','Fassungen & Dateien'));
  if(selected.available!==false){const quick=downloadVersions({...item,...selected,metadata:m});if(quick)sec.append(quick);}
  if(versions){const list=el('div',undefined,'tv-versionlist');for(const a of versions)list.append(versionRow(a,a.id===selected.id?null:x=>{titleState.selected=x;renderMovie();window.scrollTo(0,0);}));sec.append(list);}
  else sec.append(sourceLinks(selected.links||item.links),el('p',(item.offer_count||1)>1?'Weitere Fassungen werden geladen …':'Nur eine Fassung im Katalog.','muted'));

@@ -1,14 +1,12 @@
 """ArchiveMedia preservation and differentiated, source-aware metadata proof."""
-import io
 import json
 import pathlib
 import unittest
 import urllib.error
-from unittest.mock import patch
 
 import archive_companion
 import portal_metadata_policy as policy
-from vendor.archive_portals import reference_pipeline, work_validation
+from vendor.archive_portals import reference_pipeline
 import core
 
 

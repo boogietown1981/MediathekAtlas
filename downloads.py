@@ -198,8 +198,8 @@ def run(row,meta,root,quality,update,cancelled):
                 try:expected=float(row.get('duration') or 0)
                 except (TypeError,ValueError):expected=0
                 import download_quality
-                try:playlist,level=download_quality.hls_playlist(url,quality,work)
-                except Exception:playlist,level=None,None   # no levels readable: best level as before
+                try:playlist,_level=download_quality.hls_playlist(url,quality,work)
+                except Exception:playlist,_level=None,None   # no levels readable: best level as before
                 received=fetch_hls(url,src,dest.parent,expected,update,cancelled,reserve,playlist=playlist);total=0
             else:
                 with core.open_url(url) as response,src.open('wb') as f:

@@ -1,4 +1,4 @@
-import gzip,io,json,sqlite3,tempfile,threading,unittest
+import gzip,io,sqlite3,tempfile,threading,unittest
 from pathlib import Path
 from unittest.mock import patch
 import imdb_archive as imdb,metadata,core

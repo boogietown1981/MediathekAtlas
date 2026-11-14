@@ -1,5 +1,5 @@
 """0.5.32: Netzkino titles are enriched automatically, downloads use the result."""
-import json, sqlite3, sys, tempfile, threading, time, unittest
+import sys, tempfile, threading, unittest
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 import netzkino, netzkino_downloads as nd, netzkino_enrichment as ne  # noqa: E402

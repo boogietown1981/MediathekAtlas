@@ -42,7 +42,7 @@ class AccessTests(unittest.TestCase):
    metadata.candidates({'title':'Film'},{'kind':'movie','title':'Film'},{'omdb':'PRIVATE'})
    wiki.assert_called_once();omdb.assert_not_called()
  def test_persistent_timer_and_expiry(self):
-  import tempfile,time
+  import tempfile
   with tempfile.TemporaryDirectory() as d:
    path=Path(d)/'pauses.json'
    try:

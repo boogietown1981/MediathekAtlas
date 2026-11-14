@@ -1,5 +1,4 @@
 """Source-isolated scan state, bounded page windows and safe resume."""
-import json
 import sqlite3
 import tempfile
 import unittest

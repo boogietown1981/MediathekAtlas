@@ -1,5 +1,5 @@
 """Netzkino series consolidation regression tests; no network or app data touched."""
-import json, os, pathlib, tempfile, unittest, sys
+import os, pathlib, tempfile, unittest, sys
 from unittest.mock import patch
 HERE=pathlib.Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(HERE))

@@ -15,7 +15,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 import youtube as yt, youtube_downloads as yd  # noqa: E402
-from test_v0553_youtube import Api, VIDEOS, video, vid, NOW, UPLOADS  # noqa: E402
+from test_v0553_youtube import Api, VIDEOS, video, vid, NOW  # noqa: E402
 
 MUSIC_PL = 'PLmusik1234567890'
 MUSIC = {

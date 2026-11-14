@@ -91,7 +91,7 @@ class SeriesIdentityTests(unittest.TestCase):
             self.assertFalse(known['episode_verified'])
             self.assertNotIn('episode_reference_id',known)
     def test_service_reuses_existing_series_template_without_provider_requests(self):
-        import imdb_archive,core
+        import imdb_archive
         with tempfile.TemporaryDirectory() as root:
             db=database(root)
             with db() as c:

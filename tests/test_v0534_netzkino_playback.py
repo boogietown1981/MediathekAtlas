@@ -1,5 +1,4 @@
 """0.5.34: Netzkino films play in the in-app player like Mediathek videos."""
-import json
 import sys
 import unittest
 from pathlib import Path

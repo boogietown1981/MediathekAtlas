@@ -1,3 +1,12 @@
+## 0.5.108 – Phase A „Konsolidieren“ nach dem Review vom 14.11.2026
+- `main` enthält wieder den vollständigen Stand (PR #50 gemergt, gestapelte PRs #27, #30, #39, #40, #41 geschlossen, Inhalt enthalten).
+- `portal_reference.retry_after_update` jetzt in der Schleife aller Katalog-Anbieter (zusätzlich Pluto, JustWatch, Rakuten, Joyn, TOGGO, Crunchyroll, YouTube, Netzkino).
+- CSS ohne `:has()`: Klassen `has-img` (Kachelbild, `web/app.js`), `tv-section-cast`, `tv-section-versions` (`web/titleview.js`). Ein unbekanntes `:has()` machte in Safari < 15.4 / Firefox < 121 die ganze Ausblende-Regel ungültig.
+- `ed25519_lite._decompress` lehnt nicht-kanonische Punkte (y ≥ p) ab.
+- Entfernt: `integration/preview/0.5.31.11` (Tests liefen gegen veraltete Modulkopien, längst als `tests/test_netzkino_kit_*` übernommen), Workflow `assemble-053111.yml`, CI-Job `integration-regressions`. Ungenutzte Importe in Tests entfernt.
+- Bewusst nicht zusammengelegt: `vendor/archivemedia` (0.10.12) und `vendor/archive_portals` (0.10.53) überschneiden sich nur in `catalog_identity.py` und `media_probe.py`, beide Fassungen werden von verschiedenen Modulen genutzt; das gehört in Phase B.
+- Tests: `tests/test_v05108_consolidation.py`. Bericht: `docs/REVIEW_05107.md`.
+
 ## 0.5.107 – RTL+ aus dem Gratisbereich, „Meine Abos“ für RTL+ und Crunchyroll
 - Björn: „+“-Titel bei RTL+ laufen ohne Abo nicht; Accounts bei RTL+ und Crunchyroll sollen mitgenutzt werden.
 - `rtlplus.py`: Katalog aus Ordner 193 „Kostenlose Inhalte“ (`X-Location …/rtlplus-root/kostenlose-inhalte-main-root-service-f_193`), Layout-Seiten über `blockPage`/`pagination.nextPage`, Block-Seiten über `/folder/<id>/block/<blockId>` (statt `service/rtlplus_root`, das 404 lieferte), Unterordner. Film/Serie aus `extraDetails` („Film …“), Folgen-Kacheln über `parent` zur Serie. Hauptordner nur noch zum Zählen; Titel außerhalb des Gratisbereichs als `offer='abo'` gespeichert (neue Spalte, Umstellung beim Start). Erster Lauf im Gratisbereich blendet ältere Abo-Einträge sofort aus (`free_v1`), einmaliger Neuabruf nach dem Update.
