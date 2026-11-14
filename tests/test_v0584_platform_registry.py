@@ -27,7 +27,7 @@ BEFORE = {
              '/api/joyn-sync', '/api/joyn-auto', '/api/joyn-enrich', '/api/toggo-sync', '/api/toggo-auto', '/api/toggo-enrich',
              '/api/crunchyroll-sync', '/api/crunchyroll-auto', '/api/crunchyroll-enrich',
              '/api/youtube-sync', '/api/youtube-auto', '/api/youtube-enrich',
-             '/api/plex-sync', '/api/plex-auto', '/api/plex-enrich',
+             '/api/plex-sync', '/api/plex-auto', '/api/plex-enrich', '/api/plex-download-add',   # 0.6.3: Plex offline
              '/api/servustv-sync', '/api/servustv-auto', '/api/servustv-enrich',
              '/api/rtlplus-sync', '/api/rtlplus-auto', '/api/rtlplus-enrich'],
 }
@@ -35,7 +35,7 @@ BEFORE = {
 OWN = [('GET', '/api/youtube'), ('GET', '/api/youtube-sources'), ('POST', '/api/youtube-download-add'), ('POST', '/api/youtube-sources'),
        ('POST', '/api/youtube-key'), ('POST', '/api/youtube-offline'), ('GET', '/api/netzkino'), ('GET', '/api/netzkino-details'),
        ('GET', '/api/netzkino-downloads'), ('POST', '/api/netzkino-sync'), ('POST', '/api/netzkino-auto'), ('POST', '/api/netzkino-enrich'),
-       ('POST', '/api/netzkino-download-add'), ('POST', '/api/joyn-download-add'), ('POST', '/api/toggo-download-add'), ('POST', '/api/crunchyroll-download-add'), ('POST', '/api/plex-download-add'), ('POST', '/api/servustv-download-add'), ('POST', '/api/rtlplus-download-add')]
+       ('POST', '/api/netzkino-download-add'), ('POST', '/api/joyn-download-add'), ('POST', '/api/toggo-download-add'), ('POST', '/api/crunchyroll-download-add'), ('POST', '/api/servustv-download-add'), ('POST', '/api/rtlplus-download-add')]
 
 
 class RouteTableTests(unittest.TestCase):
@@ -48,7 +48,7 @@ class RouteTableTests(unittest.TestCase):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
         for method, path in OWN:
             self.assertFalse(registry.serves(method, path), path)
-            if 'joyn-download' not in path and 'toggo-download' not in path and 'crunchyroll-download' not in path and 'plex-download' not in path and 'servustv-download' not in path and 'rtlplus-download' not in path:
+            if 'joyn-download' not in path and 'toggo-download' not in path and 'crunchyroll-download' not in path and 'servustv-download' not in path and 'rtlplus-download' not in path:
                 self.assertIn("'%s'" % path, server)
         # None of the shared routes is written out a second time.
         for method, paths in BEFORE.items():

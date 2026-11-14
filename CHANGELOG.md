@@ -1,4 +1,4 @@
-## 0.6.5 – Sprachen je Titel (Ton, Untertitel, Barrierefreiheit)
+## 0.6.5 – Sammelstand: Sprachen je Titel (Ton, Untertitel, Barrierefreiheit) + 0.6.2–0.6.4
 - `languages.py` (neu): Sprachcodes (ISO 639-1/-2, englische und deutsche Namen), Titelzusätze (OmU/OV/UT/AD/DGS/„(Englisch)“ …), HLS-Spuren (`#EXT-X-MEDIA` AUDIO/SUBTITLES/CLOSED-CAPTIONS, `describes-video`), Sprachfelder in Katalogantworten (`harvest`: `audio_languages`/`subtitle_languages`, `audioLocales`…, Plex `Stream` mit `streamType`, Joyn `languages`). Speicher `languages.sqlite3` (Quelle, ID, Herkunft stream/provider). Modell mit `audio`, `subtitles`, `accessibility`, `evidence`, `short`, `text`, `rows`; `combine()` für Serien; `mediathek_filter()` für den Katalogfilter.
 - `catalog.item()` liefert `languages` (alle aktiven Fassungen des Werks), `catalog.show_detail()` die Vereinigung der Folgen. `portal_title.model()` liefert `languages` für jede Plattform (Serie: inkl. abgespielter Folgen).
 - `unified_index.page()`: Parameter `language` und `only` (eine Quelle), Feld `lang`/`lang_text` je Angebot. `/api/unified?lang=&only=`.
@@ -6,6 +6,31 @@
 - Pluto TV, Rakuten TV, Joyn, TOGGO, Plex, RTL+: `item_from` sammelt Sprachfelder, `_store` legt sie in `languages.sqlite3` ab (`remember_from_db`). Keine neue Anfrage an Anbieter, keine Schemaänderung ihrer Datenbanken.
 - Oberfläche: Titelseiten (Mediathek-Film, Mediathek-Serie, alle Plattformen) zeigen Tonspuren/Untertitel/Barrierefreiheit/Sprachangaben und das Kurzfeld in der Faktenzeile; Kacheln zeigen `.atlas-uc-lang`; Katalogfilter `#atlas-cross-lang`. „Sprache“ auf Plattform-Titelseiten heißt jetzt „Originalsprache“.
 - Tests: `tests/test_v0605_languages.py` (17 Tests).
+
+## 0.6.4 – YouTube „Filme & TV“: kostenlose Filme mit Werbung
+- `youtube_store.py` (neu): liest YouTubes kostenlose Filme über die öffentliche JustWatch-GraphQL-API (`popularTitles`, Pakete per Namenssuche „YouTube…“ über `packages`, Rückfall `yfr`/`yot`; `monetizationTypes` FREE/ADS, nur `MOVIE`). Angenommen werden nur https-Links auf youtube.com/watch bzw. youtu.be mit gültiger Video-ID. Höchstens 150 Seiten zu 40 Titeln, 1 s Abstand; bricht JustWatch mittendrin ab, bleibt das Gelesene erhalten (`partial`).
+- `youtube.py`: Quelle `store:free` (auch aus `youtube.com/feed/storefront…` und `/movies`), nur Art „Filme“. `sync()` liest sie über `_store_source`; ein JustWatch-Fehler steht als „Filme & TV: …“ an der Quelle, die übrigen Quellen laufen weiter. Die Data API liefert nur noch, ob ein Video eingebettet werden darf.
+- Die Titel tragen `drm=1`: `offline_flag` ist 0, `youtube_downloads.build_job` und `play_source` lehnen sie ab (kein Offline, kein eigener Player), der Werbefilter-Hinweis entfällt.
+- Oberfläche: Knopf `youtube-store-add` in den YouTube-Einstellungen (verschwindet, sobald die Quelle besteht), Quellenzeile „Liste über JustWatch · kopiergeschützt, läuft bei YouTube“.
+- Tests: `tests/test_v064_youtube_store.py`.
+
+## 0.6.3 – Plex offline (30 Tage), Netzprüfung mit dem richtigen Zertifikatsspeicher
+- `plex_downloads.py` (nach dem Muster von `rakuten_downloads.py`): `build_job` lehnt `drm=1`, Serien, Live-Sender und unbekannte IDs ab; ein ungeprüfter Titel (`drm=-1`) wird vorher über `plex.play_source` geprüft (setzt `drm`). Lizenz `plex_offline`, 30 Tage. `resolve` holt die Stream-Adresse mit Plex-Token erst beim Download; im Auftrag und in `metadata.json` steht kein Token (`public_url`).
+- `platform_registry`: Plex mit `offline=plex_downloads` → `POST /api/plex-download-add`. `netzkino_downloads`: `PORTAL_LICENSES`/`PORTAL_NAMES`/`portal_days`, eigener Hinweistext (persönliche Nutzung, ohne Kopierschutz), `plex_id` in der Liste, `plex.tv` als eigene Quelle bei Fremd-Lizenzdateien gesperrt. `downloads`: Resolver `plex`, in `HLS_RESOLVERS` (ffmpeg kopiert HLS und DASH).
+- `portal_title`: Plex-Film/-Folge `offline.allowed`, solange nicht als kopiergeschützt bekannt; Folgen in der Serienansicht wie bei den anderen Plattformen. `server`: Katalogkarte mit 30 Offline-Tagen, Plex in der Download-Übersicht.
+- Oberfläche: Plex in `offline_button.js` (Kachel-Knopf), `portal_title.js` (`plex-download-add`), `plex.js` (`offlineNote`), Bereich „Offline-Kopien von Plex“ sichtbar, Herkunft „Plex“ in der Download-Liste.
+- `netcheck._check`: `ssl._create_default_https_context()` statt `ssl.create_default_context()`, damit die Diagnose den Ersatz-Zertifikatsspeicher von `ensure_trust_store()` nutzt (Björns Diagnose vom 14.11.2026: 21 von 21 Servern „certificate“, Kataloge trotzdem geladen).
+- Tests: `tests/test_v0603_plex_offline.py`; angepasst: Registry-Routen, Plex-Titelseite, Zahl der Download-Plattformen.
+- 0.6.2 ist für API v1 reserviert (anderer Arbeitsstrang) und in 0.6.3 nicht enthalten.
+
+## 0.6.2 – Phase C, Teil 1: API v1 und Geräteschlüssel
+- `api_keys.py`: Geräteschlüssel (`atlas_…`, 256 Bit Zufall; gespeichert als SHA-256 in `api_keys.json`, 0600, höchstens 50, Name eindeutig, `last_used` höchstens alle fünf Minuten geschrieben) und Tickets (`<Ablauf>.<HMAC-SHA256>`, zwölf Stunden, Geheimnis des laufenden Servers).
+- `routing.py`: Stufe `v1`. `server.py`: `Handler.v1_allowed` (Geräteschlüssel in `Authorization: Bearer`, oder Anmeldung + Seitentoken, oder Ticket für `/api/v1/stream` und `/api/v1/file`), `Handler.v1`; der Zweig steht in GET und POST vor der Anmeldeprüfung, nach der Host-Prüfung. Falsche Schlüssel zählen im Netzwerkmodus in die Sperre der Anmeldung (`ACCESS.blocked`).
+- 13 Adressen: `/api/v1` (Beschreibung aus der Routen-Tabelle und den Docstrings), `catalog`, `title`, `show`, `live`, `play`, `stream`, `file`, `downloads`, `watch`, `watch-progress`, `watch-mark`, `watch-forget`. Sie rufen die vorhandenen Funktionen auf; `play` liefert Adressen unter `/api/v1/stream` und ein Ticket; `downloads` ist eine schlanke Liste ohne Ordner und Aufräum-Einstellungen.
+- Verwaltung der Schlüssel nur aus der Seite (Stufe `api`): `/api/api-keys`, `/api/api-key-create`, `/api/api-key-revoke`; Oberfläche in `web/system.js`.
+- `Handler.stream` und `Handler.download_file` haben `checked=False`; das Verhalten der bisherigen Adressen ist unverändert.
+- Nach dem Paketbau (CI, Python 3.9): `api_keys._load` erkannte eine geänderte Schlüsseldatei nur an der Änderungszeit; bei gleicher Zeit blieb der alte Stand im Speicher. Jetzt zählen Zeit, Größe und Inode. Betrifft nur von Hand geänderte Dateien, die Oberfläche schreibt über `_store` und leert den Speicher. Die Pakete 0.6.2 in `releases/0.6.2/` enthalten diese Korrektur noch nicht; sie kommt mit dem nächsten Paket.
+- Tests: `tests/test_v0602_api_v1.py` (Schlüssel, Tickets, Reihenfolge im Handler, echter Server im Einzelplatz- und im Netzwerkmodus inklusive Datei-Wiedergabe per Ticket und Sperre nach falschen Schlüsseln); Klicktest legt einen Schlüssel an, ruft `/api/v1` damit auf und löscht ihn. Beschreibung: `docs/API_V1.md`.
 
 ## 0.6.1 – Phase B, Teil 2: Routen-Tabelle statt if-Kette
 - `routing.py`: `Table` mit `get(*paths, stage=)`, `post(...)`, `find(method, path, stage)`, `listing()`; Stufen `open` (nur Host geprüft), `signed` (Anmeldung; Seite, Skripte, `/api/stream`, `/api/download-file` prüfen das Token aus der Adresse selbst), `api` (Anmeldung + `X-Atlas-Token`). Doppelte Adressen, unbekannte Stufen und Adressen ohne `/` lösen beim Import einen Fehler aus.

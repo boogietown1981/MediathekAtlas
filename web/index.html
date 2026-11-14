@@ -90,6 +90,16 @@
       <option value="normal">Normal: 2 Katalogabrufe, 2 Abgleiche gleichzeitig</option>
       <option value="low">Schwache Hardware: je 1 gleichzeitig</option></select>
     <small id="system-profile-note" class="muted"></small></div>
+  <div class="system-keys" id="system-keys">
+    <h3>Geräte und Apps (API v1)</h3>
+    <p class="muted">Ein Geräteschlüssel lässt eine App oder ein Gerät außerhalb des Browsers auf Katalog, Wiedergabe, Downloads und Merkliste zugreifen, zum Beispiel einen Abspieler am Fernseher. Einstellungen und Abrufe bleiben gesperrt. Ohne Schlüssel ist die Schnittstelle von außen geschlossen.</p>
+    <form id="system-key-form" class="system-key-form"><label for="system-key-name">Name des Geräts</label>
+      <input id="system-key-name" maxlength="60" placeholder="z. B. Apple TV Wohnzimmer" autocomplete="off">
+      <button type="submit">Schlüssel erstellen</button></form>
+    <div id="system-key-new" class="system-key-new" hidden><strong>Neuer Schlüssel. Er wird nur jetzt angezeigt:</strong>
+      <code id="system-key-value"></code><button type="button" id="system-key-copy">Kopieren</button></div>
+    <div id="system-key-list" class="system-key-list"></div>
+    <p id="system-key-status" class="muted" role="status"></p></div>
   <p id="system-status" class="muted" role="status"></p>
 </section>
 <section id="legacy" hidden>
@@ -324,7 +334,7 @@
     <label>Sortierung<select id="plex-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
   <div id="plex-categories" class="portal-categories" role="group" aria-label="Plex-Kategorien" hidden></div>
   <p id="plex-status" class="muted" role="status"></p>
-  <details id="plex-offline" class="nk-offline plex-offline" hidden><summary>Offline-Kopien von Plex <span id="plex-offline-count" class="muted"></span></summary>
+  <details id="plex-offline" class="nk-offline plex-offline"><summary>Offline-Kopien von Plex <span id="plex-offline-count" class="muted"></span></summary>
     <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
     <div id="plex-offline-jobs"></div></details>
   <div id="plex-items" class="netzkino-grid" aria-live="polite"></div>
@@ -438,6 +448,8 @@
           <input id="youtube-source-label" placeholder="Name (optional)" maxlength="120">
           <label class="youtube-min">Mindestlänge <input id="youtube-source-min" type="number" min="1" max="600" placeholder="60"> Min.</label>
           <button class="primary">Hinzufügen</button></form>
+        <p class="youtube-row"><button type="button" id="youtube-store-add">＋ YouTube „Filme &amp; TV“: kostenlose Filme aufnehmen</button>
+          <span class="muted">Die Filme, die YouTube selbst kostenlos mit Werbung anbietet. Die Liste kommt über JustWatch; diese Filme laufen kopiergeschützt nur bei YouTube (Kachel mit Link, kein Offline).</span></p>
         <p class="muted">Mindestlänge leer lassen: Filme ab 60 Minuten, Serienfolgen ab 10 Minuten. Serien bitte als Playlist eintragen (eine Playlist = eine Serie).</p>
         <p id="youtube-sources-status" class="muted" role="status"></p>
         <h4>3 · Offline speichern (Standard aus)</h4>

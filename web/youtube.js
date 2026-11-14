@@ -18,13 +18,14 @@
 
   function renderSources(list) {
     const host = $('youtube-sources'); host.replaceChildren();
+    const button = $('youtube-store-add'); if (button) button.hidden = list.some(s => s.ref === 'store:free');
     if (!list.length) host.append(make('p', 'Noch keine Kanäle eingetragen. Unten die Adresse eines offiziellen Kanals oder einer Playlist einfügen.', 'muted'));
     for (const s of list) {
       const row = make('div', undefined, 'youtube-source' + (s.enabled ? '' : ' disabled'));
-      const music = s.kind === 'music';
+      const music = s.kind === 'music', store = s.ref === 'store:free';
       row.append(make('strong', (s.label || s.title || s.ref) + (s.kind === 'series' ? ' · Serie' : music ? ' · Musikvideos' : ' · Filme')));
-      const facts = [s.ref.startsWith('v:') ? 'Video ' + s.ref.slice(2) : s.ref, s.title && s.title !== s.label ? (s.ref.startsWith('v:') ? 'Titel: ' : 'Kanal: ') + s.title : '',
-        music ? 'ohne Längenfilter' : 'ab ' + s.min_minutes + ' Min.',
+      const facts = [store ? 'Liste über JustWatch · kopiergeschützt, läuft bei YouTube' : s.ref.startsWith('v:') ? 'Video ' + s.ref.slice(2) : s.ref, s.title && s.title !== s.label ? (s.ref.startsWith('v:') ? 'Titel: ' : 'Kanal: ') + s.title : '',
+        store ? '' : music ? 'ohne Längenfilter' : 'ab ' + s.min_minutes + ' Min.',
         s.checked ? s.films + ' ' + (s.kind === 'series' ? 'Folgen' : music ? 'Musikvideos' : 'Filme') + ' von ' + s.videos + ' Videos · Stand ' + when(s.checked) : 'noch nicht abgerufen',
         s.suggested ? 'Vorschlag (ungeprüft)' : ''].filter(Boolean).join(' · ');
       row.append(make('small', facts, 'muted'));
@@ -92,6 +93,18 @@
         'Hinzugefügt. „↻ Katalog jetzt laden“ liest die Quelle ein.' + where);
       if (r.started || r.status?.running) setTimeout(panel.refresh, 1500);
     } catch (e) { say(e.message, true); }
+  };
+  // 0.6.4: YouTube's own free films ("Filme & TV") as one source; the server reads it right away.
+  const storeButton = $('youtube-store-add');
+  if (storeButton) storeButton.onclick = async () => {
+    storeButton.disabled = true;
+    try {
+      const r = await window.api('youtube-sources', {action: 'add', url: 'store:free', kind: 'movies'});
+      renderSources(r.sources || []);
+      say(r.started ? 'YouTube „Filme & TV“ aufgenommen und wird eingelesen; der Fortschritt steht oben im Status.' : 'YouTube „Filme & TV“ aufgenommen. „↻ Katalog jetzt laden“ liest die Filme ein.');
+      if (r.started) setTimeout(panel.refresh, 1500);
+    } catch (e) { say(e.message, true); }
+    storeButton.disabled = false;
   };
   // Series episodes are shorter than films: the suggested minimum follows the kind (films 60, series 10 min).
   // 0.5.71: music videos have no minimum length (and no promo filter).

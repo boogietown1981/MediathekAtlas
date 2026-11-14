@@ -213,6 +213,9 @@ def parse_ref(text):
         raise ValueError('Adresse zu lang')
     if re.fullmatch(HANDLE, value) or re.fullmatch(CHANNEL_ID, value):
         return value
+    # 0.6.4: YouTube's own film section ("Filme & TV", free with adverts) – see youtube_store.py
+    if value == 'store:free' or re.match(r'(?i)^(?:https?://)?(?:www\.|m\.)?youtube\.com/(?:feed/storefront|movies)\b', value):
+        return 'store:free'
     if re.fullmatch(r'(?:PL|OL|FL|UU)[A-Za-z0-9_-]{10,62}', value):
         return value
     if re.fullmatch(r'v:' + VIDEO_ID, value):
@@ -633,6 +636,9 @@ def _error(exc):
 def resolve_source(request, src):
     """Fill channel_id/playlist/title of a source (channels.list or playlists.list)."""
     ref = src['ref']
+    if ref == 'store:free':
+        import youtube_store
+        return {'channel_id': '', 'playlist': '', 'title': youtube_store.LABEL}
     if ref.startswith('@') or ref.startswith('UC') or ref.startswith('user:'):
         query = {'part': 'snippet,contentDetails', 'maxResults': 1}
         if ref.startswith('@'):
@@ -757,6 +763,11 @@ def add_source(root, text, kind='movies', label='', min_minutes=None):
     ref = parse_ref(text)
     if kind not in ('movies', 'series', 'music'):
         raise ValueError('Art muss „Filme“, „Serie“ oder „Musikvideos“ sein')
+    if ref == 'store:free':
+        if kind != 'movies':
+            raise ValueError('YouTube „Filme & TV“ enthält Filme; bitte die Art „Filme“ wählen')
+        import youtube_store
+        label = label or youtube_store.LABEL
     if kind == 'series' and (ref.startswith('@') or ref.startswith('UC') or ref.startswith('user:') or ref.startswith('v:')):
         raise ValueError('Eine Serie bitte als Playlist-Adresse angeben (youtube.com/playlist?list=…)')
     minutes = _int(min_minutes, 1, 600) if min_minutes not in (None, '') else None
@@ -793,7 +804,33 @@ def update_source(root, source_id, action):
     return sources(root)
 
 
-def sync(root, request=None, now=None, gap=None, key=None):
+def _store_source(db, src, request, now, gap, post, progress):
+    """0.6.4: YouTube's free films of its own film section, listed through JustWatch (youtube_store.py).
+    The Data API only adds whether a video may be embedded; without it the titles are still listed."""
+    import youtube_store, justwatch
+    try:
+        entries, without, partial = youtube_store.load(post, gap=None if post is None else 0, progress=progress)
+    except Exception as exc:
+        # JustWatch's words, not YouTube's: the user must see which side failed
+        raise ValueError('Filme & TV: ' + justwatch._error(exc)) from None
+    if not entries:
+        raise ValueError('Filme & TV: JustWatch nennt derzeit keine kostenlosen YouTube-Filme für Deutschland')
+    try:
+        facts = load_facts(request, db, [e['video'] for e in entries], now, gap)
+    except ApiError:
+        raise                      # key or quota problem: reported like for every other source
+    except (urllib.error.URLError, OSError):
+        facts = {}
+    items = [youtube_store.item(e, facts.get(e['video']), src) for e in entries]
+    skipped = {}
+    if without:
+        skipped['ohne YouTube-Adresse bei JustWatch'] = without
+    if partial:
+        skipped['Liste unvollständig geladen (nächster Abruf ergänzt)'] = 1
+    return items, len(entries) + without, skipped
+
+
+def sync(root, request=None, now=None, gap=None, key=None, store_post=None):
     """Read all enabled sources. Rows stay; listed are the titles seen in the latest successful run."""
     global _PROGRESS
     now = time.time() if now is None else float(now)
@@ -829,6 +866,19 @@ def sync(root, request=None, now=None, gap=None, key=None):
             db = _connect(root)
             try:
                 try:
+                    if src['ref'] == 'store:free':
+                        src.update(resolve_source(request, src))
+                        def read(n, number=number, name=name):
+                            global _PROGRESS
+                            _PROGRESS = 'Quelle %d von %d: %s · %d Filme gelesen' % (number, len(active), name, n)
+                        items, total, skipped = _store_source(db, src, request, now, gap, store_post, read)
+                        for it in items:
+                            found[it['id']] = it          # YouTube's own entry wins over a channel upload
+                        with db:
+                            db.execute('''UPDATE youtube_sources SET channel_id='',playlist='',title=?,videos=?,films=?,
+                                last_error='',checked=?,skipped=? WHERE id=?''',
+                                       (src['title'], total, len(items), now, json.dumps(skipped, ensure_ascii=False), src['id']))
+                        continue
                     single = src['ref'].startswith('v:')
                     if (not src['playlist'] and not single) or not src['checked'] or now - (src['checked'] or 0) > 30 * 86400:
                         src.update(resolve_source(request, src))
@@ -925,7 +975,7 @@ def offline_flag(root, row, enabled=None):
     if enabled is None:
         import youtube_downloads
         enabled = youtube_downloads.enabled(root)
-    return int(bool(enabled) and row.get('kind') in ('movie', 'episode', 'track')
+    return int(bool(enabled) and row.get('kind') in ('movie', 'episode', 'track') and not row.get('drm')
                and not str(row.get('reason') or '').startswith('Altersbeschränkt'))
 
 
@@ -963,7 +1013,7 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     hidden = 0
     kept = []
     for row in rows:
-        row['doubt'] = doubtful(reports.get(row['id']))
+        row['doubt'] = '' if row.get('drm') else doubtful(reports.get(row['id']))   # 0.6.4: YouTube's own films carry reliable data
         if row['doubt'] and not show_doubtful:
             hidden += 1
             continue
