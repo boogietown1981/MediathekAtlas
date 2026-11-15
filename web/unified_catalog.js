@@ -675,7 +675,7 @@
   loadTree();
   window.AtlasUnifiedCatalog={activate,refresh};
   // Shared tile for the platform tabs (web/portal_panel.js, web/netzkino.js) and the preview.
-  window.AtlasCards={card:makeCard,portalRow:plRow,netzkinoRow:nkRow,mediathekRow:medRow};
+  window.AtlasCards={card:makeCard,portalRow:plRow,netzkinoRow:nkRow,mediathekRow:medRow,rowOf,open:openItem};   // 0.6.8: open/rowOf for web/watch_mode.js
   // Start view from Verwaltung → Darstellung (default: all platforms, films).
   const start=prefs=>{
     if (TYPES.includes(prefs?.start_kind)) kind=prefs.start_kind;

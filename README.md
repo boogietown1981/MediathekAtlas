@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.6.7
+# MediathekAtlas · 0.6.8
+
+## Neu in 0.6.8: Ansehen-Modus für Erwachsene
+
+- **Ansehen-Modus** (`/ansehen`, Link „▶ Ansehen-Modus“ links im Menü): dieselbe App ohne Seitenleiste und Verwaltung, aufgebaut wie ein Streamingdienst. Oben die Bereiche *Startseite*, *Filme*, *Serien*, *Live-TV*, *Offline* und *Merkliste*, eine Suche, ein Vollbild-Knopf sowie Links zur Kinderecke und zur Verwaltung.
+- **Startseite:** großes Titelbild mit „Fortsetzen“ (zuletzt angefangener Titel), sonst das neueste Abo-Video oder der neueste Film. Darunter waagerecht wischbare Reihen: *Weiterschauen*, *Neu aus deinen Abos*, *Meine Merkliste*, *Offline gespeichert*, *Live-TV* (Favoriten zuerst), *Neue Filme*, *Neue Serien*, *Filme bei <Anbieter>* für jeden geladenen Dienst und je YouTube-Abo eine Reihe.
+- **Filme/Serien:** alle freien Dienste zusammen, neueste zuerst, mit Genre-Knöpfen und „Mehr laden“. Ein Tipp öffnet die gewohnte Titelseite mit „Abspielen“, „Offline speichern“ und „Merken“.
+- **Abspielen:** Offline-Kopien, Abo-Videos, Weiterschauen und Live-Sender starten direkt. Beim ersten Start geht die ganze Seite ins Vollbild, der Player füllt den Bildschirm.
+- Für Handy, Tablet und Fernseher-Browser ausgelegt; die Bedienung per Tastatur (Tab/Enter) funktioniert.
+
 
 ## Neu in 0.6.7: YouTube-Kanäle abonnieren, automatisch offline, Kinderecke
 

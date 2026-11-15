@@ -1004,3 +1004,78 @@ a.nav{display:block;text-decoration:none;border-radius:8px}a.nav-kids{color:#ffd
 .youtube-abo-form .wide{grid-column:1/-1}.youtube-abo-form label small{display:block;margin-top:4px;color:#8597ab;font-size:11px}
 .youtube-abo-form .wide button{margin-right:8px}.youtube-abo-edit{padding:12px;border:1px dashed #344150;border-radius:10px;margin-top:10px}
 .youtube-abo strong .muted{font-weight:400}.youtube-abo .youtube-source-actions a{align-self:center;margin-left:6px}
+/* 0.6.8 Ansehen-Modus (web/watch_mode.js): /ansehen ohne Seitenleiste, großformatig wie ein Streamingdienst */
+html[data-mode=watch] body>aside,html[data-mode=watch] main>header,html[data-mode=watch] #admin-tabs{display:none}
+html[data-mode=watch] main{margin:0;width:100%;max-width:none;padding:0 0 60px}
+html[data-mode=watch] .title-view{padding:24px 42px}
+html[data-mode=watch] #notice{margin:10px 42px}
+html[data-mode=watch] dialog.player{width:100vw;max-width:100vw;height:100vh;max-height:100vh;margin:0;border:0;border-radius:0;padding:14px 18px;display:none;flex-direction:column}
+html[data-mode=watch] dialog.player[open]{display:flex}
+html[data-mode=watch] dialog.player #player-stage{flex:1;min-height:0;display:flex;flex-direction:column}
+html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player iframe{flex:1;min-height:0;width:100%;max-height:none;height:auto;background:#000}
+.nav-watch{color:#8af1d1}
+.watch{--wm-pad:42px;min-height:100vh}
+.wm-top{position:sticky;top:0;z-index:5;display:flex;align-items:center;gap:22px;padding:14px var(--wm-pad);background:linear-gradient(#0c111af2,#0c111ad9);-webkit-backdrop-filter:blur(10px);backdrop-filter:blur(10px);border-bottom:1px solid #1d2733}
+.wm-brand{display:flex;align-items:center;gap:10px;font-weight:700;font-size:18px;color:#e9edf4;text-decoration:none;white-space:nowrap}
+.wm-tabs{display:flex;flex-wrap:nowrap;gap:4px;margin:0!important;flex:1;min-width:0;overflow-x:auto;scrollbar-width:none}.wm-tabs::-webkit-scrollbar{display:none}
+.wm-tab{background:transparent;border:0;color:#a9b6c6;padding:9px 13px;border-radius:999px;font-weight:600;white-space:nowrap}
+.wm-tab[aria-pressed=true]{background:#e9edf4;color:#0c111a}
+.wm-tools{display:flex;align-items:center;gap:10px}
+.wm-search{width:220px;padding:9px 14px;border-radius:999px}
+.wm-icon{padding:8px 12px;border-radius:999px;font-size:16px;line-height:1}
+.wm-link{color:#a9b6c6;text-decoration:none;font-size:13px;padding:8px 10px;border-radius:8px;white-space:nowrap;cursor:pointer}.wm-link:hover{color:#fff;background:#1c2837}
+.wm-admin{border:1px solid #344150}
+.wm-main{padding:0 0 40px}
+.wm-loading,.wm-empty{margin:60px var(--wm-pad);color:#a8b5c7}.wm-empty p{font-size:20px;color:#e9edf4;margin:0 0 10px}.wm-empty small{font-size:14px;line-height:1.6;max-width:640px;display:block}
+.wm-hero{position:relative;overflow:hidden;min-height:380px;display:flex;align-items:flex-end;gap:36px;padding:60px var(--wm-pad) 44px;margin-bottom:10px}
+.wm-hero-bg{position:absolute;inset:-40px;background-size:cover;background-position:center 30%;filter:blur(38px) brightness(.45) saturate(1.2);transform:scale(1.1)}
+.wm-hero::after{content:"";position:absolute;inset:0;background:linear-gradient(90deg,#0c111a 0%,#0c111acc 45%,#0c111a33 100%),linear-gradient(0deg,#0c111a 0%,transparent 40%);pointer-events:none}
+.wm-hero>*{position:relative;z-index:1}
+.wm-hero-poster{width:220px;aspect-ratio:2/3;object-fit:cover;border-radius:14px;box-shadow:0 20px 50px #000a;order:2;margin-left:auto}
+.wm-hero-text{max-width:720px}
+.wm-eyebrow{text-transform:uppercase;letter-spacing:1.6px;font-size:11px;font-weight:700;color:#8af1d1;margin:0}
+.wm-hero h1{font-size:46px;line-height:1.05;letter-spacing:-1.2px;margin:12px 0 10px}
+.wm-facts{color:#c6d2df;font-size:15px;margin:0 0 10px}
+.wm-plot{color:#b3c0cf;font-size:15px;line-height:1.6;margin:0 0 16px}
+.wm-hero-actions{display:flex;gap:12px;flex-wrap:wrap;margin-top:18px}
+.wm-play{background:#fff;color:#0c111a;border:0;font-weight:700;font-size:16px;padding:13px 26px;border-radius:10px}
+.wm-secondary{background:#ffffff26;border:0;color:#fff;font-weight:600;font-size:16px;padding:13px 22px;border-radius:10px}
+.wm-hero-progress{position:static!important;display:block;width:280px;margin:12px 0 0}
+.wm-row{margin:26px 0 8px}
+.wm-row-head{display:flex;align-items:baseline;gap:14px;padding:0 var(--wm-pad)}
+.wm-row h2,.wm-grid-section h2{font-size:20px;margin:0 0 12px}
+.wm-grid-section h2 small{font-size:13px;font-weight:500;margin-left:10px;color:#93a3b5}
+.wm-more{background:transparent;border:0;color:#8af1d1;font-size:13px;padding:0}
+.wm-strip-wrap{position:relative}
+.wm-strip{display:flex;gap:14px;overflow-x:auto;scroll-snap-type:x mandatory;scroll-padding:0 var(--wm-pad);padding:6px var(--wm-pad) 14px;scrollbar-width:none}.wm-strip::-webkit-scrollbar{display:none}
+.wm-arrow{position:absolute;top:6px;bottom:14px;width:var(--wm-pad);z-index:2;border:0;border-radius:0;background:#0c111ab3;font-size:30px;color:#fff;opacity:0;transition:opacity .2s;padding:0}
+.wm-left{left:0}.wm-right{right:0}.wm-strip-wrap:hover .wm-arrow{opacity:1}
+.wm-tile{flex:none;scroll-snap-align:start;display:flex;flex-direction:column;gap:4px;text-align:left;background:transparent;border:0;padding:0;color:#e9edf4;border-radius:12px}
+.wm-tile:hover{filter:none}.wm-tile:focus-visible{outline:none}.wm-tile:focus-visible .wm-art{outline:3px solid #8af1d1;outline-offset:2px}
+.wm-poster{width:168px}.wm-wide{width:288px}
+.wm-art{position:relative;display:block;border-radius:10px;overflow:hidden;background:linear-gradient(140deg,#24364a,#162130);transition:transform .18s,box-shadow .18s}
+.wm-poster .wm-art{aspect-ratio:2/3}.wm-wide .wm-art{aspect-ratio:16/9}
+.wm-tile:hover .wm-art,.wm-tile:focus-visible .wm-art{transform:scale(1.04);box-shadow:0 12px 30px #000b}
+.wm-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.wm-station .wm-art img{object-fit:contain;padding:18%;background:#151f2c}
+.wm-fallback{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;text-align:center;padding:12px;font-weight:700;font-size:16px;color:#c9d6e4}
+.wm-hover{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;font-size:34px;color:#fff;background:#0007;opacity:0;transition:opacity .18s}
+.wm-tile:hover .wm-hover,.wm-tile:focus-visible .wm-hover{opacity:1}
+.wm-badge{position:absolute;top:8px;left:8px;background:#0c111ad0;color:#fff;font-size:11px;font-weight:800;letter-spacing:.6px;padding:4px 8px;border-radius:6px}
+.wm-new{background:#ffd23f;color:#2a1d00}.wm-live{background:#e5484d}
+.wm-time{position:absolute;right:8px;bottom:10px;background:#000c;color:#fff;font-size:11px;font-weight:700;padding:3px 7px;border-radius:6px}
+.wm-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:#ffffff40;border-radius:2px;overflow:hidden}.wm-progress i{display:block;height:100%;background:#e5484d}
+.wm-tile.is-done .wm-art{opacity:.55}
+.wm-name{font-weight:600;font-size:14px;line-height:1.3;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden;margin-top:6px}
+.wm-sub{font-size:12px;color:#93a3b5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.wm-chips{display:flex;gap:8px;flex-wrap:wrap;padding:26px var(--wm-pad) 4px}
+.wm-chip{border-radius:999px;padding:7px 14px;font-size:13px}.wm-chip[aria-pressed=true]{background:#e9edf4;color:#0c111a;border-color:#e9edf4}
+.wm-grid-section{padding:22px var(--wm-pad) 0}
+.wm-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:22px 16px}
+.wm-grid .wm-tile{width:auto}.wm-grid:has(.wm-wide){grid-template-columns:repeat(auto-fill,minmax(260px,1fr))}
+.wm-load{display:block;margin:28px auto 0;padding:12px 30px;border-radius:999px}
+@media(max-width:1200px){.wm-top{flex-wrap:wrap;gap:10px 14px}.wm-tabs{order:3;flex-basis:100%}.wm-tools{margin-left:auto}}
+@media(max-width:900px){.watch{--wm-pad:20px}.wm-tools{margin-left:auto}.wm-search{width:150px}.wm-hero{min-height:340px;padding-top:40px}.wm-hero h1{font-size:32px}.wm-hero-poster{width:150px}.wm-arrow{display:none}}
+@media(max-width:600px){.watch{--wm-pad:16px}.wm-brand span,.wm-link:not(.wm-admin){display:none}.wm-search{width:120px}.wm-hero{min-height:0;flex-direction:column;align-items:flex-start;padding-top:8px;padding-bottom:20px}.wm-hero-poster{display:none}.wm-hero h1{font-size:28px}.wm-plot{display:none}.wm-poster{width:128px}.wm-wide{width:230px}.wm-grid{grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:18px 12px}.wm-grid:has(.wm-wide){grid-template-columns:repeat(auto-fill,minmax(150px,1fr))}html[data-mode=watch] .title-view{padding:16px}}
+/* 0.6.8: auf dem Handy war die Navigation drei Zeilen hoch; jetzt eine waagerecht wischbare Zeile */
+@media(max-width:650px){body>aside nav{flex-wrap:nowrap;overflow-x:auto;scrollbar-width:none;margin-top:10px}body>aside nav::-webkit-scrollbar{display:none}body>aside .nav{white-space:nowrap;flex:none}body>aside .brand+.eyebrow{display:none}}

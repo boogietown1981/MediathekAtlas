@@ -734,13 +734,14 @@ def overview(root, c=None):
             'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS}
 
 
-def kids(root, c, watch=None):
-    """Was die Kinderansicht zeigt: Kanäle und fertig geladene Videos, neue zuerst."""
+def kids(root, c, watch=None, only_kids=True):
+    """Was die Kinderansicht zeigt: Kanäle und fertig geladene Videos, neue zuerst.
+    0.6.8: only_kids=False liefert alle Abos (Ansehen-Modus für Erwachsene, watch_home.py)."""
     import watch_state
     db = _connect(root)
     try:
         sync_states(c, db)
-        abos = [dict(r) for r in db.execute('SELECT id,label,title,ref FROM youtube_abos WHERE kids=1')]
+        abos = [dict(r) for r in db.execute('SELECT id,label,title,ref,kids FROM youtube_abos' + (' WHERE kids=1' if only_kids else ''))]
         ids = [a['id'] for a in abos]
         rows = [dict(r) for r in db.execute(
             "SELECT abo_id,video,title,published,duration,job_id,done_at FROM youtube_abo_videos WHERE state='done' AND abo_id IN (%s)"
@@ -770,7 +771,7 @@ def kids(root, c, watch=None):
     channels = []
     for a in abos:
         own = [v for v in videos if v['abo'] == a['id']]
-        channels.append({'id': a['id'], 'name': a['label'] or a['title'] or a['ref'], 'videos': len(own),
+        channels.append({'id': a['id'], 'name': a['label'] or a['title'] or a['ref'], 'videos': len(own), 'kids': bool(a['kids']),
                          'new': sum(1 for v in own if v['new']), 'avatar': bool(avatar_file(root, a['id']))})
     channels.sort(key=lambda ch: (-ch['new'], ch['name'].lower()))
     return {'channels': channels, 'videos': videos}

@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.8 – Ansehen-Modus für Erwachsene (15. November 2026)
+- Automatisch: gesamte Python-Suite (1238 Tests, 4 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium inkl. `/ansehen` (ohne Befund).
+- Neu: `tests/test_v0608_watch_mode.py` (10) – Offline-Liste (nur fertige, vorhandene Dateien, neueste zuerst, ohne Abo-Videos, Fortschritt/gesehen, Folgen-Beschriftung, unsichere Bildadressen verworfen), Kinderecke weiter nur Kinder-Abos, Ansehen-Modus mit allen Abos, Adressen, Skriptliste, Vollbild vor dem Player, Seitenschlüssel für lokale Dateien.
+- Echter Server mit künstlichen Daten (Pluto TV, Plex, YouTube, Netzkino-Startbestand, 4 Abos mit 16 Videos, 3 Offline-Filme, echte MP4-Datei, Chromium) auf Desktop 1440 px, iPad quer und iPhone 13: Startseite mit Reihen, Filme, Live-TV, Offline, Suche, Titelseite und zurück, Player bildschirmfüllend. Gefunden und behoben: Seite im Vollbild lag über dem Player (Vollbild jetzt vor dem Öffnen abgewartet); lokale Dateien bekamen zuerst 403 (Seitenschlüssel fehlte).
+- Nicht geprüft: echte Anbieterdaten und -bilder (aus der Bauumgebung gesperrt), Safari/iPad-Vollbild (iPhone kennt Vollbild nur für Videos), Firefox/WebKit nur in der CI, Fernseher-Browser, NAS-Hardware. QPKG nur aus der CI (QDK hier nicht installierbar).
+
 ## 0.6.7 – YouTube-Kanal-Abos und Kinderecke (14. November 2026)
 - Automatisch: gesamte Python-Suite (1228 Tests, 4 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium (ohne Befund).
 - Neu: `tests/test_v0607_youtube_abos.py` – „nur neue“ mit Startbestand und späterem Upload, „alle“ mit Reihenfilter und Nachholen, Shorts, Schalter aus (nichts geladen, Hinweis), abgelaufene Videos nie neu, Höchstzahl entfernt nur gesehene, Fehler am Abo, yt-dlp-Liste ohne Schlüssel, Kinderecke (neu/angefangen/Reihenfolge), Ziel nur im Downloadordner, MP4-Umwandlung, Adressen und Planer.

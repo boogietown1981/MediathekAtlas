@@ -111,6 +111,15 @@ async function clickThrough(name, url) {
     }
     await page.evaluate(() => window.atlasShowView('discover'));
     await page.waitForTimeout(800);
+
+    // 0.6.8: Ansehen-Modus (/ansehen) – every area once.
+    await page.goto(url + 'ansehen');
+    await page.waitForFunction(() => !!window.AtlasWatchMode && !document.getElementById('watch').hidden, null, { timeout: 20000 }).catch(() => problems.push('Ansehen-Modus startet nicht'));
+    await expect('Seitenleiste im Ansehen-Modus ausgeblendet', () => getComputedStyle(document.querySelector('body>aside')).display === 'none');
+    for (const label of ['Filme', 'Serien', 'Live-TV', 'Offline', 'Merkliste', 'Startseite']) {
+      await page.locator('.wm-tab', { hasText: label }).click();
+      await page.waitForTimeout(600);
+    }
   } finally {
     await browser.close();
   }

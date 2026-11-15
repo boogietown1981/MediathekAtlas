@@ -1,3 +1,14 @@
+## 0.6.8 – Ansehen-Modus für Erwachsene
+- `GET /ansehen` (signed): `index.html` mit `<html data-mode="watch">`; CSS blendet Seitenleiste, Kopf und Verwaltungsreiter aus, Player-Dialog füllt den Bildschirm.
+- `watch_home.py` (neu) + `GET /api/watch-home`: fertige Downloads mit vorhandener Datei (ohne Abo-Videos, neueste zuerst, höchstens 120) mit Fortschritt/„neu“ aus `watch_state`, dazu `youtube_abos.kids(..., only_kids=False)` (neuer Parameter, Kanäle tragen `kids`). `build_macos.py` listet das Modul.
+- `/api/kids-image?job=` liefert das Vorschaubild neben jeder fertigen Datei (bisher nur Abo-Videos).
+- `web/watch_mode.js` (neu, Bereich `#watch`): Startseite mit Hero und Reihen, Raster für Filme/Serien (über `/api/unified`, `sort=year`, Genre, „Mehr laden“), Live-TV (`/api/live-tv`, Favoriten aus `atlas-live-favourites`), Offline, Merkliste, Suche. Wiederverwendet `AtlasCards.open`/`rowOf` (neu exportiert aus `unified_catalog.js`), `playRef`/`playLive`, `/api/watch`. Vollbild wird vor dem Öffnen des Players abgewartet (sonst liegt die Seite im Vollbild über dem Dialog).
+- `web/app.js`/`web/titleview.js`: Ansicht `watch`; Titelseite kehrt dorthin zurück.
+- `web/player.js`: lokale Dateien (`/api/stream?…&raw=1`) bekommen den Seitenschlüssel sofort; vorher erst 403 und Umweg.
+- `web/style.css`: Stil `.wm-*`; auf dem Handy ist die Hauptnavigation eine waagerecht wischbare Zeile statt drei Zeilen.
+- Tests: `tests/test_v0608_watch_mode.py` (10). Klicktest besucht `/ansehen`.
+- 0.6.6 (Untertitel/Tonspur) ist ein anderer Arbeitsstrang und hier nicht enthalten.
+
 ## 0.6.7 – YouTube-Kanal-Abos mit automatischem Offline-Speichern und Kinderecke
 - `youtube_abos.py` (neu): Tabellen `youtube_abos`/`youtube_abo_videos` in `youtube.sqlite3`. Modi `new` (Grundbestand als `old`, die `start_count` neuesten sofort) und `all`; Filter `include`/`exclude` (Titelwörter), `min_seconds` (Standard 61 s gegen Shorts), `max_seconds`; `keep` mit `_make_room` (entfernt per `netzkino_downloads.delete_now` das älteste gesehene, nie angeheftete/gemerkte Video); `quality` 480/720/1080; `interval_hours` 1/3/6/12/24; `kids`.
 - Videoliste über die Data API (`channels` mit Kanalbild, Uploads-Playlist, `load_facts`) oder ohne Schlüssel über `yt-dlp --flat-playlist -J` (`/videos`-Reiter, Live und ungültige IDs ausgelassen). Fehler stehen am Abo (`last_error`), nächster Versuch nach 1 Stunde.

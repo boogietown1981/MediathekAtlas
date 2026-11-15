@@ -34,9 +34,9 @@ async function busy(button,fn){const old=button.textContent;button.disabled=true
 // 0.5.55: Dashboard (films and series only), Plattformen, Live-TV, Downloads and one area
 // "Verwaltung" whose tabs hold everything that manages the app (tasks, status, presentation,
 // assignment, subscriptions, work catalogue, log, settings).
-const ATLAS_VIEWS=['discover','portals','livetv','queue','admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
+const ATLAS_VIEWS=['watch','discover','portals','livetv','queue','admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
 const ATLAS_ADMIN_VIEWS=['admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
-const ATLAS_HEADINGS={discover:['DASHBOARD','Filme und Serien aller Plattformen'],portals:['PLATTFORMEN','Kataloge der einzelnen Anbieter'],livetv:['LIVE-TV','Live-Sender aller Anbieter'],queue:['DOWNLOADS','Downloads und Offline-Kopien']};
+const ATLAS_HEADINGS={discover:['DASHBOARD','Filme und Serien aller Plattformen'],portals:['PLATTFORMEN','Kataloge der einzelnen Anbieter'],livetv:['LIVE-TV','Live-Sender aller Anbieter'],queue:['DOWNLOADS','Downloads und Offline-Kopien'],watch:['ANSEHEN','Was möchtest du sehen?']};
 let atlasView='discover';
 window.atlasCurrentView=()=>atlasView;
 function showView(name){
@@ -51,6 +51,7 @@ function showView(name){
  if(name==='review'){loadReview();loadProviderStats();loadRecognition();}
  if(name==='subscriptions')loadSubscriptions();
  if(name==='livetv')window.AtlasLiveTV?.refresh();
+ if(name==='watch')window.AtlasWatchMode?.show();
  if(name==='portals')portalView($('portals').dataset.platform||'overview');
  if(name==='legacy'){catalogKey='';loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
  document.dispatchEvent(new CustomEvent('atlas-view',{detail:{view:name}}));
