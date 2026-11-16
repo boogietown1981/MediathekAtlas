@@ -1,10 +1,20 @@
+## 0.6.12 – Sammelstand: 0.6.6 bis 0.6.11 zusammen in main
+- Zusammengeführt (16.11.2026, Björn: „ok dann merge“): PR #59 (0.6.7 Kanal-Abos + Kinderecke), PR #60 (0.6.8 Ansehen-Modus, mit 0.6.9 aus PR #61 und 0.6.11 aus PR #63), PR #62 (0.6.10 Crunchyroll-Filme), PR #58 (0.6.6 Untertitel und Tonspur).
+- Konflikte nur an Versionsstellen und in den Dokumenten, dazu: `server.py` importiert `youtube_abos`, `watch_home` und `tracks`; `web/player.js` `startDirect` hängt den Seitenschlüssel an lokale Dateien (0.6.8) und lädt Untertitel/Tonspuren (0.6.6); `build_macos.py` nimmt `watch_home.py` und `tracks.py` mit.
+- Keine neue Funktion.
+
 ## 0.6.11 – YouTube-Abos je Profil (Kinderecke / Für mich), Abo-Verwaltung neu
 - `youtube_abos.py`: Spalte `profile` (`kinder`/`erwachsene`, `PROFILES`), eindeutig ist jetzt `(ref, profile)`. `_migrate` baut die Tabelle bis 0.6.10 um (kids=1 → kinder, sonst erwachsene, IDs bleiben). `profile_of` nimmt auch noch `kids` an; `kids` wird mitgeführt. `kids(..., profile=)` statt `only_kids`; Kanäle tragen `profile`. `_make_room` löscht keine Datei, die ein Abo des anderen Profils noch hält. `overview` liefert `profiles` (Abos, Offline je Profil) und `avatar_local`.
 - `watch_home.py`: Ansehen-Modus zeigt nur Abos im Profil `erwachsene`; `web/watch_mode.js` ohne „auch in der Kinderecke“.
 - `web/youtube_abos.js` neu geschrieben (Reiter, Karten, ein Formular für Neu/Ändern mit eingeklappten Zusatzeinstellungen), `web/index.html` nur noch Behälter, neue `.abo-*`-Stile in `web/style.css` (alte `.youtube-abo*` entfernt).
 - Tests: `tests/test_v0611_abo_profiles.py` (8); angepasst: `test_v0607` (Formular-Behälter), `test_v0608` (Ansehen-Modus nur eigene Abos).
-- 0.6.10 (Crunchyroll, anderer Arbeitsstrang) ist hier nicht enthalten.
 
+
+## 0.6.10 – Crunchyroll: Filme aus eigener Liste
+- Björn (16.11.2026, 0.6.8): „crunchyroll erkennt nur serien und keine filme“. Diagnose: `crunchyroll_sync_completed` mit `series: 1690, movies: 0`. `discover/browse` ohne `type` liefert nur Serien.
+- `crunchyroll.load_catalogue(..., kind)`: zwei Listen `type=series` und `type=movie_listing` (`BROWSE_TYPES`), Fortschritt je Liste. Scheitert die Filmliste, bleibt der Lauf „partial“ mit Serien, Grund in `last_error`, Ereignis `crunchyroll_movies_failed`.
+- Kataloge ohne Statuswert `browse_lists=2` (vor 0.6.10 geladen) bekommen `next_attempt=0` und werden beim nächsten Planerlauf neu geladen.
+- Tests: `tests/test_v0596_crunchyroll.py` (24, davon 4 neu); Testseite antwortet wie die echte API (ohne `type` nur Serien).
 ## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (0.6.8, macOS arm64)
 - `catalog_service.identified_delay`: erkannte, noch nicht abgeglichene Serien, deren Sendung (`topic`) dem erkannten Serientitel entspricht, warten 30 Tage + bis zu 7 Tage Streuung bis zur nächsten Anbieterprüfung – für alle Anbieter, nicht nur ARD/ZDF. Anlass: 3.326 Ausgaben „Schleswig-Holstein Magazin“, 1.000 „NDR Info“, 774 „Nordtour“ (IMDb Offline/TMDB erkannt) wurden täglich neu geprüft (5.262 von 6.383 Ergebnissen in 11 h). Die Serienvorlage griff nicht, weil der Sendungstitel der Ausgabe gleich dem Sendungsnamen ist.
 - `server.catalog_status`: veralteter Stand wird sofort geliefert und im Hintergrund erneuert (Thread `catalog_status`), nur ein leerer Stand wird synchron geladen.
@@ -35,6 +45,14 @@
 - Oberfläche: `web/youtube_abos.js` + Bereich „Kanal-Abos“ im YouTube-Panel, Menülink „★ Kinderecke“; `web/kids.html|css|js` (Vollbild per `requestFullscreen`, auf iPhone `webkitEnterFullscreen`; Abspielstand über `/api/watch-progress`, Schlüssel `job:<id>`).
 - Tests: `tests/test_v0607_youtube_abos.py` (18); angepasst: Navigation (Link statt Bereich), Routen-Inventar (`signed`), Klicktest klickt nur `button.nav`.
 - 0.6.6 ist für Untertitel/Tonspur-Auswahl im Player reserviert (anderer Arbeitsstrang) und hier nicht enthalten.
+## 0.6.6 – Untertitel und Tonspur im Player, OmU-Korrektur
+- Anlass: Björn (14.11.2026) – ein Plex-Titel mit „OmU“ spielte deutsch; die Untertitel wurden weder gezeigt noch ließen sie sich wählen. Bis 0.6.5 lief ffmpeg mit `-sn`, und der Player bot keine Spurwahl.
+- `tracks.py` (neu): `hls_tracks`, `dash_tracks` (Audio-Sets mit Zahl der Repräsentationen für `-map 0:a:n`, Text-Sets mit einer Datei), `list_tracks`, `observed`, `audio_index`, `subtitle_vtt` (SRT/WebVTT/TTML/EBU-TT, HLS-WebVTT-Segmente, eingebettete Text-Untertitel per ffmpeg, Begleitdateien `.srt`/`.vtt`); 10 min Zwischenspeicher. Keine Tonspur-Wahl bei umgewandeltem HLS (einstufige Liste ohne Alternativspuren).
+- `server.py`: `GET /api/play-tracks` (merkt die Spuren als Stream-Beleg in `languages.sqlite3`), `GET /api/subtitle` (WebVTT), `/api/stream?audio=a<n>`. `streaming.command(audio_track=)` → `-map 0:v:0? -map 0:a:<n>`. `streaming.resolve` gibt die Untertiteldatei eines Mediathek-Angebots (`url_subtitle`) mit.
+- `plex.py`: `subtitle_streams` (Begleit-Untertitel mit `key`, ohne Bild-Untertitel) beim Stream-Abruf; DASH-Quellen tragen `dash=True`.
+- `web/player.js`: Auswahl „Ton“/„Untertitel“; hls.js über `audioTracks`/`subtitleTracks`; sonst eigene Textspur mit Cues, bei umgewandelten Strömen um die Startposition verschoben; Wahl in `localStorage` (`atlas-play-subs`, `atlas-play-audio`).
+- `languages.build`: Ton im Stream oder laut Anbieter nur Deutsch → keine Originalfassung, auch wenn der Titel OmU/OV nennt; Hinweis in den Sprachangaben.
+- Tests: `tests/test_v0606_tracks.py` (13), `tests/browser/player_tracks.cjs` (Chromium/Firefox/WebKit in der CI).
 
 ## 0.6.5 – Sammelstand: Sprachen je Titel (Ton, Untertitel, Barrierefreiheit) + 0.6.2–0.6.4
 - `languages.py` (neu): Sprachcodes (ISO 639-1/-2, englische und deutsche Namen), Titelzusätze (OmU/OV/UT/AD/DGS/„(Englisch)“ …), HLS-Spuren (`#EXT-X-MEDIA` AUDIO/SUBTITLES/CLOSED-CAPTIONS, `describes-video`), Sprachfelder in Katalogantworten (`harvest`: `audio_languages`/`subtitle_languages`, `audioLocales`…, Plex `Stream` mit `streamType`, Joyn `languages`). Speicher `languages.sqlite3` (Quelle, ID, Herkunft stream/provider). Modell mit `audio`, `subtitles`, `accessibility`, `evidence`, `short`, `text`, `rows`; `combine()` für Serien; `mediathek_filter()` für den Katalogfilter.

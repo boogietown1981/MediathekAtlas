@@ -1,10 +1,22 @@
-# MediathekAtlas · 0.6.11
+# MediathekAtlas · 0.6.12
+
+## Neu in 0.6.12: Sammelstand
+
+- Enthält alles aus 0.6.6 bis 0.6.11 in einem Paket: Untertitel und Tonspur im Player, YouTube-Kanal-Abos mit Kinderecke, Ansehen-Modus, Korrekturen aus der Diagnose, Crunchyroll mit Filmen und Abos getrennt nach Profil. Keine neue Funktion.
 
 ## Neu in 0.6.11: YouTube-Abos getrennt für Kinder und Erwachsene
 
 - **Profile:** Jedes Kanal-Abo gehört jetzt einem Profil: **Kinderecke** (erscheint nur unter `/kinder`) oder **Für mich** (erscheint nur im Ansehen-Modus `/ansehen`). Nichts wird mehr vermischt. Derselbe Kanal darf in beiden Profilen stehen; ein Video, das in beiden vorkommt, wird nur einmal geladen.
 - **Bestehende Abos:** „In der Kinderecke zeigen“ an → Profil Kinderecke, aus → Für mich. Bis 0.6.10 erschienen Kinder-Abos zusätzlich im Ansehen-Modus; das entfällt.
 - **Verwaltung aufgeräumt** (Plattformen → YouTube → Kanal-Abos): Reiter je Profil mit Zahl der Abos und Offline-Videos, kompakte Karten mit Kanalbild, Regeln in einer Zeile, Zahlen als farbige Chips und kleine Knöpfe (↻ prüfen, ⚙ Einstellungen, ⏸ pausieren, ✕ beenden, ↗ YouTube). „＋ Kanal abonnieren“ öffnet ein kurzes Formular (Für wen? · Kanal · Was laden? · Reihe); Seltenes steckt unter „Weitere Einstellungen“. Ein Abo lässt sich über ⚙ in das andere Profil verschieben.
+
+## Neu in 0.6.10: Crunchyroll mit Filmen
+
+- **Crunchyroll zeigt jetzt auch Filme.** Bisher kamen nur Serien an (laut Diagnose 1.690 Serien, 0 Filme): Crunchyroll liefert in seiner Katalogliste ohne Angabe nur Serien, Filme stehen in einer eigenen Liste. MediathekAtlas lädt jetzt beide.
+- Ein bereits geladener Crunchyroll-Katalog wird nach dem Update einmal neu geladen (bei eingeschalteter Automatik innerhalb einer Minute, sonst „Katalog jetzt laden“).
+- Scheitert nur die Filmliste, bleiben die Serien sichtbar und die Katalog-Karte nennt den Grund.
+- Manche Anime-Filme führt Crunchyroll selbst als Staffel einer Serie (z. B. Kinofilme zu einer Serie); die stehen weiter auf der Serienseite.
+
 
 ## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
 
@@ -34,6 +46,13 @@
 - **Ablage:** `<Downloadordner>/YouTube-Abos/<Kanal>/<Datum> - <Titel> [<ID>] - 720p - H264 AAC.mp4` mit Vorschaubild und NFO. MP4 statt MKV, damit Safari, iPad und schwache NAS ohne Umwandlung abspielen.
 - **Kinderecke** (`/kinder`, Link „★ Kinderecke“ links im Menü): große, bunte Kacheln, oben runde Kanal-Knöpfe mit Zahl der neuen Videos, Reihen „Neu für dich“, „Weiterschauen“ und je Kanal. Neue Videos tragen „NEU“, gesehene einen Haken. Ein Tipp startet das Video **im Vollbild**; am Ende folgt nach 6 Sekunden das nächste ungesehene Video desselben Kanals („Zurück“ hält an). Bilder liegen auf dem Server, die Seite läuft ohne Internet. Zurück in die Verwaltung: „Eltern“ unten rechts 2 Sekunden gedrückt halten.
 - **Hintergrund:** ein Eintrag im gemeinsamen Planer (kein eigener Dauer-Thread), je Prüfung höchstens 8 neue Aufträge je Abo; die Downloads laufen in der gewohnten Warteschlange.
+## Neu in 0.6.6: Untertitel und Tonspur im Player wählen
+
+- **Auswahl „Untertitel“ und „Ton“** oben im Player, sobald der Titel mehr als eine Tonspur bzw. Untertitel hat. „Aus“ schaltet Untertitel ab. Die Wahl (Sprache) merkt sich das Gerät und gilt beim nächsten Titel wieder.
+- **Woher die Untertitel kommen:** aus der HLS-Wiedergabeliste (im Browser über hls.js), aus der DASH-Beschreibung (z. B. Plex), als Untertiteldatei des Anbieters (Plex, Untertiteldatei der Mediathek-Sender), aus lokalen Dateien (eingebettete Text-Untertitel, `.srt`/`.vtt` daneben). TTML/EBU-TT der Sender und SRT werden in WebVTT umgewandelt. Bild-Untertitel (PGS, DVB) werden nicht angeboten.
+- **Tonspur:** bei hls.js direkt im Browser; bei Strömen über MediathekAtlas (ffmpeg, z. B. Plex-DASH, lokale MKV) startet der Stream an derselben Stelle mit der gewählten Spur neu.
+- **OmU-Korrektur:** Nennt der Titel „OmU“, der Stream hat aber nur deutschen Ton, zeigt MediathekAtlas nach dem ersten Abspielen kein „OmU“ mehr, sondern z. B. „DE · UT DE“ und vermerkt den Widerspruch in den Sprachangaben.
+
 
 ## Neu in 0.6.5: Sprachen je Film und Serie (Sammelstand: enthält auch 0.6.2, 0.6.3 und 0.6.4)
 

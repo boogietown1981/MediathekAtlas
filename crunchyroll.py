@@ -121,6 +121,12 @@ def _notify(event, **details):
 def _connect(root):
     db = provider_base.connect(root, 'crunchyroll.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
+    if _get(db, 'browse_lists') != '2' and float(_get(db, 'last_success', '0') or 0):
+        # 0.6.10: a catalogue loaded before the separate film list has no films; reload it at the
+        # next scheduler round instead of waiting up to 24 hours.
+        with db:
+            _set(db, 'next_attempt', 0)
+            _set(db, 'browse_lists', '2')
     return db
 
 
@@ -444,18 +450,28 @@ def item_from(node, series=None):
     return out
 
 
-def browse_query(start):
-    return {'n': PAGE, 'start': start, 'sort_by': 'alphabetical', 'ratings': 'true'}
+# 0.6.10: discover/browse without ``type`` lists series only (Björn's diagnosis of 0.6.8: 1690 series,
+# 0 films). Films are the type ``movie_listing`` and need a list of their own.
+BROWSE_TYPES = ('series', 'movie_listing')
 
 
-def load_catalogue(fetch, gap, found, progress=None):
-    """All series and film entries; False when the list stopped early."""
+def browse_query(start, kind=None):
+    query = {'n': PAGE, 'start': start, 'sort_by': 'alphabetical', 'ratings': 'true'}
+    if kind:
+        query['type'] = kind
+    return query
+
+
+def load_catalogue(fetch, gap, found, progress=None, kind=None):
+    """All titles of one list (``kind`` = browse type, None = Crunchyroll's default);
+    False when the list stopped early."""
     seen, total = set(), None
+    label = 'Filmen' if kind == 'movie_listing' else 'Serien' if kind == 'series' else 'Titeln'
     for page in range(MAX_PAGES):
         if gap and page:
             time.sleep(gap)
         try:
-            answer = fetch('/content/v2/discover/browse', browse_query(len(seen)))
+            answer = fetch('/content/v2/discover/browse', browse_query(len(seen), kind))
         except Exception:
             if page == 0:
                 raise
@@ -473,7 +489,7 @@ def load_catalogue(fetch, gap, found, progress=None):
                 if it and it['kind'] in ('series', 'movie'):
                     found[it['id']] = it
         if progress:
-            progress('%d von %s Titeln' % (len(seen), total if total is not None else '?'))
+            progress('%d von %s %s' % (len(seen), total if total is not None else '?', label))
         if not fresh:
             return total is None or len(seen) >= total
         if total is None or len(seen) >= total:
@@ -530,9 +546,18 @@ def sync(root, fetch=None, now=None, gap=None):
     try:
         found = {}
         _say('Katalog wird geladen')
-        complete = load_catalogue(fetch, gap, found, _say)
+        complete = load_catalogue(fetch, gap, found, _say, 'series')
         if not any(i['kind'] == 'series' for i in found.values()):
             raise ValueError('Crunchyroll lieferte keine Serien')
+        movies_note = ''
+        try:
+            if gap:
+                time.sleep(gap)
+            complete &= load_catalogue(fetch, gap, found, _say, 'movie_listing')
+        except Exception as exc:          # series stay; films are retried with the next run
+            complete = False
+            movies_note = 'Filme: ' + _error(exc)
+            _notify('crunchyroll_movies_failed', http_status=getattr(exc, 'code', 0) or 0)
         items = list(found.values())
         counts = _counts(items)
         db = _connect(root)
@@ -543,8 +568,9 @@ def sync(root, fetch=None, now=None, gap=None):
                 visible_since = previous if not complete and previous else now
                 for key, value in [('last_success', visible_since), ('last_loaded', time.time()),
                                    ('last_result', 'complete' if complete else 'partial'),
-                                   ('last_error', '' if complete else 'Katalog nur teilweise geladen'),
-                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), *counts.items()]:
+                                   ('last_error', '' if complete else 'Katalog nur teilweise geladen' + (' (' + movies_note + ')' if movies_note else '')),
+                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), ('browse_lists', '2'),
+                                   *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()

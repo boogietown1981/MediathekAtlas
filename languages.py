@@ -574,14 +574,21 @@ def build(source, *, observed=None, provider=None, titles=(), assumed=None, orig
         add(audio, prov['audio'])
         add(subs, prov['subtitles'])
         evidence.append({'kind': 'provider', 'label': 'laut ' + (provider_name or 'Anbieter')})
+    # 0.6.6 (Björn, 14.11.2026: a Plex title named "OmU" played with German sound): sound measured in
+    # the stream or named by the provider wins over the title. Only German there → no original version.
+    measured = list(stream.get('audio') or prov['audio'])
+    contradicted = bool(hint['original'] and measured and all(c == 'de' for c in measured))
+    if contradicted:
+        hint['original'] = False
     title_audio = list(hint['audio'])
     if hint['original'] and not title_audio:
         title_audio.append(orig if orig and orig != 'de' else ORIGINAL)
-    if title_audio or hint['subtitles']:
-        if not audio or not stream.get('audio'):
+    if title_audio or hint['subtitles'] or contradicted:
+        if not measured:
             add(audio, title_audio)
         add(subs, hint['subtitles'])
-        evidence.append({'kind': 'title', 'label': 'laut Titel' + (' bzw. Sender' if extra else '')})
+        evidence.append({'kind': 'title', 'label': 'laut Titel' + (' bzw. Sender' if extra else '')
+                         + ('; der Titel nennt eine Originalfassung, der Ton ist aber Deutsch' if contradicted else '')})
     if ORIGINAL in audio and orig and orig not in audio:
         audio[audio.index(ORIGINAL)] = orig if orig != 'de' else ORIGINAL
     is_assumed = False
