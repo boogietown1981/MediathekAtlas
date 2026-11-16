@@ -235,6 +235,36 @@ class CatalogueTests(Fixture):
         self.load()
         self.assertGreater(crunchyroll.state(self.root)['next_attempt'], NOW)
 
+    def test_ignored_film_type_falls_back_to_type_movie_and_is_counted(self):
+        # 0.6.15 (Björn, 0.6.13: still 0 films, no error): a list that answers type=movie_listing with series
+        class Ignoring(Site):
+            def __call__(self, path, query=None):
+                if path == '/content/v2/discover/browse' and query.get('type') == 'movie_listing':
+                    self.calls.append((path, dict(query)))
+                    return {'total': len(SERIES), 'data': SERIES}
+                if path == '/content/v2/discover/browse' and query.get('type') == 'movie':
+                    self.calls.append((path, dict(query)))
+                    film = {'id': 'G25FVD45Q', 'type': 'movie', 'title': 'Suzume', 'slug_title': 'suzume',
+                            'movie_metadata': {'duration_ms': 7_320_000, 'maturity_ratings': ['12']}}
+                    return {'total': 1, 'data': [film]}
+                return super().__call__(path, query)
+
+        site, result = self.load(Ignoring())
+        self.assertEqual([c[1].get('type') for c in site.calls], ['series', 'movie_listing', 'movie'])
+        self.assertEqual((result['series'], result['movies']), (3, 1))
+        row = crunchyroll.listing(self.root, 'movies')['items'][0]
+        self.assertEqual((row['title'], row['duration'], row['rating']), ('Suzume', 7320, 'ab 12'))
+        self.assertEqual(row['web_url'], 'https://www.crunchyroll.com/de/watch/G25FVD45Q/suzume')
+        stats = {s['type']: s for s in crunchyroll.state(self.root)['list_stats']}
+        self.assertEqual((stats['movie_listing']['received'], stats['movie_listing']['new']), (5, 0))
+        self.assertEqual(stats['movie_listing']['types'], {'series': 4, 'music_video': 1})
+        self.assertEqual((stats['movie']['new'], stats['series']['new']), (1, 3))
+        self.assertNotIn('Suzume', json.dumps(stats))          # counts only, no titles
+
+    def test_working_film_list_does_not_ask_twice(self):
+        site, _ = self.load()
+        self.assertNotIn('movie', [c[1].get('type') for c in site.calls])
+
     def test_failing_film_list_keeps_series_and_is_partial(self):
         site = Site()
         site.movies_fail = True
@@ -308,6 +338,70 @@ class CatalogueTests(Fixture):
         for bad in ('', '../x', 'x.ABCDEFG'):
             with self.assertRaises(ValueError):
                 crunchyroll.play_source(self.root, bad)
+
+
+class FilmAsSeriesTests(Fixture):
+    """0.6.16: Björn's example https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red"""
+
+    def site(self):
+        film = series('GMTE00258738', 'One Piece Film Red', 'one-piece-film-red', ['Action', 'Adventure'],
+                      ['ja-JP', 'de-DE'], ['de-DE', 'pl-PL'], rating='14', seasons=1, episodes=1)
+        simulcast = series('GSIMUL0001', 'Neue Serie', 'neue-serie', ['Drama'], ['ja-JP'], ['de-DE'], seasons=1, episodes=1)
+        simulcast['series_metadata']['is_simulcast'] = True
+        named = series('GNAMED0001', 'Beispiel The Movie', 'beispiel-the-movie', ['Action'], ['ja-JP'], ['de-DE'], seasons=1, episodes=2)
+        long_one = series('GLONG00001', 'Filmriss Akademie', 'filmriss', ['Comedy'], ['ja-JP'], ['de-DE'], seasons=1, episodes=12)
+
+        class FilmSite(Site):
+            def __call__(inner, path, query=None):
+                if path == '/content/v2/discover/browse' and query.get('type') != 'movie_listing' and query.get('type') != 'movie':
+                    inner.calls.append((path, dict(query)))
+                    return {'total': 4, 'data': [film, simulcast, named, long_one]}
+                if path == '/content/v2/cms/series/GMTE00258738/seasons':
+                    inner.calls.append((path, {}))
+                    return {'data': [{'id': 'GSEAS00001', 'season_number': 1, 'title': 'One Piece Film Red'}]}
+                if path == '/content/v2/cms/seasons/GSEAS00001/episodes':
+                    inner.calls.append((path, {}))
+                    return {'data': [episode('GWATCH0001', 1, 1, duration_ms=6_900_000, slug_title='one-piece-film-red')]}
+                if path == '/content/v2/discover/browse':
+                    inner.calls.append((path, dict(query)))
+                    return {'total': 0, 'data': []}
+                return super().__call__(path, query)
+        return FilmSite()
+
+    def test_single_episode_series_is_a_film(self):
+        site = self.site()
+        _, result = self.load(site)
+        self.assertEqual((result['series'], result['movies']), (2, 2))
+        self.assertEqual(self.titles('movies'), ['Beispiel The Movie', 'One Piece Film Red'])
+        self.assertEqual(self.titles('series'), ['Filmriss Akademie', 'Neue Serie'])
+        row = next(r for r in crunchyroll.listing(self.root, 'movies')['items'] if r['title'] == 'One Piece Film Red')
+        self.assertEqual((row['id'], row['rating']), ('s.GMTE00258738', 'ab 14'))
+        self.assertEqual(row['web_url'], 'https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red')
+        self.assertNotIn('movie', [c[1].get('type') for c in site.calls])      # films found: no second list
+
+    def test_film_learns_watch_page_and_runtime(self):
+        site = self.site()
+        self.load(site)
+        item = crunchyroll.item(self.root, 's.GMTE00258738', fetch=site)['item']
+        self.assertEqual(item['kind'], 'movie')
+        self.assertEqual(item['web_url'], 'https://www.crunchyroll.com/de/watch/GWATCH0001/one-piece-film-red')
+        self.assertEqual(item['duration'], 6900)
+        m = portal_title.model(self.root, 'crunchyroll', 's.GMTE00258738')
+        self.assertEqual((m['kind'], m['playable']), ('movie', False))
+        self.assertNotIn('movie_listings', ' '.join(c[0] for c in site.calls))
+
+    def test_film_like_rules(self):
+        self.assertTrue(crunchyroll.film_like({'episode_count': 1, 'season_count': 1}, 'X'))
+        self.assertFalse(crunchyroll.film_like({'episode_count': 1, 'season_count': 1, 'is_simulcast': True}, 'X'))
+        self.assertTrue(crunchyroll.film_like({'episode_count': 3, 'season_count': 1}, 'Y Movie'))
+        self.assertFalse(crunchyroll.film_like({'episode_count': 3, 'season_count': 1}, 'Filmriss'))
+        self.assertFalse(crunchyroll.film_like({'episode_count': 1, 'season_count': 2}, 'Z'))
+        self.assertFalse(crunchyroll.film_like({}, 'Film'))
+        # Björn's second example (16.11.2026): own page per film
+        self.assertTrue(crunchyroll.film_like({'episode_count': 1, 'season_count': 1},
+                                              'Detektiv Conan – The Movie 1: Der tickende Wolkenkratzer'))
+        self.assertTrue(crunchyroll.film_like({'episode_count': 2, 'season_count': 1},
+                                              'Detektiv Conan – The Movie 1: Der tickende Wolkenkratzer'))
 
 
 class IntegrationTests(Fixture):

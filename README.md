@@ -1,11 +1,23 @@
 # MediathekAtlas · X
 
+## Neu in 0.6.17: Crunchyroll-Filme werden erkannt
+
+- **Crunchyroll führt Filme als Serie** (Björns Beispiel: „One Piece Film Red“ unter `/de/series/…`). MediathekAtlas erkennt sie jetzt daran: eine Staffel mit genau einer Folge (außer laufenden Simulcasts, die anfangs auch nur eine Folge haben), oder „Film“/„Movie“ im Titel bei höchstens drei Folgen. Solche Titel stehen unter **Filme**, nicht mehr unter Serien.
+- „Bei Crunchyroll ansehen“ öffnet zuerst die Filmseite; nach dem Öffnen der Titelseite kennt MediathekAtlas die Wiedergabeseite und die Laufzeit.
+- Der Crunchyroll-Katalog wird nach dem Update einmal neu geladen (bei eingeschalteter Automatik innerhalb einer Minute).
+
 ## Neu in 0.6.16: ServusTV mit deutlich mehr Titeln
 
 - **Lange „Clips“ zählen jetzt mit:** ServusTV kennzeichnet viele vollständige Sendungen als „Clip“ (ganze Diskussionen wie „Links. Rechts. Mitte“, Vodcasts, Doku-Reihen, Rennen in voller Länge). Bisher wurden alle Clips verworfen; jetzt gelten Videos ab 20 Minuten als Folge ihrer Sendung bzw. als Film. Kurze Ausschnitte bleiben weiter draußen. Im Mitschnitt vom 13.11. waren das 185 von 787 Clips aus 23 Formaten.
 - **Sport- und Ereignisseiten** (MotoGP, Superbike, DTM, Wintersport …) werden mitgelesen, ebenso Hinweiskacheln wie „Alle Folgen: Jetzt streamen!“ und Filme, die ServusTV als eigene Seite verlinkt.
 - **Einzelne gesperrte Seiten** (HTTP 403, in Björns Diagnose immer dieselben 10 von 2.361 Abrufen) machen den Katalog nicht mehr „teilweise geladen“; sie werden übersprungen und gezählt. Erst wenn mehr als 3 % der Abrufe abgewiesen werden, gilt der Abruf als unvollständig.
 - Die ServusTV-Übersicht zeigt zusätzlich die Zahl der Folgen.
+
+## Neu in 0.6.15: Crunchyroll-Filme, zweiter Versuch und genaue Diagnose
+
+- In 0.6.13 lieferte die Crunchyroll-Filmliste ohne Fehler keinen einzigen Film (1.690 Serien, 0 Filme). Bringt die Filmliste nichts, fragt MediathekAtlas jetzt zusätzlich eine zweite Filmliste ab (einzelne Filme statt Film-Einträge); solche Filme öffnen direkt ihre Wiedergabeseite bei Crunchyroll.
+- Die Diagnose zeigt je Liste, was Crunchyroll geliefert hat: Gesamtzahl, empfangene und neue Einträge, Typen, verworfene Einträge und die Feldnamen eines Eintrags (keine Titel). Damit lässt sich die Ursache genau eingrenzen, falls weiter keine Filme kommen.
+- Basis 0.6.13; 0.6.14 (YouTube-Abos) entsteht parallel.
 
 ## Neu in 0.6.14: Abo-Videos gleichmäßig über die Stunde verteilt
 
@@ -39,7 +51,6 @@
 - Scheitert nur die Filmliste, bleiben die Serien sichtbar und die Katalog-Karte nennt den Grund.
 - Manche Anime-Filme führt Crunchyroll selbst als Staffel einer Serie (z. B. Kinofilme zu einer Serie); die stehen weiter auf der Serienseite.
 
-
 ## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
 
 - **Erkennung prüft Sendungen nicht mehr täglich neu:** Ausgaben einer Sendereihe (z. B. „Schleswig-Holstein Magazin“, „NDR Info“, „Nordtour“), deren Sendung schon erkannt ist, werden erst nach 30 bis 37 Tagen wieder bei den Anbietern abgefragt, egal ob TMDB, TVDB, IMDb oder die Mediathek sie erkannt hat. Bisher lag die Frist nur bei ARD/ZDF-Ergebnissen bei 30 Tagen, sonst bei einem Tag; das waren 82 % aller Prüfungen in der Nacht.
@@ -54,7 +65,6 @@
 - **Filme/Serien:** alle freien Dienste zusammen, neueste zuerst, mit Genre-Knöpfen und „Mehr laden“. Ein Tipp öffnet die gewohnte Titelseite mit „Abspielen“, „Offline speichern“ und „Merken“.
 - **Abspielen:** Offline-Kopien, Abo-Videos, Weiterschauen und Live-Sender starten direkt. Beim ersten Start geht die ganze Seite ins Vollbild, der Player füllt den Bildschirm.
 - Für Handy, Tablet und Fernseher-Browser ausgelegt; die Bedienung per Tastatur (Tab/Enter) funktioniert.
-
 
 ## Neu in 0.6.7: YouTube-Kanäle abonnieren, automatisch offline, Kinderecke
 
@@ -74,7 +84,6 @@
 - **Woher die Untertitel kommen:** aus der HLS-Wiedergabeliste (im Browser über hls.js), aus der DASH-Beschreibung (z. B. Plex), als Untertiteldatei des Anbieters (Plex, Untertiteldatei der Mediathek-Sender), aus lokalen Dateien (eingebettete Text-Untertitel, `.srt`/`.vtt` daneben). TTML/EBU-TT der Sender und SRT werden in WebVTT umgewandelt. Bild-Untertitel (PGS, DVB) werden nicht angeboten.
 - **Tonspur:** bei hls.js direkt im Browser; bei Strömen über MediathekAtlas (ffmpeg, z. B. Plex-DASH, lokale MKV) startet der Stream an derselben Stelle mit der gewählten Spur neu.
 - **OmU-Korrektur:** Nennt der Titel „OmU“, der Stream hat aber nur deutschen Ton, zeigt MediathekAtlas nach dem ersten Abspielen kein „OmU“ mehr, sondern z. B. „DE · UT DE“ und vermerkt den Widerspruch in den Sprachangaben.
-
 
 ## Neu in 0.6.5: Sprachen je Film und Serie (Sammelstand: enthält auch 0.6.2, 0.6.3 und 0.6.4)
 
@@ -170,7 +179,6 @@
 - Nicht geprüft: RTL+ und ServusTV selbst (aus der Bauumgebung gesperrt). Die ServusTV-Antworten sind im Test genau so aufgebaut wie im Mitschnitt; die RTL+-Schnittstelle stammt aus öffentlichen Open-Source-Clients und ist noch nicht mitgeschnitten.
 - Sammelstand: 0.5.102 enthält 0.5.101 und alles davor.
 
-
 ## Neu in 0.5.101: ServusTV On
 
 - **Neuer Plattform-Reiter „ServusTV“** mit der kostenlosen Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen wie „Bergwelten“ mit allen Folgen, Spielfilme. Dazu **ServusTV Deutschland und Österreich live**, auch im Reiter Live-TV. Wie bei den anderen Plattformen mit einheitlichen Kategorien, Titel- und Sendungsseite, Suche, Merkliste und im Dashboard.
@@ -239,7 +247,6 @@
 - Nicht geprüft: echte NAS-Hardware, macOS und Windows, sehr lange Filme. Getestet ist mit kurzen echten Videos unter Linux.
 - Sammelstand: 0.5.94 enthält 0.5.93 und alles davor.
 
-
 ## Neu in 0.5.93: Videostart auch bei TOGGO und JustWatch, SAT.1 als Joyn+
 
 - Nach Björns Test von 0.5.91: Joyn startet direkt. Bei TOGGO war noch der pinke Play-Knopf zu klicken, bei JustWatch der Play-Knopf im Mini-Player.
@@ -248,7 +255,6 @@
 - **Erweiterung aktualisieren:** neues ZIP unter Einstellungen → „Videostart bei Anbietern“ herunterladen, den alten Ordner damit ersetzen und unter `chrome://extensions` bei „MediathekAtlas Videostart“ auf ↻ (Neu laden) klicken.
 - Nicht geprüft: die echten Seiten von TOGGO und JustWatch (aus der Bauumgebung gesperrt); getestet mit nachgebauten Seiten. Liegt der Player in einem Rahmen einer anderen Adresse, kommt die Erweiterung dort nicht hin.
 - Sammelstand: 0.5.93 enthält 0.5.92 (Archive-Media-Module) und alles davor.
-
 
 ## Neu in 0.5.92: Archive.org-Scan wird verlässlich, Listen-Austausch, Blu-ray-Abbilder (aus Archive Media)
 
@@ -326,7 +332,6 @@
 - Dubletten wie „Fantasie“/„Fantasy“ oder „Krimi“/„Kriminalfilms“ und englische Bezeichnungen landen in derselben Kategorie. „Joyn (kostenlos)“, „Joyn+“ und „TOGGOLINO“ sind keine Kategorien mehr, bleiben aber filterbar.
 - Die Original-Genres der Anbieter bleiben gespeichert: auf der Titelseite unter den Anbieterangaben und im klassischen Genre-Baum (Verwaltung → Werkkatalog).
 
-
 ## 0.5.82: Sammelstand, Archive.org erkennt Werke
 
 0.5.82 enthält alles aus 0.5.78 (YouTube), 0.5.79 (TOGGO), 0.5.80 (Besetzung mit Fotos, Clips, Windows und Linux) und 0.5.81 (Merkliste, Weiterschauen, Speicher). Neu dazu:
@@ -378,7 +383,6 @@ Sammelstand: enthält 0.5.75 (YouTube-Quellen sofort eingelesen) und 0.5.76 (Jus
 - **Nichts geht mehr verloren:** Die Seite lädt ihre rund zwanzig Skripte nicht mehr einzeln nach, sie stecken in der Seite selbst. Bisher konnte ein einzelnes Skript ausbleiben, dann fehlte der Player, die Netzkino-Wiedergabe („Cannot read properties of undefined (reading 'play')“) oder ein Plattform-Reiter. Das ist unabhängig vom Browser.
 - **Flüssigere Wiedergabe:** Online-Streams sammeln erst einen Vorrat, bevor sie laufen: 8 Sekunden beim Start, 4 nach dem Spulen, 5 nach jedem Stocken. Der Player zeigt dabei „Puffer wird gefüllt … 3 von 8 s“. Länger als 15 Sekunden wartet er nie, ein Klick auf Wiedergabe startet sofort.
 
-
 ## Neu in 0.5.76: JustWatch – Download startet, sobald der Titel abspielbar ist
 
 Enthält alles bis 0.5.73.
@@ -400,7 +404,6 @@ Enthält alles bis 0.5.72.
 - **Automatisch nachladen:** Kommt ein Skript trotzdem nicht an, lädt die Seite es bis zu dreimal selbst nach, auch über eine zweite Adresse, falls eine Browser-Erweiterung oder ein Schutzprogramm den Dateinamen sperrt. Das gilt in Chrome, Safari und Firefox gleich.
 - **Ursache sichtbar:** Scheitert auch das, nennt die Meldung, ob der Server nicht antwortet oder der Browser die Anfrage ablehnt.
 
-
 ## Neu in 0.5.72: Player startet zuverlässig, der letzte Klick gewinnt
 
 Enthält alles bis 0.5.71 (YouTube-Musikvideos).
@@ -410,7 +413,6 @@ Enthält alles bis 0.5.71 (YouTube-Musikvideos).
 - **Schnellerer Start:** MediathekAtlas fragt den Anbieter vor dem Start nicht mehr zusätzlich nach den Qualitätsstufen, wenn der Browser sie selbst liest.
 - **Klare Meldung:** Lädt der Player trotzdem nicht, nennt die Meldung die Ursache, und sie steht in der Diagnose. „▶ Ansehen“ im Katalog zeigt die Meldung jetzt auch, statt nichts zu tun.
 
-
 ## Neu in 0.5.71: YouTube-Musikvideos
 
 Enthält alles bis 0.5.70.
@@ -418,7 +420,6 @@ Enthält alles bis 0.5.70.
 - **Musikvideos:** Im YouTube-Bereich unter „YouTube-Kanäle & API-Schlüssel“ eine Playlist, einen Kanal oder ein einzelnes Video mit der Art „Musikvideos“ eintragen. Hier gibt es keine Mindestlänge und keinen Werbefilter.
 - **Abspielen:** Der Reiter „Musikvideos“ zeigt Playlists und einzelne Videos. „▶ Playlist abspielen“ spielt ein Video nach dem anderen im offiziellen YouTube-Player oder aus der Offline-Kopie.
 - **Offline:** „⬇ Ganze Playlist offline speichern“ reiht mit einem Klick alle Videos ein. Mit den Kästchen lässt sich auch nur eine Auswahl speichern. Die Dateien liegen unter `Musikvideos/<Playlist>/`. Das geht wie bei Filmen nur, wenn der YouTube-Offline-Schalter an ist.
-
 
 ## Neu in 0.5.70: Streams wie auf den Anbieterseiten, einheitliche Kacheln, Fassungen
 
@@ -466,7 +467,6 @@ Enthält alles aus 0.5.61 (Archive.org-Downloads) und 0.5.65 (Joyn).
 - **Folgen ohne Nummer:** Ist bei einer Serienfolge Staffel oder Folge unbekannt, fragt die App beim Herunterladen danach (oder lädt die Datei als Film). Es wird keine Staffel 1 erfunden.
 - Archive.org-Downloads bleiben auf diesem System (kein Verbund-Austausch) und markieren keine Mediathek-Sendung als geladen.
 
-
 ## Neu in 0.5.60: Plattform-Kataloge sofort, aufgeräumte Titelseiten, weniger Dubletten
 
 Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Korrekturen (Werbevideos aussortieren, Einrichtung öffnet sich von selbst).
@@ -493,7 +493,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - **Fanart.tv:** Zusätzliche Poster, Hintergrundbilder und Titel-Logos für bereits erkannte Filme und Serien (über IMDb-, TVDB- oder TMDB-Kennung). Widerspricht die Kennung bei Fanart.tv, werden die Bilder verworfen. Vorhandene TMDB-/TVDB-Bilder bleiben, Fanart.tv füllt Lücken. Das Logo ersetzt auf der Titelseite den Schriftzug und wird bei Downloads als `clearlogo` für Jellyfin/Kodi abgelegt. Schlüssel unter Verwaltung → Einstellungen → Metadatenanbieter (Projektschlüssel und/oder persönlicher Schlüssel).
 - **Datenbanksicherungen:** Die Katalogdatenbank wird wöchentlich geprüft gesichert (Ordner „Backups“ im Datenordner, SQLite-Online-Sicherung, die App bleibt nutzbar). Vier automatische Sicherungen bleiben erhalten, eigene nie automatisch gelöscht. Unter Verwaltung → Einstellungen → Datenbanksicherungen: Liste, „Jetzt sichern“, Mehrfachauswahl löschen mit Bestätigung. Unter Verwaltung → Aufgaben als „Datenbanksicherung“ pausier- und startbar.
 - **ArchiveMedia v0.10.53:** `fanart_client` und `backup_manager` übernommen, die alten v0.10.12-Kopien angeglichen (Herkunft und Prüfsummen in `PROVENANCE.json`).
-
 
 ## Neu in 0.5.55: Dashboard nur mit Filmen und Serien, Bereich „Verwaltung“, schnellere Oberfläche
 
@@ -600,7 +599,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 
 - Plattformen → Pluto TV: Filme, Serien und Live-Sender von Pluto TV laden („↻ Katalog jetzt laden“) und direkt im MediathekAtlas-Player ansehen, mit Werbung wie beim Anbieter. Keine Anmeldung.
 
-
 ## Neu in 0.5.34: Netzkino direkt abspielen
 
 - „▶ Ansehen“ spielt Netzkino-Filme im eingebauten MediathekAtlas-Player ab, genau wie Mediathek-Videos (auch auf Synology/QNAP). Eine Offlinekopie hat Vorrang, sonst ermittelt ytdl-nightly die MP4-Datei.
@@ -621,8 +619,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - **Diagnose:** Die IMDb-Statusabfrage enthält jetzt die vollständigen und teilweise heruntergeladenen Datei-Mengen. Es werden bis zu drei kurze Wiederholungsversuche pro betroffenem Datensatz unternommen; danach greift der bestehende gestaffelte Rückzug.
 - **Geltungsbereich:** Die offiziellen IMDb-Datensätze dienen ausschließlich der zulässigen persönlichen, nichtkommerziellen Nutzung. Keine Umgehung von Authentifizierung, DRM oder Lizenzbedingungen.
 
-
-
 ## 0.5.25 · Parallele Metadatenerkennung und automatische Download-Abos
 
 - **Erkennung:** Einstellbar mit 1, 2 (Standard) oder 4 parallelen Erkennungsworkern. Ein SQLite-basierter, eindeutiger Werk-Lease verhindert doppelte Prüfungen; abgelaufene Reservierungen werden nach Absturz wieder freigegeben. Externe Metadatenanbieter werden gleichzeitig von höchstens zwei Workerketten abgefragt. Status-Karten zeigen die aktiven und konfigurierten Worker.
@@ -631,8 +627,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - **Persistenz:** Abos, nächste Prüfung, bereits eingereihte Episoden und die Zuordnung zwischen Abo und Downloadauftrag bleiben bei Neustarts erhalten. Bestehende Folgen können optional einbezogen werden; Serienabos nehmen standardmäßig nur spätere Folgen auf. Bereits eingereihte Aufträge bleiben beim Löschen eines Abos erhalten.
 - **Verhalten:** Die Aboprüfung erstellt ausschließlich reguläre Downloadjobs. Der normale Download-Worker führt Übertragung, Umwandlung, Fehlerdiagnose und Wiederaufnahme aus. Fehlende oder nicht eindeutig verifizierte Folgen werden nicht automatisch als heruntergeladen betrachtet.
 - **Validierung:** Regressionstests für Worker-Leases, Absturz-Wiederaufnahme, Titel- und Episodenabgleich, deduplizierte Aufträge, Wochenplan, abgelaufene Angebote und das Weiterbestehen von Abos nach DB-Neustart.
-
-
 
 ## Neu in 0.5.24: Nachrichtensendungen, Filmhinweise und effiziente Statistiken
 
@@ -644,8 +638,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - Neue Diagnosedaten: wie viele Nachrichteneinträge ohne externe Film-API abgefangen wurden. Diese zählen ausdrücklich **nicht** als erledigte Metadatenprüfungen oder als Erhöhung des Erstprüfungsdurchsatzes.
 - Serienvervollständigung, verfügbare Downloads, die IMDb-Offline-Archivdetails und die kompakte UI aus 0.5.23 bleiben erhalten.
 - Separate Performance-Arbeit (atomare parallele Erkennungsworker) folgt erst nach Vergleich der geänderten Katalogarbeit und SQLite-Latenzen.
-
-
 
 ## Neu in 0.5.23: Status-Dashboard und verschobene Downloads
 
@@ -662,8 +654,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - Neue lokale Dateistatus-Prüfungen werden für 15 Sekunden zwischengespeichert, damit das regelmäßige UI-Polling nicht ständig alle Speicherorte neu abfragt. Die Suche ist auf 25.000 Dateien bzw. drei Sekunden je Benutzeraktion begrenzt.
 - Die laufende Erstprüfung aus 0.5.22 bleibt im Hintergrund unverändert aktiv. Parallele Metadaten-Worker und ein Ablaufdatum-Radar gehören ausdrücklich zu einem separaten Folgeschritt.
 
-
-
 ## Neu in 0.5.22: Intelligente Warteschlange, Serienvervollständigung, Angebotsprüfung
 
 - Die Erkennung kann in den Einstellungen zwischen **Ausgewogen**, **Filme zuerst** und **Serien zuerst** umgestellt werden. Manuelle Prüfungen behalten Vorrang; die Auswahl betrifft ausdrücklich nicht Downloadaufträge.
@@ -675,8 +665,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - Zwei Senderangebote werden nur dann in der **Ansicht** zusammengefasst, wenn die tatsächlichen Video-/Untertitel-URLs, Sender, Laufzeit und Fassungsart exakt übereinstimmen. Unterliegende Datensätze und alle unterschiedlichen oder barrierefreien Fassungen bleiben erhalten.
 - Geänderte Retry-Strategie: kurz gestörte Anbieter nach gestaffeltem Backoff erneut prüfen; bestätigte Nichttreffer frühestens nach mehreren Tagen wieder aufgreifen.
 
-
-
 ## Neu in 0.5.21: Doppelte Filme zuverlässig zusammenführen
 
 - Ein Filmtitel kann aufgrund verschiedener Quellen zunächst mehrfach erkannt worden sein (z. B. „Der Rausch“ als „Komödie, Drama“ und „Drama“). Die Genre-Liste selbst ist keine Identität und erzeugt keine neue Werk-ID.
@@ -685,8 +673,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - Beim Zusammenführen automatisch bestätigter Filme bleiben die vollständigen Genres aus beiden geprüften Zuordnungen, alternative Senderangebote, Download-Historie und manuell gepflegte Metadaten erhalten.
 - Bereits vorhandene Dubletten werden nebenbei in kleinen, fortsetzbaren SQLite-Teilstapeln geprüft, statt beim Programmstart den gesamten Katalog zu blockieren.
 - Das Diagnoseprotokoll meldet die Anzahl sicher zusammengeführter Filme, ohne unbestätigte Treffer zu verändern.
-
-
 
 ## Neu in 0.5.20: Inkrementeller Filmlistenabgleich, Serienwissen, Verfügbarkeit
 
@@ -698,8 +684,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - Beim Öffnen des Download-Dialogs wird, soweit möglich, bei ARD/ZDF nach einem ausdrücklich ausgewiesenen Ablaufdatum gefragt. Die Antwort wird angebotsbezogen zwischengespeichert. Bekannte Daten erscheinen in Detailansicht und vor dem Download, baldige oder abgelaufene Termine als Hinweis.
 - Die Standard-MediathekView-Filmliste enthält normalerweise **kein** allgemeines Ablaufdatum. Wenn ein Sender keine explizite Information liefert, wird „Ablaufdatum nicht angegeben“ gezeigt. Das Sendedatum oder die Ablaufzeit eines API-Tokens wird nie als Verfügbarkeitsende verwendet.
 
-
-
 ## Neu in 0.5.19: Offline-Erkennung beschleunigt
 
 - IMDb: Datenbankverbindung je Hintergrund-Worker wiederverwenden, statt für jede Werkprüfung eine neue Verbindung zu öffnen. Nach atomarer Aktualisierung des IMDb-Archivs wird die Verbindung automatisch neu geöffnet.
@@ -710,8 +694,6 @@ Enthält 0.5.57 (Dashboard-Fix), 0.5.59 (Rakuten-Livesender) und die YouTube-Kor
 - IMDb-Download: Die verfügbare Speichermenge wird vor der Übertragung anhand der gemeldeten Restgröße geprüft. Ein Speichermangel wird früh erkannt; das bisherige Archiv bleibt nutzbar.
 - Regressionstests prüfen die Wiederverwendung der SQLite-Verbindung, das sichere Umschalten auf neue Datenbank-Snapshots sowie die Grenzen der automatischen Erkennung.
 - Download-Warteschlange: Noch nicht gestartete Aufträge bleiben nach einem Neustart als `queued` erhalten und werden vom Worker automatisch übernommen. Nur tatsächlich laufende Aufträge werden zunächst als `interrupted` markiert (sichere Wiederaufnahme folgt gesondert).
-
-
 
 Lokaler Film- und Serienkatalog mit automatischem Import der MediathekView-Filmliste, Metadatenabgleich und geordneten Downloads. Wiederverwendete ArchiveMedia-Module bilden die Grundlage für Titelerkennung, Anbieterabgleich, Dateinamen und Export.
 

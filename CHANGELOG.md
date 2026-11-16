@@ -1,8 +1,21 @@
+## 0.6.17 – Crunchyroll: Filme in der Serienliste erkennen (0.6.16 war bereits vom ServusTV-Thread vergeben)
+- Björn (16.11.2026, mit Anmeldung): Beispiel https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red – Crunchyroll führt Filme als Serie (Serien-ID, Seite `/series/`). Erklärt 0 Filme in 0.6.10 bis 0.6.13.
+- `crunchyroll.film_like(meta, title)`: `season_count` ≤ 1 und `episode_count` = 1 (nicht bei `is_simulcast: true`), oder „Film“/„Movie“/„Kinofilm“ als Wort im Titel bei höchstens 3 Folgen. Treffer: `kind = 'movie'`, ID bleibt `s.<ID>`; `load_episodes` wählt den Abruf jetzt nach dem ID-Präfix (`m.` = movie_listings, sonst Staffeln/Folgen), so dass Wiedergabeseite und Laufzeit aus der einzigen Folge kommen.
+- `browse_lists = 3`: vorhandene Kataloge werden beim nächsten Planerlauf neu geladen.
+- Tests: `tests/test_v0596_crunchyroll.py` (29, davon 3 neu; Björns zweites Beispiel „Detektiv Conan – The Movie 1“ als Prüffall).
+
 ## 0.6.16 – ServusTV: lange Clips, Sportseiten, einzelne Sperren übersprungen
 - **Ursache der wenigen ServusTV-Treffer** (Björn, 16.11.2026; Diagnose 0.6.13: 42 Filme, 41 von 81 Sendungen mit Folgen, 3.028 Folgen): Der Abruf verwarf alles mit `content_type: clip`. ServusTV führt aber viele vollständige Sendungen als Clip (HAR vom 13.11.: 185 von 787 Clips ≥ 20 Min., 23 Formate). Clips ab `MIN_FILM` (20 Min.) werden jetzt Folgen ihrer Sendung (Sendungsname aus `subheading`) oder, wenn der Name dem Titel entspricht, Filme.
 - Sportereignis-Seiten (`content_type: event`) werden wie Unterseiten gelesen; Teaserkacheln (`content_type: any` mit `nav_url` auf eine ServusTV-Seite) werden verfolgt; Filme mit `type: page` übernommen; Sendungen ohne eigene Karte erhalten ihren Namen aus der Produktantwort.
 - 403/404/410/451 einer einzelnen Nicht-Startseite nach den Wiederholungen → übersprungen (`unavailable`, Hinweis „N ServusTV-Seiten nicht freigegeben und übersprungen“), nicht mehr „teilweise geladen“. Teilweise erst bei mehr als 3 % abgewiesenen Abrufen (mind. 4) oder bei Fehlern der Startseiten.
 - Diagnose `servustv_sync_completed` zusätzlich mit `unavailable` (je HTTP-Status), `long_clips`, `events`, `shows`, `truncated` (nur Zahlen, keine Titel/Adressen). Portal-Übersicht zeigt die Folgenzahl.
+
+## 0.6.15 – Crunchyroll: Filmlisten mit Rückfall und Zählwerten
+- Björn (16.11.2026, Diagnose 0.6.13): „crunchyroll erkennt weiterhin keine filme“. Lauf 10:57 UTC `complete`, 1690 Serien, 0 Filme, kein `crunchyroll_movies_failed`: die Liste `type=movie_listing` kam ohne Fehler, brachte aber keinen neuen Film.
+- `crunchyroll.MOVIE_TYPES = ('movie_listing', 'movie')`: die zweite Liste nur, solange noch kein Film da ist. Einzelne Filme (`type: movie` ohne Film-Eintrag) bekommen `watch_id` und `/de/watch/<id>` direkt.
+- Zählwerte je Liste (`_list_stats`): `total`, `received`, `new`, `types`, `rejected`, `single_episode` (Serien mit höchstens einer Folge und Staffel), `meta_keys` (Feldnamen des ersten Eintrags), ggf. `error`. Gespeichert als `list_stats` (in `crunchyroll.state` und damit in status.json) und als Ereignis `crunchyroll_list`. Keine Titel, keine IDs.
+- Tests: `tests/test_v0596_crunchyroll.py` (26, davon 2 neu).
+
 ## 0.6.14 – Abo-Videos pro Stunde, längere Pause nach Bot-Sperre
 - Björn (16.11.2026): „lieber nur wenige Videos die Stunde laden“, damit die Bot-Sperre gar nicht erst auslöst. Diagnose 0.6.13 (11:48): 09:37–10:18 21 Abo-Videos geladen (~30/h, 5–20 s Abstand), ab 10:20 jede yt-dlp-Anfrage „kein Bot“, um 11:40 (0.6.13) immer noch; 0.6.13 reihte 43 Aufträge wieder ein und plante nach dem ersten Fehlschlag die Pause (`download_retry_planned`).
 - `youtube_abos`: `PER_HOUR_CHOICES` (1, 2, 3, 4, 6, 10, 20), Standard `PER_HOUR_DEFAULT` 4, Einstellung `abo_per_hour` und letzter Start `abo_last_start` in youtube.sqlite3; `pace(root, job, now, force)` stellt Abo-Aufträge (`youtube_abo`) bis zum nächsten Platz zurück (`not_before`, Hinweis), `force` (Jetzt versuchen) startet sofort und zählt mit; `next_slot`, `set_per_hour`; `overview` mit `per_hour`, `per_hour_choices`, `next_slot`.
@@ -31,7 +44,6 @@
 - `watch_home.py`: Ansehen-Modus zeigt nur Abos im Profil `erwachsene`; `web/watch_mode.js` ohne „auch in der Kinderecke“.
 - `web/youtube_abos.js` neu geschrieben (Reiter, Karten, ein Formular für Neu/Ändern mit eingeklappten Zusatzeinstellungen), `web/index.html` nur noch Behälter, neue `.abo-*`-Stile in `web/style.css` (alte `.youtube-abo*` entfernt).
 - Tests: `tests/test_v0611_abo_profiles.py` (8); angepasst: `test_v0607` (Formular-Behälter), `test_v0608` (Ansehen-Modus nur eigene Abos).
-
 
 ## 0.6.10 – Crunchyroll: Filme aus eigener Liste
 - Björn (16.11.2026, 0.6.8): „crunchyroll erkennt nur serien und keine filme“. Diagnose: `crunchyroll_sync_completed` mit `series: 1690, movies: 0`. `discover/browse` ohne `type` liefert nur Serien.
@@ -742,8 +754,6 @@
 - **Netzkino:** Nur vom Nutzer eingegebene Filmseiten; kein Scraping, keine Stream-Extraktion und keine Umgehung der Werbewiedergabe.
 - **Freigabe:** Getrennter Entwicklungsbranch; native macOS-, Linux- und NAS-Tests und reale Archivetests vor einem Merge erforderlich.
 
-
-
 ## 0.5.31.2 – Netzkino-Katalogimport (lokale Preview)
 - Die im Netzwerkmitschnitt vom 11.11.2026 beobachteten lesenden GraphQL-Katalogoperationen AllContent und CategoryDataBySlug ersetzen die ungeeignete Sitemap als Standardquelle.
 - Bereinigter HAR-Startbestand: 449 unterscheidbare Film- und Serienobjekte; keine HTTP-Header, Sitzungen, Player-Streams oder Tokens enthalten. Der Snapshot ist ausdrücklich kein Live-Verfügbarkeitsnachweis.
@@ -785,7 +795,6 @@
 - Regressionstests für Anime-Beispiele, Trailer-Ausnahmen, kurze echte Episoden, Neustart-Persistenz, Download-Vorprüfung und Einstellungen.
 - Die geplante FTS5-Suche und Kategorie „Letzte Chance“ sind eigene weitere Arbeitspakete und nicht Bestandteil dieses Teils der Preview.
 
-
 ## 0.5.30 – 10. November 2026 (Preview)
 
 - Sender-First-Episodenprüfung: Der Episodenworker übernimmt bereits importierte, eindeutig zugehörige ARD-/ZDF-Senderlinks und ihre Quellidentitäten, bevor IMDb Offline nach einer Episode sucht.
@@ -796,7 +805,6 @@
 - Testabdeckung für Offline-Betrieb, Berechtigungsschalter, sichere Nummernverifikation, Budgetbegrenzung, Fehlerwiederholung, IMDb-Fallback und manuelle Konkurrenzänderungen.
 - Keine automatische Massensuche auf internen ARD-/ZDF-Schnittstellen ohne Freigabe; keine Umgehung technischer Schutzmaßnahmen.
 
-
 ## 0.5.29 – 10. November 2026 (Preview)
 
 - Dashboard-Kennzahlen passen sich automatisch der tatsächlichen Fenster- bzw. Inhaltsbreite an (fünf, vier, drei, zwei oder eine Spalte); große Fenster zeigen zwei gleichmäßige Reihen mit je fünf statt acht plus zwei Kennzahlen.
@@ -805,7 +813,6 @@
 - Eigenständige Statuschips für Haupt- und Episodenworker, offene/bereite Episoden sowie bestätigte Werke/Folgen anstelle einer langen schlecht lesbaren Textzeile.
 - Suchfeld und Schaltflächen reagieren auf Fenstergrößenänderungen ohne unnötige Maximalbreite oder überlappende Bedienfelder.
 - Keine Änderungen an Katalog, Datenbank, Downloadvorgang, Worker-Scheduling oder Erkennungslogik.
-
 
 ## 0.5.28 – 10. November 2026 (Preview)
 
@@ -818,7 +825,6 @@
 - Die ETA für neue Werkidentitäten zählt keine bereits in der Episodenwarteschlange liegenden Beiträge mehr.
 - Tests für Queue-Routing, Konkurrenz, Neustart-Wiederaufnahme, eindeutige Episodenbelege und manuelle Priorisierung.
 
-
 ## 0.5.27 – 10. November 2026 (Preview / Diagnose-Fixes)
 
 - TVDB-Anfragen erhalten ein separates Zeitlimit von zwölf Sekunden statt der bisherigen 35 Sekunden; andere Anbieter behalten ihren bisherigen Standard.
@@ -828,7 +834,6 @@
 - Serienvorlagen dürfen einen explizit gespeicherten ausstehenden Anbieterabgleich nicht als bereits erledigt überspringen; bestätigte Episoden werden nicht herabgestuft.
 - Regressionstests für Timeouts, Schlüsselseparation, Circuit Breaker, erfolgreiche Wiederaufnahme und persistierte Teilergebnisse.
 - Offen: End-to-End-Performance und Erkennungsrate müssen am realen Katalog validiert werden; keine automatische Episodenverifikation allein aus einer Serienidentität.
-
 
 ## 0.5.26 – 10. November 2026 (Testbuild)
 
@@ -847,8 +852,6 @@
 - IMDb-Offline: kurze Wiederholungen bei vorübergehenden Netzfehlern und fortsetzbare Teil-Downloads; erfolgreich heruntergeladene Zwischenstände bleiben beim gescheiterten Erstimport bis sieben Tage nutzbar. Diagnosestatus zeigt Dateigrößen.
 - Regressionstests: alter Verbundschlüssel wird nach Rotation abgelehnt, neuer funktioniert, andere Verbindungen bleiben bestehen; HTTP-Range nach Timeout setzt IMDb-Download fort.
 
-
-
 ## 0.5.25 Preview – 9. November 2026
 - Konfigurierbarer Pool mit 1, 2 oder 4 parallelen Erkennungsworkern und SQLite-Leases pro Werk. Ausgelaufene Claims lassen sich nach Neustart wieder übernehmen; doppelte parallele Bearbeitung wird verhindert.
 - Gemeinsame Limitierung externer Metadatenprüfketten auf zwei gleichzeitig, damit mehr Worker nicht alle API-Quoten überlasten.
@@ -856,8 +859,6 @@
 - Serienepisoden erfordern eindeutige, überprüfte Staffel-/Folgeninformationen; unsichere Kandidaten und nicht direkt unterstützte Links werden ausgelassen.
 - Schutz vor doppelten Downloads durch Abonnement-Schlüssel, gespeicherte Downloadhistorie, vorhandene Zielpfade und laufende/abgeschlossene Aufträge.
 - Neue Regressionstests für sichere Abos und parallele Auftragsreservierung.
-
-
 
 ## 0.5.24 Preview – 9. November 2026
 
@@ -868,8 +869,6 @@
 - Gebündelte Statuszählung nach Werkart und Erkennungszustand statt mehrfacher vollständiger SQLite-Scans.
 - Eigener Diagnosezähler für ohne externe API gruppierte Nachrichtenbeiträge; keine Verfälschung der Netto-Erstprüfungsquote.
 - Regressionstests für bekannte News-Formate, Filmhinweise, negative Titelbeispiele, manuelle Prioritäten und Zustandszahlen.
-
-
 
 ## 0.5.23 Preview – 8. November 2026
 - Build 47: IMDb Offline im Katalog-/Metadaten-Dashboard mit letztem erfolgreichem Archivaufbau, nächstem Versuch und letztem Fehler. Aufklappbare Übersicht über alle sieben IMDb-Dateien inklusive Datensatzumfang und Übernahmezeitpunkt.
@@ -884,8 +883,6 @@
 - Zusätzliche Bibliotheksordner in den Einstellungen. Die automatische Suche ist begrenzt, überprüft keine beliebigen Verzeichnisse und folgt keinen Verzeichnis-Symlinks.
 - Regressionstests für verlorene Speicherorte, wiederhergestellte Dateiverknüpfungen und Schutz vor falschen Verknüpfungen.
 
-
-
 ## 0.5.22 Preview – 8. November 2026
 - Nutzerauswahl: ausgewogene Film-/Serienprüfung, Filme zuerst oder Serien zuerst; manuelle Prioritäten bleiben vorrangig.
 - Serienvervollständigung: begrenzter Fokus auf bis zu 24 weitere fällige Folgen, ohne unbegrenzte Massenanfragen.
@@ -895,16 +892,12 @@
 - Identische Senderangebote werden nur bei exakter technischer Medienidentität gemeinsam angezeigt. Unterschiedliche Medien und Audiodeskription bleiben getrennt.
 - Neu: automatisierte Tests der Scheduler-Modi, Caches, Medienidentität und Netto-Statistik.
 
-
-
 ## 0.5.21 Preview – 7. November 2026
 - Konservative Filmdubletten-Erkennung über eindeutige Anbieterkennung oder bestätigten Titel, Produktionsjahr und vergleichbare Laufzeit.
 - Beim Zusammenführen bleiben verfügbare Genres aus geprüften Quellen, Senderangebote, Downloadbelege und manuelle Änderungen erhalten.
 - Bestehende bestätigte Dubletten werden in kleinen, fortsetzbaren Batches nachbereinigt; neue bestätigte Treffer sofort geprüft.
 - Keine automatischen Zusammenführungen bei widersprüchlichen Jahren, Referenzen oder Laufzeiten sowie bei zwei voneinander abweichenden manuellen Bearbeitungen.
 - Regressionstests und Diagnosezähler.
-
-
 
 ## 0.5.20 Preview – 7. November 2026
 - Inkrementeller Vergleich vollständiger MediathekView-Filmlisten: unveränderte Angebote werden nicht erneut in den Werk- und Angebotstabellen geschrieben.
