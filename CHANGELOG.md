@@ -1,3 +1,7 @@
+## 0.6.18 – Sammelstand: 0.6.14 bis 0.6.17 zusammen in main
+- Zusammengeführt (16.11.2026, Björn: „ja merge alle“): PR #66 (0.6.14 Abo-Videos höchstens N pro Stunde), PR #68 (0.6.16 ServusTV lange Clips/Sportseiten), PR #67 (0.6.15 + 0.6.17 Crunchyroll-Filme erkennen).
+- Konflikte nur an Versionsstellen und in CHANGELOG/README/VALIDATION. Keine neue Funktion.
+
 ## 0.6.17 – Crunchyroll: Filme in der Serienliste erkennen (0.6.16 war bereits vom ServusTV-Thread vergeben)
 - Björn (16.11.2026, mit Anmeldung): Beispiel https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red – Crunchyroll führt Filme als Serie (Serien-ID, Seite `/series/`). Erklärt 0 Filme in 0.6.10 bis 0.6.13.
 - `crunchyroll.film_like(meta, title)`: `season_count` ≤ 1 und `episode_count` = 1 (nicht bei `is_simulcast: true`), oder „Film“/„Movie“/„Kinofilm“ als Wort im Titel bei höchstens 3 Folgen. Treffer: `kind = 'movie'`, ID bleibt `s.<ID>`; `load_episodes` wählt den Abruf jetzt nach dem ID-Präfix (`m.` = movie_listings, sonst Staffeln/Folgen), so dass Wiedergabeseite und Laufzeit aus der einzigen Folge kommen.

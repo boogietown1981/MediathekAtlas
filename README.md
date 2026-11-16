@@ -1,4 +1,8 @@
-# MediathekAtlas · X
+# MediathekAtlas · 0.6.18
+
+## Neu in 0.6.18: Sammelstand
+
+- Enthält 0.6.14 bis 0.6.17 in einem Paket: Abo-Videos gleichmäßig über die Stunde verteilt, ServusTV mit deutlich mehr Titeln, Crunchyroll-Filme werden erkannt. Keine neue Funktion.
 
 ## Neu in 0.6.17: Crunchyroll-Filme werden erkannt
 
