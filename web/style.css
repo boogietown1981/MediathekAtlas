@@ -1000,10 +1000,31 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .system-profile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:16px 0 8px}.system-profile label{font-weight:600}.system-profile small{flex-basis:100%}
 /* 0.6.7 YouTube-Kanal-Abos und Link zur Kinderecke */
 a.nav{display:block;text-decoration:none;border-radius:8px}a.nav-kids{color:#ffd76a}a.nav-kids:hover{background:#2a2540}
-.youtube-abos .youtube-abo-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 14px;align-items:end;margin-top:12px}
-.youtube-abo-form .wide{grid-column:1/-1}.youtube-abo-form label small{display:block;margin-top:4px;color:#8597ab;font-size:11px}
-.youtube-abo-form .wide button{margin-right:8px}.youtube-abo-edit{padding:12px;border:1px dashed #344150;border-radius:10px;margin-top:10px}
-.youtube-abo strong .muted{font-weight:400}.youtube-abo .youtube-source-actions a{align-self:center;margin-left:6px}
+/* 0.6.11: Abo-Verwaltung mit Profil-Reitern und kompakten Karten */
+.abo-profiles{display:flex;gap:8px;margin:14px 0 12px;flex-wrap:wrap}
+.abo-tab{display:flex;flex-direction:column;align-items:flex-start;gap:2px;padding:9px 16px;border-radius:10px;background:#141e2b;border:1px solid #2d3c4c;min-width:170px}
+.abo-tab[aria-selected=true]{background:#21372f;border-color:#3f7a66;color:#8af1d1}.abo-tab-name{font-weight:650}.abo-tab-count{font-size:11px;color:#90a2b7}
+.abo-list{display:grid;gap:8px}.abo-empty{color:#90a2b7;padding:14px;border:1px dashed #344150;border-radius:10px;margin:0}
+.abo-card{display:grid;grid-template-columns:44px 1fr auto;gap:12px;align-items:start;padding:12px 14px;border:1px solid #2b3948;border-radius:12px;background:#131d2a}
+.abo-card.is-paused{opacity:.62}.abo-card>.abo-form{grid-column:1/-1}
+.abo-avatar{width:44px;height:44px;border-radius:50%;background:#2c3c52;display:grid;place-items:center;font-weight:700;font-size:18px;overflow:hidden}
+.abo-avatar img{width:100%;height:100%;object-fit:cover}
+.abo-body{min-width:0}.abo-head{display:flex;align-items:center;gap:8px;flex-wrap:wrap}.abo-head strong{font-size:14px}
+.abo-badge{font-size:10px;padding:2px 7px;border-radius:9px;background:#26303c;color:#a4b1c3;text-transform:uppercase;letter-spacing:.5px}
+.abo-rules{margin:3px 0 6px;font-size:12px;color:#90a2b7;overflow-wrap:anywhere}
+.abo-chips{display:flex;gap:6px;flex-wrap:wrap}.abo-chip{font-size:11px;padding:3px 9px;border-radius:999px;background:#1c2837;color:#c4d0de}
+.abo-chip.abo-ok{background:#1d3a30;color:#8af1d1}.abo-chip.abo-busy{background:#1d2f45;color:#9cc8ff}.abo-chip.abo-wait{background:#3a3220;color:#f1cd8d}
+.abo-chip.abo-bad{background:#45202a;color:#ffaab8}.abo-chip.abo-muted{color:#8597ab}
+.abo-error{margin:6px 0 0;font-size:12px;color:#ffb0a0}.abo-why{margin-top:6px;font-size:12px}.abo-why summary{cursor:pointer;color:#90a2b7}
+.abo-actions{display:flex;gap:4px;align-items:center}
+.abo-icon{display:inline-grid;place-items:center;width:32px;height:32px;padding:0;border-radius:8px;font-size:15px;text-decoration:none;color:#c4d0de;border:1px solid #344150;background:#1c2837}
+.abo-add{margin-top:12px}.abo-add-button{width:auto}
+.abo-form{margin-top:10px;padding:14px;border:1px solid #344150;border-radius:12px;background:#101822}
+.abo-form-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(200px,1fr));gap:0 14px;align-items:end}
+.abo-form-grid label{margin:8px 0}.abo-form-grid .abo-wide{grid-column:span 2}.abo-form-grid .check{align-self:center}
+.abo-profile-hint{margin:2px 0 6px}.abo-more{margin:6px 0}.abo-more summary{cursor:pointer;color:#acbed0;font-size:12px}
+.abo-form-actions{display:flex;gap:8px;margin-top:10px}
+@media(max-width:650px){.abo-card{grid-template-columns:36px 1fr}.abo-actions{grid-column:1/-1}.abo-form-grid .abo-wide{grid-column:auto}}
 /* 0.6.8 Ansehen-Modus (web/watch_mode.js): /ansehen ohne Seitenleiste, großformatig wie ein Streamingdienst */
 html[data-mode=watch] body>aside,html[data-mode=watch] main>header,html[data-mode=watch] #admin-tabs{display:none}
 html[data-mode=watch] main{margin:0;width:100%;max-width:none;padding:0 0 60px}

@@ -1,3 +1,10 @@
+## 0.6.11 – YouTube-Abos je Profil (Kinderecke / Für mich), Abo-Verwaltung neu
+- `youtube_abos.py`: Spalte `profile` (`kinder`/`erwachsene`, `PROFILES`), eindeutig ist jetzt `(ref, profile)`. `_migrate` baut die Tabelle bis 0.6.10 um (kids=1 → kinder, sonst erwachsene, IDs bleiben). `profile_of` nimmt auch noch `kids` an; `kids` wird mitgeführt. `kids(..., profile=)` statt `only_kids`; Kanäle tragen `profile`. `_make_room` löscht keine Datei, die ein Abo des anderen Profils noch hält. `overview` liefert `profiles` (Abos, Offline je Profil) und `avatar_local`.
+- `watch_home.py`: Ansehen-Modus zeigt nur Abos im Profil `erwachsene`; `web/watch_mode.js` ohne „auch in der Kinderecke“.
+- `web/youtube_abos.js` neu geschrieben (Reiter, Karten, ein Formular für Neu/Ändern mit eingeklappten Zusatzeinstellungen), `web/index.html` nur noch Behälter, neue `.abo-*`-Stile in `web/style.css` (alte `.youtube-abo*` entfernt).
+- Tests: `tests/test_v0611_abo_profiles.py` (8); angepasst: `test_v0607` (Formular-Behälter), `test_v0608` (Ansehen-Modus nur eigene Abos).
+- 0.6.10 (Crunchyroll, anderer Arbeitsstrang) ist hier nicht enthalten.
+
 ## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (0.6.8, macOS arm64)
 - `catalog_service.identified_delay`: erkannte, noch nicht abgeglichene Serien, deren Sendung (`topic`) dem erkannten Serientitel entspricht, warten 30 Tage + bis zu 7 Tage Streuung bis zur nächsten Anbieterprüfung – für alle Anbieter, nicht nur ARD/ZDF. Anlass: 3.326 Ausgaben „Schleswig-Holstein Magazin“, 1.000 „NDR Info“, 774 „Nordtour“ (IMDb Offline/TMDB erkannt) wurden täglich neu geprüft (5.262 von 6.383 Ergebnissen in 11 h). Die Serienvorlage griff nicht, weil der Sendungstitel der Ausgabe gleich dem Sendungsnamen ist.
 - `server.catalog_status`: veralteter Stand wird sofort geliefert und im Hintergrund erneuert (Thread `catalog_status`), nur ein leerer Stand wird synchron geladen.

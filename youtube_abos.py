@@ -58,7 +58,7 @@ LIVE_STATES = ('queued', 'downloading', 'tagging', 'done')
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS youtube_abos(
-  id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT NOT NULL UNIQUE, kind TEXT NOT NULL DEFAULT 'channel',
+  id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT NOT NULL, profile TEXT NOT NULL DEFAULT 'kinder', kind TEXT NOT NULL DEFAULT 'channel',
   label TEXT NOT NULL DEFAULT '', title TEXT NOT NULL DEFAULT '', channel_id TEXT NOT NULL DEFAULT '',
   playlist TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', mode TEXT NOT NULL DEFAULT 'new',
   start_count INTEGER NOT NULL DEFAULT 5, keep INTEGER NOT NULL DEFAULT 30, include TEXT NOT NULL DEFAULT '',
@@ -66,7 +66,7 @@ CREATE TABLE IF NOT EXISTS youtube_abos(
   quality TEXT NOT NULL DEFAULT '720', kids INTEGER NOT NULL DEFAULT 1, interval_hours INTEGER NOT NULL DEFAULT 3,
   enabled INTEGER NOT NULL DEFAULT 1, added REAL NOT NULL, checked REAL NOT NULL DEFAULT 0,
   next_check REAL NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', last_new INTEGER NOT NULL DEFAULT 0,
-  via TEXT NOT NULL DEFAULT '');
+  via TEXT NOT NULL DEFAULT '', UNIQUE(ref, profile));
 CREATE TABLE IF NOT EXISTS youtube_abo_videos(
   abo_id INTEGER NOT NULL, video TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', published TEXT NOT NULL DEFAULT '',
   duration INTEGER, poster TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0,
@@ -100,10 +100,47 @@ def _notify(event, **details):
         pass
 
 
+# 0.6.11 (Björn, 16.11.2026): Abos gehören einem Profil. „kinder“ erscheint nur in der Kinderecke,
+# „erwachsene“ nur im Ansehen-Modus; derselbe Kanal darf in beiden Profilen abonniert sein.
+PROFILES = {'kinder': 'Kinderecke', 'erwachsene': 'Für mich (Ansehen-Modus)'}
+
+_COLUMNS = ('id', 'ref', 'kind', 'label', 'title', 'channel_id', 'playlist', 'avatar', 'mode', 'start_count', 'keep',
+            'include', 'exclude', 'min_seconds', 'max_seconds', 'quality', 'kids', 'interval_hours', 'enabled', 'added',
+            'checked', 'next_check', 'last_error', 'last_new', 'via')
+
+
+def _migrate(db):
+    """Bis 0.6.10: ``ref`` war eindeutig, ``kids`` schaltete die Kinderecke zu (Erwachsene sahen alles).
+    Jetzt Profil je Abo; kids=1 -> 'kinder', kids=0 -> 'erwachsene'. IDs bleiben (Videos hängen daran)."""
+    columns = {r[1] for r in db.execute('PRAGMA table_info(youtube_abos)')}
+    if 'profile' in columns:
+        return False
+    keep = [c for c in _COLUMNS if c in columns]
+    with db:
+        db.execute('ALTER TABLE youtube_abos RENAME TO youtube_abos_bis_0610')
+        db.executescript(SCHEMA)
+        db.execute('INSERT INTO youtube_abos(%s,profile) SELECT %s,CASE WHEN kids=1 THEN \'kinder\' ELSE \'erwachsene\' END '
+                   'FROM youtube_abos_bis_0610' % (','.join(keep), ','.join(keep)))
+        db.execute('DROP TABLE youtube_abos_bis_0610')
+    return True
+
+
 def _connect(root):
     db = youtube._connect(root)            # dieselbe Datei youtube.sqlite3 (WAL)
+    if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='youtube_abos'").fetchone():
+        _migrate(db)
     db.executescript(SCHEMA)
     return db
+
+
+def profile_of(data, current=None):
+    value = str((data or {}).get('profile') or '')
+    if not value and 'kids' in (data or {}):     # ältere Aufrufer (bis 0.6.10) schicken nur kids
+        value = 'kinder' if data.get('kids') not in (False, 0, '0', 'false', '') else 'erwachsene'
+    value = value or (current or {}).get('profile') or 'kinder'
+    if value not in PROFILES:
+        raise ValueError('Unbekanntes Profil')
+    return value
 
 
 def _int(value, low, high, default):
@@ -153,9 +190,11 @@ def _clean(data, current=None):
             out[key] = ', '.join(_words(data.get(key)))[:300]
     if 'label' in data or not current:
         out['label'] = ' '.join(str(data.get('label') or '').split())[:80]
-    for key in ('kids', 'enabled'):
-        if key in data or not current:
-            out[key] = int(data.get(key, True) not in (False, 0, '0', 'false', ''))
+    if 'enabled' in data or not current:
+        out['enabled'] = int(data.get('enabled', True) not in (False, 0, '0', 'false', ''))
+    if 'profile' in data or 'kids' in data or not current:
+        out['profile'] = profile_of(data, cur)
+        out['kids'] = int(out['profile'] == 'kinder')       # Spalte bleibt für ältere Auswertungen
     return out
 
 
@@ -167,15 +206,15 @@ def add(root, data, now=None):
     try:
         if db.execute('SELECT COUNT(*) FROM youtube_abos').fetchone()[0] >= MAX_ABOS:
             raise ValueError('Höchstens %d Abos' % MAX_ABOS)
-        if db.execute('SELECT 1 FROM youtube_abos WHERE ref=?', (ref,)).fetchone():
-            raise ValueError('Dieser Kanal bzw. diese Playlist ist schon abonniert')
+        if db.execute('SELECT 1 FROM youtube_abos WHERE ref=? AND profile=?', (ref, fields['profile'])).fetchone():
+            raise ValueError('Dieser Kanal bzw. diese Playlist ist im Profil „%s“ schon abonniert' % PROFILES[fields['profile']])
         with db:
             cur = db.execute('INSERT INTO youtube_abos(ref,kind,added,next_check,%s) VALUES(?,?,?,?,%s)'
                              % (','.join(fields), ','.join('?' * len(fields))), (ref, kind, now, now, *fields.values()))
         abo_id = cur.lastrowid
     finally:
         db.close()
-    _notify('youtube_abo_added', kind=kind, mode=fields['mode'], kids=bool(fields['kids']))
+    _notify('youtube_abo_added', kind=kind, mode=fields['mode'], profile=fields['profile'])
     return abo_id
 
 
@@ -198,6 +237,9 @@ def change(root, abo_id, data, now=None):
                 db.execute('UPDATE youtube_abos SET next_check=0,enabled=1 WHERE id=?', (abo_id,))
                 return {'ok': True}
             fields = _clean(data, dict(row))
+            if fields.get('profile', row['profile']) != row['profile'] and db.execute(
+                    'SELECT 1 FROM youtube_abos WHERE ref=? AND profile=? AND id!=?', (row['ref'], fields['profile'], abo_id)).fetchone():
+                raise ValueError('Dieser Kanal ist im Profil „%s“ schon abonniert' % PROFILES[fields['profile']])
             if not fields:
                 return {'ok': True}
             if fields.get('mode') == 'all' and row['mode'] == 'new':
@@ -430,6 +472,14 @@ def _make_room(c, db, abo, now):
     for row in rows:
         mark = seen.get('job:' + row['job_id']) or {}
         if mark.get('done') and not mark.get('pinned') and not mark.get('favorite'):
+            # 0.6.11: hält ein anderes Abo (anderes Profil, gleicher Kanal) dieselbe Datei, bleibt sie liegen;
+            # nur dieses Abo gibt seinen Platz frei.
+            shared = db.execute("SELECT 1 FROM youtube_abo_videos WHERE job_id=? AND abo_id!=? AND state='done'",
+                                (row['job_id'], abo['id'])).fetchone()
+            if shared:
+                db.execute("UPDATE youtube_abo_videos SET state='expired',reason='gesehen, Platz für Neues' WHERE abo_id=? AND video=?",
+                           (abo['id'], row['video']))
+                return True
             try:
                 netzkino_downloads.delete_now(c, row['job_id'], now)
             except ValueError:
@@ -728,20 +778,25 @@ def overview(root, c=None):
         a['reasons'] = reasons.get(a['id'], [])[:5]
         a['name'] = a['label'] or a['title'] or a['ref']
         a['url'] = _channel_url(a['ref']).replace('/videos', '')
+        a['avatar_local'] = bool(avatar_file(root, a['id']))
     offline = youtube_downloads.status(root)
-    return {'abos': abos, 'offline': {'enabled': offline.get('enabled'), 'tool': bool(offline.get('tool'))},
+    profiles = [{'key': k, 'label': v, 'abos': sum(1 for a in abos if a['profile'] == k),
+                 'done': sum((a['counts'].get('done') or 0) for a in abos if a['profile'] == k)} for k, v in PROFILES.items()]
+    return {'abos': abos, 'profiles': profiles, 'offline': {'enabled': offline.get('enabled'), 'tool': bool(offline.get('tool'))},
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
             'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS}
 
 
-def kids(root, c, watch=None, only_kids=True):
-    """Was die Kinderansicht zeigt: Kanäle und fertig geladene Videos, neue zuerst.
-    0.6.8: only_kids=False liefert alle Abos (Ansehen-Modus für Erwachsene, watch_home.py)."""
+def kids(root, c, watch=None, profile='kinder'):
+    """Fertig geladene Videos eines Profils mit seinen Kanälen, neue zuerst. Kinderecke: 'kinder',
+    Ansehen-Modus (watch_home.py): 'erwachsene' (0.6.11: keine Vermischung mehr)."""
     import watch_state
+    if profile not in PROFILES:
+        raise ValueError('Unbekanntes Profil')
     db = _connect(root)
     try:
         sync_states(c, db)
-        abos = [dict(r) for r in db.execute('SELECT id,label,title,ref,kids FROM youtube_abos' + (' WHERE kids=1' if only_kids else ''))]
+        abos = [dict(r) for r in db.execute('SELECT id,label,title,ref,kids,profile FROM youtube_abos WHERE profile=?', (profile,))]
         ids = [a['id'] for a in abos]
         rows = [dict(r) for r in db.execute(
             "SELECT abo_id,video,title,published,duration,job_id,done_at FROM youtube_abo_videos WHERE state='done' AND abo_id IN (%s)"
@@ -771,7 +826,7 @@ def kids(root, c, watch=None, only_kids=True):
     channels = []
     for a in abos:
         own = [v for v in videos if v['abo'] == a['id']]
-        channels.append({'id': a['id'], 'name': a['label'] or a['title'] or a['ref'], 'videos': len(own), 'kids': bool(a['kids']),
+        channels.append({'id': a['id'], 'name': a['label'] or a['title'] or a['ref'], 'videos': len(own), 'kids': a['profile'] == 'kinder', 'profile': a['profile'],
                          'new': sum(1 for v in own if v['new']), 'avatar': bool(avatar_file(root, a['id']))})
     channels.sort(key=lambda ch: (-ch['new'], ch['name'].lower()))
     return {'channels': channels, 'videos': videos}
@@ -781,7 +836,7 @@ def summary(root):
     """Zahlen für den Diagnoseexport (ohne Namen und Adressen)."""
     db = _connect(root)
     try:
-        abos = db.execute('SELECT COUNT(*),SUM(enabled),SUM(kids) FROM youtube_abos').fetchone()
+        abos = db.execute("SELECT COUNT(*),SUM(enabled),SUM(profile='kinder') FROM youtube_abos").fetchone()
         states = dict(db.execute('SELECT state,COUNT(*) FROM youtube_abo_videos GROUP BY state').fetchall())
         errors = db.execute("SELECT COUNT(*) FROM youtube_abos WHERE last_error!=''").fetchone()[0]
     finally:

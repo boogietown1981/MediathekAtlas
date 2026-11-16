@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.11 – YouTube-Abos je Profil (16. November 2026)
+- Automatisch: gesamte Python-Suite (1254 Tests, 4 übersprungen), Klicktest Chromium.
+- Echter Server mit der Datenbank aus 0.6.7 (alte Tabelle, 3 Abos, eins ohne Kinderecke): Umbau beim Start, Kinderecke zeigt nur die zwei Kinder-Kanäle, `/api/watch-home` nur den dritten; Verwaltung mit Reitern, neues Abo desselben Kanals unter „Für mich“, Einstellungen aufklappen (Chromium, Bildschirmfotos).
+- Nicht geprüft: echtes YouTube, Safari/Firefox, NAS.
+
 ## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (16. November 2026)
 - Diagnose-ZIP ausgewertet (0.6.8, macOS arm64, Python 3.14.10, 23.245 Ereignisse von 15.11. 22:07 bis 16.11. 09:05 UTC).
 - Automatisch: gesamte Python-Suite (1247 Tests, 4 übersprungen), `ruff` (F, E9) für alle geänderten Module.
