@@ -34,4 +34,8 @@ RUNTIME="$("$PY" "$APP_DIR/stable_runtime.py" "$APP_DIR" "$STATE_DIR" 2>> "$LOG"
 cd "$RUNTIME" || fail "Laufzeitordner nicht erreichbar: $RUNTIME"
 export MEDIATHEKATLAS_HOME="$STATE_DIR"
 if [ "${1:-}" = "--diagnose" ]; then exec "$PY" diagnostics_cli.py; fi
-"$PY" server.py "$@" >> "$LOG" 2>&1 || fail "MediathekAtlas wurde mit einem Fehler beendet. Details stehen im Startprotokoll."
+"$PY" server.py "$@" >> "$LOG" 2>&1
+STATUS=$?
+# 0.6.20: Speicherort für System und Datenbank nicht erreichbar (z. B. externes Laufwerk nicht eingebunden).
+if [ "$STATUS" -eq 3 ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then fail "$(cat "$STATE_DIR/storage-problem.txt")"; fi
+[ "$STATUS" -eq 0 ] || fail "MediathekAtlas wurde mit einem Fehler beendet. Details stehen im Startprotokoll."

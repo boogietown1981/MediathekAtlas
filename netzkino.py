@@ -128,6 +128,8 @@ def _seed_target(root):
     Unit tests use temporary scratch roots and must remain deterministic.
     """
     root=Path(root).expanduser().resolve()
+    data=os.environ.get('MEDIATHEKATLAS_DATA_DIR')   # 0.6.20: umgezogener Datenordner
+    if data and root==Path(data).expanduser().resolve():return True
     custom=os.environ.get('MEDIATHEKATLAS_HOME')
     if custom:return root==Path(custom).expanduser().resolve()
     home=Path.home()

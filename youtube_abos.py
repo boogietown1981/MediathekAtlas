@@ -40,6 +40,7 @@ import time
 import urllib.parse
 from pathlib import Path
 
+import storage_locations
 import youtube
 
 MODES = ('new', 'all')
@@ -629,7 +630,8 @@ def _enqueue(root, db, abo, now, c=None, download_dir=None):
     import netzkino_downloads as offline
     def work(c):
         sync_states(c, db, abo['id'])
-        target_dir = download_dir or (_SETTINGS() or {}).get('download_dir')
+        # 0.6.20: eigener Zwischenspeicher (Einstellungen → Speicherorte), sonst der Downloadordner
+        target_dir = download_dir or storage_locations.abo_base(_SETTINGS() or {})
         if not target_dir:
             return 0, 0
         wanted = [dict(r) for r in db.execute("SELECT * FROM youtube_abo_videos WHERE abo_id=? AND state='wanted'", (abo['id'],))]

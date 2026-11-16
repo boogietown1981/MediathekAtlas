@@ -1,5 +1,13 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.21 – Sammelstand 0.6.19 + 0.6.20 (16. November 2026)
+- Skriptprüfung: jede von PR #70 und #71 hinzugefügte Zeile steht im zusammengeführten Stand (außer Versionsangaben). Testläufe siehe PR.
+
+## 0.6.20 – Speicherorte mit Umzug (16. November 2026)
+- Automatisch: gesamte Python-Suite, `tests/test_v0620_storage_locations.py` (offene WAL-Datenbank konsistent kopiert, Wiederaufnahme ohne Doppelkopie, Abbruch ohne halbe Datei, Inhaltsabweichung erkannt, Download- und Abo-Umzug mit Pfadänderung in catalog.db, Warten auf laufenden Download, System-Umzug mit Nachkopieren beim Start, Rückweg an den Standardort, abgezogenes Laufwerk → Meldung statt leerem Neuanfang, Löschen nur nachweislich gleicher Dateien).
+- Ende-zu-Ende mit echtem Server (Linux): Downloads umgezogen, System umgezogen, „Jetzt neu starten“ (gleiche PID, gleicher Port), Altdaten gelöscht, danach Laufwerk entfernt → Start endet nach 30 s mit Code 3 und Meldung, nichts neu angelegt. Klicktest Chromium.
+- Nicht geprüft: echtes externes Laufwerk/exFAT und SMB-Freigabe am Mac, macOS-Dialog im Startskript, NAS-Pakete, Windows (Neustart dort von Hand).
+
 ## 0.6.19 – Korrekturen aus der Diagnose von 0.6.18 (16. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests; neu `tests/test_v0619_diagnose_0618.py`, Crunchyroll-Tests mit nachgebildeter Filmliste (Einträge vom Typ „series“).
 - Nicht geprüft: echte Antwort von crunchyroll.com (aus der Cloud gesperrt); die Zahl 168 ist aus 1.690 − 1.522 geschlossen. Die nächste Diagnose zeigt `list_stats` mit `films` je Liste.

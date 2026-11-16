@@ -31,9 +31,9 @@ def invalidate(*paths):
         for path in paths:_STATUS.pop(str(path),None)
 
 def roots(settings):
-    folders=[settings.get('download_dir','')]+list(settings.get('library_dirs') or [])
+    folders=[settings.get('download_dir',''),settings.get('cache_dir') or '']+list(settings.get('library_dirs') or [])   # 0.6.20: Zwischenspeicher (YouTube-Abos)
     output=[];seen=set()
-    for value in folders[:9]:
+    for value in folders[:10]:
         try:
             p=Path(value).expanduser()
             if not p.is_absolute():continue
