@@ -44,12 +44,13 @@ window.AtlasPortalPanel = function (cfg) {
       st.last_result === 'failed' ? (stored ? 'Abruf fehlgeschlagen · gespeicherter Bestand' : 'Fehlgeschlagen') :
       stored ? 'Gespeicherter Bestand' : 'Noch nicht geladen';
     $(P + '-summary').textContent = `${st.movies || 0} Filme · ${st.series || 0} Serien · ` +
+      (st.episodes ? `${st.episodes} Folgen · ` : '') +
       (cfg.live ? `${st.channels || 0} Live-Sender · ` : '') +
       (cfg.music ? `${st.music || 0} Musik-Playlists/-Videos (${st.tracks || 0} Videos) · ` : '') +
       (st.playable !== undefined ? `${st.playable || 0} im Player abspielbar · ` : '') + `${phase} · ` +
       `Stand: ${date(st.last_success)}` + (stored ? ' · bleibt nach Neustart erhalten' : '') +
       (st.running && st.progress ? ` · ${st.progress}` : '') +
-      (st.last_error ? ` · Hinweis: ${st.last_error}` : '');
+      (st.last_error ? ` · Hinweis: ${st.last_error}` : '') + (st.note && !st.last_error ? ` · ${st.note}` : '');
     $(P + '-summary').dataset.phase = st.last_result || 'never';
     clearTimeout(poll);
     if (st.running && visible()) poll = setTimeout(refresh, 4000);

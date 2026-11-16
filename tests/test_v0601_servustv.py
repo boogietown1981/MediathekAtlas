@@ -151,11 +151,30 @@ class CatalogueTests(Base):
         result = servustv.sync(self.root, opener=fake, now=NOW, waits=(0, 0))
         self.assertTrue(result['ok'])
         self.assertFalse(result['partial'])
+        # 0.6.16: one page that keeps refusing is skipped; the rest of the catalogue counts as complete
         fake = FakeServus()
         fake.refuse = {'/products/v5.3/stv/de/de/AA-25RX849FN1W11': 9}
         result = servustv.sync(self.root, opener=fake, now=NOW + 10, waits=(0, 0))
-        self.assertTrue(result['partial'])
-        self.assertRegex(servustv.state(self.root)['last_error'], r'HTTP 403.*\(1 von \d+ Abrufen\)')
+        self.assertFalse(result['partial'])
+        state = servustv.state(self.root)
+        self.assertEqual((state['last_result'], state['last_error'], state['unavailable']), ('complete', '', 1))
+        self.assertEqual(state['note'], '1 ServusTV-Seite nicht freigegeben und übersprungen')
+        # a seed that keeps refusing still makes the run partial
+        fake = FakeServus()
+        fake.refuse = {'/products/v5.3/stv/de/de/sendungen': 9}
+        result = servustv.sync(self.root, opener=fake, now=NOW + 20, waits=(0, 0))
+        self.assertFalse(result['ok'])
+        self.assertRegex(servustv.state(self.root)['last_error'], r'HTTP 403')
+        self.assertEqual(servustv.listing(self.root, 'movies')['total'], 1)     # stored catalogue stays
+
+    def test_many_refusals_still_count_as_partial(self):
+        crawl = servustv.Crawl(self.fake, 0)
+        crawl.requests, crawl.unavailable = 100, {403: 4}
+        self.assertTrue(crawl.refused_too_often())          # 4 > max(3, 3 % of 100)
+        crawl.unavailable = {403: 3, 404: 20}
+        self.assertFalse(crawl.refused_too_often())         # vanished pages (404) do not count
+        crawl.requests, crawl.unavailable = 2361, {403: 10}
+        self.assertFalse(crawl.refused_too_often())         # Björn's diagnosis of 16.11.2026
 
     def test_failure_keeps_catalogue(self):
         servustv.sync(self.root, opener=self.fake, now=NOW)
@@ -272,3 +291,60 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class FullCatalogueTests(Base):
+    """0.6.16 (Björn, 16.11.2026: "ServusTV hat weiterhin nur sehr wenige Treffer"): long clips, event
+    pages and teaser tiles. Card shapes as in the HAR of 13.11.2026 (clips name their format in
+    ``subheading``; events are ``type: page``; teasers are ``content_type: any`` with ``nav_url``)."""
+
+    def setUp(self):
+        super().setUp()
+        self.products = dict(PRODUCTS)
+        self.collections = dict(COLLECTIONS)
+        debate = [card('AAXIH9WCXRN7QLL%05d' % n, 'Debatte %d' % n, 'clip', type='video', duration=2039560,
+                       subheading='Links. Rechts. Mitte - Duell der Meinungsmacher') for n in range(1, 4)]
+        short = card('AASHORTCLIPCLIP0001', 'Kurz erklärt', 'clip', duration=420000, subheading='TM Wissen')
+        doku = card('AADOKUDOKUDOKU00001', 'Sechs Jahre Lauf', 'clip', duration=3180000,
+                    subheading='Sechs Jahre Lauf')
+        event = card('AA-1R5PWBVXN1W11', 'FIM Superbike World Championship', 'event', type='page')
+        teaser = {'id': '658', 'title': 'Alle Folgen: Jetzt streamen!', 'type': 'any', 'content_type': 'any',
+                  'subheading': 'FC Hollywood', 'nav_url': 'https://www.servustv.com/de/page/AABCMK09EAPGF7LRPVFE'}
+        newsletter = {'id': '346', 'type': 'any', 'content_type': 'any', 'title': 'Newsletter',
+                      'nav_url': 'https://www.servustv.com/allgemein/p/der-servustv-on-newsletter/'}
+        film_page = card('AAH5WW0PW7N2A9C9PBTH', 'QUERSCHNITT', 'film', type='page')
+        self.collections['dbca43da-6420-475b-94b8-6fd187dd347e'] = NATUR + debate + [short, doku, event, teaser,
+                                                                                     newsletter, film_page]
+        self.products['AA-1R5PWBVXN1W11'] = {'id': 'AA-1R5PWBVXN1W11', 'content_type': 'event', 'collections': [
+            {'id': '565aefe0-0437-4817-a741-59d3cfd6adeb'}]}
+        self.collections['565aefe0-0437-4817-a741-59d3cfd6adeb'] = [
+            card('AAJEREZJEREZJEREZ01', 'Jerez: Supersport Rennen 2', 'clip', duration=3360000,
+                 subheading='Superbike - Pirelli Spanish Round'),
+            card('AAJEREZJEREZJEREZ02', 'Wrap-Up', 'clip', duration=500000, subheading='Superbike - Pirelli Spanish Round')]
+        self.products['AABCMK09EAPGF7LRPVFE'] = {'id': 'AABCMK09EAPGF7LRPVFE', 'content_type': 'show', 'type': 'page',
+                                                 'title': 'FC Hollywood: Der FC Bayern und die verrückten 90er', 'collections': [
+            {'id': '086acfe4-2fdc-4b00-9555-260f26509b65'}]}
+        self.collections['086acfe4-2fdc-4b00-9555-260f26509b65'] = [
+            card('AAFCHOLLYWOOD%07d' % n, 'Teil %d' % n, 'episode', season_number=1, episode_number=n) for n in (1, 2, 3)]
+
+    def run_sync(self):
+        import unittest.mock as mock
+        with mock.patch.dict(PRODUCTS, self.products, clear=True), \
+                mock.patch.dict(COLLECTIONS, self.collections, clear=True):
+            return servustv.sync(self.root, opener=self.fake, now=NOW)
+
+    def test_long_clips_events_and_teasers_are_read(self):
+        result = self.run_sync()
+        self.assertTrue(result['ok'], result)
+        self.assertFalse(result['partial'])
+        shows = {s['title']: s['episodes'] for s in servustv.listing(self.root, 'series')['items']}
+        self.assertEqual(shows['Links. Rechts. Mitte - Duell der Meinungsmacher'], 3)     # long clips
+        self.assertEqual(shows['Superbike - Pirelli Spanish Round'], 1)                   # event page, replay only
+        self.assertEqual(shows['FC Hollywood: Der FC Bayern und die verrückten 90er'], 3)   # via teaser tile
+        self.assertIn('AABCMK09EAPGF7LRPVFE', [c[1].rsplit('/', 1)[-1] for c in self.fake.calls])   # teaser followed
+        self.assertNotIn('TM Wissen', shows)                                               # short clips stay out
+        films = [f['title'] for f in servustv.listing(self.root, 'movies')['items']]
+        self.assertIn('Sechs Jahre Lauf', films)          # stand-alone documentary
+        self.assertIn('QUERSCHNITT', films)               # film card of type page
+        self.assertNotIn('Kurz erklärt', films)
+        self.assertNotIn('Wrap-Up', films)

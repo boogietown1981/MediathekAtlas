@@ -1,5 +1,21 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.18 – Sammelstand 0.6.14–0.6.17 (16. November 2026)
+- Skriptprüfung: jede von PR #66, #67 und #68 hinzugefügte Zeile steht im zusammengeführten Stand (außer Versionsangaben). Testläufe siehe PR.
+
+## 0.6.17 – Crunchyroll-Filme als Serie (16. November 2026)
+- Neu getestet mit nachgebildeter Liste nach Björns Beispiel: Ein-Folgen-Serie wird Film (Seite `/de/series/…`), nach dem Öffnen Wiedergabeseite und Laufzeit; laufender Simulcast mit einer Folge bleibt Serie; „… The Movie“ mit 2 Folgen wird Film; „Filmriss …“ mit 12 Folgen bleibt Serie; zweite Filmliste entfällt, sobald Filme erkannt sind.
+- Nicht geprüft: echte Felder `episode_count`/`season_count`/`is_simulcast` in der Liste von crunchyroll.com (gesperrt). `list_stats.single_episode` in der nächsten Diagnose zeigt die Zahl der Treffer.
+
+## 0.6.16 – ServusTV-Katalog (16. November 2026)
+- Automatisch: gesamte Python-Suite, `node --check`/Node-Smoke-Tests; `tests/test_v0601_servustv.py` erweitert (lange Clips, Ereignisseiten, Teaserkacheln, Film-Seiten, einzelne 403 übersprungen, Schwelle für „teilweise“).
+- Abgleich mit Björns HAR vom 13.11.2026 (nur die darin enthaltenen Karten): alt 397 Folgen/83 Sendungen/30 Filme → neu 580/104/33, dazu 18 Sportseiten zum Weiterlesen.
+- Nicht geprüft: echter Abruf bei ServusTV (tv-api.redbull.com aus der Bauumgebung gesperrt), Laufzeit und 403-Verhalten mit den zusätzlichen Seiten, Wiedergabe der langen Clips.
+
+## 0.6.15 – Crunchyroll-Filme, zweiter Versuch (16. November 2026)
+- Diagnose 0.6.13 ausgewertet (siehe CHANGELOG). Neu getestet: Liste, die `type=movie_listing` mit Serien beantwortet, führt zur zweiten Liste `type=movie` und zum Film mit direkter Wiedergabeseite; Zählwerte ohne Titel; funktionierende Filmliste fragt nicht doppelt.
+- Nicht geprüft: echte Antworten von crunchyroll.com (gesperrt). Ob Filme ankommen, zeigt Björns nächste Diagnose (`crunchyroll.list_stats`).
+
 ## 0.6.14 – Abo-Videos pro Stunde (16. November 2026)
 - Diagnose 0.6.13 von Björn ausgewertet (Ablauf siehe CHANGELOG).
 - Automatisch: gesamte Python-Suite (1291 Tests, 3 übersprungen), Klicktest Chromium ohne Befund; echter Server: Auswahl zeigt 4/h (alle 15 Min.), Umstellen auf 2 speichert und zeigt alle 30 Min.; neu `tests/test_v0614_abo_pacing.py` (7): Standard 4/h mit 15 Min. Abstand, Klicks von Hand und „Jetzt versuchen“ ohne Wartezeit, Einstellung und ungültige Werte, zurückgestellte Uhr, Bot-Sperre ab 1 Std., Verdrahtung.
@@ -462,8 +478,6 @@
 - Praxistest: Synology und QNAP teilen ihre Codes, Mac fügt je einen hinzu; bei HTTP 403 die gespeicherte NAS-Adresse gegen den tatsächlichen Dienstport und die aktuelle Freigabe prüfen.
 - IMDb: prüfe DNS/TLS und ausreichend freien Speicher auf dem Gerät; ein fehlgeschlagener Download belegt keine fiktiven Archivdatensätze.
 
-
-
 ## 0.5.25 – Worker-Pool und geplante Download-Abos (9. November 2026)
 
 - `tests/test_v0525.py`: eindeutige SQLite-Auftragsreservierung, parallele Claims, Laufzeitende und Wiederaufnahme nach Absturz, Nutzerzustimmung, nur bestätigte Serienepisoden, Film-Abo bei Verfügbarkeit, wöchentlicher Check einschließlich 48-Stunden-Nachprüffenster, abgelaufene Angebote, Mehrfachdownloads und Persistenz über Neustarts.
@@ -472,8 +486,6 @@
 - Alle Downloadjobs nutzen die bestehende Warteschlange; Benutzeraktionen (Pause/Fortsetzen/Löschen) wirken ausschließlich auf den Aboplan, nicht auf bereits erstellte Jobs.
 - Vor stabiler Freigabe den Netto-Durchsatz und die 429-/SQLite-Fehlerraten mit dem vorherigen Diagnoseexport messen.
 
-
-
 ## 0.5.24 – Nachrichtenformat-Schnellpfad und Filmpriorität (9. November 2026)
 
 - `tests/test_v0524.py` deckt eindeutige Nachrichtenformate, frühzeitige API-Umgehung, Film-/Serien-Titelkonflikte, ausdrücklich angeforderte Werkprüfungen, manuelle und verifizierte Episoden, bestehende Serie-mit-Nachrichtenbeiträgen, Filmhinweise und wiederaufnehmbaren Index-Backfill ab.
@@ -481,8 +493,6 @@
 - Der Filmhinweis-Index dient ausschließlich der Sortierung, nicht der automatischen Bestätigung. Varianten ohne eindeutige Filmbelege bleiben unverändert.
 - Katalogzählungen nach gruppiertem SQL werden gegen kleine deterministische Datensätze geprüft; für ~700.000 Angebote muss der nächste reale Diagnoseexport einen Vorher-/Nachher-Vergleich liefern.
 - Regressionen: Python 3.9, 3.13, 3.14 und macOS; SPK/QPKG-Builds und Payload-Integrität über CI. Keine GitHub-Zusammenführung nach `main` ohne Freigabe.
-
-
 
 ## 0.5.23 · Status-Dashboard und resiliente lokale Downloadverwaltung (8. November 2026)
 
@@ -498,8 +508,6 @@
 - Statische JS-Syntaxprüfung und responsive HTML/CSS-Einbindung; alle Plattformtests und macOS/SPK/QPKG-Paketinhalt über GitHub CI.
 - Feldtest: Benutzer verschiebt einen fertigen Film in einen anderen Bibliotheksordner und verknüpft ihn über die Downloads-Karte erneut. Der Status darf zu keinem Zeitpunkt den Katalog- oder Downloadbereich blockieren.
 
-
-
 ## 0.5.22 · Intelligenter Scheduler, Serienfokus und sichere Angebotsgruppen (8. November 2026)
 
 - `tests/test_v0522.py` verifiziert Filme-zuerst/Serien-zuerst, Vorrang manueller Prüfaufträge, Erstprüfungen vor Wiederholungen, begrenzten Serienfokus und Netto-Erstprüfungsrate.
@@ -509,8 +517,6 @@
 - Ältere Tests zu Nichttreffern/Retry-Zeiten aktualisiert. Kompatibilitätsprüfungen für Python 3.9/3.13 und NAS-/macOS-Build via CI.
 - Die tatsächliche Durchsatzsteigerung und Prognosegenauigkeit müssen mit einem vergleichbaren Nutzerdiagnoseexport geprüft werden.
 
-
-
 ## 0.5.21 · Sicheres Zusammenführen doppelter Filme (7. November 2026)
 
 - `tests/test_v0521.py`: „Der Rausch“ wird bei unabhängigen verifizierten Quellen, identischem Jahr und passender Laufzeit zu einem Film mit beiden Genres. Sämtliche Senderangebote bleiben erhalten.
@@ -518,8 +524,6 @@
 - Manuell gepflegte Genres und gespeicherte Downloadverweise bleiben erhalten; beide manuell gepflegten Datensätze werden nicht ohne ausdrückliche Auswahl verschmolzen.
 - Legacy-Dubletten werden transaktionsweise und mit persistiertem Cursor geprüft; der Nachlauf ist idempotent.
 - GitHub CI führt Linux/macOS-Regressionen und NAS-Paketvalidierung aus. Performance auf dem vollständigen Nutzerkatalog muss im nächsten Diagnoseexport verglichen werden.
-
-
 
 ## 0.5.20 · Inkrementelles Archiv, Serienvorlage, Verfügbarkeit (7. November 2026)
 
@@ -530,8 +534,6 @@
 - Verfügbarkeit ist angebotsbezogen und wird im Download-Dialog erst bei Bedarf abgefragt; bei unbekanntem Ablaufdatum klare Kennzeichnung.
 - CI: Python 3.9/3.13 Linux, macOS 3.13 und SPK/QPKG-Build; echte Performance-Benchmarks folgen.
 
-
-
 ## 0.5.19 · Offline-Suche und früher Abschluss sicherer Zuordnungen (7. November 2026)
 
 - `tests/test_v0519.py`: Hohe Konfidenz trotz fehlender Genres nur bei bestätigter IMDb-Laufzeit bzw. IMDb-Episode; negative Fälle und Konflikte bleiben unbestätigt.
@@ -541,7 +543,6 @@
 - Test für frühzeitigen Abbruch eines Downloads bei zu wenig freiem Speicher. Vorhandene Teildateien und das bisherige Archiv sollen unangetastet bleiben.
 - Warteschlangenregression: Vor dem Neustart `queued` bleibt `queued`, in Arbeit befindliche `downloading`/`tagging` werden `interrupted`; terminale Zustände bleiben bestehen.
 - Gesamttest, Paketbuild und Tests auf realer Hardware: noch durch CI bzw. Installation zu prüfen.
-
 
 ## 0.5.18 · Wiedergabe im Browser (6. November 2026, Linux-Testumgebung)
 

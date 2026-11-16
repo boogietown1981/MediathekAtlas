@@ -63,8 +63,19 @@ USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1
 RB_ID = re.compile(r'(?:AA-?|PN|AP)[A-Z0-9]{8,30}|[a-z][a-z0-9\-]{2,40}')
 COLLECTION_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][a-z0-9\-]{2,40}')
 VALID_ID = re.compile(r'(?:[vc]\.(?:AA-?|PN)[A-Z0-9]{8,30}|s\.(?:AA-?[A-Z0-9]{8,30}|n-[a-z0-9\-]{1,80}))')
-SKIP_TYPES = {'clip', 'trailer', 'stop', 'live_program', 'event', 'person', 'promo', 'external'}
-PAGE_TYPES = {'subchannel', 'page', 'system', 'topic', 'channel'}
+SKIP_TYPES = {'clip', 'trailer', 'stop', 'live_program', 'person', 'promo', 'external'}
+# 0.6.16: sport and event pages (MotoGP, Superbike, DTM …) carry full replays and documentaries.
+PAGE_TYPES = {'subchannel', 'page', 'system', 'topic', 'channel', 'event'}
+# 0.6.16 (Björn, 16.11.2026: "ServusTV hat weiterhin nur sehr wenige Treffer"): ServusTV marks many
+# full-length videos as ``clip`` (whole debates, vodcasts, docu series, race replays; in the HAR of
+# 13.11.2026 185 of 787 clips ran 20 minutes or longer, spread over 23 formats). Clips of at least
+# MIN_FILM count as episodes of their format; shorter clips stay out (no "Sonstiges").
+NAV_PAGE = re.compile(r'https://www\.servustv\.com/[a-z]{2}/page/((?:AA-?|PN|AP)[A-Z0-9]{8,30})(?:[/?#].*)?')
+# 0.6.16: a single page that keeps answering 403/404/410/451 after the retries is left out (in the
+# diagnosis of 16.11.2026 always the same 10 of 2,361 requests, never recovered: not a rate limit).
+# Only when more than this share of the requests is refused does the run count as partial.
+REFUSED_SHARE = 0.03
+SKIPPABLE = (403, 404, 410, 451)
 # ServusTV live channels if the catalogue cannot be read (ids from the HAR of 13.11.2026).
 LIVE_FALLBACK = (('c.PN0B1EC15B2FE10', 'ServusTV', 1),)
 
@@ -273,6 +284,22 @@ class Crawl:
         self.pending_products, self.done_products = [], set()
         self.pending_collections, self.done_collections = [], set()
         self.requests, self.errors, self.truncated = 0, [], False
+        self.unavailable = {}                 # HTTP status -> pages left out (0.6.16)
+        self.long_clips = self.events = 0
+
+    def _failed(self, exc, seed=False):
+        """0.6.16: a single refused or vanished page is skipped; everything else is an error."""
+        code = getattr(exc, 'code', None)
+        if isinstance(exc, urllib.error.HTTPError) and code in SKIPPABLE and not seed:
+            self.unavailable[code] = self.unavailable.get(code, 0) + 1
+            return
+        if isinstance(exc, urllib.error.HTTPError) and code == 404 and seed:
+            return
+        self.errors.append(_error(exc))
+
+    def refused_too_often(self):
+        refused = sum(n for code, n in self.unavailable.items() if code != 404)
+        return refused > max(3, REFUSED_SHARE * max(self.requests, 1))
 
     def _pause(self):
         self.requests += 1
@@ -296,9 +323,17 @@ class Crawl:
         if not isinstance(card, dict):
             return
         ident, ctype = str(card.get('id') or ''), str(card.get('content_type') or '')
+        if ctype == 'any':
+            # 0.6.16: teaser tiles ("Alle Folgen: Jetzt streamen!") that point to a ServusTV page
+            match = NAV_PAGE.fullmatch(str(card.get('nav_url') or ''))
+            if match:
+                self.want_product(match.group(1))
+            return
         if not RB_ID.fullmatch(ident) or ident.islower():
             return
         if ctype in PAGE_TYPES:
+            if ctype == 'event' and ident not in self.done_products and ident not in self.pending_products:
+                self.events += 1
             self.want_product(ident)
             return
         if ctype == 'show':
@@ -311,13 +346,20 @@ class Crawl:
             self.items.setdefault('c.' + ident, {**_base(card, 'channel'), 'id': 'c.' + ident, 'genre': 'Live',
                                                  'category': 'Live', 'duration': None})
             return
-        if ctype in SKIP_TYPES or card.get('type') not in (None, 'video'):
+        long_clip = ctype == 'clip' and (_ms(card.get('duration')) or 0) >= MIN_FILM
+        if (ctype in SKIP_TYPES and not long_clip) \
+                or card.get('type') not in ((None, 'video', 'page') if ctype == 'film' else (None, 'video')):
             return
         row = _base(card, 'movie')
         if not row['title']:
             return
-        show_name = _text(card.get('show_name') or (card.get('subheading') if ctype == 'episode' else ''), 200)
-        if ctype == 'episode' or show is not None:
+        show_name = _text(card.get('show_name') or (card.get('subheading') if ctype in ('episode', 'clip') else ''), 200)
+        if long_clip:
+            if 'v.' + ident not in self.items:
+                self.long_clips += 1
+            if show_name.casefold() == row['title'].casefold():
+                show_name = ''                          # a stand-alone documentary, not a format
+        if ctype == 'episode' or show is not None or (long_clip and show_name):
             row.update(kind='episode', season=_int(card.get('season_number'), 0, 999),
                        episode=_int(card.get('episode_number'), 0, 9999))
             row['_show'] = show or ''
@@ -348,6 +390,9 @@ class Crawl:
         answer = product(self.opener, ident)
         self._pause()
         show = ident if str(answer.get('content_type') or '') == 'show' else None
+        if show and ident not in self.shows and _text(answer.get('title'), 200):
+            # 0.6.16: a show reached through a teaser tile has no card of its own: use the product
+            self.card({**answer, 'id': ident, 'content_type': 'show'})
         for entry in answer.get('collections') or []:
             cid = str((entry or {}).get('id') or '') if isinstance(entry, dict) else str(entry or '')
             if isinstance(entry, dict) and entry.get('list_type') == 'reference':
@@ -358,7 +403,7 @@ class Crawl:
                     try:
                         self.run_collection(cid, show)
                     except Exception as exc:
-                        self.errors.append(_error(exc))
+                        self._failed(exc)
             else:
                 self.want_collection(cid)
 
@@ -372,7 +417,7 @@ class Crawl:
                 try:
                     self.run_collection(cid)
                 except Exception as exc:
-                    self.errors.append(_error(exc))
+                    self._failed(exc)
                 continue
             self.pending_collections = []
             if not self.pending_products:
@@ -384,11 +429,8 @@ class Crawl:
             self.done_products.add(pid)
             try:
                 self.run_product(pid)
-            except urllib.error.HTTPError as exc:
-                if exc.code != 404 or pid not in SEEDS:
-                    self.errors.append(_error(exc))
             except Exception as exc:
-                self.errors.append(_error(exc))
+                self._failed(exc, seed=pid in SEEDS)
         if self.pending_products or self.pending_collections:
             self.truncated = True
 
@@ -483,7 +525,21 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
             row['number'] = number
         if not channels:
             rows += live_rows()
-        partial = crawl.truncated or bool(crawl.errors)
+        refused = sum(n for code, n in crawl.unavailable.items() if code != 404)
+        too_many = crawl.refused_too_often()
+        partial = crawl.truncated or bool(crawl.errors) or too_many
+        if crawl.errors:
+            message = 'Katalog nur teilweise geladen: %s (%d von %d Abrufen)' % (crawl.errors[0], len(crawl.errors), crawl.requests)
+        elif too_many:
+            message = ('Katalog nur teilweise geladen: ServusTV verweigert den Zugriff (HTTP 403) (%d von %d Abrufen)'
+                       % (refused, crawl.requests))
+        elif partial:
+            message = 'Katalog nur teilweise geladen'
+        else:
+            message = ''
+        skipped = sum(crawl.unavailable.values())
+        note = ('%d ServusTV-Seite%s nicht freigegeben und übersprungen' % (skipped, '' if skipped == 1 else 'n')
+                if skipped and not partial else '')
         counts = {'movies': sum(1 for r in rows if r['kind'] == 'movie'),
                   'series': sum(1 for r in rows if r['kind'] == 'series'),
                   'episodes': sum(1 for r in rows if r['kind'] == 'episode'),
@@ -496,15 +552,16 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 visible_since = previous if partial and previous else now
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'),
-                                   ('last_error', ('Katalog nur teilweise geladen' + (': ' + crawl.errors[0] if crawl.errors else '')
-                                                  + (' (%d von %d Abrufen)' % (len(crawl.errors), crawl.requests) if crawl.errors else '')) if partial else ''),
+                                   ('last_error', message), ('note', note), ('unavailable', skipped),
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
                                    ('requests', crawl.requests), *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()
         _notify('servustv_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
-                recovered=crawl.recovered, errors=len(crawl.errors), **counts)
+                recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated,
+                unavailable={str(k): v for k, v in sorted(crawl.unavailable.items())},
+                long_clips=crawl.long_clips, events=crawl.events, shows=len(crawl.shows), **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)
@@ -653,7 +710,8 @@ def state(root):
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'episodes': _int(_get(db, 'episodes', '0')) or 0, 'channels': _int(_get(db, 'channels', '0')) or 0, 'protected': protected,
-            'requests': _int(_get(db, 'requests', '0')) or 0}
+            'requests': _int(_get(db, 'requests', '0')) or 0,
+            'unavailable': _int(_get(db, 'unavailable', '0')) or 0, 'note': _get(db, 'note')}
     finally:
         db.close()
 

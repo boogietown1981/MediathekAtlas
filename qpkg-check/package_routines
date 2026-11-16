@@ -1,0 +1,12 @@
+######################################################################
+# MediathekAtlas package routines (QDK). Catalogue, settings and the
+# login live in $SYS_QPKG_DIR/data and survive updates.
+######################################################################
+PKG_PRE_REMOVE="{
+	\$CMD_SH \$SYS_QPKG_DIR/MediathekAtlas.sh stop
+}"
+
+pkg_post_install(){
+	$CMD_MKDIR -p "$SYS_QPKG_DIR/data"
+	$CMD_CHMOD 755 "$SYS_QPKG_DIR/MediathekAtlas.sh" "$SYS_QPKG_DIR/bin/mediathekatlas-service.sh"
+}
