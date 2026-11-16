@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.16 – Crunchyroll-Filme als Serie (16. November 2026)
+- Neu getestet mit nachgebildeter Liste nach Björns Beispiel: Ein-Folgen-Serie wird Film (Seite `/de/series/…`), nach dem Öffnen Wiedergabeseite und Laufzeit; laufender Simulcast mit einer Folge bleibt Serie; „… The Movie“ mit 2 Folgen wird Film; „Filmriss …“ mit 12 Folgen bleibt Serie; zweite Filmliste entfällt, sobald Filme erkannt sind.
+- Nicht geprüft: echte Felder `episode_count`/`season_count`/`is_simulcast` in der Liste von crunchyroll.com (gesperrt). `list_stats.single_episode` in der nächsten Diagnose zeigt die Zahl der Treffer.
+
 ## 0.6.15 – Crunchyroll-Filme, zweiter Versuch (16. November 2026)
 - Diagnose 0.6.13 ausgewertet (siehe CHANGELOG). Neu getestet: Liste, die `type=movie_listing` mit Serien beantwortet, führt zur zweiten Liste `type=movie` und zum Film mit direkter Wiedergabeseite; Zählwerte ohne Titel; funktionierende Filmliste fragt nicht doppelt.
 - Nicht geprüft: echte Antworten von crunchyroll.com (gesperrt). Ob Filme ankommen, zeigt Björns nächste Diagnose (`crunchyroll.list_stats`).

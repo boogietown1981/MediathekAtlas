@@ -340,6 +340,65 @@ class CatalogueTests(Fixture):
                 crunchyroll.play_source(self.root, bad)
 
 
+class FilmAsSeriesTests(Fixture):
+    """0.6.16: Björn's example https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red"""
+
+    def site(self):
+        film = series('GMTE00258738', 'One Piece Film Red', 'one-piece-film-red', ['Action', 'Adventure'],
+                      ['ja-JP', 'de-DE'], ['de-DE', 'pl-PL'], rating='14', seasons=1, episodes=1)
+        simulcast = series('GSIMUL0001', 'Neue Serie', 'neue-serie', ['Drama'], ['ja-JP'], ['de-DE'], seasons=1, episodes=1)
+        simulcast['series_metadata']['is_simulcast'] = True
+        named = series('GNAMED0001', 'Beispiel The Movie', 'beispiel-the-movie', ['Action'], ['ja-JP'], ['de-DE'], seasons=1, episodes=2)
+        long_one = series('GLONG00001', 'Filmriss Akademie', 'filmriss', ['Comedy'], ['ja-JP'], ['de-DE'], seasons=1, episodes=12)
+
+        class FilmSite(Site):
+            def __call__(inner, path, query=None):
+                if path == '/content/v2/discover/browse' and query.get('type') != 'movie_listing' and query.get('type') != 'movie':
+                    inner.calls.append((path, dict(query)))
+                    return {'total': 4, 'data': [film, simulcast, named, long_one]}
+                if path == '/content/v2/cms/series/GMTE00258738/seasons':
+                    inner.calls.append((path, {}))
+                    return {'data': [{'id': 'GSEAS00001', 'season_number': 1, 'title': 'One Piece Film Red'}]}
+                if path == '/content/v2/cms/seasons/GSEAS00001/episodes':
+                    inner.calls.append((path, {}))
+                    return {'data': [episode('GWATCH0001', 1, 1, duration_ms=6_900_000, slug_title='one-piece-film-red')]}
+                if path == '/content/v2/discover/browse':
+                    inner.calls.append((path, dict(query)))
+                    return {'total': 0, 'data': []}
+                return super().__call__(path, query)
+        return FilmSite()
+
+    def test_single_episode_series_is_a_film(self):
+        site = self.site()
+        _, result = self.load(site)
+        self.assertEqual((result['series'], result['movies']), (2, 2))
+        self.assertEqual(self.titles('movies'), ['Beispiel The Movie', 'One Piece Film Red'])
+        self.assertEqual(self.titles('series'), ['Filmriss Akademie', 'Neue Serie'])
+        row = next(r for r in crunchyroll.listing(self.root, 'movies')['items'] if r['title'] == 'One Piece Film Red')
+        self.assertEqual((row['id'], row['rating']), ('s.GMTE00258738', 'ab 14'))
+        self.assertEqual(row['web_url'], 'https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red')
+        self.assertNotIn('movie', [c[1].get('type') for c in site.calls])      # films found: no second list
+
+    def test_film_learns_watch_page_and_runtime(self):
+        site = self.site()
+        self.load(site)
+        item = crunchyroll.item(self.root, 's.GMTE00258738', fetch=site)['item']
+        self.assertEqual(item['kind'], 'movie')
+        self.assertEqual(item['web_url'], 'https://www.crunchyroll.com/de/watch/GWATCH0001/one-piece-film-red')
+        self.assertEqual(item['duration'], 6900)
+        m = portal_title.model(self.root, 'crunchyroll', 's.GMTE00258738')
+        self.assertEqual((m['kind'], m['playable']), ('movie', False))
+        self.assertNotIn('movie_listings', ' '.join(c[0] for c in site.calls))
+
+    def test_film_like_rules(self):
+        self.assertTrue(crunchyroll.film_like({'episode_count': 1, 'season_count': 1}, 'X'))
+        self.assertFalse(crunchyroll.film_like({'episode_count': 1, 'season_count': 1, 'is_simulcast': True}, 'X'))
+        self.assertTrue(crunchyroll.film_like({'episode_count': 3, 'season_count': 1}, 'Y Movie'))
+        self.assertFalse(crunchyroll.film_like({'episode_count': 3, 'season_count': 1}, 'Filmriss'))
+        self.assertFalse(crunchyroll.film_like({'episode_count': 1, 'season_count': 2}, 'Z'))
+        self.assertFalse(crunchyroll.film_like({}, 'Film'))
+
+
 class IntegrationTests(Fixture):
     def test_title_page_models(self):
         site, _ = self.load()

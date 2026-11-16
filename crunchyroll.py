@@ -121,12 +121,12 @@ def _notify(event, **details):
 def _connect(root):
     db = provider_base.connect(root, 'crunchyroll.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
-    if _get(db, 'browse_lists') != '2' and float(_get(db, 'last_success', '0') or 0):
-        # 0.6.10: a catalogue loaded before the separate film list has no films; reload it at the
-        # next scheduler round instead of waiting up to 24 hours.
+    if _get(db, 'browse_lists') != '3' and float(_get(db, 'last_success', '0') or 0):
+        # 0.6.10/0.6.16: a catalogue loaded before films were recognised (own list, films listed as
+        # series) has no films; reload it at the next scheduler round instead of waiting 24 hours.
         with db:
             _set(db, 'next_attempt', 0)
-            _set(db, 'browse_lists', '2')
+            _set(db, 'browse_lists', '3')
     return db
 
 
@@ -395,6 +395,23 @@ def _free(meta):
     return meta.get('is_premium_only') is False
 
 
+FILM_WORDS = re.compile(r'\b(?:film|movie|kinofilm)\b', re.I)
+
+
+def film_like(meta, title):
+    """0.6.16 (Björn, 16.11.2026: "One Piece Film Red" is /de/series/GMTE00258738/…): Crunchyroll lists
+    its films as series with one season and one episode. Such an entry counts as a film, unless it is a
+    running simulcast (a new series has one episode at first). A title with "Film"/"Movie" may have up to
+    three episodes (versions, bonus)."""
+    episodes = _int(meta.get('episode_count'), 0)
+    seasons = _int(meta.get('season_count'), 0)
+    if not episodes or (seasons or 1) > 1:
+        return False
+    if episodes == 1 and meta.get('is_simulcast') is not True:
+        return True
+    return episodes <= 3 and bool(FILM_WORDS.search(str(title or '')))
+
+
 def item_from(node, series=None):
     """Series, film entry or episode of an API answer; None for anything else (music, clips)."""
     if not isinstance(node, dict):
@@ -449,6 +466,10 @@ def item_from(node, series=None):
         'watch_id': ident if is_episode or standalone else '',
         'web_url': web_url('series' if kind == 'series' else 'watch', ident, slug) if kind != 'movie' or standalone
         else search_url(title)}
+    if kind == 'series' and film_like(meta, title):
+        # Film kept under its series id (s.…): seasons/episodes give its single episode and watch page;
+        # until then the series page opens (Crunchyroll's own film page, as in Björn's example).
+        out.update(kind='movie', seasons=None)
     return out
 
 
@@ -637,7 +658,7 @@ def sync(root, fetch=None, now=None, gap=None):
                 for key, value in [('last_success', visible_since), ('last_loaded', time.time()),
                                    ('last_result', 'complete' if complete else 'partial'),
                                    ('last_error', '' if complete else 'Katalog nur teilweise geladen' + (' (' + movies_note + ')' if movies_note else '')),
-                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), ('browse_lists', '2'),
+                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), ('browse_lists', '3'),
                                    *counts.items()]:
                     _set(db, key, value)
         finally:
@@ -689,7 +710,7 @@ def load_episodes(root, series_id, fetch=None, now=None, gap=None):
         db.close()
     ident = series_id[2:]
     found = []
-    if series['kind'] == 'movie':
+    if series_id.startswith('m.'):
         answer = fetch('/content/v2/cms/movie_listings/%s/movies' % ident)
         nodes = answer.get('data') if isinstance(answer, dict) else None
         for n in nodes if isinstance(nodes, list) else []:

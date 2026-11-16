@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.15
+# MediathekAtlas · 0.6.16
+
+## Neu in 0.6.16: Crunchyroll-Filme werden erkannt
+
+- **Crunchyroll führt Filme als Serie** (Björns Beispiel: „One Piece Film Red“ unter `/de/series/…`). MediathekAtlas erkennt sie jetzt daran: eine Staffel mit genau einer Folge (außer laufenden Simulcasts, die anfangs auch nur eine Folge haben), oder „Film“/„Movie“ im Titel bei höchstens drei Folgen. Solche Titel stehen unter **Filme**, nicht mehr unter Serien.
+- „Bei Crunchyroll ansehen“ öffnet zuerst die Filmseite; nach dem Öffnen der Titelseite kennt MediathekAtlas die Wiedergabeseite und die Laufzeit.
+- Der Crunchyroll-Katalog wird nach dem Update einmal neu geladen (bei eingeschalteter Automatik innerhalb einer Minute).
+
 
 ## Neu in 0.6.15: Crunchyroll-Filme, zweiter Versuch und genaue Diagnose
 
