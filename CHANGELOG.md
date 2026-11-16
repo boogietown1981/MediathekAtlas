@@ -40,6 +40,14 @@
 - Oberfläche: `web/youtube_abos.js` + Bereich „Kanal-Abos“ im YouTube-Panel, Menülink „★ Kinderecke“; `web/kids.html|css|js` (Vollbild per `requestFullscreen`, auf iPhone `webkitEnterFullscreen`; Abspielstand über `/api/watch-progress`, Schlüssel `job:<id>`).
 - Tests: `tests/test_v0607_youtube_abos.py` (18); angepasst: Navigation (Link statt Bereich), Routen-Inventar (`signed`), Klicktest klickt nur `button.nav`.
 - 0.6.6 ist für Untertitel/Tonspur-Auswahl im Player reserviert (anderer Arbeitsstrang) und hier nicht enthalten.
+## 0.6.6 – Untertitel und Tonspur im Player, OmU-Korrektur
+- Anlass: Björn (14.11.2026) – ein Plex-Titel mit „OmU“ spielte deutsch; die Untertitel wurden weder gezeigt noch ließen sie sich wählen. Bis 0.6.5 lief ffmpeg mit `-sn`, und der Player bot keine Spurwahl.
+- `tracks.py` (neu): `hls_tracks`, `dash_tracks` (Audio-Sets mit Zahl der Repräsentationen für `-map 0:a:n`, Text-Sets mit einer Datei), `list_tracks`, `observed`, `audio_index`, `subtitle_vtt` (SRT/WebVTT/TTML/EBU-TT, HLS-WebVTT-Segmente, eingebettete Text-Untertitel per ffmpeg, Begleitdateien `.srt`/`.vtt`); 10 min Zwischenspeicher. Keine Tonspur-Wahl bei umgewandeltem HLS (einstufige Liste ohne Alternativspuren).
+- `server.py`: `GET /api/play-tracks` (merkt die Spuren als Stream-Beleg in `languages.sqlite3`), `GET /api/subtitle` (WebVTT), `/api/stream?audio=a<n>`. `streaming.command(audio_track=)` → `-map 0:v:0? -map 0:a:<n>`. `streaming.resolve` gibt die Untertiteldatei eines Mediathek-Angebots (`url_subtitle`) mit.
+- `plex.py`: `subtitle_streams` (Begleit-Untertitel mit `key`, ohne Bild-Untertitel) beim Stream-Abruf; DASH-Quellen tragen `dash=True`.
+- `web/player.js`: Auswahl „Ton“/„Untertitel“; hls.js über `audioTracks`/`subtitleTracks`; sonst eigene Textspur mit Cues, bei umgewandelten Strömen um die Startposition verschoben; Wahl in `localStorage` (`atlas-play-subs`, `atlas-play-audio`).
+- `languages.build`: Ton im Stream oder laut Anbieter nur Deutsch → keine Originalfassung, auch wenn der Titel OmU/OV nennt; Hinweis in den Sprachangaben.
+- Tests: `tests/test_v0606_tracks.py` (13), `tests/browser/player_tracks.cjs` (Chromium/Firefox/WebKit in der CI).
 
 ## 0.6.5 – Sammelstand: Sprachen je Titel (Ton, Untertitel, Barrierefreiheit) + 0.6.2–0.6.4
 - `languages.py` (neu): Sprachcodes (ISO 639-1/-2, englische und deutsche Namen), Titelzusätze (OmU/OV/UT/AD/DGS/„(Englisch)“ …), HLS-Spuren (`#EXT-X-MEDIA` AUDIO/SUBTITLES/CLOSED-CAPTIONS, `describes-video`), Sprachfelder in Katalogantworten (`harvest`: `audio_languages`/`subtitle_languages`, `audioLocales`…, Plex `Stream` mit `streamType`, Joyn `languages`). Speicher `languages.sqlite3` (Quelle, ID, Herkunft stream/provider). Modell mit `audio`, `subtitles`, `accessibility`, `evidence`, `short`, `text`, `rows`; `combine()` für Serien; `mediathek_filter()` für den Katalogfilter.

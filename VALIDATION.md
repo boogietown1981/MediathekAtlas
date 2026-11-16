@@ -27,6 +27,10 @@
 - Neu: `tests/test_v0607_youtube_abos.py` – „nur neue“ mit Startbestand und späterem Upload, „alle“ mit Reihenfilter und Nachholen, Shorts, Schalter aus (nichts geladen, Hinweis), abgelaufene Videos nie neu, Höchstzahl entfernt nur gesehene, Fehler am Abo, yt-dlp-Liste ohne Schlüssel, Kinderecke (neu/angefangen/Reihenfolge), Ziel nur im Downloadordner, MP4-Umwandlung, Adressen und Planer.
 - Echter Server mit künstlichen Daten (3 Abos, 12 echte MP4-Dateien, Chromium): Kinderecke mit Kanal-Knöpfen, NEU/Haken, Video startet im Vollbild direkt aus der Datei (`raw=1`), am Ende „Gleich geht's weiter mit …“, „Zurück“ verlässt Vollbild; Verwaltung zeigt Abos, Zahlen und Hinweis „yt-dlp fehlt“.
 - Nicht geprüft: echtes YouTube (aus der Bauumgebung gesperrt) – weder Kanalliste per yt-dlp/API noch Download; Safari/iPad-Vollbild, Firefox; NAS-Hardware.
+## 0.6.6 – Untertitel und Tonspur im Player (14. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Smoke-Tests, Klicktest Chromium, neuer Player-Test `tests/browser/player_tracks.cjs` in Chromium (Firefox/WebKit nur in der CI), `ruff` (F, E9).
+- Von Hand in Chromium: echter HLS-Stream mit zwei WebVTT-Untertitelspuren über hls.js (Wahl, Umschalten, „Aus“, Merken); lokale MKV mit zwei Tonspuren und eingebetteten SRT-Untertiteln (Spurenliste per ffprobe, WebVTT-Ausgabe, ffmpeg-Ausgabe mit englischer Spur).
+- Nicht geprüft: echte Plex-Streams und -Untertitel (kein Zugang zu Anbietern in der Testumgebung), ob Plex die Untertitel als Begleitdatei (`key`) oder nur eingebettet liefert; Untertiteldateien von ARD/ZDF/arte live; Safari.
 
 ## 0.6.5 – Sprachen je Titel (14. November 2026)
 - Sammelstand (0.6.1 + 0.6.2 + 0.6.3 + 0.6.4 + Sprachen) automatisch: gesamte Python-Suite (1210 Tests, 3 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium (ohne Befund), `ruff` (F, E9) für alle geänderten Module.

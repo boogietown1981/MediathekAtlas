@@ -840,6 +840,32 @@ def _stream_query(cid, token):
                                    'X-Plex-Token': token})
 
 
+_SUBS = {}   # 0.6.6: item id -> subtitle sidecar files named in the metadata (tracks.py)
+
+
+def subtitle_streams(answer, cid, token):
+    """Text subtitles of a metadata answer: Stream entries with streamType 3 and their own key
+    (sidecar file on the Plex host). Embedded or image subtitles are not listed."""
+    out = []
+    for meta in _list(_container(answer), 'Metadata'):
+        for media in _list(meta, 'Media'):
+            for part in _list(media, 'Part'):
+                for st in _list(part, 'Stream'):
+                    if not isinstance(st, dict) or str(st.get('streamType')) != '3':
+                        continue
+                    key = str(st.get('key') or '').split('?')[0]
+                    codec = str(st.get('codec') or st.get('format') or '').lower()
+                    if not re.fullmatch(r'/[A-Za-z0-9\-_./]{1,300}', key) or '..' in key or codec in ('pgs', 'dvd_subtitle', 'dvb_subtitle', 'vobsub'):
+                        continue
+                    out.append({'url': VOD + key + '?' + urllib.parse.urlencode({'X-Plex-Token': token, 'X-Plex-Client-Identifier': cid}),
+                                'lang': st.get('languageTag') or st.get('languageCode') or st.get('language') or '',
+                                'name': st.get('displayTitle') or st.get('title') or '',
+                                'format': 'ttml' if codec in ('ttml', 'dfxp') else 'srt' if codec == 'srt' else 'auto',
+                                'forced': bool(st.get('forced')), 'origin': 'stream'})
+            return out[:16]
+    return out[:16]
+
+
 def stream(root, row, opener=None, fetch_token=None, check=None):
     """Checked stream address of a film, episode or channel: (url, hls)."""
     import hls_guard
@@ -849,7 +875,12 @@ def stream(root, row, opener=None, fetch_token=None, check=None):
         url = EPG + '/library/parts/%s.m3u8?%s' % (urllib.parse.quote(row['path'], safe='-_'), _stream_query(api.cid, api.token))
         (check or hls_guard.check)(url)
         return url, True
-    found = part_of(api.get(VOD, '/library/metadata/%s' % row['path'], {'includeGuids': 1}))
+    answer = api.get(VOD, '/library/metadata/%s' % row['path'], {'includeGuids': 1})
+    found = part_of(answer)
+    try:
+        _SUBS[row['id']] = subtitle_streams(answer, api.cid, api.token)
+    except Exception:
+        _SUBS.pop(row['id'], None)
     if not found:
         raise ValueError('Plex nennt für diesen Titel keinen Stream')
     path, container, protected = found
@@ -913,5 +944,7 @@ def play_source(root, item_id, opener=None, fetch_token=None, check=None, now=No
               'quality': 'Plex live (kostenlos, mit Werbung)' if row['kind'] == 'channel' else 'Plex (kostenlos, mit Werbung)',
               'duration': 0 if row['kind'] == 'channel' else row['duration'] or 0, 'live': row['kind'] == 'channel'}
     if not hls:
-        source.update(remux=True, server_only=True)   # DASH: ffmpeg on the server joins picture and sound
+        source.update(remux=True, server_only=True, dash=True)   # DASH: ffmpeg on the server joins picture and sound
+    if _SUBS.get(item_id):
+        source['subtitles'] = _SUBS[item_id]
     return source

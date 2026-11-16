@@ -156,6 +156,11 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
     limit=quality_limit(quality)
     best=(sorted(direct,key=lambda l:(0<(l['height_hint'] or 720)<=limit,l['score'] if (l['height_hint'] or 720)<=limit else -(l['height_hint'] or 720)),reverse=True) or usable)[0]
     out={'kind':'url','url':best['url'],'hls':bool(HLS.search(best['url'])),'quality':best['quality'],'title':title,'duration':duration}
+    # 0.6.6: the broadcaster's subtitle file (TTML/WebVTT) as a choice in the player (tracks.py)
+    sub=str(row.get('url_subtitle') or '')
+    if sub.startswith(('https://','http://')):
+        import languages
+        out['subtitles']=[{'url':sub,'lang':languages.CHANNEL_LANGUAGE.get(str(row.get('channel') or '').upper(),'de'),'origin':'provider'}]
     out['files']=sorted({int(l['height_hint']) for l in direct if l.get('height_hint')},reverse=True)   # resolutions offered as files
     # Broadcaster live streams (0.5.50): no length, no resume position, title = station.
     if str(row.get('topic') or '').strip() in catalog.LIVE_TOPICS:
@@ -236,7 +241,7 @@ def plan(source,info=None,levels=True):
     out.update(mode='direct' if direct else 'remux',file=path.name)
     return out
 
-def command(source,start=0.0,audio_copy=True,playlist=None):
+def command(source,start=0.0,audio_copy=True,playlist=None,audio_track=None):
     ffmpeg=tool('ffmpeg')
     if not ffmpeg:raise ValueError('ffmpeg konnte nicht gestartet werden. Unter Einstellungen die Werkzeugprüfung öffnen.')
     args=[ffmpeg,'-nostdin','-v','error']
@@ -259,6 +264,9 @@ def command(source,start=0.0,audio_copy=True,playlist=None):
         # 0.5.86: wait for both inputs instead of writing up to 10 s of one track ahead of the other
         # when one address is slow (fragments out of order make the browser lose picture/sound sync).
         args+=['-max_interleave_delta','0']
+    elif isinstance(audio_track,int) and 0<=audio_track<64:
+        # 0.6.6: the audio track chosen in the player (tracks.audio_index); picture as before
+        args+=['-map','0:v:0?','-map','0:a:%d'%audio_track]
     # 0.5.86 (Björn, 13.11.2026: picture and sound out of step after resuming or seeking): no output
     # start of 0 any more. It dropped the picture up to the next keyframe while the sound started at
     # the chosen position - measured 3.6 s of a frozen picture with running sound (HLS and YouTube).

@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment, youtube_abos
-import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home
+import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -608,7 +608,12 @@ class Handler(BaseHTTPRequestHandler):
             try:languages.observe_hls(ROOT,{k:q.get(k,[''])[0] for k in languages.REF_SOURCE},source['url'])
             except Exception:pass
         try:
-            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist),q.get('session',[''])[0][:64],cleanup=playlist)
+            # 0.6.6: audio track chosen in the player ('a<n>', see tracks.py)
+            track=None
+            if q.get('audio',[''])[0]:
+                try:track=tracks.audio_index(source,q.get('audio',[''])[0])
+                except Exception:track=None
+            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist,audio_track=track),q.get('session',[''])[0][:64],cleanup=playlist)
         except RuntimeError as e:
             _unlink(playlist);return self.send({'error':str(e)},429)
         except (ValueError,OSError) as e:
@@ -1959,6 +1964,39 @@ def post_languages_observe(self,path,d):
     if not key:return self.send({'ok':False})
     found=languages.tracks_from_player(d.get('audio') if isinstance(d.get('audio'),list) else [],d.get('subtitles') if isinstance(d.get('subtitles'),list) else [])
     return self.send({'ok':languages.remember(ROOT,key[0],key[1],found,'stream') if found else False,'found':found})
+
+# 0.6.6: audio tracks and subtitles the player can offer for a source played through ffmpeg or as a file
+def _track_source(q):
+    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')}
+    if q.get('direct',[''])[0]=='1':ref['youtube']=q.get('youtube',[''])[0]   # own player only; the embedded player has its own subtitles
+    with db() as c:return ref,streaming.resolve(c,root=ROOT,quality=_play_quality(q),**ref)
+
+@ROUTES.get('/api/play-tracks')
+def get_play_tracks(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    try:ref,source=_track_source(q)
+    except ValueError as e:return self.send({'error':str(e)},404)
+    found=tracks.list_tracks(source)
+    try:
+        key=languages.ref_key(ref)
+        seen=tracks.observed(source)
+        if key and seen:languages.remember(ROOT,key[0],key[1],seen,'stream')
+    except Exception:pass
+    diagnostics.event('player_tracks',provider=source.get('provider','mediathek'),origin='local' if source.get('kind')=='file' else 'online',
+                      audio=len(found['audio']),subtitles=len(found['subtitles']))
+    return self.send(found)
+
+@ROUTES.get('/api/subtitle')
+def get_subtitle(self,path):
+    # Loaded by web/player.js (fetch with the page token) and shown as cues of a text track.
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    try:
+        _,source=_track_source(q)
+        offset=max(0.0,min(float(q.get('t',['0'])[0] or 0),86400.0))
+        text=tracks.subtitle_vtt(source,q.get('track',[''])[0],offset)
+    except ValueError as e:return self.send({'error':str(e)},404)
+    except Exception as e:return self.send({'error':core.safe_error(e)},502)
+    return self.send(text.encode('utf-8'),ctype='text/vtt; charset=utf-8')
 
 @ROUTES.get('/api/language-filters')
 def get_languages_filters(self,path):
