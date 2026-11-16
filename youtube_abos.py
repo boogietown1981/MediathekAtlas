@@ -312,7 +312,11 @@ def list_with_ytdlp(abo, limit, runner=None, root=None):
     result = run(args, capture_output=True, text=True, timeout=LIST_TIMEOUT, stdin=subprocess.DEVNULL,
                  env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
     if result.returncode != 0:
-        raise ValueError('YouTube-Liste nicht lesbar: ' + youtube_downloads._reason(result.stderr[-3000:]))
+        message, _retry, block = youtube_downloads._failure(result.stderr[-3000:])
+        if block:                        # 0.6.13: Bot-Prüfung auch beim Lesen der Liste: YouTube eine Weile schonen
+            import download_retry
+            download_retry.block('youtube', time.time() + download_retry.BACKOFF[0], message)
+        raise ValueError('YouTube-Liste nicht lesbar: ' + message)
     try:
         data = json.loads(result.stdout or '{}')
     except ValueError:
@@ -450,7 +454,7 @@ def build_job(root, download_dir, abo, video, now=None):
     target = Path(download_dir) / FOLDER / (clean_path_part(channel)[:80] or 'YouTube') / ('%s [%s].mp4' % (name, video['video']))
     item_id = 'v.' + video['video']
     source = {'_id': 'youtube:' + item_id, '_resolver': 'youtube', '_youtube_id': item_id, '_youtube_home': str(root),
-              '_video_id': video['video'], '_target': str(target), '_container': 'mp4',
+              '_video_id': video['video'], '_target': str(target), '_container': 'mp4', '_abo': int(abo['id']),
               'channel': channel, 'title': title, 'duration': video.get('duration'), 'url': youtube.video_url(video['video'])}
     return {'id': secrets.token_hex(8), 'source': source, 'metadata': meta, 'root': str(download_dir),
             'quality': abo.get('quality') or '720', 'target': str(target), 'state': 'queued', 'received': 0, 'total': 0,
@@ -494,7 +498,7 @@ def sync_states(c, db, abo_id=None):
     """Zustände aus der Warteschlange übernehmen (fertig, Fehler, abgelaufen)."""
     where, args = ("WHERE state IN ('queued','done','failed')", ()) if abo_id is None else \
         ("WHERE abo_id=? AND state IN ('queued','done','failed')", (abo_id,))
-    rows = db.execute('SELECT abo_id,video,state,job_id FROM youtube_abo_videos ' + where, args).fetchall()
+    rows = db.execute('SELECT abo_id,video,state,job_id,reason FROM youtube_abo_videos ' + where, args).fetchall()
     states = _job_states(c, [r['job_id'] for r in rows])
     changed = 0
     with db:
@@ -502,6 +506,16 @@ def sync_states(c, db, abo_id=None):
             job_state, payload = states.get(r['job_id'], (None, None))
             if job_state in ('queued', 'downloading', 'tagging'):
                 new = 'queued'
+                # 0.6.13: wartet der Auftrag nach einem vorübergehenden Fehler, steht der Grund am Video.
+                try:
+                    job = json.loads(payload)
+                    waiting = str(job.get('last_error') or '')[:200] if job_state == 'queued' and job.get('retries') else ''
+                except (TypeError, ValueError):
+                    waiting = ''
+                if new == r['state'] and waiting != (r['reason'] or ''):
+                    db.execute('UPDATE youtube_abo_videos SET reason=? WHERE abo_id=? AND video=?', (waiting, r['abo_id'], r['video']))
+                    changed += 1
+                    continue
             elif job_state == 'done':
                 new = 'done'
             elif job_state == 'error':
@@ -544,6 +558,15 @@ def check(root, abo_id, now=None, request=None, runner=None, c=None, download_di
         first = not abo['checked']
         limit = MAX_LIST if (first or abo['mode'] == 'all') else NEW_LIST
         request = request if request is not None else _request_for_key()
+        if request is None:
+            # 0.6.13: Pausiert YouTube uns gerade (Bot-Prüfung), wartet auch die Liste über yt-dlp.
+            import download_retry
+            until, why = download_retry.blocked_until('youtube', now)
+            if until:
+                message = 'YouTube pausiert bis %s Uhr (%s); die Prüfung folgt danach' % (time.strftime('%H:%M', time.localtime(until)), why)
+                with db:
+                    db.execute('UPDATE youtube_abos SET last_error=?,next_check=? WHERE id=?', (message, until + 60, abo_id))
+                return {'ok': False, 'error': message, 'paused': True}
         try:
             if request is not None:
                 info, videos = list_with_api(root, abo, limit, request)
@@ -692,6 +715,39 @@ def start_sync(root, queue=False):
     return True
 
 
+TEMPORARY_ERRORS = ('kein Bot', 'zu viele Anfragen', 'keine Daten', 'antwortet nicht rechtzeitig', 'Zeitüberschreitung')
+
+
+def requeue_on_start(c, now=None):
+    """0.6.13, einmal beim Start: YouTube-Aufträge, die vor 0.6.13 an einem vorübergehenden Fehler
+    (Bot-Prüfung) gescheitert sind, und Abo-Downloads, die ein Neustart unterbrochen hat, wieder
+    einreihen. Gestaffelt, damit YouTube nicht alle auf einmal sieht. Gibt die Zahl zurück."""
+    import download_retry
+    now = time.time() if now is None else float(now)
+    rows = c.execute("SELECT id,payload,state FROM jobs WHERE state IN ('error','interrupted') "
+                     "AND json_extract(payload,'$.origin')='youtube'").fetchall()
+    moved = 0
+    for job_id, payload, state in rows:
+        try:
+            job = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        error = str(job.get('error') or '')
+        if state == 'interrupted' and job.get('youtube_abo'):
+            wait = 60
+        elif state == 'error' and not job.get('retries') and any(x in error for x in TEMPORARY_ERRORS):
+            wait = download_retry.BACKOFF[0]
+        else:
+            continue
+        job.update(state='queued', not_before=now + wait + moved * 120, received=0, total=0, speed=0, eta=None,
+                   error='', retries=1 if state == 'error' else int(job.get('retries') or 0),
+                   last_error=error[:200] if state == 'error' else '',
+                   note='Wird nach dem Update automatisch erneut versucht')
+        c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), 'queued', job_id))
+        moved += 1
+    return moved
+
+
 def tick(root):
     """Jede Minute ohne fällige Prüfung: fertige Downloads übernehmen (für „Neu“ in der Kinderansicht)."""
     if _DB is None:
@@ -767,8 +823,13 @@ def overview(root, c=None):
         counts = {}
         for r in db.execute('SELECT abo_id,state,COUNT(*) FROM youtube_abo_videos GROUP BY abo_id,state'):
             counts.setdefault(r[0], {})[r[1]] = r[2]
+        # 0.6.13: Aufträge, die nach einem vorübergehenden Fehler auf ihren nächsten Versuch warten
+        for r in db.execute("SELECT abo_id,COUNT(*) FROM youtube_abo_videos WHERE state='queued' AND reason!='' GROUP BY abo_id"):
+            mine = counts.setdefault(r[0], {})
+            mine['retry'] = r[1]
+            mine['queued'] = max(0, (mine.get('queued') or 0) - r[1])
         reasons = {}
-        for r in db.execute("SELECT abo_id,reason,COUNT(*) FROM youtube_abo_videos WHERE state IN ('skipped','failed') AND reason!='' "
+        for r in db.execute("SELECT abo_id,reason,COUNT(*) FROM youtube_abo_videos WHERE state IN ('skipped','failed','queued') AND reason!='' "
                             "GROUP BY abo_id,reason ORDER BY 3 DESC"):
             reasons.setdefault(r[0], []).append({'reason': r[1], 'count': r[2]})
     finally:
@@ -784,7 +845,13 @@ def overview(root, c=None):
                  'done': sum((a['counts'].get('done') or 0) for a in abos if a['profile'] == k)} for k, v in PROFILES.items()]
     return {'abos': abos, 'profiles': profiles, 'offline': {'enabled': offline.get('enabled'), 'tool': bool(offline.get('tool'))},
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
-            'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS}
+            'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause()}
+
+
+def _pause(now=None):
+    import download_retry
+    until, reason = download_retry.blocked_until('youtube', now)
+    return {'until': until, 'reason': reason} if until else {}
 
 
 def kids(root, c, watch=None, profile='kinder'):

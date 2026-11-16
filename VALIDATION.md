@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.13 – Abo-Downloads (16. November 2026)
+- Automatisch: gesamte Python-Suite (1284 Tests, 4 übersprungen), `node --check` und Node-Smoke-Tests, Klicktest Chromium ohne Befund; neu `tests/test_v0613_download_retry.py` (14): Abstände und Aufgeben, Pause der Quelle mit „Jetzt versuchen“, Einteilung der yt-dlp-Fehler, Phasen, Abbruch eines Downloads ohne Daten (mit verkürzter Frist), Pausen nur für Abo-Downloads, Wiedereinreihen nach dem Update, Abo-Prüfung während der Pause, Grund am Abo-Video.
+- Echter Server mit einem Abo-Auftrag „kein Bot“ (Fehler aus 0.6.12) und einem unterbrochenen Abo-Download: nach dem Start beide „Geplant für …“ (15 Min. bzw. 1 Min.), Karte im Download zeigt die Phase statt „Geschwindigkeit wird ermittelt“ (Chromium).
+- Nicht geprüft: echtes YouTube (aus der Bauumgebung gesperrt), ob YouTube die Bot-Prüfung bei Björn nach der Pause wieder aufhebt, Safari/Firefox, NAS.
+
 ## 0.6.12 – Sammelstand 0.6.6–0.6.11 (16. November 2026)
 - Prüfung, dass jede von PR #58 und #62 hinzugefügte Zeile im zusammengeführten Stand steht (außer Versionsangaben).
 - Ergebnisse der Testläufe siehe PR.

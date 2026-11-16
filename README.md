@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.6.12
+# MediathekAtlas · 0.6.13
+
+## Neu in 0.6.13: Abo-Downloads laufen von selbst weiter
+
+- **Bot-Prüfung von YouTube:** Meldet YouTube „Anmeldung erforderlich („kein Bot“)“ oder „zu viele Anfragen“, bleibt das Video nicht mehr dauerhaft im Fehler. MediathekAtlas versucht es automatisch mit wachsendem Abstand erneut (15 Min., 1 Std., 3, 6, 12, 24, 24 Std.) und lässt bis dahin auch alle anderen YouTube-Downloads und Abo-Prüfungen ruhen, damit YouTube die Sperre nicht verlängert. Die Download-Karte zeigt „Geplant für … Uhr“ mit dem Grund; „Jetzt versuchen“ startet trotzdem sofort.
+- **Hängende Downloads:** Statt dauerhaft „0.0 MiB · Geschwindigkeit wird ermittelt“ steht da, was gerade passiert (Videoseite wird abgerufen, Videodaten werden abgefragt, kurze Pause …). Kommen nach 10 Minuten keine Daten (oder 5 Minuten lang keine weiteren), bricht MediathekAtlas ab und versucht es später automatisch erneut.
+- **Schonender laden:** Abo-Downloads machen zwischen den Anfragen kurze Pausen (1 s, vor jedem Video 5–20 s). Ein einzelner Klick auf „Offline speichern“ startet weiter sofort.
+- **Nach dem Update:** Abo- und YouTube-Videos, die vorher an der Bot-Prüfung gescheitert oder durch einen Neustart unterbrochen sind, werden gestaffelt wieder eingereiht.
+- **Abo-Verwaltung:** Chip „neuer Versuch geplant“ je Abo, Grund unter „Warum ausgelassen oder verzögert?“, Hinweis oben, solange YouTube bremst.
+- Keine Anmeldung bei YouTube: MediathekAtlas meldet sich weiterhin nicht mit einem Konto an und nutzt keine Cookies.
 
 ## Neu in 0.6.12: Sammelstand
 

@@ -17,7 +17,7 @@
   };
   const PROFILES = {kinder: {icon: '★', label: 'Kinderecke', hint: 'erscheint nur in der Kinderecke'},
     erwachsene: {icon: '▶', label: 'Für mich', hint: 'erscheint nur im Ansehen-Modus'}};
-  const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['wanted', 'warten', 'wait'],
+  const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['retry', 'neuer Versuch geplant', 'wait'], ['wanted', 'warten', 'wait'],
     ['failed', 'Fehler', 'bad'], ['skipped', 'ausgelassen', 'muted'], ['expired', 'abgelaufen', 'muted']];
   let data = {abos: [], profiles: []}, current = 'kinder', timer = 0;
 
@@ -112,7 +112,7 @@
     body.append(chips);
     if (a.last_error) body.append(make('p', a.last_error, 'abo-error'));
     if (a.reasons?.length) {
-      const why = make('details', undefined, 'abo-why'); why.append(make('summary', 'Warum ausgelassen?'));
+      const why = make('details', undefined, 'abo-why'); why.append(make('summary', 'Warum ausgelassen oder verzögert?'));
       why.append(make('p', a.reasons.map(r => r.count + ' × ' + r.reason).join(' · '), 'muted')); body.append(why);
     }
     const acts = make('div', undefined, 'abo-actions');
@@ -155,6 +155,9 @@
     const warn = $('youtube-abos-warning'); const problems = [];
     if (!d.offline?.enabled) problems.push('Der YouTube-Offline-Schalter (Schritt 3 oben) ist aus: Abos werden geprüft, aber nichts geladen.');
     else if (!d.offline?.tool) problems.push('yt-dlp fehlt noch: oben in Schritt 3 „yt-dlp einrichten“ wählen.');
+    // 0.6.13: YouTube hat Anfragen als Bot eingestuft; Abo-Downloads warten, statt die Sperre zu verlängern.
+    if (d.pause?.until) problems.push('YouTube bremst gerade (' + d.pause.reason + '). Abo-Downloads pausieren bis ' +
+      new Date(d.pause.until * 1000).toLocaleString('de-DE', {weekday: 'short', hour: '2-digit', minute: '2-digit'}) + ' Uhr und laufen danach von selbst weiter.');
     warn.hidden = !problems.length; warn.textContent = problems.join(' ');
     const total = (d.abos || []).length, done = (d.profiles || []).reduce((n, p) => n + p.done, 0);
     $('youtube-abos-state').textContent = total ? '· ' + total + (total === 1 ? ' Abo' : ' Abos') + ' · ' + done + ' Videos offline' + (d.running ? ' · prüft gerade' : '') : '';

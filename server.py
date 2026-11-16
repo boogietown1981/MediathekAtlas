@@ -2,7 +2,7 @@ import subprocess,sys,tempfile,types
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
-import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
+import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment, youtube_abos
 import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
@@ -268,7 +268,10 @@ def worker():
             if blocked:
                 # Queued before the other instance's claim arrived (e.g. series packages).
                 j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
-            c.execute("UPDATE jobs SET state='downloading' WHERE id=?",(j['id'],))
+            # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
+            if download_retry.hold(j):
+                c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
+            c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
         def cancelled():
             with db() as c:x=c.execute('SELECT state FROM jobs WHERE id=?',(j['id'],)).fetchone()
             return not x or x[0]=='cancelled'
@@ -288,7 +291,12 @@ def worker():
             if not cancelled():downloads.run(j['source'],j['metadata'],j['root'],j['quality'],update,cancelled)
         except Exception as e:
             diagnostics.error('download_failed',e,job_id=j['id'])
-            if not cancelled():j.update(state='error',error=core.safe_error(e));put_job(j)
+            if not cancelled():
+                # 0.6.13: temporary failures (bot check, network, stalled download) are retried later with growing gaps.
+                if download_retry.reschedule(j,e):
+                    diagnostics.event('download_retry_planned',job_id=j['id'],retries=j['retries'],not_before=int(j['not_before']),source=download_retry.source_of(j))
+                else:j.update(state='error',error=j.get('error') or core.safe_error(e))
+                put_job(j)
         if j.get('state')=='done' and j.get('origin')==archive_downloads.ORIGIN:
             # 0.5.95: signed receipt with checksum for the Verbund; runs beside the queue, a large file takes a while to read.
             threading.Thread(target=archive_receipt,args=(dict(j),),daemon=True,name='archive_receipt').start()
@@ -2170,6 +2178,11 @@ if __name__=='__main__':
         with db() as c:removed=job_queue.dedupe(c)
         if removed:diagnostics.event('download_queue_deduplicated',count=removed)
     except Exception as e:diagnostics.error('download_queue_dedupe_failed',e)
+    try:
+        # 0.6.13: YouTube jobs stopped by the bot check (before automatic retries existed) or by a restart start again later.
+        with db() as c:moved=youtube_abos.requeue_on_start(c)
+        if moved:diagnostics.event('youtube_jobs_requeued',count=moved)
+    except Exception as e:diagnostics.error('youtube_requeue_failed',e)
     try:
         with db() as c:moved=netzkino_downloads.migrate_legacy(ROOT,c,settings()['download_dir'])
         if moved:diagnostics.event('netzkino_licensed_jobs_migrated',count=moved)
