@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.22 – Umzug großer Datenbanken (16. November 2026)
+- Automatisch: gesamte Python-Suite; neue Tests für schrittweise Datenbankkopie bei gleichzeitigen Schreibzugriffen (kein Neubeginn, Kopie konsistent), Abbruch mitten in der Datei, Strukturprüfung ab 512 MB. Probelauf mit 565-MB-Datenbank: 39 Fortschrittsmeldungen, Strukturprüfung statt quick_check. Klicktest Chromium.
+- Nicht geprüft: Dauer auf Björns MacBook Air mit externem Laufwerk (5,5-GB-catalog.db, 21,8-GB-IMDb-Archiv).
+
 ## 0.6.21 – Sammelstand 0.6.19 + 0.6.20 (16. November 2026)
 - Skriptprüfung: jede von PR #70 und #71 hinzugefügte Zeile steht im zusammengeführten Stand (außer Versionsangaben). Testläufe siehe PR.
 

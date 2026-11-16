@@ -197,6 +197,79 @@ class CopyTests(unittest.TestCase):
         self.assertEqual([p.name for p in dst.iterdir()], [])
 
 
+class LargeDatabaseTests(unittest.TestCase):
+    """0.6.22: Björns Umzug stand bei catalog.db (5,5 GB) über 10 Minuten ohne Anzeige (quick_check am Ziel)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name)
+        self.src = self.base / 'catalog.db'
+        make_db(self.src, 4000).close()
+
+    def test_steps_report_progress_and_survive_concurrent_writes(self):
+        import threading
+        sl.BACKUP_PAGES, old = 20, sl.BACKUP_PAGES
+        self.addCleanup(setattr, sl, 'BACKUP_PAGES', old)
+        stop = threading.Event()
+        writes = [0]
+
+        def writer():
+            w = sqlite3.connect(self.src, timeout=30)
+            while not stop.is_set():
+                w.execute("INSERT INTO t(v) VALUES('neu')")
+                w.commit()
+                writes[0] += 1
+                time.sleep(0.001)
+            w.close()
+        th = threading.Thread(target=writer)
+        th.start()
+        stages = []
+        try:
+            sl.copy_sqlite(self.src, self.base / 'kopie.db', on_stage=lambda *a: stages.append(a))
+        finally:
+            stop.set()
+            th.join()
+        copies = [a for a in stages if a[0] == 'copy']
+        self.assertGreater(len(copies), 5)
+        self.assertEqual([a[1] for a in copies], sorted(a[1] for a in copies))   # kein Neubeginn
+        self.assertEqual(copies[-1][1], copies[-1][2])
+        self.assertIn('check', [a[0] for a in stages])
+        c = sqlite3.connect(self.base / 'kopie.db')
+        self.assertGreaterEqual(c.execute('SELECT count(*) FROM t').fetchone()[0], 4000)
+        self.assertEqual(c.execute('PRAGMA quick_check').fetchone()[0], 'ok')
+        c.close()
+
+    def test_cancel_inside_database_copy(self):
+        sl.BACKUP_PAGES, old = 10, sl.BACKUP_PAGES
+        self.addCleanup(setattr, sl, 'BACKUP_PAGES', old)
+        calls = []
+        with self.assertRaises(InterruptedError):
+            sl.copy_sqlite(self.src, self.base / 'kopie.db', cancelled=lambda: calls.append(1) or len(calls) > 3)
+        self.assertFalse((self.base / 'kopie.db').exists())
+        self.assertFalse((self.base / 'kopie.db.partial').exists())
+
+    def test_large_database_uses_structure_check(self):
+        sl.QUICK_CHECK_LIMIT, old = 0, sl.QUICK_CHECK_LIMIT
+        self.addCleanup(setattr, sl, 'QUICK_CHECK_LIMIT', old)
+        seen = []
+        sl.copy_sqlite(self.src, self.base / 'kopie.db', on_stage=lambda *a: seen.append(a[0]))
+        self.assertEqual(seen[-1], 'sync')
+        c = sqlite3.connect(self.base / 'kopie.db')
+        self.assertEqual(c.execute('SELECT count(*) FROM t').fetchone()[0], 4000)
+        c.close()
+
+    def test_mover_state_shows_file_progress(self):
+        src, dst = self.base / 'quelle', self.base / 'ziel'
+        src.mkdir()
+        make_db(src / 'catalog.db', 2000).close()
+        states = []
+        sl.sync_tree(src, dst, progress=states.append)
+        db_states = [x for x in states if x.get('current') == 'catalog.db' and x.get('file_total')]
+        self.assertTrue(db_states)
+        self.assertTrue({x['step'] for x in db_states} >= {'copy', 'check'})
+
+
 class DownloadMoveTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()

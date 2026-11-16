@@ -1,3 +1,10 @@
+## 0.6.22 – Speicherorte: große Datenbanken mit Fortschritt, Abbruch und schneller Prüfung
+- Björn (16.11.2026, 0.6.21 auf dem MacBook Air): Umzug „System und Datenbank“ stand bei catalog.db (5,5 GB) über 10 Minuten ohne Aktualisierung. Ursache: `copy_sqlite` kopierte per Backup-API in einem Schritt (Fortschritt nur über die Dateigröße) und lief danach `PRAGMA quick_check` über die ganze 5,5-GB-Kopie am Ziel – ohne Anzeige, ohne Abbruch, bei 8 GB RAM überwiegend Zufallslesen vom USB-Laufwerk.
+- `copy_sqlite`: Lesetransaktion an der Quelle hält den Stand fest, Kopie in Schritten zu `BACKUP_PAGES` (4096 Seiten) ohne Neubeginn bei Schreibzugriffen der App (geprüft mit gleichzeitigem Schreiber), Fortschritt je Schritt, Abbruch je Schritt (`InterruptedError` aus dem Fortschrittsrückruf, `.partial` wird entfernt).
+- Prüfung: bis `QUICK_CHECK_LIMIT` (512 MB) weiter `quick_check`; darüber Seitenzahl = Quelle, Schema lesbar, Dateikopf, Mindestgröße nach fsync.
+- Zustand des Umzugs mit `step` (`copy`/`check`/`sync`), `file_done`, `file_total`, `file_started`; Oberfläche zeigt „catalog.db wird kopiert: 2,1 von 5,5 GB · seit 3 min“, „wird geprüft“, „wird auf das Laufwerk geschrieben“. Auch normale große Dateien zeigen ihren Fortschritt.
+- Tests: `tests/test_v0620_storage_locations.py` (23, davon 4 neu: Schritte mit gleichzeitigem Schreiber, Abbruch mitten in der Datenbank, Strukturprüfung großer Datenbanken, Dateifortschritt im Zustand).
+
 ## 0.6.21 – Sammelstand: 0.6.19 + 0.6.20 zusammen in main
 - Zusammengeführt (16.11.2026, Björn: „merge bitte die offenen PR und gib mir eine neue Testversion“): PR #70 (0.6.19 Korrekturen aus der Diagnose von 0.6.18) und PR #71 (0.6.20 Speicherorte mit Umzug).
 - Konflikte nur an Versionsstellen und in CHANGELOG/README/VALIDATION. `youtube_abos.py` ohne Konflikt: Wiederholung gescheiterter Abo-Downloads (0.6.19) und Zwischenspeicher aus den Speicherorten (0.6.20) stehen nebeneinander. Volles Laufwerk (`download_retry.NoSpace`, alle Quellen warten) und angehaltene Downloads während eines Umzugs (`storage_locations.downloads_held`) sind getrennte Sperren und greifen beide.

@@ -36,6 +36,8 @@ function renderMove(){
   const bar=el('progress');bar.max=Math.max(1,m.bytes_total||0);bar.value=Math.min(bar.max,m.bytes_done||0);moveBox.append(bar);
   moveBox.append(line(gb(m.bytes_done)+' von '+gb(m.bytes_total)+' · '+(m.files_done||0)+' von '+(m.files_total||0)+' Dateien'+(m.kind!=='system'?' · Downloads warten so lange':'')));
   if(m.current)moveBox.append(el('div',m.current,'loc-current'));
+  // 0.6.22: Fortschritt der aktuellen Datei (große Datenbanken: kopieren, prüfen, auf das Laufwerk schreiben)
+  if(m.current&&m.file_total>0&&m.phase==='copying'){const step={copy:'wird kopiert',check:'wird geprüft',sync:'wird auf das Laufwerk geschrieben'}[m.step]||'wird kopiert';const mins=m.file_started?Math.floor((Date.now()/1000-m.file_started)/60):0;moveBox.append(line(m.current.split(/[\\/]/).pop()+' '+step+(m.step==='copy'?': '+gb(m.file_done)+' von '+gb(m.file_total):'')+(mins>=1?' · seit '+mins+' min':'')));}
   const c=el('button','Umzug abbrechen');c.type='button';c.onclick=()=>busy(c,async()=>{await api('storage-locations',{action:'cancel'});await load();});moveBox.append(c);
  }
  if(m.error)moveBox.append(line(m.error,m.phase==='failed'?'loc-bad':'muted'));

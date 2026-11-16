@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.21
+# MediathekAtlas · 0.6.22
+
+## Neu in 0.6.22: Umzug großer Datenbanken mit Fortschritt
+
+- Beim Umzug von „System und Datenbank“ zeigt die Anzeige jetzt auch bei großen Datenbanken (catalog.db, IMDb-Archiv) laufend, was passiert: kopiert X von Y GB, wird geprüft, wird auf das Laufwerk geschrieben, seit wie vielen Minuten.
+- Die lange Prüfung der ganzen Kopie (bisher bei 5,5 GB auf einem USB-Laufwerk viele Minuten ohne Anzeige) ist bei großen Datenbanken durch eine schnelle Strukturprüfung ersetzt.
+- „Umzug abbrechen“ wirkt jetzt auch mitten in einer großen Datei.
 
 ## Neu in 0.6.21: Sammelstand
 

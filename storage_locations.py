@@ -264,35 +264,57 @@ def copy_file(src, dst, on_bytes=None, cancelled=None):
         raise
 
 
-def copy_sqlite(src, dst, on_bytes=None):
-    """Konsistente Kopie einer (auch geöffneten) SQLite-Datei über die Backup-API."""
+QUICK_CHECK_LIMIT = 512 * 1024 * 1024   # größere Datenbanken: Strukturprüfung statt quick_check (0.6.22)
+BACKUP_PAGES = 4096
+
+
+def copy_sqlite(src, dst, on_bytes=None, cancelled=None, on_stage=None):
+    """Konsistente Kopie einer (auch geöffneten) SQLite-Datei über die Backup-API.
+
+    0.6.22 (Björn, 16.11.2026: Anzeige stand bei catalog.db 5,5 GB über 10 Minuten still): Die Quelle
+    hält einen Lesestand fest (offene Lesetransaktion), damit die Kopie in Schritten laufen kann, ohne
+    bei Schreibzugriffen der App neu zu beginnen. Jeder Schritt meldet Fortschritt und prüft den
+    Abbruch. Danach statt ``quick_check`` über die ganze Datei (bei 5,5 GB auf USB-Laufwerken viele
+    Minuten ohne Anzeige) bei großen Dateien eine Strukturprüfung: Kopf, Seitenzahl = Quelle,
+    Dateigröße, Schema lesbar; kleine Dateien weiter mit ``quick_check``.
+    """
     dst = Path(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     part = dst.with_name(dst.name + '.partial')
     part.unlink(missing_ok=True)
-    done = threading.Event()
+    stage = on_stage or (lambda *a: None)
     seen = [0]
-
-    def watch():   # Fortschritt nach Dateigröße der Kopie (Backup in einem Schritt, kein Neustart bei Schreibzugriffen)
-        while not done.wait(0.5):
-            try:
-                size = part.stat().st_size
-            except OSError:
-                continue
-            if size > seen[0] and on_bytes:
-                on_bytes(size - seen[0])
-                seen[0] = size
-    watcher = threading.Thread(target=watch, daemon=True, name='storage_move_watch')
-    watcher.start()
     try:
-        source = sqlite3.connect(str(src), timeout=60)
+        source = sqlite3.connect(str(src), timeout=60, isolation_level=None)
         target = sqlite3.connect(str(part))
         try:
-            source.backup(target)
-            check = target.execute('PRAGMA quick_check').fetchone()[0]
-            if check != 'ok':
-                raise ValueError('Datenbankkopie fehlerhaft (%s): %s' % (Path(src).name, str(check)[:160]))
+            source.execute('BEGIN')
+            page_size = source.execute('PRAGMA page_size').fetchone()[0]
+            pages = source.execute('PRAGMA page_count').fetchone()[0]   # Lesestand ab hier fest
+            total = page_size * pages
+
+            def progress(_status, remaining, count):
+                if cancelled and cancelled():
+                    raise InterruptedError('abgebrochen')
+                done = max(0, (count - remaining) * page_size)
+                if on_bytes and done > seen[0]:
+                    on_bytes(done - seen[0])
+                    seen[0] = done
+                stage('copy', done, total)
+            stage('copy', 0, total)
+            source.backup(target, pages=BACKUP_PAGES, progress=progress, sleep=0)
             mode = source.execute('PRAGMA journal_mode').fetchone()[0]
+            source.execute('COMMIT')
+            stage('check', 0, total)
+            if total <= QUICK_CHECK_LIMIT:
+                check = target.execute('PRAGMA quick_check').fetchone()[0]
+                if check != 'ok':
+                    raise ValueError('Datenbankkopie fehlerhaft (%s): %s' % (Path(src).name, str(check)[:160]))
+            else:
+                copied = target.execute('PRAGMA page_count').fetchone()[0]
+                if copied != pages:
+                    raise ValueError('Datenbankkopie unvollständig (%s): %d von %d Seiten' % (Path(src).name, copied, pages))
+                target.execute('SELECT count(*) FROM sqlite_master').fetchone()
             if str(mode).lower() == 'wal':
                 target.execute('PRAGMA journal_mode=WAL')
             target.commit()
@@ -301,8 +323,14 @@ def copy_sqlite(src, dst, on_bytes=None):
             source.close()
         Path(part.with_name(part.name + '-wal')).unlink(missing_ok=True)
         Path(part.with_name(part.name + '-shm')).unlink(missing_ok=True)
+        stage('sync', total, total)
         with open(part, 'rb') as f:
             os.fsync(f.fileno())
+        with open(part, 'rb') as f:
+            if f.read(16) != b'SQLite format 3\x00':
+                raise ValueError('Datenbankkopie ohne gültigen Kopf (%s)' % Path(src).name)
+        if total > QUICK_CHECK_LIMIT and part.stat().st_size < total:
+            raise ValueError('Datenbankkopie zu klein (%s)' % Path(src).name)
         try:
             os.chmod(part, 0o600)
         except OSError:
@@ -311,9 +339,6 @@ def copy_sqlite(src, dst, on_bytes=None):
     except BaseException:
         part.unlink(missing_ok=True)
         raise
-    finally:
-        done.set()
-        watcher.join(2)
     final = dst.stat().st_size
     if on_bytes and final > seen[0]:
         on_bytes(final - seen[0])
@@ -624,10 +649,16 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
     state = {'files_total': len(files), 'files_done': 0, 'bytes_total': total, 'bytes_done': 0, 'current': ''}
     last_save = [time.monotonic()]
 
+    def _stage(step, done, total):
+        state.update(step=step, file_done=done, file_total=total)
+        if progress:
+            progress(dict(state))
+
     def tick(n=0, current=None):
         state['bytes_done'] += n
         if current is not None:
             state['current'] = current
+            state.update(step='copy', file_done=0, file_total=0, file_started=time.time())
         if progress:
             progress(dict(state))
     tick()
@@ -645,10 +676,16 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
         before = state['bytes_done']
         if db:
             stamp = _stamp(st, full, True)
-            copy_sqlite(full, dst, on_bytes=lambda n: tick(n))
+            copy_sqlite(full, dst, on_bytes=lambda n: tick(n), cancelled=cancelled,
+                        on_stage=lambda step, done, total: _stage(step, done, total))
         else:
             stamp = _stamp(st, full, False)
-            copy_file(full, dst, on_bytes=lambda n: tick(n), cancelled=cancelled)
+            state['file_total'] = st.st_size
+
+            def counted(n):
+                state['file_done'] = state.get('file_done', 0) + n
+                tick(n)
+            copy_file(full, dst, on_bytes=counted, cancelled=cancelled)
         state['bytes_done'] = before + st.st_size   # Datenbankkopie kann kleiner/größer sein als das Original
         state['files_done'] += 1
         manifest[key] = stamp
