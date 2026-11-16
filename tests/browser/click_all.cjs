@@ -96,6 +96,13 @@ async function clickThrough(name, url) {
     if (!(Math.min(...light) > 200 && Math.max(...dark) < 60)) problems.push('Helles Design greift nicht: dunkel ' + dark + ', hell ' + light);
     await expect('Text im hellen Design dunkel', () => getComputedStyle(document.documentElement).color.match(/\d+/g).slice(0, 3).every(v => Number(v) < 90));
     for (const view of ['discover', 'storage', 'settings']) { await page.evaluate(v => window.atlasShowView(v), view); await page.waitForTimeout(500); }
+    // 0.6.20: Einstellungen → Speicherorte aufklappen und ein nicht verbundenes Laufwerk prüfen lassen.
+    await page.evaluate(() => { document.getElementById('storage-locations-panel').open = true; });
+    await page.waitForSelector('#storage-locations-list .loc-location', { timeout: 10000 });
+    if (await page.locator('#storage-locations-list .loc-location').count() !== 3) problems.push('Speicherorte: drei Bereiche erwartet');
+    await page.locator('#storage-locations-list .loc-location input').first().fill('/Volumes/NichtVerbunden/MediathekAtlas');
+    await page.locator('#storage-locations-list .loc-location button', { hasText: 'Ziel prüfen' }).first().click();
+    await page.waitForSelector('#storage-locations-list .loc-bad', { timeout: 10000 });
     await page.evaluate(() => window.AtlasDisplay.save({ theme: 'dark' }));
     await page.waitForTimeout(300);
     await expect('Dunkles Design wiederhergestellt', () => !document.documentElement.dataset.theme);

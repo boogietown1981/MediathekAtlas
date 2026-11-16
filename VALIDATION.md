@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.20 – Speicherorte mit Umzug (16. November 2026)
+- Automatisch: gesamte Python-Suite, `tests/test_v0620_storage_locations.py` (offene WAL-Datenbank konsistent kopiert, Wiederaufnahme ohne Doppelkopie, Abbruch ohne halbe Datei, Inhaltsabweichung erkannt, Download- und Abo-Umzug mit Pfadänderung in catalog.db, Warten auf laufenden Download, System-Umzug mit Nachkopieren beim Start, Rückweg an den Standardort, abgezogenes Laufwerk → Meldung statt leerem Neuanfang, Löschen nur nachweislich gleicher Dateien).
+- Ende-zu-Ende mit echtem Server (Linux): Downloads umgezogen, System umgezogen, „Jetzt neu starten“ (gleiche PID, gleicher Port), Altdaten gelöscht, danach Laufwerk entfernt → Start endet nach 30 s mit Code 3 und Meldung, nichts neu angelegt. Klicktest Chromium.
+- Nicht geprüft: echtes externes Laufwerk/exFAT und SMB-Freigabe am Mac, macOS-Dialog im Startskript, NAS-Pakete, Windows (Neustart dort von Hand).
+
 ## 0.6.18 – Sammelstand 0.6.14–0.6.17 (16. November 2026)
 - Skriptprüfung: jede von PR #66, #67 und #68 hinzugefügte Zeile steht im zusammengeführten Stand (außer Versionsangaben). Testläufe siehe PR.
 

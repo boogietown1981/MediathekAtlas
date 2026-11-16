@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.6.18
+# MediathekAtlas · 0.6.20
+
+## Neu in 0.6.20: Speicherorte einstellbar, mit Umzug der Daten
+
+- Einstellungen → **Speicherorte**: Downloads, Zwischenspeicher (YouTube-Abo-Videos) sowie System und Datenbank lassen sich einzeln festlegen, z. B. auf einem externen Laufwerk oder einer Netzwerkfreigabe.
+- Beim Umzug wird zuerst alles kopiert und geprüft, erst dann umgestellt. Fortschritt und Abbruch in der Oberfläche; ein abgebrochener Umzug setzt beim nächsten Versuch fort.
+- System und Datenbank: Abschluss beim Neustart (Knopf „Jetzt neu starten“), geänderte Dateien werden dabei nachkopiert.
+- Der alte Ort bleibt erhalten, bis du ihn ausdrücklich löschst; gelöscht wird nur, was am neuen Ort gleich vorliegt.
+- Fehlt ein Laufwerk (abgezogen), meldet MediathekAtlas das verständlich: Downloads warten, und ohne Datenordner startet die App nicht an einem leeren Ort neu.
+- 0.6.19 ist für die Auswertung der Diagnose von 0.6.18 vorgesehen.
 
 ## Neu in 0.6.18: Sammelstand
 

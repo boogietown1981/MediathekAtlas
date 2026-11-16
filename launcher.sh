@@ -12,7 +12,7 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 LOG="$STATE_DIR/startup.log"
 : > "$LOG"
-printf 'MediathekAtlas 0.6.18 Startprüfung\n' >> "$LOG"
+printf 'MediathekAtlas 0.6.20 Startprüfung\n' >> "$LOG"
 FOUND_PYTHON=""
 try_python() {
   local candidate="$1"
@@ -60,9 +60,25 @@ cd "$RUNTIME_DIR" || exit 1
 if [ "${1:-}" = "--diagnose" ]; then
   exec "$FOUND_PYTHON" diagnostics_cli.py
 fi
-"$FOUND_PYTHON" server.py >> "$LOG" 2>&1
-STATUS=$?
-if [ "$STATUS" -ne 0 ] && [ -x /usr/bin/osascript ]; then
+while :; do
+  "$FOUND_PYTHON" server.py >> "$LOG" 2>&1
+  STATUS=$?
+  # 0.6.20: Speicherort für System und Datenbank nicht erreichbar (z. B. externes Laufwerk abgezogen).
+  if [ "$STATUS" -eq 3 ] && [ -x /usr/bin/osascript ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then
+    ANSWER="$(/usr/bin/osascript - "$STATE_DIR/storage-problem.txt" <<'APPLESCRIPT'
+on run argv
+ set message to read POSIX file (item 1 of argv) as «class utf8»
+ set answer to display dialog message buttons {"Beenden", "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
+ return button returned of answer
+end run
+APPLESCRIPT
+)"
+    if [ "$ANSWER" = "Erneut versuchen" ]; then continue; fi
+    exit 3
+  fi
+  break
+done
+if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 3 ] && [ -x /usr/bin/osascript ]; then
   /usr/bin/osascript - "$LOG" <<'APPLESCRIPT'
 on run argv
  display dialog "Python wurde gefunden, aber die Anwendung konnte nicht gestartet werden. Das Startprotokoll enthält die genaue Fehlermeldung." buttons {"OK"} default button "OK" with title "MediathekAtlas"
