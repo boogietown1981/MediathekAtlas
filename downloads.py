@@ -60,7 +60,8 @@ def remux(source,dest,meta,original=None,container='matroska'):
 def require_space(directory, required):
     free=shutil.disk_usage(directory).free
     if free < required:
-        raise ValueError('Zu wenig freier Speicher am Downloadziel: %.1f GiB frei, mindestens %.1f GiB benötigt' % (free/2**30,required/2**30))
+        import download_retry   # 0.6.19: temporary – the job waits instead of failing for good
+        raise download_retry.NoSpace('Zu wenig freier Speicher am Downloadziel: %.1f GiB frei, mindestens %.1f GiB benötigt' % (free/2**30,required/2**30))
     return free
 
 def quality_summary(details):

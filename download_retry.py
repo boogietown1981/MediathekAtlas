@@ -13,6 +13,10 @@ endeten dauerhaft mit „YouTube verlangt eine Anmeldung („kein Bot“) … Sp
   verlängern). Die Abo-Prüfung wartet ebenfalls.
 * „Jetzt versuchen“ (``job_queue.control(..., 'now')``) übergeht die Sperre einmal.
 
+0.6.19 (Björns Diagnose 0.6.18): Zu wenig Speicher am Downloadziel ist ebenfalls vorübergehend
+(:class:`NoSpace`). Die Sperre gilt dann für alle Quellen (:data:`EVERYWHERE`), sonst scheitert ein
+Auftrag nach dem anderen dauerhaft (16.11.: 20 Abo-Videos in 50 Minuten).
+
 Nur Standardbibliothek; der Zustand der Sperre lebt im Speicher. Nach einem Neustart warten die
 Aufträge trotzdem bis zu ihrem eigenen ``not_before``.
 """
@@ -28,6 +32,7 @@ BACKOFF = (15 * 60, 60 * 60, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 24 * 3600
 BACKOFF_BLOCK = (60 * 60, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 24 * 3600, 24 * 3600)
 _LOCK = threading.Lock()
 _BLOCKS = {}                      # Quelle -> (bis, Grund)
+EVERYWHERE = '*'                  # Sperre für alle Quellen (Speicher voll)
 
 
 class RetryLater(ValueError):
@@ -38,6 +43,15 @@ class RetryLater(ValueError):
     def __init__(self, message, block=False):
         super().__init__(message)
         self.block = bool(block)
+        self.everywhere = False
+
+
+class NoSpace(RetryLater):
+    """Zu wenig freier Speicher: alle Downloads warten, bis wieder Platz sein könnte (0.6.19)."""
+
+    def __init__(self, message):
+        super().__init__(message + ' – neuer Versuch automatisch, sobald Platz frei ist', block=True)
+        self.everywhere = True
 
 
 def source_of(job):
@@ -81,7 +95,7 @@ def hold(job, now=None):
     now = time.time() if now is None else float(now)
     if job.pop('force_now', False):
         return False
-    until, reason = blocked_until(source_of(job), now)
+    until, reason = max(blocked_until(source_of(job), now), blocked_until(EVERYWHERE, now))
     if not until:
         return False
     job.update(not_before=until, note='Pausiert bis %s Uhr: %s' % (_clock(until), reason or 'Anbieter bremst'))
@@ -102,7 +116,7 @@ def reschedule(job, exc, now=None, rand=random.random):
         job['error'] = '%s (nach %d automatischen Versuchen aufgegeben)' % (message, tries - 1)
         return False
     delay = steps[tries - 1] * (0.9 + 0.2 * rand())
-    source = source_of(job)
+    source = EVERYWHERE if getattr(exc, 'everywhere', False) else source_of(job)
     if exc.block:
         block(source, now + delay, message)
     until = max(now + delay, blocked_until(source, now)[0])

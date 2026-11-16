@@ -1,3 +1,12 @@
+## 0.6.19 – Korrekturen aus der Diagnose von 0.6.18
+- Diagnose 16.11.2026 14:02 (MacBook Air, 0.6.18 lief nur 5 Minuten). Befunde und Korrekturen:
+- **Crunchyroll-Filme gingen verloren:** Bis 0.6.9 brachte die Liste ohne Typ 1.690 Einträge, `type=series` liefert nur 1.522. Die fehlenden 168 kommen nur über `type=movie_listing`, tragen dort aber den Typ `series`. 0.6.17 übersprang diese Liste, sobald die Serienliste einen Film enthielt (17 Ein-Folgen-Titel), und verlor die 168. Jetzt wird die Filmliste immer geladen; ein Eintrag, den nur die Filmliste kennt, ist ein Film (ID bleibt `s.<ID>`). `type=movie` nur noch, wenn die Filmliste nichts Neues brachte. `list_stats` je Liste mit `films`. `BROWSE_VERSION = '4'`: Katalog wird nach dem Update einmal neu geladen.
+- **Unterbrochene Katalogläufe starten neu** (`provider_base.catalog_due`): ServusTV lief um 11:35 mit 0.6.13 an, der Neustart um 11:52 brach ab (`interrupted`), 0.6.18 wartete bis zum 17.11. Der neue ServusTV-Abruf aus 0.6.16 ist dadurch noch nie gelaufen. Gilt für alle Anbieter mit gemeinsamem Planer.
+- **YouTube „This video is not available“** nach der Bot-Sperre (18 von 18 Versuchen, kein Erfolg dazwischen) ist jetzt ein vorübergehender Fehler mit wachsendem Abstand statt dauerhaft. „Video unavailable“/„Private video“ bleiben dauerhaft.
+- **Zu wenig Speicher am Downloadziel** (`downloads.require_space`) ist jetzt `download_retry.NoSpace`: alle Downloads pausieren (Sperre für alle Quellen, ab 1 h wachsend) statt dass ein Auftrag nach dem anderen dauerhaft scheitert (16.11.: 20 Abo-Videos in 50 Minuten).
+- Beim Start werden YouTube-Aufträge, die an diesen beiden Fehlern endgültig gescheitert sind, einmal wieder eingereiht (`requeued_0619`).
+- Tests: `tests/test_v0619_diagnose_0618.py` (8), `tests/test_v0596_crunchyroll.py` (+2, eine Erwartung angepasst).
+
 ## 0.6.18 – Sammelstand: 0.6.14 bis 0.6.17 zusammen in main
 - Zusammengeführt (16.11.2026, Björn: „ja merge alle“): PR #66 (0.6.14 Abo-Videos höchstens N pro Stunde), PR #68 (0.6.16 ServusTV lange Clips/Sportseiten), PR #67 (0.6.15 + 0.6.17 Crunchyroll-Filme erkennen).
 - Konflikte nur an Versionsstellen und in CHANGELOG/README/VALIDATION. Keine neue Funktion.

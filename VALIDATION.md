@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.19 – Korrekturen aus der Diagnose von 0.6.18 (16. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests; neu `tests/test_v0619_diagnose_0618.py`, Crunchyroll-Tests mit nachgebildeter Filmliste (Einträge vom Typ „series“).
+- Nicht geprüft: echte Antwort von crunchyroll.com (aus der Cloud gesperrt); die Zahl 168 ist aus 1.690 − 1.522 geschlossen. Die nächste Diagnose zeigt `list_stats` mit `films` je Liste.
+
 ## 0.6.18 – Sammelstand 0.6.14–0.6.17 (16. November 2026)
 - Skriptprüfung: jede von PR #66, #67 und #68 hinzugefügte Zeile steht im zusammengeführten Stand (außer Versionsangaben). Testläufe siehe PR.
 
