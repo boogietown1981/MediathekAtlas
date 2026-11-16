@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.11
+# MediathekAtlas · 0.6.12
+
+## Neu in 0.6.12: Sammelstand
+
+- Enthält alles aus 0.6.6 bis 0.6.11 in einem Paket: Untertitel und Tonspur im Player, YouTube-Kanal-Abos mit Kinderecke, Ansehen-Modus, Korrekturen aus der Diagnose, Crunchyroll mit Filmen und Abos getrennt nach Profil. Keine neue Funktion.
 
 ## Neu in 0.6.11: YouTube-Abos getrennt für Kinder und Erwachsene
 

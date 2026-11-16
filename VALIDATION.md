@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.12 – Sammelstand 0.6.6–0.6.11 (16. November 2026)
+- Prüfung, dass jede von PR #58 und #62 hinzugefügte Zeile im zusammengeführten Stand steht (außer Versionsangaben).
+- Ergebnisse der Testläufe siehe PR.
+
 ## 0.6.11 – YouTube-Abos je Profil (16. November 2026)
 - Automatisch: gesamte Python-Suite (1254 Tests, 4 übersprungen), Klicktest Chromium.
 - Echter Server mit der Datenbank aus 0.6.7 (alte Tabelle, 3 Abos, eins ohne Kinderecke): Umbau beim Start, Kinderecke zeigt nur die zwei Kinder-Kanäle, `/api/watch-home` nur den dritten; Verwaltung mit Reitern, neues Abo desselben Kanals unter „Für mich“, Einstellungen aufklappen (Chromium, Bildschirmfotos).

@@ -1,3 +1,8 @@
+## 0.6.12 – Sammelstand: 0.6.6 bis 0.6.11 zusammen in main
+- Zusammengeführt (16.11.2026, Björn: „ok dann merge“): PR #59 (0.6.7 Kanal-Abos + Kinderecke), PR #60 (0.6.8 Ansehen-Modus, mit 0.6.9 aus PR #61 und 0.6.11 aus PR #63), PR #62 (0.6.10 Crunchyroll-Filme), PR #58 (0.6.6 Untertitel und Tonspur).
+- Konflikte nur an Versionsstellen und in den Dokumenten, dazu: `server.py` importiert `youtube_abos`, `watch_home` und `tracks`; `web/player.js` `startDirect` hängt den Seitenschlüssel an lokale Dateien (0.6.8) und lädt Untertitel/Tonspuren (0.6.6); `build_macos.py` nimmt `watch_home.py` und `tracks.py` mit.
+- Keine neue Funktion.
+
 ## 0.6.11 – YouTube-Abos je Profil (Kinderecke / Für mich), Abo-Verwaltung neu
 - `youtube_abos.py`: Spalte `profile` (`kinder`/`erwachsene`, `PROFILES`), eindeutig ist jetzt `(ref, profile)`. `_migrate` baut die Tabelle bis 0.6.10 um (kids=1 → kinder, sonst erwachsene, IDs bleiben). `profile_of` nimmt auch noch `kids` an; `kids` wird mitgeführt. `kids(..., profile=)` statt `only_kids`; Kanäle tragen `profile`. `_make_room` löscht keine Datei, die ein Abo des anderen Profils noch hält. `overview` liefert `profiles` (Abos, Offline je Profil) und `avatar_local`.
 - `watch_home.py`: Ansehen-Modus zeigt nur Abos im Profil `erwachsene`; `web/watch_mode.js` ohne „auch in der Kinderecke“.
