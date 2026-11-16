@@ -715,6 +715,83 @@ def start_sync(root, queue=False):
     return True
 
 
+# 0.6.14 (Björn, 16.11.2026: „lieber nur wenige Videos die Stunde laden“, damit die Bot-Sperre gar nicht
+# erst auslöst): automatische Abo-Downloads starten höchstens PER_HOUR-mal pro Stunde, gleichmäßig verteilt
+# (bei 4 alle 15 Minuten). Der Zeitpunkt des letzten Starts steht in youtube.sqlite3, damit ein Neustart
+# keinen Schub auslöst. Einzelne Klicks auf „Offline speichern“ sind keine Abo-Aufträge und starten sofort.
+PER_HOUR_CHOICES = (1, 2, 3, 4, 6, 10, 20)
+PER_HOUR_DEFAULT = 4
+
+
+def per_hour(root):
+    db = youtube._connect(root)
+    try:
+        value = youtube._get(db, 'abo_per_hour', str(PER_HOUR_DEFAULT))
+    finally:
+        db.close()
+    try:
+        value = int(value)
+    except ValueError:
+        return PER_HOUR_DEFAULT
+    return value if value in PER_HOUR_CHOICES else PER_HOUR_DEFAULT
+
+
+def set_per_hour(root, value):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError('Bitte eine Zahl pro Stunde wählen') from None
+    if value not in PER_HOUR_CHOICES:
+        raise ValueError('Erlaubt sind %s Videos pro Stunde' % ', '.join(map(str, PER_HOUR_CHOICES)))
+    db = youtube._connect(root)
+    try:
+        with db:
+            youtube._set(db, 'abo_per_hour', value)
+    finally:
+        db.close()
+    return value
+
+
+def _last_start(db, now):
+    try:
+        last = float(youtube._get(db, 'abo_last_start', '0') or 0)
+    except ValueError:
+        last = 0.0
+    return 0.0 if last > now + 60 else last          # Uhr zurückgestellt: nicht ewig warten
+
+
+def next_slot(root, now=None):
+    """Frühester Start des nächsten Abo-Videos (0 = sofort)."""
+    now = time.time() if now is None else float(now)
+    db = youtube._connect(root)
+    try:
+        slot = _last_start(db, now) + 3600.0 / per_hour(root)
+    finally:
+        db.close()
+    return slot if slot > now else 0.0
+
+
+def pace(root, job, now=None, force=False):
+    """Vor dem Start eines Abo-Auftrags: ist der nächste Platz noch nicht frei, wartet der Auftrag bis
+    dahin (``not_before``, Hinweis) und die Funktion gibt True zurück. Sonst wird der Start vermerkt."""
+    if not job.get('youtube_abo'):
+        return False
+    now = time.time() if now is None else float(now)
+    limit = per_hour(root)
+    db = youtube._connect(root)
+    try:
+        slot = _last_start(db, now) + 3600.0 / limit
+        if slot > now and not force:          # „Jetzt versuchen“ startet sofort, zählt aber mit
+            job.update(not_before=slot, note='Höchstens %d Abo-Videos pro Stunde: nächstes startet um %s Uhr'
+                       % (limit, time.strftime('%H:%M', time.localtime(slot))))
+            return True
+        with db:
+            youtube._set(db, 'abo_last_start', now)
+    finally:
+        db.close()
+    return False
+
+
 TEMPORARY_ERRORS = ('kein Bot', 'zu viele Anfragen', 'keine Daten', 'antwortet nicht rechtzeitig', 'Zeitüberschreitung')
 
 
@@ -845,7 +922,8 @@ def overview(root, c=None):
                  'done': sum((a['counts'].get('done') or 0) for a in abos if a['profile'] == k)} for k, v in PROFILES.items()]
     return {'abos': abos, 'profiles': profiles, 'offline': {'enabled': offline.get('enabled'), 'tool': bool(offline.get('tool'))},
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
-            'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause()}
+            'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause(),
+            'per_hour': per_hour(root), 'per_hour_choices': list(PER_HOUR_CHOICES), 'next_slot': next_slot(root)}
 
 
 def _pause(now=None):

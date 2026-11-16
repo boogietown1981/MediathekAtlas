@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.13
+# MediathekAtlas · 0.6.14
+
+## Neu in 0.6.14: Abo-Videos gleichmäßig über die Stunde verteilt
+
+- **Höchstens 4 Abo-Videos pro Stunde** (einstellbar 1, 2, 3, 4, 6, 10 oder 20, Plattformen → YouTube → Kanal-Abos). Die Abo-Downloads starten gleichmäßig verteilt, bei 4 also etwa alle 15 Minuten, statt im Schub. Die Download-Karte zeigt „nächstes startet um … Uhr“. „Offline speichern“ von Hand und „Jetzt versuchen“ starten weiter sofort.
+- Vorher (0.6.13) lagen zwischen zwei Abo-Videos nur 5–20 Sekunden. In der Diagnose vom 16.11. luden so 21 Videos in rund 40 Minuten, danach sperrte YouTube.
+- **Nach einer Bot-Sperre** beginnen die neuen Versuche jetzt bei 1 Stunde (dann 3, 6, 12, 24 Std.) statt bei 15 Minuten; die Sperre hielt in der Diagnose mindestens 80 Minuten.
 
 ## Neu in 0.6.13: Abo-Downloads laufen von selbst weiter
 
