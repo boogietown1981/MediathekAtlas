@@ -181,33 +181,59 @@ def fetch(row, src, directory, update, cancelled, runner=None):
     if not youtube.VALID_VIDEO.fullmatch(video):
         raise ValueError('Ungültiges YouTube-Video')
     downloads.require_space(directory, 2 * 1024 ** 3)
+    import download_retry
     work = Path(tempfile.mkdtemp(prefix='.yt-', suffix='.partial', dir=str(Path(src).parent)))
     ffmpeg = downloads.tool('ffmpeg')
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
             '--no-mtime', '--no-part', '--newline', '--no-warnings', '-f', _format(row),
             '--merge-output-format', 'mkv', '--progress-template', 'download:MAP %(progress.downloaded_bytes)s %(progress.total_bytes)s',
             '-o', str(work / 'video.%(ext)s')]
+    if row.get('_container') == 'mp4' or row.get('_abo'):
+        # 0.6.13: subscription videos come in batches; short pauses between YouTube's requests make the
+        # bot check ("Sign in to confirm you're not a bot") less likely. A single click stays immediate.
+        args += ['--sleep-requests', str(SLEEP_REQUESTS), '--sleep-interval', str(SLEEP_MIN), '--max-sleep-interval', str(SLEEP_MAX)]
     if ffmpeg:
         args += ['--ffmpeg-location', str(ffmpeg)]
     args.append(youtube.video_url(video))
-    update('downloading', 0, 0, speed=0, eta=None)
+    update('downloading', 0, 0, speed=0, eta=None, note=PHASES[0][1])
     log = tempfile.TemporaryFile(mode='w+', encoding='utf-8', errors='replace')
     started, done_parts, part_total, received, last = time.monotonic(), 0, 0, 0, 0
     proc = (runner or subprocess.Popen)(args, stdout=subprocess.PIPE, stderr=log, stdin=subprocess.DEVNULL, text=True,
                                          env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
     stop = threading.Event()
+    # 0.6.13 (Björn, 16.11.2026: "0.0 MiB · Geschwindigkeit wird ermittelt" for good): the watcher also
+    # ends a download that receives nothing. Before the first byte yt-dlp may take a while (video page,
+    # player, pauses), so that limit is longer than the one for a stalled transfer.
+    state = {'bytes': 0, 'moved': time.monotonic(), 'phase': PHASES[0][1], 'stalled': '', 'told': time.monotonic()}
 
     def watch():
         while not stop.wait(1):
-            if cancelled() or time.monotonic() - started > TIMEOUT:
+            now = time.monotonic()
+            if cancelled() or now - started > TIMEOUT:
                 proc.kill()
                 return
+            quiet = now - state['moved']
+            limit = STALL_START if not state['bytes'] else STALL
+            if quiet > limit:
+                state['stalled'] = ('YouTube liefert seit %d Minuten keine Daten' % round(quiet / 60)) if state['bytes'] else \
+                    ('YouTube hat nach %d Minuten noch keine Daten geschickt (%s)' % (round(quiet / 60), state['phase']))
+                proc.kill()
+                return
+            if not state['bytes'] and quiet > 60 and now - state['told'] >= 30:
+                state['told'] = now
+                update('downloading', 0, 0, speed=0, eta=None,
+                       note='%s · wartet seit %d Min.; nach %d Min. ohne Daten neuer Versuch später'
+                            % (state['phase'], quiet // 60, STALL_START // 60))
     threading.Thread(target=watch, name='youtube-cancel', daemon=True).start()
     try:
         prev = 0
         for line in proc.stdout:
             got = _progress(line)
             if not got:
+                phase = _phase(line)
+                if phase and phase != state['phase']:
+                    state['phase'] = phase
+                    update('downloading', received, done_parts + part_total if part_total else 0, speed=0, eta=None, note=phase)
                 continue
             d, t = got
             if d < prev:              # next stream (audio after video)
@@ -215,17 +241,24 @@ def fetch(row, src, directory, update, cancelled, runner=None):
             prev = d
             part_total = max(part_total, t)
             received = done_parts + d
+            if received > state['bytes']:
+                state['bytes'], state['moved'] = received, time.monotonic()
             if time.monotonic() - last > .5:
                 speed = received / max(.001, time.monotonic() - started)
                 update('downloading', received, done_parts + part_total if part_total else 0, speed=speed,
-                       eta=max(0, (part_total - d) / speed) if part_total and speed else None)
+                       eta=max(0, (part_total - d) / speed) if part_total and speed else None, note='')
                 last = time.monotonic()
         code = proc.wait()
         if cancelled():
             raise ValueError('Download abgebrochen')
+        if state['stalled']:
+            raise download_retry.RetryLater(state['stalled'])
         if code != 0:
             log.seek(0)
-            raise ValueError(_reason(log.read()[-4000:]))
+            message, retry, block = _failure(log.read()[-4000:])
+            if retry:
+                raise download_retry.RetryLater(message, block=block)
+            raise ValueError(message)
         files = [p for p in work.iterdir() if p.is_file() and p.name.startswith('video.') and p.stat().st_size]
         if not files:
             raise ValueError('yt-dlp lieferte keine Videodatei')
@@ -240,13 +273,62 @@ def fetch(row, src, directory, update, cancelled, runner=None):
         shutil.rmtree(work, ignore_errors=True)
 
 
+STALL_START = 10 * 60        # bis zum ersten Byte
+STALL = 5 * 60               # danach ohne Zuwachs
+SLEEP_REQUESTS = 1           # Sekunden zwischen den Anfragen eines Abo-Downloads
+SLEEP_MIN, SLEEP_MAX = 5, 20 # Sekunden vor jedem Abo-Download (gestreut)
+PHASES = (
+    ('', 'Verbindung zu YouTube wird aufgebaut'),
+    ('downloading webpage', 'Videoseite wird abgerufen'),
+    ('player api json', 'Videodaten werden abgefragt'),
+    ('downloading player', 'YouTube-Player wird ausgewertet'),
+    ('n challenge', 'YouTube-Player wird ausgewertet'),
+    ('downloading m3u8', 'Formate werden abgefragt'),
+    ('sleeping', 'Kurze Pause zur Schonung (YouTube bremst sonst)'),
+    ('downloading 1 format', 'Download startet'),
+    ('[merger]', 'Bild und Ton werden zusammengeführt'),
+)
+
+
+def _phase(line):
+    """Readable step from a yt-dlp status line (shown while no bytes arrive)."""
+    low = str(line or '').lower()
+    for needle, text in PHASES[1:]:
+        if needle in low:
+            return text
+    return ''
+
+
+def _failure(text):
+    """(reason, temporary, provider-wide pause) for yt-dlp's error output (0.6.13)."""
+    low = str(text or '').lower()
+    reason = _reason(text)
+    if "not a bot" in low or 'http error 429' in low or 'too many requests' in low:
+        if 'not a bot' not in low:
+            reason = 'YouTube bremst gerade (zu viele Anfragen)'
+        return reason, True, True
+    if any(x in low for x in TEMPORARY):
+        return reason, True, False
+    return reason, False, False
+
+
+TEMPORARY = ('timed out', 'timeout', 'connection reset', 'connection aborted', 'connection refused',
+             'temporary failure in name resolution', 'name or service not known', 'network is unreachable',
+             'remote end closed', 'incompleteread', 'http error 500', 'http error 502', 'http error 503',
+             'http error 504', 'unable to download video data', 'giving up after', 'read operation timed out')
+
+
 def _reason(text):
     """yt-dlp error -> short German reason without URLs."""
     low = str(text or '').lower()
     if 'sign in to confirm your age' in low or 'age-restricted' in low or 'inappropriate for some users' in low:
         return 'Altersbeschränktes Video: ohne Anmeldung nicht ladbar (MediathekAtlas meldet sich nicht an)'
     if "sign in to confirm you're not a bot" in low or 'not a bot' in low:
-        return 'YouTube verlangt eine Anmeldung („kein Bot“); MediathekAtlas umgeht das nicht. Später erneut versuchen'
+        return 'YouTube verlangt eine Anmeldung („kein Bot“); MediathekAtlas meldet sich nicht an'
+    if 'http error 429' in low or 'too many requests' in low:
+        return 'YouTube bremst gerade (zu viele Anfragen)'
+    if 'timed out' in low or 'timeout' in low:
+        return 'YouTube antwortet nicht rechtzeitig (Netz oder YouTube langsam)'
     if 'not available in your country' in low or 'geo' in low and 'restrict' in low:
         return 'In Deutschland nicht verfügbar'
     if 'drm' in low:

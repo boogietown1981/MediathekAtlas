@@ -42,7 +42,7 @@ def retry(c, job_id):
     if not row:
         raise ValueError('Auftrag ist nicht wiederholbar')
     job = json.loads(row[0])
-    job.update(state='queued', received=0, total=0, error='', note='', speed=0, eta=None)
+    job.update(state='queued', received=0, total=0, error='', note='', speed=0, eta=None, retries=0, not_before=0, force_now=True)
     c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), 'queued', job_id))
     supersede(c, job)
     return job
@@ -103,6 +103,7 @@ def control(c, job_id, action):
         job.pop('not_before', None)
         job.pop('night', None)
         job.pop('hold', None)
+        job['force_now'] = True      # 0.6.13: also past a provider pause (download_retry.hold)
     else:
         raise ValueError('Unbekannte Aktion')
     c.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(job), job_id))

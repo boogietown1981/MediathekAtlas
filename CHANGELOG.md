@@ -1,3 +1,13 @@
+## 0.6.13 – Abo-Downloads: automatische Wiederholung, Pause bei Bot-Prüfung, Hänger-Erkennung
+- Björn (16.11.2026): Abo-Video hängt bei „0.0 MiB · Geschwindigkeit wird ermittelt“, ein anderes endet mit „YouTube verlangt eine Anmeldung („kein Bot“) … Später erneut versuchen“.
+- `download_retry.py` (neu): `RetryLater(message, block)`, `reschedule` (Auftrag bleibt `queued`, `not_before` nach `BACKOFF` 15 min … 24 h, ±10 %, `retries`, `last_error`, `note`; nach 7 Versuchen Fehler mit Zahl der Versuche), `block`/`blocked_until`/`hold` (Pause je Quelle im Speicher; `force_now` übergeht sie einmal).
+- `server.worker`: `download_retry.hold(j)` vor dem Start, `download_retry.reschedule(j,e)` im Fehlerfall (Ereignis `download_retry_planned`); beim Start `youtube_abos.requeue_on_start` (Ereignis `youtube_jobs_requeued`).
+- `job_queue`: `retry` setzt `retries`/`not_before` zurück und `force_now`; `control(..., 'now')` setzt `force_now`.
+- `youtube_downloads.fetch`: Phasen aus den yt-dlp-Zeilen als `note` (`PHASES`, `_phase`), Wächter bricht ab nach `STALL_START` (10 min ohne erstes Byte) bzw. `STALL` (5 min ohne Zuwachs) → `RetryLater`; `_failure` teilt Fehler ein (Bot/429 → Wiederholung mit Pause der Quelle, Netz/Zeitüberschreitung/5xx → Wiederholung); Abo-Aufträge (`_container` mp4 oder `_abo`) mit `--sleep-requests 1 --sleep-interval 5 --max-sleep-interval 20`. `_reason` ohne „Später erneut versuchen“, neu: 429, Zeitüberschreitung.
+- `youtube_abos`: `_abo` in der Quelle; `check` wartet während einer YouTube-Pause (ohne yt-dlp-Aufruf), Bot-Prüfung beim Lesen der Liste startet die Pause; `sync_states` übernimmt den Grund wartender Wiederholungen; `overview` mit Zähler `retry` und `pause`; `requeue_on_start` (Bot-/Netzfehler aus älteren Versionen und unterbrochene Abo-Downloads, gestaffelt).
+- `web/app.js`: Phase statt „Geschwindigkeit wird ermittelt“, Hinweis nicht doppelt, Titel von „Jetzt versuchen“ passend zur Pause. `web/youtube_abos.js`: Chip „neuer Versuch geplant“, Pausenhinweis, „Warum ausgelassen oder verzögert?“.
+- `build_macos.py` nimmt `download_retry.py` mit. Tests: `tests/test_v0613_download_retry.py` (14).
+
 ## 0.6.12 – Sammelstand: 0.6.6 bis 0.6.11 zusammen in main
 - Zusammengeführt (16.11.2026, Björn: „ok dann merge“): PR #59 (0.6.7 Kanal-Abos + Kinderecke), PR #60 (0.6.8 Ansehen-Modus, mit 0.6.9 aus PR #61 und 0.6.11 aus PR #63), PR #62 (0.6.10 Crunchyroll-Filme), PR #58 (0.6.6 Untertitel und Tonspur).
 - Konflikte nur an Versionsstellen und in den Dokumenten, dazu: `server.py` importiert `youtube_abos`, `watch_home` und `tracks`; `web/player.js` `startDirect` hängt den Seitenschlüssel an lokale Dateien (0.6.8) und lädt Untertitel/Tonspuren (0.6.6); `build_macos.py` nimmt `watch_home.py` und `tracks.py` mit.
