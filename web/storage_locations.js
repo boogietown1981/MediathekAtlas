@@ -16,7 +16,7 @@ async function load(){
 function renderMove(){
  const m=data.move||{},p=data.pending;moveBox.replaceChildren();
  if(p&&p.state==='copied'){
-  moveBox.hidden=false;moveBox.append(el('strong','System und Datenbank: Kopie fertig und geprüft'),line('Neuer Ort: '+p.target+'. Der Umzug wird beim nächsten Start abgeschlossen: Änderungen seit der Kopie werden nachgezogen, danach arbeitet MediathekAtlas am neuen Ort. Der alte Ort bleibt erhalten.'));
+  moveBox.hidden=false;moveBox.append(el('strong','System und Datenbank: Kopie fertig und geprüft'),line('Neuer Ort: '+p.target+'.'+(data.move?.changed_since_copy?' '+data.move.changed_since_copy+' Dateien (z. B. Protokolle) hat die App seit der Kopie geändert; sie werden beim Neustart nachgezogen und dann geprüft.':'')+' Der Umzug wird beim nächsten Start abgeschlossen: Änderungen seit der Kopie werden nachgezogen, danach arbeitet MediathekAtlas am neuen Ort. Der alte Ort bleibt erhalten.'));
   const row=el('div',undefined,'loc-actions');
   if(data.restart_supported&&!data.managed){const b=el('button','Jetzt neu starten','primary');b.type='button';b.onclick=()=>restart(b);row.append(b);}
   else row.append(line(data.managed?'Neustart über das Paket-Zentrum bzw. App Center (Paket stoppen und starten).':'Bitte MediathekAtlas beenden und neu starten.'));

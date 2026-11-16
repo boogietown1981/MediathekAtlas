@@ -669,6 +669,8 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
         key = str(rel)
         db = is_sqlite(full)
         if dst.exists() and ((db and _unchanged(manifest.get(key), st, full)) or (not db and _present(dst, st))):
+            if not db:
+                manifest[key] = _stamp(st, full, False)   # auch übernommene Dateien gehören zur Prüfliste
             state['files_done'] += 1
             tick(st.st_size, key)
             continue
@@ -701,12 +703,46 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
     return manifest
 
 
-def verify_tree(source, target, *, top_exclude=(), exclude=(), progress=None, cancelled=None, manifest=None):
-    """Jede Datei des Quellordners liegt gleich am Ziel. Gibt Liste der Abweichungen zurück."""
+def _live_files(source, manifest):
+    """Prüfliste im laufenden Betrieb: nur die kopierten Dateien, deren Quelle seit der Kopie unverändert ist.
+
+    0.6.23 (Björn, 16.11.2026): Die Prüfung las den Quellordner neu ein und meldete Dateien, die die
+    laufende App seit der Kopie geschrieben hatte (diagnostic.jsonl, neue Verbund-Ereignisse
+    verbund/nodes/…/events-*.jsonl), als Fehler – der ganze Umzug galt als fehlgeschlagen. Solche
+    Dateien zieht beim System-Umzug der Abschluss beim Neustart nach (dann ohne laufende App und mit
+    strenger Prüfung aller Dateien).
+    """
+    files, changed = [], 0
+    for key, entry in sorted(manifest.items()):
+        full = Path(source) / key
+        try:
+            st = full.stat()
+        except OSError:
+            changed += 1   # seit der Kopie gelöscht oder umbenannt (z. B. rotiertes Protokoll)
+            continue
+        if not _unchanged(entry, st, full):
+            changed += 1
+            continue
+        files.append((full, Path(key), st))
+    return files, changed
+
+
+def verify_tree(source, target, *, top_exclude=(), exclude=(), progress=None, cancelled=None, manifest=None,
+                live=False, report=None):
+    """Jede Datei des Quellordners liegt gleich am Ziel. Gibt Liste der Abweichungen zurück.
+
+    ``live``: App läuft weiter – nur Dateien aus dem Manifest prüfen, deren Quelle unverändert ist;
+    die Zahl der seitdem geänderten Dateien steht danach in ``report['changed']``.
+    """
     source, target = Path(source), Path(target)
     manifest = manifest or {}
     bad = []
-    files = list(walk(source, top_exclude, exclude))
+    if live:
+        files, changed = _live_files(source, manifest)
+        if report is not None:
+            report['changed'] = changed
+    else:
+        files = list(walk(source, top_exclude, exclude))
     for i, (full, rel, st) in enumerate(files):
         if cancelled and cancelled():
             raise InterruptedError('abgebrochen')
@@ -991,9 +1027,26 @@ class Mover:
                                      progress=lambda s: self._set(**s), cancelled=self.cancel.is_set,
                                      manifest=info['files'], staging_info=info)
                 self._set(phase='verifying', current='')
+                report = {}
                 bad = verify_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
                                   progress=lambda s: self._set(current=s.get('current', '')),
-                                  cancelled=self.cancel.is_set, manifest=manifest)
+                                  cancelled=self.cancel.is_set, manifest=manifest, live=True, report=report)
+                # Downloads/Zwischenspeicher haben keinen Abschluss beim Neustart: seit der Kopie geänderte
+                # Dateien noch einmal abgleichen (System und Datenbank: beim Neustart, App dann geschlossen).
+                passes = 1
+                while kind != 'system' and not bad and report.get('changed') and passes < 3:
+                    passes += 1
+                    self._set(phase='copying', current='')
+                    manifest = sync_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
+                                         progress=lambda s: self._set(**s), cancelled=self.cancel.is_set,
+                                         manifest=manifest, staging_info=info)
+                    self._set(phase='verifying', current='')
+                    report = {}
+                    bad = verify_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
+                                      cancelled=self.cancel.is_set, manifest=manifest, live=True, report=report)
+                if kind != 'system' and report.get('changed'):
+                    bad.append('%d Dateien ändern sich während des Umzugs noch' % report['changed'])
+                self._set(changed_since_copy=report.get('changed', 0))
                 if bad:
                     raise ValueError('Prüfung am Ziel fehlgeschlagen: ' + '; '.join(bad[:5]))
             self._set(phase='switching', current='')

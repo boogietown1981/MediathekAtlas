@@ -1,3 +1,11 @@
+## 0.6.23 – Speicherorte: Prüfung im laufenden Betrieb
+- Björn (16.11.2026): Umzug „System und Datenbank“ nach /Volumes/Docking-2/MediathekAtlas/System „Fehlgeschlagen – Prüfung am Ziel fehlgeschlagen: diagnostic.jsonl Größe weicht ab; verbund/nodes/…/events-005140…005143.jsonl fehlt“. Ursache: `verify_tree` las nach dem Kopieren den Quellordner neu ein; was die laufende App seitdem geschrieben hatte (Diagnoseprotokoll, neue Verbund-Ereignisse), galt als Fehler.
+- `verify_tree(live=True)` (im Umzug): prüft nur Dateien aus dem Manifest, deren Quelle seit der Kopie unverändert ist (Größe, mtime, WAL); geänderte/gelöschte zählen als `changed_since_copy`. Strenge Prüfung aller Dateien weiter beim Abschluss beim Start (App geschlossen).
+- `sync_tree` nimmt auch übernommene (schon vorhandene) Dateien ins Manifest auf, damit sie geprüft werden.
+- Downloads/Zwischenspeicher (kein Abschluss beim Start): bis zu zwei weitere Abgleiche geänderter Dateien, danach klare Meldung, falls sich noch Dateien ändern.
+- Oberfläche: „N Dateien hat die App seit der Kopie geändert; sie werden beim Neustart nachgezogen“.
+- Tests: `tests/test_v0620_storage_locations.py` (26, davon 3 neu; Björns Fall nachgestellt, schlägt mit 0.6.22 fehl).
+
 ## 0.6.22 – Speicherorte: große Datenbanken mit Fortschritt, Abbruch und schneller Prüfung
 - Björn (16.11.2026, 0.6.21 auf dem MacBook Air): Umzug „System und Datenbank“ stand bei catalog.db (5,5 GB) über 10 Minuten ohne Aktualisierung. Ursache: `copy_sqlite` kopierte per Backup-API in einem Schritt (Fortschritt nur über die Dateigröße) und lief danach `PRAGMA quick_check` über die ganze 5,5-GB-Kopie am Ziel – ohne Anzeige, ohne Abbruch, bei 8 GB RAM überwiegend Zufallslesen vom USB-Laufwerk.
 - `copy_sqlite`: Lesetransaktion an der Quelle hält den Stand fest, Kopie in Schritten zu `BACKUP_PAGES` (4096 Seiten) ohne Neubeginn bei Schreibzugriffen der App (geprüft mit gleichzeitigem Schreiber), Fortschritt je Schritt, Abbruch je Schritt (`InterruptedError` aus dem Fortschrittsrückruf, `.partial` wird entfernt).

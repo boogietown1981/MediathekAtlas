@@ -323,6 +323,25 @@ class DownloadMoveTests(unittest.TestCase):
         self.assertFalse(sl.downloads_held())
         self.assertEqual(e.store['download_dir'], str(e.downloads))
 
+    def test_file_changed_during_copy_is_copied_again(self):
+        e = self.env
+        real = sl.verify_tree
+        calls = []
+
+        def change_once(*a, **k):
+            if not calls:
+                (e.downloads / 'Filme' / 'Film (2020)' / 'Film (2020).nfo').write_text('<movie>neu</movie>')
+            calls.append(1)
+            return real(*a, **k)
+        sl.verify_tree = change_once
+        try:
+            state = run(e.ctx, 'downloads', str(e.ext / 'D'))
+        finally:
+            sl.verify_tree = real
+        self.assertEqual(state['phase'], 'done', state)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((e.ext / 'D' / 'Filme' / 'Film (2020)' / 'Film (2020).nfo').read_text(), '<movie>neu</movie>')
+
     def test_switch_only_keeps_files_and_paths(self):
         e = self.env
         state = run(e.ctx, 'downloads', str(e.ext / 'Neu'), mode='switch')
@@ -430,6 +449,53 @@ class SystemMoveTests(unittest.TestCase):
         (e.ext / 'weg').rename(target)
         self.assertEqual(sl.data_root(e.home), target)
         self.assertFalse((e.home / sl.PROBLEM_FILE).exists())
+
+    def test_files_written_by_running_app_do_not_fail_the_move(self):
+        """0.6.23 (Björn): diagnostic.jsonl gewachsen, neue verbund/nodes/…/events-*.jsonl → Umzug „fehlgeschlagen“."""
+        e = self.env
+        (e.home / 'diagnostic.jsonl').write_text('{"a":1}\n')
+        nodes = e.home / 'verbund' / 'nodes' / 'abc'
+        nodes.mkdir(parents=True)
+        (nodes / 'events-005139.jsonl').write_text('{}\n')
+        real = sl.verify_tree
+
+        def app_keeps_writing(*a, **k):
+            with (e.home / 'diagnostic.jsonl').open('a') as f:
+                f.write('{"b":2}\n')
+            (nodes / 'events-005140.jsonl').write_text('{}\n')
+            (nodes / 'events-005139.jsonl').unlink()
+            return real(*a, **k)
+        sl.verify_tree = app_keeps_writing
+        try:
+            state = run(e.ctx, 'system', str(e.ext / 'S'))
+        finally:
+            sl.verify_tree = real
+        self.assertEqual(state['phase'], 'ready', state)
+        self.assertGreaterEqual(state['changed_since_copy'], 2)
+        root = sl.data_root(e.home, log=self.say.append)   # Abschluss beim Start zieht nach und prüft streng
+        self.assertEqual(root, e.ext / 'S')
+        self.assertEqual((root / 'diagnostic.jsonl').read_text(), '{"a":1}\n{"b":2}\n')
+        self.assertTrue((root / 'verbund' / 'nodes' / 'abc' / 'events-005140.jsonl').is_file())
+
+    def test_resumed_move_checks_files_taken_over(self):
+        e = self.env
+        bad = []
+        real = sl.verify_tree
+
+        def spy(*a, **k):
+            result = real(*a, **k)
+            bad.append((k.get('live'), len(k.get('manifest') or {})))
+            return result
+        sl.verify_tree = spy
+        try:
+            run(e.ctx, 'system', str(e.ext / 'S'))
+            e.ctx.cancel_pending()
+            (e.ext / 'S' / sl.STAGING).write_text(json.dumps({'source': str(e.home), 'files': {}}))
+            state = run(e.ctx, 'system', str(e.ext / 'S'))
+        finally:
+            sl.verify_tree = real
+        self.assertEqual(state['phase'], 'ready', state)
+        self.assertGreaterEqual(bad[-1][1], 3)   # übernommene Dateien stehen in der Prüfliste
 
     def test_cleanup_of_old_system_data_keeps_program_files(self):
         e = self.env

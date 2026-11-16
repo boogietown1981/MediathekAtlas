@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.23 – Prüfung im laufenden Betrieb (16. November 2026)
+- Automatisch: gesamte Python-Suite; Björns Fehlerbild nachgestellt (Protokoll wächst, Verbund-Ereignisse kommen hinzu und verschwinden zwischen Kopie und Prüfung): mit 0.6.22 „failed“, mit 0.6.23 „ready“, Abschluss beim Start zieht beides nach. Klicktest Chromium.
+- Nicht geprüft: Björns Mac mit /Volumes/Docking-2.
+
 ## 0.6.22 – Umzug großer Datenbanken (16. November 2026)
 - Automatisch: gesamte Python-Suite; neue Tests für schrittweise Datenbankkopie bei gleichzeitigen Schreibzugriffen (kein Neubeginn, Kopie konsistent), Abbruch mitten in der Datei, Strukturprüfung ab 512 MB. Probelauf mit 565-MB-Datenbank: 39 Fortschrittsmeldungen, Strukturprüfung statt quick_check. Klicktest Chromium.
 - Nicht geprüft: Dauer auf Björns MacBook Air mit externem Laufwerk (5,5-GB-catalog.db, 21,8-GB-IMDb-Archiv).

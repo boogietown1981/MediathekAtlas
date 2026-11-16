@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.22
+# MediathekAtlas · 0.6.23
+
+## Neu in 0.6.23: Umzug scheitert nicht mehr an Dateien, die die App gerade schreibt
+
+- Beim Umzug von „System und Datenbank“ meldete die Prüfung Protokolle und Verbund-Ereignisse, die die laufende App seit der Kopie geschrieben hatte, als Fehler. Jetzt prüft sie nur die kopierten, seitdem unveränderten Dateien; der Rest wird beim Neustart nachgezogen und dann vollständig geprüft.
+- Downloads und Zwischenspeicher: seit der Kopie geänderte Dateien werden sofort noch einmal kopiert.
+- Bereits kopierte Dateien werden bei einem neuen Versuch übernommen.
 
 ## Neu in 0.6.22: Umzug großer Datenbanken mit Fortschritt
 
