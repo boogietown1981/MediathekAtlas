@@ -459,24 +459,12 @@
       </div></details>
     <details id="youtube-abos" class="youtube-setup youtube-abos"><summary>Kanal-Abos: automatisch offline <span id="youtube-abos-state" class="muted"></span></summary>
       <div class="youtube-setup-body">
-        <p class="muted">Ein abonnierter Kanal (oder eine Playlist) wird regelmäßig geprüft; passende Videos werden selbsttätig geladen und sind danach ohne Internet abspielbar – zum Beispiel für die
-          <a href="/kinder">Kinderecke</a>, in der neue Videos als „NEU“ erscheinen und im Vollbild starten. Braucht den eingeschalteten Offline-Schalter oben (Schritt 3) und yt-dlp; ein API-Schlüssel ist nicht nötig.</p>
+        <p class="muted">Abonnierte Kanäle und Playlists werden regelmäßig geprüft; passende Videos werden selbsttätig geladen und laufen danach ohne Internet.
+          Jedes Abo gehört einem Profil: <b>Kinderecke</b> (nur in der <a href="/kinder">Kinderecke</a>) oder <b>Für mich</b> (nur im <a href="/ansehen">Ansehen-Modus</a>). Derselbe Kanal darf in beiden Profilen stehen.</p>
         <p id="youtube-abos-warning" class="nk-warning" hidden></p>
-        <div id="youtube-abos-list" class="youtube-abos-list"></div>
-        <form id="youtube-abo-form" class="youtube-abo-form">
-          <label class="wide">Kanal oder Playlist<input id="youtube-abo-url" placeholder="youtube.com/@Kanal oder youtube.com/playlist?list=…" required></label>
-          <label>Was laden?<select id="youtube-abo-mode"><option value="new">Nur neue Videos (ab jetzt)</option><option value="all">Alle Videos (neueste zuerst)</option></select></label>
-          <label>Zum Start schon laden<input id="youtube-abo-start" type="number" min="0" max="50" value="5"><small>die neuesten Videos, damit gleich etwas da ist</small></label>
-          <label>Nur eine Reihe (optional)<input id="youtube-abo-include" placeholder="z. B. Folge, Bluey"><small>Titel muss eines dieser Wörter enthalten</small></label>
-          <label>Ausschließen (optional)<input id="youtube-abo-exclude" placeholder="z. B. Trailer, Live"></label>
-          <label>Höchstens offline<input id="youtube-abo-keep" type="number" min="1" max="500" value="30"><small>Videos; für neue wird das älteste schon gesehene entfernt</small></label>
-          <label>Qualität<select id="youtube-abo-quality"><option value="480">480p (spart am meisten)</option><option value="720" selected>720p</option><option value="1080">1080p</option></select></label>
-          <label>Prüfen alle<select id="youtube-abo-interval"><option value="1">1 Stunde</option><option value="3" selected>3 Stunden</option><option value="6">6 Stunden</option><option value="12">12 Stunden</option><option value="24">24 Stunden</option></select></label>
-          <label>Name (optional)<input id="youtube-abo-label" maxlength="80" placeholder="wie der Kanal heißt"></label>
-          <label class="check"><input type="checkbox" id="youtube-abo-shorts" checked> Shorts auslassen (unter 1 Minute)</label>
-          <label class="check"><input type="checkbox" id="youtube-abo-kids" checked> In der Kinderecke zeigen</label>
-          <div class="wide"><button class="primary">Abonnieren</button></div>
-        </form>
+        <div id="youtube-abos-profiles" class="abo-profiles" role="tablist" aria-label="Profil"></div>
+        <div id="youtube-abos-list" class="abo-list" role="tabpanel"></div>
+        <div id="youtube-abo-add" class="abo-add"></div>
         <p id="youtube-abos-status" class="muted" role="status"></p>
       </div></details>
   </div>

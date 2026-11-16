@@ -1,5 +1,5 @@
 """Resolve media tools for Finder launches, including keg-only Homebrew installs."""
-import os, re, shutil, subprocess, sys, time
+import os, re, shutil, subprocess, sys, threading, time
 from pathlib import Path
 _CACHE = {}
 
@@ -69,3 +69,50 @@ def resolve(name):return status(name).get('path')
 def report(refresh=False):
     return {'python':{'ok':True,'path':sys.executable,'version':sys.version.split()[0]},
             'ffmpeg':status('ffmpeg',refresh=refresh),'ffprobe':status('ffprobe',refresh=refresh)}
+
+
+_REPORT = {'at': float('-inf'), 'value': None, 'busy': False}
+_REPORT_LOCK = threading.Lock()
+
+
+def _refresh_report():
+    try:
+        value = report(refresh=True)
+        with _REPORT_LOCK:
+            _REPORT.update(at=time.monotonic(), value=value)
+    except Exception:  # a failed probe keeps the last answer
+        pass
+    finally:
+        with _REPORT_LOCK:
+            _REPORT['busy'] = False
+
+
+def cached_report(max_age=60):
+    """Tool report for dashboard polling (0.6.9).
+
+    report() starts ``ffmpeg -version`` and ``ffprobe -version`` (and possibly ``brew --prefix``)
+    once its 30-second cache has run out, i.e. on nearly every /api/state poll. The dashboard now
+    gets the last answer at once and the probe runs in the background; only the very first call
+    waits for it.
+    """
+    with _REPORT_LOCK:
+        value = _REPORT['value']
+        if value is not None and (time.monotonic() - _REPORT['at'] <= max_age or _REPORT['busy']):
+            return value
+        if value is not None:
+            _REPORT['busy'] = True
+    if value is None:
+        value = report()
+        with _REPORT_LOCK:
+            _REPORT.update(at=time.monotonic(), value=value)
+        return value
+    threading.Thread(target=_refresh_report, daemon=True, name='runtime_tools').start()
+    return value
+
+
+def refreshed_report():
+    """Explicit check from the settings page: probe now and keep the answer for the dashboard."""
+    value = report(refresh=True)
+    with _REPORT_LOCK:
+        _REPORT.update(at=time.monotonic(), value=value)
+    return value

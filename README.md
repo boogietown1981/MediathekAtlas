@@ -1,4 +1,17 @@
-# MediathekAtlas · 0.6.8
+# MediathekAtlas · 0.6.11
+
+## Neu in 0.6.11: YouTube-Abos getrennt für Kinder und Erwachsene
+
+- **Profile:** Jedes Kanal-Abo gehört jetzt einem Profil: **Kinderecke** (erscheint nur unter `/kinder`) oder **Für mich** (erscheint nur im Ansehen-Modus `/ansehen`). Nichts wird mehr vermischt. Derselbe Kanal darf in beiden Profilen stehen; ein Video, das in beiden vorkommt, wird nur einmal geladen.
+- **Bestehende Abos:** „In der Kinderecke zeigen“ an → Profil Kinderecke, aus → Für mich. Bis 0.6.10 erschienen Kinder-Abos zusätzlich im Ansehen-Modus; das entfällt.
+- **Verwaltung aufgeräumt** (Plattformen → YouTube → Kanal-Abos): Reiter je Profil mit Zahl der Abos und Offline-Videos, kompakte Karten mit Kanalbild, Regeln in einer Zeile, Zahlen als farbige Chips und kleine Knöpfe (↻ prüfen, ⚙ Einstellungen, ⏸ pausieren, ✕ beenden, ↗ YouTube). „＋ Kanal abonnieren“ öffnet ein kurzes Formular (Für wen? · Kanal · Was laden? · Reihe); Seltenes steckt unter „Weitere Einstellungen“. Ein Abo lässt sich über ⚙ in das andere Profil verschieben.
+
+## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
+
+- **Erkennung prüft Sendungen nicht mehr täglich neu:** Ausgaben einer Sendereihe (z. B. „Schleswig-Holstein Magazin“, „NDR Info“, „Nordtour“), deren Sendung schon erkannt ist, werden erst nach 30 bis 37 Tagen wieder bei den Anbietern abgefragt, egal ob TMDB, TVDB, IMDb oder die Mediathek sie erkannt hat. Bisher lag die Frist nur bei ARD/ZDF-Ergebnissen bei 30 Tagen, sonst bei einem Tag; das waren 82 % aller Prüfungen in der Nacht.
+- **Übersicht reagiert schneller:** Die Katalogzahlen und die Prüfung von ffmpeg/ffprobe laufen im Hintergrund; die Seite bekommt sofort den letzten Stand, statt 5 bis 16 Sekunden zu warten.
+- **Diagnose aussagekräftiger:** Langsame Abfragen der Übersicht nennen ihre langsamsten Teile, die Tabelle „Erkennung je Sender“ und die Werkzeugprüfung sind enthalten, Netzkino-Kategoriefehler ohne Fehlercode bringen einen kurzen Hinweistext mit.
+- Die Python-3.14-Warnung aus dem mitgelieferten Downloader erscheint nicht mehr im Startprotokoll.
 
 ## Neu in 0.6.8: Ansehen-Modus für Erwachsene
 

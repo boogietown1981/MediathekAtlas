@@ -3,7 +3,8 @@
 Die Seite /ansehen zeigt dieselbe App ohne Verwaltung, aufgeräumt zum Anschauen (web/watch_mode.js).
 Dieses Modul liefert in einem Aufruf, was nur auf dem Server liegt:
 - fertige Offline-Kopien (Downloads, Netzkino-/Pluto-/YouTube-Offline), neueste zuerst,
-- die Videos aller YouTube-Abos (youtube_abos.kids mit only_kids=False).
+- die Videos der YouTube-Abos im Profil „Für mich“ (0.6.11: youtube_abos.kids, profile='erwachsene';
+  die Abos der Kinderecke erscheinen hier nicht mehr).
 Weiterschauen/Merkliste (/api/watch), Kataloge (/api/unified) und Live-TV (/api/live-tv) holt die
 Seite über die bestehenden Adressen.
 """
@@ -68,4 +69,4 @@ def offline(c, marks, limit=MAX_OFFLINE):
 def home(root, c, watch=None):
     import watch_state
     marks = watch if watch is not None else watch_state.overview(root).get('progress', {})
-    return {'offline': offline(c, marks), 'abos': youtube_abos.kids(root, c, watch=marks, only_kids=False)}
+    return {'offline': offline(c, marks), 'abos': youtube_abos.kids(root, c, watch=marks, profile='erwachsene')}
