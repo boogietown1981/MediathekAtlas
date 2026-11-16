@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment, youtube_abos
 import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages
 from version import VERSION
 from contextlib import contextmanager
@@ -75,6 +75,8 @@ def settings():
 
 # 0.5.53: the YouTube catalogue reads the API key from the settings on each run (never cached on disk elsewhere).
 youtube.configure(lambda:settings().get('youtube',''))
+# 0.6.7: YouTube-Abos lesen Schlüssel und Downloadordner ebenso bei jeder Prüfung; Aufträge gehen in catalog.db.
+youtube_abos.configure(db=db,settings=settings)
 
 def record(i):
     with db() as c:
@@ -980,6 +982,60 @@ def get_youtube(self,path):
     data['status']=portal_snapshot.status('youtube',lambda:youtube.state(ROOT))
     return self.send(data)
 
+def _safe(fn):
+    try:return fn()
+    except Exception as e:return {'error':core.safe_error(e)}
+
+# 0.6.7: YouTube-Kanal-Abos (youtube_abos.py) und die Kinderansicht /kinder (web/kids.*)
+@ROUTES.get('/api/youtube-abos')
+def get_youtube_abos(self,path):
+    with db() as c:return self.send(youtube_abos.overview(ROOT,c))
+
+@ROUTES.post('/api/youtube-abos')
+def post_youtube_abos(self,path,d):
+    action=str(d.get('action','update'))[:10]
+    if action=='add':youtube_abos.add(ROOT,d)
+    else:youtube_abos.change(ROOT,d.get('id'),d)
+    diagnostics.event('youtube_abos_changed',action=action)
+    # A new abo or "Jetzt prüfen" is read right away (a running check takes it on its next round).
+    started=action in ('add','check','update') and youtube_abos.start_sync(ROOT)
+    with db() as c:return self.send({**youtube_abos.overview(ROOT,c),'started':bool(started)})
+
+@ROUTES.get('/kinder',stage='signed')
+def get_kinder(self,path):
+    page=page_scripts.inline_scripts((Path(__file__).parent/'web'/'kids.html').read_text(encoding='utf-8'),Path(__file__).parent/'web',('/kids.js',))
+    return self.send(page.replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
+
+@ROUTES.get('/kids.css',stage='signed')
+def get_kids_css(self,path):
+    return self.send((Path(__file__).parent/'web'/'kids.css').read_bytes(),ctype='text/css')
+
+@ROUTES.get('/kids.js',stage='signed')
+def get_kids_js(self,path):
+    return self.send((Path(__file__).parent/'web'/'kids.js').read_bytes(),ctype='text/javascript')
+
+@ROUTES.get('/api/kids')
+def get_kids(self,path):
+    with db() as c:return self.send(youtube_abos.kids(ROOT,c))
+
+@ROUTES.get('/api/kids-image',stage='signed')
+def get_kids_image(self,path):
+    # <img> elements carry the page token in the query (like /api/stream); pictures are stored locally,
+    # so the kids view works without internet.
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+    found=None
+    if q.get('abo'):found=youtube_abos.avatar_file(ROOT,q['abo'][0])
+    elif q.get('job'):
+        with db() as c:r=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(q['job'][0][:40],)).fetchone()
+        if r:
+            job=json.loads(r[0])
+            if job.get('youtube_abo'):found=youtube_abos.poster_file(job)
+    if not found:return self.send({'error':'Kein Bild'},404)
+    data=found.read_bytes()
+    ctype='image/png' if data.startswith(b'\x89PNG') else 'image/webp' if data[8:12]==b'WEBP' else 'image/jpeg'
+    return self.send(data,ctype=ctype)
+
 @ROUTES.get('/api/youtube-sources')
 def get_youtube_sources(self,path):
     return self.send({'sources':youtube.sources(ROOT),'status':youtube.state(ROOT),'offline':youtube_downloads.status(ROOT)})
@@ -1076,7 +1132,7 @@ def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
     try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
     except Exception as e:overview={'catalog_error':core.safe_error(e)}
-    return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+    return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':_safe(lambda:youtube_abos.summary(ROOT)),'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
 
 @ROUTES.get('/api/tools')
 def get_tools(self,path):
@@ -2006,7 +2062,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js','/crunchyroll.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js','/crunchyroll.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2041,7 +2097,7 @@ if __name__=='__main__':
         # 0.6.0: one planner (planner.py) instead of two threads per platform; Samsung TV Plus and
         # the Archive.org recognition join it (formerly samsung_tvplus.loop, archive_recognition.loop).
         PLANNER[0]=platform_registry.start_background(platform_context(),STOP,
-            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus)],
+            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos)],
             extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()

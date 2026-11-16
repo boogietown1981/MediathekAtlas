@@ -1,4 +1,17 @@
-# MediathekAtlas · 0.6.5
+# MediathekAtlas · 0.6.7
+
+## Neu in 0.6.7: YouTube-Kanäle abonnieren, automatisch offline, Kinderecke
+
+- **Kanal-Abos** (Plattformen → YouTube → „Kanal-Abos: automatisch offline“): Kanal (`youtube.com/@Kanal`) oder Playlist eintragen. Je Abo einstellbar:
+  - *Was laden?* „Nur neue Videos“ (ab dem Abo, dazu die neuesten *N* zum Start) oder „Alle Videos“ (neueste zuerst).
+  - *Nur eine Reihe:* Wörter, von denen eines im Titel stehen muss (z. B. „Bluey, Folge“); *Ausschließen* entsprechend. Eine Reihe kann auch direkt als Playlist abonniert werden.
+  - *Höchstens offline:* so viele Videos je Abo; für ein neues wird das älteste **schon gesehene** entfernt, ungesehene bleiben immer.
+  - *Qualität* 480p/720p/1080p (Standard 720p), *Prüfen alle* 1–24 Stunden (Standard 3), *Shorts auslassen*, *In der Kinderecke zeigen*.
+  - Knöpfe „Jetzt prüfen“, „Einstellungen“, „Pausieren“, „Abo beenden“ (geladene Videos bleiben bis zum Ablauf ihrer Frist).
+- **Ohne API-Schlüssel:** Die Videoliste kommt über yt-dlp; mit Schlüssel über die YouTube Data API (spart Zeit). Geladen wird nur mit eingeschaltetem YouTube-Offline-Schalter, wie bisher auf eigene Verantwortung und mit derselben Frist (30 Tage); abgelaufene Videos werden nicht erneut geladen.
+- **Ablage:** `<Downloadordner>/YouTube-Abos/<Kanal>/<Datum> - <Titel> [<ID>] - 720p - H264 AAC.mp4` mit Vorschaubild und NFO. MP4 statt MKV, damit Safari, iPad und schwache NAS ohne Umwandlung abspielen.
+- **Kinderecke** (`/kinder`, Link „★ Kinderecke“ links im Menü): große, bunte Kacheln, oben runde Kanal-Knöpfe mit Zahl der neuen Videos, Reihen „Neu für dich“, „Weiterschauen“ und je Kanal. Neue Videos tragen „NEU“, gesehene einen Haken. Ein Tipp startet das Video **im Vollbild**; am Ende folgt nach 6 Sekunden das nächste ungesehene Video desselben Kanals („Zurück“ hält an). Bilder liegen auf dem Server, die Seite läuft ohne Internet. Zurück in die Verwaltung: „Eltern“ unten rechts 2 Sekunden gedrückt halten.
+- **Hintergrund:** ein Eintrag im gemeinsamen Planer (kein eigener Dauer-Thread), je Prüfung höchstens 8 neue Aufträge je Abo; die Downloads laufen in der gewohnten Warteschlange.
 
 ## Neu in 0.6.5: Sprachen je Film und Serie (Sammelstand: enthält auch 0.6.2, 0.6.3 und 0.6.4)
 

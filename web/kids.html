@@ -1,0 +1,21 @@
+<!doctype html><html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover"><meta name="atlas-token" content="__TOKEN__"><meta name="theme-color" content="#1b1446"><meta name="apple-mobile-web-app-capable" content="yes"><title>Kinderecke · MediathekAtlas</title><link rel="icon" href="/icon.svg" type="image/svg+xml"><link rel="stylesheet" href="/kids.css"></head><body>
+<!-- 0.6.7: Kinderansicht der YouTube-Abos (youtube_abos.py). Nur fertig geladene Videos, startet im Vollbild. -->
+<header class="kids-top">
+  <h1 class="kids-logo"><span class="kids-logo-mark" aria-hidden="true">▶</span> Kinderecke</h1>
+  <nav id="kids-channels" class="kids-channels" aria-label="Kanäle"></nav>
+</header>
+<main id="kids-main" class="kids-main" aria-live="polite"></main>
+<button type="button" id="kids-parents" class="kids-parents" title="Für Eltern: 2 Sekunden gedrückt halten">Eltern <span id="kids-parents-ring" aria-hidden="true"></span></button>
+<div id="kids-stage" class="kids-stage" hidden>
+  <video id="kids-video" playsinline controls preload="auto"></video>
+  <button type="button" id="kids-close" class="kids-close" aria-label="Schließen">✕</button>
+  <div id="kids-next" class="kids-next" hidden>
+    <p>Gleich geht's weiter mit</p>
+    <button type="button" id="kids-next-play" class="kids-next-card"><img id="kids-next-img" alt=""><strong id="kids-next-title"></strong></button>
+    <div class="kids-next-actions"><button type="button" id="kids-next-stop" class="kids-round">Zurück</button></div>
+    <div class="kids-next-bar"><span id="kids-next-fill"></span></div>
+  </div>
+  <p id="kids-stage-msg" class="kids-stage-msg" hidden></p>
+</div>
+<script src="/kids.js"></script>
+</body></html>

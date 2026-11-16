@@ -998,3 +998,9 @@ body.atlas-hide-card-poster :is(#atlas-source-content,#portals,#display) .atlas-
 .system-key-new{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:12px 0;border:1px solid #3d7a55;border-radius:12px;background:#10261b;padding:11px 14px}.system-key-new strong{flex-basis:100%}.system-key-new code{user-select:all;overflow-wrap:anywhere;font-size:13px}
 .system-key-list{display:grid;gap:6px;margin-top:12px;max-width:820px}.system-key-row{display:grid;grid-template-columns:minmax(0,1fr) auto auto;align-items:center;gap:6px 14px;border:1px solid #2c3b49;border-radius:12px;background:#101d29;padding:9px 14px;font-size:13px}.system-key-row small{color:#adc0d1}
 .system-profile{display:flex;flex-wrap:wrap;align-items:center;gap:8px 12px;margin:16px 0 8px}.system-profile label{font-weight:600}.system-profile small{flex-basis:100%}
+/* 0.6.7 YouTube-Kanal-Abos und Link zur Kinderecke */
+a.nav{display:block;text-decoration:none;border-radius:8px}a.nav-kids{color:#ffd76a}a.nav-kids:hover{background:#2a2540}
+.youtube-abos .youtube-abo-form{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:4px 14px;align-items:end;margin-top:12px}
+.youtube-abo-form .wide{grid-column:1/-1}.youtube-abo-form label small{display:block;margin-top:4px;color:#8597ab;font-size:11px}
+.youtube-abo-form .wide button{margin-right:8px}.youtube-abo-edit{padding:12px;border:1px dashed #344150;border-radius:10px;margin-top:10px}
+.youtube-abo strong .muted{font-weight:400}.youtube-abo .youtube-source-actions a{align-self:center;margin-left:6px}

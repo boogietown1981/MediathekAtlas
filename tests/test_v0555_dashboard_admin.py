@@ -407,7 +407,9 @@ class InterfaceTests(unittest.TestCase):
 
     def test_navigation_dashboard_and_verwaltung(self):
         nav = self.html[self.html.index('<nav>'):self.html.index('</nav>')]
-        self.assertEqual(nav.count('class="nav'), 5)
+        # 0.6.7: dazu ein Link (kein Bereich) zur Kinderecke /kinder
+        self.assertEqual(nav.count('<button class="nav'), 5)
+        self.assertIn('<a class="nav nav-kids" href="/kinder"', nav)
         for label in ('Dashboard', 'Plattformen', 'Live-TV', 'Downloads', 'Verwaltung'):
             self.assertIn(label, nav)
         for view in ('admin', 'status', 'display', 'review', 'subscriptions', 'legacy', 'logs', 'settings'):

@@ -34,7 +34,7 @@ def check_episode_runtime(row,meta,measured_seconds=None):
     return True
 
 
-def remux(source,dest,meta,original=None):
+def remux(source,dest,meta,original=None,container='matroska'):
     ffmpeg=tool('ffmpeg')
     if not ffmpeg:raise ValueError('ffmpeg konnte nicht gestartet werden. Unter Einstellungen die Werkzeugprüfung öffnen.')
     tags={'title':meta.get('episode_title') or meta['title'],'date':str(meta.get('year') or ''),'description':meta.get('description',''),
@@ -42,12 +42,15 @@ def remux(source,dest,meta,original=None):
     if meta.get('genres'):tags['genre']='; '.join(meta['genres'])
     if meta.get('reference_id'):tags['external_id']=meta.get('provider','')+':'+str(meta['reference_id'])
     if meta['kind']=='series':tags.update(show=meta['title'],season_number=str(meta['season']),episode_id=str(meta['episode']))
-    args=[ffmpeg,'-nostdin','-v','error','-n','-i',str(source),'-map','0:v','-map','0:a?','-map','0:s?','-c','copy','-map_metadata','0']
+    # 0.6.7: YouTube-Abos are stored as MP4 (plays directly in Safari/iPad, no remux on the NAS);
+    # MP4 carries no text subtitles of other formats, so only picture and sound are kept there.
+    mp4=container=='mp4'
+    args=[ffmpeg,'-nostdin','-v','error','-n','-i',str(source),'-map','0:v','-map','0:a?']+([] if mp4 else ['-map','0:s?'])+['-c','copy','-map_metadata','0']
     for k,v in tags.items():args+=['-metadata',k+'='+v]
     # Explicit container: staged outputs end in .partial so sync tools skip them.
-    args += ['-f','matroska',str(dest)]
+    args += (['-movflags','+faststart','-f','mp4'] if mp4 else ['-f','matroska'])+[str(dest)]
     r=subprocess.run(args,capture_output=True,timeout=7200)
-    if r.returncode:raise ValueError('MKV-Erstellung fehlgeschlagen: '+r.stderr.decode(errors='replace')[-250:])
+    if r.returncode:raise ValueError(('MP4' if mp4 else 'MKV')+'-Erstellung fehlgeschlagen: '+r.stderr.decode(errors='replace')[-250:])
     original=original if original is not None else probe(source)
     final=probe(dest)
     a=float(original.get('format',{}).get('duration') or 0);b=float(final.get('format',{}).get('duration') or 0)
@@ -174,6 +177,16 @@ def fetch_hls(url,src,directory,expected,update,cancelled,reserve=256*1024*1024,
         raise ValueError('Download unvollständig: %d von %d Minuten'%(position//60,expected//60))
     return received
 
+def planned_target(root,meta,row):
+    """Destination of a download: the library layout (core.target), or since 0.6.7 the fixed place a
+    YouTube-Abo chose (``_target``, inside the download folder, .mp4/.mkv only)."""
+    wish=row.get('_target')
+    if not wish:return core.target(root,meta,row['_id'])
+    base=Path(root).resolve();dest=Path(wish).resolve()
+    if base not in dest.parents or dest.suffix.lower()!=('.mp4' if row.get('_container')=='mp4' else '.mkv'):
+        raise ValueError('Ungültiges Downloadziel')
+    return dest
+
 def run(row,meta,root,quality,update,cancelled):
     # The catalogue already records most offer runtimes. Reject obvious extras
     # before any download or FFmpeg process; FFprobe is not a catalog scanner.
@@ -185,7 +198,7 @@ def run(row,meta,root,quality,update,cancelled):
     if not url:raise ValueError('Keine Downloadadresse vorhanden')
     hls=row.get('_resolver') in HLS_RESOLVERS
     if not hls and ('.m3u8' in url.lower() or '.mpd' in url.lower()):raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
-    dest=core.target(root,meta,row['_id'])
+    dest=planned_target(root,meta,row)
     dest.parent.mkdir(parents=True,exist_ok=True)
     if core.existing_download(dest) or any(p.exists() for p in (dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
     # Every staged name ends in .partial: MeshSync and similar tools skip these until publication.
@@ -239,7 +252,7 @@ def run(row,meta,root,quality,update,cancelled):
                 try:actual=float(original_probe.get('format',{}).get('duration') or 0)
                 except (TypeError,ValueError,OverflowError):actual=0
                 check_episode_runtime(row,meta,actual if actual>0 else None)
-            details=remux(src,out,meta,original=original_probe)
+            details=remux(src,out,meta,original=original_probe,container='mp4' if row.get('_container')=='mp4' else 'matroska')
             if cancelled():raise ValueError('Download abgebrochen')
             streams=core.parse_streams(details);duration=float(details.get('format',{}).get('duration') or 0)
             # 0.5.42: the published name carries the measured resolution and codecs.
