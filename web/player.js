@@ -116,7 +116,8 @@ function startHls(url,t){stopHls();gateOff();S.gated=false;S.fresh=true;S.mode='
 function reportLanguages(h){try{const pick=t=>({lang:String(t.lang||''),name:String(t.name||''),characteristics:String(t.characteristics||'')});
  const audio=(h.audioTracks||[]).slice(0,16).map(pick),subtitles=(h.subtitleTracks||[]).slice(0,16).map(pick);
  if(S.ref&&(audio.length||subtitles.length))api('language-observe',{...S.ref,audio,subtitles}).catch(()=>{});}catch(e){}}
-function startDirect(src,t){gateOff();S.gated=false;S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
+function startDirect(src,t){if(typeof src==='string'&&src.startsWith('/api/stream?')&&!/[?&]token=/.test(src)&&typeof token==='string')src+='&token='+encodeURIComponent(token);   // 0.6.8: lokale Datei sofort mit Seitenschlüssel (vorher erst 403, dann Umweg)
+ gateOff();S.gated=false;S.fresh=true;S.mode='direct';video.controls=true;bar.hidden=true;video.src=src;if(t)video.addEventListener('loadedmetadata',()=>{try{video.currentTime=t;}catch{}},{once:true});video.play().catch(()=>{});say('Wird geladen …');}
 function seek(t){const d=duration();t=Math.max(0,d?Math.min(t,d-1):t);if(S.mode==='direct'){video.currentTime=t;return;}
  // Restarting ffmpeg for every arrow key press would be wasteful: wait until input settles.
  S.offset=t;slider.value=t;time.textContent=fmt(t)+' / '+fmt(d);clearTimeout(S.seekTimer);S.seekTimer=setTimeout(()=>startRemux(t),350);}

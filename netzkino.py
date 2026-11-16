@@ -67,7 +67,10 @@ _SYNC_MAX_SECONDS = 900
 
 class GraphQLCatalogError(ValueError):
     """A provider's public catalog query failed without storing raw responses."""
-    def __init__(self, code='UNKNOWN'):
+    def __init__(self, code='UNKNOWN', message=''):
+        # 0.6.9 (diagnosis 16.11.2026: 131 of 429 categories failed as 'graphql_unknown' without any
+        # hint): a short, cleaned excerpt of Netzkino's error text goes into the diagnosis.
+        self.hint=re.sub(r'[^\w .,:;()\'"-]+',' ',str(message or ''))[:80].strip()
         code=str(code or 'UNKNOWN')
         self.code=code if code in (
             'PERSISTED_QUERY_NOT_FOUND','GRAPHQL_VALIDATION_FAILED','FORBIDDEN',
@@ -476,7 +479,7 @@ def _fetch_graphql(operation, variables):
             if parsed.get('errors'):
                 first=parsed['errors'][0] if isinstance(parsed['errors'],list) and parsed['errors'] else {}
                 code=(first.get('extensions') or {}).get('code') if isinstance(first,dict) else ''
-                raise GraphQLCatalogError(code)
+                raise GraphQLCatalogError(code,first.get('message','') if isinstance(first,dict) else '')
             data=parsed.get('data')
             if not isinstance(data,dict):raise ValueError('Netzkino antwortet ohne Katalogdaten.')
             return data
@@ -865,7 +868,8 @@ def sync_graphql(root, fetch=None, now=None):
                 status=int(getattr(exc,'code',0) or 0) if isinstance(exc,urllib.error.HTTPError) else 0
                 if status:last_http=status
                 _notify('netzkino_category_error',error_type=kind,http_status=status,
-                        category_errors=failures,checked=checked+1)
+                        category_errors=failures,checked=checked+1,
+                        hint=getattr(exc,'hint','') if kind=='graphql_unknown' else '')
                 if status in (401,403,429) or kind in ('graphql_forbidden','graphql_unauthenticated'):
                     stopped_for_access=True
             checked+=1

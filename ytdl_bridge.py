@@ -65,7 +65,12 @@ def load():
             else:
                 sys.path.insert(0, str(base))
                 try:
-                    import youtube_dl as module  # noqa: E402
+                    # 0.6.9: Python 3.14 warns about a 'return' in a 'finally' block of the vendored
+                    # niconico downloader on first compile; the message only cluttered startup.log.
+                    import warnings
+                    with warnings.catch_warnings():
+                        warnings.simplefilter('ignore', SyntaxWarning)
+                        import youtube_dl as module  # noqa: E402
                 except Exception as exc:  # broken checkout: try the next one
                     last_error = exc
                     sys.path.remove(str(base))

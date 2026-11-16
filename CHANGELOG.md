@@ -1,3 +1,31 @@
+## 0.6.11 – YouTube-Abos je Profil (Kinderecke / Für mich), Abo-Verwaltung neu
+- `youtube_abos.py`: Spalte `profile` (`kinder`/`erwachsene`, `PROFILES`), eindeutig ist jetzt `(ref, profile)`. `_migrate` baut die Tabelle bis 0.6.10 um (kids=1 → kinder, sonst erwachsene, IDs bleiben). `profile_of` nimmt auch noch `kids` an; `kids` wird mitgeführt. `kids(..., profile=)` statt `only_kids`; Kanäle tragen `profile`. `_make_room` löscht keine Datei, die ein Abo des anderen Profils noch hält. `overview` liefert `profiles` (Abos, Offline je Profil) und `avatar_local`.
+- `watch_home.py`: Ansehen-Modus zeigt nur Abos im Profil `erwachsene`; `web/watch_mode.js` ohne „auch in der Kinderecke“.
+- `web/youtube_abos.js` neu geschrieben (Reiter, Karten, ein Formular für Neu/Ändern mit eingeklappten Zusatzeinstellungen), `web/index.html` nur noch Behälter, neue `.abo-*`-Stile in `web/style.css` (alte `.youtube-abo*` entfernt).
+- Tests: `tests/test_v0611_abo_profiles.py` (8); angepasst: `test_v0607` (Formular-Behälter), `test_v0608` (Ansehen-Modus nur eigene Abos).
+- 0.6.10 (Crunchyroll, anderer Arbeitsstrang) ist hier nicht enthalten.
+
+## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (0.6.8, macOS arm64)
+- `catalog_service.identified_delay`: erkannte, noch nicht abgeglichene Serien, deren Sendung (`topic`) dem erkannten Serientitel entspricht, warten 30 Tage + bis zu 7 Tage Streuung bis zur nächsten Anbieterprüfung – für alle Anbieter, nicht nur ARD/ZDF. Anlass: 3.326 Ausgaben „Schleswig-Holstein Magazin“, 1.000 „NDR Info“, 774 „Nordtour“ (IMDb Offline/TMDB erkannt) wurden täglich neu geprüft (5.262 von 6.383 Ergebnissen in 11 h). Die Serienvorlage griff nicht, weil der Sendungstitel der Ausgabe gleich dem Sendungsnamen ist.
+- `server.catalog_status`: veralteter Stand wird sofort geliefert und im Hintergrund erneuert (Thread `catalog_status`), nur ein leerer Stand wird synchron geladen.
+- `runtime_tools.cached_report`/`refreshed_report`: `/api/state` startet `ffmpeg -version`/`ffprobe -version` (und ggf. `brew --prefix`) nicht mehr bei jeder Abfrage, sondern höchstens einmal pro Minute im Hintergrund. `/api/tools` prüft weiter sofort.
+- `/api/state` misst seine Teile; ab 2 s Ereignis `state_slow_parts` mit den vier langsamsten Teilen. Anlass: 38 Abfragen mit 5–16 s in einer Stunde.
+- Diagnose-ZIP: `recognition` wartet bis zu 20 s auf die Hintergrundzählung (war leer, `loading: true`), dazu `runtime` (ffmpeg/ffprobe).
+- `netzkino.GraphQLCatalogError.hint`: bereinigter Auszug (≤ 80 Zeichen) der Fehlermeldung, im Ereignis `netzkino_category_error` bei `graphql_unknown` (131 von 429 Kategorien ohne Hinweis).
+- `ytdl_bridge`: `SyntaxWarning` (Python 3.14, `return` in `finally` in `niconico.py`) beim Laden unterdrückt.
+- Tests: `tests/test_v0609_diagnose.py` (9).
+
+## 0.6.8 – Ansehen-Modus für Erwachsene
+- `GET /ansehen` (signed): `index.html` mit `<html data-mode="watch">`; CSS blendet Seitenleiste, Kopf und Verwaltungsreiter aus, Player-Dialog füllt den Bildschirm.
+- `watch_home.py` (neu) + `GET /api/watch-home`: fertige Downloads mit vorhandener Datei (ohne Abo-Videos, neueste zuerst, höchstens 120) mit Fortschritt/„neu“ aus `watch_state`, dazu `youtube_abos.kids(..., only_kids=False)` (neuer Parameter, Kanäle tragen `kids`). `build_macos.py` listet das Modul.
+- `/api/kids-image?job=` liefert das Vorschaubild neben jeder fertigen Datei (bisher nur Abo-Videos).
+- `web/watch_mode.js` (neu, Bereich `#watch`): Startseite mit Hero und Reihen, Raster für Filme/Serien (über `/api/unified`, `sort=year`, Genre, „Mehr laden“), Live-TV (`/api/live-tv`, Favoriten aus `atlas-live-favourites`), Offline, Merkliste, Suche. Wiederverwendet `AtlasCards.open`/`rowOf` (neu exportiert aus `unified_catalog.js`), `playRef`/`playLive`, `/api/watch`. Vollbild wird vor dem Öffnen des Players abgewartet (sonst liegt die Seite im Vollbild über dem Dialog).
+- `web/app.js`/`web/titleview.js`: Ansicht `watch`; Titelseite kehrt dorthin zurück.
+- `web/player.js`: lokale Dateien (`/api/stream?…&raw=1`) bekommen den Seitenschlüssel sofort; vorher erst 403 und Umweg.
+- `web/style.css`: Stil `.wm-*`; auf dem Handy ist die Hauptnavigation eine waagerecht wischbare Zeile statt drei Zeilen.
+- Tests: `tests/test_v0608_watch_mode.py` (10). Klicktest besucht `/ansehen`.
+- 0.6.6 (Untertitel/Tonspur) ist ein anderer Arbeitsstrang und hier nicht enthalten.
+
 ## 0.6.7 – YouTube-Kanal-Abos mit automatischem Offline-Speichern und Kinderecke
 - `youtube_abos.py` (neu): Tabellen `youtube_abos`/`youtube_abo_videos` in `youtube.sqlite3`. Modi `new` (Grundbestand als `old`, die `start_count` neuesten sofort) und `all`; Filter `include`/`exclude` (Titelwörter), `min_seconds` (Standard 61 s gegen Shorts), `max_seconds`; `keep` mit `_make_room` (entfernt per `netzkino_downloads.delete_now` das älteste gesehene, nie angeheftete/gemerkte Video); `quality` 480/720/1080; `interval_hours` 1/3/6/12/24; `kids`.
 - Videoliste über die Data API (`channels` mit Kanalbild, Uploads-Playlist, `load_facts`) oder ohne Schlüssel über `yt-dlp --flat-playlist -J` (`/videos`-Reiter, Live und ungültige IDs ausgelassen). Fehler stehen am Abo (`last_error`), nächster Versuch nach 1 Stunde.

@@ -1,5 +1,23 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.11 – YouTube-Abos je Profil (16. November 2026)
+- Automatisch: gesamte Python-Suite (1254 Tests, 4 übersprungen), Klicktest Chromium.
+- Echter Server mit der Datenbank aus 0.6.7 (alte Tabelle, 3 Abos, eins ohne Kinderecke): Umbau beim Start, Kinderecke zeigt nur die zwei Kinder-Kanäle, `/api/watch-home` nur den dritten; Verwaltung mit Reitern, neues Abo desselben Kanals unter „Für mich“, Einstellungen aufklappen (Chromium, Bildschirmfotos).
+- Nicht geprüft: echtes YouTube, Safari/Firefox, NAS.
+
+## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (16. November 2026)
+- Diagnose-ZIP ausgewertet (0.6.8, macOS arm64, Python 3.14.10, 23.245 Ereignisse von 15.11. 22:07 bis 16.11. 09:05 UTC).
+- Automatisch: gesamte Python-Suite (1247 Tests, 4 übersprungen), `ruff` (F, E9) für alle geänderten Module.
+- Neu: `tests/test_v0609_diagnose.py` (9) – Frist für Ausgaben einer Sendereihe (alle Anbieter, Streuung begrenzt, andere Fälle unverändert), Dienst-Durchlauf mit IMDb-Offline-Ergebnis (scheitert mit 0.6.8, grün mit 0.6.9), Hintergrund-Erneuerung des Katalogstands, Werkzeugbericht, Netzkino-Hinweis, Aufbau von `/api/state`.
+- Echter Server (leeres Datenverzeichnis): `/api/state` 0,1 s bzw. 0,004 s, Werkzeuge erkannt; Diagnose-ZIP mit `recognition` (fertig) und `runtime`. Python 3.14.6: `ytdl_bridge.load()` ohne `SyntaxWarning`.
+- Nicht geprüft: Wirkung auf Björns Mac mit 685.000 Werken (die Last durch die täglichen Neuprüfungen sinkt erst, wenn jede betroffene Ausgabe einmal neu geprüft wurde, also binnen eines Tages); ob die 5–16 s von `/api/state` wirklich von Katalogzählung oder Werkzeugprüfung kamen (in einer Testdatenbank mit 685.000 Werken dauerte die Zählung 0,1 s) – das zeigt erst `state_slow_parts` in der nächsten Diagnose. Pakete: QPKG nur aus der CI.
+
+## 0.6.8 – Ansehen-Modus für Erwachsene (15. November 2026)
+- Automatisch: gesamte Python-Suite (1238 Tests, 4 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium inkl. `/ansehen` (ohne Befund).
+- Neu: `tests/test_v0608_watch_mode.py` (10) – Offline-Liste (nur fertige, vorhandene Dateien, neueste zuerst, ohne Abo-Videos, Fortschritt/gesehen, Folgen-Beschriftung, unsichere Bildadressen verworfen), Kinderecke weiter nur Kinder-Abos, Ansehen-Modus mit allen Abos, Adressen, Skriptliste, Vollbild vor dem Player, Seitenschlüssel für lokale Dateien.
+- Echter Server mit künstlichen Daten (Pluto TV, Plex, YouTube, Netzkino-Startbestand, 4 Abos mit 16 Videos, 3 Offline-Filme, echte MP4-Datei, Chromium) auf Desktop 1440 px, iPad quer und iPhone 13: Startseite mit Reihen, Filme, Live-TV, Offline, Suche, Titelseite und zurück, Player bildschirmfüllend. Gefunden und behoben: Seite im Vollbild lag über dem Player (Vollbild jetzt vor dem Öffnen abgewartet); lokale Dateien bekamen zuerst 403 (Seitenschlüssel fehlte).
+- Nicht geprüft: echte Anbieterdaten und -bilder (aus der Bauumgebung gesperrt), Safari/iPad-Vollbild (iPhone kennt Vollbild nur für Videos), Firefox/WebKit nur in der CI, Fernseher-Browser, NAS-Hardware. QPKG nur aus der CI (QDK hier nicht installierbar).
+
 ## 0.6.7 – YouTube-Kanal-Abos und Kinderecke (14. November 2026)
 - Automatisch: gesamte Python-Suite (1228 Tests, 4 übersprungen), Node-Smoke-Tests (4), Klicktest Chromium (ohne Befund).
 - Neu: `tests/test_v0607_youtube_abos.py` – „nur neue“ mit Startbestand und späterem Upload, „alle“ mit Reihenfilter und Nachholen, Shorts, Schalter aus (nichts geladen, Hinweis), abgelaufene Videos nie neu, Höchstzahl entfernt nur gesehene, Fehler am Abo, yt-dlp-Liste ohne Schlüssel, Kinderecke (neu/angefangen/Reihenfolge), Ziel nur im Downloadordner, MP4-Umwandlung, Adressen und Planer.

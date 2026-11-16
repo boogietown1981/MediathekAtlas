@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment, youtube_abos
-import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages
+import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home
 from version import VERSION
 from contextlib import contextmanager
 ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
@@ -437,12 +437,31 @@ def refresh_recognition():
         with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),error=core.safe_error(e))
     finally:
         with _TREE_LOCK:_RECOGNITION['busy']=False
+_STATUS_BUSY=False
+def refresh_catalog_status():
+    global _STATUS_CACHE,_STATUS_BUSY
+    try:
+        with db() as c:_STATUS_CACHE=(time.monotonic(),catalog.stats(c))
+    except Exception as e:diagnostics.error('catalog_status_failed',e)
+    finally:_STATUS_BUSY=False
+def recognition_for_export(wait=20.0):
+    """0.6.9: the diagnosis of 16.11.2026 had an empty table "Erkennung je Sender" (still loading,
+    because nobody had opened it). The export waits a little for the background count."""
+    result=recognition();deadline=time.monotonic()+wait
+    while result.get('loading') and not result.get('channels') and time.monotonic()<deadline:
+        time.sleep(.25);result=recognition()
+    return result
 def catalog_status():
-    global _STATUS_CACHE
+    global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
-    if not snapshot[1] or time.monotonic()-snapshot[0]>10:
+    if not snapshot[1]:
         with db() as c:snapshot=(time.monotonic(),catalog.stats(c))
         _STATUS_CACHE=snapshot
+    elif time.monotonic()-snapshot[0]>10 and not _STATUS_BUSY:
+        # 0.6.9 (diagnosis 16.11.2026: /api/state took 5–16 s 38 times in one hour): a stale snapshot is
+        # answered at once and refreshed in the background, like the genre tree and the recognition table.
+        _STATUS_BUSY=True
+        threading.Thread(target=refresh_catalog_status,daemon=True,name='catalog_status').start()
     # A concurrent metadata save can invalidate the shared cache at any point.
     # Return our complete local snapshot, never the newly emptied shared cache.
     scan=SERVICE.scan_progress() if hasattr(SERVICE,'scan_progress') else {}
@@ -1018,6 +1037,17 @@ def get_kids_js(self,path):
 def get_kids(self,path):
     with db() as c:return self.send(youtube_abos.kids(ROOT,c))
 
+# 0.6.8: Ansehen-Modus für Erwachsene – dieselbe Seite wie „/“, ohne Verwaltung (web/watch_mode.js)
+@ROUTES.get('/ansehen',stage='signed')
+def get_ansehen(self,path):
+    body=page_scripts.inline_scripts((Path(__file__).parent/'web'/'index.html').read_text(encoding='utf-8'),Path(__file__).parent/'web',SCRIPTS).replace('__TOKEN__',TOKEN).replace('__VERSION__',VERSION)
+    body=body.replace('<html lang="de">','<html lang="de" data-mode="watch">',1).replace('<title>MediathekAtlas</title>','<title>Ansehen · MediathekAtlas</title>',1)
+    return self.send(body.encode(),ctype='text/html; charset=utf-8')
+
+@ROUTES.get('/api/watch-home')
+def get_watch_home(self,path):
+    with db() as c:return self.send(watch_home.home(ROOT,c))
+
 @ROUTES.get('/api/kids-image',stage='signed')
 def get_kids_image(self,path):
     # <img> elements carry the page token in the query (like /api/stream); pictures are stored locally,
@@ -1030,7 +1060,7 @@ def get_kids_image(self,path):
         with db() as c:r=c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'",(q['job'][0][:40],)).fetchone()
         if r:
             job=json.loads(r[0])
-            if job.get('youtube_abo'):found=youtube_abos.poster_file(job)
+            found=youtube_abos.poster_file(job)   # 0.6.8: Vorschaubild neben jeder fertigen Datei (auch Ansehen-Modus)
     if not found:return self.send({'error':'Kein Bild'},404)
     data=found.read_bytes()
     ctype='image/png' if data.startswith(b'\x89PNG') else 'image/webp' if data[8:12]==b'WEBP' else 'image/jpeg'
@@ -1130,13 +1160,13 @@ def get_logs(self,path):
 @ROUTES.get('/api/diagnostics')
 def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
-    try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
+    try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(),'runtime':runtime_tools.cached_report()}
     except Exception as e:overview={'catalog_error':core.safe_error(e)}
     return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':_safe(lambda:youtube_abos.summary(ROOT)),'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
 
 @ROUTES.get('/api/tools')
 def get_tools(self,path):
-    return self.send(runtime_tools.report(refresh=True))
+    return self.send(runtime_tools.refreshed_report())
 
 @ROUTES.get('/api/provider-stats')
 def get_provider_stats(self,path):
@@ -1334,11 +1364,27 @@ def get_availability(self,path):
     return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
                       'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
 
+def _timed(parts,name,fn):
+    started=time.monotonic()
+    try:return fn()
+    finally:parts[name]=round(time.monotonic()-started,2)
+
 @ROUTES.get('/api/state')
 def get_state(self,path):
-    s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
+    # 0.6.9: the slow parts are timed; a slow answer names its slowest parts in the diagnosis.
+    parts={};started=time.monotonic()
+    s=_timed(parts,'settings',settings)
+    imdb=_timed(parts,'imdb',IMDB.status);job_list=_timed(parts,'jobs',jobs)
+    tools=_timed(parts,'tools',runtime_tools.cached_report)
+    catalog_part=_timed(parts,'catalog',catalog_status)
+    pauses=_timed(parts,'provider_pauses',lambda:{'omdb':metadata.omdb_status(s.get('omdb','')),
             'tmdb':metadata.network_provider_status('TMDB'),
-            'wikidata':metadata.network_provider_status('Wikidata')},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            'wikidata':metadata.network_provider_status('Wikidata')})
+    total=time.monotonic()-started
+    if total>=2:
+        diagnostics.event('state_slow_parts',seconds=round(total,2),
+                          parts=dict(sorted(parts.items(),key=lambda kv:-kv[1])[:4]))
+    return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
 
 # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
 @ROUTES.post('/api/samsung-sync')
@@ -2062,7 +2108,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js','/crunchyroll.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

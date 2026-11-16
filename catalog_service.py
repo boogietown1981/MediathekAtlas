@@ -15,6 +15,24 @@ def retry_delay(attempts,result):
     # Rechecks remain possible (new evidence/API updates) and manual priority bypasses the delay.
     return min(30*86400,3*86400*2**min(max(attempts-1,0),4))
 
+def identified_delay(recognized,source,rand=None):
+    """Next full provider check of a work that is identified but not yet matched.
+
+    Diagnosis 0.6.8 (16.11.2026): 3,326 editions of "Schleswig-Holstein Magazin", 1,000 of "NDR Info"
+    and 774 of "Nordtour" were identified via IMDb Offline/TMDB and therefore re-queried every day
+    (82 % of all recognition checks). Only broadcaster results had the 30-day rule. The series
+    identity of an edition of a Sendereihe (topic = recognised series title) does not change from
+    day to day; the episode itself is the episode queue's job. A random spread of up to 7 days keeps
+    thousands of editions from falling due on the same day again.
+    """
+    rand=__import__('random').random if rand is None else rand
+    topic=(source or {}).get('topic') or ''
+    sendereihe=(recognized.get('kind')=='series' and bool(metadata.norm(topic)) and
+                metadata.norm(topic)==metadata.norm(recognized.get('title') or ''))
+    if recognized.get('provider') in broadcaster.PROVIDERS or sendereihe:
+        return 30*86400+int(rand()*7*86400)
+    return 86400
+
 METADATA_PAUSE=.1
 MAX_RECOGNITION_WORKERS=8
 MAX_EPISODE_WORKERS=4
@@ -416,7 +434,7 @@ class Service:
             # Programme data of a Sendereihe rarely changes; daily rechecks of every episode would only load the Mediathek.
             if outcome=='identified':
                 delay=(retry_delay(row['attempts']+1,result) if result.get('deferred_providers')
-                       else 30*86400 if recognized.get('provider') in broadcaster.PROVIDERS else 86400)
+                       else identified_delay(recognized,entry['source']))
                 c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+delay,dest))
         else:
             m['suggestions']=result['candidates'];m['metadata_warnings']=result['warnings']
