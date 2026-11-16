@@ -1,3 +1,11 @@
+## 0.6.14 – Abo-Videos pro Stunde, längere Pause nach Bot-Sperre
+- Björn (16.11.2026): „lieber nur wenige Videos die Stunde laden“, damit die Bot-Sperre gar nicht erst auslöst. Diagnose 0.6.13 (11:48): 09:37–10:18 21 Abo-Videos geladen (~30/h, 5–20 s Abstand), ab 10:20 jede yt-dlp-Anfrage „kein Bot“, um 11:40 (0.6.13) immer noch; 0.6.13 reihte 43 Aufträge wieder ein und plante nach dem ersten Fehlschlag die Pause (`download_retry_planned`).
+- `youtube_abos`: `PER_HOUR_CHOICES` (1, 2, 3, 4, 6, 10, 20), Standard `PER_HOUR_DEFAULT` 4, Einstellung `abo_per_hour` und letzter Start `abo_last_start` in youtube.sqlite3; `pace(root, job, now, force)` stellt Abo-Aufträge (`youtube_abo`) bis zum nächsten Platz zurück (`not_before`, Hinweis), `force` (Jetzt versuchen) startet sofort und zählt mit; `next_slot`, `set_per_hour`; `overview` mit `per_hour`, `per_hour_choices`, `next_slot`.
+- `server.worker`: `youtube_abos.pace(ROOT,j,force=forced)` nach `download_retry.hold`; `POST /api/youtube-abos` mit `action: 'pace'`.
+- `download_retry.BACKOFF_BLOCK` (1 h, 3 h, 6 h, 12 h, 24 h ×3) für Sperren (`block=True`).
+- `web/index.html` `#youtube-abos-pace`, `web/youtube_abos.js` Auswahl „Höchstens N Abo-Videos pro Stunde“ mit nächstem Startzeitpunkt, `web/style.css` `.abo-pace`.
+- Tests: `tests/test_v0614_abo_pacing.py` (7).
+
 ## 0.6.13 – Abo-Downloads: automatische Wiederholung, Pause bei Bot-Prüfung, Hänger-Erkennung
 - Björn (16.11.2026): Abo-Video hängt bei „0.0 MiB · Geschwindigkeit wird ermittelt“, ein anderes endet mit „YouTube verlangt eine Anmeldung („kein Bot“) … Später erneut versuchen“.
 - `download_retry.py` (neu): `RetryLater(message, block)`, `reschedule` (Auftrag bleibt `queued`, `not_before` nach `BACKOFF` 15 min … 24 h, ±10 %, `retries`, `last_error`, `note`; nach 7 Versuchen Fehler mit Zahl der Versuche), `block`/`blocked_until`/`hold` (Pause je Quelle im Speicher; `force_now` übergeht sie einmal).

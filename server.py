@@ -269,7 +269,9 @@ def worker():
                 # Queued before the other instance's claim arrived (e.g. series packages).
                 j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
             # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
-            if download_retry.hold(j):
+            # 0.6.14: subscription videos start at most N per hour, evenly spaced (single clicks are not paced).
+            forced=bool(j.get('force_now'))
+            if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced):
                 c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
             c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
         def cancelled():
@@ -1027,6 +1029,7 @@ def get_youtube_abos(self,path):
 def post_youtube_abos(self,path,d):
     action=str(d.get('action','update'))[:10]
     if action=='add':youtube_abos.add(ROOT,d)
+    elif action=='pace':youtube_abos.set_per_hour(ROOT,d.get('per_hour'))   # 0.6.14: Abo-Videos pro Stunde
     else:youtube_abos.change(ROOT,d.get('id'),d)
     diagnostics.event('youtube_abos_changed',action=action)
     # A new abo or "Jetzt prüfen" is read right away (a running check takes it on its next round).

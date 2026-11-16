@@ -23,6 +23,9 @@ import threading
 import time
 
 BACKOFF = (15 * 60, 60 * 60, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 24 * 3600)
+# 0.6.14: Björns Diagnose vom 16.11.2026 – die Bot-Sperre hielt mindestens 80 Minuten (10:20 bis 11:40 jeder
+# Versuch abgewiesen). Nach einer Sperre beginnt die Reihe deshalb bei 1 Stunde.
+BACKOFF_BLOCK = (60 * 60, 3 * 3600, 6 * 3600, 12 * 3600, 24 * 3600, 24 * 3600, 24 * 3600)
 _LOCK = threading.Lock()
 _BLOCKS = {}                      # Quelle -> (bis, Grund)
 
@@ -94,15 +97,16 @@ def reschedule(job, exc, now=None, rand=random.random):
     now = time.time() if now is None else float(now)
     tries = int(job.get('retries') or 0) + 1
     message = str(exc)[:240]
-    if tries > len(BACKOFF):
+    steps = BACKOFF_BLOCK if exc.block else BACKOFF
+    if tries > len(steps):
         job['error'] = '%s (nach %d automatischen Versuchen aufgegeben)' % (message, tries - 1)
         return False
-    delay = BACKOFF[tries - 1] * (0.9 + 0.2 * rand())
+    delay = steps[tries - 1] * (0.9 + 0.2 * rand())
     source = source_of(job)
     if exc.block:
         block(source, now + delay, message)
     until = max(now + delay, blocked_until(source, now)[0])
     job.update(state='queued', retries=tries, not_before=until, received=0, total=0, speed=0, eta=None, error='',
                last_error=message,
-               note='%s · Versuch %d von %d um %s Uhr' % (message, tries + 1, len(BACKOFF) + 1, _clock(until)))
+               note='%s · Versuch %d von %d um %s Uhr' % (message, tries + 1, len(steps) + 1, _clock(until)))
     return True

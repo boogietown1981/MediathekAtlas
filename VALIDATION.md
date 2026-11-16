@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.14 – Abo-Videos pro Stunde (16. November 2026)
+- Diagnose 0.6.13 von Björn ausgewertet (Ablauf siehe CHANGELOG).
+- Automatisch: gesamte Python-Suite (1291 Tests, 3 übersprungen), Klicktest Chromium ohne Befund; echter Server: Auswahl zeigt 4/h (alle 15 Min.), Umstellen auf 2 speichert und zeigt alle 30 Min.; neu `tests/test_v0614_abo_pacing.py` (7): Standard 4/h mit 15 Min. Abstand, Klicks von Hand und „Jetzt versuchen“ ohne Wartezeit, Einstellung und ungültige Werte, zurückgestellte Uhr, Bot-Sperre ab 1 Std., Verdrahtung.
+- Nicht geprüft: ob 4 Videos pro Stunde bei Björns Anschluss die Sperre wirklich vermeiden (echtes YouTube aus der Bauumgebung gesperrt).
+
 ## 0.6.13 – Abo-Downloads (16. November 2026)
 - Automatisch: gesamte Python-Suite (1284 Tests, 4 übersprungen), `node --check` und Node-Smoke-Tests, Klicktest Chromium ohne Befund; neu `tests/test_v0613_download_retry.py` (14): Abstände und Aufgeben, Pause der Quelle mit „Jetzt versuchen“, Einteilung der yt-dlp-Fehler, Phasen, Abbruch eines Downloads ohne Daten (mit verkürzter Frist), Pausen nur für Abo-Downloads, Wiedereinreihen nach dem Update, Abo-Prüfung während der Pause, Grund am Abo-Video.
 - Echter Server mit einem Abo-Auftrag „kein Bot“ (Fehler aus 0.6.12) und einem unterbrochenen Abo-Download: nach dem Start beide „Geplant für …“ (15 Min. bzw. 1 Min.), Karte im Download zeigt die Phase statt „Geschwindigkeit wird ermittelt“ (Chromium).

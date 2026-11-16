@@ -161,9 +161,24 @@
     warn.hidden = !problems.length; warn.textContent = problems.join(' ');
     const total = (d.abos || []).length, done = (d.profiles || []).reduce((n, p) => n + p.done, 0);
     $('youtube-abos-state').textContent = total ? '· ' + total + (total === 1 ? ' Abo' : ' Abos') + ' · ' + done + ' Videos offline' + (d.running ? ' · prüft gerade' : '') : '';
+    pace(d);
     render();
     clearTimeout(timer);
     if (d.running || (d.abos || []).some(a => (a.counts || {}).queued)) timer = setTimeout(load, 8000);
+  }
+  // 0.6.14 (Björn: lieber nur wenige Videos pro Stunde, damit YouTube nicht sperrt)
+  function pace(d) {
+    const host = $('youtube-abos-pace'); if (!host || document.activeElement?.id === 'youtube-abos-per-hour') return;
+    const pick = make('select'); pick.id = 'youtube-abos-per-hour'; pick.setAttribute('aria-label', 'Abo-Videos pro Stunde');
+    for (const n of d.per_hour_choices || [d.per_hour || 4]) {
+      const o = make('option', String(n)); o.value = n; o.selected = n === d.per_hour; pick.append(o);
+    }
+    pick.onchange = () => act({action: 'pace', per_hour: Number(pick.value)}, 'Gespeichert: höchstens ' + pick.value + ' Abo-Videos pro Stunde', pick);
+    const minutes = Math.round(60 / (d.per_hour || 4));
+    const next = d.next_slot ? ' Nächstes Abo-Video frühestens um ' +
+      new Date(d.next_slot * 1000).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) + ' Uhr.' : '';
+    host.replaceChildren('Höchstens ', pick, ' Abo-Videos pro Stunde laden (eines etwa alle ' + minutes + ' Min.), damit YouTube nicht sperrt.' + next +
+      ' „Offline speichern“ von Hand startet sofort.');
   }
   async function act(payload, message, button) {
     if (button) button.disabled = true;
