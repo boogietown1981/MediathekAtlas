@@ -78,6 +78,7 @@ FILMS = {'G6NQ5DWZ6': [{'id': 'G25FVD45Q', 'type': 'movie', 'title': 'Jujutsu Ka
 class Site:
     """Answers like www.crunchyroll.com/content/v2; records every request."""
     page = None
+    movies_fail = False
 
     def __init__(self):
         self.calls = []
@@ -85,7 +86,13 @@ class Site:
     def __call__(self, path, query=None):
         self.calls.append((path, dict(query or {})))
         if path == '/content/v2/discover/browse':
-            items = SERIES + MOVIES
+            # 0.6.10: like the real API (Björn's diagnosis of 0.6.8) the list without ``type`` has series only.
+            if query.get('type') == 'movie_listing':
+                if self.movies_fail:
+                    raise urllib.error.HTTPError('https://www.crunchyroll.com/x', 500, 'x', {}, io.BytesIO(b''))
+                items = MOVIES
+            else:
+                items = SERIES
             start = int(query['start'])
             part = items[start:start + self.page] if self.page else items[start:]
             return {'total': len(items), 'data': part}
@@ -209,7 +216,31 @@ class CatalogueTests(Fixture):
         site.page = 2
         _, result = self.load(site)
         self.assertEqual((result['series'], result['movies']), (3, 1))
-        self.assertEqual([c[1]['start'] for c in site.calls], [0, 2, 4])
+        self.assertEqual([(c[1]['type'], c[1]['start']) for c in site.calls],
+                         [('series', 0), ('series', 2), ('series', 4), ('movie_listing', 0)])
+
+    def test_films_come_from_their_own_list(self):
+        site, result = self.load()
+        self.assertEqual([c[1].get('type') for c in site.calls], ['series', 'movie_listing'])
+        self.assertEqual((result['series'], result['movies']), (3, 1))
+
+    def test_catalogue_of_older_version_is_reloaded_soon(self):
+        self.load()
+        self.assertGreater(crunchyroll.state(self.root)['next_attempt'], NOW)
+        db = crunchyroll._connect(self.root)
+        with db:
+            db.execute("DELETE FROM crunchyroll_state WHERE name='browse_lists'")
+        db.close()
+        self.assertEqual(crunchyroll.state(self.root)['next_attempt'], 0)
+        self.load()
+        self.assertGreater(crunchyroll.state(self.root)['next_attempt'], NOW)
+
+    def test_failing_film_list_keeps_series_and_is_partial(self):
+        site = Site()
+        site.movies_fail = True
+        _, result = self.load(site)
+        self.assertEqual((result['ok'], result['partial'], result['series'], result['movies']), (True, True, 3, 0))
+        self.assertIn('Filme', crunchyroll.state(self.root)['last_error'])
 
     def test_failure_keeps_the_stored_catalogue_and_names_the_cause(self):
         self.load()

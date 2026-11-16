@@ -5,6 +5,13 @@
 - **Profile:** Jedes Kanal-Abo gehört jetzt einem Profil: **Kinderecke** (erscheint nur unter `/kinder`) oder **Für mich** (erscheint nur im Ansehen-Modus `/ansehen`). Nichts wird mehr vermischt. Derselbe Kanal darf in beiden Profilen stehen; ein Video, das in beiden vorkommt, wird nur einmal geladen.
 - **Bestehende Abos:** „In der Kinderecke zeigen“ an → Profil Kinderecke, aus → Für mich. Bis 0.6.10 erschienen Kinder-Abos zusätzlich im Ansehen-Modus; das entfällt.
 - **Verwaltung aufgeräumt** (Plattformen → YouTube → Kanal-Abos): Reiter je Profil mit Zahl der Abos und Offline-Videos, kompakte Karten mit Kanalbild, Regeln in einer Zeile, Zahlen als farbige Chips und kleine Knöpfe (↻ prüfen, ⚙ Einstellungen, ⏸ pausieren, ✕ beenden, ↗ YouTube). „＋ Kanal abonnieren“ öffnet ein kurzes Formular (Für wen? · Kanal · Was laden? · Reihe); Seltenes steckt unter „Weitere Einstellungen“. Ein Abo lässt sich über ⚙ in das andere Profil verschieben.
+## Neu in 0.6.10: Crunchyroll mit Filmen
+
+- **Crunchyroll zeigt jetzt auch Filme.** Bisher kamen nur Serien an (laut Diagnose 1.690 Serien, 0 Filme): Crunchyroll liefert in seiner Katalogliste ohne Angabe nur Serien, Filme stehen in einer eigenen Liste. MediathekAtlas lädt jetzt beide.
+- Ein bereits geladener Crunchyroll-Katalog wird nach dem Update einmal neu geladen (bei eingeschalteter Automatik innerhalb einer Minute, sonst „Katalog jetzt laden“).
+- Scheitert nur die Filmliste, bleiben die Serien sichtbar und die Katalog-Karte nennt den Grund.
+- Manche Anime-Filme führt Crunchyroll selbst als Staffel einer Serie (z. B. Kinofilme zu einer Serie); die stehen weiter auf der Serienseite.
+
 
 ## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
 
