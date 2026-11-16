@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+
+## 0.6.16 – ServusTV-Katalog (16. November 2026)
+- Automatisch: gesamte Python-Suite, `node --check`/Node-Smoke-Tests; `tests/test_v0601_servustv.py` erweitert (lange Clips, Ereignisseiten, Teaserkacheln, Film-Seiten, einzelne 403 übersprungen, Schwelle für „teilweise“).
+- Abgleich mit Björns HAR vom 13.11.2026 (nur die darin enthaltenen Karten): alt 397 Folgen/83 Sendungen/30 Filme → neu 580/104/33, dazu 18 Sportseiten zum Weiterlesen.
+- Nicht geprüft: echter Abruf bei ServusTV (tv-api.redbull.com aus der Bauumgebung gesperrt), Laufzeit und 403-Verhalten mit den zusätzlichen Seiten, Wiedergabe der langen Clips.
 ## 0.6.14 – Abo-Videos pro Stunde (16. November 2026)
 - Diagnose 0.6.13 von Björn ausgewertet (Ablauf siehe CHANGELOG).
 - Automatisch: gesamte Python-Suite (1291 Tests, 3 übersprungen), Klicktest Chromium ohne Befund; echter Server: Auswahl zeigt 4/h (alle 15 Min.), Umstellen auf 2 speichert und zeigt alle 30 Min.; neu `tests/test_v0614_abo_pacing.py` (7): Standard 4/h mit 15 Min. Abstand, Klicks von Hand und „Jetzt versuchen“ ohne Wartezeit, Einstellung und ungültige Werte, zurückgestellte Uhr, Bot-Sperre ab 1 Std., Verdrahtung.
