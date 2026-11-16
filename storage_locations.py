@@ -1,0 +1,1191 @@
+"""Einstellbare Speicherorte mit sicherem Umzug (0.6.20).
+
+Björn (16.11.2026): In den Einstellungen sollen drei Speicherorte getrennt festgelegt werden
+können: Downloads, Zwischenspeicher (YouTube-Abo-Videos) und System/Datenbank. Beim Ändern eines
+Pfads sollen die vorhandenen Daten an den neuen Ort übernommen werden. Anlass: auf dem MacBook
+Air waren nur noch 2,6 GB frei (Datenbanksicherung scheiterte, IMDb-Archiv 21,8 GB).
+
+Ablauf eines Umzugs (alle drei Arten gleich):
+
+1. Prüfen: Ziel absolut, nicht ineinander verschachtelt, Elternordner vorhanden (ein abgezogenes
+   Laufwerk wird nie neu angelegt), Schreibprobe, freier Platz, Konflikte am Ziel.
+2. Kopieren: Dateien über ``<name>.partial`` und erst danach umbenennen; SQLite-Dateien über die
+   Backup-API (auch die offene Datenbank mit WAL bleibt konsistent). Bereits vollständig kopierte
+   Dateien werden bei einer Wiederaufnahme übersprungen. Abbruch jederzeit.
+3. Prüfen: jede Datei am Ziel vorhanden, gleiche Größe, kleine Dateien zusätzlich per SHA-256,
+   Datenbanken per ``PRAGMA quick_check``.
+4. Umschalten: Downloads/Zwischenspeicher sofort (Einstellung + Pfade in catalog.db), System und
+   Datenbank beim nächsten Start: dann ist nichts mehr geöffnet, geänderte Dateien werden
+   nachkopiert und erst danach zeigt ``storage.json`` auf den neuen Ort.
+5. Der alte Ort bleibt unangetastet. Löschen nur auf ausdrücklichen Wunsch (Bestätigungstext);
+   gelöscht wird nur, was am neuen Ort nachweislich gleich vorliegt.
+
+``storage.json`` liegt immer im Startordner (``MEDIATHEKATLAS_HOME`` bzw. Standardort), dort
+bleiben auch ``runtime/`` (Programmkopie), Startprotokoll und Instanzsperre. Ist der eingestellte
+Datenordner beim Start nicht erreichbar (Laufwerk abgezogen), wartet der Start kurz und bricht
+dann mit einer verständlichen Meldung ab, statt still an einem leeren Ort neu anzufangen.
+"""
+from __future__ import annotations
+
+import hashlib
+import json
+import os
+import shutil
+import sqlite3
+import subprocess
+import sys
+import threading
+import time
+from pathlib import Path
+
+POINTER = 'storage.json'
+PROBLEM_FILE = 'storage-problem.txt'
+DATA_MARKER = '.mediathekatlas-daten'      # liegt in einem umgezogenen Datenordner
+PLACE_MARKER = '.mediathekatlas-ort'       # liegt in Download-/Zwischenspeicherordnern nach einem Umzug
+STAGING = '.mediathekatlas-umzug'          # Umzugsprotokoll am Ziel, solange der Umzug läuft
+MARKERS = (DATA_MARKER, PLACE_MARKER, STAGING)
+HOME_ONLY = frozenset({'runtime', 'instance.lock', 'instance.json', 'instance.json.tmp', 'startup.log',
+                       POINTER, POINTER + '.tmp', PROBLEM_FILE})
+SKIP_SUFFIXES = ('.partial', '.part', '.ytdl', '-wal', '-shm', '-journal')
+SKIP_NAMES = frozenset({'.DS_Store', 'Thumbs.db', 'desktop.ini'})
+RESERVE = 512 * 1024 * 1024
+HASH_LIMIT = 16 * 1024 * 1024
+CHUNK = 8 * 1024 * 1024
+CONFIRM = 'ALTE DATEN LÖSCHEN'
+ABO_FOLDER = 'YouTube-Abos'
+UNAVAILABLE_EXIT = 3
+KINDS = {'downloads': 'Downloads', 'cache': 'Zwischenspeicher (YouTube-Abos)', 'system': 'System und Datenbank'}
+SUBFOLDER = {'downloads': 'Downloads', 'cache': 'Zwischenspeicher', 'system': 'System'}
+
+
+class Unavailable(RuntimeError):
+    """Der eingestellte Datenordner ist nicht erreichbar."""
+
+
+# ------------------------------------------------------------------ Startordner und Zeiger
+
+def default_home() -> Path:
+    custom = os.environ.get('MEDIATHEKATLAS_HOME')
+    if custom:
+        return Path(custom)
+    if sys.platform == 'darwin':
+        return Path.home() / 'Library' / 'Application Support' / 'MediathekAtlas'
+    return Path.home() / '.mediathekatlas'
+
+
+def read_pointer(home) -> dict:
+    try:
+        data = json.loads((Path(home) / POINTER).read_text(encoding='utf-8'))
+        return data if isinstance(data, dict) else {}
+    except (OSError, ValueError):
+        return {}
+
+
+def write_pointer(home, data):
+    path = Path(home) / POINTER
+    temp = path.with_name(POINTER + '.tmp')
+    with temp.open('w', encoding='utf-8') as f:
+        json.dump(data, f, ensure_ascii=False, indent=1)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(temp, path)
+
+
+def _norm(path) -> str:
+    text = str(path or '').strip()
+    if not text:
+        return ''
+    p = Path(text).expanduser()
+    try:
+        p = p.resolve()
+    except (OSError, RuntimeError):
+        p = Path(os.path.abspath(str(p)))
+    return str(p)
+
+
+def same(a, b) -> bool:
+    return bool(a) and bool(b) and _norm(a) == _norm(b)
+
+
+def inside(child, parent) -> bool:
+    """``child`` liegt in ``parent`` (oder ist gleich)."""
+    a, b = _norm(child), _norm(parent)
+    if not a or not b:
+        return False
+    try:
+        return os.path.commonpath((a, b)) == b
+    except ValueError:
+        return False
+
+
+def data_root(home=None, wait=0.0, log=None) -> Path:
+    """Datenordner für den Start. Schließt einen vorbereiteten System-Umzug ab.
+
+    ``wait``: so viele Sekunden auf ein noch nicht eingebundenes Laufwerk warten.
+    Raises Unavailable, wenn der eingestellte Ordner fehlt (nie still neu anfangen).
+    """
+    home = Path(home or default_home())
+    say = log or (lambda text: print(text, flush=True))
+    cfg = read_pointer(home)
+    pending = cfg.get('pending')
+    if isinstance(pending, dict) and pending.get('kind') == 'system' and pending.get('state') == 'copied':
+        try:
+            finalize_system(home, cfg, pending, say)
+        except Exception as exc:   # Umzug misslungen: alter Ort bleibt aktiv, Grund sichtbar
+            cfg = read_pointer(home)
+            pending = dict(cfg.get('pending') or pending, state='failed', error=str(exc)[:400], failed_at=time.time())
+            cfg['pending'] = pending
+            cfg['last'] = {'kind': 'system', 'phase': 'failed', 'error': pending['error'], 'at': time.time(),
+                           'source': pending.get('source'), 'target': pending.get('target')}
+            write_pointer(home, cfg)
+            say('Umzug von System und Datenbank nicht abgeschlossen: %s – es bleibt beim bisherigen Ort.' % exc)
+        cfg = read_pointer(home)
+    data = cfg.get('data_dir')
+    if not data:
+        (home / PROBLEM_FILE).unlink(missing_ok=True)
+        return home
+    root = Path(data)
+    deadline = time.monotonic() + max(0.0, float(wait))
+    announced = False
+    while not (root / DATA_MARKER).is_file():
+        if time.monotonic() >= deadline:
+            text = ('Der Speicherort für System und Datenbank ist nicht erreichbar:\n%s\n\n'
+                    'Bitte das Laufwerk bzw. die Netzwerkfreigabe verbinden und MediathekAtlas erneut starten. '
+                    'Es wurde nichts verändert und kein neuer, leerer Katalog angelegt.' % root)
+            try:
+                (home / PROBLEM_FILE).write_text(text + '\n', encoding='utf-8')
+            except OSError:
+                pass
+            raise Unavailable(text)
+        if not announced:
+            say('Warte auf den Speicherort für System und Datenbank: %s' % root)
+            announced = True
+        time.sleep(1.0)
+    (home / PROBLEM_FILE).unlink(missing_ok=True)
+    return root
+
+
+# ------------------------------------------------------------------ Dateien, Datenbanken
+
+def is_sqlite(path) -> bool:
+    try:
+        with open(path, 'rb') as f:
+            return f.read(16) == b'SQLite format 3\x00'
+    except OSError:
+        return False
+
+
+def _skip_name(name) -> bool:
+    return name in SKIP_NAMES or name in MARKERS or name.endswith(SKIP_SUFFIXES)
+
+
+def walk(source, top_exclude=(), exclude=()):
+    """Alle zu übernehmenden Dateien: (absoluter Pfad, relativer Pfad, os.stat_result).
+
+    Übersprungen: Teil-/Sperrdateien (``.partial``, ``-wal`` …), Symlinks, Markierungen,
+    Namen aus ``top_exclude`` direkt im Quellordner und Ordner aus ``exclude`` (andere
+    Speicherorte, die im Quellordner liegen).
+    """
+    source = Path(source)
+    excluded = [_norm(p) for p in exclude if p]
+    top = set(top_exclude)
+    for current, dirs, files in os.walk(source, followlinks=False):
+        here = Path(current)
+        rel_dir = here.relative_to(source)
+        keep = []
+        for name in sorted(dirs):
+            full = here / name
+            if (not rel_dir.parts and name in top) or name.endswith('.partial') or full.is_symlink():
+                continue
+            if any(_norm(full) == e for e in excluded):
+                continue
+            keep.append(name)
+        dirs[:] = keep
+        for name in sorted(files):
+            if (not rel_dir.parts and name in top) or _skip_name(name):
+                continue
+            full = here / name
+            try:
+                st = full.lstat()
+            except OSError:
+                continue
+            if not os.path.isfile(full) or os.path.islink(full):
+                continue
+            yield full, (rel_dir / name), st
+
+
+def _sha256(path):
+    h = hashlib.sha256()
+    with open(path, 'rb') as f:
+        while True:
+            block = f.read(CHUNK)
+            if not block:
+                break
+            h.update(block)
+    return h.hexdigest()
+
+
+def _fsync_dir(path):
+    if os.name == 'nt':
+        return
+    try:
+        fd = os.open(str(path), os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
+def copy_file(src, dst, on_bytes=None, cancelled=None):
+    dst = Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(dst.name + '.partial')
+    try:
+        with open(src, 'rb') as fin, open(part, 'wb') as fout:
+            while True:
+                if cancelled and cancelled():
+                    raise InterruptedError('abgebrochen')
+                block = fin.read(CHUNK)
+                if not block:
+                    break
+                fout.write(block)
+                if on_bytes:
+                    on_bytes(len(block))
+            fout.flush()
+            os.fsync(fout.fileno())
+        shutil.copystat(src, part, follow_symlinks=False)
+        os.replace(part, dst)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+
+
+def copy_sqlite(src, dst, on_bytes=None):
+    """Konsistente Kopie einer (auch geöffneten) SQLite-Datei über die Backup-API."""
+    dst = Path(dst)
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    part = dst.with_name(dst.name + '.partial')
+    part.unlink(missing_ok=True)
+    done = threading.Event()
+    seen = [0]
+
+    def watch():   # Fortschritt nach Dateigröße der Kopie (Backup in einem Schritt, kein Neustart bei Schreibzugriffen)
+        while not done.wait(0.5):
+            try:
+                size = part.stat().st_size
+            except OSError:
+                continue
+            if size > seen[0] and on_bytes:
+                on_bytes(size - seen[0])
+                seen[0] = size
+    watcher = threading.Thread(target=watch, daemon=True, name='storage_move_watch')
+    watcher.start()
+    try:
+        source = sqlite3.connect(str(src), timeout=60)
+        target = sqlite3.connect(str(part))
+        try:
+            source.backup(target)
+            check = target.execute('PRAGMA quick_check').fetchone()[0]
+            if check != 'ok':
+                raise ValueError('Datenbankkopie fehlerhaft (%s): %s' % (Path(src).name, str(check)[:160]))
+            mode = source.execute('PRAGMA journal_mode').fetchone()[0]
+            if str(mode).lower() == 'wal':
+                target.execute('PRAGMA journal_mode=WAL')
+            target.commit()
+        finally:
+            target.close()
+            source.close()
+        Path(part.with_name(part.name + '-wal')).unlink(missing_ok=True)
+        Path(part.with_name(part.name + '-shm')).unlink(missing_ok=True)
+        with open(part, 'rb') as f:
+            os.fsync(f.fileno())
+        try:
+            os.chmod(part, 0o600)
+        except OSError:
+            pass
+        os.replace(part, dst)
+    except BaseException:
+        part.unlink(missing_ok=True)
+        raise
+    finally:
+        done.set()
+        watcher.join(2)
+    final = dst.stat().st_size
+    if on_bytes and final > seen[0]:
+        on_bytes(final - seen[0])
+
+
+def _wal_stamp(path):
+    wal = Path(str(path) + '-wal')
+    try:
+        st = wal.stat()
+        return [st.st_size, st.st_mtime_ns] if st.st_size else None
+    except OSError:
+        return None
+
+
+def _stamp(st, path, db):
+    return {'size': st.st_size, 'mtime': st.st_mtime_ns, 'wal': _wal_stamp(path) if db else None, 'db': bool(db)}
+
+
+def _unchanged(entry, st, path):
+    return bool(entry) and entry.get('size') == st.st_size and entry.get('mtime') == st.st_mtime_ns and \
+        entry.get('wal') == (_wal_stamp(path) if entry.get('db') else None)
+
+
+def _present(dst, st):
+    """Normale Datei schon vollständig am Ziel (Wiederaufnahme)."""
+    try:
+        d = dst.stat()
+    except OSError:
+        return False
+    return d.st_size == st.st_size and abs(d.st_mtime - st.st_mtime) <= 2   # FAT/exFAT: 2 s Raster
+
+
+# ------------------------------------------------------------------ Laufwerke
+
+def disk(path):
+    """Freier/gesamter Platz am nächsten vorhandenen Ordner von ``path``."""
+    p = Path(path) if path else None
+    while p is not None and not p.exists():
+        if p.parent == p:
+            p = None
+            break
+        p = p.parent
+    if p is None:
+        return {'free': 0, 'total': 0}
+    try:
+        usage = shutil.disk_usage(p)
+        return {'free': usage.free, 'total': usage.total}
+    except OSError:
+        return {'free': 0, 'total': 0}
+
+
+def _mounts():
+    rows = []
+    try:
+        if sys.platform.startswith('linux'):
+            for line in Path('/proc/self/mounts').read_text().splitlines():
+                parts = line.split()
+                if len(parts) >= 3:
+                    rows.append((parts[1].replace('\\040', ' '), parts[2]))
+        elif sys.platform == 'darwin':
+            out = subprocess.run(['/sbin/mount'], capture_output=True, text=True, timeout=5).stdout
+            for line in out.splitlines():
+                if ' on ' in line and ' (' in line:
+                    point = line.split(' on ', 1)[1].rsplit(' (', 1)[0]
+                    kind = line.rsplit(' (', 1)[1].split(',')[0].strip(' )')
+                    rows.append((point, kind))
+    except (OSError, ValueError, subprocess.SubprocessError):
+        pass
+    return rows
+
+
+NETWORK_FS = ('smbfs', 'cifs', 'smb3', 'nfs', 'nfs4', 'afpfs', 'webdav', 'fuse.sshfs', 'davfs', '9p')
+
+
+def filesystem(path):
+    """Dateisystemtyp des Einhängepunkts (best effort, '' wenn unbekannt)."""
+    target = _norm(path)
+    best, kind = '', ''
+    for point, fs in _mounts():
+        if inside(target, point) and len(point) > len(best):
+            best, kind = point, fs
+    return kind
+
+
+def volumes():
+    """Vorschläge für die Oberfläche: eingebundene Laufwerke mit freiem Platz."""
+    found = []
+    if sys.platform == 'darwin':
+        candidates = sorted(Path('/Volumes').glob('*'))
+    elif os.name == 'nt':
+        candidates = [Path('%s:\\' % c) for c in 'DEFGHIJKLMNOPQRSTUVWXYZ' if os.path.exists('%s:\\' % c)]
+    else:
+        user = os.environ.get('USER') or ''
+        candidates = list(Path('/media').glob('*')) + list(Path('/mnt').glob('*')) + \
+            list(Path('/').glob('volume[0-9]*')) + list(Path('/share').glob('CACHEDEV*_DATA'))
+        if user:
+            candidates += list(Path('/media', user).glob('*')) + list(Path('/run/media', user).glob('*'))
+        candidates = sorted(candidates)
+    seen = set()
+    for p in candidates:
+        try:
+            if not p.is_dir() or p.is_symlink() or str(p) in seen:
+                continue
+            if sys.platform.startswith('linux') and p.parent == Path('/media') and user and p.name == user:
+                continue
+            seen.add(str(p))
+            usage = shutil.disk_usage(p)
+        except OSError:
+            continue
+        if usage.total <= 0:
+            continue
+        found.append({'path': str(p), 'name': p.name or str(p), 'free': usage.free, 'total': usage.total,
+                      'network': filesystem(p) in NETWORK_FS})
+    return found[:16]
+
+
+# ------------------------------------------------------------------ Prüfung eines Ziels
+
+def _existing_ancestor(p: Path):
+    while not p.exists():
+        if p.parent == p:
+            return None
+        p = p.parent
+    return p if p.is_dir() else p
+
+
+def _mount_container(p: Path) -> bool:
+    """Ordner, in denen Laufwerke eingehängt werden: ein fehlender Unterordner heißt „nicht verbunden“.
+    Darin wird nie etwas angelegt (sonst landen die Daten still auf der internen Platte)."""
+    user = os.environ.get('USER') or ''
+    containers = {'/Volumes', '/media', '/mnt', '/run/media', '/share', '/media/' + user, '/run/media/' + user}
+    text = str(p)
+    return p == Path(p.anchor) or text in containers
+
+
+def _writable(target: Path):
+    probe = target / ('.mediathekatlas-schreibprobe-%d' % os.getpid())
+    try:
+        with probe.open('wb') as f:
+            f.write(b'MediathekAtlas')
+            f.flush()
+            os.fsync(f.fileno())
+        return ''
+    except OSError as exc:
+        return str(exc)
+    finally:
+        try:
+            probe.unlink()
+        except OSError:
+            pass
+
+
+def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='copy', budget=40.0):
+    """Prüft einen geplanten Umzug, ohne etwas zu verändern."""
+    if kind not in KINDS:
+        raise ValueError('Unbekannter Speicherort')
+    text = str(target or '').strip()
+    result = {'kind': kind, 'label': KINDS[kind], 'source': str(source or ''), 'target': text, 'mode': mode,
+              'problems': [], 'warnings': [], 'files': 0, 'bytes_total': 0, 'bytes_present': 0, 'bytes_needed': 0,
+              'free': 0, 'complete': True, 'conflicts': [], 'existing_data': False, 'network': False}
+    problems, warnings = result['problems'], result['warnings']
+    if not text:
+        problems.append('Bitte einen Zielordner angeben.')
+        return _finish(result)
+    p = Path(text).expanduser()
+    if not p.is_absolute():
+        problems.append('Bitte einen absoluten Pfad angeben (z. B. /Volumes/Laufwerk/MediathekAtlas).')
+        return _finish(result)
+    if p == Path(p.anchor):
+        problems.append('Bitte einen Unterordner wählen, nicht die oberste Ebene eines Laufwerks.')
+        return _finish(result)
+    target_n = _norm(p)
+    result['target'] = target_n
+    src = Path(source) if source else None
+    if src is not None and same(src, target_n):
+        problems.append('Das ist bereits der aktuelle Speicherort.')
+        return _finish(result)
+    if src is not None and (inside(target_n, src) or inside(src, target_n)):
+        problems.append('Alter und neuer Ort dürfen nicht ineinander liegen.')
+        return _finish(result)
+    for label, other in others:
+        if other and (inside(target_n, other) or inside(other, target_n)):
+            problems.append('Der neue Ort überschneidet sich mit „%s“ (%s).' % (label, other))
+    anchor = _existing_ancestor(p)
+    if anchor is None or (anchor != p and _mount_container(anchor)):
+        problems.append('Laufwerk bzw. Ordner nicht gefunden: %s – ist das Laufwerk verbunden?' % p)
+        return _finish(result)
+    if p.exists() and not p.is_dir():
+        problems.append('Am Ziel liegt eine Datei, kein Ordner.')
+        return _finish(result)
+    probe_dir = anchor
+    error = _writable(probe_dir)
+    if error:
+        problems.append('Keine Schreibrechte am Ziel: %s' % error[:160])
+    fs = filesystem(probe_dir)
+    result['network'] = fs in NETWORK_FS
+    if kind == 'system' and result['network']:
+        warnings.append('Das Ziel ist eine Netzwerkfreigabe (%s). SQLite-Datenbanken können dort langsam sein; '
+                        'die App braucht die Freigabe dauerhaft und startet ohne sie nicht.' % fs)
+    if fs in ('msdos', 'vfat', 'fat32'):
+        warnings.append('Das Laufwerk ist mit FAT32 formatiert: Dateien über 4 GB passen nicht. Besser exFAT, APFS oder NTFS.')
+    is_home = home is not None and same(target_n, home)
+    staging = p / STAGING
+    if p.is_dir():
+        if kind == 'system':
+            if (p / DATA_MARKER).is_file() and (p / 'catalog.db').is_file():
+                result['existing_data'] = True
+            entries = [x for x in p.iterdir() if x.name not in SKIP_NAMES]
+            if entries and not is_home and not staging.is_file() and not result['existing_data']:
+                problems.append('Der Zielordner ist nicht leer. Bitte einen leeren oder neuen Ordner wählen.')
+        if staging.is_file():
+            try:
+                info = json.loads(staging.read_text(encoding='utf-8'))
+                if info.get('source') and not same(info.get('source'), source):
+                    problems.append('Im Zielordner liegt ein unterbrochener Umzug von einem anderen Ort (%s).' % info.get('source'))
+                else:
+                    warnings.append('Unterbrochener Umzug gefunden: bereits kopierte Dateien werden übernommen.')
+            except (OSError, ValueError):
+                pass
+    if mode == 'adopt':
+        if not result['existing_data']:
+            problems.append('Am Ziel liegen keine MediathekAtlas-Daten.')
+        return _finish(result)
+    if mode == 'switch' or src is None or not src.is_dir():
+        if mode != 'switch' and (src is None or not src.is_dir()):
+            warnings.append('Am bisherigen Ort liegen keine Daten; es wird nur umgestellt.')
+            result['mode'] = 'switch'
+        if kind == 'system' and result['mode'] == 'switch':
+            problems.append('System und Datenbank lassen sich nur mit Übernahme der Daten umstellen.')
+        return _finish(result)
+    started = time.monotonic()
+    plan = _plan_parts(kind, source, home)
+    manifest = _read_staging(p)
+    for full, rel, st in walk(src, plan['top_exclude'], list(exclude)):
+        result['files'] += 1
+        result['bytes_total'] += st.st_size
+        dst = p / rel
+        if dst.exists():
+            db = is_sqlite(full)
+            if db and _unchanged(manifest.get(str(rel)), st, full):
+                result['bytes_present'] += st.st_size
+            elif not db and _present(dst, st):
+                result['bytes_present'] += st.st_size
+            elif kind != 'system' and not db and len(result['conflicts']) < 50:
+                result['conflicts'].append(str(rel))
+        if time.monotonic() - started > budget:
+            result['complete'] = False
+            warnings.append('Sehr viele Dateien: Größe noch nicht vollständig ermittelt; der Umzug prüft den Platz erneut.')
+            break
+    if result['conflicts'] and not is_home:
+        problems.append('Am Ziel liegen schon %d gleichnamige, abweichende Dateien (z. B. %s). Nichts wird überschrieben – '
+                        'bitte einen anderen Ordner wählen.' % (len(result['conflicts']), result['conflicts'][0]))
+    result['bytes_needed'] = max(0, result['bytes_total'] - result['bytes_present'])
+    result['free'] = disk(probe_dir)['free']
+    if result['free'] and result['free'] < result['bytes_needed'] + RESERVE:
+        problems.append('Zu wenig freier Platz am Ziel: %s frei, %s nötig.' % (_gb(result['free']), _gb(result['bytes_needed'] + RESERVE)))
+    return _finish(result)
+
+
+def _finish(result):
+    result['ok'] = not result['problems']
+    return result
+
+
+def _gb(n):
+    return ('%.1f GB' % (n / 1e9)).replace('.', ',')
+
+
+def _plan_parts(kind, source, home):
+    top = set()
+    if kind == 'system':
+        top = set(HOME_ONLY)
+    return {'top_exclude': sorted(top)}
+
+
+def _read_staging(target):
+    try:
+        data = json.loads((Path(target) / STAGING).read_text(encoding='utf-8'))
+        return data.get('files') or {}
+    except (OSError, ValueError, AttributeError):
+        return {}
+
+
+def _write_staging(target, info):
+    path = Path(target) / STAGING
+    temp = path.with_name(STAGING + '.tmp')
+    temp.write_text(json.dumps(info, ensure_ascii=False), encoding='utf-8')
+    os.replace(temp, path)
+
+
+def _write_marker(folder, name, kind):
+    Path(folder).mkdir(parents=True, exist_ok=True)
+    (Path(folder) / name).write_text(json.dumps({'kind': kind, 'created': time.time(), 'app': 'MediathekAtlas'}) + '\n',
+                                     encoding='utf-8')
+
+
+# ------------------------------------------------------------------ Kopieren und Prüfen
+
+def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, cancelled=None, manifest=None,
+              staging_info=None):
+    """Kopiert alle Dateien; überspringt bereits identische. Gibt das Manifest zurück."""
+    source, target = Path(source), Path(target)
+    target.mkdir(parents=True, exist_ok=True)
+    manifest = dict(manifest or {})
+    info = dict(staging_info or {})
+    files = list(walk(source, top_exclude, exclude))
+    total = sum(st.st_size for _, _, st in files)
+    state = {'files_total': len(files), 'files_done': 0, 'bytes_total': total, 'bytes_done': 0, 'current': ''}
+    last_save = [time.monotonic()]
+
+    def tick(n=0, current=None):
+        state['bytes_done'] += n
+        if current is not None:
+            state['current'] = current
+        if progress:
+            progress(dict(state))
+    tick()
+    for full, rel, st in files:
+        if cancelled and cancelled():
+            raise InterruptedError('abgebrochen')
+        dst = target / rel
+        key = str(rel)
+        db = is_sqlite(full)
+        if dst.exists() and ((db and _unchanged(manifest.get(key), st, full)) or (not db and _present(dst, st))):
+            state['files_done'] += 1
+            tick(st.st_size, key)
+            continue
+        tick(0, key)
+        before = state['bytes_done']
+        if db:
+            stamp = _stamp(st, full, True)
+            copy_sqlite(full, dst, on_bytes=lambda n: tick(n))
+        else:
+            stamp = _stamp(st, full, False)
+            copy_file(full, dst, on_bytes=lambda n: tick(n), cancelled=cancelled)
+        state['bytes_done'] = before + st.st_size   # Datenbankkopie kann kleiner/größer sein als das Original
+        state['files_done'] += 1
+        manifest[key] = stamp
+        tick(0)
+        if staging_info is not None and time.monotonic() - last_save[0] > 5:
+            info['files'] = manifest
+            _write_staging(target, info)
+            last_save[0] = time.monotonic()
+    _fsync_dir(target)
+    if staging_info is not None:
+        info['files'] = manifest
+        _write_staging(target, info)
+    return manifest
+
+
+def verify_tree(source, target, *, top_exclude=(), exclude=(), progress=None, cancelled=None, manifest=None):
+    """Jede Datei des Quellordners liegt gleich am Ziel. Gibt Liste der Abweichungen zurück."""
+    source, target = Path(source), Path(target)
+    manifest = manifest or {}
+    bad = []
+    files = list(walk(source, top_exclude, exclude))
+    for i, (full, rel, st) in enumerate(files):
+        if cancelled and cancelled():
+            raise InterruptedError('abgebrochen')
+        if progress and (i % 50 == 0 or i == len(files) - 1):
+            progress({'files_done': i + 1, 'files_total': len(files), 'current': str(rel)})
+        dst = target / rel
+        if not dst.is_file():
+            bad.append('%s fehlt' % rel)
+            continue
+        if is_sqlite(full):
+            entry = manifest.get(str(rel))
+            if entry and entry.get('db'):
+                continue   # direkt nach dem Kopieren mit quick_check geprüft
+            try:
+                c = sqlite3.connect(dst.as_uri() + '?mode=ro', uri=True, timeout=10)
+                try:
+                    ok = c.execute('PRAGMA quick_check').fetchone()[0] == 'ok'
+                finally:
+                    c.close()
+            except sqlite3.Error:
+                ok = False
+            if not ok:
+                bad.append('%s fehlerhaft' % rel)
+            continue
+        if dst.stat().st_size != st.st_size:
+            bad.append('%s Größe weicht ab' % rel)
+            continue
+        if st.st_size <= HASH_LIMIT and _sha256(full) != _sha256(dst):
+            bad.append('%s Inhalt weicht ab' % rel)
+    return bad
+
+
+def remove_verified(source, target, *, top_exclude=(), exclude=(), progress=None):
+    """Löscht am alten Ort nur Dateien, die am neuen Ort gleich vorliegen. Leere Ordner danach."""
+    source, target = Path(source), Path(target)
+    removed = kept = freed = 0
+    files = list(walk(source, top_exclude, exclude))
+    for i, (full, rel, st) in enumerate(files):
+        if progress and i % 50 == 0:
+            progress({'files_done': i, 'files_total': len(files), 'current': str(rel)})
+        dst = target / rel
+        try:
+            # gleich groß, oder am neuen Ort seither weitergeschrieben (z. B. Protokoll nach dem Umzug)
+            good = dst.is_file() and (is_sqlite(full) or dst.stat().st_size == st.st_size or
+                                      dst.stat().st_mtime > st.st_mtime + 2 and dst.stat().st_size >= st.st_size)
+        except OSError:
+            good = False
+        if not good:
+            kept += 1
+            continue
+        try:
+            full.unlink()
+            for extra in (Path(str(full) + '-wal'), Path(str(full) + '-shm')):
+                if is_sqlite(dst):
+                    extra.unlink(missing_ok=True)
+            removed += 1
+            freed += st.st_size
+        except OSError:
+            kept += 1
+    # leere Ordner von unten nach oben entfernen (nie den Quellordner selbst bei System = Startordner)
+    for current, dirs, _files in sorted(os.walk(source), key=lambda x: -len(x[0])):
+        here = Path(current)
+        if here == source:
+            continue
+        rel = here.relative_to(source)
+        if rel.parts and rel.parts[0] in set(top_exclude):
+            continue
+        try:
+            here.rmdir()
+        except OSError:
+            pass
+    return {'removed': removed, 'kept': kept, 'freed': freed}
+
+
+# ------------------------------------------------------------------ Pfade in der Datenbank
+
+def _swap(value, pairs):
+    if not isinstance(value, str) or not value:
+        return value
+    for old, new in pairs:
+        if value == old:
+            return new
+        for sep in {os.sep, '/'}:
+            if value.startswith(old + sep):
+                return new + value[len(old):]
+    return value
+
+
+def _swap_tree(value, pairs):
+    if isinstance(value, dict):
+        return {k: _swap_tree(v, pairs) for k, v in value.items()}
+    if isinstance(value, list):
+        return [_swap_tree(v, pairs) for v in value]
+    return _swap(value, pairs)
+
+
+def rewrite_paths(c, pairs, abo_root=None):
+    """Ersetzt alte Pfadanfänge in catalog.db (Aufträge, fertige Downloads, Verbund)."""
+    pairs = [(str(o).rstrip('/\\'), str(n).rstrip('/\\')) for o, n in pairs if o and n and str(o) != str(n)]
+    if not pairs:
+        return 0
+    changed = 0
+    tables = {r[0] for r in c.execute("SELECT name FROM sqlite_master WHERE type='table'")}
+    if 'jobs' in tables:
+        for job_id, payload in c.execute('SELECT id,payload FROM jobs').fetchall():
+            try:
+                data = json.loads(payload)
+            except (TypeError, ValueError):
+                continue
+            new = _swap_tree(data, pairs)
+            if abo_root and isinstance(new, dict) and new.get('youtube_abo'):
+                new['root'] = str(abo_root)
+            if new != data:
+                c.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(new), job_id))
+                changed += 1
+    for table, key, column in (('downloaded_items', 'identity', 'path'), ('mesh_downloads', 'key', 'local')):
+        if table not in tables:
+            continue
+        for ident, value in c.execute('SELECT %s,%s FROM %s' % (key, column, table)).fetchall():
+            new = _swap(value, pairs)
+            if new != value:
+                c.execute('UPDATE %s SET %s=? WHERE %s=?' % (table, column, key), (new, ident))
+                changed += 1
+    return changed
+
+
+# ------------------------------------------------------------------ System-Umzug beim Start
+
+def finalize_system(home, cfg, pending, say):
+    source, target = Path(pending['source']), Path(pending['target'])
+    home = Path(home)
+    if not source.is_dir():
+        raise Unavailable('Bisheriger Datenordner nicht erreichbar: %s' % source)
+    if not target.is_dir() or not (target / STAGING).is_file():
+        raise Unavailable('Neuer Datenordner nicht erreichbar oder unvollständig: %s' % target)
+    say('Umzug von System und Datenbank wird abgeschlossen: %s → %s' % (source, target))
+    info = json.loads((target / STAGING).read_text(encoding='utf-8'))
+    top = info.get('top_exclude') or sorted(HOME_ONLY)
+    last = [0.0]
+
+    def progress(state):
+        if time.monotonic() - last[0] > 5:
+            last[0] = time.monotonic()
+            say('Abgleich: %d/%d Dateien, %s' % (state.get('files_done', 0), state.get('files_total', 0), state.get('current', '')))
+    manifest = sync_tree(source, target, top_exclude=top, progress=progress, manifest=info.get('files') or {},
+                         staging_info=info)
+    bad = verify_tree(source, target, top_exclude=top, manifest=manifest)
+    if bad:
+        raise ValueError('Prüfung am Ziel fehlgeschlagen: ' + '; '.join(bad[:5]))
+    db = target / 'catalog.db'
+    if db.is_file():
+        c = sqlite3.connect(str(db), timeout=30)
+        try:
+            with c:
+                changed = rewrite_paths(c, [(str(source), str(target))])
+        finally:
+            c.close()
+        say('Pfadangaben angepasst: %d' % changed)
+    if not same(target, home):
+        _write_marker(target, DATA_MARKER, 'system')
+    (target / STAGING).unlink(missing_ok=True)
+    cfg = read_pointer(home)
+    if same(target, home):
+        cfg.pop('data_dir', None)
+    else:
+        cfg['data_dir'] = str(target)
+    cfg.pop('pending', None)
+    previous = dict(cfg.get('previous') or {})
+    previous['system'] = {'source': str(source), 'target': str(target), 'at': time.time(), 'top_exclude': top}
+    cfg['previous'] = previous
+    cfg['last'] = {'kind': 'system', 'phase': 'done', 'at': time.time(), 'source': str(source), 'target': str(target),
+                   'files': len(manifest)}
+    write_pointer(home, cfg)
+    say('Umzug abgeschlossen. Datenordner: %s' % target)
+
+
+# ------------------------------------------------------------------ Laufzeit: Umzüge im Hintergrund
+
+_HOLD = threading.Event()   # Download-Warteschlange wartet während eines Download-/Zwischenspeicher-Umzugs
+
+
+def downloads_held():
+    return _HOLD.is_set()
+
+
+def abo_base(settings):
+    """Basisordner der YouTube-Abo-Videos: Zwischenspeicher oder Downloadordner."""
+    return (settings or {}).get('cache_dir') or (settings or {}).get('download_dir') or ''
+
+
+def location(settings, kind, root=None):
+    s = settings or {}
+    if kind == 'downloads':
+        return s.get('download_dir') or ''
+    if kind == 'cache':
+        base = abo_base(s)
+        return str(Path(base) / ABO_FOLDER) if base else ''
+    return str(root or '')
+
+
+def problems(settings):
+    """Nicht erreichbare Download-/Zwischenspeicherorte (nur nach einem Umzug markiert)."""
+    s = settings or {}
+    marked = s.get('storage_markers') or {}
+    found = []
+    for kind, folder in (('downloads', s.get('download_dir')), ('cache', s.get('cache_dir'))):
+        if folder and marked.get(kind) and not (Path(folder) / PLACE_MARKER).is_file():
+            found.append({'kind': kind, 'path': folder,
+                          'text': '%s nicht erreichbar: %s. Laufwerk bzw. Freigabe verbinden; Downloads warten so lange.'
+                                  % (KINDS[kind].split(' (')[0], folder)})
+    return found
+
+
+def root_problem(job_root, settings):
+    for item in problems(settings):
+        if job_root and (same(job_root, item['path']) or inside(job_root, item['path'])):
+            return item['text']
+    return ''
+
+
+class Mover:
+    """Ein Umzug zur Zeit; Zustand für die Oberfläche."""
+
+    def __init__(self):
+        self.lock = threading.Lock()
+        self.cancel = threading.Event()
+        self.thread = None
+        self.state = {'phase': 'idle'}
+
+    def status(self):
+        with self.lock:
+            return dict(self.state)
+
+    def running(self):
+        return self.state.get('phase') in ('preparing', 'waiting', 'copying', 'verifying', 'switching', 'removing')
+
+    def _set(self, **kw):
+        with self.lock:
+            self.state.update(kw)
+
+    def start(self, ctx, kind, target, mode='copy'):
+        if self.running():
+            raise ValueError('Es läuft bereits ein Umzug.')
+        plan = ctx.plan(kind, target, mode)
+        if not plan['check']['ok']:
+            raise ValueError(' '.join(plan['check']['problems']))
+        self.cancel.clear()
+        self.state = {'phase': 'preparing', 'kind': kind, 'label': KINDS[kind], 'source': plan['source'],
+                      'target': plan['target'], 'mode': plan['check']['mode'], 'started': time.time(), 'files_done': 0,
+                      'files_total': 0, 'bytes_done': 0, 'bytes_total': plan['check']['bytes_total'], 'current': '',
+                      'error': '', 'restart_needed': False}
+        self.thread = threading.Thread(target=self._run, args=(ctx, plan), daemon=True, name='storage_move')
+        self.thread.start()
+        return self.status()
+
+    def stop(self):
+        if not self.running():
+            raise ValueError('Kein Umzug aktiv.')
+        self.cancel.set()
+        return self.status()
+
+    def _run(self, ctx, plan):
+        kind = plan['kind']
+        hold = kind in ('downloads', 'cache')
+        try:
+            if hold:
+                _HOLD.set()
+                self._set(phase='waiting', current='Wartet, bis der laufende Download fertig ist')
+                while ctx.active_downloads():
+                    if self.cancel.wait(2):
+                        raise InterruptedError('abgebrochen')
+            mode = plan['check']['mode']
+            manifest = {}
+            if mode == 'copy':
+                target = Path(plan['target'])
+                target.mkdir(parents=True, exist_ok=True)
+                info = {'kind': kind, 'source': plan['source'], 'target': plan['target'], 'started': time.time(),
+                        'top_exclude': plan['top_exclude'], 'files': _read_staging(target)}
+                _write_staging(target, info)
+                self._set(phase='copying')
+                manifest = sync_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
+                                     progress=lambda s: self._set(**s), cancelled=self.cancel.is_set,
+                                     manifest=info['files'], staging_info=info)
+                self._set(phase='verifying', current='')
+                bad = verify_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
+                                  progress=lambda s: self._set(current=s.get('current', '')),
+                                  cancelled=self.cancel.is_set, manifest=manifest)
+                if bad:
+                    raise ValueError('Prüfung am Ziel fehlgeschlagen: ' + '; '.join(bad[:5]))
+            self._set(phase='switching', current='')
+            result = ctx.commit(plan, manifest)
+            self._set(phase='ready' if kind == 'system' else 'done', finished=time.time(),
+                      restart_needed=kind == 'system', result=result, current='')
+            ctx.event('storage_move_done', kind=kind, mode=mode, files=len(manifest))
+        except InterruptedError:
+            self._set(phase='cancelled', finished=time.time(), current='',
+                      error='Abgebrochen. Bereits kopierte Dateien bleiben am Ziel und werden beim nächsten Versuch übernommen; '
+                            'der bisherige Ort ist unverändert in Gebrauch.')
+            ctx.event('storage_move_cancelled', kind=kind)
+        except Exception as exc:
+            self._set(phase='failed', finished=time.time(), current='', error=str(exc)[:400])
+            ctx.error('storage_move_failed', exc, kind=kind)
+        finally:
+            if hold:
+                _HOLD.clear()
+            ctx.remember(self.status())
+
+
+MOVER = Mover()
+
+
+class Context:
+    """Bindung an den laufenden Server (Einstellungen, catalog.db, Protokoll)."""
+
+    def __init__(self, home, root, settings, save_settings, db, event=None, error=None):
+        self.home, self.root = Path(home), Path(root)
+        self.settings, self.save_settings, self.db = settings, save_settings, db
+        self.event = event or (lambda *a, **k: None)
+        self.error = error or (lambda *a, **k: None)
+
+    # -- Hilfen
+    def active_downloads(self):
+        with self.db() as c:
+            return c.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('downloading','tagging')").fetchone()[0]
+
+    def others(self, kind):
+        s = self.settings()
+        spots = {'downloads': ('Downloads', s.get('download_dir')),
+                 'cache': ('Zwischenspeicher', s.get('cache_dir') and str(Path(s['cache_dir']) / ABO_FOLDER)),
+                 'system': ('System und Datenbank', str(self.root))}
+        out = [spots[k] for k in spots if k != kind and spots[k][1]]
+        if kind == 'downloads' and not s.get('cache_dir'):
+            out = [o for o in out if o[0] != 'Zwischenspeicher']
+        return out
+
+    def plan(self, kind, target, mode='copy'):
+        s = self.settings()
+        target = str(target or '').strip()
+        if kind == 'cache':
+            base = _norm(target) if target else ''
+            dl = s.get('download_dir') or ''
+            source = location(s, 'cache')
+            dest = str(Path(base) / ABO_FOLDER) if base else ''
+            others = [o for o in self.others('cache') if o[0] != 'Downloads' or not base or not same(base, dl)]
+            # Abo-Ordner liegt (ohne eigenen Zwischenspeicher) im Downloadordner – das ist kein Konflikt.
+            others = [o for o in others if not (o[0] == 'Downloads' and (inside(dest, o[1]) or inside(source, o[1])))]
+            check = inspect('cache', source, dest, home=self.home, others=others, mode=mode)
+            check['base'] = base
+            return {'kind': kind, 'source': source, 'target': check['target'], 'base': base,
+                    'top_exclude': [], 'exclude': [], 'check': check}
+        if kind == 'downloads':
+            source = s.get('download_dir') or ''
+            others = self.others('downloads')
+            # ohne eigenen Zwischenspeicher ziehen die Abo-Videos mit (Unterordner), sonst ausnehmen
+            exclude = [o[1] for o in others if o[1] and inside(o[1], source)]
+            check = inspect('downloads', source, target, home=self.home,
+                            others=[o for o in others if not inside(o[1], source)], exclude=exclude, mode=mode)
+            return {'kind': kind, 'source': source, 'target': check['target'], 'top_exclude': [], 'exclude': exclude,
+                    'check': check}
+        if kind == 'system':
+            source = str(self.root)
+            others = self.others('system')
+            exclude = [o[1] for o in others if o[1] and inside(o[1], source)]
+            check = inspect('system', source, target, home=self.home,
+                            others=[o for o in others if not inside(o[1], source)], exclude=exclude, mode=mode)
+            return {'kind': kind, 'source': source, 'target': check['target'], 'top_exclude': sorted(HOME_ONLY),
+                    'exclude': exclude, 'check': check}
+        raise ValueError('Unbekannter Speicherort')
+
+    def commit(self, plan, manifest):
+        kind, source, target = plan['kind'], plan['source'], plan['target']
+        mode = plan['check']['mode']
+        if kind == 'system':
+            if mode == 'adopt':
+                cfg = read_pointer(self.home)
+                if same(target, self.home):
+                    cfg.pop('data_dir', None)
+                else:
+                    cfg['data_dir'] = target
+                cfg['last'] = {'kind': 'system', 'phase': 'adopted', 'at': time.time(), 'target': target}
+                write_pointer(self.home, cfg)
+                return {'adopted': True}
+            cfg = read_pointer(self.home)
+            cfg['pending'] = {'kind': 'system', 'state': 'copied', 'source': source, 'target': target, 'at': time.time()}
+            write_pointer(self.home, cfg)
+            return {'pending': True}
+        s = self.settings()
+        markers = dict(s.get('storage_markers') or {})
+        if kind == 'downloads':
+            Path(target).mkdir(parents=True, exist_ok=True)
+            _write_marker(target, PLACE_MARKER, 'downloads')
+            s['download_dir'] = target
+            s['library_dirs'] = [target if same(p, source) else p for p in (s.get('library_dirs') or [])
+                                 if not same(p, target)]
+            markers['downloads'] = True
+            s['storage_markers'] = markers
+            self.save_settings(s)
+            pairs = [(source, target)] if mode == 'copy' else []
+            abo_root = None
+        else:
+            base = plan['base']
+            Path(target).mkdir(parents=True, exist_ok=True)
+            use_downloads = same(base, s.get('download_dir'))
+            if use_downloads:
+                s['cache_dir'] = ''
+                markers.pop('cache', None)
+            else:
+                _write_marker(base, PLACE_MARKER, 'cache')
+                s['cache_dir'] = base
+                markers['cache'] = True
+            s['storage_markers'] = markers
+            self.save_settings(s)
+            pairs = [(source, target)] if mode == 'copy' else []
+            abo_root = base if mode == 'copy' else None
+        changed = 0
+        if pairs:
+            with self.db() as c:
+                changed = rewrite_paths(c, pairs, abo_root=abo_root)
+        if mode == 'copy':
+            Path(target, STAGING).unlink(missing_ok=True)
+            cfg = read_pointer(self.home)
+            previous = dict(cfg.get('previous') or {})
+            previous[kind] = {'source': source, 'target': target, 'at': time.time(), 'top_exclude': plan['top_exclude'],
+                              'exclude': plan['exclude']}
+            cfg['previous'] = previous
+            write_pointer(self.home, cfg)
+        return {'paths_changed': changed}
+
+    def remember(self, state):
+        cfg = read_pointer(self.home)
+        cfg['last'] = {k: state.get(k) for k in ('kind', 'phase', 'source', 'target', 'error', 'finished', 'files_total')}
+        write_pointer(self.home, cfg)
+
+    # -- Altdaten
+    def cleanup(self, kind, confirm):
+        if confirm != CONFIRM:
+            raise ValueError('Zum Löschen bitte „%s“ eingeben.' % CONFIRM)
+        if MOVER.running():
+            raise ValueError('Während eines Umzugs wird nichts gelöscht.')
+        cfg = read_pointer(self.home)
+        prev = (cfg.get('previous') or {}).get(kind)
+        if not prev:
+            raise ValueError('Kein alter Speicherort vermerkt.')
+        source, target = prev['source'], prev['target']
+        s = self.settings()
+        current = {'downloads': s.get('download_dir'), 'cache': location(s, 'cache'), 'system': str(self.root)}
+        if not same(current[kind], target):
+            raise ValueError('Der vermerkte neue Ort ist nicht mehr in Gebrauch; zur Sicherheit wird nichts gelöscht.')
+        for label, path in current.items():
+            if path and (same(source, path) or inside(path, source)):
+                raise ValueError('Der alte Ort enthält einen aktiven Speicherort (%s); zur Sicherheit wird nichts gelöscht.'
+                                 % KINDS[label])
+        if not Path(source).is_dir():
+            raise ValueError('Alter Ort nicht erreichbar: %s' % source)
+        top = prev.get('top_exclude') or []
+        exclude = prev.get('exclude') or []
+        result = remove_verified(source, target, top_exclude=top, exclude=exclude)
+        if kind != 'system' or not same(source, self.home):
+            try:
+                if not any(Path(source).iterdir()):
+                    Path(source).rmdir()
+            except OSError:
+                pass
+        previous = dict(cfg.get('previous') or {})
+        if result['kept'] == 0:
+            previous.pop(kind, None)
+        else:
+            previous[kind] = dict(prev, left=result['kept'])
+        cfg['previous'] = previous
+        write_pointer(self.home, cfg)
+        self.event('storage_old_removed', kind=kind, removed=result['removed'], kept=result['kept'], freed=result['freed'])
+        return result
+
+    def dismiss(self, kind):
+        """Altdaten-Hinweis ausblenden (nichts wird gelöscht)."""
+        cfg = read_pointer(self.home)
+        previous = dict(cfg.get('previous') or {})
+        previous.pop(kind, None)
+        cfg['previous'] = previous
+        if kind == 'system' and (cfg.get('pending') or {}).get('state') == 'failed':
+            cfg.pop('pending', None)
+        write_pointer(self.home, cfg)
+        return {'ok': True}
+
+    def cancel_pending(self):
+        """Vorbereiteten System-Umzug verwerfen (Kopie am Ziel bleibt liegen)."""
+        cfg = read_pointer(self.home)
+        cfg.pop('pending', None)
+        write_pointer(self.home, cfg)
+        if MOVER.status().get('phase') == 'ready':
+            MOVER._set(phase='idle', restart_needed=False)
+        return {'ok': True}
+
+    # -- Überblick
+    def overview(self):
+        s = self.settings()
+        cfg = read_pointer(self.home)
+        rows = []
+        defaults = {'downloads': '', 'cache': '', 'system': str(self.home)}
+        for kind in KINDS:
+            path = location(s, kind, self.root)
+            space = disk(path)
+            item = {'kind': kind, 'label': KINDS[kind], 'path': path, 'free': space['free'], 'total': space['total'],
+                    'reachable': bool(path) and Path(path).exists(), 'suggest': SUBFOLDER[kind]}
+            if kind == 'cache':
+                item['base'] = s.get('cache_dir') or ''
+                item['shared_with_downloads'] = not s.get('cache_dir')
+            if kind == 'system':
+                item['default'] = defaults['system']
+                item['is_default'] = same(self.root, self.home)
+            rows.append(item)
+        for problem in problems(s):
+            for row in rows:
+                if row['kind'] == problem['kind']:
+                    row['problem'] = problem['text']
+                    row['reachable'] = False
+        return {'locations': rows, 'move': MOVER.status(), 'previous': cfg.get('previous') or {},
+                'pending': cfg.get('pending'), 'last': cfg.get('last'), 'volumes': volumes(),
+                'restart_supported': os.name == 'posix', 'confirm': CONFIRM}

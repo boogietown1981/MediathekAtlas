@@ -1104,3 +1104,26 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 /* 0.6.14: Abo-Videos pro Stunde */
 .abo-pace{margin:.4rem 0 .8rem;font-size:.92em}
 .abo-pace select{margin:0 .35em;padding:.1em .3em}
+/* 0.6.20: Einstellungen → Speicherorte */
+.loc-locations{display:grid;gap:14px;margin-top:14px}
+.loc-location{border:1px solid #2c3b49;border-radius:12px;padding:16px;background:#111a26}
+.loc-location h4{margin:0 0 4px;font-size:15px}
+.loc-location .loc-path{font:12px monospace;color:#9ae6cc;overflow-wrap:anywhere;margin:6px 0}
+.loc-location .loc-facts{font-size:12px;color:#90a2b7}
+.loc-location .loc-form{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:10px;align-items:center}
+.loc-location .loc-form input{margin:0}
+.loc-location .loc-actions{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+.loc-location .loc-check{margin-top:10px;font-size:12px;line-height:1.6}
+.loc-location .loc-check ul{margin:4px 0;padding-left:18px}
+.loc-bad{color:#ffb4a8}
+.loc-warn{color:#f1cd8d}
+.loc-good{color:#8ae2c7}
+.loc-move{border:1px solid #31464f;border-radius:12px;padding:14px 16px;margin:12px 0;background:#152131}
+.loc-move progress{width:100%;height:10px;accent-color:#67e1bc;margin:8px 0}
+.loc-move .loc-current{font:11px monospace;color:#90a2b7;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.loc-volume-list{display:flex;flex-wrap:wrap;gap:8px;margin-top:8px}
+.loc-volume-list button{font-size:12px;padding:8px 11px}
+.loc-volumes{margin-top:14px}
+.loc-volumes summary{cursor:pointer;font-size:12px;color:#acbed0}
+#storage-locations-problems .notice-error{margin:10px 0}
+@media(max-width:650px){.loc-location .loc-form{grid-template-columns:1fr}}

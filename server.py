@@ -7,11 +7,18 @@ import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, se
 import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
-ROOT=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if __import__('sys').platform=='darwin' else Path.home()/'.mediathekatlas'))
-ROOT.mkdir(parents=True,exist_ok=True);os.chmod(ROOT,0o700)
+import storage_locations
+# 0.6.20: HOME = Startordner (Programmkopie, Startprotokoll, Instanzsperre, storage.json); ROOT = Datenordner
+# (System und Datenbank), standardmäßig derselbe Ordner, nach einem Umzug z. B. ein externes Laufwerk.
+HOME=storage_locations.default_home()
+HOME.mkdir(parents=True,exist_ok=True);os.chmod(HOME,0o700)
 # NAS packages listen on the LAN with a fixed port; that always requires a login.
 LISTEN=os.environ.get('MEDIATHEKATLAS_LISTEN','127.0.0.1')
 PORT=int(os.environ.get('MEDIATHEKATLAS_PORT','0') or 0)
+# 0.6.20: Neustart nach einem Umzug nimmt denselben Port, damit die offene Seite sich neu verbinden kann.
+RESTART_PORT=int(os.environ.pop('MEDIATHEKATLAS_RESTART_PORT','0') or 0)
+if not PORT and RESTART_PORT:PORT=RESTART_PORT
+RESTART=threading.Event()
 NETWORK=LISTEN not in ('127.0.0.1','localhost','::1') or os.environ.get('MEDIATHEKATLAS_LOGIN')=='1'
 MANAGED=os.environ.get('MEDIATHEKATLAS_MANAGED','')
 def _default_download_dir():
@@ -24,12 +31,23 @@ SESSION_COOKIE='mediathekatlas_session'
 INSTANCE=None
 if __name__=='__main__':
     from instance import Instance
-    INSTANCE=Instance(ROOT)
+    INSTANCE=Instance(HOME)
     if not INSTANCE.acquire():
         existing=INSTANCE.existing()
         if existing.get('url') and '--no-browser' not in __import__('sys').argv:webbrowser.open(existing['url'])
         print('MediathekAtlas läuft bereits. Bestehende Instanz verwenden bzw. dort „App beenden“ wählen.',flush=True)
         raise SystemExit(0)
+try:
+    # 0.6.20: schließt einen vorbereiteten Umzug ab und wartet bis zu 30 s auf ein externes Laufwerk.
+    ROOT=storage_locations.data_root(HOME,wait=30 if __name__=='__main__' else 0)
+except storage_locations.Unavailable as e:
+    print(str(e),file=sys.stderr,flush=True)
+    if __name__=='__main__':raise SystemExit(storage_locations.UNAVAILABLE_EXIT)
+    raise
+ROOT.mkdir(parents=True,exist_ok=True)
+try:os.chmod(ROOT,0o700)
+except OSError:pass   # z. B. exFAT/SMB ohne Unix-Rechte
+os.environ['MEDIATHEKATLAS_DATA_DIR']=str(ROOT)
 diagnostics.setup(ROOT)
 metadata.configure_provider_state(ROOT/'provider-pauses.json')
 negative_cache.configure(ROOT/'provider-negative.sqlite')
@@ -71,7 +89,7 @@ def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     stored=json.loads(r[0]) if r else {}
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('youtube'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('fanart'),stored.get('fanart_personal'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
-    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'tmdb':'','omdb':'','youtube':'','tvdb':'','tvdb_pin':'','fanart':'','fanart_personal':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'episode_workers':2,'sender_direct_lookup':False,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
+    return {'download_dir':DEFAULT_DOWNLOAD_DIR,'cache_dir':'','tmdb':'','omdb':'','youtube':'','tvdb':'','tvdb_pin':'','fanart':'','fanart_personal':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'episode_workers':2,'sender_direct_lookup':False,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
 # 0.5.53: the YouTube catalogue reads the API key from the settings on each run (never cached on disk elsewhere).
 youtube.configure(lambda:settings().get('youtube',''))
@@ -249,13 +267,21 @@ def jobs():
         result.append(item)
     return result
 
+STORAGE_WARNED=[0.0]
 def worker():
     while not STOP.wait(.5):
         # 0.5.55: Verwaltung → Aufgaben can hold the queue; a running download is finished first.
         if task_control.paused('downloads'):continue
+        if storage_locations.downloads_held():continue   # 0.6.20: Umzug von Downloads/Zwischenspeicher läuft
         with db() as c:
             j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
             if not j:continue
+            # 0.6.20: Ziel auf einem abgezogenen Laufwerk: warten statt einen leeren Ordner neu anzulegen.
+            missing=storage_locations.root_problem(j.get('root'),settings())
+            if missing:
+                if time.time()-STORAGE_WARNED[0]>3600:
+                    STORAGE_WARNED[0]=time.time();diagnostics.event('download_target_unavailable',root=j.get('root'))
+                continue
             if j.get('night'):
                 # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
                 later=justwatch.night_start()
@@ -1178,7 +1204,7 @@ def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
     try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(),'runtime':runtime_tools.cached_report()}
     except Exception as e:overview={'catalog_error':core.safe_error(e)}
-    return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':_safe(lambda:youtube_abos.summary(ROOT)),'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+    return self.send(diagnostics.export({**overview,'storage':_storage_for_export(),'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':_safe(lambda:youtube_abos.summary(ROOT)),'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
 
 @ROUTES.get('/api/tools')
 def get_tools(self,path):
@@ -1200,6 +1226,43 @@ def get_review(self,path):
 @ROUTES.get('/api/backups')
 def get_backups(self,path):
     return self.send(db_backup.listing(ROOT))
+
+# 0.6.20: Speicherorte (Downloads, Zwischenspeicher, System und Datenbank) mit sicherem Umzug.
+def _storage_for_export():
+    try:
+        o=STORAGE.overview();return {'locations':o['locations'],'move':o['move'],'pending':o['pending'],'last':o['last'],'previous':o['previous']}
+    except Exception as e:return {'error':core.safe_error(e)}
+def _save_settings(s):
+    with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error)
+
+@ROUTES.get('/api/storage-locations')
+def get_storage_locations(self,path):
+    return self.send({**STORAGE.overview(),'managed':bool(MANAGED),'network':NETWORK})
+
+@ROUTES.post('/api/storage-locations')
+def post_storage_locations(self,path,d):
+    action=str(d.get('action') or '');kind=str(d.get('kind') or '')
+    if action in ('inspect','start','cleanup','dismiss') and kind not in storage_locations.KINDS:raise ValueError('Unbekannter Speicherort')
+    mode=str(d.get('mode') or 'copy')
+    if mode not in ('copy','switch','adopt'):raise ValueError('Unbekannte Umzugsart')
+    if action=='inspect':
+        plan=STORAGE.plan(kind,d.get('target'),mode);return self.send(plan['check'])
+    if action=='start':
+        diagnostics.event('storage_move_started',kind=kind,mode=mode)
+        return self.send(storage_locations.MOVER.start(STORAGE,kind,d.get('target'),mode))
+    if action=='cancel':return self.send(storage_locations.MOVER.stop())
+    if action=='cleanup':return self.send(STORAGE.cleanup(kind,d.get('confirm')))
+    if action=='dismiss':return self.send(STORAGE.dismiss(kind))
+    if action=='discard':return self.send(STORAGE.cancel_pending())
+    if action=='restart':
+        if os.name!='posix':raise ValueError('Bitte MediathekAtlas beenden und neu starten; der Umzug wird beim Start abgeschlossen.')
+        if storage_locations.MOVER.running():raise ValueError('Bitte warten, bis der Umzug fertig ist.')
+        diagnostics.event('storage_restart_requested')
+        self.send({'ok':True,'restarting':True});RESTART.set();STOP.set()
+        threading.Thread(target=self.server.shutdown,daemon=True).start()
+        return
+    raise ValueError('Unbekannte Aktion')
 
 @ROUTES.get('/api/archive-list-export')
 def get_archive_list_export(self,path):
@@ -1244,7 +1307,7 @@ def get_system_monitor(self,path):
     # 0.5.99: one reading of the machine on request (system_monitor); nothing runs while nobody looks.
     with db() as c:states=dict(c.execute("SELECT state,COUNT(*) FROM jobs WHERE state IN ('queued','downloading','tagging') GROUP BY state").fetchall())
     mesh=SERVICE.mesh_status
-    return self.send(system_monitor.snapshot(ROOT,settings().get('download_dir'),{
+    return self.send(system_monitor.snapshot(ROOT,settings().get('download_dir'),cache_dir=settings().get('cache_dir'),activity={
         'downloads_running':states.get('downloading',0)+states.get('tagging',0),'downloads_waiting':states.get('queued',0),
         'encoder_active':encoder.listing(ROOT)['active'],'receipt_task':RECEIPT_TASK['running'],
         'verbund':mesh.get('enabled') is True,'verbund_systems':len(mesh.get('nodes') or []),'background':not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'),
@@ -1400,7 +1463,7 @@ def get_state(self,path):
     if total>=2:
         diagnostics.event('state_slow_parts',seconds=round(total,2),
                           parts=dict(sorted(parts.items(),key=lambda kv:-kv[1])[:4]))
-    return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+    return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'cache_dir':s.get('cache_dir',''),'storage_problems':storage_locations.problems(s),'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
 
 # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
 @ROUTES.post('/api/samsung-sync')
@@ -2157,7 +2220,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2171,7 +2234,12 @@ class Server(ThreadingHTTPServer):
         self.server_name,self.server_port=self.server_address[:2]
 
 if __name__=='__main__':
-    server=Server((LISTEN,PORT),Handler)
+    try:server=Server((LISTEN,PORT),Handler)
+    except OSError:
+        if not RESTART_PORT:raise
+        # Port nach dem Neustart belegt: freien Port nehmen und die Seite neu öffnen.
+        RESTART_PORT=0;server=Server((LISTEN,0),Handler)
+        sys.argv=[a for a in sys.argv if a!='--no-browser']
     try:
         trust=netcheck.ensure_trust_store()
         if trust.get('source')!='system':diagnostics.event('tls_trust_store_fallback',source=trust.get('source'),ca_certs=trust.get('ca_certs'))
@@ -2226,4 +2294,11 @@ if __name__=='__main__':
     signal.signal(signal.SIGTERM,terminate)
     try:server.serve_forever()
     except KeyboardInterrupt:pass
-    finally:STOP.set();server.server_close();INSTANCE.close()
+    finally:
+        STOP.set();server.server_close();INSTANCE.close()
+        if RESTART.is_set():
+            # 0.6.20: Neustart im selben Prozess (gleiche PID für NAS-Dienstskripte); schließt einen System-Umzug ab.
+            os.environ['MEDIATHEKATLAS_RESTART_PORT']=str(server.server_port)
+            print('Neustart für den Speicherort-Umzug …',flush=True)
+            argv=[a for a in sys.argv if a!='--no-browser']
+            os.execv(sys.executable,[sys.executable]+argv+['--no-browser'])

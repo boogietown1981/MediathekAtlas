@@ -4,7 +4,11 @@ from pathlib import Path
 import diagnostics
 
 def main():
-    root=Path(os.environ.get('MEDIATHEKATLAS_HOME',Path.home()/'Library'/'Application Support'/'MediathekAtlas' if sys.platform=='darwin' else Path.home()/'.mediathekatlas'))
+    import storage_locations
+    home=storage_locations.default_home();root=home
+    # 0.6.20: Protokolle liegen im eingestellten Datenordner; ist er nicht erreichbar, bleibt der Startordner.
+    data=storage_locations.read_pointer(home).get('data_dir')
+    if data and (Path(data)/storage_locations.DATA_MARKER).is_file():root=Path(data)
     # Read only the secrets needed for redaction; never export settings or database.
     if (root/'catalog.db').exists():
         c=None

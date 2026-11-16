@@ -26,6 +26,7 @@
 ./mediathekatlas/archive_companion.py
 ./mediathekatlas/joyn.py
 ./mediathekatlas/meshpeer.py
+./mediathekatlas/download_retry.py
 ./mediathekatlas/downloads.py
 ./mediathekatlas/negative_cache.py
 ./mediathekatlas/categories.py

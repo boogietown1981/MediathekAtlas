@@ -165,12 +165,14 @@ def assess(reading):
     return hints
 
 
-def snapshot(root, download_dir, activity=None):
+def snapshot(root, download_dir, activity=None, cache_dir=None):
     """One reading of the machine and of MediathekAtlas."""
     total, available = memory()
     drives = [dict(drive(root), label='Daten und Datenbanken')]
     if download_dir:
         drives.append(dict(drive(download_dir), label='Downloads'))
+    if cache_dir:   # 0.6.20: eigener Zwischenspeicher (YouTube-Abos)
+        drives.append(dict(drive(cache_dir), label='Zwischenspeicher'))
     reading = {'time': time.time(), 'system': platform.system() or sys.platform, 'release': platform.release()[:60], 'machine': platform.machine()[:40],
                'python': platform.python_version(), 'cores': os.cpu_count() or 1, 'load': load(), 'memory_total': total, 'memory_available': available,
                'process_memory': process_memory(), 'threads': threading.active_count(), 'temperature': temperature(),
