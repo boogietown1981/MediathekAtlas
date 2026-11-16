@@ -333,7 +333,7 @@ class WiringTests(unittest.TestCase):
         self.assertIn("planner.CatalogJob('youtube_abos',youtube_abos)", SERVER)
         self.assertIn("'/youtube_abos.js'", SERVER)
         index = (ROOT / 'web' / 'index.html').read_text(encoding='utf-8')
-        self.assertIn('id="youtube-abo-form"', index)
+        self.assertIn('id="youtube-abo-add"', index)   # 0.6.11: Formular entsteht in web/youtube_abos.js
         self.assertIn('href="/kinder"', index)
         kids = (ROOT / 'web' / 'kids.html').read_text(encoding='utf-8')
         for needle in ('__TOKEN__', 'id="kids-video"', 'id="kids-close"', 'src="/kids.js"'):

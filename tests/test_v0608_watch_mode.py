@@ -92,7 +92,7 @@ class AboTests(Fixture):
         db = ab._connect(self.root)
         with db:
             for i, (name, kids) in enumerate((('Kinderkanal', 1), ('Doku-Kanal', 0)), 1):
-                db.execute("INSERT INTO youtube_abos(id,ref,label,kids,added) VALUES(?,?,?,?,?)", (i, '@k%d' % i, name, kids, now))
+                db.execute("INSERT INTO youtube_abos(id,ref,label,kids,profile,added) VALUES(?,?,?,?,?,?)", (i, '@k%d' % i, name, kids, 'kinder' if kids else 'erwachsene', now))
                 jid = 'job%d' % i
                 db.execute("INSERT INTO youtube_abo_videos(abo_id,video,title,state,job_id,found,done_at,duration) "
                            "VALUES(?,?,?,'done',?,?,?,300)", (i, 'v%010d' % i, 'Video %d' % i, jid, now, now))
@@ -104,12 +104,12 @@ class AboTests(Fixture):
             data = ab.kids(self.root, c, watch={})
         self.assertEqual([ch['name'] for ch in data['channels']], ['Kinderkanal'])
 
-    def test_watch_home_has_all_channels(self):
+    def test_watch_home_has_only_own_channels(self):
+        # 0.6.11 (Björn, 16.11.2026): Kinder-Abos erscheinen nicht mehr im Ansehen-Modus.
         with self.db() as c:
             data = watch_home.home(self.root, c, watch={})
-        self.assertEqual(sorted(ch['name'] for ch in data['abos']['channels']), ['Doku-Kanal', 'Kinderkanal'])
-        self.assertEqual({ch['name']: ch['kids'] for ch in data['abos']['channels']}, {'Kinderkanal': True, 'Doku-Kanal': False})
-        self.assertEqual(len(data['abos']['videos']), 2)
+        self.assertEqual([ch['name'] for ch in data['abos']['channels']], ['Doku-Kanal'])
+        self.assertEqual(len(data['abos']['videos']), 1)
         self.assertEqual(data['offline'], [])          # Abo-Videos stehen nicht doppelt unter „Offline“
 
 

@@ -273,7 +273,7 @@
     for (const [src, rows] of Object.entries(S.start.perSource)) parts.push(row('Filme bei ' + (S.start.names[src] || NAMES[src] || src), rows.map(fromCatalog), () => { S.genre = ''; S.only = src; setTab('movies'); }));
     for (const c of abos.channels.filter(c => c.videos)) {
       const own = abos.videos.filter(v => v.abo === c.id);
-      parts.push(row(c.name + (c.kids ? ' · auch in der Kinderecke' : ''), own.slice(0, 30).map(v => fromAbo(v, abos.channels))));
+      parts.push(row(c.name, own.slice(0, 30).map(v => fromAbo(v, abos.channels))));
     }
     const shown = parts.filter(Boolean);
     if (shown.length < 2) shown.push(empty('Noch nichts zum Anschauen da.',

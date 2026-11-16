@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.9
+# MediathekAtlas · 0.6.11
+
+## Neu in 0.6.11: YouTube-Abos getrennt für Kinder und Erwachsene
+
+- **Profile:** Jedes Kanal-Abo gehört jetzt einem Profil: **Kinderecke** (erscheint nur unter `/kinder`) oder **Für mich** (erscheint nur im Ansehen-Modus `/ansehen`). Nichts wird mehr vermischt. Derselbe Kanal darf in beiden Profilen stehen; ein Video, das in beiden vorkommt, wird nur einmal geladen.
+- **Bestehende Abos:** „In der Kinderecke zeigen“ an → Profil Kinderecke, aus → Für mich. Bis 0.6.10 erschienen Kinder-Abos zusätzlich im Ansehen-Modus; das entfällt.
+- **Verwaltung aufgeräumt** (Plattformen → YouTube → Kanal-Abos): Reiter je Profil mit Zahl der Abos und Offline-Videos, kompakte Karten mit Kanalbild, Regeln in einer Zeile, Zahlen als farbige Chips und kleine Knöpfe (↻ prüfen, ⚙ Einstellungen, ⏸ pausieren, ✕ beenden, ↗ YouTube). „＋ Kanal abonnieren“ öffnet ein kurzes Formular (Für wen? · Kanal · Was laden? · Reihe); Seltenes steckt unter „Weitere Einstellungen“. Ein Abo lässt sich über ⚙ in das andere Profil verschieben.
 
 ## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
 
