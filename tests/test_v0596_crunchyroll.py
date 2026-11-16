@@ -397,6 +397,11 @@ class FilmAsSeriesTests(Fixture):
         self.assertFalse(crunchyroll.film_like({'episode_count': 3, 'season_count': 1}, 'Filmriss'))
         self.assertFalse(crunchyroll.film_like({'episode_count': 1, 'season_count': 2}, 'Z'))
         self.assertFalse(crunchyroll.film_like({}, 'Film'))
+        # Björn's second example (16.11.2026): own page per film
+        self.assertTrue(crunchyroll.film_like({'episode_count': 1, 'season_count': 1},
+                                              'Detektiv Conan – The Movie 1: Der tickende Wolkenkratzer'))
+        self.assertTrue(crunchyroll.film_like({'episode_count': 2, 'season_count': 1},
+                                              'Detektiv Conan – The Movie 1: Der tickende Wolkenkratzer'))
 
 
 class IntegrationTests(Fixture):

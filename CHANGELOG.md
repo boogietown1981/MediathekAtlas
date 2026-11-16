@@ -1,8 +1,8 @@
-## 0.6.16 – Crunchyroll: Filme in der Serienliste erkennen
+## 0.6.17 – Crunchyroll: Filme in der Serienliste erkennen (0.6.16 war bereits vom ServusTV-Thread vergeben)
 - Björn (16.11.2026, mit Anmeldung): Beispiel https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red – Crunchyroll führt Filme als Serie (Serien-ID, Seite `/series/`). Erklärt 0 Filme in 0.6.10 bis 0.6.13.
 - `crunchyroll.film_like(meta, title)`: `season_count` ≤ 1 und `episode_count` = 1 (nicht bei `is_simulcast: true`), oder „Film“/„Movie“/„Kinofilm“ als Wort im Titel bei höchstens 3 Folgen. Treffer: `kind = 'movie'`, ID bleibt `s.<ID>`; `load_episodes` wählt den Abruf jetzt nach dem ID-Präfix (`m.` = movie_listings, sonst Staffeln/Folgen), so dass Wiedergabeseite und Laufzeit aus der einzigen Folge kommen.
 - `browse_lists = 3`: vorhandene Kataloge werden beim nächsten Planerlauf neu geladen.
-- Tests: `tests/test_v0596_crunchyroll.py` (29, davon 3 neu).
+- Tests: `tests/test_v0596_crunchyroll.py` (29, davon 3 neu; Björns zweites Beispiel „Detektiv Conan – The Movie 1“ als Prüffall).
 ## 0.6.15 – Crunchyroll: Filmlisten mit Rückfall und Zählwerten
 - Björn (16.11.2026, Diagnose 0.6.13): „crunchyroll erkennt weiterhin keine filme“. Lauf 10:57 UTC `complete`, 1690 Serien, 0 Filme, kein `crunchyroll_movies_failed`: die Liste `type=movie_listing` kam ohne Fehler, brachte aber keinen neuen Film.
 - `crunchyroll.MOVIE_TYPES = ('movie_listing', 'movie')`: die zweite Liste nur, solange noch kein Film da ist. Einzelne Filme (`type: movie` ohne Film-Eintrag) bekommen `watch_id` und `/de/watch/<id>` direkt.

@@ -122,7 +122,7 @@ def _connect(root):
     db = provider_base.connect(root, 'crunchyroll.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
     if _get(db, 'browse_lists') != '3' and float(_get(db, 'last_success', '0') or 0):
-        # 0.6.10/0.6.16: a catalogue loaded before films were recognised (own list, films listed as
+        # 0.6.10/0.6.17: a catalogue loaded before films were recognised (own list, films listed as
         # series) has no films; reload it at the next scheduler round instead of waiting 24 hours.
         with db:
             _set(db, 'next_attempt', 0)
@@ -399,7 +399,7 @@ FILM_WORDS = re.compile(r'\b(?:film|movie|kinofilm)\b', re.I)
 
 
 def film_like(meta, title):
-    """0.6.16 (Björn, 16.11.2026: "One Piece Film Red" is /de/series/GMTE00258738/…): Crunchyroll lists
+    """0.6.17 (Björn, 16.11.2026: "One Piece Film Red" is /de/series/GMTE00258738/…): Crunchyroll lists
     its films as series with one season and one episode. Such an entry counts as a film, unless it is a
     running simulcast (a new series has one episode at first). A title with "Film"/"Movie" may have up to
     three episodes (versions, bonus)."""
