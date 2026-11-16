@@ -309,6 +309,13 @@ def _failure(text):
         return reason, True, True
     if any(x in low for x in TEMPORARY):
         return reason, True, False
+    if 'this video is not available' in low:
+        # 0.6.19 (Björns Diagnose 0.6.18): after the bot check every one of 18 videos failed with this text
+        # within minutes, none succeeded – YouTube's answer to a flagged address, not a removed video
+        # (that says "Video unavailable"/"Private video"). Retried with growing gaps; given up after the series.
+        return ('YouTube gibt das Video gerade nicht heraus („This video is not available“, oft nach der '
+                'Bot-Sperre)'), True, False
+    return reason, False, False
     return reason, False, False
 
 

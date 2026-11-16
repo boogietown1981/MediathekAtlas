@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.18
+# MediathekAtlas · 0.6.19
+
+## Neu in 0.6.19: Korrekturen aus der Diagnose von 0.6.18
+
+- **Crunchyroll zeigt seine Filme:** Crunchyroll führt rund 170 Filme nur in seiner Filmliste. 0.6.17 hatte diese Liste übersprungen, sobald ein einzelner Film in der Serienliste erkannt war. Jetzt wird sie immer geladen, der Katalog nach dem Update einmal neu.
+- **Abgebrochene Katalogabrufe laufen nach einem Neustart sofort weiter** statt erst am nächsten Tag (ServusTV braucht über eine halbe Stunde und wurde durch Updates mehrfach unterbrochen).
+- **YouTube-Abos:** „This video is not available“ direkt nach der Bot-Sperre und „Zu wenig freier Speicher“ beenden einen Auftrag nicht mehr endgültig. Die Downloads warten und versuchen es später selbst; bei vollem Speicher pausieren alle Downloads, bis wieder Platz sein könnte. Bereits so gescheiterte Abo-Videos werden einmal neu eingereiht.
 
 ## Neu in 0.6.18: Sammelstand
 

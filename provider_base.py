@@ -72,7 +72,11 @@ def catalog_due(root, module, current, now=None):
     if current.get('running'):
         return False
     now = time.time() if now is None else now
+    # 0.6.19 (Björns Diagnose 0.6.18): a run cut off by a restart or update ('interrupted') starts again
+    # instead of waiting for the next 24-hour slot. ServusTV's crawl takes 30-40 minutes; the restart
+    # into 0.6.18 cut it off and the new code (0.6.16) would only have run a day later.
     return bool(portal_reference.first_load_due(current)
+                or current.get('last_result') == 'interrupted'
                 or portal_reference.retry_after_update(root, module, current)
                 or (current.get('auto') and now >= float(current.get('next_attempt') or 0)))
 

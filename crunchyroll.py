@@ -121,12 +121,12 @@ def _notify(event, **details):
 def _connect(root):
     db = provider_base.connect(root, 'crunchyroll.sqlite3', private=True)   # 0.6.0: WAL, busy timeout (provider_base)
     db.executescript(SCHEMA)
-    if _get(db, 'browse_lists') != '3' and float(_get(db, 'last_success', '0') or 0):
-        # 0.6.10/0.6.17: a catalogue loaded before films were recognised (own list, films listed as
-        # series) has no films; reload it at the next scheduler round instead of waiting 24 hours.
+    if _get(db, 'browse_lists') != BROWSE_VERSION and float(_get(db, 'last_success', '0') or 0):
+        # 0.6.10/0.6.17/0.6.19: a catalogue loaded before films were recognised (own list, films listed as
+        # series, film list skipped) lacks films; reload it at the next scheduler round instead of in 24 hours.
         with db:
             _set(db, 'next_attempt', 0)
-            _set(db, 'browse_lists', '3')
+            _set(db, 'browse_lists', BROWSE_VERSION)
     return db
 
 
@@ -477,6 +477,10 @@ def item_from(node, series=None):
 # 0 films). Films are the type ``movie_listing`` and need a list of their own.
 BROWSE_TYPES = ('series', 'movie_listing')
 MOVIE_TYPES = ('movie_listing', 'movie')     # 0.6.15: 'movie' only if movie_listing brought no film
+# 0.6.19 (Björns Diagnose 0.6.18): bis 0.6.9 brachte die Liste ohne Typ 1.690 Einträge, type=series nur 1.522.
+# Die fehlenden 168 kommen nur über type=movie_listing, tragen dort aber den Typ „series“ – das sind die Filme.
+# 0.6.17 übersprang diese Liste, sobald die Serienliste einen Film enthielt (17), und verlor sie dadurch.
+BROWSE_VERSION = '4'
 _SERIES_STATS = {}
 
 
@@ -497,7 +501,7 @@ def _remember_stats(root, stats):
         db.close()
     for one in stats:
         _notify('crunchyroll_list', list_type=one['type'], total=one['total'], received=one['received'], new=one['new'],
-                rejected=one['rejected'], single_episode=one['single_episode'], types=one['types'],
+                rejected=one['rejected'], single_episode=one['single_episode'], films=one.get('films', 0), types=one['types'],
                 meta_keys=','.join(one['meta_keys'])[:400], error=one.get('error', ''))
 
 
@@ -510,7 +514,7 @@ def browse_query(start, kind=None):
 
 def _list_stats(kind):
     return {'type': kind or '', 'total': None, 'received': 0, 'new': 0, 'types': {}, 'rejected': 0,
-            'single_episode': 0, 'meta_keys': []}
+            'single_episode': 0, 'films': 0, 'meta_keys': []}
 
 
 def _note_node(stats, node, it, fresh_title):
@@ -557,6 +561,12 @@ def load_catalogue(fetch, gap, found, progress=None, kind=None, stats=None):
                 it = item_from(node)
                 if it and it['kind'] not in ('series', 'movie'):
                     it = None
+                if it and kind in MOVIE_TYPES and it['kind'] == 'series' and it['id'] not in found:
+                    # 0.6.19: an entry only the film list knows is a film, even if Crunchyroll calls it
+                    # "series" (id stays s.<ID>, like film_like); a real series is already in ``found``.
+                    it.update(kind='movie', seasons=None)
+                if it and it['kind'] == 'movie' and it['id'] not in found:
+                    stats['films'] = stats.get('films', 0) + 1
                 _note_node(stats, node, it, bool(it) and it['id'] not in found)
                 if it:
                     found[it['id']] = it
@@ -631,8 +641,9 @@ def sync(root, fetch=None, now=None, gap=None):
             stats[0].update(_SERIES_STATS)
             for kind in MOVIE_TYPES:
                 # 0.6.15: Björn's 0.6.13 still had 0 films with type=movie_listing and no error. The next
-                # type is tried only while no film has arrived; the counts go to the diagnosis.
-                if any(i['kind'] == 'movie' for i in found.values()):
+                # type is tried only while the film list brought nothing new; the counts go to the diagnosis.
+                # 0.6.19: the film list itself always loads (films recognised in the series list do not count).
+                if kind != MOVIE_TYPES[0] and stats[-1]['new']:
                     break
                 one = _list_stats(kind)
                 stats.append(one)
@@ -658,7 +669,7 @@ def sync(root, fetch=None, now=None, gap=None):
                 for key, value in [('last_success', visible_since), ('last_loaded', time.time()),
                                    ('last_result', 'complete' if complete else 'partial'),
                                    ('last_error', '' if complete else 'Katalog nur teilweise geladen' + (' (' + movies_note + ')' if movies_note else '')),
-                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), ('browse_lists', '3'),
+                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600), ('browse_lists', BROWSE_VERSION),
                                    *counts.items()]:
                     _set(db, key, value)
         finally:

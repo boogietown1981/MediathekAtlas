@@ -377,7 +377,41 @@ class FilmAsSeriesTests(Fixture):
         row = next(r for r in crunchyroll.listing(self.root, 'movies')['items'] if r['title'] == 'One Piece Film Red')
         self.assertEqual((row['id'], row['rating']), ('s.GMTE00258738', 'ab 14'))
         self.assertEqual(row['web_url'], 'https://www.crunchyroll.com/de/series/GMTE00258738/one-piece-film-red')
-        self.assertNotIn('movie', [c[1].get('type') for c in site.calls])      # films found: no second list
+        # 0.6.19: the film list is always asked (films in the series list do not replace it); it was empty here
+        self.assertIn('movie_listing', [c[1].get('type') for c in site.calls])
+
+    def test_film_list_entries_typed_series_are_films(self):
+        # 0.6.19 (Björns Diagnose 0.6.18): type=series 1.522, ohne Typ 1.690 – die 168 fehlenden kommen nur über
+        # type=movie_listing und tragen dort den Typ "series". 0.6.17 übersprang diese Liste und verlor sie.
+        known = series('GY19NQ2QR', 'Frieren', 'frieren', ['Fantasy'], ['ja-JP'], ['de-DE'])
+        conan = series('GCONAN0001', 'Detektiv Conan – The Movie 1', 'detektiv-conan-movie-1', ['Krimi'],
+                       ['ja-JP', 'de-DE'], ['de-DE'], seasons=2, episodes=2)
+
+        class Both(Site):
+            def __call__(inner, path, query=None):
+                if path == '/content/v2/discover/browse' and query.get('type') == 'movie_listing':
+                    inner.calls.append((path, dict(query)))
+                    return {'total': 2, 'data': [known, conan]}
+                return super().__call__(path, query)
+
+        site, result = self.load(Both())
+        self.assertEqual((result['series'], result['movies']), (3, 1))
+        self.assertEqual(self.titles('movies'), ['Detektiv Conan – The Movie 1'])
+        self.assertIn('Frieren', self.titles('series'))                  # already a series: stays one
+        row = crunchyroll.listing(self.root, 'movies')['items'][0]
+        self.assertEqual(row['id'], 's.GCONAN0001')
+        self.assertNotIn('movie', [c[1].get('type') for c in site.calls])  # film list brought films: no fallback
+        stats = {s['type']: s for s in crunchyroll.state(self.root)['list_stats']}
+        self.assertEqual((stats['movie_listing']['new'], stats['movie_listing']['films']), (1, 1))
+
+    def test_older_catalogue_reloads_for_the_film_list(self):
+        self.load(self.site())
+        db = crunchyroll._connect(self.root)
+        with db:
+            crunchyroll._set(db, 'browse_lists', '3')
+            crunchyroll._set(db, 'next_attempt', NOW + 9999)
+        db.close()
+        self.assertEqual(crunchyroll.state(self.root)['next_attempt'], 0)
 
     def test_film_learns_watch_page_and_runtime(self):
         site = self.site()
