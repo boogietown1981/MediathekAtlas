@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.15 – Crunchyroll-Filme, zweiter Versuch (16. November 2026)
+- Diagnose 0.6.13 ausgewertet (siehe CHANGELOG). Neu getestet: Liste, die `type=movie_listing` mit Serien beantwortet, führt zur zweiten Liste `type=movie` und zum Film mit direkter Wiedergabeseite; Zählwerte ohne Titel; funktionierende Filmliste fragt nicht doppelt.
+- Nicht geprüft: echte Antworten von crunchyroll.com (gesperrt). Ob Filme ankommen, zeigt Björns nächste Diagnose (`crunchyroll.list_stats`).
+
 ## 0.6.13 – Abo-Downloads (16. November 2026)
 - Automatisch: gesamte Python-Suite (1284 Tests, 4 übersprungen), `node --check` und Node-Smoke-Tests, Klicktest Chromium ohne Befund; neu `tests/test_v0613_download_retry.py` (14): Abstände und Aufgeben, Pause der Quelle mit „Jetzt versuchen“, Einteilung der yt-dlp-Fehler, Phasen, Abbruch eines Downloads ohne Daten (mit verkürzter Frist), Pausen nur für Abo-Downloads, Wiedereinreihen nach dem Update, Abo-Prüfung während der Pause, Grund am Abo-Video.
 - Echter Server mit einem Abo-Auftrag „kein Bot“ (Fehler aus 0.6.12) und einem unterbrochenen Abo-Download: nach dem Start beide „Geplant für …“ (15 Min. bzw. 1 Min.), Karte im Download zeigt die Phase statt „Geschwindigkeit wird ermittelt“ (Chromium).

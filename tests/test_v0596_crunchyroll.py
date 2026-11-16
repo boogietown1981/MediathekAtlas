@@ -235,6 +235,36 @@ class CatalogueTests(Fixture):
         self.load()
         self.assertGreater(crunchyroll.state(self.root)['next_attempt'], NOW)
 
+    def test_ignored_film_type_falls_back_to_type_movie_and_is_counted(self):
+        # 0.6.15 (Björn, 0.6.13: still 0 films, no error): a list that answers type=movie_listing with series
+        class Ignoring(Site):
+            def __call__(self, path, query=None):
+                if path == '/content/v2/discover/browse' and query.get('type') == 'movie_listing':
+                    self.calls.append((path, dict(query)))
+                    return {'total': len(SERIES), 'data': SERIES}
+                if path == '/content/v2/discover/browse' and query.get('type') == 'movie':
+                    self.calls.append((path, dict(query)))
+                    film = {'id': 'G25FVD45Q', 'type': 'movie', 'title': 'Suzume', 'slug_title': 'suzume',
+                            'movie_metadata': {'duration_ms': 7_320_000, 'maturity_ratings': ['12']}}
+                    return {'total': 1, 'data': [film]}
+                return super().__call__(path, query)
+
+        site, result = self.load(Ignoring())
+        self.assertEqual([c[1].get('type') for c in site.calls], ['series', 'movie_listing', 'movie'])
+        self.assertEqual((result['series'], result['movies']), (3, 1))
+        row = crunchyroll.listing(self.root, 'movies')['items'][0]
+        self.assertEqual((row['title'], row['duration'], row['rating']), ('Suzume', 7320, 'ab 12'))
+        self.assertEqual(row['web_url'], 'https://www.crunchyroll.com/de/watch/G25FVD45Q/suzume')
+        stats = {s['type']: s for s in crunchyroll.state(self.root)['list_stats']}
+        self.assertEqual((stats['movie_listing']['received'], stats['movie_listing']['new']), (5, 0))
+        self.assertEqual(stats['movie_listing']['types'], {'series': 4, 'music_video': 1})
+        self.assertEqual((stats['movie']['new'], stats['series']['new']), (1, 3))
+        self.assertNotIn('Suzume', json.dumps(stats))          # counts only, no titles
+
+    def test_working_film_list_does_not_ask_twice(self):
+        site, _ = self.load()
+        self.assertNotIn('movie', [c[1].get('type') for c in site.calls])
+
     def test_failing_film_list_keeps_series_and_is_partial(self):
         site = Site()
         site.movies_fail = True

@@ -400,6 +400,7 @@ def item_from(node, series=None):
     if not isinstance(node, dict):
         return None
     kind = str(node.get('type') or ('episode' if series is not None else ''))
+    standalone = kind == 'movie' and series is None    # 0.6.15: a film without a film entry
     if kind == 'movie_listing':
         kind = 'movie'
     elif kind == 'movie' and series is not None:
@@ -417,7 +418,7 @@ def item_from(node, series=None):
         free, poster = False, pick_image(images, 'poster_tall') or pick_image(images, 'poster_wide')
         duration, year = None, _year(meta, 'series_launch_year')
     elif kind == 'movie':
-        meta = _meta(node, 'movie_listing_metadata')
+        meta = _meta(node, 'movie_listing_metadata', 'movie_metadata')
         free = _free(meta)
         poster = pick_image(images, 'poster_tall') or pick_image(images, 'poster_wide') or pick_image(images, 'thumbnail')
         duration = (_int(meta.get('duration_ms'), 1000, 10 ** 8) or 0) // 1000 or None
@@ -445,14 +446,38 @@ def item_from(node, series=None):
         'seasons': _int(meta.get('season_count'), 0, 500) if kind == 'series' else None,
         'episodes_total': _int(meta.get('episode_count'), 0, 100000) if kind == 'series' else None,
         'languages': _languages(meta), 'season_title': _text(meta.get('season_title'), 200) if is_episode else '',
-        'watch_id': ident if is_episode else '',
-        'web_url': web_url('series' if kind == 'series' else 'watch', ident, slug) if kind != 'movie' else search_url(title)}
+        'watch_id': ident if is_episode or standalone else '',
+        'web_url': web_url('series' if kind == 'series' else 'watch', ident, slug) if kind != 'movie' or standalone
+        else search_url(title)}
     return out
 
 
 # 0.6.10: discover/browse without ``type`` lists series only (Björn's diagnosis of 0.6.8: 1690 series,
 # 0 films). Films are the type ``movie_listing`` and need a list of their own.
 BROWSE_TYPES = ('series', 'movie_listing')
+MOVIE_TYPES = ('movie_listing', 'movie')     # 0.6.15: 'movie' only if movie_listing brought no film
+_SERIES_STATS = {}
+
+
+def _stats_value(raw):
+    try:
+        value = json.loads(raw) if raw else []
+    except ValueError:
+        return []
+    return value if isinstance(value, list) else []
+
+
+def _remember_stats(root, stats):
+    db = _connect(root)
+    try:
+        with db:
+            _set(db, 'list_stats', json.dumps(stats, ensure_ascii=False, separators=(',', ':')))
+    finally:
+        db.close()
+    for one in stats:
+        _notify('crunchyroll_list', list_type=one['type'], total=one['total'], received=one['received'], new=one['new'],
+                rejected=one['rejected'], single_episode=one['single_episode'], types=one['types'],
+                meta_keys=','.join(one['meta_keys'])[:400], error=one.get('error', ''))
 
 
 def browse_query(start, kind=None):
@@ -462,10 +487,31 @@ def browse_query(start, kind=None):
     return query
 
 
-def load_catalogue(fetch, gap, found, progress=None, kind=None):
+def _list_stats(kind):
+    return {'type': kind or '', 'total': None, 'received': 0, 'new': 0, 'types': {}, 'rejected': 0,
+            'single_episode': 0, 'meta_keys': []}
+
+
+def _note_node(stats, node, it, fresh_title):
+    """0.6.15: what one list delivered, without titles or ids (Björn, 16.11.2026: 0.6.13 still 0 films)."""
+    kind = str(node.get('type') or '?')[:30]
+    stats['types'][kind] = stats['types'].get(kind, 0) + 1
+    if not it:
+        stats['rejected'] += 1
+    elif fresh_title:
+        stats['new'] += 1
+    meta = node.get('series_metadata') if isinstance(node.get('series_metadata'), dict) else {}
+    if meta and (_int(meta.get('episode_count'), 0) or 0) <= 1 and (_int(meta.get('season_count'), 0) or 0) <= 1:
+        stats['single_episode'] += 1
+    if not stats['meta_keys']:
+        stats['meta_keys'] = sorted(k for k in node.keys() if isinstance(k, str))[:40]
+
+
+def load_catalogue(fetch, gap, found, progress=None, kind=None, stats=None):
     """All titles of one list (``kind`` = browse type, None = Crunchyroll's default);
-    False when the list stopped early."""
+    False when the list stopped early. ``stats`` (dict) collects counts for the diagnosis."""
     seen, total = set(), None
+    stats = stats if stats is not None else _list_stats(kind)
     label = 'Filmen' if kind == 'movie_listing' else 'Serien' if kind == 'series' else 'Titeln'
     for page in range(MAX_PAGES):
         if gap and page:
@@ -479,14 +525,19 @@ def load_catalogue(fetch, gap, found, progress=None, kind=None):
         data = answer.get('data') if isinstance(answer, dict) else None
         data = data if isinstance(data, list) else []
         total = _int(answer.get('total'), 0) if isinstance(answer, dict) else None
+        stats['total'] = total
         fresh = 0
         for node in data:
             ident = str(node.get('id') or '') if isinstance(node, dict) else ''
             if ident and ident not in seen:
                 seen.add(ident)
                 fresh += 1
+                stats['received'] += 1
                 it = item_from(node)
-                if it and it['kind'] in ('series', 'movie'):
+                if it and it['kind'] not in ('series', 'movie'):
+                    it = None
+                _note_node(stats, node, it, bool(it) and it['id'] not in found)
+                if it:
                     found[it['id']] = it
         if progress:
             progress('%d von %s %s' % (len(seen), total if total is not None else '?', label))
@@ -546,14 +597,31 @@ def sync(root, fetch=None, now=None, gap=None):
     try:
         found = {}
         _say('Katalog wird geladen')
-        complete = load_catalogue(fetch, gap, found, _say, 'series')
+        _SERIES_STATS.clear()
+        _SERIES_STATS.update(_list_stats('series'))
+        complete = load_catalogue(fetch, gap, found, _say, 'series', _SERIES_STATS)
         if not any(i['kind'] == 'series' for i in found.values()):
             raise ValueError('Crunchyroll lieferte keine Serien')
         movies_note = ''
         try:
             if gap:
                 time.sleep(gap)
-            complete &= load_catalogue(fetch, gap, found, _say, 'movie_listing')
+            stats = [_list_stats('series')]
+            stats[0].update(_SERIES_STATS)
+            for kind in MOVIE_TYPES:
+                # 0.6.15: Björn's 0.6.13 still had 0 films with type=movie_listing and no error. The next
+                # type is tried only while no film has arrived; the counts go to the diagnosis.
+                if any(i['kind'] == 'movie' for i in found.values()):
+                    break
+                one = _list_stats(kind)
+                stats.append(one)
+                try:
+                    complete &= load_catalogue(fetch, gap, found, _say, kind, one)
+                except Exception as exc:
+                    one['error'] = _error(exc)[:160]
+                    if kind == MOVIE_TYPES[0]:
+                        raise
+            _remember_stats(root, stats)
         except Exception as exc:          # series stay; films are retried with the next run
             complete = False
             movies_note = 'Filme: ' + _error(exc)
@@ -829,6 +897,7 @@ def state(root):
             'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'client': _get(db, 'client'),
+            'list_stats': _stats_value(_get(db, 'list_stats')),
             'movies': movies, 'series': series, 'channels': 0, 'free': _int(_get(db, 'free', '0')) or 0,
             'free_episodes_seen': free_seen, 'plus': movies + series - (_int(_get(db, 'free', '0')) or 0),
             'protection': 'drm', 'protected': movies + series, 'playable': 0,

@@ -1,3 +1,8 @@
+## 0.6.15 – Crunchyroll: Filmlisten mit Rückfall und Zählwerten
+- Björn (16.11.2026, Diagnose 0.6.13): „crunchyroll erkennt weiterhin keine filme“. Lauf 10:57 UTC `complete`, 1690 Serien, 0 Filme, kein `crunchyroll_movies_failed`: die Liste `type=movie_listing` kam ohne Fehler, brachte aber keinen neuen Film.
+- `crunchyroll.MOVIE_TYPES = ('movie_listing', 'movie')`: die zweite Liste nur, solange noch kein Film da ist. Einzelne Filme (`type: movie` ohne Film-Eintrag) bekommen `watch_id` und `/de/watch/<id>` direkt.
+- Zählwerte je Liste (`_list_stats`): `total`, `received`, `new`, `types`, `rejected`, `single_episode` (Serien mit höchstens einer Folge und Staffel), `meta_keys` (Feldnamen des ersten Eintrags), ggf. `error`. Gespeichert als `list_stats` (in `crunchyroll.state` und damit in status.json) und als Ereignis `crunchyroll_list`. Keine Titel, keine IDs.
+- Tests: `tests/test_v0596_crunchyroll.py` (26, davon 2 neu).
 ## 0.6.13 – Abo-Downloads: automatische Wiederholung, Pause bei Bot-Prüfung, Hänger-Erkennung
 - Björn (16.11.2026): Abo-Video hängt bei „0.0 MiB · Geschwindigkeit wird ermittelt“, ein anderes endet mit „YouTube verlangt eine Anmeldung („kein Bot“) … Später erneut versuchen“.
 - `download_retry.py` (neu): `RetryLater(message, block)`, `reschedule` (Auftrag bleibt `queued`, `not_before` nach `BACKOFF` 15 min … 24 h, ±10 %, `retries`, `last_error`, `note`; nach 7 Versuchen Fehler mit Zahl der Versuche), `block`/`blocked_until`/`hold` (Pause je Quelle im Speicher; `force_now` übergeht sie einmal).

@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.13
+# MediathekAtlas · 0.6.15
+
+## Neu in 0.6.15: Crunchyroll-Filme, zweiter Versuch und genaue Diagnose
+
+- In 0.6.13 lieferte die Crunchyroll-Filmliste ohne Fehler keinen einzigen Film (1.690 Serien, 0 Filme). Bringt die Filmliste nichts, fragt MediathekAtlas jetzt zusätzlich eine zweite Filmliste ab (einzelne Filme statt Film-Einträge); solche Filme öffnen direkt ihre Wiedergabeseite bei Crunchyroll.
+- Die Diagnose zeigt je Liste, was Crunchyroll geliefert hat: Gesamtzahl, empfangene und neue Einträge, Typen, verworfene Einträge und die Feldnamen eines Eintrags (keine Titel). Damit lässt sich die Ursache genau eingrenzen, falls weiter keine Filme kommen.
+- Basis 0.6.13; 0.6.14 (YouTube-Abos) entsteht parallel.
+
 
 ## Neu in 0.6.13: Abo-Downloads laufen von selbst weiter
 
