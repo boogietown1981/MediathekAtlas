@@ -1,3 +1,9 @@
+## 0.6.16 – ServusTV: lange Clips, Sportseiten, einzelne Sperren übersprungen
+- **Ursache der wenigen ServusTV-Treffer** (Björn, 16.11.2026; Diagnose 0.6.13: 42 Filme, 41 von 81 Sendungen mit Folgen, 3.028 Folgen): Der Abruf verwarf alles mit `content_type: clip`. ServusTV führt aber viele vollständige Sendungen als Clip (HAR vom 13.11.: 185 von 787 Clips ≥ 20 Min., 23 Formate). Clips ab `MIN_FILM` (20 Min.) werden jetzt Folgen ihrer Sendung (Sendungsname aus `subheading`) oder, wenn der Name dem Titel entspricht, Filme.
+- Sportereignis-Seiten (`content_type: event`) werden wie Unterseiten gelesen; Teaserkacheln (`content_type: any` mit `nav_url` auf eine ServusTV-Seite) werden verfolgt; Filme mit `type: page` übernommen; Sendungen ohne eigene Karte erhalten ihren Namen aus der Produktantwort.
+- 403/404/410/451 einer einzelnen Nicht-Startseite nach den Wiederholungen → übersprungen (`unavailable`, Hinweis „N ServusTV-Seiten nicht freigegeben und übersprungen“), nicht mehr „teilweise geladen“. Teilweise erst bei mehr als 3 % abgewiesenen Abrufen (mind. 4) oder bei Fehlern der Startseiten.
+- Diagnose `servustv_sync_completed` zusätzlich mit `unavailable` (je HTTP-Status), `long_clips`, `events`, `shows`, `truncated` (nur Zahlen, keine Titel/Adressen). Portal-Übersicht zeigt die Folgenzahl.
+
 ## 0.6.13 – Abo-Downloads: automatische Wiederholung, Pause bei Bot-Prüfung, Hänger-Erkennung
 - Björn (16.11.2026): Abo-Video hängt bei „0.0 MiB · Geschwindigkeit wird ermittelt“, ein anderes endet mit „YouTube verlangt eine Anmeldung („kein Bot“) … Später erneut versuchen“.
 - `download_retry.py` (neu): `RetryLater(message, block)`, `reschedule` (Auftrag bleibt `queued`, `not_before` nach `BACKOFF` 15 min … 24 h, ±10 %, `retries`, `last_error`, `note`; nach 7 Versuchen Fehler mit Zahl der Versuche), `block`/`blocked_until`/`hold` (Pause je Quelle im Speicher; `force_now` übergeht sie einmal).

@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+
+## 0.6.16 – ServusTV-Katalog (16. November 2026)
+- Automatisch: gesamte Python-Suite, `node --check`/Node-Smoke-Tests; `tests/test_v0601_servustv.py` erweitert (lange Clips, Ereignisseiten, Teaserkacheln, Film-Seiten, einzelne 403 übersprungen, Schwelle für „teilweise“).
+- Abgleich mit Björns HAR vom 13.11.2026 (nur die darin enthaltenen Karten): alt 397 Folgen/83 Sendungen/30 Filme → neu 580/104/33, dazu 18 Sportseiten zum Weiterlesen.
+- Nicht geprüft: echter Abruf bei ServusTV (tv-api.redbull.com aus der Bauumgebung gesperrt), Laufzeit und 403-Verhalten mit den zusätzlichen Seiten, Wiedergabe der langen Clips.
 ## 0.6.13 – Abo-Downloads (16. November 2026)
 - Automatisch: gesamte Python-Suite (1284 Tests, 4 übersprungen), `node --check` und Node-Smoke-Tests, Klicktest Chromium ohne Befund; neu `tests/test_v0613_download_retry.py` (14): Abstände und Aufgeben, Pause der Quelle mit „Jetzt versuchen“, Einteilung der yt-dlp-Fehler, Phasen, Abbruch eines Downloads ohne Daten (mit verkürzter Frist), Pausen nur für Abo-Downloads, Wiedereinreihen nach dem Update, Abo-Prüfung während der Pause, Grund am Abo-Video.
 - Echter Server mit einem Abo-Auftrag „kein Bot“ (Fehler aus 0.6.12) und einem unterbrochenen Abo-Download: nach dem Start beide „Geplant für …“ (15 Min. bzw. 1 Min.), Karte im Download zeigt die Phase statt „Geschwindigkeit wird ermittelt“ (Chromium).

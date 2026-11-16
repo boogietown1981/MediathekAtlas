@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.13
+# MediathekAtlas · 0.6.16
+
+## Neu in 0.6.16: ServusTV mit deutlich mehr Titeln
+
+- **Lange „Clips“ zählen jetzt mit:** ServusTV kennzeichnet viele vollständige Sendungen als „Clip“ (ganze Diskussionen wie „Links. Rechts. Mitte“, Vodcasts, Doku-Reihen, Rennen in voller Länge). Bisher wurden alle Clips verworfen; jetzt gelten Videos ab 20 Minuten als Folge ihrer Sendung bzw. als Film. Kurze Ausschnitte bleiben weiter draußen. Im Mitschnitt vom 13.11. waren das 185 von 787 Clips aus 23 Formaten.
+- **Sport- und Ereignisseiten** (MotoGP, Superbike, DTM, Wintersport …) werden mitgelesen, ebenso Hinweiskacheln wie „Alle Folgen: Jetzt streamen!“ und Filme, die ServusTV als eigene Seite verlinkt.
+- **Einzelne gesperrte Seiten** (HTTP 403, in Björns Diagnose immer dieselben 10 von 2.361 Abrufen) machen den Katalog nicht mehr „teilweise geladen“; sie werden übersprungen und gezählt. Erst wenn mehr als 3 % der Abrufe abgewiesen werden, gilt der Abruf als unvollständig.
+- Die ServusTV-Übersicht zeigt zusätzlich die Zahl der Folgen.
 
 ## Neu in 0.6.13: Abo-Downloads laufen von selbst weiter
 
