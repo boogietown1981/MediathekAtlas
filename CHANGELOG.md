@@ -1,3 +1,13 @@
+## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (0.6.8, macOS arm64)
+- `catalog_service.identified_delay`: erkannte, noch nicht abgeglichene Serien, deren Sendung (`topic`) dem erkannten Serientitel entspricht, warten 30 Tage + bis zu 7 Tage Streuung bis zur nächsten Anbieterprüfung – für alle Anbieter, nicht nur ARD/ZDF. Anlass: 3.326 Ausgaben „Schleswig-Holstein Magazin“, 1.000 „NDR Info“, 774 „Nordtour“ (IMDb Offline/TMDB erkannt) wurden täglich neu geprüft (5.262 von 6.383 Ergebnissen in 11 h). Die Serienvorlage griff nicht, weil der Sendungstitel der Ausgabe gleich dem Sendungsnamen ist.
+- `server.catalog_status`: veralteter Stand wird sofort geliefert und im Hintergrund erneuert (Thread `catalog_status`), nur ein leerer Stand wird synchron geladen.
+- `runtime_tools.cached_report`/`refreshed_report`: `/api/state` startet `ffmpeg -version`/`ffprobe -version` (und ggf. `brew --prefix`) nicht mehr bei jeder Abfrage, sondern höchstens einmal pro Minute im Hintergrund. `/api/tools` prüft weiter sofort.
+- `/api/state` misst seine Teile; ab 2 s Ereignis `state_slow_parts` mit den vier langsamsten Teilen. Anlass: 38 Abfragen mit 5–16 s in einer Stunde.
+- Diagnose-ZIP: `recognition` wartet bis zu 20 s auf die Hintergrundzählung (war leer, `loading: true`), dazu `runtime` (ffmpeg/ffprobe).
+- `netzkino.GraphQLCatalogError.hint`: bereinigter Auszug (≤ 80 Zeichen) der Fehlermeldung, im Ereignis `netzkino_category_error` bei `graphql_unknown` (131 von 429 Kategorien ohne Hinweis).
+- `ytdl_bridge`: `SyntaxWarning` (Python 3.14, `return` in `finally` in `niconico.py`) beim Laden unterdrückt.
+- Tests: `tests/test_v0609_diagnose.py` (9).
+
 ## 0.6.8 – Ansehen-Modus für Erwachsene
 - `GET /ansehen` (signed): `index.html` mit `<html data-mode="watch">`; CSS blendet Seitenleiste, Kopf und Verwaltungsreiter aus, Player-Dialog füllt den Bildschirm.
 - `watch_home.py` (neu) + `GET /api/watch-home`: fertige Downloads mit vorhandener Datei (ohne Abo-Videos, neueste zuerst, höchstens 120) mit Fortschritt/„neu“ aus `watch_state`, dazu `youtube_abos.kids(..., only_kids=False)` (neuer Parameter, Kanäle tragen `kids`). `build_macos.py` listet das Modul.

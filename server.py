@@ -437,12 +437,31 @@ def refresh_recognition():
         with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),error=core.safe_error(e))
     finally:
         with _TREE_LOCK:_RECOGNITION['busy']=False
+_STATUS_BUSY=False
+def refresh_catalog_status():
+    global _STATUS_CACHE,_STATUS_BUSY
+    try:
+        with db() as c:_STATUS_CACHE=(time.monotonic(),catalog.stats(c))
+    except Exception as e:diagnostics.error('catalog_status_failed',e)
+    finally:_STATUS_BUSY=False
+def recognition_for_export(wait=20.0):
+    """0.6.9: the diagnosis of 16.11.2026 had an empty table "Erkennung je Sender" (still loading,
+    because nobody had opened it). The export waits a little for the background count."""
+    result=recognition();deadline=time.monotonic()+wait
+    while result.get('loading') and not result.get('channels') and time.monotonic()<deadline:
+        time.sleep(.25);result=recognition()
+    return result
 def catalog_status():
-    global _STATUS_CACHE
+    global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
-    if not snapshot[1] or time.monotonic()-snapshot[0]>10:
+    if not snapshot[1]:
         with db() as c:snapshot=(time.monotonic(),catalog.stats(c))
         _STATUS_CACHE=snapshot
+    elif time.monotonic()-snapshot[0]>10 and not _STATUS_BUSY:
+        # 0.6.9 (diagnosis 16.11.2026: /api/state took 5–16 s 38 times in one hour): a stale snapshot is
+        # answered at once and refreshed in the background, like the genre tree and the recognition table.
+        _STATUS_BUSY=True
+        threading.Thread(target=refresh_catalog_status,daemon=True,name='catalog_status').start()
     # A concurrent metadata save can invalidate the shared cache at any point.
     # Return our complete local snapshot, never the newly emptied shared cache.
     scan=SERVICE.scan_progress() if hasattr(SERVICE,'scan_progress') else {}
@@ -1141,13 +1160,13 @@ def get_logs(self,path):
 @ROUTES.get('/api/diagnostics')
 def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
-    try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition()}
+    try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(),'runtime':runtime_tools.cached_report()}
     except Exception as e:overview={'catalog_error':core.safe_error(e)}
     return self.send(diagnostics.export({**overview,'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':_safe(lambda:youtube_abos.summary(ROOT)),'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
 
 @ROUTES.get('/api/tools')
 def get_tools(self,path):
-    return self.send(runtime_tools.report(refresh=True))
+    return self.send(runtime_tools.refreshed_report())
 
 @ROUTES.get('/api/provider-stats')
 def get_provider_stats(self,path):
@@ -1345,11 +1364,27 @@ def get_availability(self,path):
     return self.send({'available_until':until or (cached[0] if cached else None),'source':(info or {}).get('provider') or (cached[1] if cached else None),
                       'known':bool(until or cached and cached[0]),'checked_at':now,'error':error or None})
 
+def _timed(parts,name,fn):
+    started=time.monotonic()
+    try:return fn()
+    finally:parts[name]=round(time.monotonic()-started,2)
+
 @ROUTES.get('/api/state')
 def get_state(self,path):
-    s=settings();return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':IMDB.status(),'jobs':jobs(),'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(downloads.tool('ffmpeg')),'ffprobe':bool(downloads.tool('ffprobe'))},'runtime':runtime_tools.report(),'catalog':catalog_status(),'metadata':SERVICE.metadata_status,'provider_pauses':{'omdb':metadata.omdb_status(s.get('omdb','')),
+    # 0.6.9: the slow parts are timed; a slow answer names its slowest parts in the diagnosis.
+    parts={};started=time.monotonic()
+    s=_timed(parts,'settings',settings)
+    imdb=_timed(parts,'imdb',IMDB.status);job_list=_timed(parts,'jobs',jobs)
+    tools=_timed(parts,'tools',runtime_tools.cached_report)
+    catalog_part=_timed(parts,'catalog',catalog_status)
+    pauses=_timed(parts,'provider_pauses',lambda:{'omdb':metadata.omdb_status(s.get('omdb','')),
             'tmdb':metadata.network_provider_status('TMDB'),
-            'wikidata':metadata.network_provider_status('Wikidata')},'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+            'wikidata':metadata.network_provider_status('Wikidata')})
+    total=time.monotonic()-started
+    if total>=2:
+        diagnostics.event('state_slow_parts',seconds=round(total,2),
+                          parts=dict(sorted(parts.items(),key=lambda kv:-kv[1])[:4]))
+    return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
 
 # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
 @ROUTES.post('/api/samsung-sync')

@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.8
+# MediathekAtlas · 0.6.9
+
+## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
+
+- **Erkennung prüft Sendungen nicht mehr täglich neu:** Ausgaben einer Sendereihe (z. B. „Schleswig-Holstein Magazin“, „NDR Info“, „Nordtour“), deren Sendung schon erkannt ist, werden erst nach 30 bis 37 Tagen wieder bei den Anbietern abgefragt, egal ob TMDB, TVDB, IMDb oder die Mediathek sie erkannt hat. Bisher lag die Frist nur bei ARD/ZDF-Ergebnissen bei 30 Tagen, sonst bei einem Tag; das waren 82 % aller Prüfungen in der Nacht.
+- **Übersicht reagiert schneller:** Die Katalogzahlen und die Prüfung von ffmpeg/ffprobe laufen im Hintergrund; die Seite bekommt sofort den letzten Stand, statt 5 bis 16 Sekunden zu warten.
+- **Diagnose aussagekräftiger:** Langsame Abfragen der Übersicht nennen ihre langsamsten Teile, die Tabelle „Erkennung je Sender“ und die Werkzeugprüfung sind enthalten, Netzkino-Kategoriefehler ohne Fehlercode bringen einen kurzen Hinweistext mit.
+- Die Python-3.14-Warnung aus dem mitgelieferten Downloader erscheint nicht mehr im Startprotokoll.
 
 ## Neu in 0.6.8: Ansehen-Modus für Erwachsene
 

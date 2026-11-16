@@ -12,7 +12,7 @@ for name in ('core.py','watch_home.py','languages.py','planner.py','provider_bas
 for name in ('web','vendor','assets'):
     shutil.copytree(ROOT/name,code/name,ignore=shutil.ignore_patterns('__pycache__','*.pyc'))
 shutil.copy2(ROOT/'assets'/'MediathekAtlas.icns',resources/'MediathekAtlas.icns')
-plist={'CFBundleName':'MediathekAtlas','CFBundleDisplayName':'MediathekAtlas','CFBundleIdentifier':'de.mediathekatlas.desktop','CFBundleVersion':'6008','CFBundleShortVersionString':VERSION,'CFBundleExecutable':'MediathekAtlas','CFBundleIconFile':'MediathekAtlas.icns','CFBundlePackageType':'APPL','LSUIElement':True,'LSMinimumSystemVersion':'11.0'}
+plist={'CFBundleName':'MediathekAtlas','CFBundleDisplayName':'MediathekAtlas','CFBundleIdentifier':'de.mediathekatlas.desktop','CFBundleVersion':'6009','CFBundleShortVersionString':VERSION,'CFBundleExecutable':'MediathekAtlas','CFBundleIconFile':'MediathekAtlas.icns','CFBundlePackageType':'APPL','LSUIElement':True,'LSMinimumSystemVersion':'11.0'}
 (app/'Contents'/'Info.plist').write_bytes(plistlib.dumps(plist))
 launcher=macos/'MediathekAtlas';shutil.copy2(ROOT/'launcher.sh',launcher);launcher.chmod(0o755)
 # Optional native Netzkino player window (official web player in WKWebView). Until 0.5.32
