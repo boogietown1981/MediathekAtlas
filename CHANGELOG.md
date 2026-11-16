@@ -1,3 +1,8 @@
+## 0.6.10 – Crunchyroll: Filme aus eigener Liste
+- Björn (16.11.2026, 0.6.8): „crunchyroll erkennt nur serien und keine filme“. Diagnose: `crunchyroll_sync_completed` mit `series: 1690, movies: 0`. `discover/browse` ohne `type` liefert nur Serien.
+- `crunchyroll.load_catalogue(..., kind)`: zwei Listen `type=series` und `type=movie_listing` (`BROWSE_TYPES`), Fortschritt je Liste. Scheitert die Filmliste, bleibt der Lauf „partial“ mit Serien, Grund in `last_error`, Ereignis `crunchyroll_movies_failed`.
+- Kataloge ohne Statuswert `browse_lists=2` (vor 0.6.10 geladen) bekommen `next_attempt=0` und werden beim nächsten Planerlauf neu geladen.
+- Tests: `tests/test_v0596_crunchyroll.py` (24, davon 4 neu); Testseite antwortet wie die echte API (ohne `type` nur Serien).
 ## 0.6.9 – Korrekturen aus der Diagnose vom 16.11.2026 (0.6.8, macOS arm64)
 - `catalog_service.identified_delay`: erkannte, noch nicht abgeglichene Serien, deren Sendung (`topic`) dem erkannten Serientitel entspricht, warten 30 Tage + bis zu 7 Tage Streuung bis zur nächsten Anbieterprüfung – für alle Anbieter, nicht nur ARD/ZDF. Anlass: 3.326 Ausgaben „Schleswig-Holstein Magazin“, 1.000 „NDR Info“, 774 „Nordtour“ (IMDb Offline/TMDB erkannt) wurden täglich neu geprüft (5.262 von 6.383 Ergebnissen in 11 h). Die Serienvorlage griff nicht, weil der Sendungstitel der Ausgabe gleich dem Sendungsnamen ist.
 - `server.catalog_status`: veralteter Stand wird sofort geliefert und im Hintergrund erneuert (Thread `catalog_status`), nur ein leerer Stand wird synchron geladen.

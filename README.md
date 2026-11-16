@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.9
+# MediathekAtlas · 0.6.10
+
+## Neu in 0.6.10: Crunchyroll mit Filmen
+
+- **Crunchyroll zeigt jetzt auch Filme.** Bisher kamen nur Serien an (laut Diagnose 1.690 Serien, 0 Filme): Crunchyroll liefert in seiner Katalogliste ohne Angabe nur Serien, Filme stehen in einer eigenen Liste. MediathekAtlas lädt jetzt beide.
+- Ein bereits geladener Crunchyroll-Katalog wird nach dem Update einmal neu geladen (bei eingeschalteter Automatik innerhalb einer Minute, sonst „Katalog jetzt laden“).
+- Scheitert nur die Filmliste, bleiben die Serien sichtbar und die Katalog-Karte nennt den Grund.
+- Manche Anime-Filme führt Crunchyroll selbst als Staffel einer Serie (z. B. Kinofilme zu einer Serie); die stehen weiter auf der Serienseite.
+
 
 ## Neu in 0.6.9: Korrekturen aus der Diagnose vom 16.11.2026
 
