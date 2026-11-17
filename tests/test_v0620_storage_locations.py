@@ -32,7 +32,7 @@ class Env:
     """Startordner, Datenordner, Downloads und catalog.db wie in der App."""
 
     def __init__(self, tmp):
-        self.base = Path(tmp)
+        self.base = Path(tmp).resolve()   # macOS: /var → /private/var
         self.home = self.base / 'home'
         self.home.mkdir()
         self.downloads = self.base / 'Movies' / 'MediathekAtlas'
@@ -147,7 +147,7 @@ class CopyTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.base = Path(tmp.name)
+        self.base = Path(tmp.name).resolve()
 
     def test_open_wal_database_copied_consistently_and_resume_skips(self):
         src, dst = self.base / 'src', self.base / 'dst'
@@ -203,7 +203,7 @@ class LargeDatabaseTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.base = Path(tmp.name)
+        self.base = Path(tmp.name).resolve()
         self.src = self.base / 'catalog.db'
         make_db(self.src, 4000).close()
 
