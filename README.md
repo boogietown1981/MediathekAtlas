@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.23
+# MediathekAtlas · 0.6.24
+
+## Neu in 0.6.24: Episodensuche findet Folgen erkannter Serien
+
+- Die Folgensuche verwarf IMDb-Folgen, sobald TMDB/TVDB das Startjahr der Serie ein Jahr anders angab als IMDb, und fand Titel wie „Folge 12: Titel“ oder „Titel (S01/E12)“ nicht, weil IMDb nur „Titel“ führt. Beides ist behoben; die erkannte Serie (Titel, Jahr, Anbieter) bleibt dabei unverändert, IMDb ergänzt nur Staffel, Folge und Besetzung.
+- Ausgaben von Magazinen und Nachrichten, zu denen IMDb keine Folgen kennt, werden je Serie in einem Schritt um 30 Tage verschoben, statt jede Ausgabe einzeln zu prüfen. Echte Serienfolgen kommen dadurch schnell an die Reihe.
+- Die Auswahl der nächsten Folge dauerte bei 200.000 Einträgen etwa eine Sekunde je Prüfung, jetzt etwa eine Millisekunde.
+- Zurückgestellte Prüfungen (z. B. Senderabruf im Stundenlimit) zählen nicht mehr als Episodenprüfung; die Übersicht zeigt sie getrennt.
+- Bisher ungelöste Folgen werden nach dem Update einmal neu geprüft.
 
 ## Neu in 0.6.23: Umzug scheitert nicht mehr an Dateien, die die App gerade schreibt
 

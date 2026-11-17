@@ -1251,6 +1251,13 @@ def initialize(c):
             AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0
             AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)=0""")
         set_state(c,'episode_queue_migrated_v0528',True)
+    # 0.6.24: the episode search now finds episodes it rejected before (provider
+    # year vs. IMDb start year, numbering in the title). Re-check the earlier
+    # "unresolved" results once instead of waiting 30 days; their attempt
+    # history stays. Magazine editions are postponed per series in one step.
+    if not get_state(c,'episode_queue_recheck_v0624',False):
+        c.execute("UPDATE episode_queue SET next_try=0 WHERE last_outcome IN ('unresolved','retry')")
+        set_state(c,'episode_queue_recheck_v0624',True)
 
 def review_listing(c,query='',state='open',offset=0):
     """Flat work/episode list: do not hide unresolved episodes behind a series parent."""

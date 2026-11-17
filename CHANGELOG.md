@@ -1,3 +1,18 @@
+## 0.6.24 – Episodensuche an der Ursache repariert
+- Diagnosen 0.6.8–0.6.18 (Björns Mac): Episoden-Warteschlange 218.000 Einträge, 25.700 Prüfungen, 4 Treffer. Ursachen, mit nachgestellten Fällen belegt:
+  1. Die Folgensuche nutzte dieselbe Titelsuche wie die Erkennung. Gequeuete Werke tragen aber das Serienjahr des erkennenden Anbieters (TMDB/TVDB); weicht IMDbs Startjahr ab (häufig ±1), galt jede IMDb-Folge als „Erscheinungsjahr widersprüchlich“.
+  2. Folgentitel mit Nummerierung („Folge 12: Titel“, „Titel (S01/E12)“, „Titel (Folge 12)“) wurden wörtlich gesucht; IMDb führt nur „Titel“.
+  3. Die Warteschlange besteht überwiegend aus Ausgaben von Magazinen/Nachrichten (Schleswig-Holstein Magazin, NDR Info, Nano …), zu denen IMDb keine Folgen hat; jede Ausgabe wurde einzeln geprüft, echte Folgen warteten Wochen.
+  4. Die Auswahl der nächsten Folge durchsuchte alle erkannten Werke und sortierte sie (≈1 s je Prüfung bei 200.000 Einträgen).
+  5. Zurückgestellte Prüfungen (Senderabruf im Stundenlimit) zählten als Prüfung und blähten die Zahl auf.
+- `imdb_archive.episode_evidence`: Serie über bekannte IMDb-ID (IMDb/OMDb-Identität oder `imdb_id`), sonst exakter Titel mit ±1 Jahr; Ergebnis behält Titel, Jahr, Anbieter und Referenz des Werks (show_key unverändert) und ergänzt Staffel, Folge, Episoden-ID, Laufzeit und Besetzung. Mehrdeutige Treffer (verschiedene Episoden-IDs) bleiben ungelöst. Auch für den Serienvorlagen-Pfad, dort jetzt mit Laufzeitprüfung.
+- `episode_name`/`episode_search_terms`: Nummerierung (SxxEyy, NxM, „Staffel N, Folge M“, „Folge N“) wird für die Namenssuche entfernt; Staffel/Folge bleiben eigener Beleg. Serienpräfix weiter nur mit Trennzeichen.
+- `defer_series_without_episodes`: kennt IMDb zur Serie keine Folge, werden alle fälligen Geschwister mit gleicher Identität in einem Schritt um 30–37 Tage verschoben (`no_imdb_episodes`); Angebote mit ARD/ZDF-Seite bleiben bei erlaubter Senderabfrage fällig, Nutzerprioritäten ebenfalls.
+- `pick_episode`: feste Schleifenreihenfolge über den Fälligkeitsindex (CROSS JOIN), Prioritäten von `metadata_priority` aus; Folgen mit Nummer werden bevorzugt.
+- Zähler: `retry` zählt nicht mehr als Episodenprüfung; neu `episode_series_deferred_session`; Oberfläche „zurückgestellt“ und „Ohne IMDb-Folgenliste verschoben“.
+- Migration `episode_queue_recheck_v0624`: bisher `unresolved`/`retry` einmal sofort neu prüfen (Versuche bleiben erhalten).
+- Tests: `tests/test_v0624_episode_search.py` (19); angepasst `test_v0528`, `test_v0530` (Folgensuche über `episode_evidence`, Serienidentität bleibt).
+
 ## 0.6.23 – Speicherorte: Prüfung im laufenden Betrieb
 - Björn (16.11.2026): Umzug „System und Datenbank“ nach /Volumes/Docking-2/MediathekAtlas/System „Fehlgeschlagen – Prüfung am Ziel fehlgeschlagen: diagnostic.jsonl Größe weicht ab; verbund/nodes/…/events-005140…005143.jsonl fehlt“. Ursache: `verify_tree` las nach dem Kopieren den Quellordner neu ein; was die laufende App seitdem geschrieben hatte (Diagnoseprotokoll, neue Verbund-Ereignisse), galt als Fehler.
 - `verify_tree(live=True)` (im Umzug): prüft nur Dateien aus dem Manifest, deren Quelle seit der Kopie unverändert ist (Größe, mtime, WAL); geänderte/gelöschte zählen als `changed_since_copy`. Strenge Prüfung aller Dateien weiter beim Abschluss beim Start (App geschlossen).

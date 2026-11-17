@@ -271,7 +271,8 @@ function catalogProgress(c){
      ['confirmed','Vollständig: '+countLabel(c.quality_session?.matched||0)+' · Folgen: '+countLabel(c.episode_matched_session||0)],
      ['sender','Senderbelege: '+countLabel(c.episode_sender_imported_session||0)+' · Seiten bestätigt: '+countLabel(c.episode_sender_items_session||0)],
      ['sender-matches','Sender-Folgen bestätigt: '+countLabel(c.episode_sender_matched_session||0)],
-     ['episode-checks','Episodenprüfungen: '+countLabel(c.episode_checked_session||0)],
+     ['episode-checks','Episodenprüfungen: '+countLabel(c.episode_checked_session||0)+' · zurückgestellt: '+countLabel(c.episode_retried_session||0)],
+     ['episode-series','Ohne IMDb-Folgenliste verschoben: '+countLabel(c.episode_series_deferred_session||0)],
      ['shorts','Kurzvideos vermutet: '+countLabel(c.episode_suspected_session||0)+' · Extras: '+countLabel(c.episode_extras_session||0)]
    ];
    if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
@@ -280,7 +281,7 @@ function catalogProgress(c){
    const groupSpec=[
      ['Worker & Scan', ['identity','episode']],
      ['Erkennungsqualität', ['identified','confirmed']],
-     ['Episoden & Senderbelege', ['queue','due','episode-checks','sender','sender-matches','shorts']],
+     ['Episoden & Senderbelege', ['queue','due','episode-checks','episode-series','sender','sender-matches','shorts']],
      ['Fehler & Wiederholungen', ['retry']]
    ];
    for(const [name,kinds] of groupSpec){

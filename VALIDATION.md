@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.24 – Episodensuche (17. November 2026)
+- Automatisch: gesamte Python-Suite; nachgestellte Fälle mit lokalem IMDb-Archiv (TMDB-Jahr ±1, „Folge 12: Titel“, „Titel (S01/E12)“, „Titel (Folge 12)“): mit 0.6.23 kein Treffer, mit 0.6.24 Treffer bei unveränderter Serienidentität. Auswahl der nächsten Folge bei 200.000 Einträgen: 1,2 s → 1 ms. Klicktest Chromium.
+- Nicht geprüft: Trefferquote mit Björns echtem Katalog und IMDb-Archiv (21,8 GB); echte IMDb-Daten sind in der Testumgebung nicht abrufbar.
+
 ## 0.6.23 – Prüfung im laufenden Betrieb (16. November 2026)
 - Automatisch: gesamte Python-Suite; Björns Fehlerbild nachgestellt (Protokoll wächst, Verbund-Ereignisse kommen hinzu und verschwinden zwischen Kopie und Prüfung): mit 0.6.22 „failed“, mit 0.6.23 „ready“, Abschluss beim Start zieht beides nach. Klicktest Chromium.
 - Auf dem Gerät (Björn, 17.11.2026): Umzug „System und Datenbank“ auf dem MacBook Air nach /Volumes/Docking-2/MediathekAtlas/System mit 0.6.23 erfolgreich („das hat geklappt“). Weiterhin nicht geprüft: Downloads-/Zwischenspeicher-Umzug am Mac, NAS, Windows.
