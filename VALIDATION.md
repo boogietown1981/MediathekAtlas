@@ -2,7 +2,7 @@
 
 ## 0.6.23 – Prüfung im laufenden Betrieb (16. November 2026)
 - Automatisch: gesamte Python-Suite; Björns Fehlerbild nachgestellt (Protokoll wächst, Verbund-Ereignisse kommen hinzu und verschwinden zwischen Kopie und Prüfung): mit 0.6.22 „failed“, mit 0.6.23 „ready“, Abschluss beim Start zieht beides nach. Klicktest Chromium.
-- Nicht geprüft: Björns Mac mit /Volumes/Docking-2.
+- Auf dem Gerät (Björn, 17.11.2026): Umzug „System und Datenbank“ auf dem MacBook Air nach /Volumes/Docking-2/MediathekAtlas/System mit 0.6.23 erfolgreich („das hat geklappt“). Weiterhin nicht geprüft: Downloads-/Zwischenspeicher-Umzug am Mac, NAS, Windows.
 
 ## 0.6.22 – Umzug großer Datenbanken (16. November 2026)
 - Automatisch: gesamte Python-Suite; neue Tests für schrittweise Datenbankkopie bei gleichzeitigen Schreibzugriffen (kein Neubeginn, Kopie konsistent), Abbruch mitten in der Datei, Strukturprüfung ab 512 MB. Probelauf mit 565-MB-Datenbank: 39 Fortschrittsmeldungen, Strukturprüfung statt quick_check. Klicktest Chromium.
