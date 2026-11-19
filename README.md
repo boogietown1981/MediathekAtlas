@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.31
+# MediathekAtlas · 0.6.33
+
+## Neu in 0.6.33: Werkerkennung auch mit älteren SQLite-Versionen schnell
+
+- Die Korrektur aus 0.6.31 griff mit älteren SQLite-Versionen (z. B. 3.45) noch nicht vollständig: Die Abfrage für Serien „im Fokus“ las weiterhin alle wartenden Folgen. Jetzt unabhängig von der SQLite-Version behoben.
 
 ## Neu in 0.6.31: Werkerkennung läuft auch mit der Datenbank auf einem USB-Laufwerk
 

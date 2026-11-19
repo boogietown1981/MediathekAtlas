@@ -1,3 +1,7 @@
+## 0.6.33 – Hauptworker-Auswahl auch mit SQLite 3.45
+- CI (Ubuntu, SQLite 3.45.1) zeigte, dass `focused()` (series_focus JOIN works) und die film_hints-Abfrage dort von `works` aus planen und alle fälligen Werke lesen. Beide jetzt per `CROSS JOIN` von der kleinen Tabelle aus. Geprüft mit Python 3.12/SQLite 3.45.1 und Python 3.13/SQLite 3.53.1, alle drei Reihenfolgen (ausgewogen, Filme zuerst, Serien zuerst).
+- 0.6.32 ist vom Thread „Speicherorte“ (IMDb-Archiv) reserviert.
+
 ## 0.6.31 – Hauptworker-Auswahl ohne Vollscan (Datenbank auf USB-Laufwerk)
 - Björn (19.11.2026, 0.6.29, System auf /Volumes/Docking-2): „Hauptworker 0 / 4 aktiv“, „Wird gestartet · 0 Abgleiche seit Start“, Folgenworker liefen.
 - Ursache: `Service.pick` suchte im Zustand `identified` über `work_queue(kind,state,next_try)` und filterte die Folgen-Warteschlange per `NOT EXISTS` – damit wurden alle ~220.000 wartenden Serien (next_try fällig) Zeile für Zeile gelesen, mehrfach je Auswahl. Die Prioritätenabfrage lief ebenso über `work_retry` statt über `metadata_priority`. Auf SSD ~0,2 s, auf dem USB-Laufwerk Minuten je Auswahl; die Auswahl kehrte nie zurück, daher auch kein „Wartet“.

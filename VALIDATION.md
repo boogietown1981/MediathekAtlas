@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.33 – Auswahl mit SQLite 3.45 (19. November 2026)
+- Automatisch: gesamte Python-Suite mit Python 3.12/SQLite 3.45.1 und 3.13/SQLite 3.53.1; `tests/test_v0631_identity_pick.py` mit 3.45.1 vorher rot, jetzt grün.
+
 ## 0.6.31 – Hauptworker-Auswahl (19. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktests Chromium; neuer Test mit altem Code rot, mit neuem grün. Synthetische Messung 690.000 Werke: Auswahl 0,19 s → 0,002 s, ohne Zeilenlesen.
 - Nicht geprüft: Björns Datenbank auf Docking-2 (Dauer der einmaligen Indexanlage dort), NAS, Windows.
