@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.39 – Erkennung ARD/ZDF (19. November 2026)
+- Automatisch: siehe PR. Neu `tests/test_v0639_recognition_noise.py`: Suchtitel bereinigt (und echte Titel unverändert), Serienabfrage für nummerierte Teile, Datumsregel mit Gegenbeispielen, ARTE-Fremdsprachfassungen (Länge, deutsche Fassung, Anzahl), Neuzuordnung geprüfter Werke ohne Treffer (Werke mit Vorschlag und Filme bleiben).
+- Regeln an den 1.086 erfolglosen Prüfungen aus Björns Diagnose 16:12 nachgezählt.
+- Nicht geprüft: Wirkung auf Björns Bestand (Zahlen erst nach dem Formatdurchlauf in einer neuen Diagnose), Trefferquote der bereinigten Suchtitel bei TMDB/TVDB (Testumgebung ohne Anbieterzugriff).
+
 ## 0.6.36 – Kindervideos von YouTube (19. November 2026)
 - Automatisch: siehe Bericht im PR. Neu `tests/test_v0636_youtube_kids.py`: Laufzeitsuche (eigenes Deno zuerst), `--js-runtimes` nur bei neuem yt-dlp, Versionsabfrage einmalig, altes System-yt-dlp tritt zurück, Deno-Installation mit Prüfsumme (manipuliert → Fehler), Release-Dateinamen je System, Deno-Fehler nicht fatal, einmaliges Neueinreihen.
 - Geprüft gegen das offizielle yt-dlp 2026.10.26: Optionen `--js-runtimes`/`--remote-components` vorhanden, `yt_dlp_ejs` im Zipapp enthalten, Client-Logik (visionos ohne JS, Kindervideo-Hinweis) im Quelltext.

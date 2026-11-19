@@ -943,6 +943,19 @@ def prioritize(c,ids=None,show=''):
 FORMAT_WORDS=re.compile(r'(?i)\b(?:nachrichten|tagesschau|tagesthemen|aktuell|journal|heute|wetter|sportschau|sportstudio|magazin|lokalzeit|abendschau|landesschau|hessenschau|regional|drehscheibe|morgenmagazin|mittagsmagazin|pressekonferenz|gottesdienst|podcast|kompakt|update|live)\b')
 FORMAT_GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','dokumentation','dokumentationen','doku','dokus','reportage','sonstiges','sonstige','unterhaltung','filme im ersten'}
 TRAILER=re.compile(r'(?i)^\s*(?:trailer|teaser|vorschau)\b')
+# 0.6.39 (Björn, 19.11.2026, diagnosis sample): dated editions of magazines were queried as films at
+# IMDb, TMDB, TVDB and Wikidata and ended "ohne Treffer" – "28 minutes - … (13/11/2026)", "ttt vom
+# 2. Februar 2025", "Studio 2 vom 16.11.2026", "Hier und heute | 12.08.2025", "Invitation au voyage -
+# 04/11/2026". A full calendar date in the title marks one edition of a recurring Sendung; a film or a
+# drama episode is not titled with its broadcast date.
+MONTHS='januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember'
+DATED=re.compile(r'(?i)(?<![\w/.])(?:[0-3]?\d[./][01]?\d[./](?:19|20)\d{2}|vom\s+[0-3]?\d\.\s*(?:'+MONTHS+r')\s+(?:19|20)\d{2})(?![\w/]|\.\d)')
+
+def foreign_version(source):
+    """True for an ARTE language version other than German (ARTE.FR, ARTE.ES, ARTE.IT, ARTE.PL, ARTE.EN)."""
+    import languages
+    if source.get('_foreign_only') is False:return False
+    return languages.CHANNEL_LANGUAGE.get(str(source.get('channel') or '').strip().upper(),'de')!='de'
 
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
@@ -950,6 +963,12 @@ def format_contribution(m,source,topic_works):
     import metadata
     if m.get('kind') not in ('unknown','other') or m.get('scan_requested') or not topic or key(topic) in FORMAT_GENERIC or metadata.RUBRIC.match(topic):return False
     if TRAILER.search(title):return False
+    if DATED.search(title) and topic_works>=2:return True
+    # 0.6.39: 41 % of the failed checks in Björn's diagnosis were ARTE's French, Spanish, Italian, Polish
+    # and English versions ("Le dessous des images - …", "ARTE Reportaje - …", "Green, ma non troppo - …").
+    # The German version of the same programme is its own work and is checked; the foreign versions of
+    # a recurring Sendung (three or more works, shorter than a feature film) join it instead.
+    if foreign_version(source) and topic_works>=3 and 0<int(source.get('duration') or 0)<3600:return True
     clip=m.get('kind')=='other';duration=int(source.get('duration') or 0)
     # 0.5.80 (Björn: news and magazine clips belong to their Sendung, not to "Weitere Sendungen"):
     # editions titled like their Sendung ("Landesschau" / "Landesschau") count once there are several,
@@ -1063,7 +1082,7 @@ def backfill_film_hints(c,limit=400):
     return len(rows)
 
 # Raise when the format rules change: existing catalogues then get one more format pass.
-FORMAT_REV=4   # 0.5.80: clips ('other') and editions named like their Sendung
+FORMAT_REV=5   # 0.5.80: clips ('other') and editions named like their Sendung; 0.6.39: dated editions (also after a check without hit)
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
@@ -1082,11 +1101,20 @@ def assign_formats(c,limit=500):
     for row in rows:
         cursor=row['rid']
         if dirty_mode:c.execute('DELETE FROM format_dirty WHERE work_id=?',(row['id'],))
-        open_work=row['kind'] in ('unknown','other') and row['state'] in ('pending','retry')
+        # 0.6.39: a check without any hit ('review' without suggestions) may still be a Sendung's edition.
+        open_work=row['kind'] in ('unknown','other') and row['state'] in ('pending','retry','review')
         if not open_work and not (row['kind']=='series' and row['state']=='identified'):continue
         best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(row['id'],)).fetchone()
         if not best:continue
         source=json.loads(best[0])
+        if foreign_version(source):
+            # Only when no German version of the same work is listed.
+            channels={str(x[0] or '').strip().upper() for x in c.execute("SELECT json_extract(payload,'$.channel') FROM offers WHERE work_id=?",(row['id'],))}
+            source['_foreign_only']=all(foreign_version({'channel':ch}) for ch in channels)
+        if open_work and row['state']=='review':
+            # A check found nothing usable; only the 0.6.39 rules (dated edition, foreign ARTE version) apply.
+            meta=json.loads(row['meta'] or '{}')
+            if meta.get('suggestions') or meta.get('scan_requested') or not (DATED.search(cleaned(source.get('title'))) or foreign_version(source)):continue
         if mark_news_format(c,row,source):
             assigned+=1
             continue
