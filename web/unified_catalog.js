@@ -8,7 +8,7 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','rtlplus'];
+  const VALID_SOURCES = ['all','abos','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','rtlplus'];
   const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',rtlplus:'RTL+'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
   const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,rtlplus:()=>null};
@@ -25,7 +25,7 @@
   const SPECIAL=['Unklassifiziert','Sonstige','Unbekannt'];
   const catOrder=name=>{const i=CATEGORY_NAMES.indexOf(name);return i>=0?i:SPECIAL.includes(name)?1000+SPECIAL.indexOf(name):500;};
   let pendingTries=0;
-  const heading=() => ({all:'Alle Plattformen',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
+  const heading=() => ({all:'Alle Plattformen',abos:'YouTube-Abos',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
     const discover=$('discover');
@@ -128,53 +128,96 @@
     }
     return board;
   }
-  function portalCard(p, inTab) {
-    const card=el('article',undefined,'atlas-portal-card');
-    const phase=p.running?'Abruf läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise geladen':
+  // 0.6.27 (Björn, 19.11.2026): „die Darstellung in der Verwaltung soll überall gleich aussehen und
+  // möglichst auf einen Block sichtbar sein“. Every platform now has the same figures in the same
+  // order (portalFacts); what only some platforms have (live channels, copy protection, …) goes into
+  // one line "Besonderheiten". Several platforms: one table (portalTable), one platform: one card.
+  function portalPhase(p) {
+    return p.running?'Abruf läuft':p.last_result==='complete'?'Aktuell':p.last_result==='partial'?'Teilweise geladen':
       p.last_result==='interrupted'?(p.titles?'Abruf unterbrochen · gespeicherter Bestand':'Abruf unterbrochen'):
       p.last_result==='failed'?(p.titles?'Abruf fehlgeschlagen · gespeicherter Bestand':'Abruf fehlgeschlagen'):
       p.titles?'Gespeicherter Bestand':'Noch nicht geladen';
-    card.append(el('h3',p.name+' · '+phase));
-    const tiles=el('div',undefined,'atlas-status-grid');
-    const tile=(label,value,hint)=>{const t=el('div',undefined,'atlas-portal-tile');t.append(el('strong',value),el('small',label));if(hint)t.title=hint;tiles.append(t);};
-    const ref=p.reference||{},by=ref.by_status||{},checked=Number(ref.checked||0),titles=Number(p.titles||0);
-    // 0.6.28: the check counts the titles it actually works on (RTL+: also the subscription titles).
-    const pool=ref.listed!==undefined&&ref.listed!==null?Number(ref.listed||0):titles;
-    tile('Filme & Serien im Katalog',num(titles));
-    if (p.channels) tile('Live-Sender',num(p.channels));
-    if (p.playable!==undefined) tile('im Player abspielbar',num(p.playable));
-    if (p.sources!==undefined) tile('Kanäle/Playlists',num(p.sources));
-    // 0.5.74: YouTube music videos have their own count (they are no films or series).
-    if (p.music!==undefined) tile('Musik-Playlists & -Videos',num(p.music),num(p.tracks||0)+' Musikvideos, im YouTube-Bereich unter „Musikvideos“');
-    if (p.key_set===false) tile('API-Schlüssel','fehlt','Im YouTube-Bereich einen Schlüssel für die YouTube Data API v3 eintragen');
-    if (p.protected) tile('kopiergeschützt (nur beim Anbieter)',num(p.protected));
-    tile('Stand des Katalogs',when(p.last_success));
-    tile('eindeutig zugeordnet',num(by.candidate),'Eindeutige IMDb-/TVDB-/TMDB-Referenz');
-    tile('zu prüfen',num(by.review),'Widersprüchliche Referenzen, keine automatische Zuordnung');
-    tile('ohne Treffer',num(by.no_match));
-    if (by.partial) tile('Anbieter nicht erreichbar',num(by.partial),'Wird später automatisch erneut geprüft');
-    tile('noch offen',num(Math.max(0,pool-checked)),'Wird im Hintergrund abgeglichen (ein Titel alle 6 s)');
-    card.append(tiles);
-    if (p.running && p.progress) card.append(el('small','Abruf läuft: '+p.progress,'muted atlas-portal-running'));
-    const share=pool?Math.min(100,Math.round(checked*100/pool)):0;
+  }
+  function phaseTone(p) {return p.running?'running':['failed','interrupted'].includes(p.last_result)?'error':p.last_result==='partial'||!p.last_success?'warn':'ok';}
+  function portalFacts(p) {
+    const ref=p.reference||{},by=ref.by_status||{},titles=Number(p.titles||0);
+    // 0.6.28 (PR #75): the check counts the titles it actually works on (RTL+: also the subscription titles).
+    const pool=ref.listed!==undefined&&ref.listed!==null?Number(ref.listed||0):titles,checked=Math.min(Number(ref.checked||0),pool||Number(ref.checked||0));
+    const share=pool?Math.min(100,Math.round(checked*100/pool)):0,off=p.offline||{};
+    const extras=[];
+    if (p.channels) extras.push(num(p.channels)+' Live-Sender');
+    if (p.playable!==undefined) extras.push(num(p.playable)+' im Player abspielbar');
+    if (p.sources!==undefined) extras.push(num(p.sources)+' Kanäle/Playlists');
+    if (p.music) extras.push(num(p.music)+' Musik-Playlists & -Videos ('+num(p.tracks||0)+' Musikvideos)');
+    if (p.protected) extras.push(num(p.protected)+' kopiergeschützt');
+    if (by.partial) extras.push(num(by.partial)+' Anbieter nicht erreichbar');
+    if (p.key_set===false) extras.push('API-Schlüssel fehlt');
+    let offline,offlineHint='';
+    if (p.offline_note) {offline='aus';offlineHint=p.source==='youtube'?'Im YouTube-Bereich auf eigene Verantwortung einschaltbar (YouTube-Nutzungsbedingungen)':p.offline_note;}
+    else if (p.protected && p.protected>=p.titles) {offline='nicht möglich';offlineHint='Der Anbieter liefert nur mit Kopierschutz';}
+    else {const busy=(off.queued||0)+(off.downloading||0)+(off.tagging||0);offline=num(off.done)+(busy?' · '+num(busy)+' in Arbeit':'')+(off.error?' · '+num(off.error)+' Fehler':'');offlineHint='Offline-Kopien ('+p.offline_days+' Tage): verfügbar · in Arbeit · Fehler';}
+    return {titles,pool,checked,share,by,extras,offline,offlineHint,open:Math.max(0,pool-checked),
+      stand:when(p.last_success),lastCheck:ref.last_checked?when(ref.last_checked):'',oldest:ref.oldest_checked?when(ref.oldest_checked):''};
+  }
+  function progressBar(share) {
     const bar=el('div',undefined,'atlas-portal-progress');const fill=el('span');fill.style.width=share+'%';bar.append(fill);
     bar.setAttribute('role','progressbar');bar.setAttribute('aria-valuenow',String(share));bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
-    const scope=el('small','Werkzuordnung (IMDb/TVDB/TMDB): '+num(checked)+' von '+num(pool)+' geprüft · '+share+' %'+(pool>titles?' (inkl. '+num(pool-titles)+' Titel nur mit Abo)':''));
-    if (pool>titles) scope.title='Geprüft werden auch Titel, die nur mit Abo laufen und erst mit „Meine Abos“ erscheinen.';
-    card.append(scope,bar);
-    const off=p.offline||{};
-    // 0.5.51: Rakuten TV delivers every free film/episode with copy protection – no offline copies there.
-    if (p.offline_note) card.append(el('small','Offline: ausgeschaltet – '+(p.source==='youtube'?'im YouTube-Bereich auf eigene Verantwortung einschaltbar (YouTube-Nutzungsbedingungen)':p.offline_note),'muted'));
-    else if (p.protected && p.protected>=p.titles) card.append(el('small','Offline: nicht möglich – der Anbieter liefert nur mit Kopierschutz','muted'));
-    else card.append(el('small','Offline ('+p.offline_days+' Tage): '+num(off.done)+' verfügbar · '+num((off.queued||0)+(off.downloading||0)+(off.tagging||0))+' in Arbeit'+(off.error?' · '+num(off.error)+' Fehler':''),'muted'));
-    const actions=el('div',undefined,'atlas-portal-actions');
-    const load=el('button',p.running?'Katalog wird geladen …':'↻ Katalog jetzt laden');load.type='button';load.disabled=!!p.running;
+    return bar;
+  }
+  function portalButtons(p, inTab, small) {
+    const load=el('button',p.running?(small?'…':'Katalog wird geladen …'):(small?'↻':'↻ Katalog jetzt laden'));load.type='button';load.disabled=!!p.running;
+    load.title='Katalog von '+p.name+' jetzt neu laden';
     load.onclick=async()=>{load.disabled=true;try{await window.api(SYNC[p.source],{});}catch(e){load.textContent=e.message;}setTimeout(inTab?()=>mountTabBoard(p.source):refreshPortalBoard,1500);};
-    const open=el('button',inTab?'Im Dashboard anzeigen':'Plattform öffnen');open.type='button';
+    const open=el('button',inTab?'Im Dashboard anzeigen':small?'Öffnen':'Plattform öffnen');open.type='button';
     open.onclick=inTab?()=>{document.querySelector('[data-view="discover"]')?.click();document.querySelector('[data-catalog-source="'+p.source+'"]')?.click();}:
       ()=>{document.querySelector('[data-view="portals"]')?.click();document.querySelector('.platform-tab[data-platform="'+p.source+'"]')?.click();};
-    actions.append(load,open);card.append(actions);
+    return [load,open];
+  }
+  function checkLine(f) {
+    return 'Werkzuordnung (IMDb/TVDB/TMDB): '+num(f.checked)+' von '+num(f.pool)+' geprüft · '+f.share+' %'+(f.pool>f.titles?' (inkl. '+num(f.pool-f.titles)+' Titel nur mit Abo)':'')+
+      (f.lastCheck?' · zuletzt geprüft '+f.lastCheck:'')+(f.oldest&&f.oldest!==f.lastCheck?' · ältester Stand '+f.oldest:'');
+  }
+  function portalCard(p, inTab) {
+    const f=portalFacts(p),card=el('article',undefined,'atlas-portal-card');
+    const head=el('div',undefined,'atlas-portal-head');
+    head.append(el('h3',p.name),el('span',portalPhase(p),'atlas-portal-phase is-'+phaseTone(p)),el('small','Stand '+f.stand,'muted'));
+    card.append(head);
+    const tiles=el('div',undefined,'atlas-status-grid atlas-portal-tiles');
+    const tile=(label,value,hint)=>{const t=el('div',undefined,'atlas-portal-tile');t.append(el('strong',value),el('small',label));if(hint)t.title=hint;tiles.append(t);};
+    tile('Filme & Serien im Katalog',num(f.titles));
+    tile('eindeutig zugeordnet',num(f.by.candidate),'Eindeutige IMDb-/TVDB-/TMDB-Referenz');
+    tile('zu prüfen',num(f.by.review),'Widersprüchliche Referenzen, keine automatische Zuordnung');
+    tile('ohne Treffer',num(f.by.no_match));
+    tile('noch offen',num(f.open),'Wird im Hintergrund abgeglichen (ein Titel alle 6 s)');
+    tile('offline',f.offline,f.offlineHint);
+    card.append(tiles);
+    card.append(el('small','Besonderheiten: '+(f.extras.join(' · ')||'keine'),'muted atlas-portal-extras'));
+    if (p.running && p.progress) card.append(el('small','Abruf läuft: '+p.progress,'muted atlas-portal-running'));
+    card.append(el('small',checkLine(f)),progressBar(f.share));
+    const actions=el('div',undefined,'atlas-portal-actions');actions.append(...portalButtons(p,inTab,false));card.append(actions);
     return card;
+  }
+  function portalTable(list) {
+    const wrap=el('div',undefined,'atlas-portal-tablewrap'),table=el('table',undefined,'atlas-portal-table');
+    const cols=[['Plattform'],['Status'],['Stand','','Stand des Katalogs (letzter erfolgreicher Abruf)'],['Titel','num'],['zugeordnet','num','Eindeutige IMDb-/TVDB-/TMDB-Referenz'],['zu prüfen','num','Widersprüchliche Referenzen, keine automatische Zuordnung'],['ohne Treffer','num'],['offen','num','Wird im Hintergrund abgeglichen'],['Werkzuordnung'],['Offline'],['Besonderheiten'],['']];
+    const hr=el('tr');for(const [label,cls,hint] of cols){const th=el('th',label,cls);if(hint)th.title=hint;hr.append(th);}
+    const thead=el('thead');thead.append(hr);const body=el('tbody');
+    for (const p of list) {
+      const f=portalFacts(p),tr=el('tr');
+      const td=(value,cls,hint)=>{const c=el('td',value,cls);if(hint)c.title=hint;tr.append(c);return c;};
+      td(p.name,'atlas-portal-name');
+      const st=td('');st.append(el('span',portalPhase(p),'atlas-portal-phase is-'+phaseTone(p)));
+      if (p.running && p.progress) st.append(el('small',p.progress,'muted'));
+      td(f.stand);
+      td(num(f.titles),'num');td(num(f.by.candidate),'num');td(num(f.by.review),'num');td(num(f.by.no_match),'num');td(num(f.open),'num');
+      const work=td('','atlas-portal-work',checkLine(f));work.append(progressBar(f.share),el('small',f.share+' %'+(f.lastCheck?' · zuletzt '+f.lastCheck:''),'muted'));
+      td(f.offline,undefined,f.offlineHint);
+      td('','muted').append(el('div',f.extras.join(' · ')||'–','atlas-portal-extras-cell'));
+      const act=td('','atlas-portal-rowactions');act.append(...portalButtons(p,false,true));
+      body.append(tr);
+    }
+    table.append(thead,body);wrap.append(table);
+    return wrap;
   }
   // 0.5.49 (Björn, 12.11.2026): the platform tabs show the same overview as the catalogue (stock,
   // recognised, to check, open, offline copies), so both views read alike and the stored stock is
@@ -207,13 +250,15 @@
     if (!board) return;
     // 0.5.55: the boards live under Verwaltung → Status & Abgleich and show every platform there;
     // they are only fetched while that view is open.
-    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
+    // 0.6.27: „YouTube-Abos“ zeigt nur die Abo-Videos je Kanal (web/abo_shelf.js), keine Katalogkarten.
+    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || source==='abos' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
     const seq=++portalSeq;let data;
     try {data=await window.api('film-platforms');}catch(e){if(seq===portalSeq){board.hidden=false;board.replaceChildren(el('p','Katalog-Übersicht nicht verfügbar: '+e.message,'muted'));}return;}
-    if (seq!==portalSeq||(!inStatus&&source==='mediatheken')) return;
+    if (seq!==portalSeq||(!inStatus&&(source==='mediatheken'||source==='abos'))) return;
     const list=(data.film_platforms||[]).filter(p=>inStatus||source==='all'||p.source===source);
     board.replaceChildren(el('h2',inStatus||source==='all'?'Weitere Kataloge · Bestand & Werkzuordnung':(list[0]?.name||'Katalog')+' · Bestand & Werkzuordnung','atlas-dashboard-heading'));
-    const grid=el('div',undefined,'atlas-portal-grid');for(const p of list)grid.append(portalCard(p));board.append(grid);
+    if (list.length>1) board.append(portalTable(list));
+    else {const grid=el('div',undefined,'atlas-portal-grid');for(const p of list)grid.append(portalCard(p));board.append(grid);}
     board.hidden=false;
     portalTimer=setTimeout(refreshPortalBoard,list.some(p=>p.running)?4000:15000);
   }
@@ -234,8 +279,10 @@
     if (!VALID_SOURCES.includes(name)) return;
     source=name;seriesKey='';seriesTitle='';offset=0;sequence++;
     $('discover').dataset.source=name;
-    $('atlas-source-content').hidden=false;
-    updateControls();refresh();
+    $('atlas-source-content').hidden=name==='abos';
+    if (typeof CustomEvent==='function') document.dispatchEvent?.(new CustomEvent('atlas-source',{detail:{source:name}}));   // 0.6.27: web/abo_shelf.js
+    updateControls();
+    if (name!=='abos') refresh();
     // The overview must never block the catalogue itself.
     refreshPortalBoard().catch(e=>console.warn('MediathekAtlas: Katalog-Übersicht',e));
   }
@@ -541,6 +588,7 @@
     host.setAttribute('aria-busy','false');
   }
   async function refresh() {
+    if (source==='abos') return;
     const seq=++sequence;
     updateControls();
     $('atlas-cross-items').setAttribute('aria-busy','true');
@@ -677,7 +725,7 @@
     }).catch(()=>{if(attempt<20)setTimeout(()=>loadTree(attempt+1),5000);});
   }
   loadTree();
-  window.AtlasUnifiedCatalog={activate,refresh};
+  window.AtlasUnifiedCatalog={activate,refresh,source:()=>source};
   // Shared tile for the platform tabs (web/portal_panel.js, web/netzkino.js) and the preview.
   window.AtlasCards={card:makeCard,portalRow:plRow,netzkinoRow:nkRow,mediathekRow:medRow,rowOf,open:openItem};   // 0.6.8: open/rowOf for web/watch_mode.js
   // Start view from Verwaltung → Darstellung (default: all platforms, films).

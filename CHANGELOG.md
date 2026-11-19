@@ -1,3 +1,7 @@
+## 0.6.29 – Sammelstand 0.6.24 + 0.6.27 + 0.6.28
+- Zusammenführung von PR #74 (Episodensuche), PR #76 (Oberfläche) und PR #75 (Diagnose 19.11.) auf Basis PR #73.
+- Konflikt Werkzuordnung: Stand aus 0.6.27 übernommen (enthält bereits `listed` aus 0.6.28, dazu `last_checked`/`oldest_checked`/`stored`).
+
 ## 0.6.28 – Diagnose 19.11.: Downloads auf exFAT, YouTube-Abruf, Zähler der Werkzuordnung
 - Björns Diagnose (19.11.2026, 0.6.26, Mac, Downloads/Zwischenspeicher auf /Volumes/Docking, System auf /Volumes/Docking-2).
 - Downloads: `os.link` (exklusives Veröffentlichen) scheiterte auf Laufwerken ohne Hardlinks mit `[Errno 45] Operation not supported` (15 YouTube-Abo-Aufträge, 17.11.). Neu `core.publish_exclusive`: Hardlink, sonst Name mit `O_EXCL` reservieren und per `os.replace` darauf verschieben; überschreibt nie. Genutzt in `downloads.py` und `artwork.py` (Bilder fielen dort still weg). Einmaliges Neueinreihen (`requeued_0628`).
@@ -5,6 +9,14 @@
 - `portal_enrichment.metrics`: zählt nur Prüfberichte von Titeln, die im aktuellen Katalog stehen, und liefert `listed`; die Übersicht rechnet „geprüft“, „noch offen“ und den Balken damit (RTL+: Hinweis auf mitgeprüfte Abo-Titel).
 - Enthält 0.6.24 (Episodensuche, PR #74).
 - Tests: `tests/test_v0628_diagnose_1911.py` (12).
+
+## 0.6.27 – YouTube-Abos im Dashboard, einheitliche Katalogübersicht, gegliederte Downloads
+- Björn (19.11.2026, 0.6.26): abonnierte YouTube-Videos fehlten in der normalen Dashboard-Übersicht; die Katalogkarten in der Verwaltung sahen je Anbieter anders aus (Kachelzahl und Reihenfolge wechselnd); die Downloadwarteschlange war undurchsichtig (wartende, geplante, fehlgeschlagene und fertige Aufträge als gleichförmige Kacheln durcheinander); bei der Werkzuordnung stand nur „geprüft“ ohne Zeitpunkt.
+- Dashboard: neue Quelle „YouTube-Abos“ (`web/abo_shelf.js`, `/api/youtube-abo-videos` → `youtube_abos.library`): alle offline gespeicherten Abo-Videos je Kanal, mit NEU/Fortschritt, Stand der letzten Prüfung, nächster Prüfung, Warteschlange und Fehlern je Kanal, Filter Profil/„Nur neue“/Suche. Unter „Alle“ und „YouTube“ zusätzlich der zuklappbare Block „Neu aus deinen YouTube-Abos“ (bis 12 neueste je Kanal). Auch als Startansicht wählbar (`ui_prefs.START_SOURCES`). `youtube_abos.kids(profile=None)` liefert alle Profile.
+- Verwaltung → Status: alle Plattformen in einer Tabelle (gleiche Spalten für jede Plattform); Plattform-Reiter: gleiche Karte mit sechs festen Kacheln, Stand im Kopf, Sonderwerte (Live-Sender, kopiergeschützt, abspielbar, Kanäle, Musik, API-Schlüssel) in einer Zeile „Besonderheiten“.
+- Werkzuordnung zählt nur noch Prüfungen der Titel im aktuellen Katalog (bisher auch längst entfernte Titel, z. B. RTL+ „1.042 von 65 geprüft“); neu `last_checked`/`oldest_checked` (`portal_enrichment.metrics`, Netzkino). Aufgaben und Katalogübersicht zeigen „zuletzt geprüft …“ und „ältester Stand …“.
+- Downloads: Gruppen Läuft gerade / Wartet / Geplant / Zurückgestellt / Fehlgeschlagen / Fertig (auf- und zuklappbar, Zustand gespeichert, Sprungleiste oben), darin je Herkunft (YouTube-Abo je Kanal, Anbieter, Sender), kompakte Zeilen, gemeinsamer Hinweis einer Gruppe nur einmal, „Alle erneut versuchen“ bei Fehlern, Fehlertexte auf zwei Zeilen gekürzt (voll im Tooltip). „Vorgemerkt ab …“ doppelte sich mit „Geplant für …“ und entfällt.
+- Tests: `tests/test_v0627_dashboard_abos.py` (5), Klicktest um YouTube-Abos und Katalogtabelle erweitert.
 
 ## 0.6.26 – Dienst bleibt bei Umzug und langsamem Laufwerk bedienbar, Protokoll-Download mit Frist
 - Björn (19.11.2026, 0.6.23/0.6.25, Datenordner auf /Volumes/Docking-2): „Protokoll herunterladen“ endete immer mit „seit 60 Sekunden nicht verfügbar“ (/api/diagnostics 84 s). Während des Downloadumzugs /api/state bis 579 s („catalog“ 532 s, „settings“ 239 s), /api/storage-locations bis 433 s (auch ohne Umzug 103 s), Katalog-Vorwärmen 449 s; auch ohne Umzug „catalog“ 2–20 s. Ursache: Datenbank (5,5 GB) und Umzug teilen sich dasselbe USB-Laufwerk; der Umzug kopierte ungebremst, die Oberfläche wartete synchron auf Laufwerksabfragen (`mount` je Laufwerk, freier Platz) und Zählungen.

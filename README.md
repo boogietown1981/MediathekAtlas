@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.28
+# MediathekAtlas · 0.6.29
+
+## Neu in 0.6.29: Sammelstand
+
+- Fasst 0.6.24 (Episodensuche), 0.6.27 (YouTube-Abos im Dashboard, einheitliche Katalogübersicht, gegliederte Downloads) und 0.6.28 (exFAT-Downloads, YouTube-Abruf, Zähler der Werkzuordnung) in einem Paket zusammen.
 
 ## Neu in 0.6.28: Downloads auf exFAT-Laufwerken, stabiler YouTube-Abruf, ehrliche Zähler
 
@@ -6,6 +10,12 @@
 - YouTube-Katalog: eine kurz abgebrochene Verbindung wird wiederholt, statt die Quelle für 24 Stunden ausfallen zu lassen. Nach einem Teilfehler folgt der nächste Versuch nach 2 Stunden, und die Titelzahl bleibt bei dem, was der Katalog tatsächlich zeigt.
 - Verwaltung: „Werkzuordnung … von … geprüft“ zählt nur Titel, die heute im Katalog stehen (vorher z. B. „3.894 von 3.075“ bei Joyn).
 - Enthält die Episodensuche aus 0.6.24.
+
+## Neu in 0.6.27: YouTube-Abos im Dashboard, aufgeräumte Downloads
+
+- Dashboard → Quelle „YouTube-Abos“: alle abonnierten Videos je Kanal; unter „Alle“ steht oben „Neu aus deinen YouTube-Abos“.
+- Downloads nach Zustand gegliedert (läuft, wartet, geplant, fehlgeschlagen, fertig) und darin je Kanal bzw. Anbieter.
+- Verwaltung → Status: alle Kataloge in einer einheitlichen Tabelle; bei der Werkzuordnung steht, wann zuletzt geprüft wurde.
 
 ## Neu in 0.6.26: bedienbar auch während eines Umzugs
 

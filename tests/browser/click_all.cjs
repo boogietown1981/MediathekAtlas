@@ -118,6 +118,16 @@ async function clickThrough(name, url) {
     }
     await page.evaluate(() => window.atlasShowView('discover'));
     await page.waitForTimeout(800);
+    // 0.6.27: Quelle „YouTube-Abos“ (web/abo_shelf.js) und zurück zu „Alle“.
+    await page.locator('[data-catalog-source="abos"]').click();
+    await page.waitForFunction(() => { const s = document.getElementById('atlas-abo-shelf'); return s && !s.hidden && /Noch keine YouTube-Abos/.test(s.textContent) && document.getElementById('atlas-source-content').hidden; }, null, { timeout: 10000 }).catch(() => problems.push('YouTube-Abos im Dashboard fehlen'));
+    await page.locator('[data-catalog-source="all"]').click();
+    await page.waitForTimeout(500);
+    await expect('Katalog nach „Alle“ wieder sichtbar', () => !document.getElementById('atlas-source-content').hidden);
+    // 0.6.27: Verwaltung → Status zeigt alle Plattformen in einer Tabelle.
+    await page.evaluate(() => window.atlasShowView('status'));
+    await page.waitForSelector('#atlas-portal-dashboard .atlas-portal-table tbody tr', { timeout: 15000 }).catch(() => problems.push('Katalogübersicht als Tabelle fehlt'));
+    await page.evaluate(() => window.atlasShowView('discover'));
 
     // 0.6.8: Ansehen-Modus (/ansehen) – every area once.
     await page.goto(url + 'ansehen');

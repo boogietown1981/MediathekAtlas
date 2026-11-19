@@ -949,12 +949,14 @@ def kids(root, c, watch=None, profile='kinder'):
     """Fertig geladene Videos eines Profils mit seinen Kanälen, neue zuerst. Kinderecke: 'kinder',
     Ansehen-Modus (watch_home.py): 'erwachsene' (0.6.11: keine Vermischung mehr)."""
     import watch_state
-    if profile not in PROFILES:
+    if profile is not None and profile not in PROFILES:
         raise ValueError('Unbekanntes Profil')
     db = _connect(root)
     try:
         sync_states(c, db)
-        abos = [dict(r) for r in db.execute('SELECT id,label,title,ref,kids,profile FROM youtube_abos WHERE profile=?', (profile,))]
+        # 0.6.27: profile=None liefert alle Abos (Dashboard, library()).
+        abos = [dict(r) for r in (db.execute('SELECT id,label,title,ref,kids,profile FROM youtube_abos') if profile is None else
+                                  db.execute('SELECT id,label,title,ref,kids,profile FROM youtube_abos WHERE profile=?', (profile,)))]
         ids = [a['id'] for a in abos]
         rows = [dict(r) for r in db.execute(
             "SELECT abo_id,video,title,published,duration,job_id,done_at FROM youtube_abo_videos WHERE state='done' AND abo_id IN (%s)"
@@ -988,6 +990,35 @@ def kids(root, c, watch=None, profile='kinder'):
                          'new': sum(1 for v in own if v['new']), 'avatar': bool(avatar_file(root, a['id']))})
     channels.sort(key=lambda ch: (-ch['new'], ch['name'].lower()))
     return {'channels': channels, 'videos': videos}
+
+
+def library(root, c, watch=None):
+    """0.6.27 (Björn, 19.11.2026): die abonnierten Videos im normalen Dashboard, gegliedert je Kanal.
+    Alle Profile; je Kanal zusätzlich, was noch in der Warteschlange steckt und wann zuletzt geprüft wurde."""
+    data = kids(root, c, watch=watch, profile=None)
+    db = _connect(root)
+    try:
+        meta = {r['id']: dict(r) for r in db.execute(
+            'SELECT id,ref,enabled,checked,next_check,last_error,interval_hours FROM youtube_abos')}
+        counts = {}
+        for r in db.execute("SELECT abo_id,state,COUNT(*),SUM(state='queued' AND reason!='') FROM youtube_abo_videos GROUP BY abo_id,state"):
+            mine = counts.setdefault(r[0], {})
+            mine[r[1]] = r[2]
+            if r[1] == 'queued' and r[3]:
+                mine['retry'] = r[3]
+    finally:
+        db.close()
+    for ch in data['channels']:
+        m, n = meta.get(ch['id'], {}), counts.get(ch['id'], {})
+        ch.update({'profile_label': PROFILES.get(ch['profile'], ch['profile']), 'enabled': bool(m.get('enabled')),
+                   'checked': m.get('checked') or 0, 'next_check': m.get('next_check') or 0,
+                   'error': m.get('last_error') or '', 'queued': n.get('queued') or 0, 'retry': n.get('retry') or 0,
+                   'failed': n.get('failed') or 0, 'url': _channel_url(m.get('ref') or '').replace('/videos', '') if m.get('ref') else ''})
+    # Kanäle mit neuen Videos zuerst, dann mit Videos, dann der Rest (z. B. noch nichts geladen)
+    data['channels'].sort(key=lambda ch: (-ch['new'], -ch['videos'], ch['name'].lower()))
+    data['pause'] = _pause()
+    data['next_slot'] = next_slot(root)
+    return data
 
 
 def summary(root):

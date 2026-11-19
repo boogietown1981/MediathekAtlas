@@ -427,7 +427,8 @@ def metrics(root):
             except (ValueError,AttributeError):status='invalid'
             if status not in ('review','candidate','no_match','partial'):status='invalid'
             counts[status]=counts.get(status,0)+1
-        return {'checked':sum(counts.values()),'by_status':counts}
+        newest,oldest=db.execute('SELECT MAX(checked),MIN(checked) FROM netzkino_reference_checks').fetchone()
+        return {'checked':sum(counts.values()),'by_status':counts,'last_checked':newest or 0,'oldest_checked':oldest or 0}
     finally:db.close()
 
 

@@ -187,8 +187,10 @@ def task_details():
             out['catalog:'+key]={'running':bool(st.get('running')),'auto':bool(st.get('auto')),'titles':titles,
                 'last_success':st.get('last_success') or 0,'next_attempt':st.get('next_attempt') or 0,
                 'last_result':st.get('last_result') or '','last_error':st.get('last_error') or ''}
-            checked=int((enrichment.metrics(ROOT) or {}).get('checked') or 0)
-            out['enrich:'+key]={'checked':min(checked,titles) if titles else checked,'total':titles}
+            ref=enrichment.metrics(ROOT) or {};checked=int(ref.get('checked') or 0)
+            # 0.6.27: Zeitpunkt der neuesten und der ältesten Prüfung („von wann ist der Stand?“)
+            out['enrich:'+key]={'checked':min(checked,titles) if titles else checked,'total':titles,
+                'last_checked':ref.get('last_checked') or 0,'oldest_checked':ref.get('oldest_checked') or 0}
         except Exception as e:
             out['catalog:'+key]={'error':core.safe_error(e)}
     try:
@@ -1079,6 +1081,11 @@ def get_kids_js(self,path):
 @ROUTES.get('/api/kids')
 def get_kids(self,path):
     with db() as c:return self.send(youtube_abos.kids(ROOT,c))
+
+# 0.6.27: abonnierte Videos im Dashboard, je Kanal (web/abo_shelf.js)
+@ROUTES.get('/api/youtube-abo-videos')
+def get_youtube_abo_videos(self,path):
+    with db() as c:return self.send(youtube_abos.library(ROOT,c))
 
 # 0.6.8: Ansehen-Modus für Erwachsene – dieselbe Seite wie „/“, ohne Verwaltung (web/watch_mode.js)
 @ROUTES.get('/ansehen',stage='signed')
@@ -2256,7 +2263,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

@@ -1,8 +1,17 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.29 – Sammelstand (19. November 2026)
+- Automatisch: gesamte Python-Suite (1385, 4 übersprungen), Node-Tests, Klicktests Chromium (`click_all.cjs` ohne Befund, `player_tracks.cjs` in Ordnung).
+- Nicht geprüft: Björns Mac mit Docking/Docking-2, exFAT real, NAS, Windows.
+
 ## 0.6.28 – Diagnose 19.11. (19. November 2026)
 - Automatisch: gesamte Python-Suite (1380, 4 übersprungen), Node-Tests, Klicktest Chromium (`click_all.cjs` ohne Befund). Neu `tests/test_v0628_diagnose_1911.py` (12): Veröffentlichen ohne Hardlinks (Errno 45 nachgestellt), nie überschreiben, Neueinreihen, Wiederholung bei Verbindungsabbruch, Zähler bei Teilfehler, Zähler der Werkzuordnung.
 - Nicht geprüft: echtes exFAT-Laufwerk am Mac (nur mit nachgestelltem Errno 45), echter YouTube-Abruf (kein Schlüssel in der Testumgebung), NAS, Windows.
+
+## 0.6.27 – YouTube-Abos im Dashboard, Katalogtabelle, gegliederte Downloads (19. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest Chromium (`click_all.cjs` inkl. Quelle „YouTube-Abos“ und Katalogtabelle). Neu `tests/test_v0627_dashboard_abos.py`.
+- Ablauf mit echtem Server und Beispieldaten (3 Abos, 19 Abo-Aufträge, Chromium 1600 px): Dashboard „Alle“ und „YouTube-Abos“, Downloads gegliedert, Katalogtabelle, Plattformkarte, Aufgaben – ohne Skript- oder Serverfehler.
+- Nicht geprüft: Björns Mac mit echtem Bestand (viele Kanäle/Aufträge), Safari, iPad, NAS.
 
 ## 0.6.26 – Dienst bei Umzug und langsamem Laufwerk (19. November 2026)
 - Automatisch: gesamte Python-Suite (1351, 4 übersprungen), Node-Tests, Klicktests Chromium. Neu `tests/test_v0626_busy_drive.py`: hängender Teil im Diagnose-Export endet nach der Frist, hängende Laufwerksliste blockiert die Speicherorte-Anzeige nicht, Pausen nur im Umzug-Thread, startup.log aus dem Startordner.

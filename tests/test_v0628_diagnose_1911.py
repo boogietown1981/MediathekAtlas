@@ -203,12 +203,15 @@ class MetricsTests(unittest.TestCase):
                 db.execute('INSERT INTO checks VALUES(?,?,?,?)', (item, 1, '', json.dumps({'status': status})))
         db.close()
         m = engine.metrics(spec, None)
-        self.assertEqual(m, {'checked': 2, 'by_status': {'candidate': 1, 'no_match': 1}, 'listed': 3})
+        # 0.6.29: 0.6.27 adds last_checked/oldest_checked/stored to the same counting
+        self.assertEqual({k: m[k] for k in ('checked', 'by_status', 'listed')},
+                         {'checked': 2, 'by_status': {'candidate': 1, 'no_match': 1}, 'listed': 3})
+        self.assertEqual(m.get('stored', 5), 5)
 
     def test_overview_uses_listed_titles(self):
         js = (ROOT / 'web' / 'unified_catalog.js').read_text(encoding='utf-8')
         self.assertIn('ref.listed', js)
-        self.assertIn("num(pool)+' geprüft", js)
+        self.assertRegex(js, r"num\((f\.)?pool\)\+' geprüft")
 
 
 if __name__ == '__main__':
