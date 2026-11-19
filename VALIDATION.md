@@ -1,10 +1,16 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.39 – Erkennung ARD/ZDF (19. November 2026)
+- Automatisch: siehe PR. Neu `tests/test_v0639_recognition_noise.py`: Suchtitel bereinigt (und echte Titel unverändert), Serienabfrage für nummerierte Teile, Datumsregel mit Gegenbeispielen, ARTE-Fremdsprachfassungen (Länge, deutsche Fassung, Anzahl), Neuzuordnung geprüfter Werke ohne Treffer (Werke mit Vorschlag und Filme bleiben).
+- Regeln an den 1.086 erfolglosen Prüfungen aus Björns Diagnose 16:12 nachgezählt.
+- Nicht geprüft: Wirkung auf Björns Bestand (Zahlen erst nach dem Formatdurchlauf in einer neuen Diagnose), Trefferquote der bereinigten Suchtitel bei TMDB/TVDB (Testumgebung ohne Anbieterzugriff).
+
 ## 0.6.37 – Downloads als Liste, fehlende Dateien, Abos unter YouTube, Werkkatalog unter Plattformen (19. November 2026)
 - Automatisch: gesamte Python-Suite (1421, 4 übersprungen), Node-Tests, Klicktest Chromium ohne Befund (neu: YouTube → Abos, Plattformen → ARD, ZDF & Co., alter Link „legacy“). Neu `tests/test_v0637_missing_files.py`: Wiederfinden über verschobenen Download-Ordner, Namenssuche mit Größenprüfung, zwei Kandidaten bleiben offen, Entfernen nur fehlender fertiger Einträge, Umzug „übernehmen“ schreibt nur vorhandene Pfade um.
 - Echter Server mit Testdaten im Browser (Chromium): Gruppe „Datei fehlt“, automatische Suche fand 1 von 3 Dateien im neuen Ordner, Detailzeile ohne Überlauf, Bildschirmfotos.
 - Nicht geprüft: Björns echter Bestand nach dem Umzug auf /Volumes/Docking, Safari, NAS, Windows.
- – Kindervideos von YouTube (19. November 2026)
+
+## 0.6.36 – Kindervideos von YouTube (19. November 2026)
 - Automatisch: siehe Bericht im PR. Neu `tests/test_v0636_youtube_kids.py`: Laufzeitsuche (eigenes Deno zuerst), `--js-runtimes` nur bei neuem yt-dlp, Versionsabfrage einmalig, altes System-yt-dlp tritt zurück, Deno-Installation mit Prüfsumme (manipuliert → Fehler), Release-Dateinamen je System, Deno-Fehler nicht fatal, einmaliges Neueinreihen.
 - Geprüft gegen das offizielle yt-dlp 2026.10.26: Optionen `--js-runtimes`/`--remote-components` vorhanden, `yt_dlp_ejs` im Zipapp enthalten, Client-Logik (visionos ohne JS, Kindervideo-Hinweis) im Quelltext.
 - Nicht geprüft: echter Download eines Kindervideos (youtube.com ist aus der Testumgebung gesperrt), Deno-Download auf Björns Mac.

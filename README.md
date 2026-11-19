@@ -1,5 +1,9 @@
-# MediathekAtlas · 0.6.37
+# MediathekAtlas · 0.6.39
 
+## Neu in 0.6.39: Weniger „ohne Treffer“ bei ARD, ZDF & Co.
+
+- Sendungsausgaben mit Datum im Titel („ttt vom 2. Februar 2025“, „Studio 2 vom 16.11.2026“) und die französischen, spanischen, italienischen, polnischen und englischen ARTE-Fassungen wiederkehrender Sendungen werden ihrer Sendung zugeordnet, statt als Film gesucht zu werden – auch wenn sie schon ohne Treffer geprüft wurden.
+- Suchtitel ohne Folgenzähler und Zusätze („Donna Leon (12) – …“, „(2/6)“, „Season 1“, „- Audiodeskription“, „NEU“); nummerierte Teile („Die Rosenheim-Cops (13/20): …“) werden zuerst als Serie gesucht.
 ## Neu in 0.6.37: Downloads als Liste, Abos unter YouTube
 
 - Downloads stehen je Zustand in übersichtlichen Tabellen. Videos, deren Datei verschwunden ist, sucht MediathekAtlas automatisch an allen bekannten Speicherorten (auch früheren) und verknüpft eindeutige Funde neu; der Rest lässt sich einzeln oder gesammelt entfernen.
