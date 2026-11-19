@@ -1,3 +1,12 @@
+## 0.6.32 – Eigener Speicherort für das IMDb-Archiv (enthält 0.6.31)
+- Björn (19.11.2026): „warum kann ich die IMDb-DB noch nicht auf ein Dock ziehen?“ Das IMDb-Archiv (21,8 GB) lag fest in `<Datenordner>/imdb` und zog nur mit „System und Datenbank“ um. Ziel: Hauptdatenbank auf der internen SSD (auf Docking-2 bremste sie die Erkennung von etwa 600 auf 4 Ergebnisse pro Stunde), Archiv extern.
+- Einstellungen → Speicherorte: vierter Ort „IMDb-Archiv“ (`storage.json` → `imdb_dir`, Ortsmarkierung `.mediathekatlas-ort`). Umzug wie die anderen Orte: kopieren (Datenbank über die Backup-API, `building.db` und Downloads zählen nicht), prüfen, ohne Neustart umstellen (`Archive.relocate`), alter Ort bleibt bis „Alte Daten löschen“. Ein laufender Neuaufbau wird abgewartet, Neuaufbauten warten während des Umzugs (`imdb_held`).
+- Vorhandenes Archiv am Ziel (z. B. Kopie im alten Datenordner auf Docking-2): „Vorhandenes Archiv am Ziel verwenden“ ohne Kopie; ein Kopieren darüber ist gesperrt. Das bisherige Archiv gilt dann als ersetzbar (jederzeit neu von IMDb ladbar) und darf nach Bestätigung gelöscht werden, sofern das neue lesbar ist.
+- Fehlendes Laufwerk beim Start (10 s Wartezeit) oder im Betrieb: App läuft ohne IMDb-Abgleich weiter (Phase `unavailable`), legt nie ein leeres Archiv an und schaltet das Archiv ohne Neustart wieder zu, sobald das Laufwerk zurück ist.
+- Abfragezeit des Archivs (Mittel, langsamste) in Speicherorte und Diagnose (`imdb.timing`).
+- Systemumzug lässt ein altes Archiv im Datenordner zurück, wenn das Archiv einen eigenen Ort hat (auch beim Abschluss beim Start: `exclude` steht jetzt im Umzugsprotokoll).
+- Tests: `tests/test_v0630_imdb_location.py` (9); Klicktest erwartet vier Speicherorte.
+
 ## 0.6.31 – Hauptworker-Auswahl ohne Vollscan (Datenbank auf USB-Laufwerk)
 - Björn (19.11.2026, 0.6.29, System auf /Volumes/Docking-2): „Hauptworker 0 / 4 aktiv“, „Wird gestartet · 0 Abgleiche seit Start“, Folgenworker liefen.
 - Ursache: `Service.pick` suchte im Zustand `identified` über `work_queue(kind,state,next_try)` und filterte die Folgen-Warteschlange per `NOT EXISTS` – damit wurden alle ~220.000 wartenden Serien (next_try fällig) Zeile für Zeile gelesen, mehrfach je Auswahl. Die Prioritätenabfrage lief ebenso über `work_retry` statt über `metadata_priority`. Auf SSD ~0,2 s, auf dem USB-Laufwerk Minuten je Auswahl; die Auswahl kehrte nie zurück, daher auch kein „Wartet“.
