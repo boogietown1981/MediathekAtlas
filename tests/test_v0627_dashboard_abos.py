@@ -75,7 +75,7 @@ class MetricsTests(unittest.TestCase):
             m = pluto_enrichment.metrics(root)
         self.assertEqual(m['checked'], 2)
         self.assertEqual(m['by_status'], {'candidate': 1, 'no_match': 1})
-        self.assertEqual((m['last_checked'], m['oldest_checked'], m['stored']), (3000, 2000, 4))
+        self.assertEqual((m['last_checked'], m['oldest_checked'], m['stored'], m['listed']), (3000, 2000, 4, 2))
 
 
 class WiringTests(unittest.TestCase):

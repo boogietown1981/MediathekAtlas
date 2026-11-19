@@ -140,8 +140,10 @@
   }
   function phaseTone(p) {return p.running?'running':['failed','interrupted'].includes(p.last_result)?'error':p.last_result==='partial'||!p.last_success?'warn':'ok';}
   function portalFacts(p) {
-    const ref=p.reference||{},by=ref.by_status||{},titles=Number(p.titles||0),checked=Math.min(Number(ref.checked||0),titles||Number(ref.checked||0));
-    const share=titles?Math.min(100,Math.round(checked*100/titles)):0,off=p.offline||{};
+    const ref=p.reference||{},by=ref.by_status||{},titles=Number(p.titles||0);
+    // 0.6.28 (PR #75): the check counts the titles it actually works on (RTL+: also the subscription titles).
+    const pool=ref.listed!==undefined&&ref.listed!==null?Number(ref.listed||0):titles,checked=Math.min(Number(ref.checked||0),pool||Number(ref.checked||0));
+    const share=pool?Math.min(100,Math.round(checked*100/pool)):0,off=p.offline||{};
     const extras=[];
     if (p.channels) extras.push(num(p.channels)+' Live-Sender');
     if (p.playable!==undefined) extras.push(num(p.playable)+' im Player abspielbar');
@@ -154,7 +156,7 @@
     if (p.offline_note) {offline='aus';offlineHint=p.source==='youtube'?'Im YouTube-Bereich auf eigene Verantwortung einschaltbar (YouTube-Nutzungsbedingungen)':p.offline_note;}
     else if (p.protected && p.protected>=p.titles) {offline='nicht möglich';offlineHint='Der Anbieter liefert nur mit Kopierschutz';}
     else {const busy=(off.queued||0)+(off.downloading||0)+(off.tagging||0);offline=num(off.done)+(busy?' · '+num(busy)+' in Arbeit':'')+(off.error?' · '+num(off.error)+' Fehler':'');offlineHint='Offline-Kopien ('+p.offline_days+' Tage): verfügbar · in Arbeit · Fehler';}
-    return {titles,checked,share,by,extras,offline,offlineHint,open:Math.max(0,titles-checked),
+    return {titles,pool,checked,share,by,extras,offline,offlineHint,open:Math.max(0,pool-checked),
       stand:when(p.last_success),lastCheck:ref.last_checked?when(ref.last_checked):'',oldest:ref.oldest_checked?when(ref.oldest_checked):''};
   }
   function progressBar(share) {
@@ -172,7 +174,7 @@
     return [load,open];
   }
   function checkLine(f) {
-    return 'Werkzuordnung (IMDb/TVDB/TMDB): '+num(f.checked)+' von '+num(f.titles)+' geprüft · '+f.share+' %'+
+    return 'Werkzuordnung (IMDb/TVDB/TMDB): '+num(f.checked)+' von '+num(f.pool)+' geprüft · '+f.share+' %'+(f.pool>f.titles?' (inkl. '+num(f.pool-f.titles)+' Titel nur mit Abo)':'')+
       (f.lastCheck?' · zuletzt geprüft '+f.lastCheck:'')+(f.oldest&&f.oldest!==f.lastCheck?' · ältester Stand '+f.oldest:'');
   }
   function portalCard(p, inTab) {
