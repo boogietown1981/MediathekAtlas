@@ -1,7 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
 ## 0.6.40 – Sammelstand 0.6.36–0.6.39 (19. November 2026)
-- Automatisch: siehe Abschnitt im PR (gesamte Python-Suite, Node-Tests, Klicktests Chromium nach dem Zusammenführen).
+- Nach dem Zusammenführen: gesamte Python-Suite (1437, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund, Player-Spuren in Ordnung, Erweiterungs-Assistent mit echter Erweiterung ok (ein erster Lauf scheiterte an einer Wartezeit, zwei weitere Läufe grün).
+- Pakete gebaut (SPK, QPKG, deb, Linux, Windows-ZIP/Setup, macOS-ZIP), SHA256 geprüft.
+- Nicht geprüft: Björns Mac/Bestand, Safari, NAS, Windows.
 
 ## 0.6.39 – Erkennung ARD/ZDF (19. November 2026)
 - Automatisch: siehe PR. Neu `tests/test_v0639_recognition_noise.py`: Suchtitel bereinigt (und echte Titel unverändert), Serienabfrage für nummerierte Teile, Datumsregel mit Gegenbeispielen, ARTE-Fremdsprachfassungen (Länge, deutsche Fassung, Anzahl), Neuzuordnung geprüfter Werke ohne Treffer (Werke mit Vorschlag und Filme bleiben).
