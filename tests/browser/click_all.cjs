@@ -38,7 +38,12 @@ async function clickThrough(name, url) {
   const browser = await playwright[name].launch();
   try {
     const page = await browser.newPage({ viewport: { width: 1400, height: 1000 } });
-    page.on('pageerror', e => problems.push('Skriptfehler: ' + String(e)));
+    // 0.6.34: WebKit reports a same-origin fetch that a page navigation cancels as
+    // "Fetch API cannot load …/api/… due to access control checks" (a page error, not a
+    // rejection the app can catch). The UI and API share one origin, so a real CORS
+    // block cannot occur here; only that cancellation message is ignored.
+    const cancelled = /Fetch API cannot load .*127\.0\.0\.1:\d+\/api\/.* due to access control checks/;
+    page.on('pageerror', e => { if (name === 'webkit' && cancelled.test(String(e))) return; problems.push('Skriptfehler: ' + String(e)); });
     page.on('response', r => {
       const u = new URL(r.url());
       if (u.hostname === '127.0.0.1' && u.pathname.startsWith('/api/') && r.status() >= 400) problems.push(r.status() + ' ' + u.pathname);
