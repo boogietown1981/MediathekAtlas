@@ -1,3 +1,11 @@
+## 0.6.31 – Hauptworker-Auswahl ohne Vollscan (Datenbank auf USB-Laufwerk)
+- Björn (19.11.2026, 0.6.29, System auf /Volumes/Docking-2): „Hauptworker 0 / 4 aktiv“, „Wird gestartet · 0 Abgleiche seit Start“, Folgenworker liefen.
+- Ursache: `Service.pick` suchte im Zustand `identified` über `work_queue(kind,state,next_try)` und filterte die Folgen-Warteschlange per `NOT EXISTS` – damit wurden alle ~220.000 wartenden Serien (next_try fällig) Zeile für Zeile gelesen, mehrfach je Auswahl. Die Prioritätenabfrage lief ebenso über `work_retry` statt über `metadata_priority`. Auf SSD ~0,2 s, auf dem USB-Laufwerk Minuten je Auswahl; die Auswahl kehrte nie zurück, daher auch kein „Wartet“.
+- Neu: Teilindex `work_identity_recheck` (identifizierte Werke außerhalb der Warteschlange, gleiche Regel wie die Trigger), `catalog.IDENTITY_RECHECK` als gemeinsame Bedingung; `pick` nutzt ihn per `INDEXED BY`. Prioritäten per `CROSS JOIN` von `metadata_priority`. Messung (synthetisch 690.000 Werke, 219.000 in der Warteschlange): 9 Mio. → ~0 VM-Schritte, 0,19 s → 0,002 s.
+- Anzeige: „Letzte Erkennung“ ohne Ergebnis heißt „Sucht die nächste fällige Prüfung …“.
+- Nummer 0.6.30 ist vom Thread „Speicherorte“ reserviert.
+- Tests: `tests/test_v0631_identity_pick.py` (3; mit altem Code rot).
+
 ## 0.6.29 – Sammelstand 0.6.24 + 0.6.27 + 0.6.28
 - Zusammenführung von PR #74 (Episodensuche), PR #76 (Oberfläche) und PR #75 (Diagnose 19.11.) auf Basis PR #73.
 - Konflikt Werkzuordnung: Stand aus 0.6.27 übernommen (enthält bereits `listed` aus 0.6.28, dazu `last_checked`/`oldest_checked`/`stored`).

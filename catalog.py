@@ -53,6 +53,13 @@ CREATE TRIGGER IF NOT EXISTS episode_queue_work_delete AFTER DELETE ON works
 BEGIN DELETE FROM episode_queue WHERE work_id=OLD.id; END;
 
 CREATE INDEX IF NOT EXISTS work_first_pass ON works(attempts,state,kind,next_try);
+-- 0.6.29 (Björn, Datenbank auf USB-Laufwerk): identified works that are NOT in the episode queue.
+-- The identity selector used to walk all ~220,000 queued series row by row before finding none.
+CREATE INDEX IF NOT EXISTS work_identity_recheck ON works(kind,next_try) WHERE state='identified' AND NOT (
+ kind='series' AND NULLIF(json_extract(meta,'$.reference_id'),'') IS NOT NULL
+ AND json_type(meta,'$.deferred_providers') IS NULL
+ AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)=0);
 CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
 CREATE INDEX IF NOT EXISTS work_retry ON works(state,next_try);
@@ -1214,6 +1221,14 @@ def recover_download_queue(c):
     """Keep untouched queued jobs runnable after a crash; never replay an in-flight job blindly."""
     c.execute("UPDATE jobs SET state='interrupted' WHERE state IN ('downloading','tagging')")
     
+# Same rule as the episode_queue triggers and work_identity_recheck: an identified work outside
+# the episode queue. Must stay textually identical to the index so SQLite can use it.
+IDENTITY_RECHECK="""w.state='identified' AND NOT (
+ w.kind='series' AND NULLIF(json_extract(w.meta,'$.reference_id'),'') IS NOT NULL
+ AND json_type(w.meta,'$.deferred_providers') IS NULL
+ AND COALESCE(json_extract(w.meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(w.meta,'$.video_role_needs_review'),0)=0)"""
+
 def initialize(c):
     c.executescript(SCHEMA)
     # SQLite CREATE TRIGGER IF NOT EXISTS does not replace older definitions.

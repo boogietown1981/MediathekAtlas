@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.29
+# MediathekAtlas · 0.6.31
+
+## Neu in 0.6.31: Werkerkennung läuft auch mit der Datenbank auf einem USB-Laufwerk
+
+- Die Auswahl der nächsten Prüfung las bei jedem Durchgang alle rund 220.000 Serien der Folgen-Warteschlange. Mit der Datenbank auf einem externen Laufwerk dauerte das Minuten; die Hauptworker standen bei „0 / 4 aktiv“. Jetzt hilft ein eigener Index, die Auswahl braucht nur noch Millisekunden.
+- Beim ersten Start legt MediathekAtlas den Index einmalig an (auf einem USB-Laufwerk einige Minuten).
+- Solange noch kein Ergebnis da ist, steht in „Letzte Erkennung“ jetzt „Sucht die nächste fällige Prüfung …“ statt „Wird gestartet“.
 
 ## Neu in 0.6.29: Sammelstand
 
