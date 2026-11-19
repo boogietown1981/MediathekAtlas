@@ -529,6 +529,11 @@ class SystemMoveTests(unittest.TestCase):
         run(e.ctx, 'system', str(target))
         sl.data_root(e.home, log=self.say.append)
         ctx = sl.Context(e.home, target, e.ctx.settings, e.save, e.db)
+        # 0.6.25: solange der frühere Stand am Standardort liegt, wird er nie überschrieben
+        plan = ctx.plan('system', str(e.home))
+        self.assertFalse(plan['check']['ok'], plan['check'])
+        self.assertTrue(plan['check']['existing_data'])
+        ctx.cleanup('system', sl.CONFIRM)
         plan = ctx.plan('system', str(e.home))
         self.assertTrue(plan['check']['ok'], plan['check'])
         state = run(ctx, 'system', str(e.home))

@@ -19,6 +19,7 @@ PORT=int(os.environ.get('MEDIATHEKATLAS_PORT','0') or 0)
 RESTART_PORT=int(os.environ.pop('MEDIATHEKATLAS_RESTART_PORT','0') or 0)
 if not PORT and RESTART_PORT:PORT=RESTART_PORT
 RESTART=threading.Event()
+LOST_EXIT=[0]
 NETWORK=LISTEN not in ('127.0.0.1','localhost','::1') or os.environ.get('MEDIATHEKATLAS_LOGIN')=='1'
 MANAGED=os.environ.get('MEDIATHEKATLAS_MANAGED','')
 def _default_download_dir():
@@ -1255,6 +1256,7 @@ def post_storage_locations(self,path,d):
     if action=='cleanup':return self.send(STORAGE.cleanup(kind,d.get('confirm')))
     if action=='dismiss':return self.send(STORAGE.dismiss(kind))
     if action=='discard':return self.send(STORAGE.cancel_pending())
+    if action=='revert':return self.send(STORAGE.revert())
     if action=='restart':
         if os.name!='posix':raise ValueError('Bitte MediathekAtlas beenden und neu starten; der Umzug wird beim Start abgeschlossen.')
         if storage_locations.MOVER.running():raise ValueError('Bitte warten, bis der Umzug fertig ist.')
@@ -2283,6 +2285,11 @@ if __name__=='__main__':
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
         threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()
         threading.Thread(target=ENCODER.loop,args=(STOP,),daemon=True,name='encoder').start()
+    def storage_lost(text):
+        # 0.6.25: Datenordner im Betrieb verschwunden (Björn, 19.11.2026) → sauber anhalten, Startskript zeigt Hinweis.
+        print(text,flush=True);LOST_EXIT[0]=storage_locations.UNAVAILABLE_EXIT;STOP.set()
+        threading.Thread(target=server.shutdown,daemon=True).start()
+    threading.Thread(target=storage_locations.watch_root,args=(HOME,ROOT,STOP,storage_lost),daemon=True,name='storage_watch').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)
@@ -2302,3 +2309,4 @@ if __name__=='__main__':
             print('Neustart für den Speicherort-Umzug …',flush=True)
             argv=[a for a in sys.argv if a!='--no-browser']
             os.execv(sys.executable,[sys.executable]+argv+['--no-browser'])
+    if LOST_EXIT[0]:raise SystemExit(LOST_EXIT[0])

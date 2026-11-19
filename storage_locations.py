@@ -152,6 +152,10 @@ def data_root(home=None, wait=0.0, log=None) -> Path:
             text = ('Der Speicherort für System und Datenbank ist nicht erreichbar:\n%s\n\n'
                     'Bitte das Laufwerk bzw. die Netzwerkfreigabe verbinden und MediathekAtlas erneut starten. '
                     'Es wurde nichts verändert und kein neuer, leerer Katalog angelegt.' % root)
+            info = revert_info(home)
+            if info:
+                text += ('\n\nAlternativ „Bisherigen Ort verwenden“: startet mit dem Datenstand in\n%s\n(Stand %s). '
+                         'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (info['path'], info['stand'] or 'unbekannt'))
             try:
                 (home / PROBLEM_FILE).write_text(text + '\n', encoding='utf-8')
             except OSError:
@@ -163,6 +167,103 @@ def data_root(home=None, wait=0.0, log=None) -> Path:
         time.sleep(1.0)
     (home / PROBLEM_FILE).unlink(missing_ok=True)
     return root
+
+
+# ------------------------------------------------------------------ Sicherer Rückweg (0.6.25)
+
+def _stand(path):
+    try:
+        return time.strftime('%d.%m.%Y %H:%M', time.localtime(Path(path).stat().st_mtime))
+    except OSError:
+        return ''
+
+
+def revert_info(home) -> dict | None:
+    """Bisheriger Datenordner, auf den sich gefahrlos zurückstellen lässt – nur den Zeiger, ohne Kopie.
+
+    Björn (19.11.2026): Nach dem Abschluss des System-Umzugs fiel das Ziellaufwerk Sekunden später
+    weg. Der bisherige Ort war vollständig und unverändert, aber der einzige Weg zurück
+    („Zurück an den Standardort“) hätte die womöglich beschädigte Kopie darüber kopiert.
+    Kandidaten: der vermerkte alte Ort des letzten System-Umzugs, sonst der Startordner – jeweils nur
+    mit vorhandener ``catalog.db``. Am aktuellen Ort wird nichts verändert oder gelöscht.
+    """
+    home = Path(home)
+    cfg = read_pointer(home)
+    current = cfg.get('data_dir')
+    if not current:
+        return None
+    prev = (cfg.get('previous') or {}).get('system') or {}
+    candidates = [prev.get('source'), str(home)]
+    for cand in candidates:
+        if not cand or same(cand, current):
+            continue
+        folder = Path(cand)
+        try:
+            usable = (folder / 'catalog.db').is_file() and (same(folder, home) or (folder / DATA_MARKER).is_file())
+        except OSError:
+            usable = False
+        if usable:
+            return {'path': str(folder), 'current': str(current), 'stand': _stand(folder / 'catalog.db'),
+                    'is_default': same(folder, home)}
+    return None
+
+
+def revert_system(home) -> dict:
+    """Stellt System und Datenbank auf den bisherigen Ort zurück (wirksam beim nächsten Start)."""
+    home = Path(home)
+    info = revert_info(home)
+    if not info:
+        raise ValueError('Kein bisheriger Datenordner mit Katalog gefunden; es wurde nichts verändert.')
+    cfg = read_pointer(home)
+    if info['is_default']:
+        cfg.pop('data_dir', None)
+    else:
+        cfg['data_dir'] = info['path']
+    cfg.pop('pending', None)
+    previous = dict(cfg.get('previous') or {})
+    previous.pop('system', None)        # „Alte Daten löschen“ darf den jetzt aktiven Ort nie erreichen
+    cfg['previous'] = previous
+    cfg['abandoned'] = {'path': info['current'], 'at': time.time()}
+    cfg['last'] = {'kind': 'system', 'phase': 'reverted', 'at': time.time(), 'source': info['current'],
+                   'target': info['path']}
+    write_pointer(home, cfg)
+    (home / PROBLEM_FILE).unlink(missing_ok=True)
+    return info
+
+
+def lost_text(root, home):
+    text = ('Der Speicherort für System und Datenbank ist nicht mehr erreichbar:\n%s\n\n'
+            'MediathekAtlas wurde angehalten, damit nichts Halbes geschrieben wird. Bitte das Laufwerk bzw. '
+            'die Netzwerkfreigabe wieder verbinden und erneut starten.' % root)
+    info = revert_info(home)
+    if info:
+        text += ('\n\nAlternativ „Bisherigen Ort verwenden“: startet mit dem Datenstand in\n%s\n(Stand %s). '
+                 'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (info['path'], info['stand'] or 'unbekannt'))
+    return text
+
+
+def watch_root(home, root, stop, on_lost, interval=10.0, misses=2):
+    """Wächter (0.6.25): verschwindet der Datenordner im Betrieb (Laufwerk abgezogen, Ruhezustand),
+    wird ``on_lost(text)`` aufgerufen, statt mit Fehlern wie „database disk image is malformed“
+    weiterzulaufen. Nur für einen eingestellten Datenordner außerhalb des Startordners."""
+    home, root = Path(home), Path(root)
+    if same(home, root):
+        return
+    missing = 0
+    while not stop.wait(interval):
+        try:
+            ok = (root / DATA_MARKER).is_file()
+        except OSError:
+            ok = False
+        missing = 0 if ok else missing + 1
+        if missing >= misses:
+            text = lost_text(root, home)
+            try:
+                (home / PROBLEM_FILE).write_text(text + '\n', encoding='utf-8')
+            except OSError:
+                pass
+            on_lost(text)
+            return
 
 
 # ------------------------------------------------------------------ Dateien, Datenbanken
@@ -303,7 +404,6 @@ def copy_sqlite(src, dst, on_bytes=None, cancelled=None, on_stage=None):
                 stage('copy', done, total)
             stage('copy', 0, total)
             source.backup(target, pages=BACKUP_PAGES, progress=progress, sleep=0)
-            mode = source.execute('PRAGMA journal_mode').fetchone()[0]
             source.execute('COMMIT')
             stage('check', 0, total)
             if total <= QUICK_CHECK_LIMIT:
@@ -315,14 +415,20 @@ def copy_sqlite(src, dst, on_bytes=None, cancelled=None, on_stage=None):
                 if copied != pages:
                     raise ValueError('Datenbankkopie unvollständig (%s): %d von %d Seiten' % (Path(src).name, copied, pages))
                 target.execute('SELECT count(*) FROM sqlite_master').fetchone()
-            if str(mode).lower() == 'wal':
-                target.execute('PRAGMA journal_mode=WAL')
             target.commit()
+            # 0.6.25: keine Umstellung des Journalmodus an der Kopie mehr; sollte die Prüfung dort ein
+            # WAL angelegt haben, wird es zurückgeschrieben statt blind gelöscht.
+            if str(target.execute('PRAGMA journal_mode').fetchone()[0]).lower() == 'wal':
+                target.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         finally:
             target.close()
             source.close()
-        Path(part.with_name(part.name + '-wal')).unlink(missing_ok=True)
-        Path(part.with_name(part.name + '-shm')).unlink(missing_ok=True)
+        for suffix in ('-wal', '-shm'):
+            extra = part.with_name(part.name + suffix)
+            if extra.exists():
+                if suffix == '-wal' and extra.stat().st_size:
+                    raise ValueError('Datenbankkopie nicht vollständig zurückgeschrieben (%s)' % Path(src).name)
+                extra.unlink(missing_ok=True)
         stage('sync', total, total)
         with open(part, 'rb') as f:
             os.fsync(f.fileno())
@@ -544,7 +650,7 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
     staging = p / STAGING
     if p.is_dir():
         if kind == 'system':
-            if (p / DATA_MARKER).is_file() and (p / 'catalog.db').is_file():
+            if (p / 'catalog.db').is_file() and (is_home or (p / DATA_MARKER).is_file()):
                 result['existing_data'] = True
             entries = [x for x in p.iterdir() if x.name not in SKIP_NAMES]
             if entries and not is_home and not staging.is_file() and not result['existing_data']:
@@ -558,6 +664,12 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
                     warnings.append('Unterbrochener Umzug gefunden: bereits kopierte Dateien werden übernommen.')
             except (OSError, ValueError):
                 pass
+    if kind == 'system' and mode == 'copy' and is_home and result['existing_data'] and not staging.is_file():
+        # 0.6.25: am Standardort liegt noch ein früherer Stand – nie überschreiben.
+        problems.append('Am Standardort liegt noch ein früherer Datenstand (Katalog vom %s). Er wird nicht '
+                        'überschrieben. „Vorhandene MediathekAtlas-Daten am Ziel verwenden“ kehrt zu diesem Stand '
+                        'zurück; soll der aktuelle Stand umziehen, den früheren vorher löschen lassen oder im Finder '
+                        'wegräumen.' % (_stand(p / 'catalog.db') or 'unbekannt'))
     if mode == 'adopt':
         if not result['existing_data']:
             problems.append('Am Ziel liegen keine MediathekAtlas-Daten.')
@@ -1241,8 +1353,18 @@ class Context:
         cfg['previous'] = previous
         if kind == 'system' and (cfg.get('pending') or {}).get('state') == 'failed':
             cfg.pop('pending', None)
+        if kind == 'system':
+            cfg.pop('abandoned', None)
         write_pointer(self.home, cfg)
         return {'ok': True}
+
+    def revert(self):
+        """„Bisherigen Ort verwenden“: nur den Zeiger zurückstellen, wirksam beim Neustart."""
+        if MOVER.running():
+            raise ValueError('Bitte zuerst den laufenden Umzug abbrechen.')
+        info = revert_system(self.home)
+        self.event('storage_reverted', target=info['path'], left=info['current'])
+        return dict(info, restart_needed=True)
 
     def cancel_pending(self):
         """Vorbereiteten System-Umzug verwerfen (Kopie am Ziel bleibt liegen)."""
@@ -1278,4 +1400,34 @@ class Context:
                     row['reachable'] = False
         return {'locations': rows, 'move': MOVER.status(), 'previous': cfg.get('previous') or {},
                 'pending': cfg.get('pending'), 'last': cfg.get('last'), 'volumes': volumes(),
+                'revert': revert_info(self.home), 'abandoned': cfg.get('abandoned'),
                 'restart_supported': os.name == 'posix', 'confirm': CONFIRM}
+
+
+def main(argv=None):
+    """Startskripte (0.6.25): ``--revert-info`` / ``--revert`` ohne laufenden Server."""
+    import argparse
+    parser = argparse.ArgumentParser(description='MediathekAtlas-Speicherorte')
+    parser.add_argument('--home', default=None)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--revert-info', action='store_true')
+    group.add_argument('--revert', action='store_true')
+    args = parser.parse_args(argv)
+    home = Path(args.home) if args.home else default_home()
+    if args.revert_info:
+        info = revert_info(home)
+        if not info:
+            return 1
+        print('%s (Stand %s)' % (info['path'], info['stand'] or 'unbekannt'))
+        return 0
+    try:
+        info = revert_system(home)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print('Datenordner zurückgestellt auf %s; %s bleibt unverändert liegen.' % (info['path'], info['current']))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

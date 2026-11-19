@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.23
+# MediathekAtlas · 0.6.25
+
+## Neu in 0.6.25: sicherer Weg zurück, wenn das Laufwerk mit der Datenbank wegfällt
+
+- „Bisherigen Ort verwenden“ (beim Start, wenn das Laufwerk fehlt, und in Einstellungen → Speicherorte): MediathekAtlas arbeitet wieder mit dem Datenstand am bisherigen Ort. Es wird nichts kopiert und nichts gelöscht; die Kopie auf dem Laufwerk bleibt unverändert liegen.
+- Verschwindet das Laufwerk im Betrieb, hält MediathekAtlas sauber an und meldet es, statt mit Datenbankfehlern weiterzulaufen.
+- „Zurück an den Standardort“ überschreibt nie mehr einen dort noch liegenden früheren Datenstand.
 
 ## Neu in 0.6.23: Umzug scheitert nicht mehr an Dateien, die die App gerade schreibt
 

@@ -93,6 +93,18 @@ function render(){
    back.onclick=()=>{const dl=data.locations.find(x=>x.kind==='downloads');input.value=dl?.path||'';check.click();};
    const r=el('div',undefined,'loc-actions');r.append(back);card.append(r);
   }
+  if(row.kind==='system'&&data.revert){
+   // 0.6.25: sicherer Rückweg – nur umstellen, nichts kopieren oder löschen (Björn, 19.11.2026).
+   const rv=data.revert,box2=el('div',undefined,'loc-check');
+   box2.append(line('Bisheriger Ort mit vollständigem Datenstand: '+rv.path+(rv.stand?' (Stand '+rv.stand+')':'')+'. Zurückstellen kopiert und löscht nichts; '+rv.current+' bleibt unverändert liegen. Änderungen seit dem Umzug sind dann nicht enthalten.'));
+   const rr=el('div',undefined,'loc-actions'),b=el('button','Bisherigen Ort wieder verwenden');b.type='button';b.disabled=busyMove;
+   b.onclick=()=>{if(!confirm('MediathekAtlas arbeitet nach dem Neustart wieder mit '+rv.path+(rv.stand?' (Stand '+rv.stand+')':'')+'. Die Daten in '+rv.current+' bleiben unverändert liegen. Fortfahren?'))return;busy(b,async()=>{await api('storage-locations',{action:'revert'});await load();if(data.restart_supported&&!data.managed)await restart(b,true);else notice('Umgestellt. Bitte MediathekAtlas neu starten.');});};
+   rr.append(b);box2.append(rr);card.append(box2);
+  }
+  if(row.kind==='system'&&data.abandoned?.path){
+   const ab=el('div',undefined,'loc-check');ab.append(line('Nicht mehr benutzte Kopie: '+data.abandoned.path+'. Sie wird nicht automatisch gelöscht; nach einer Prüfung des Laufwerks lässt sie sich im Finder entfernen.'));
+   const ar=el('div',undefined,'loc-actions'),h=el('button','Hinweis ausblenden');h.type='button';h.onclick=()=>busy(h,async()=>{await api('storage-locations',{action:'dismiss',kind:'system'});await load();});ar.append(h);ab.append(ar);card.append(ab);
+  }
   if(row.kind==='system'&&!row.is_default){
    const back=el('button','Zurück an den Standardort');back.type='button';back.disabled=busyMove;
    back.onclick=()=>{input.value=row.default;check.click();};
@@ -125,8 +137,8 @@ async function start(kind,mode,button){
  if(!confirm(text))return;
  await busy(button,async()=>{await api('storage-locations',{action:'start',kind,target:r.target,mode});delete checks[kind];notice(mode==='copy'?'Umzug gestartet. Die App bleibt nutzbar.':'Umgestellt.');await load();});
 }
-async function restart(button){
- if(!confirm('MediathekAtlas startet neu und schließt den Umzug ab. Das kann je nach Datenmenge einige Minuten dauern. Jetzt neu starten?'))return;
+async function restart(button,quiet){
+ if(!quiet&&!confirm('MediathekAtlas startet neu und schließt den Umzug ab. Das kann je nach Datenmenge einige Minuten dauern. Jetzt neu starten?'))return;
  await busy(button,async()=>{await api('storage-locations',{action:'restart'});});
  restarting=true;clearTimeout(timer);moveBox.hidden=false;moveBox.replaceChildren(el('strong','Neustart läuft …'),line('Der Umzug wird abgeschlossen. Diese Seite lädt sich neu, sobald MediathekAtlas wieder bereit ist.'));
  const started=Date.now();
