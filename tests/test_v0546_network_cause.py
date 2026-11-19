@@ -48,7 +48,7 @@ class CauseTests(unittest.TestCase):
 
     def test_wiring(self):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
-        self.assertIn("'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()}", server)
+        self.assertIn("'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()}", server)
         self.assertIn("'netcheck.py'", (ROOT / 'build_macos.py').read_text(encoding='utf-8'))
         self.assertIn("with_cause('Netzkino-Katalogserver nicht erreichbar',exc)", (ROOT / 'netzkino.py').read_text(encoding='utf-8'))
 

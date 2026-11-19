@@ -356,6 +356,19 @@ class Service:
             else:self.repeat_checks+=1
             if from_template:self.template_hits+=1
             if outcome in self.quality_counts:self.quality_counts[outcome]+=1
+    def _count_episode_queue(self):
+        try:
+            with self.db() as c:
+                total_ep=c.execute('SELECT COUNT(*) FROM episode_queue').fetchone()[0]
+                due_ep=c.execute('SELECT COUNT(*) FROM episode_queue WHERE next_try<=?',(time.time(),)).fetchone()[0]
+            self.episode_last_count=(time.monotonic(),total_ep,due_ep)
+        except sqlite3.OperationalError as e:
+            self.episode_last_count=(time.monotonic(),)+tuple(self.episode_last_count[1:])
+            if sqlite_busy(e):self.sqlite_busy_count+=1
+        except Exception:
+            self.episode_last_count=(time.monotonic(),)+tuple(self.episode_last_count[1:])
+        finally:self.episode_count_busy=False
+
     def scan_progress(self):
         with self.worker_lock:
             rate=self.scan_rate()
@@ -364,15 +377,12 @@ class Service:
             first=self.first_pass_checks;repeat=self.repeat_checks;template=self.template_hits
         total=sum(counts.values());elapsed=max(1,time.monotonic()-self.started_at)
         now=time.monotonic()
-        if self.db is not None and now-self.episode_last_count[0]>=30:
-            try:
-                with self.db() as c:
-                    total_ep=c.execute('SELECT COUNT(*) FROM episode_queue').fetchone()[0]
-                    due_ep=c.execute('SELECT COUNT(*) FROM episode_queue WHERE next_try<=?',(time.time(),)).fetchone()[0]
-                self.episode_last_count=(now,total_ep,due_ep)
-            except sqlite3.OperationalError as e:
-                if not sqlite_busy(e):raise
-                self.sqlite_busy_count+=1
+        if self.db is not None and now-self.episode_last_count[0]>=30 and not getattr(self,'episode_count_busy',False):
+            # 0.6.25 (Björn, 19.11.2026: /api/state „catalog“ 2–20 s, im Umzug bis 532 s): die Zählung der
+            # Folgen-Warteschlange läuft im Hintergrund; die Anzeige nimmt den letzten Stand.
+            self.episode_count_busy=True
+            counter=threading.Thread(target=self._count_episode_queue,daemon=True,name='episode_queue_count')
+            counter.start();counter.join(1.0)
         _,ep_total,ep_due=self.episode_last_count
         return {'episode_queue_total':ep_total,'episode_queue_due':ep_due,
                 'episode_workers_active':self.episode_active,

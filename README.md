@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.25
+# MediathekAtlas · 0.6.26
+
+## Neu in 0.6.26: bedienbar auch während eines Umzugs
+
+- „Protokoll herunterladen“ klappt auch, wenn das Laufwerk ausgelastet ist: Was nicht rechtzeitig fertig wird, steht als Zeitüberschreitung im Export.
+- Ein Umzug im laufenden Betrieb bremst sich zugunsten der Datenbank. Die Seite „Speicherorte“ wartet nicht mehr auf schlafende Laufwerke oder hängende Freigaben.
 
 ## Neu in 0.6.25: sicherer Weg zurück, wenn das Laufwerk mit der Datenbank wegfällt
 

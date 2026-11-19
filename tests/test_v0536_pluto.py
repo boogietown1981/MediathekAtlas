@@ -153,7 +153,7 @@ class WiringTests(unittest.TestCase):
     def test_server_ui_and_packages(self):
         server = (ROOT / 'server.py').read_text('utf-8')
         for needle in ("path=='/api/pluto'", "path=='/api/pluto-sync'", "('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')",
-                       "pluto=q.get('pluto',[''])[0]", "'pluto':pluto.state(ROOT)", "'/pluto.js'"):
+                       "pluto=q.get('pluto',[''])[0]", "'pluto':lambda:pluto.state(ROOT)", "'/pluto.js'"):
             self.assertTrue(__import__('_wiring').wired(needle), needle)
         self.assertIn("'pluto.py'", (ROOT / 'build_macos.py').read_text('utf-8'))
         html = (ROOT / 'web' / 'index.html').read_text('utf-8')

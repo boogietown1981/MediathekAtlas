@@ -341,21 +341,54 @@ def _fsync_dir(path):
         os.close(fd)
 
 
+_PACE = threading.local()   # im Umzug im laufenden Betrieb: Laufwerk für die Datenbank der App freihalten
+PACE_RATIO = 0.5             # nach jedem Block halb so lange Pause, wie der Block gebraucht hat
+FLUSH_EVERY = 64 * 1024 * 1024
+
+
+def _low_io_priority():
+    """0.6.25 (Björn, 19.11.2026: während des Downloadumzugs /api/state bis 579 s): der Umzug-Thread
+    bekommt unter macOS die gedrosselte E/A-Klasse (``setiopolicy_np``, IOPOL_THROTTLE), damit die
+    Datenbankzugriffe der App Vorrang haben. Anderswo genügt die Pause zwischen den Blöcken."""
+    _PACE.on = True
+    if sys.platform != 'darwin':
+        return False
+    try:
+        import ctypes
+        libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+        return libc.setiopolicy_np(0, 1, 3) == 0   # IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE
+    except (OSError, AttributeError):
+        return False
+
+
+def _pace(started):
+    if getattr(_PACE, 'on', False):
+        time.sleep(min(2.0, max(0.0, time.monotonic() - started) * PACE_RATIO))
+
+
 def copy_file(src, dst, on_bytes=None, cancelled=None):
     dst = Path(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     part = dst.with_name(dst.name + '.partial')
+    written = flushed = 0
     try:
         with open(src, 'rb') as fin, open(part, 'wb') as fout:
             while True:
                 if cancelled and cancelled():
                     raise InterruptedError('abgebrochen')
+                started = time.monotonic()
                 block = fin.read(CHUNK)
                 if not block:
                     break
                 fout.write(block)
+                written += len(block)
+                if getattr(_PACE, 'on', False) and written - flushed >= FLUSH_EVERY:
+                    fout.flush()
+                    os.fsync(fout.fileno())   # kleine Schübe statt eines großen Rückstaus vor dem fsync der Datenbank
+                    flushed = written
                 if on_bytes:
                     on_bytes(len(block))
+                _pace(started)
             fout.flush()
             os.fsync(fout.fileno())
         shutil.copystat(src, part, follow_symlinks=False)
@@ -394,7 +427,11 @@ def copy_sqlite(src, dst, on_bytes=None, cancelled=None, on_stage=None):
             pages = source.execute('PRAGMA page_count').fetchone()[0]   # Lesestand ab hier fest
             total = page_size * pages
 
+            step = [time.monotonic()]
+
             def progress(_status, remaining, count):
+                _pace(step[0])
+                step[0] = time.monotonic()
                 if cancelled and cancelled():
                     raise InterruptedError('abgebrochen')
                 done = max(0, (count - remaining) * page_size)
@@ -496,7 +533,41 @@ def disk(path):
         return {'free': 0, 'total': 0}
 
 
+_SLOW = {}
+_SLOW_LOCK = threading.Lock()
+
+
+def _bounded(key, fn, ttl=60.0, wait=3.0, default=None):
+    """0.6.25 (Björn, 19.11.2026: /api/storage-locations bis 433 s): Laufwerksabfragen (``mount``,
+    Platz auf schlafenden USB-Laufwerken oder hängenden Netzwerkfreigaben) laufen im Hintergrund.
+    Die Oberfläche wartet höchstens ``wait`` Sekunden und bekommt sonst den letzten bekannten Wert."""
+    with _SLOW_LOCK:
+        entry = _SLOW.setdefault(key, {})
+        fresh = 'value' in entry and time.monotonic() - entry['at'] < ttl
+        if fresh:
+            return entry['value']
+        thread = entry.get('thread')
+        if thread is None or not thread.is_alive():
+            def work():
+                try:
+                    value = fn()
+                except Exception:   # noqa: BLE001 – Anzeigewert, nie den Aufrufer stören
+                    value = default
+                with _SLOW_LOCK:
+                    entry.update(value=value, at=time.monotonic())
+            thread = threading.Thread(target=work, daemon=True, name='storage_probe')
+            entry['thread'] = thread
+            thread.start()
+    thread.join(wait)
+    with _SLOW_LOCK:
+        return entry.get('value', default)
+
+
 def _mounts():
+    return _bounded('mounts', _read_mounts, ttl=30.0, wait=6.0, default=[])
+
+
+def _read_mounts():
     rows = []
     try:
         if sys.platform.startswith('linux'):
@@ -1118,6 +1189,7 @@ class Mover:
 
     def _run(self, ctx, plan):
         kind = plan['kind']
+        _low_io_priority()
         hold = kind in ('downloads', 'cache')
         try:
             if hold:
@@ -1383,9 +1455,12 @@ class Context:
         defaults = {'downloads': '', 'cache': '', 'system': str(self.home)}
         for kind in KINDS:
             path = location(s, kind, self.root)
-            space = disk(path)
+            space = _bounded(('disk', path), lambda p=path: disk(p), ttl=20.0, wait=2.0,
+                             default={'free': 0, 'total': 0}) or {'free': 0, 'total': 0}
+            reachable = _bounded(('exists', path), lambda p=path: bool(p) and Path(p).exists(), ttl=10.0, wait=2.0,
+                                 default=None)
             item = {'kind': kind, 'label': KINDS[kind], 'path': path, 'free': space['free'], 'total': space['total'],
-                    'reachable': bool(path) and Path(path).exists(), 'suggest': SUBFOLDER[kind]}
+                    'reachable': reachable, 'suggest': SUBFOLDER[kind]}
             if kind == 'cache':
                 item['base'] = s.get('cache_dir') or ''
                 item['shared_with_downloads'] = not s.get('cache_dir')
@@ -1399,7 +1474,7 @@ class Context:
                     row['problem'] = problem['text']
                     row['reachable'] = False
         return {'locations': rows, 'move': MOVER.status(), 'previous': cfg.get('previous') or {},
-                'pending': cfg.get('pending'), 'last': cfg.get('last'), 'volumes': volumes(),
+                'pending': cfg.get('pending'), 'last': cfg.get('last'), 'volumes': _bounded('volumes', volumes, ttl=60.0, wait=3.0, default=[]) or [],
                 'revert': revert_info(self.home), 'abandoned': cfg.get('abandoned'),
                 'restart_supported': os.name == 'posix', 'confirm': CONFIRM}
 

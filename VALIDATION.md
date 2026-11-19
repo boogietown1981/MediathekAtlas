@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.26 – Dienst bei Umzug und langsamem Laufwerk (19. November 2026)
+- Automatisch: gesamte Python-Suite (1351, 4 übersprungen), Node-Tests, Klicktests Chromium. Neu `tests/test_v0626_busy_drive.py`: hängender Teil im Diagnose-Export endet nach der Frist, hängende Laufwerksliste blockiert die Speicherorte-Anzeige nicht, Pausen nur im Umzug-Thread, startup.log aus dem Startordner.
+- Ablauf mit echtem Server (Chromium): „Diagnose-ZIP herunterladen“ liefert das ZIP in 0,3 s.
+- Nicht geprüft: Wirkung der E/A-Drosselung auf Björns Mac mit Docking-2 (nur dort messbar), NAS, Windows.
+
 ## 0.6.25 – Sicherer Rückweg und Wächter (19. November 2026)
 - Automatisch: gesamte Python-Suite (1342, 4 übersprungen), Node-Tests, Klicktests Chromium (`click_all.cjs`, `player_tracks.cjs`). Neu `tests/test_v0625_storage_safety.py`: Björns Fall (Ziel nach Abschluss weg) → Meldung mit Rückweg, Rückstellung ändert weder Standardort noch Kopie, „Alte Daten löschen“ danach verweigert, Startskript-Aufruf, Wächter inkl. kurzem Aussetzer, WAL-Kopie ohne Nebendateien.
 - Ablauf mit echtem Server (Linux, Chromium): Datenordner im Betrieb entfernt → Server endet nach ~20 s mit Exit 3 und Hinweistext; Laufwerk zurück, in Einstellungen „Bisherigen Ort wieder verwenden“ → Neustart, App läuft am Standardort, Hinweis auf nicht mehr benutzte Kopie.

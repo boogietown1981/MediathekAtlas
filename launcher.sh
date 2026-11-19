@@ -12,7 +12,7 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 LOG="$STATE_DIR/startup.log"
 : > "$LOG"
-printf 'MediathekAtlas 0.6.25 Startprüfung\n' >> "$LOG"
+printf 'MediathekAtlas 0.6.26 Startprüfung\n' >> "$LOG"
 FOUND_PYTHON=""
 try_python() {
   local candidate="$1"
