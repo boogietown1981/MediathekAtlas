@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.35
+# MediathekAtlas · 0.6.38
+
+## Neu in 0.6.38: Chrome-Erweiterung einfacher installieren
+
+- Kein ZIP mehr herunterladen und entpacken: MediathekAtlas legt die Erweiterung „Videostart“ selbst in einen festen Ordner und hält ihn aktuell.
+- Einstellungen → „Videostart bei Anbietern“ führt in drei Schritten durch die Installation: Adresse `chrome://extensions` kopieren, Entwicklermodus einschalten, „Ordner im Finder zeigen“ und den Ordner auf die Chrome-Seite ziehen.
+- Die Seite erkennt die installierte Erweiterung von selbst (auch ohne Neuladen) und zeigt „installiert und aktuell“.
+- Updates kommen ohne Handarbeit: nach einer neuen MediathekAtlas-Version lädt sich die Erweiterung aus ihrem Ordner neu.
+- Einmalig nötig: eine vor 0.6.38 installierte Fassung auf `chrome://extensions` entfernen und über den Assistenten neu laden.
 
 ## Neu in 0.6.35: Start ohne Hänger
 

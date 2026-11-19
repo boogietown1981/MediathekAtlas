@@ -1008,6 +1008,19 @@ def get_video_audit(self,path):
 def get_browser_extension(self,path):
     return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')
 
+# 0.6.38: Einrichtungsassistent der Chrome-Erweiterung (entpackter Ordner statt ZIP, Erkennung, Update).
+@ROUTES.get('/api/browser-extension/status')
+def get_browser_extension_status(self,path):
+    return self.send(__import__('browser_extension').status(VERSION,HOME,NETWORK))
+
+@ROUTES.post('/api/browser-extension/reveal')
+def post_browser_extension_reveal(self,path,d):
+    if NETWORK:raise ValueError('Die App läuft auf einem anderen Gerät. Bitte die Erweiterung als ZIP herunterladen.')
+    import browser_extension
+    info=browser_extension.provide(VERSION,HOME)
+    info['shown']=bool(d.get('show',True)) and browser_extension.reveal(info['path'])
+    return self.send(info)
+
 @ROUTES.get('/api/live-tv')
 def get_live_tv(self,path):
     # 0.5.50: live channels of all sources, merged by station (web/live_tv.js).
@@ -2351,6 +2364,15 @@ if __name__=='__main__':
         # Ohne Hintergrunddienste (Klicktests) den Index trotzdem nach dem Start anlegen.
         threading.Thread(target=catalog.build_deferred_indexes,args=(db,diagnostics.event,diagnostics.error),daemon=True,name='catalog_index_build').start()
     _boot('Webserver bereit')
+    if not NETWORK:
+        def provide_extension():
+            # 0.6.38: entpackte Chrome-Erweiterung mit der aktuellen Version bereitlegen; eine geladene Erweiterung
+            # lädt sich danach auf der MediathekAtlas-Seite selbst neu (Update ohne Handarbeit).
+            try:
+                info=__import__('browser_extension').provide(VERSION,HOME)
+                if info['changed']:diagnostics.event('browser_extension_provided',version=info['version'],changed=len(info['changed']))
+            except Exception as e:diagnostics.error('browser_extension_provide_failed',e)
+        threading.Thread(target=provide_extension,daemon=True,name='browser_extension_provide').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)

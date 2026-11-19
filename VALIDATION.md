@@ -1,5 +1,12 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.38 – Einrichtungsassistent Chrome-Erweiterung (19. November 2026)
+- Automatisch: gesamte Python-Suite (1411, 4 übersprungen), Node-Tests, Klicktests Chromium (`click_all`, `player_tracks`). Neu `tests/test_v0638_extension_wizard.py` (10): Ordner anlegen, nur Geändertes neu schreiben, alte Dateien entfernen (Fremdes bleibt), Status, Finder/Explorer/xdg-open und fehlender Dateimanager, Manifest und Skripte ohne Datenversand, Routen.
+- Neuer Browsertest `tests/browser/extension_wizard.cjs` mit der echten Erweiterung in Chromium (geladen wie „Entpackte Erweiterung laden“, Entwicklermodus an): App legt den Ordner beim Start an; ohne Erweiterung Zustand „nicht installiert“ und Schritte; Erweiterung wird bei offener Seite geladen und meldet sich ohne Neuladen; App schreibt neue Fassung, Erweiterung lädt sich selbst neu und meldet die neue Version.
+- Befund dabei: Chrome deaktiviert entpackte Erweiterungen beim Neuladen, wenn der Entwicklermodus aus ist; der Assistent setzt den Entwicklermodus voraus (Schritt 2).
+- Pakete gebaut (SPK, QPKG, deb, Linux, Windows-ZIP/Setup, macOS-ZIP), SHA256 geprüft, `atlas_bridge.js` in jedem Paket.
+- Nicht geprüft: Ziehen des Ordners aus dem Finder auf `chrome://extensions` und ⌘⇧G im Ordnerdialog auf Björns Mac, „Ordner im Finder zeigen“ unter macOS (`open -R`), Edge/Brave, Windows.
+
 ## 0.6.35 – Start ohne Indexanlage (19. November 2026)
 - Automatisch: gesamte Python-Suite (1402, 4 übersprungen), Node-Tests, Klicktest Chromium. Neu `tests/test_v0635_deferred_index.py`: Schema ohne Index, Auswahl ohne Index, Aufbau im Hintergrund einmalig, Fehler wird gemeldet statt geworfen.
 - Echter Start mit synthetischer 868-MB-Datenbank (400.000 Werke) ohne Index: Adresse nach 0,8 s, Index danach im Hintergrund (0,3 s auf SSD).
