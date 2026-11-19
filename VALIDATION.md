@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.35 – Start ohne Indexanlage (19. November 2026)
+- Automatisch: gesamte Python-Suite (1402, 4 übersprungen), Node-Tests, Klicktest Chromium. Neu `tests/test_v0635_deferred_index.py`: Schema ohne Index, Auswahl ohne Index, Aufbau im Hintergrund einmalig, Fehler wird gemeldet statt geworfen.
+- Echter Start mit synthetischer 868-MB-Datenbank (400.000 Werke) ohne Index: Adresse nach 0,8 s, Index danach im Hintergrund (0,3 s auf SSD).
+- Nicht geprüft: Dauer der Indexanlage auf Björns Docking-2, macOS-App-Start auf seinem Mac, NAS, Windows.
+
 ## 0.6.34 – Sammelstand 0.6.32 + 0.6.33 (19. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktest Chromium auf dem zusammengeführten Stand; Pakete gebaut, SHA256 geprüft.
 

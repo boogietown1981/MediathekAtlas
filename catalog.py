@@ -53,13 +53,7 @@ CREATE TRIGGER IF NOT EXISTS episode_queue_work_delete AFTER DELETE ON works
 BEGIN DELETE FROM episode_queue WHERE work_id=OLD.id; END;
 
 CREATE INDEX IF NOT EXISTS work_first_pass ON works(attempts,state,kind,next_try);
--- 0.6.29 (Björn, Datenbank auf USB-Laufwerk): identified works that are NOT in the episode queue.
--- The identity selector used to walk all ~220,000 queued series row by row before finding none.
-CREATE INDEX IF NOT EXISTS work_identity_recheck ON works(kind,next_try) WHERE state='identified' AND NOT (
- kind='series' AND NULLIF(json_extract(meta,'$.reference_id'),'') IS NOT NULL
- AND json_type(meta,'$.deferred_providers') IS NULL
- AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0
- AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)=0);
+-- 0.6.35: work_identity_recheck (0.6.29/0.6.31) is no longer part of SCHEMA, see IDENTITY_INDEX_SQL.
 CREATE INDEX IF NOT EXISTS work_queue ON works(kind,state,next_try);
 CREATE INDEX IF NOT EXISTS work_type ON works(kind,title);
 CREATE INDEX IF NOT EXISTS work_retry ON works(state,next_try);
@@ -1229,7 +1223,54 @@ IDENTITY_RECHECK="""w.state='identified' AND NOT (
  AND COALESCE(json_extract(w.meta,'$.episode_verified'),0)=0
  AND COALESCE(json_extract(w.meta,'$.video_role_needs_review'),0)=0)"""
 
-def initialize(c):
+# 0.6.29 (Björn, Datenbank auf USB-Laufwerk): identified works that are NOT in the episode queue.
+# The identity selector used to walk all ~220,000 queued series row by row before finding none.
+# 0.6.35: Building this index reads every work once. On Björn's 5.5 GB catalog.db on a USB drive
+# that took many minutes *before* the web server started, so 0.6.34 looked hung ("Programm
+# reagiert nicht"). The server now builds it in the background after start (build_deferred_indexes);
+# until then Service.pick leaves out the identified re-checks.
+IDENTITY_INDEX='work_identity_recheck'
+IDENTITY_INDEX_SQL="""CREATE INDEX IF NOT EXISTS work_identity_recheck ON works(kind,next_try) WHERE state='identified' AND NOT (
+ kind='series' AND NULLIF(json_extract(meta,'$.reference_id'),'') IS NOT NULL
+ AND json_type(meta,'$.deferred_providers') IS NULL
+ AND COALESCE(json_extract(meta,'$.episode_verified'),0)=0
+ AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)=0);"""
+# Visible state of the one-time background maintenance (shown in /api/state and the UI).
+MAINTENANCE={'phase':'idle'}
+
+def index_ready(c,name=IDENTITY_INDEX):
+    """True when the deferred index exists in this database (sqlite_master is small and cached)."""
+    return c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",(name,)).fetchone() is not None
+
+def build_deferred_indexes(connect,event=None,error=None):
+    """Create indexes that need a full table pass, after the server is reachable.
+    connect() returns a context-managed connection. Readers keep working (WAL); writers wait."""
+    with connect() as c:
+        if index_ready(c):MAINTENANCE.update(phase='done');return True
+    started=time.time();MAINTENANCE.clear()
+    MAINTENANCE.update(phase='running',started=started,
+        text='Datenbank wird einmalig für die schnellere Erkennung vorbereitet (neuer Index). '
+             'Auf externen Laufwerken kann das einige Minuten dauern; die Oberfläche bleibt bedienbar, '
+             'Erkennung und Speichern können solange warten.')
+    if event:event('catalog_index_build_started',index=IDENTITY_INDEX)
+    try:
+        with connect() as c:c.execute(IDENTITY_INDEX_SQL)
+    except Exception as e:
+        MAINTENANCE.update(phase='failed',seconds=round(time.time()-started,1),
+            text='Datenbank-Index konnte nicht angelegt werden; die Erkennung läuft ohne ihn langsamer weiter. Details im Protokoll.')
+        if error:error('catalog_index_build_failed',e,index=IDENTITY_INDEX)
+        return False
+    MAINTENANCE.update(phase='done',seconds=round(time.time()-started,1),text='')
+    if event:event('catalog_index_build_finished',index=IDENTITY_INDEX,seconds=MAINTENANCE['seconds'])
+    return True
+
+def initialize(c,defer_heavy=False):
+    # defer_heavy=False (tests, tools): build the identity index at once; the server defers it.
+    _initialize(c)
+    if not defer_heavy:
+        c.execute(IDENTITY_INDEX_SQL)
+
+def _initialize(c):
     c.executescript(SCHEMA)
     # SQLite CREATE TRIGGER IF NOT EXISTS does not replace older definitions.
     # Rebuild once, preserving all queue rows, retries and user choices.

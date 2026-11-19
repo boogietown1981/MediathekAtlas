@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.34
+# MediathekAtlas · 0.6.35
+
+## Neu in 0.6.35: Start ohne Hänger
+
+- Der neue Datenbank-Index aus 0.6.34 wird nicht mehr vor dem Start angelegt, sondern danach im Hintergrund. Die Oberfläche ist sofort erreichbar und zeigt „Datenbank wird einmalig vorbereitet“, bis der Index fertig ist; die Erkennung beginnt danach.
 
 ## Neu in 0.6.34: Sammelstand
 

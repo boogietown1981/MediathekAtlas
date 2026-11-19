@@ -303,6 +303,9 @@ class Service:
                     # which leaves out the ~220,000 queued series. Before, every selection read all
                     # of them row by row; on a USB drive one pick took minutes ("Hauptworker 0 / 4").
                     if state=='identified':
+                        # 0.6.35: the index is built in the background after start; until it exists,
+                        # skip the re-checks instead of reading all queued series (or failing on INDEXED BY).
+                        if not catalog.index_ready(c):continue
                         head="""SELECT w.* FROM works w INDEXED BY work_identity_recheck WHERE w.kind=? AND """+catalog.IDENTITY_RECHECK+"""
                         AND w.next_try<=?"""
                         args=(kind,now)

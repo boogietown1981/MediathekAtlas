@@ -1,3 +1,11 @@
+## 0.6.35 – Start hängt nicht mehr an der einmaligen Indexanlage
+- Björn (19.11.2026): 0.6.34 ließ sich nicht starten, macOS meldete „Python reagiert nicht“. Ursache: der Teilindex `work_identity_recheck` (0.6.31/0.6.33) stand im Schema und wurde beim ersten Start angelegt, bevor der Webserver lief. Dafür muss SQLite alle Werke einmal lesen; bei 5,5 GB `catalog.db` auf dem USB-Laufwerk dauert das sehr lange, und in dieser Zeit war weder Oberfläche noch Fenster erreichbar.
+- Der Index steht nicht mehr im Schema (`catalog.IDENTITY_INDEX_SQL`). Der Server legt ihn nach dem Start im Hintergrund an (`catalog.build_deferred_indexes`), die Erkennung (`SERVICE.start`) beginnt erst danach. Bis dahin lässt die Werkauswahl nur die Nachprüfungen „identified“ aus (`catalog.index_ready`), statt alle Serien zu lesen oder an `INDEXED BY` zu scheitern.
+- Sichtbar: Hinweis „Datenbank wird einmalig vorbereitet …“ in der Oberfläche und im Erkennungsstatus (`/api/state` → `maintenance`); bei einem Fehler eine Meldung, die Erkennung läuft dann ohne Index weiter. Ereignisse `catalog_index_build_started/_finished/_failed` mit Dauer.
+- Startprotokoll: jeder Startschritt mit Dauer (`Start: Datenbank öffnen …`, `Katalogschema geprüft`, `Datenbank bereit`, `Webserver bereit`) auf stderr; die erste stdout-Zeile bleibt die Adresse.
+- Klicktest: WebKit meldet einen durch Seitenwechsel abgebrochenen Abruf als „access control checks“-Skriptfehler; dieser Fall wird nicht mehr als Fehler gezählt.
+- Tests: `tests/test_v0635_deferred_index.py` (6).
+
 ## 0.6.34 – Sammelstand 0.6.32 + 0.6.33
 - Ein Paket für Björn: eigener Speicherort für das IMDb-Archiv (0.6.32, PR #78) und Hauptworker-Auswahl mit SQLite 3.45 (0.6.33, PR #77). Keine weiteren Änderungen.
 
