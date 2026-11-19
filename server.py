@@ -1864,6 +1864,44 @@ def post_library_locate(self,path,d):
     diagnostics.event('library_relinked',job_id=job_id,automatic=False)
     return self.send(result)
 
+# 0.6.37: fehlende Dateien an den bekannten Speicherorten suchen bzw. Einträge entfernen (web/app.js „Datei fehlt“)
+def _storage_history():
+    """Every folder MediathekAtlas has used for downloads: current ones, the default, and both ends of earlier moves."""
+    s=settings();cfg=storage_locations.read_pointer(HOME);out=[]
+    for value in [s.get('download_dir'),s.get('cache_dir'),DEFAULT_DOWNLOAD_DIR]+list(s.get('library_dirs') or []):
+        if value:out.append(str(value))
+    for kind,entry in (cfg.get('previous') or {}).items():
+        if kind in ('downloads','cache') and isinstance(entry,dict):
+            out+= [str(entry.get(k)) for k in ('source','target') if entry.get(k)]
+    last=cfg.get('last') or {}
+    if last.get('kind') in ('downloads','cache'):
+        out+= [str(last.get(k)) for k in ('source','target') if last.get(k)]
+    return list(dict.fromkeys(out))
+def _repair_roots():
+    approved=local_library.roots(settings());seen={str(p) for p in approved}
+    for value in _storage_history():
+        try:p=Path(value).expanduser().resolve()
+        except (OSError,RuntimeError,ValueError):continue
+        if p.is_dir() and p!=Path(p.anchor) and str(p) not in seen:approved.append(p);seen.add(str(p))
+    return approved
+
+@ROUTES.post('/api/library-repair')
+def post_library_repair(self,path,d):
+    roots=_repair_roots()
+    with db() as c:result=local_library.repair_missing(c,roots,old_roots=_storage_history())
+    diagnostics.event('library_repair',checked=result['checked'],relinked=result['relinked'],missing=result['missing'],
+                      ambiguous=result['ambiguous'],incomplete=result['incomplete'],roots=len(roots))
+    result['roots']=[str(p) for p in roots]
+    return self.send(result)
+
+@ROUTES.post('/api/library-remove-missing')
+def post_library_remove_missing(self,path,d):
+    ids=[str(x)[:128] for x in (d.get('ids') or [])][:5000] if d.get('ids') else None
+    if d.get('id'):ids=[str(d['id'])[:128]]
+    with db() as c:removed=local_library.remove_missing(c,ids)
+    diagnostics.event('library_remove_missing',removed=removed,all=ids is None)
+    return self.send({'ok':True,'removed':removed})
+
 @ROUTES.post('/api/subscription-add')
 def post_subscription_add(self,path,d):
     with db() as c:

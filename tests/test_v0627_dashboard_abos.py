@@ -83,7 +83,8 @@ class WiringTests(unittest.TestCase):
         server, index, js = read('server.py'), read('web/index.html'), read('web/abo_shelf.js')
         self.assertIn("@ROUTES.get('/api/youtube-abo-videos')", server)
         self.assertIn("'/abo_shelf.js'", server)
-        self.assertIn('data-catalog-source="abos"', index)
+        self.assertIn('data-cross-kind="abos"', index)        # 0.6.37: Unteransicht von YouTube
+        self.assertNotIn('data-catalog-source="abos"', index)
         self.assertIn('<script src="/abo_shelf.js"></script>', index)
         self.assertIn("window.api('youtube-abo-videos')", js)
         self.assertIn("'atlas-source'", read('web/unified_catalog.js'))

@@ -11,7 +11,6 @@
   <button type="button" class="admin-tab" data-view="system" title="Auslastung, Arbeitsspeicher, Laufwerke und Temperatur dieses Geräts">System</button>
   <button type="button" class="admin-tab" data-view="review" title="Unklare Zuordnungen prüfen">Zuordnung</button>
   <button type="button" class="admin-tab" data-view="subscriptions">Download-Abos</button>
-  <button type="button" class="admin-tab" data-view="legacy" title="Werkkatalog ARD, ZDF &amp; Co. mit Genre-Baum und Zuordnungsfiltern">Werkkatalog</button>
   <button type="button" class="admin-tab" data-view="logs">Protokoll</button>
   <button type="button" class="admin-tab" data-view="settings">Einstellungen</button>
 </div>
@@ -102,18 +101,9 @@
     <p id="system-key-status" class="muted" role="status"></p></div>
   <p id="system-status" class="muted" role="status"></p>
 </section>
-<section id="legacy" hidden>
-  <div class="sectionhead"><div><h2>Werkkatalog ARD, ZDF &amp; Co.</h2>
-    <p class="muted">Arbeitsansicht mit Genre-Baum, Zuordnungs- und Download-Filtern. Zum Stöbern ist das Dashboard gedacht.</p></div></div>
-  <div id="legacy-body"><p class="muted">Serie suchen → Folgen prüfen → Für deine Mediathek herunterladen.</p>
-<div class="type-tabs"><button id="browse-series" class="primary">Serien</button><button id="browse-movies">Filme</button></div><form id="search"><input id="query" aria-label="Im lokalen Katalog suchen" placeholder="Serientitel suchen, z. B. Bibi und Tina"><button class="primary">Suchen</button><button type="button" id="remote-search">Online ergänzen</button></form>
-<div class="catalog-filters"><label>Downloads <select id="download-filter"><option value="hide">Noch nicht geladen</option><option value="all">Alle anzeigen</option><option value="only">Heruntergeladen</option></select></label><label>Zuordnung <select id="state-filter"><option value="">Alle Zuordnungen</option><option value="recognized">Erkannte Werke</option><option value="pending">Vorgemerkt / Wiederholung</option><option value="review">Zu prüfen</option><option value="format">Sendungsbeiträge</option></select></label><label>Entdecken <select id="collection-filter" title="Mindestens 7,5 / 10; mindestens 10.000 IMDb- oder 1.000 TMDB-Stimmen. Automatische Auswahl, keine Kino-Umsatzwertung."><option value="">Alle Werke</option><option value="cinema">Großes Kino</option><option value="series">Serienfavoriten</option></select></label><label>Sortierung <select id="sort-filter"><option value="title">Werktitel A–Z</option><option value="year">Erscheinungsjahr</option><option value="recognized">Bestätigte Werke zuerst</option></select></label><button type="button" id="reset-filters">Filter zurücksetzen</button></div>
-<div class="cataloglayout"><div><h3>Filme, Serien & Genres</h3><div id="catalog-tree" class="catalogtree" aria-label="Kategorienbaum"></div><p id="tree-status" role="status"></p><button id="tree-retry">Kategorien aktualisieren</button></div><div class="catalogcontent"><div class="sectionhead"><h2 id="results-title">Lokaler Katalog</h2><div><button id="catalog">Alle Werke</button><button id="back" disabled>←</button><button id="more" disabled>→</button></div></div><p id="filter-label" class="muted">Filme und Serien · weitere Kandidaten unter „Noch zuordnen“</p><div id="series-actions" hidden><button id="series-pick" class="primary">Folgen auswählen & herunterladen</button></div><div id="results" class="grid"></div></div></div></div>
-</section>
 <section id="discover" data-source="mediatheken"><div class="atlas-source-switch" role="group" aria-label="Katalogquelle">
   <strong>Quelle</strong>
   <button type="button" data-catalog-source="all" class="primary">Alle</button>
-  <button type="button" data-catalog-source="abos" title="Abonnierte YouTube-Kanäle: offline gespeicherte Videos, gegliedert je Kanal">YouTube-Abos</button>
   <button type="button" data-catalog-source="mediatheken" title="Öffentlich-rechtliche Mediatheken: ARD, ZDF, Arte, 3sat und weitere Sender">ARD, ZDF &amp; Co.</button>
   <button type="button" data-catalog-source="netzkino">Netzkino</button>
   <button type="button" data-catalog-source="pluto">Pluto TV</button>
@@ -143,6 +133,7 @@
     <button type="button" data-cross-kind="movies" class="primary">Filme</button>
     <button type="button" data-cross-kind="series">Serien</button>
     <button type="button" data-cross-kind="music" title="Musik-Playlists und Musikvideos von YouTube">Musikvideos</button>
+    <button type="button" data-cross-kind="abos" hidden title="Abonnierte YouTube-Kanäle: offline gespeicherte Videos, gegliedert je Kanal">Abos</button>
     <button type="button" id="atlas-cross-back-series" hidden>← Zurück zur Serienliste</button>
     <button type="button" id="atlas-cross-open-portal">Zur Plattform</button>
   </div>
@@ -156,6 +147,7 @@
 <section id="portals" data-platform="overview" hidden>
   <div class="platform-tabs" role="group" aria-label="Plattform auswählen">
     <button class="platform-tab active" type="button" data-platform="overview">Übersicht</button>
+    <button class="platform-tab" type="button" data-platform="mediatheken" title="Werkkatalog ARD, ZDF &amp; Co. mit Genre-Baum und Zuordnungsfiltern">ARD, ZDF &amp; Co.</button>
     <button class="platform-tab" type="button" data-platform="archive">Internet Archive</button>
     <button class="platform-tab" type="button" data-platform="netzkino">Netzkino</button>
     <button class="platform-tab" type="button" data-platform="pluto">Pluto TV</button>
@@ -169,6 +161,14 @@
     <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
     <button class="platform-tab" type="button" data-platform="rtlplus">RTL+</button>
   </div>
+<section id="legacy" class="legacy-panel">
+  <div class="sectionhead"><div><h2>ARD, ZDF &amp; Co. · Werkkatalog</h2>
+    <p class="muted">Alle Filme und Serien der öffentlich-rechtlichen Mediatheken mit Genre-Baum, Zuordnungs- und Download-Filtern. Zum Stöbern ist das Dashboard gedacht; Scan und Erkennung stehen unter Verwaltung → Status &amp; Abgleich.</p></div></div>
+  <div id="legacy-body"><p class="muted">Serie suchen → Folgen prüfen → Für deine Mediathek herunterladen.</p>
+<div class="type-tabs"><button id="browse-series" class="primary">Serien</button><button id="browse-movies">Filme</button></div><form id="search"><input id="query" aria-label="Im lokalen Katalog suchen" placeholder="Serientitel suchen, z. B. Bibi und Tina"><button class="primary">Suchen</button><button type="button" id="remote-search">Online ergänzen</button></form>
+<div class="catalog-filters"><label>Downloads <select id="download-filter"><option value="hide">Noch nicht geladen</option><option value="all">Alle anzeigen</option><option value="only">Heruntergeladen</option></select></label><label>Zuordnung <select id="state-filter"><option value="">Alle Zuordnungen</option><option value="recognized">Erkannte Werke</option><option value="pending">Vorgemerkt / Wiederholung</option><option value="review">Zu prüfen</option><option value="format">Sendungsbeiträge</option></select></label><label>Entdecken <select id="collection-filter" title="Mindestens 7,5 / 10; mindestens 10.000 IMDb- oder 1.000 TMDB-Stimmen. Automatische Auswahl, keine Kino-Umsatzwertung."><option value="">Alle Werke</option><option value="cinema">Großes Kino</option><option value="series">Serienfavoriten</option></select></label><label>Sortierung <select id="sort-filter"><option value="title">Werktitel A–Z</option><option value="year">Erscheinungsjahr</option><option value="recognized">Bestätigte Werke zuerst</option></select></label><button type="button" id="reset-filters">Filter zurücksetzen</button></div>
+<div class="cataloglayout"><div><h3>Filme, Serien & Genres</h3><div id="catalog-tree" class="catalogtree" aria-label="Kategorienbaum"></div><p id="tree-status" role="status"></p><button id="tree-retry">Kategorien aktualisieren</button></div><div class="catalogcontent"><div class="sectionhead"><h2 id="results-title">Lokaler Katalog</h2><div><button id="catalog">Alle Werke</button><button id="back" disabled>←</button><button id="more" disabled>→</button></div></div><p id="filter-label" class="muted">Filme und Serien · weitere Kandidaten unter „Noch zuordnen“</p><div id="series-actions" hidden><button id="series-pick" class="primary">Folgen auswählen & herunterladen</button></div><div id="results" class="grid"></div></div></div></div>
+</section>
   <div class="portal-heading"><div><h2>Weitere Filmportale</h2><p class="muted">Filme aus zusätzlichen legal zugänglichen Katalogen – mit getrennten Quellenangaben und Rechtehinweisen.</p></div><span class="pill">Nur Katalog & offizielle Links</span></div>
 <section id="pluto" class="pluto-panel">
   <div class="panel netzkino-sync-panel">

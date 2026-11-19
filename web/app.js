@@ -34,12 +34,15 @@ async function busy(button,fn){const old=button.textContent;button.disabled=true
 // 0.5.55: Dashboard (films and series only), Plattformen, Live-TV, Downloads and one area
 // "Verwaltung" whose tabs hold everything that manages the app (tasks, status, presentation,
 // assignment, subscriptions, work catalogue, log, settings).
-const ATLAS_VIEWS=['watch','discover','portals','livetv','queue','admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
-const ATLAS_ADMIN_VIEWS=['admin','status','display','storage','system','review','subscriptions','legacy','logs','settings'];
+const ATLAS_VIEWS=['watch','discover','portals','livetv','queue','admin','status','display','storage','system','review','subscriptions','logs','settings'];
+const ATLAS_ADMIN_VIEWS=['admin','status','display','storage','system','review','subscriptions','logs','settings'];
+// 0.6.37 (Björn, 19.11.2026): Der Werkkatalog ARD, ZDF & Co. steht unter Plattformen wie die anderen Kataloge.
+const legacyOpen=()=>atlasView==='portals'&&$('portals')?.dataset.platform==='mediatheken';
 const ATLAS_HEADINGS={discover:['DASHBOARD','Filme und Serien aller Plattformen'],portals:['PLATTFORMEN','Kataloge der einzelnen Anbieter'],livetv:['LIVE-TV','Live-Sender aller Anbieter'],queue:['DOWNLOADS','Downloads und Offline-Kopien'],watch:['ANSEHEN','Was möchtest du sehen?']};
 let atlasView='discover';
 window.atlasCurrentView=()=>atlasView;
 function showView(name){
+ if(name==='legacy'){$('portals').dataset.platform='mediatheken';name='portals';}
  if(!ATLAS_VIEWS.includes(name))return;
  atlasView=name;const inAdmin=ATLAS_ADMIN_VIEWS.includes(name);
  for(const v of ATLAS_VIEWS)if($(v))$(v).hidden=v!==name;
@@ -53,7 +56,6 @@ function showView(name){
  if(name==='livetv')window.AtlasLiveTV?.refresh();
  if(name==='watch')window.AtlasWatchMode?.show();
  if(name==='portals')portalView($('portals').dataset.platform||'overview');
- if(name==='legacy'){catalogKey='';loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
  document.dispatchEvent(new CustomEvent('atlas-view',{detail:{view:name}}));
 }
 window.atlasShowView=showView;
@@ -258,7 +260,7 @@ function catalogProgress(c){
  const rev=[c.offers,c.matched,c.identified,c.review,c.works,c.formats].join(':');
  // 0.5.55: the counters change every few seconds while recognition runs. Reloading the work catalogue on each
  // change kept one slow /api/catalog request running all the time (diagnosis 12.11.2026: 239 requests of 7-31 s).
- if(rev!==catalogRevision&&atlasView==='legacy'&&Date.now()-catalogReloaded>60000&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;catalogReloaded=Date.now();loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
+ if(rev!==catalogRevision&&legacyOpen()&&Date.now()-catalogReloaded>60000&&!$('editor').open&&!document.querySelector('.alternatives[open]')){catalogRevision=rev;catalogReloaded=Date.now();loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
  const workers=$('metadata-workers-status');
  if(workers){
    // Keep each status value in a separate adaptive chip.
@@ -368,7 +370,7 @@ async function openSeries(show){try{seriesShow=show;seriesPlan=await api('series
 $('series-close').onclick=()=>$('series-dialog').close();
 $('series-submit').onclick=e=>busy(e.target,async()=>{if(!$('series-confirmed').checked)throw Error('Bitte Folgen und Zielnamen zuerst prüfen und bestätigen.');const d=await api('series-download',{show:seriesShow,fingerprint:seriesPlan.fingerprint,ids:[...document.querySelectorAll('#series-plan input:checked')].map(x=>x.value),confirmed:true});$('series-dialog').close();notice(d.queued+' Folgen in die Downloadwarteschlange aufgenommen.');await refresh();});
 
-setInterval(()=>{if(!appStopped&&atlasView==='legacy')loadTree().catch(()=>{});},30000);
+setInterval(()=>{if(!appStopped&&legacyOpen())loadTree().catch(()=>{});},30000);
 
 $('mesh-config').onsubmit=e=>{e.preventDefault();busy(e.submitter,async()=>{await api('settings',{mesh_dir:$('mesh_dir').value.trim(),mesh_name:$('mesh_name').value.trim(),mesh_init:$('mesh_init').checked});$('mesh_init').checked=false;notice($('mesh_dir').value.trim()?'Verbund gespeichert. Der Ordner wird geprüft.':'Verbund ausgeschaltet.');await refresh();});};
 let meshServer={};
@@ -564,56 +566,71 @@ let completedRevision='';
 const openJobDetails=new Set();
 function fileUrl(j,inline){return '/api/download-file?'+new URLSearchParams({id:j.id,token,inline:inline?'1':'0'});}
 // Download cards follow the catalogue cards: cover on top, the essentials below, file details folded away.
-function jobCard(j,server,shared){const m=j.metadata||{},card=el('article',undefined,'card job job-'+j.state),art=el('div',undefined,'art'),acts=el('div',undefined,'job-actions');
-if(safeArt(m.poster)){const img=el('img');img.src=m.poster;img.alt='Cover: '+(m.title||'');img.loading='lazy';img.onerror=()=>{img.remove();art.classList.remove('has-img');};art.append(img);art.classList.add('has-img');}
-art.append(el('strong',m.kind==='series'?'SERIE':m.kind==='movie'?'FILM':'DOWNLOAD'));if(j.state==='done'&&j.size_bytes)art.append(el('span',(j.size_bytes/1073741824>=1?(j.size_bytes/1073741824).toFixed(1)+' GB':Math.round(j.size_bytes/1048576)+' MB')));
-const body=el('div',undefined,'cardbody'),episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
-const heading=el('h3',(m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':''));heading.title=heading.textContent;
-body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading);if(episode)body.append(el('p',episode,'episode-heading'));
-body.append(el('p',(j.state==='done'?(j.file_state==='missing'?'⚠ ':'✓ '):j.state==='error'?'⚠ ':'◌ ')+(j.state==='done'&&j.file_state==='missing'?'Datei verschoben / derzeit nicht erreichbar':(j.state==='queued'&&j.not_before*1000>Date.now()?'Geplant für '+queueTime(j.not_before)+' Uhr':(labels[j.state]||j.state)))+(m.provider?' · '+m.provider:''),'badge'));const waiting=j.state==='queued'&&j.not_before*1000>Date.now();if(waiting&&j.note&&j.note!==shared)body.append(el('small',j.note+'. Startet von selbst, wenn MediathekAtlas dann läuft.','muted job-note'));
-if(j.state==='done'&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));body.append(el('small',({pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube'}[j.origin]||'Netzkino')+' offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage')+'; danach automatische Entfernung',left<=3?'atlas-current-warning':'muted'));}
-if(j.state==='downloading'){const p=el('progress');p.max=j.total||1;if(j.total)p.value=j.received||0;body.append(p,el('small',((j.received||0)/1048576).toFixed(1)+' MiB'+(j.total?' / '+(j.total/1048576).toFixed(1)+' MiB':'')+' · '+(Number(j.speed)>0?(j.speed/1048576).toFixed(1)+' MiB/s':j.note||'Geschwindigkeit wird ermittelt')+(Number.isFinite(j.eta)?' · ca. '+Math.ceil(j.eta/60)+' Min.':'')));}
-// 0.6.13: the note of a waiting (retry) or running job is already shown above.
-if(j.error||(j.note&&!waiting&&j.state!=='downloading')){const note=el('small',j.error||j.note,'job-note');note.title=note.textContent;body.append(note);}
-const details=el('details',undefined,'file-details');details.open=openJobDetails.has(j.id);details.ontoggle=()=>details.open?openJobDetails.add(j.id):openJobDetails.delete(j.id);details.append(el('summary',j.state==='done'&&j.size_bytes?'Datei & Qualität · '+(j.size_bytes/1048576).toFixed(0)+' MiB':'Datei & Speicherort'));
-if(j.state==='done'&&j.measured){for(const track of j.measured)details.append(el('p',(track.type==='video'?'Video: '+(track.width||'?')+' × '+(track.height||'?'):track.type==='audio'?'Audio'+(track.channels?' · '+track.channels+' Kanäle':''):'Untertitel')+' · '+(track.codec||'unbekannter Codec')+(track.language?' · '+track.language:'')));}
-const where=el('p',j.path||j.target||'','job-path');where.title=where.textContent;details.append(where);if(server.network&&j.state==='done')details.append(el('small','Liegt auf dem NAS. Über „Herunterladen“ im Browser laden oder per File Station bzw. Netzwerkfreigabe öffnen.'));
-const url=j.source?._download_url||j.source?.url_video_hd||j.source?.url_video;if(url&&/^https?:\/\//.test(url)){const a=el('a','Originalquelle öffnen');a.href=url;a.target='_blank';a.rel='noopener noreferrer';details.append(a);}
-body.append(details);
-if(j.state==='done'&&j.file_state==='missing'){
- const missing=el('div',undefined,'job-file-missing');
- missing.append(el('p','Datei am gespeicherten Pfad nicht gefunden. Die Downloadhistorie bleibt erhalten; eventuell ist ein Laufwerk gerade nicht verbunden.'));
- const input=el('input');input.type='text';input.placeholder='Neuer vollständiger Dateipfad';input.autocomplete='off';input.setAttribute('aria-label','Neuer Dateipfad für '+(m.title||j.id));
- const actions=el('div',undefined,'job-file-actions');
- const search=el('button','In Bibliothek suchen');
- search.onclick=e=>busy(e.target,async()=>{
-    const r=await api('library-locate',{id:j.id});
-    if(r.ok){notice('Datei gefunden und wieder verknüpft.');document.activeElement?.blur();await refresh();return;}
-    if(r.matches?.length===1){input.value=r.matches[0];notice('Eine mögliche Datei gefunden. Bitte den Pfad bestätigen.');}
-    else if(r.matches?.length>1){input.value=r.matches[0];notice(r.matches.length+' mögliche Dateien gefunden. Ersten Pfad eingesetzt – vor dem Verknüpfen prüfen.');}
-    else notice('In den freigegebenen Bibliotheksordnern keine passende Datei gefunden.'+(r.incomplete?' Die Suche wurde zeitlich begrenzt.':'')+' Prüfe die Ordner in den Einstellungen.');
- });
- const bind=el('button','Pfad verknüpfen');bind.onclick=e=>busy(e.target,async()=>{
-    await api('library-relink',{id:j.id,path:input.value.trim()});
-    notice('Neue Datei erfolgreich verknüpft. Metadaten und Downloadhistorie bleiben erhalten.');document.activeElement?.blur();await refresh();
- });
- actions.append(search,bind);missing.append(input,actions);body.append(missing);
-}
-if(j.state==='done'&&j.file_state!=='missing'){const save=el('a','Herunterladen','button-link');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Datei über den Browser auf dieses Gerät laden';if(j.license?.kind==='netzkino_offline')save.hidden=true;
- const play=el('button','▶ Abspielen','play-button primary');play.title='Im Browser abspielen';play.onclick=()=>playJob(j);acts.append(play,save);
- if(!server.network){const b=el('button','Datei öffnen');b.title='Filmdatei mit dem Standardprogramm dieses Rechners öffnen';b.onclick=()=>busy(b,async()=>{await api('open-download',{id:j.id});});acts.append(b);}}
-const action=['error','cancelled','interrupted','remote'].includes(j.state)?'retry':['queued','downloading','tagging'].includes(j.state)?'cancel':null;if(action){const b=el('button',action==='retry'?'Erneut versuchen':'Abbrechen');b.onclick=()=>busy(b,async()=>{await api(action,{id:j.id});await refresh();});acts.append(b);}
-// 0.5.55: order of the waiting jobs (Verwaltung → Aufgaben pauses the whole queue).
-if(j.state==='queued'){const ctl=(label,act,title)=>{const b=el('button',label,'job-control');b.title=title;b.onclick=()=>busy(b,async()=>{await api('job-control',{id:j.id,action:act});await refresh();});acts.append(b);};
- if(j.hold){body.append(el('small','Zurückgestellt · startet erst nach „Freigeben“','job-hold'));ctl('Freigeben','release','Auftrag wieder in die Warteschlange stellen');}
- else{if(j.not_before&&j.not_before*1000>Date.now()){ctl('Jetzt versuchen','now',j.night?'Nicht auf das Zeitfenster warten; der Anbieter kann den Titel tagsüber ablehnen':'Nicht auf die Pause warten; der Anbieter kann erneut ablehnen und die Pause verlängern');}
-  if((j.priority||0)<2)ctl('Als Nächstes laden','first','Vor allen anderen wartenden Aufträgen starten');
-  if((j.priority||0)>0)ctl('Normale Reihenfolge','normal','Priorität zurücknehmen');
-  ctl('Zurückstellen','hold','In der Liste behalten, aber vorerst nicht laden');}}
-// 0.5.43: failed, cancelled or interrupted orders can be removed from the list (no media file is touched).
-if(action==='retry'){const rm=el('button','Aus Liste entfernen');rm.title='Auftrag löschen; heruntergeladene Dateien gibt es für diesen Auftrag nicht';rm.onclick=()=>busy(rm,async()=>{await api('job-remove',{id:j.id});await refresh();});acts.append(rm);}
-if(acts.childElementCount)body.append(acts);
-card.append(art,body);return card;}
+// 0.6.37 (Björn, 19.11.2026): „die Darstellung unter Downloads ist wirklich nicht übersichtlich, das sollte eher mit
+// Listen geregelt werden“. Jede Gruppe ist eine Tabelle, ein Auftrag eine Zeile; Pfad, Spuren und Quelle
+// stehen in einer aufklappbaren Detailzeile.
+function jobSize(j){const b=j.state==='done'?j.size_bytes:j.total;if(!b)return '';return b/1073741824>=1?(b/1073741824).toFixed(1)+' GB':Math.round(b/1048576)+' MB';}
+function jobTitle(j){const m=j.metadata||{};return (m.title||j.source?.title||'Download')+(m.year&&m.kind==='movie'?' ('+m.year+')':'');}
+function jobStatus(j,shared){
+ const m=j.metadata||{},cell=el('td',undefined,'q-status'),missing=j.state==='done'&&j.file_state==='missing';
+ const planned=j.state==='queued'&&j.not_before*1000>Date.now();
+ const text=missing?'⚠ Datei fehlt':j.state==='done'?'✓ Fertig':j.state==='error'?'⚠ Fehler':planned?'◌ Geplant für '+queueTime(j.not_before)+' Uhr':j.hold?'◌ Zurückgestellt':'◌ '+(labels[j.state]||j.state);
+ cell.append(el('span',text,'q-badge q-'+(missing?'missing':j.state)));
+ if(j.state==='downloading'){const p=el('progress');p.max=j.total||1;if(j.total)p.value=j.received||0;cell.append(p,el('small',((j.received||0)/1048576).toFixed(1)+' MiB'+(j.total?' / '+(j.total/1048576).toFixed(1)+' MiB':'')+' · '+(Number(j.speed)>0?(j.speed/1048576).toFixed(1)+' MiB/s':j.note||'Geschwindigkeit wird ermittelt')+(Number.isFinite(j.eta)?' · ca. '+Math.ceil(j.eta/60)+' Min.':'')));}
+ const note=j.error||(j.state!=='downloading'&&j.note!==shared?j.note:'')||'';
+ if(note){const n=el('small',note,'q-note');n.title=note;cell.append(n);}
+ if(j.state==='done'&&!missing&&j.offline_until){const left=Math.max(0,Math.ceil((j.offline_until*1000-Date.now())/86400000));cell.append(el('small','offline bis '+new Date(j.offline_until*1000).toLocaleDateString('de-DE')+' · noch '+left+(left===1?' Tag':' Tage'),left<=3?'atlas-current-warning':'muted'));}
+ return cell;}
+function jobButton(label,title,fn,cls){const b=el('button',label,cls||'');b.type='button';if(title)b.title=title;b.onclick=e=>{e.stopPropagation();busy(b,fn);};return b;}
+function jobActions(j,server){
+ const cell=el('td',undefined,'q-actions'),missing=j.state==='done'&&j.file_state==='missing',add=(...n)=>cell.append(...n);
+ if(j.state==='done'&&!missing){
+  const play=el('button','▶','play-button primary');play.type='button';play.title='Im Browser abspielen';play.onclick=()=>playJob(j);
+  const save=el('a','⬇','button-link');save.href=fileUrl(j,false);save.setAttribute('download','');save.title='Herunterladen: Datei über den Browser auf dieses Gerät laden';if(j.license?.kind==='netzkino_offline')save.hidden=true;
+  add(play,save);
+  if(!server.network)add(jobButton('Öffnen','Filmdatei mit dem Standardprogramm dieses Rechners öffnen',async()=>{await api('open-download',{id:j.id});}));}
+ if(missing){
+  add(jobButton('Suchen','In Bibliothek suchen: an den bekannten Speicherorten nach dieser Datei suchen',async()=>{const r=await api('library-locate',{id:j.id});
+   if(r.ok){notice('Datei gefunden und wieder verknüpft.');await refresh();return;}
+   if(r.matches?.length){openJobDetails.add(j.id);notice(r.matches.length+' mögliche Dateien gefunden; in den Details den Pfad bestätigen.');missingGuess[j.id]=r.matches[0];await refresh();}
+   else notice('Keine passende Datei gefunden.'+(r.incomplete?' Die Suche wurde zeitlich begrenzt.':''));}));
+  add(jobButton('Entfernen','Eintrag aus der Liste entfernen. Es wird keine Datei gelöscht; der Titel gilt danach wieder als nicht heruntergeladen.',async()=>{await api('library-remove-missing',{id:j.id});await refresh();}));}
+ const ctl=(label,act,title)=>add(jobButton(label,title,async()=>{await api('job-control',{id:j.id,action:act});await refresh();}));
+ if(j.state==='queued'){
+  if(j.hold)ctl('Freigeben','release','Auftrag wieder in die Warteschlange stellen');
+  else{if(j.not_before&&j.not_before*1000>Date.now())ctl('Jetzt','now',j.night?'Jetzt versuchen: nicht auf das Zeitfenster warten; der Anbieter kann den Titel tagsüber ablehnen':'Jetzt versuchen: nicht auf die Pause warten; der Anbieter kann erneut ablehnen und die Pause verlängern');
+   if((j.priority||0)<2)ctl('Vorziehen','first','Als Nächstes laden: vor allen anderen wartenden Aufträgen starten');
+   if((j.priority||0)>0)ctl('Normal','normal','Normale Reihenfolge: Priorität zurücknehmen');
+   ctl('Zurückstellen','hold','In der Liste behalten, aber vorerst nicht laden');}}
+ if(['queued','downloading','tagging'].includes(j.state))add(jobButton('Abbrechen','',async()=>{await api('cancel',{id:j.id});await refresh();}));
+ if(['error','cancelled','interrupted','remote'].includes(j.state)){
+  add(jobButton('Erneut','Erneut versuchen',async()=>{await api('retry',{id:j.id});await refresh();}));
+  add(jobButton('Entfernen','Aus Liste entfernen: Auftrag löschen; heruntergeladene Dateien gibt es für diesen Auftrag nicht',async()=>{await api('job-remove',{id:j.id});await refresh();}));}
+ return cell;}
+const missingGuess={};
+function jobDetails(j,server){
+ const m=j.metadata||{},tr=el('tr',undefined,'q-details'),td=el('td');td.colSpan=5;
+ if(j.state==='done'&&j.measured){for(const track of j.measured)td.append(el('p',(track.type==='video'?'Video: '+(track.width||'?')+' × '+(track.height||'?'):track.type==='audio'?'Audio'+(track.channels?' · '+track.channels+' Kanäle':''):'Untertitel')+' · '+(track.codec||'unbekannter Codec')+(track.language?' · '+track.language:'')));}
+ const where=el('p',j.path||j.target||'','job-path');td.append(where);
+ if(server.network&&j.state==='done')td.append(el('small','Liegt auf dem NAS. Über „⬇“ im Browser laden oder per File Station bzw. Netzwerkfreigabe öffnen.'));
+ const url=j.source?._download_url||j.source?.url_video_hd||j.source?.url_video;if(url&&/^https?:\/\//.test(url)){const a=el('a','Originalquelle öffnen');a.href=url;a.target='_blank';a.rel='noopener noreferrer';td.append(a);}
+ if(j.state==='done'&&j.file_state==='missing'){
+  const box=el('div',undefined,'job-file-missing');
+  box.append(el('p','Datei am gespeicherten Pfad nicht gefunden. Gesucht wird automatisch am Download-Ordner, Zwischenspeicher, Bibliotheksordnern und früheren Speicherorten. Liegt sie woanders, hier den vollständigen Pfad eintragen:'));
+  const input=el('input');input.type='text';input.placeholder='Neuer vollständiger Dateipfad';input.autocomplete='off';input.value=missingGuess[j.id]||'';input.setAttribute('aria-label','Neuer Dateipfad für '+(m.title||j.id));
+  const bind=jobButton('Pfad verknüpfen','',async()=>{await api('library-relink',{id:j.id,path:input.value.trim()});notice('Neue Datei verknüpft. Metadaten und Downloadhistorie bleiben erhalten.');document.activeElement?.blur();await refresh();});
+  const row=el('div',undefined,'job-file-actions');row.append(input,bind);box.append(row);td.append(box);}
+ tr.append(td);return tr;}
+function jobRow(j,server,shared){
+ const m=j.metadata||{},tr=el('tr',undefined,'q-row q-state-'+j.state+(j.state==='done'&&j.file_state==='missing'?' q-missing':''));tr.dataset.job=j.id;
+ const thumb=el('td',undefined,'q-thumb');if(safeArt(m.poster)){const img=el('img');img.src=m.poster;img.alt='';img.loading='lazy';img.onerror=()=>img.remove();thumb.append(img);}
+ const title=el('td',undefined,'q-title'),open=openJobDetails.has(j.id),toggle=el('button',(open?'▾ ':'▸ ')+jobTitle(j),'q-toggle');toggle.type='button';toggle.title=jobTitle(j)+' · Details ein-/ausblenden';
+ toggle.setAttribute('aria-expanded',String(open));toggle.onclick=()=>{open?openJobDetails.delete(j.id):openJobDetails.add(j.id);if(queueLast)renderQueue(...queueLast);};
+ const episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
+ title.append(toggle,el('small',[episode,(m.genres||[]).filter(g=>g!=='YouTube-Abo').slice(0,2).join(' · '),m.provider].filter(Boolean).join(' · '),'muted'));
+ const size=el('td',jobSize(j),'q-size num');
+ tr.append(thumb,title,jobStatus(j,shared),size,jobActions(j,server));
+ return open?[tr,jobDetails(j,server)]:[tr];}
 // 0.6.27 (Björn, 19.11.2026): „die Downloadwarteschlange ist undurchsichtig“. Gliederung nach Zustand
 // (läuft, wartet, geplant, zurückgestellt, fehlgeschlagen, fertig), darin je Herkunft (YouTube-Abo je
 // Kanal, Anbieter, Sender); kompakte Zeilen statt großer Kacheln, gemeinsamer Hinweis einer Gruppe
@@ -624,13 +641,22 @@ const QUEUE_GROUPS=[
  {key:'planned',title:'Geplant · nächster Versuch später',open:true,hint:'Wartet auf eine Pause des Anbieters, das Nachtfenster oder das Stundenlimit für Abo-Videos und startet dann von selbst.',test:j=>j.state==='queued'&&!j.hold&&j.not_before*1000>Date.now()},
  {key:'held',title:'Zurückgestellt',open:false,hint:'Bleibt in der Liste, startet erst nach „Freigeben“.',test:j=>j.state==='queued'&&!!j.hold},
  {key:'failed',title:'Fehlgeschlagen oder abgebrochen',open:true,test:j=>['error','cancelled','interrupted','remote'].includes(j.state)},
+ {key:'missing',title:'Datei fehlt',open:true,hint:'Die Datei liegt nicht mehr am gespeicherten Pfad. MediathekAtlas sucht beim Öffnen dieser Ansicht automatisch am Download-Ordner, Zwischenspeicher, in den Bibliotheksordnern und an früheren Speicherorten und verknüpft eindeutige Funde neu. Was danach fehlt, lässt sich entfernen (es wird keine Datei gelöscht).',test:j=>j.state==='done'&&j.file_state==='missing'},
  {key:'done',title:'Fertig',open:false,test:j=>j.state==='done'},
  {key:'other',title:'Abgelaufen oder entfernt',open:false,test:()=>true}];
 const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
 function jobOrigin(j){if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
 function queueOpen(key,fallback){try{const v=localStorage.getItem('atlas-queue-'+key);return v===null?fallback:v==='1';}catch(_){return fallback;}}
 function queueTime(t){return new Date(t*1000).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
+let repairStarted=false,repairInfo='',queueLast=null;
+async function repairMissing(manual){
+ repairInfo='Suche an den bekannten Speicherorten läuft …';
+ const r=await api('library-repair',{});
+ repairInfo='Zuletzt gesucht '+new Date().toLocaleTimeString('de-DE',{hour:'2-digit',minute:'2-digit'})+' Uhr in '+(r.roots||[]).length+' Ordnern: '+r.relinked+' wiedergefunden und neu verknüpft'+(r.missing?' · '+r.missing+' nicht gefunden':'')+(r.ambiguous?' · '+r.ambiguous+' mit mehreren möglichen Dateien (Details öffnen)':'')+(r.incomplete?' · Suche zeitlich begrenzt':'')+'.';
+ if(manual||r.relinked)notice(r.relinked?(r.relinked===1?'1 fehlende Datei':r.relinked+' fehlende Dateien')+' wiedergefunden und neu verknüpft.':'Keine der fehlenden Dateien an den bekannten Speicherorten gefunden.');
+ await refresh();}
 function renderQueue(jobs,server){
+ queueLast=[jobs,server];
  const host=$('jobs');host.className='job-queue';
  const scrollY=window.scrollY;
  host.replaceChildren();
@@ -648,17 +674,28 @@ function renderQueue(jobs,server){
   if(g.key==='planned'){const next=Math.min(...list.map(j=>j.not_before||Infinity));if(Number.isFinite(next))sum.append(el('span',' · nächster ab '+queueTime(next),'muted'));}
   if(g.key==='failed'){const again=el('button','Alle erneut versuchen','queue-bulk');again.type='button';again.title='Jeden fehlgeschlagenen oder abgebrochenen Auftrag erneut in die Warteschlange stellen';
    again.onclick=e=>{e.preventDefault();busy(again,async()=>{for(const j of list)await api('retry',{id:j.id}).catch(()=>{});await refresh();});};sum.append(again);}
+  if(g.key==='missing'){
+   const again=el('button','Erneut suchen','queue-bulk');again.type='button';again.title='Download-Ordner, Zwischenspeicher, Bibliotheksordner und frühere Speicherorte nach den fehlenden Dateien durchsuchen';
+   again.onclick=e=>{e.preventDefault();busy(again,()=>repairMissing(true));};
+   const drop=el('button','Alle '+list.length+' entfernen','queue-bulk');drop.type='button';drop.title='Alle Einträge ohne Datei aus der Liste entfernen. Es wird keine Datei gelöscht.';
+   drop.onclick=e=>{e.preventDefault();if(!drop.dataset.sure){drop.dataset.sure='1';drop.textContent='Wirklich '+list.length+' Einträge entfernen?';drop.classList.add('danger');setTimeout(()=>{if(drop.isConnected){delete drop.dataset.sure;drop.textContent='Alle '+list.length+' entfernen';drop.classList.remove('danger');}},6000);return;}
+    busy(drop,async()=>{const r=await api('library-remove-missing',{ids:list.map(j=>j.id)});notice(r.removed+' Einträge ohne Datei entfernt. Es wurde keine Datei gelöscht.');await refresh();});};
+   sum.append(again,drop);
+   if(!repairStarted){repairStarted=true;setTimeout(()=>repairMissing(false).catch(()=>{}),0);}}
   box.append(sum);
   if(g.hint)box.append(el('p',g.hint,'muted queue-hint'));
+  if(g.key==='missing'&&repairInfo)box.append(el('p',repairInfo,'muted queue-hint'));
   const origins=new Map();for(const j of list){const k=jobOrigin(j);if(!origins.has(k))origins.set(k,[]);origins.get(k).push(j);}
+  const table=el('table',undefined,'queue-table'),head=el('thead'),hr=el('tr');
+  for(const [label,cls] of [['',''],['Titel',''],['Zustand',''],['Größe','num'],['','']])hr.append(el('th',label,cls));
+  head.append(hr);const body=el('tbody');
   for(const [origin,own] of origins){
-   const part=el('section',undefined,'queue-origin');
    const notes=new Set(own.map(j=>j.note||''));const shared=g.key==='planned'&&own.length>1&&notes.size===1?[...notes][0]:'';
-   if(origins.size>1||shared){const head=el('h4',origin);head.append(el('span',' · '+own.length,'muted'));part.append(head);}
-   if(shared)part.append(el('p',shared+'. Startet von selbst, wenn MediathekAtlas dann läuft.','muted queue-shared-note'));
-   const rows=el('div',undefined,'queue-rows');for(const j of own)rows.append(jobCard(j,server,shared));part.append(rows);
-   box.append(part);
+   if(origins.size>1||shared){const tr=el('tr',undefined,'q-origin'),td=el('td');td.colSpan=5;td.append(el('strong',origin),el('span',' · '+own.length,'muted'));
+    if(shared)td.append(el('small',shared+'. Startet von selbst, wenn MediathekAtlas dann läuft.','queue-shared-note'));tr.append(td);body.append(tr);}
+   for(const j of own)body.append(...jobRow(j,server,shared));
   }
+  table.append(head,body);const wrap=el('div',undefined,'queue-tablewrap');wrap.append(table);box.append(wrap);
   host.append(box);
  }
  if(Math.abs(window.scrollY-scrollY)>2)window.scrollTo(0,scrollY);
@@ -1051,6 +1088,7 @@ function portalView(name){
   $('portal-language').value=name==='archive'?'de':'all';
   portalOffset=0;loadPortals();
   if(name==='archive')loadArchiveCompanion();
+  if(name==='mediatheken'){catalogKey='';loadCatalog().catch(()=>{});loadTree().catch(()=>{});}
   if(name==='netzkino')window.MediathekAtlasNetzkino?.refresh?.();
   if(name==='pluto')window.MediathekAtlasPluto?.refresh?.();
   if(name==='justwatch')window.MediathekAtlasJustWatch?.refresh?.();

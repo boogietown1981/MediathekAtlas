@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.36
+# MediathekAtlas · 0.6.37
+
+## Neu in 0.6.37: Downloads als Liste, Abos unter YouTube
+
+- Downloads stehen je Zustand in übersichtlichen Tabellen. Videos, deren Datei verschwunden ist, sucht MediathekAtlas automatisch an allen bekannten Speicherorten (auch früheren) und verknüpft eindeutige Funde neu; der Rest lässt sich einzeln oder gesammelt entfernen.
+- Umzug mit „Vorhandene übernehmen“ passt die Pfade der Downloads jetzt an.
+- YouTube-Abos: Dashboard → YouTube → Abos. Werkkatalog ARD, ZDF & Co.: Plattformen → ARD, ZDF & Co.
 
 ## Neu in 0.6.36: Kindervideos von YouTube
 
