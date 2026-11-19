@@ -1,8 +1,13 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.34 – Sammelstand 0.6.32 + 0.6.33 (19. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest Chromium auf dem zusammengeführten Stand; Pakete gebaut, SHA256 geprüft.
+
 ## 0.6.32 – IMDb-Archiv an eigenem Ort (19. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktests Chromium. Neu `tests/test_v0630_imdb_location.py`: Umzug auf ein Laufwerk mit Prüfung und Umschalten ohne Neustart, Löschen des alten Orts, zurück in den Datenordner, Übernahme eines vorhandenen Archivs (Kopie darüber gesperrt), Warten auf laufenden Neuaufbau, Systemumzug ohne altes Archiv, fehlendes und verschwindendes Laufwerk.
 - Nicht geprüft: Umzug von 21,8 GB auf Björns Docking-2 (Dauer), Abfragezeit dort, NAS, Windows.
+## 0.6.33 – Auswahl mit SQLite 3.45 (19. November 2026)
+- Automatisch: gesamte Python-Suite mit Python 3.12/SQLite 3.45.1 und 3.13/SQLite 3.53.1; `tests/test_v0631_identity_pick.py` mit 3.45.1 vorher rot, jetzt grün.
 
 ## 0.6.31 – Hauptworker-Auswahl (19. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktests Chromium; neuer Test mit altem Code rot, mit neuem grün. Synthetische Messung 690.000 Werke: Auswahl 0,19 s → 0,002 s, ohne Zeilenlesen.

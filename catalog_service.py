@@ -320,7 +320,8 @@ class Service:
         def focused():
             if not config.get('complete_series',True):return None
             for where,params,_ in scopes:
-                row=c.execute("""SELECT w.* FROM series_focus f JOIN works w ON w.show_key=f.show_key
+                # 0.6.31: CROSS JOIN keeps the small focus table outside (SQLite 3.45 walked all due works).
+                row=c.execute("""SELECT w.* FROM series_focus f CROSS JOIN works w ON w.show_key=f.show_key
                     WHERE f.until>? AND f.remaining>0 AND w.kind='series'
                       AND w.state IN ('pending','retry','identified') AND w.next_try<=?
                       AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
@@ -336,7 +337,7 @@ class Service:
             # Unknown works with *explicit* film rubrics/production cues go before
             # generic series. A hint changes scheduling only, never metadata.
             for where,params,_ in scopes:
-                row=c.execute("""SELECT w.* FROM film_hints h JOIN works w ON w.id=h.work_id
+                row=c.execute("""SELECT w.* FROM film_hints h CROSS JOIN works w ON w.id=h.work_id
                     WHERE h.score>=2 AND w.kind='unknown' AND w.attempts=0
                       AND w.state IN ('pending','retry','identified') AND w.next_try<=?
                       AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)

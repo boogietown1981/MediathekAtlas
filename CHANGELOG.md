@@ -1,3 +1,6 @@
+## 0.6.34 – Sammelstand 0.6.32 + 0.6.33
+- Ein Paket für Björn: eigener Speicherort für das IMDb-Archiv (0.6.32, PR #78) und Hauptworker-Auswahl mit SQLite 3.45 (0.6.33, PR #77). Keine weiteren Änderungen.
+
 ## 0.6.32 – Eigener Speicherort für das IMDb-Archiv (enthält 0.6.31)
 - Björn (19.11.2026): „warum kann ich die IMDb-DB noch nicht auf ein Dock ziehen?“ Das IMDb-Archiv (21,8 GB) lag fest in `<Datenordner>/imdb` und zog nur mit „System und Datenbank“ um. Ziel: Hauptdatenbank auf der internen SSD (auf Docking-2 bremste sie die Erkennung von etwa 600 auf 4 Ergebnisse pro Stunde), Archiv extern.
 - Einstellungen → Speicherorte: vierter Ort „IMDb-Archiv“ (`storage.json` → `imdb_dir`, Ortsmarkierung `.mediathekatlas-ort`). Umzug wie die anderen Orte: kopieren (Datenbank über die Backup-API, `building.db` und Downloads zählen nicht), prüfen, ohne Neustart umstellen (`Archive.relocate`), alter Ort bleibt bis „Alte Daten löschen“. Ein laufender Neuaufbau wird abgewartet, Neuaufbauten warten während des Umzugs (`imdb_held`).
@@ -6,6 +9,9 @@
 - Abfragezeit des Archivs (Mittel, langsamste) in Speicherorte und Diagnose (`imdb.timing`).
 - Systemumzug lässt ein altes Archiv im Datenordner zurück, wenn das Archiv einen eigenen Ort hat (auch beim Abschluss beim Start: `exclude` steht jetzt im Umzugsprotokoll).
 - Tests: `tests/test_v0630_imdb_location.py` (9); Klicktest erwartet vier Speicherorte.
+## 0.6.33 – Hauptworker-Auswahl auch mit SQLite 3.45
+- CI (Ubuntu, SQLite 3.45.1) zeigte, dass `focused()` (series_focus JOIN works) und die film_hints-Abfrage dort von `works` aus planen und alle fälligen Werke lesen. Beide jetzt per `CROSS JOIN` von der kleinen Tabelle aus. Geprüft mit Python 3.12/SQLite 3.45.1 und Python 3.13/SQLite 3.53.1, alle drei Reihenfolgen (ausgewogen, Filme zuerst, Serien zuerst).
+- 0.6.32 ist vom Thread „Speicherorte“ (IMDb-Archiv) reserviert.
 
 ## 0.6.31 – Hauptworker-Auswahl ohne Vollscan (Datenbank auf USB-Laufwerk)
 - Björn (19.11.2026, 0.6.29, System auf /Volumes/Docking-2): „Hauptworker 0 / 4 aktiv“, „Wird gestartet · 0 Abgleiche seit Start“, Folgenworker liefen.

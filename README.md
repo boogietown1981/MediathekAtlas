@@ -1,10 +1,17 @@
-# MediathekAtlas · 0.6.32
+# MediathekAtlas · 0.6.34
+
+## Neu in 0.6.34: Sammelstand
+
+- Enthält 0.6.32 (IMDb-Archiv an eigenem Ort) und 0.6.33 (schnelle Werkauswahl auch mit älteren SQLite-Versionen) in einem Paket.
 
 ## Neu in 0.6.32: IMDb-Archiv an einem eigenen Ort
 
 - In Einstellungen → Speicherorte lässt sich das IMDb-Archiv (rund 20 GB) getrennt von der Hauptdatenbank ablegen, zum Beispiel auf einem externen Laufwerk. Ein dort schon vorhandenes Archiv kann ohne Kopieren übernommen werden.
 - Fehlt das Laufwerk, läuft MediathekAtlas ohne IMDb-Abgleich weiter und nimmt das Archiv wieder dazu, sobald das Laufwerk verbunden ist.
 
+## Neu in 0.6.33: Werkerkennung auch mit älteren SQLite-Versionen schnell
+
+- Die Korrektur aus 0.6.31 griff mit älteren SQLite-Versionen (z. B. 3.45) noch nicht vollständig: Die Abfrage für Serien „im Fokus“ las weiterhin alle wartenden Folgen. Jetzt unabhängig von der SQLite-Version behoben.
 
 ## Neu in 0.6.31: Werkerkennung läuft auch mit der Datenbank auf einem USB-Laufwerk
 
