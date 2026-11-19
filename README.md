@@ -11,6 +11,14 @@
 - Verschwindet das Laufwerk im Betrieb, hält MediathekAtlas sauber an und meldet es, statt mit Datenbankfehlern weiterzulaufen.
 - „Zurück an den Standardort“ überschreibt nie mehr einen dort noch liegenden früheren Datenstand.
 
+## Neu in 0.6.24: Episodensuche findet Folgen erkannter Serien
+
+- Die Folgensuche verwarf IMDb-Folgen, sobald TMDB/TVDB das Startjahr der Serie ein Jahr anders angab als IMDb, und fand Titel wie „Folge 12: Titel“ oder „Titel (S01/E12)“ nicht, weil IMDb nur „Titel“ führt. Beides ist behoben; die erkannte Serie (Titel, Jahr, Anbieter) bleibt dabei unverändert, IMDb ergänzt nur Staffel, Folge und Besetzung.
+- Ausgaben von Magazinen und Nachrichten, zu denen IMDb keine Folgen kennt, werden je Serie in einem Schritt um 30 Tage verschoben, statt jede Ausgabe einzeln zu prüfen. Echte Serienfolgen kommen dadurch schnell an die Reihe.
+- Die Auswahl der nächsten Folge dauerte bei 200.000 Einträgen etwa eine Sekunde je Prüfung, jetzt etwa eine Millisekunde.
+- Zurückgestellte Prüfungen (z. B. Senderabruf im Stundenlimit) zählen nicht mehr als Episodenprüfung; die Übersicht zeigt sie getrennt.
+- Bisher ungelöste Folgen werden nach dem Update einmal neu geprüft.
+
 ## Neu in 0.6.23: Umzug scheitert nicht mehr an Dateien, die die App gerade schreibt
 
 - Beim Umzug von „System und Datenbank“ meldete die Prüfung Protokolle und Verbund-Ereignisse, die die laufende App seit der Kopie geschrieben hatte, als Fehler. Jetzt prüft sie nur die kopierten, seitdem unveränderten Dateien; der Rest wird beim Neustart nachgezogen und dann vollständig geprüft.
