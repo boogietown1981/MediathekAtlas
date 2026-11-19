@@ -1,3 +1,34 @@
+## 0.6.35 – Start hängt nicht mehr an der einmaligen Indexanlage
+- Björn (19.11.2026): 0.6.34 ließ sich nicht starten, macOS meldete „Python reagiert nicht“. Ursache: der Teilindex `work_identity_recheck` (0.6.31/0.6.33) stand im Schema und wurde beim ersten Start angelegt, bevor der Webserver lief. Dafür muss SQLite alle Werke einmal lesen; bei 5,5 GB `catalog.db` auf dem USB-Laufwerk dauert das sehr lange, und in dieser Zeit war weder Oberfläche noch Fenster erreichbar.
+- Der Index steht nicht mehr im Schema (`catalog.IDENTITY_INDEX_SQL`). Der Server legt ihn nach dem Start im Hintergrund an (`catalog.build_deferred_indexes`), die Erkennung (`SERVICE.start`) beginnt erst danach. Bis dahin lässt die Werkauswahl nur die Nachprüfungen „identified“ aus (`catalog.index_ready`), statt alle Serien zu lesen oder an `INDEXED BY` zu scheitern.
+- Sichtbar: Hinweis „Datenbank wird einmalig vorbereitet …“ in der Oberfläche und im Erkennungsstatus (`/api/state` → `maintenance`); bei einem Fehler eine Meldung, die Erkennung läuft dann ohne Index weiter. Ereignisse `catalog_index_build_started/_finished/_failed` mit Dauer.
+- Startprotokoll: jeder Startschritt mit Dauer (`Start: Datenbank öffnen …`, `Katalogschema geprüft`, `Datenbank bereit`, `Webserver bereit`) auf stderr; die erste stdout-Zeile bleibt die Adresse.
+- Klicktest: WebKit meldet einen durch Seitenwechsel abgebrochenen Abruf als „access control checks“-Skriptfehler; dieser Fall wird nicht mehr als Fehler gezählt.
+- Tests: `tests/test_v0635_deferred_index.py` (6).
+
+## 0.6.34 – Sammelstand 0.6.32 + 0.6.33
+- Ein Paket für Björn: eigener Speicherort für das IMDb-Archiv (0.6.32, PR #78) und Hauptworker-Auswahl mit SQLite 3.45 (0.6.33, PR #77). Keine weiteren Änderungen.
+
+## 0.6.32 – Eigener Speicherort für das IMDb-Archiv (enthält 0.6.31)
+- Björn (19.11.2026): „warum kann ich die IMDb-DB noch nicht auf ein Dock ziehen?“ Das IMDb-Archiv (21,8 GB) lag fest in `<Datenordner>/imdb` und zog nur mit „System und Datenbank“ um. Ziel: Hauptdatenbank auf der internen SSD (auf Docking-2 bremste sie die Erkennung von etwa 600 auf 4 Ergebnisse pro Stunde), Archiv extern.
+- Einstellungen → Speicherorte: vierter Ort „IMDb-Archiv“ (`storage.json` → `imdb_dir`, Ortsmarkierung `.mediathekatlas-ort`). Umzug wie die anderen Orte: kopieren (Datenbank über die Backup-API, `building.db` und Downloads zählen nicht), prüfen, ohne Neustart umstellen (`Archive.relocate`), alter Ort bleibt bis „Alte Daten löschen“. Ein laufender Neuaufbau wird abgewartet, Neuaufbauten warten während des Umzugs (`imdb_held`).
+- Vorhandenes Archiv am Ziel (z. B. Kopie im alten Datenordner auf Docking-2): „Vorhandenes Archiv am Ziel verwenden“ ohne Kopie; ein Kopieren darüber ist gesperrt. Das bisherige Archiv gilt dann als ersetzbar (jederzeit neu von IMDb ladbar) und darf nach Bestätigung gelöscht werden, sofern das neue lesbar ist.
+- Fehlendes Laufwerk beim Start (10 s Wartezeit) oder im Betrieb: App läuft ohne IMDb-Abgleich weiter (Phase `unavailable`), legt nie ein leeres Archiv an und schaltet das Archiv ohne Neustart wieder zu, sobald das Laufwerk zurück ist.
+- Abfragezeit des Archivs (Mittel, langsamste) in Speicherorte und Diagnose (`imdb.timing`).
+- Systemumzug lässt ein altes Archiv im Datenordner zurück, wenn das Archiv einen eigenen Ort hat (auch beim Abschluss beim Start: `exclude` steht jetzt im Umzugsprotokoll).
+- Tests: `tests/test_v0630_imdb_location.py` (9); Klicktest erwartet vier Speicherorte.
+## 0.6.33 – Hauptworker-Auswahl auch mit SQLite 3.45
+- CI (Ubuntu, SQLite 3.45.1) zeigte, dass `focused()` (series_focus JOIN works) und die film_hints-Abfrage dort von `works` aus planen und alle fälligen Werke lesen. Beide jetzt per `CROSS JOIN` von der kleinen Tabelle aus. Geprüft mit Python 3.12/SQLite 3.45.1 und Python 3.13/SQLite 3.53.1, alle drei Reihenfolgen (ausgewogen, Filme zuerst, Serien zuerst).
+- 0.6.32 ist vom Thread „Speicherorte“ (IMDb-Archiv) reserviert.
+
+## 0.6.31 – Hauptworker-Auswahl ohne Vollscan (Datenbank auf USB-Laufwerk)
+- Björn (19.11.2026, 0.6.29, System auf /Volumes/Docking-2): „Hauptworker 0 / 4 aktiv“, „Wird gestartet · 0 Abgleiche seit Start“, Folgenworker liefen.
+- Ursache: `Service.pick` suchte im Zustand `identified` über `work_queue(kind,state,next_try)` und filterte die Folgen-Warteschlange per `NOT EXISTS` – damit wurden alle ~220.000 wartenden Serien (next_try fällig) Zeile für Zeile gelesen, mehrfach je Auswahl. Die Prioritätenabfrage lief ebenso über `work_retry` statt über `metadata_priority`. Auf SSD ~0,2 s, auf dem USB-Laufwerk Minuten je Auswahl; die Auswahl kehrte nie zurück, daher auch kein „Wartet“.
+- Neu: Teilindex `work_identity_recheck` (identifizierte Werke außerhalb der Warteschlange, gleiche Regel wie die Trigger), `catalog.IDENTITY_RECHECK` als gemeinsame Bedingung; `pick` nutzt ihn per `INDEXED BY`. Prioritäten per `CROSS JOIN` von `metadata_priority`. Messung (synthetisch 690.000 Werke, 219.000 in der Warteschlange): 9 Mio. → ~0 VM-Schritte, 0,19 s → 0,002 s.
+- Anzeige: „Letzte Erkennung“ ohne Ergebnis heißt „Sucht die nächste fällige Prüfung …“.
+- Nummer 0.6.30 ist vom Thread „Speicherorte“ reserviert.
+- Tests: `tests/test_v0631_identity_pick.py` (3; mit altem Code rot).
+
 ## 0.6.29 – Sammelstand 0.6.24 + 0.6.27 + 0.6.28
 - Zusammenführung von PR #74 (Episodensuche), PR #76 (Oberfläche) und PR #75 (Diagnose 19.11.) auf Basis PR #73.
 - Konflikt Werkzuordnung: Stand aus 0.6.27 übernommen (enthält bereits `listed` aus 0.6.28, dazu `last_checked`/`oldest_checked`/`stored`).

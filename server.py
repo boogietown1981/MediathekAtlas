@@ -70,10 +70,18 @@ def db():
     try:
         with c:yield c
     finally:c.close()
+# 0.6.35: Startschritte mit Dauer ins Startprotokoll (Björn: 0.6.34 hing vor dem Webserver, ohne Hinweis).
+_BOOT=time.monotonic()
+def _boot(step):
+    # stderr: stdout's first line is the URL that launchers and NAS scripts read.
+    if __name__=='__main__':print(f'Start: {step} ({time.monotonic()-_BOOT:.1f} s)',file=sys.stderr,flush=True)
+_boot('Datenbank öffnen: '+str(ROOT/'catalog.db'))
 with db() as c:
     c.execute('PRAGMA journal_mode=WAL')
     c.executescript('CREATE TABLE IF NOT EXISTS records(id TEXT PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT);CREATE TABLE IF NOT EXISTS settings(id INTEGER PRIMARY KEY,payload TEXT);CREATE TABLE IF NOT EXISTS metadata_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL);')
-    catalog.initialize(c)
+    # 0.6.35: Indizes mit vollem Tabellendurchlauf entstehen erst nach dem Start im Hintergrund.
+    catalog.initialize(c,defer_heavy=__name__=='__main__')
+    _boot('Katalogschema geprüft')
     subscriptions.initialize(c)
     portal_sources.initialize(c)
     portal_control.initialize(c)
@@ -85,6 +93,7 @@ with db() as c:
         # Time-limited Netzkino copies never mark Mediathek works as downloaded.
         if not netzkino_downloads.is_portal(done_job):catalog.mark_downloaded(c,done_job)
     catalog.recover_download_queue(c)
+_boot('Datenbank bereit')
 
 def settings():
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
@@ -426,7 +435,10 @@ def imdb_updated():
         c.execute("UPDATE works SET next_try=0,state=CASE WHEN state='review' THEN 'retry' ELSE state END WHERE state IN ('pending','retry','identified','review')")
         c.execute('DELETE FROM metadata_cache')
     SERVICE.metadata_wake.set()
-IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
+# 0.6.30: eigener Speicherort für das IMDb-Archiv (storage.json imdb_dir); fehlt das Laufwerk, läuft die App ohne IMDb-Abgleich.
+_IMDB_DIR,_IMDB_OK=storage_locations.imdb_location(HOME,ROOT,wait=10 if __name__=='__main__' else 0)
+IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated,folder=_IMDB_DIR,available=_IMDB_OK)
+IMDB.locate=lambda:storage_locations.imdb_location(HOME,ROOT)
 imdb_archive.ACTIVE=IMDB
 _UNIFIED_SOURCES={k:_SnapshotSource(k,m[0]) for k,m in _PORTAL_MODULES.items()}
 _STATUS_CACHE=(0,{})
@@ -1276,7 +1288,7 @@ def _storage_for_export():
     except Exception as e:return {'error':core.safe_error(e)}
 def _save_settings(s):
     with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error)
+STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error,imdb=IMDB)
 
 @ROUTES.get('/api/storage-locations')
 def get_storage_locations(self,path):
@@ -1506,7 +1518,7 @@ def get_state(self,path):
     if total>=2:
         diagnostics.event('state_slow_parts',seconds=round(total,2),
                           parts=dict(sorted(parts.items(),key=lambda kv:-kv[1])[:4]))
-    return self.send({'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'cache_dir':s.get('cache_dir',''),'storage_problems':storage_locations.problems(s),'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
+    return self.send({'maintenance':dict(catalog.MAINTENANCE),'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'cache_dir':s.get('cache_dir',''),'storage_problems':storage_locations.problems(s),'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
 
 # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
 @ROUTES.post('/api/samsung-sync')
@@ -2312,7 +2324,11 @@ if __name__=='__main__':
             extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
-        SERVICE.start()
+        # 0.6.35: Die Erkennung (viele Schreibzugriffe) startet erst, wenn der einmalige Index steht.
+        def start_service():
+            catalog.build_deferred_indexes(db,diagnostics.event,diagnostics.error)
+            if not STOP.is_set():SERVICE.start()
+        threading.Thread(target=start_service,daemon=True,name='catalog_index_build').start()
         def prewarm_listing():
             # 0.5.55: the first dashboard page must not wait for the grouping of the whole catalogue.
             for kind in ('movie','series'):
@@ -2331,6 +2347,10 @@ if __name__=='__main__':
         print(text,flush=True);LOST_EXIT[0]=storage_locations.UNAVAILABLE_EXIT;STOP.set()
         threading.Thread(target=server.shutdown,daemon=True).start()
     threading.Thread(target=storage_locations.watch_root,args=(HOME,ROOT,STOP,storage_lost),daemon=True,name='storage_watch').start()
+    if os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
+        # Ohne Hintergrunddienste (Klicktests) den Index trotzdem nach dem Start anlegen.
+        threading.Thread(target=catalog.build_deferred_indexes,args=(db,diagnostics.event,diagnostics.error),daemon=True,name='catalog_index_build').start()
+    _boot('Webserver bereit')
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)

@@ -28,6 +28,7 @@ class QueueTests(unittest.TestCase):
         self.path=self.root/'catalog.db'
         with self.db() as c:
             c.executescript(catalog.SCHEMA)
+            c.execute(catalog.IDENTITY_INDEX_SQL)  # 0.6.35: no longer part of SCHEMA (built after start)
             catalog.ingest(c,[source('first'),source('second'),source('third')])
         self.settings=lambda:{'auto_metadata':True,'episode_workers':2,
                               'metadata_workers':2,'complete_series':False,
