@@ -10,6 +10,30 @@ from media_probe import parse_streams, resolve_ffprobe
 from version import VERSION
 UA='MediathekAtlas/'+VERSION
 
+def publish_exclusive(src,dest):
+    """Publish a finished file under its final name without ever overwriting one.
+
+    A hard link is atomic and exclusive. exFAT, FAT32, many SMB/AFP shares and some NAS volumes
+    have no hard links (macOS: Errno 45 ENOTSUP, Linux: EPERM/EOPNOTSUPP). Then the name is
+    reserved with O_EXCL and the file is moved onto the reservation by rename. Returns 'link' or
+    'rename'; afterwards src may no longer exist."""
+    import os
+    try:
+        os.link(src,dest);return 'link'
+    except FileExistsError:raise
+    except OSError as exc:
+        if not os.path.isfile(src):raise
+        try:fd=os.open(dest,os.O_CREAT|os.O_EXCL|os.O_WRONLY,0o644)
+        except FileExistsError:raise
+        except OSError:raise exc from None
+        os.close(fd)
+        try:os.replace(src,dest)
+        except BaseException:
+            try:os.unlink(dest)
+            except OSError:pass
+            raise
+        return 'rename'
+
 def public_url(url):
     p=urllib.parse.urlsplit(url)
     if p.scheme not in ('https','http') or not p.hostname or p.username or p.password or p.port not in (None,80,443):

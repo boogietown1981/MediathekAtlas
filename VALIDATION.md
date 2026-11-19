@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.28 – Diagnose 19.11. (19. November 2026)
+- Automatisch: gesamte Python-Suite (1380, 4 übersprungen), Node-Tests, Klicktest Chromium (`click_all.cjs` ohne Befund). Neu `tests/test_v0628_diagnose_1911.py` (12): Veröffentlichen ohne Hardlinks (Errno 45 nachgestellt), nie überschreiben, Neueinreihen, Wiederholung bei Verbindungsabbruch, Zähler bei Teilfehler, Zähler der Werkzuordnung.
+- Nicht geprüft: echtes exFAT-Laufwerk am Mac (nur mit nachgestelltem Errno 45), echter YouTube-Abruf (kein Schlüssel in der Testumgebung), NAS, Windows.
+
 ## 0.6.26 – Dienst bei Umzug und langsamem Laufwerk (19. November 2026)
 - Automatisch: gesamte Python-Suite (1351, 4 übersprungen), Node-Tests, Klicktests Chromium. Neu `tests/test_v0626_busy_drive.py`: hängender Teil im Diagnose-Export endet nach der Frist, hängende Laufwerksliste blockiert die Speicherorte-Anzeige nicht, Pausen nur im Umzug-Thread, startup.log aus dem Startordner.
 - Ablauf mit echtem Server (Chromium): „Diagnose-ZIP herunterladen“ liefert das ZIP in 0,3 s.

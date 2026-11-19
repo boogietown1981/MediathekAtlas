@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.26
+# MediathekAtlas · 0.6.28
+
+## Neu in 0.6.28: Downloads auf exFAT-Laufwerken, stabiler YouTube-Abruf, ehrliche Zähler
+
+- Downloads und YouTube-Abos lassen sich auf Laufwerke ohne Hardlinks speichern (exFAT, FAT32, viele Netzlaufwerke). Bisher scheiterte dort jeder fertige Download mit „[Errno 45] Operation not supported“; diese Aufträge laufen nach dem Update einmal neu.
+- YouTube-Katalog: eine kurz abgebrochene Verbindung wird wiederholt, statt die Quelle für 24 Stunden ausfallen zu lassen. Nach einem Teilfehler folgt der nächste Versuch nach 2 Stunden, und die Titelzahl bleibt bei dem, was der Katalog tatsächlich zeigt.
+- Verwaltung: „Werkzuordnung … von … geprüft“ zählt nur Titel, die heute im Katalog stehen (vorher z. B. „3.894 von 3.075“ bei Joyn).
+- Enthält die Episodensuche aus 0.6.24.
 
 ## Neu in 0.6.26: bedienbar auch während eines Umzugs
 

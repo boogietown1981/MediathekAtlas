@@ -138,6 +138,8 @@
     const tiles=el('div',undefined,'atlas-status-grid');
     const tile=(label,value,hint)=>{const t=el('div',undefined,'atlas-portal-tile');t.append(el('strong',value),el('small',label));if(hint)t.title=hint;tiles.append(t);};
     const ref=p.reference||{},by=ref.by_status||{},checked=Number(ref.checked||0),titles=Number(p.titles||0);
+    // 0.6.28: the check counts the titles it actually works on (RTL+: also the subscription titles).
+    const pool=ref.listed!==undefined&&ref.listed!==null?Number(ref.listed||0):titles;
     tile('Filme & Serien im Katalog',num(titles));
     if (p.channels) tile('Live-Sender',num(p.channels));
     if (p.playable!==undefined) tile('im Player abspielbar',num(p.playable));
@@ -151,13 +153,15 @@
     tile('zu prüfen',num(by.review),'Widersprüchliche Referenzen, keine automatische Zuordnung');
     tile('ohne Treffer',num(by.no_match));
     if (by.partial) tile('Anbieter nicht erreichbar',num(by.partial),'Wird später automatisch erneut geprüft');
-    tile('noch offen',num(Math.max(0,titles-checked)),'Wird im Hintergrund abgeglichen (ein Titel alle 6 s)');
+    tile('noch offen',num(Math.max(0,pool-checked)),'Wird im Hintergrund abgeglichen (ein Titel alle 6 s)');
     card.append(tiles);
     if (p.running && p.progress) card.append(el('small','Abruf läuft: '+p.progress,'muted atlas-portal-running'));
-    const share=titles?Math.min(100,Math.round(checked*100/titles)):0;
+    const share=pool?Math.min(100,Math.round(checked*100/pool)):0;
     const bar=el('div',undefined,'atlas-portal-progress');const fill=el('span');fill.style.width=share+'%';bar.append(fill);
     bar.setAttribute('role','progressbar');bar.setAttribute('aria-valuenow',String(share));bar.setAttribute('aria-valuemin','0');bar.setAttribute('aria-valuemax','100');
-    card.append(el('small','Werkzuordnung (IMDb/TVDB/TMDB): '+num(checked)+' von '+num(titles)+' geprüft · '+share+' %'),bar);
+    const scope=el('small','Werkzuordnung (IMDb/TVDB/TMDB): '+num(checked)+' von '+num(pool)+' geprüft · '+share+' %'+(pool>titles?' (inkl. '+num(pool-titles)+' Titel nur mit Abo)':''));
+    if (pool>titles) scope.title='Geprüft werden auch Titel, die nur mit Abo laufen und erst mit „Meine Abos“ erscheinen.';
+    card.append(scope,bar);
     const off=p.offline||{};
     // 0.5.51: Rakuten TV delivers every free film/episode with copy protection – no offline copies there.
     if (p.offline_note) card.append(el('small','Offline: ausgeschaltet – '+(p.source==='youtube'?'im YouTube-Bereich auf eigene Verantwortung einschaltbar (YouTube-Nutzungsbedingungen)':p.offline_note),'muted'));

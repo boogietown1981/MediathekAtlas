@@ -797,6 +797,9 @@ def pace(root, job, now=None, force=False):
 TEMPORARY_ERRORS = ('kein Bot', 'zu viele Anfragen', 'keine Daten', 'antwortet nicht rechtzeitig', 'Zeitüberschreitung')
 # 0.6.19 (Björns Diagnose 0.6.18): these ended as permanent errors before 0.6.19; requeued once after the update.
 REQUEUE_ONCE = ('This video is not available', 'Zu wenig freier Speicher')
+# 0.6.28 (Diagnose 19.11.): exFAT/SMB-Ziele ohne Hardlinks scheiterten beim Veröffentlichen mit
+# „[Errno 45] Operation not supported“. core.publish_exclusive weicht jetzt aus; einmal neu einreihen.
+REQUEUE_NO_HARDLINK = ('[Errno 45]', 'Operation not supported', '[Errno 95]')
 
 
 def requeue_on_start(c, now=None):
@@ -821,6 +824,9 @@ def requeue_on_start(c, now=None):
         elif state == 'error' and not job.get('requeued_0619') and any(x in error for x in REQUEUE_ONCE):
             wait = download_retry.BACKOFF[0]
             job['requeued_0619'] = True
+        elif state == 'error' and not job.get('requeued_0628') and any(x in error for x in REQUEUE_NO_HARDLINK):
+            wait = 60
+            job['requeued_0628'] = True
         else:
             continue
         job.update(state='queued', not_before=now + wait + moved * 120, received=0, total=0, speed=0, eta=None,

@@ -197,16 +197,34 @@ def pending(spec, root, limit=10, now=None):
 
 
 def metrics(spec, root):
+    """Reference checks of the titles the catalogue lists now (films and series of the latest run).
+
+    0.6.28 (Diagnose 19.11.): reports of titles that left the catalogue were counted as well, so
+    the overview read "3.894 von 3.075 geprüft" (Joyn) or "1.042 von 65" (RTL+). ``listed`` is the
+    number of titles the background check works on (same rule as ``pending``)."""
     db = _conn(spec, root)
     try:
-        counts = {}
-        for payload, in db.execute('SELECT payload FROM %s' % spec.checks):
+        counts, listed = {}, None
+        try:
+            last = float(spec.last_success(db) or 0)
+            listed = db.execute("SELECT COUNT(*) FROM %s WHERE kind IN ('movie','series') AND seen>=?" % spec.items,
+                                (last,)).fetchone()[0]
+            rows = db.execute("SELECT r.payload FROM %s r JOIN %s i ON i.id=r.item_id "
+                              "WHERE i.kind IN ('movie','series') AND i.seen>=?" % (spec.checks, spec.items),
+                              (last,)).fetchall()
+        except Exception:      # catalogue table not created yet or without these columns
+            listed = None
+            rows = db.execute('SELECT payload FROM %s' % spec.checks).fetchall()
+        for payload, in rows:
             try:
                 status = json.loads(payload).get('status')
             except (ValueError, AttributeError):
                 status = 'invalid'
             counts[status] = counts.get(status, 0) + 1
-        return {'checked': sum(counts.values()), 'by_status': counts}
+        out = {'checked': sum(counts.values()), 'by_status': counts}
+        if listed is not None:
+            out['listed'] = int(listed or 0)
+        return out
     finally:
         db.close()
 

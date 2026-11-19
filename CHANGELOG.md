@@ -1,3 +1,11 @@
+## 0.6.28 – Diagnose 19.11.: Downloads auf exFAT, YouTube-Abruf, Zähler der Werkzuordnung
+- Björns Diagnose (19.11.2026, 0.6.26, Mac, Downloads/Zwischenspeicher auf /Volumes/Docking, System auf /Volumes/Docking-2).
+- Downloads: `os.link` (exklusives Veröffentlichen) scheiterte auf Laufwerken ohne Hardlinks mit `[Errno 45] Operation not supported` (15 YouTube-Abo-Aufträge, 17.11.). Neu `core.publish_exclusive`: Hardlink, sonst Name mit `O_EXCL` reservieren und per `os.replace` darauf verschieben; überschreibt nie. Genutzt in `downloads.py` und `artwork.py` (Bilder fielen dort still weg). Einmaliges Neueinreihen (`requeued_0628`).
+- YouTube-Katalog: `_request` wiederholt Netzfehler (Verbindungsabbruch, Zeitüberschreitung) und HTTP 500/502/503/504 nach 2, 6, 15 s. Teilweise geladener Lauf: Zähler aus den sichtbaren Titeln (`visible_counts`, vorher 1.936 statt 4.265), nächster Versuch nach 2 h statt 24 h (außer Kontingent).
+- `portal_enrichment.metrics`: zählt nur Prüfberichte von Titeln, die im aktuellen Katalog stehen, und liefert `listed`; die Übersicht rechnet „geprüft“, „noch offen“ und den Balken damit (RTL+: Hinweis auf mitgeprüfte Abo-Titel).
+- Enthält 0.6.24 (Episodensuche, PR #74).
+- Tests: `tests/test_v0628_diagnose_1911.py` (12).
+
 ## 0.6.26 – Dienst bleibt bei Umzug und langsamem Laufwerk bedienbar, Protokoll-Download mit Frist
 - Björn (19.11.2026, 0.6.23/0.6.25, Datenordner auf /Volumes/Docking-2): „Protokoll herunterladen“ endete immer mit „seit 60 Sekunden nicht verfügbar“ (/api/diagnostics 84 s). Während des Downloadumzugs /api/state bis 579 s („catalog“ 532 s, „settings“ 239 s), /api/storage-locations bis 433 s (auch ohne Umzug 103 s), Katalog-Vorwärmen 449 s; auch ohne Umzug „catalog“ 2–20 s. Ursache: Datenbank (5,5 GB) und Umzug teilen sich dasselbe USB-Laufwerk; der Umzug kopierte ungebremst, die Oberfläche wartete synchron auf Laufwerksabfragen (`mount` je Laufwerk, freier Platz) und Zählungen.
 - Diagnose-Export: alle Teile parallel mit gemeinsamer Frist (20 s); ein hängender oder fehlerhafter Teil steht als `timeout`/`error` im Export statt den Download zu verhindern (`export_slow_parts`). Oberfläche wartet beim Export 180 s. `startup.log` kommt aus dem Startordner, auch wenn der Datenordner umgezogen ist (seit 0.6.20 fehlte es dann).

@@ -265,7 +265,7 @@ def run(row,meta,root,quality,update,cancelled):
             published=[]
             try:
                 for a,b in [(nfo,dest.with_suffix('.nfo')),(metadata,dest.with_suffix('.metadata.json')),(out,dest)]:
-                    os.link(a,b);published.append(b) # exclusive creation, same filesystem
+                    core.publish_exclusive(a,b);published.append(b) # exclusive creation; rename fallback on exFAT/SMB
             except Exception:
                 for p in published:p.unlink(missing_ok=True)
                 raise
