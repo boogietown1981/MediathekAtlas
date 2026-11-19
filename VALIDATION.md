@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.36 – Kindervideos von YouTube (19. November 2026)
+- Automatisch: siehe Bericht im PR. Neu `tests/test_v0636_youtube_kids.py`: Laufzeitsuche (eigenes Deno zuerst), `--js-runtimes` nur bei neuem yt-dlp, Versionsabfrage einmalig, altes System-yt-dlp tritt zurück, Deno-Installation mit Prüfsumme (manipuliert → Fehler), Release-Dateinamen je System, Deno-Fehler nicht fatal, einmaliges Neueinreihen.
+- Geprüft gegen das offizielle yt-dlp 2026.10.26: Optionen `--js-runtimes`/`--remote-components` vorhanden, `yt_dlp_ejs` im Zipapp enthalten, Client-Logik (visionos ohne JS, Kindervideo-Hinweis) im Quelltext.
+- Nicht geprüft: echter Download eines Kindervideos (youtube.com ist aus der Testumgebung gesperrt), Deno-Download auf Björns Mac.
+
 ## 0.6.35 – Start ohne Indexanlage (19. November 2026)
 - Automatisch: gesamte Python-Suite (1402, 4 übersprungen), Node-Tests, Klicktest Chromium. Neu `tests/test_v0635_deferred_index.py`: Schema ohne Index, Auswahl ohne Index, Aufbau im Hintergrund einmalig, Fehler wird gemeldet statt geworfen.
 - Echter Start mit synthetischer 868-MB-Datenbank (400.000 Werke) ohne Index: Adresse nach 0,8 s, Index danach im Hintergrund (0,3 s auf SSD).

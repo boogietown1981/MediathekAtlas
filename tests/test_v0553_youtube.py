@@ -343,7 +343,8 @@ class OfflineTests(Fixture):
         blob = b'#!/usr/bin/env python3\nprint(1)\n'
         good = hashlib.sha256(blob).hexdigest()
         files = {yd.RELEASE + 'SHA2-256SUMS': ('%s  yt-dlp\n%s  yt-dlp.exe\n' % (good, '0' * 64)).encode(), yd.RELEASE + 'yt-dlp': blob}
-        with mock.patch('shutil.which', return_value=None), mock.patch.dict('os.environ', {'MEDIATHEKATLAS_YTDLP': ''}):
+        with mock.patch('shutil.which', return_value=None), mock.patch.dict('os.environ', {'MEDIATHEKATLAS_YTDLP': ''}), \
+                mock.patch.object(yd, 'find_js_runtime', return_value=('node', '/usr/bin/node')):
             st = yd.install_tool(self.root, fetch=files.__getitem__)
             self.assertTrue(st['tool'])
             files[yd.RELEASE + 'yt-dlp'] = b'tampered'

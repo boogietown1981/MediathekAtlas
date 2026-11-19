@@ -1561,8 +1561,14 @@ def post_youtube_offline(self,path,d):
 
 @ROUTES.post('/api/youtube-ytdlp-install')
 def post_youtube_ytdlp_install(self,path,d):
-    try:return self.send(youtube_downloads.install_tool(ROOT))
+    try:st=youtube_downloads.install_tool(ROOT)
     except (OSError,ValueError) as e:return self.send({'error':'yt-dlp konnte nicht eingerichtet werden: '+core.safe_error(e)},502)
+    try:
+        if youtube_downloads.js_args(ROOT):
+            with db() as c:st['requeued']=youtube_abos.requeue_not_available(c)
+            if st['requeued']:diagnostics.event('youtube_jobs_requeued',count=st['requeued'],js_runtime=True)
+    except Exception as e:diagnostics.error('youtube_requeue_failed',e)
+    return self.send(st)
 
 @ROUTES.post('/api/youtube-download-add')
 def post_youtube_download_add(self,path,d):
@@ -2306,8 +2312,10 @@ if __name__=='__main__':
     except Exception as e:diagnostics.error('download_queue_dedupe_failed',e)
     try:
         # 0.6.13: YouTube jobs stopped by the bot check (before automatic retries existed) or by a restart start again later.
-        with db() as c:moved=youtube_abos.requeue_on_start(c)
-        if moved:diagnostics.event('youtube_jobs_requeued',count=moved)
+        # 0.6.36: with a JavaScript runtime for yt-dlp, "This video is not available" (kids' videos) is retried once.
+        js_ready=bool(youtube_downloads.enabled(ROOT) and youtube_downloads.js_args(ROOT))
+        with db() as c:moved=youtube_abos.requeue_on_start(c,js_ready=js_ready)
+        if moved:diagnostics.event('youtube_jobs_requeued',count=moved,js_runtime=js_ready)
     except Exception as e:diagnostics.error('youtube_requeue_failed',e)
     try:
         with db() as c:moved=netzkino_downloads.migrate_legacy(ROOT,c,settings()['download_dir'])

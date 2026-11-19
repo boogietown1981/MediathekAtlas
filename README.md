@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.35
+# MediathekAtlas · 0.6.36
+
+## Neu in 0.6.36: Kindervideos von YouTube
+
+- Videos, die YouTube als „Made for Kids“ führt (z. B. „Anna und die wilden Tiere“), scheiterten mit „This video is not available“: yt-dlp kann sie nur mit einer JavaScript-Laufzeit laden. Der Knopf im YouTube-Bereich richtet jetzt neben yt-dlp auch Deno ein (offizielle Version, Prüfsumme geprüft); danach werden die gescheiterten Videos einmal neu versucht.
 
 ## Neu in 0.6.35: Start ohne Hänger
 

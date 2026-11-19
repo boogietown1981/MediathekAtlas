@@ -802,7 +802,33 @@ REQUEUE_ONCE = ('This video is not available', 'Zu wenig freier Speicher')
 REQUEUE_NO_HARDLINK = ('[Errno 45]', 'Operation not supported', '[Errno 95]')
 
 
-def requeue_on_start(c, now=None):
+# 0.6.36: "This video is not available" bei Kindervideos ("Made for Kids") lag an der fehlenden
+# JavaScript-Laufzeit für yt-dlp. Sobald eine da ist, diese Aufträge einmal neu einreihen.
+NOT_AVAILABLE = 'This video is not available'
+
+
+def requeue_not_available(c, now=None):
+    """Aufgegebene YouTube-Aufträge mit „This video is not available“ einmal neu einreihen (gestaffelt)."""
+    now = time.time() if now is None else float(now)
+    moved = 0
+    for job_id, payload in c.execute("SELECT id,payload FROM jobs WHERE state='error' "
+                                     "AND json_extract(payload,'$.origin')='youtube'").fetchall():
+        try:
+            job = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        error = str(job.get('error') or '')
+        if job.get('requeued_0636') or NOT_AVAILABLE not in error:
+            continue
+        job.update(state='queued', not_before=now + 60 + moved * 120, received=0, total=0, speed=0, eta=None,
+                   error='', retries=0, last_error=error[:200], requeued_0636=True,
+                   note='Wird mit JavaScript-Laufzeit (Deno) erneut versucht')
+        c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), 'queued', job_id))
+        moved += 1
+    return moved
+
+
+def requeue_on_start(c, now=None, js_ready=False):
     """0.6.13, einmal beim Start: YouTube-Aufträge, die vor 0.6.13 an einem vorübergehenden Fehler
     (Bot-Prüfung) gescheitert sind, und Abo-Downloads, die ein Neustart unterbrochen hat, wieder
     einreihen. Gestaffelt, damit YouTube nicht alle auf einmal sieht. Gibt die Zahl zurück."""
@@ -835,6 +861,8 @@ def requeue_on_start(c, now=None):
                    note='Wird nach dem Update automatisch erneut versucht')
         c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), 'queued', job_id))
         moved += 1
+    if js_ready:
+        moved += requeue_not_available(c, now + moved * 120)
     return moved
 
 

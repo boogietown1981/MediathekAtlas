@@ -24,6 +24,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import platform
 import re
 import secrets
 import shutil
@@ -102,10 +103,21 @@ def status(root):
     finally:
         db.close()
     tool = find_tool(root)
+    js = find_js_runtime(root)
+    old = bool(tool) and not _js_ok(tool)
+    hint = ('' if tool else 'yt-dlp fehlt. „yt-dlp einrichten“ lädt die offizielle Version von '
+                            'github.com/yt-dlp herunter (einmalig, ca. 3 MB).')
+    if tool and not js:
+        hint = ('Deno fehlt: Ohne JavaScript-Laufzeit kann yt-dlp Kindervideos („Made for Kids“) und manche '
+                'Formate nicht laden. „Deno einrichten“ lädt die offizielle Version von github.com/denoland '
+                '(einmalig, ca. 40 MB).')
+    elif old:
+        hint = ('yt-dlp ist zu alt für Kindervideos („Made for Kids“). „yt-dlp einrichten“ lädt eine aktuelle '
+                'Version in MediathekAtlas (ein über Homebrew installiertes yt-dlp: „brew upgrade yt-dlp“).')
     return {'enabled': enabled(root), 'consent_at': consent, 'days': OFFLINE_DAYS, 'policy': POLICY,
             'consent_text': CONSENT, 'tool': bool(tool), 'tool_origin': tool[1] if tool else '',
-            'tool_hint': '' if tool else 'yt-dlp fehlt. „yt-dlp einrichten“ lädt die offizielle Version von '
-                                          'github.com/yt-dlp herunter (einmalig, ca. 3 MB).'}
+            'js_runtime': ('%s (%s)' % js) if js else '', 'tool_current': bool(tool) and not old,
+            'tool_hint': hint}
 
 
 # ------------------------------------------------------------ yt-dlp
@@ -114,21 +126,144 @@ def _managed(root):
     return Path(root) / 'tools' / 'yt-dlp'
 
 
-def find_tool(root):
-    """(argv prefix, origin) of a usable yt-dlp, or None."""
-    override = os.environ.get('MEDIATHEKATLAS_YTDLP')
-    if override and Path(override).is_file():
-        return [override], 'MEDIATHEKATLAS_YTDLP'
-    found = shutil.which('yt-dlp')
-    if found:
-        return [found], 'installiert (' + found + ')'
-    managed = _managed(root)
-    if managed.is_file():
-        return [sys.executable, str(managed)], 'von MediathekAtlas eingerichtet'
+# 0.6.36 (Björn, 19.11.2026): "Anna und die wilden Tiere" (BR, Kinderkanal) scheiterte immer mit
+# "This video is not available". yt-dlp ohne JavaScript-Laufzeit fragt YouTube nur über den Client
+# "visionos" an, und der liefert keine "Made for Kids"-Videos; der Ausweg über "web_embedded" braucht
+# eine JS-Laufzeit (yt-dlp: Deno von Haus aus, Node/Bun mit --js-runtimes).
+JS_RUNTIMES = ('deno', 'node', 'bun')
+JS_DIRS = ('/opt/homebrew/bin', '/usr/local/bin', '~/.deno/bin', '~/.bun/bin', '/usr/bin')
+DENO_RELEASE = 'https://github.com/denoland/deno/releases/latest/download/'
+
+
+def _deno_managed(root):
+    return Path(root) / 'tools' / 'deno' / ('deno.exe' if os.name == 'nt' else 'deno')
+
+
+def find_js_runtime(root):
+    """(name, path) of a JavaScript runtime yt-dlp can use, or None. The app's own Deno first."""
+    managed = _deno_managed(root) if root is not None else None
+    if managed is not None and managed.is_file():
+        return 'deno', str(managed)
+    for name in JS_RUNTIMES:
+        found = shutil.which(name)
+        if not found:
+            # Started from Finder, the app has no Homebrew PATH.
+            found = next((str(Path(d).expanduser() / name) for d in JS_DIRS
+                          if os.access(str(Path(d).expanduser() / name), os.X_OK)), None)
+        if found:
+            return name, found
     return None
 
 
-def install_tool(root, fetch=None):
+def js_args(root, tool=None):
+    """--js-runtimes for yt-dlp, only if the yt-dlp in use knows the option (else it would stop at once)."""
+    js = find_js_runtime(root)
+    tool = tool or find_tool(root)
+    # --remote-components: if this yt-dlp lacks its bundled solver scripts (yt-dlp-ejs, e.g. a pip install),
+    # it may fetch them from yt-dlp's GitHub releases; with the scripts present it uses its own.
+    return ['--js-runtimes', '%s:%s' % js, '--remote-components', 'ejs:github'] if js and tool and _js_ok(tool) else []
+
+
+def _deno_asset():
+    machine = platform.machine().lower()
+    arch = 'aarch64' if machine in ('arm64', 'aarch64') else 'x86_64' if machine in ('x86_64', 'amd64') else ''
+    system = {'darwin': 'apple-darwin', 'linux': 'unknown-linux-gnu', 'windows': 'pc-windows-msvc'}.get(platform.system().lower(), '')
+    if not arch or not system or (system == 'pc-windows-msvc' and arch != 'x86_64'):
+        return ''
+    return 'deno-%s-%s.zip' % (arch, system)
+
+
+def install_js_runtime(root, fetch=None):
+    """Download the official Deno build and verify it against its published SHA-256."""
+    import zipfile, io
+    asset = _deno_asset()
+    if not asset:
+        raise ValueError('Für dieses System gibt es keine offizielle Deno-Version; bitte Node.js installieren')
+    fetch = fetch or (lambda url: urllib.request.urlopen(urllib.request.Request(
+        url, headers={'User-Agent': 'MediathekAtlas'}), timeout=120).read(160 * 1024 * 1024))
+    with _LOCK:
+        line = fetch(DENO_RELEASE + asset + '.sha256sum').decode('utf-8', 'replace').split()
+        expected = line[0].lower() if line else ''
+        if not re.fullmatch(r'[0-9a-f]{64}', expected):
+            raise ValueError('Prüfsumme für Deno nicht gefunden')
+        data = fetch(DENO_RELEASE + asset)
+        if hashlib.sha256(data).hexdigest() != expected:
+            raise ValueError('Deno-Download beschädigt (Prüfsumme stimmt nicht)')
+        target = _deno_managed(root)
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with zipfile.ZipFile(io.BytesIO(data)) as z:
+            name = next((n for n in z.namelist() if Path(n).name == target.name), None)
+            if not name:
+                raise ValueError('Deno-Archiv ohne Programmdatei')
+            tmp = target.with_name(target.name + '.partial')
+            tmp.write_bytes(z.read(name))
+        os.chmod(tmp, 0o755)
+        os.replace(tmp, target)
+    return status(root)
+
+
+JS_MIN_VERSION = (2025, 11, 12)   # first yt-dlp with --js-runtimes (EJS)
+_VERSIONS = {}
+
+
+def tool_version(argv):
+    """yt-dlp's version as a tuple (cached per program file and its change time), () if unknown."""
+    path = argv[-1]
+    try:
+        key = (path, os.stat(path).st_mtime)
+    except OSError:
+        return ()
+    if key not in _VERSIONS:
+        try:
+            out = subprocess.run([*argv, '--version'], capture_output=True, text=True, timeout=30,
+                                 stdin=subprocess.DEVNULL).stdout
+            _VERSIONS[key] = tuple(int(x) for x in re.findall(r'\d+', out.strip().split()[0])[:3]) if out.strip() else ()
+        except (OSError, subprocess.SubprocessError, ValueError, IndexError):
+            _VERSIONS[key] = ()
+    return _VERSIONS[key]
+
+
+def find_tool(root):
+    """(argv prefix, origin) of a usable yt-dlp, or None.
+
+    0.6.36: an installed yt-dlp older than JS_MIN_VERSION cannot use a JavaScript runtime; the app's own,
+    newer copy (if set up) is preferred then."""
+    override = os.environ.get('MEDIATHEKATLAS_YTDLP')
+    if override and Path(override).is_file():
+        return [override], 'MEDIATHEKATLAS_YTDLP'
+    managed = _managed(root)
+    own = ([sys.executable, str(managed)], 'von MediathekAtlas eingerichtet') if managed.is_file() else None
+    found = shutil.which('yt-dlp')
+    if found:
+        system = ([found], 'installiert (' + found + ')')
+        if own and tool_version(system[0]) and tool_version(system[0]) < JS_MIN_VERSION:
+            return own
+        return system
+    return own
+
+
+def _js_ok(tool):
+    version = tool_version(tool[0])
+    return bool(version) and version >= JS_MIN_VERSION
+
+
+def install_tool(root, fetch=None, js_fetch=None):
+    """yt-dlp (official zipapp, checksum verified) and, if no JavaScript runtime is there, Deno.
+
+    The button stays one: "yt-dlp einrichten" also renews the app's own yt-dlp (YouTube changes often)."""
+    tool = find_tool(root)
+    if not tool or tool[1] == 'von MediathekAtlas eingerichtet' or not _js_ok(tool):
+        _install_ytdlp(root, fetch)
+    if not find_js_runtime(root):
+        try:
+            install_js_runtime(root, js_fetch)
+        except (OSError, ValueError) as e:
+            # yt-dlp itself is set up; Deno is reported, not fatal (most videos load without it).
+            return {**status(root), 'js_error': 'Deno konnte nicht eingerichtet werden: ' + str(e)[:200]}
+    return status(root)
+
+
+def _install_ytdlp(root, fetch=None):
     """Download the official yt-dlp zipapp and verify it against the release checksums."""
     fetch = fetch or (lambda url: urllib.request.urlopen(urllib.request.Request(
         url, headers={'User-Agent': 'MediathekAtlas'}), timeout=60).read(64 * 1024 * 1024))
@@ -187,7 +322,7 @@ def fetch(row, src, directory, update, cancelled, runner=None):
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
             '--no-mtime', '--no-part', '--newline', '--no-warnings', '-f', _format(row),
             '--merge-output-format', 'mkv', '--progress-template', 'download:MAP %(progress.downloaded_bytes)s %(progress.total_bytes)s',
-            '-o', str(work / 'video.%(ext)s')]
+            '-o', str(work / 'video.%(ext)s'), *js_args(root, tool)]
     if row.get('_container') == 'mp4' or row.get('_abo'):
         # 0.6.13: subscription videos come in batches; short pauses between YouTube's requests make the
         # bot check ("Sign in to confirm you're not a bot") less likely. A single click stays immediate.
@@ -313,9 +448,9 @@ def _failure(text):
         # 0.6.19 (Björns Diagnose 0.6.18): after the bot check every one of 18 videos failed with this text
         # within minutes, none succeeded – YouTube's answer to a flagged address, not a removed video
         # (that says "Video unavailable"/"Private video"). Retried with growing gaps; given up after the series.
-        return ('YouTube gibt das Video gerade nicht heraus („This video is not available“, oft nach der '
-                'Bot-Sperre)'), True, False
-    return reason, False, False
+        # 0.6.36: also every "Made for Kids" video when yt-dlp has no JavaScript runtime (see JS_RUNTIMES).
+        return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Bot-Sperre oder '
+                'Kindervideo ohne Deno; im YouTube-Bereich „Deno einrichten“)'), True, False
     return reason, False, False
 
 
@@ -393,7 +528,7 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
     if not tool:
         raise ValueError('yt-dlp fehlt; im YouTube-Bereich „yt-dlp einrichten“ wählen')
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
-            '--no-warnings', '-f', FORMAT.format(h=limit), '-S', SORT.format(h=limit), '-j', youtube.video_url(row['path'])]
+            '--no-warnings', '-f', FORMAT.format(h=limit), '-S', SORT.format(h=limit), *js_args(root, tool), '-j', youtube.video_url(row['path'])]
     try:
         done = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
                                           env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
