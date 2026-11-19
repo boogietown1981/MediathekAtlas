@@ -1008,6 +1008,19 @@ def get_video_audit(self,path):
 def get_browser_extension(self,path):
     return self.send(__import__('browser_extension').package(VERSION),ctype='application/zip')
 
+# 0.6.38: Einrichtungsassistent der Chrome-Erweiterung (entpackter Ordner statt ZIP, Erkennung, Update).
+@ROUTES.get('/api/browser-extension/status')
+def get_browser_extension_status(self,path):
+    return self.send(__import__('browser_extension').status(VERSION,HOME,NETWORK))
+
+@ROUTES.post('/api/browser-extension/reveal')
+def post_browser_extension_reveal(self,path,d):
+    if NETWORK:raise ValueError('Die App läuft auf einem anderen Gerät. Bitte die Erweiterung als ZIP herunterladen.')
+    import browser_extension
+    info=browser_extension.provide(VERSION,HOME)
+    info['shown']=bool(d.get('show',True)) and browser_extension.reveal(info['path'])
+    return self.send(info)
+
 @ROUTES.get('/api/live-tv')
 def get_live_tv(self,path):
     # 0.5.50: live channels of all sources, merged by station (web/live_tv.js).
@@ -1561,8 +1574,14 @@ def post_youtube_offline(self,path,d):
 
 @ROUTES.post('/api/youtube-ytdlp-install')
 def post_youtube_ytdlp_install(self,path,d):
-    try:return self.send(youtube_downloads.install_tool(ROOT))
+    try:st=youtube_downloads.install_tool(ROOT)
     except (OSError,ValueError) as e:return self.send({'error':'yt-dlp konnte nicht eingerichtet werden: '+core.safe_error(e)},502)
+    try:
+        if youtube_downloads.js_args(ROOT):
+            with db() as c:st['requeued']=youtube_abos.requeue_not_available(c)
+            if st['requeued']:diagnostics.event('youtube_jobs_requeued',count=st['requeued'],js_runtime=True)
+    except Exception as e:diagnostics.error('youtube_requeue_failed',e)
+    return self.send(st)
 
 @ROUTES.post('/api/youtube-download-add')
 def post_youtube_download_add(self,path,d):
@@ -1857,6 +1876,44 @@ def post_library_locate(self,path,d):
     with db() as c:result=local_library.relink(c,job_id,d.get('path') or '',approved)
     diagnostics.event('library_relinked',job_id=job_id,automatic=False)
     return self.send(result)
+
+# 0.6.37: fehlende Dateien an den bekannten Speicherorten suchen bzw. Einträge entfernen (web/app.js „Datei fehlt“)
+def _storage_history():
+    """Every folder MediathekAtlas has used for downloads: current ones, the default, and both ends of earlier moves."""
+    s=settings();cfg=storage_locations.read_pointer(HOME);out=[]
+    for value in [s.get('download_dir'),s.get('cache_dir'),DEFAULT_DOWNLOAD_DIR]+list(s.get('library_dirs') or []):
+        if value:out.append(str(value))
+    for kind,entry in (cfg.get('previous') or {}).items():
+        if kind in ('downloads','cache') and isinstance(entry,dict):
+            out+= [str(entry.get(k)) for k in ('source','target') if entry.get(k)]
+    last=cfg.get('last') or {}
+    if last.get('kind') in ('downloads','cache'):
+        out+= [str(last.get(k)) for k in ('source','target') if last.get(k)]
+    return list(dict.fromkeys(out))
+def _repair_roots():
+    approved=local_library.roots(settings());seen={str(p) for p in approved}
+    for value in _storage_history():
+        try:p=Path(value).expanduser().resolve()
+        except (OSError,RuntimeError,ValueError):continue
+        if p.is_dir() and p!=Path(p.anchor) and str(p) not in seen:approved.append(p);seen.add(str(p))
+    return approved
+
+@ROUTES.post('/api/library-repair')
+def post_library_repair(self,path,d):
+    roots=_repair_roots()
+    with db() as c:result=local_library.repair_missing(c,roots,old_roots=_storage_history())
+    diagnostics.event('library_repair',checked=result['checked'],relinked=result['relinked'],missing=result['missing'],
+                      ambiguous=result['ambiguous'],incomplete=result['incomplete'],roots=len(roots))
+    result['roots']=[str(p) for p in roots]
+    return self.send(result)
+
+@ROUTES.post('/api/library-remove-missing')
+def post_library_remove_missing(self,path,d):
+    ids=[str(x)[:128] for x in (d.get('ids') or [])][:5000] if d.get('ids') else None
+    if d.get('id'):ids=[str(d['id'])[:128]]
+    with db() as c:removed=local_library.remove_missing(c,ids)
+    diagnostics.event('library_remove_missing',removed=removed,all=ids is None)
+    return self.send({'ok':True,'removed':removed})
 
 @ROUTES.post('/api/subscription-add')
 def post_subscription_add(self,path,d):
@@ -2306,8 +2363,10 @@ if __name__=='__main__':
     except Exception as e:diagnostics.error('download_queue_dedupe_failed',e)
     try:
         # 0.6.13: YouTube jobs stopped by the bot check (before automatic retries existed) or by a restart start again later.
-        with db() as c:moved=youtube_abos.requeue_on_start(c)
-        if moved:diagnostics.event('youtube_jobs_requeued',count=moved)
+        # 0.6.36: with a JavaScript runtime for yt-dlp, "This video is not available" (kids' videos) is retried once.
+        js_ready=bool(youtube_downloads.enabled(ROOT) and youtube_downloads.js_args(ROOT))
+        with db() as c:moved=youtube_abos.requeue_on_start(c,js_ready=js_ready)
+        if moved:diagnostics.event('youtube_jobs_requeued',count=moved,js_runtime=js_ready)
     except Exception as e:diagnostics.error('youtube_requeue_failed',e)
     try:
         with db() as c:moved=netzkino_downloads.migrate_legacy(ROOT,c,settings()['download_dir'])
@@ -2351,6 +2410,15 @@ if __name__=='__main__':
         # Ohne Hintergrunddienste (Klicktests) den Index trotzdem nach dem Start anlegen.
         threading.Thread(target=catalog.build_deferred_indexes,args=(db,diagnostics.event,diagnostics.error),daemon=True,name='catalog_index_build').start()
     _boot('Webserver bereit')
+    if not NETWORK:
+        def provide_extension():
+            # 0.6.38: entpackte Chrome-Erweiterung mit der aktuellen Version bereitlegen; eine geladene Erweiterung
+            # lädt sich danach auf der MediathekAtlas-Seite selbst neu (Update ohne Handarbeit).
+            try:
+                info=__import__('browser_extension').provide(VERSION,HOME)
+                if info['changed']:diagnostics.event('browser_extension_provided',version=info['version'],changed=len(info['changed']))
+            except Exception as e:diagnostics.error('browser_extension_provide_failed',e)
+        threading.Thread(target=provide_extension,daemon=True,name='browser_extension_provide').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)

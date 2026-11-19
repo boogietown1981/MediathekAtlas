@@ -240,7 +240,7 @@ class WiringTests(unittest.TestCase):
     def test_worker_uses_retry(self):
         self.assertIn('download_retry.hold(j)', SERVER)
         self.assertIn('download_retry.reschedule(j,e)', SERVER)
-        self.assertIn('youtube_abos.requeue_on_start(c)', SERVER)
+        self.assertIn('youtube_abos.requeue_on_start(c', SERVER)
         self.assertIn("'download_retry.py'", (ROOT / 'build_macos.py').read_text(encoding='utf-8'))
 
     def test_ui(self):

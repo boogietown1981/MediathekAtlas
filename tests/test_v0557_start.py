@@ -48,7 +48,9 @@ class StaticLayoutTests(unittest.TestCase):
         for wanted in ('id="results"', 'id="catalog-tree"', 'id="query"', 'id="download-filter"', 'id="series-pick"'):
             self.assertIn(wanted, legacy)
         self.assertIn('<section id="status" hidden>', self.html)
-        self.assertIn('<section id="legacy" hidden>', self.html)
+        self.assertIn('<section id="legacy" class="legacy-panel">', self.html)   # 0.6.37: unter Plattformen
+        portals = self.html[self.html.index('<section id="portals"'):]
+        self.assertLess(portals.index('<section id="legacy"'), portals.index('<section id="pluto"'))
 
     def test_every_id_exists_once(self):
         ids = re.findall(r'\bid="([^"]+)"', self.html)

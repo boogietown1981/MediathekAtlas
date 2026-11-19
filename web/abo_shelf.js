@@ -1,11 +1,7 @@
-/* 0.6.27 · YouTube-Abos im Dashboard (Björn, 19.11.2026): „die bei YouTube abonnierten Videos tauchen
-   noch nicht in der normalen Dashboard-Übersicht auf, hier würde ich diese auch mit einer Gliederung
-   je Kanal sehen.“
-
-   - Quelle „Alle“ und „YouTube“: Block „Neu aus deinen YouTube-Abos“ über dem Katalog, je Kanal eine
-     Reihe mit den neuesten offline gespeicherten Videos (zuklappbar, Zustand bleibt gespeichert).
-   - Quelle „YouTube-Abos“: alle Abo-Videos je Kanal, mit Stand der letzten Prüfung, Warteschlange
-     und Fehlern je Kanal, Filter nach Profil und „nur neue“.
+/* 0.6.27/0.6.37 · YouTube-Abos im Dashboard (Björn, 19.11.2026): die abonnierten Videos, gegliedert je Kanal.
+   0.6.37: kein eigener Bereich mehr, sondern Unteransicht „Abos“ der Quelle YouTube (neben Filme, Serien,
+   Musikvideos), so wie Live-TV bei den Plattformen. Je Kanal: Stand der letzten Prüfung, Warteschlange,
+   Fehler; Filter nach Profil, „nur neue“ und Suche.
    Daten: /api/youtube-abo-videos (youtube_abos.library), Bilder lokal über /api/kids-image,
    Wiedergabe im gemeinsamen Player (window.playRef, Abspielstand „job:<id>“ wie Kinderecke und
    Ansehen-Modus). */
@@ -22,12 +18,11 @@
   const when = t => t ? new Date(t * 1000).toLocaleString('de-DE', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '';
   const day = iso => { const m = /^(\d{4})-(\d\d)-(\d\d)/.exec(iso || ''); return m ? m[3] + '.' + m[2] + '.' + m[1] : ''; };
   const clock = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60), r = s % 60; return h ? h + ':' + String(m).padStart(2, '0') + ':' + String(r).padStart(2, '0') : m + ':' + String(r).padStart(2, '0'); };
-  const COMPACT = 12;   // Videos je Kanal im Block über dem Katalog
-  const KEY = 'atlas-abo-shelf-open';
 
   const host = make('section', undefined, 'abs-shelf');
   host.id = 'atlas-abo-shelf'; host.hidden = true; host.setAttribute('aria-label', 'Videos aus deinen YouTube-Abos');
-  discover.insertBefore(host, content);
+  const anchor = $('atlas-cross-categories');
+  if (anchor && anchor.parentElement === content) content.insertBefore(host, anchor); else content.append(host);
 
   let mode = 'off', data = null, timer = 0, seq = 0, profile = 'all', onlyNew = false, query = '';
 
@@ -89,32 +84,6 @@
     return '';
   }
 
-  function renderCompact() {
-    const channels = (data.channels || []).filter(ch => ch.videos);
-    if (!(data.channels || []).length) { host.hidden = true; return; }
-    const box = make('details', undefined, 'abs-shelf-box');
-    box.open = localStorage.getItem(KEY) !== '0';
-    box.ontoggle = () => { try { localStorage.setItem(KEY, box.open ? '1' : '0'); } catch (_) { /* privat */ } };
-    const fresh = (data.channels || []).reduce((n, ch) => n + (ch.new || 0), 0);
-    const sum = make('summary', undefined, 'abs-shelf-summary');
-    sum.append(make('strong', 'Neu aus deinen YouTube-Abos'), make('span', ' · ' + num(channels.length) + (channels.length === 1 ? ' Kanal' : ' Kanäle') + ' · ' + num(fresh) + ' neu', 'muted'));
-    const all = make('button', 'Alle Abo-Videos →'); all.type = 'button';
-    all.onclick = e => { e.preventDefault(); document.querySelector('[data-catalog-source="abos"]')?.click(); };
-    sum.append(all);
-    box.append(sum);
-    if (!channels.length) box.append(make('p', 'Noch keine Abo-Videos offline. Was gerade geladen wird, steht unter Downloads.', 'muted'));
-    for (const ch of channels) {
-      const own = data.videos.filter(v => v.abo === ch.id).slice(0, COMPACT);
-      const row = make('section', undefined, 'abs-channel abs-compact');
-      row.append(channelHead(ch, false));
-      const strip = make('div', undefined, 'abs-strip');
-      for (const v of own) strip.append(tile(v));
-      row.append(strip); box.append(row);
-    }
-    host.replaceChildren(box);
-    host.hidden = false;
-  }
-
   function renderFull() {
     const wrap = make('div', undefined, 'abs-full');
     const bar = make('div', undefined, 'abs-toolbar');
@@ -153,7 +122,7 @@
   function render() {
     if (mode === 'off') { host.hidden = true; return; }
     if (!data) return;
-    if (mode === 'full') renderFull(); else renderCompact();
+    renderFull();
   }
   async function load() {
     clearTimeout(timer);
@@ -173,18 +142,18 @@
     }
     timer = setTimeout(load, 60000);
   }
-  function setSource(source) {
-    mode = source === 'abos' ? 'full' : (source === 'all' || source === 'youtube') ? 'compact' : 'off';
+  function setSource(source, kind) {
+    mode = source === 'youtube' && kind === 'abos' ? 'full' : 'off';
     if (mode === 'off') { clearTimeout(timer); host.hidden = true; return; }
     if (data) render();
     load();
   }
-  document.addEventListener('atlas-source', e => setSource(e.detail?.source));
+  document.addEventListener('atlas-source', e => setSource(e.detail?.source, e.detail?.kind));
   document.addEventListener('atlas-view', e => { if (e.detail?.view === 'discover') load(); else clearTimeout(timer); });
   // Nach dem Abspielen stimmt „neu/gesehen“ erst mit dem nächsten Abruf; der Player meldet sein Schließen nicht,
   // daher beim Zurückkehren in das Fenster neu laden.
   window.addEventListener('focus', () => { if (mode !== 'off' && !discover.hidden) load(); });
   const now = window.AtlasUnifiedCatalog?.source?.();
-  if (now) setSource(now);
+  if (now) setSource(now, window.AtlasUnifiedCatalog?.kind?.());
   window.AtlasAboShelf = {reload: load};
 })();

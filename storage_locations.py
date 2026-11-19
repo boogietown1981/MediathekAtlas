@@ -1106,8 +1106,17 @@ def _swap_tree(value, pairs):
     return _swap(value, pairs)
 
 
-def rewrite_paths(c, pairs, abo_root=None):
-    """Ersetzt alte Pfadanfänge in catalog.db (Aufträge, fertige Downloads, Verbund)."""
+def _exists(value):
+    try:
+        return bool(value) and Path(value).is_file()
+    except (OSError, ValueError):
+        return False
+
+
+def rewrite_paths(c, pairs, abo_root=None, only_existing=False):
+    """Ersetzt alte Pfadanfänge in catalog.db (Aufträge, fertige Downloads, Verbund).
+
+    ``only_existing`` (0.6.37, Übernehmen vorhandener Daten): nur dort, wo die Datei am neuen Ort liegt."""
     pairs = [(str(o).rstrip('/\\'), str(n).rstrip('/\\')) for o, n in pairs if o and n and str(o) != str(n)]
     if not pairs:
         return 0
@@ -1120,6 +1129,8 @@ def rewrite_paths(c, pairs, abo_root=None):
             except (TypeError, ValueError):
                 continue
             new = _swap_tree(data, pairs)
+            if only_existing and new != data and not _exists(new.get('path') or new.get('target')):
+                continue
             if abo_root and isinstance(new, dict) and new.get('youtube_abo'):
                 new['root'] = str(abo_root)
             if new != data:
@@ -1130,6 +1141,8 @@ def rewrite_paths(c, pairs, abo_root=None):
             continue
         for ident, value in c.execute('SELECT %s,%s FROM %s' % (key, column, table)).fetchall():
             new = _swap(value, pairs)
+            if only_existing and new != value and not _exists(new):
+                continue
             if new != value:
                 c.execute('UPDATE %s SET %s=? WHERE %s=?' % (table, column, key), (new, ident))
                 changed += 1
@@ -1458,7 +1471,9 @@ class Context:
             markers['downloads'] = True
             s['storage_markers'] = markers
             self.save_settings(s)
-            pairs = [(source, target)] if mode == 'copy' else []
+            # 0.6.37: auch beim Übernehmen vorhandener Daten am Ziel („adopt“) zeigen die Aufträge auf die neue Stelle,
+            # dort aber nur, wo die Datei am Ziel wirklich liegt (sonst blieben sie am alten Ort verwaist).
+            pairs = [(source, target)] if source else []
             abo_root = None
         else:
             base = plan['base']
@@ -1473,12 +1488,12 @@ class Context:
                 markers['cache'] = True
             s['storage_markers'] = markers
             self.save_settings(s)
-            pairs = [(source, target)] if mode == 'copy' else []
+            pairs = [(source, target)] if source else []
             abo_root = base if mode == 'copy' else None
         changed = 0
         if pairs:
             with self.db() as c:
-                changed = rewrite_paths(c, pairs, abo_root=abo_root)
+                changed = rewrite_paths(c, pairs, abo_root=abo_root, only_existing=mode != 'copy')
         if mode == 'copy':
             Path(target, STAGING).unlink(missing_ok=True)
             cfg = read_pointer(self.home)

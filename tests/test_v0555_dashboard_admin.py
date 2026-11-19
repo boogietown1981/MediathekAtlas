@@ -412,7 +412,10 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn('<a class="nav nav-kids" href="/kinder"', nav)
         for label in ('Dashboard', 'Plattformen', 'Live-TV', 'Downloads', 'Verwaltung'):
             self.assertIn(label, nav)
-        for view in ('admin', 'status', 'display', 'review', 'subscriptions', 'legacy', 'logs', 'settings'):
+        # 0.6.37: Werkkatalog nicht mehr in der Verwaltung, sondern Plattformen → ARD, ZDF & Co.
+        self.assertNotIn('data-view="legacy"', self.html)
+        self.assertIn('data-platform="mediatheken"', self.html)
+        for view in ('admin', 'status', 'display', 'review', 'subscriptions', 'logs', 'settings'):
             self.assertIn('class="admin-tab" data-view="%s"' % view, self.html)
             self.assertIn('<section id="%s"' % view, self.html)
         self.assertIn('data-catalog-source="all" class="primary"', self.html)
@@ -428,9 +431,9 @@ class InterfaceTests(unittest.TestCase):
         self.assertIn("$('status-boards')", js)
 
     def test_work_catalogue_no_longer_reloads_all_the_time(self):
-        self.assertIn("atlasView==='legacy'&&Date.now()-catalogReloaded>60000", self.app)
+        self.assertIn("legacyOpen()&&Date.now()-catalogReloaded>60000", self.app)
         self.assertNotIn('renderTree([]);loadCatalog();', self.app)
-        self.assertIn("if(!appStopped&&atlasView==='legacy')loadTree()", self.app)
+        self.assertIn("if(!appStopped&&legacyOpen())loadTree()", self.app)
 
     def test_platform_tabs_use_the_shared_tile(self):
         self.assertIn('shared.card(shared.portalRow(item, K))', (ROOT / 'web' / 'portal_panel.js').read_text())

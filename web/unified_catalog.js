@@ -8,7 +8,7 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','abos','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','rtlplus'];
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','rtlplus'];
   const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',rtlplus:'RTL+'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
   const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,rtlplus:()=>null};
@@ -25,7 +25,7 @@
   const SPECIAL=['Unklassifiziert','Sonstige','Unbekannt'];
   const catOrder=name=>{const i=CATEGORY_NAMES.indexOf(name);return i>=0?i:SPECIAL.includes(name)?1000+SPECIAL.indexOf(name):500;};
   let pendingTries=0;
-  const heading=() => ({all:'Alle Plattformen',abos:'YouTube-Abos',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
+  const heading=() => ({all:'Alle Plattformen',mediatheken:'ARD, ZDF & Co.',netzkino:'Netzkino',...PORTALS}[source]);
   const hrefOkay=value=>typeof value==='string' && /^https:\/\/[a-z0-9.-]+\//i.test(value) && !/[\s<>'"]/.test(value);
   function arrangeAdvanced() {
     const discover=$('discover');
@@ -33,7 +33,7 @@
     const body=$('atlas-source-content');
     if (!discover || !switcher || !body || $('atlas-catalog-advanced')) return;
     // 0.5.55 (Björn, 12.11.2026): the dashboard shows films and series only. The work catalogue
-    // with genre tree moves to Verwaltung → Werkkatalog, the scan and recognition boards to
+    // with genre tree moves to Verwaltung → Werkkatalog (0.6.37: Plattformen → ARD, ZDF & Co.), the scan and recognition boards to
     // Verwaltung → Status & Abgleich. Live nodes are moved, so IDs and handlers stay intact.
     const legacyHost=$('legacy-body'),boards=$('status-boards');
     const workerOverview=dashboard=>{
@@ -251,10 +251,10 @@
     // 0.5.55: the boards live under Verwaltung → Status & Abgleich and show every platform there;
     // they are only fetched while that view is open.
     // 0.6.27: „YouTube-Abos“ zeigt nur die Abo-Videos je Kanal (web/abo_shelf.js), keine Katalogkarten.
-    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || source==='abos' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
+    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
     const seq=++portalSeq;let data;
     try {data=await window.api('film-platforms');}catch(e){if(seq===portalSeq){board.hidden=false;board.replaceChildren(el('p','Katalog-Übersicht nicht verfügbar: '+e.message,'muted'));}return;}
-    if (seq!==portalSeq||(!inStatus&&(source==='mediatheken'||source==='abos'))) return;
+    if (seq!==portalSeq||(!inStatus&&source==='mediatheken')) return;
     const list=(data.film_platforms||[]).filter(p=>inStatus||source==='all'||p.source===source);
     board.replaceChildren(el('h2',inStatus||source==='all'?'Weitere Kataloge · Bestand & Werkzuordnung':(list[0]?.name||'Katalog')+' · Bestand & Werkzuordnung','atlas-dashboard-heading'));
     if (list.length>1) board.append(portalTable(list));
@@ -270,19 +270,21 @@
     for (const b of document.querySelectorAll('[data-cross-kind]')) {
       const active=b.dataset.crossKind===kind;
       b.classList.toggle('primary',active);b.setAttribute('aria-pressed',String(active));
+      if (b.dataset.crossKind==='abos') b.hidden=source!=='youtube';   // 0.6.37: Abos nur unter YouTube
     }
-    $('atlas-cross-title').textContent=kind==='music'?'YouTube · Musikvideos':seriesKey?seriesTitle:heading()+' · '+(kind==='movies'?'Filme':'Serien');
+    $('atlas-source-content').classList?.toggle('is-abos',kind==='abos');
+    $('atlas-cross-title').textContent=kind==='abos'?'YouTube · Abos':kind==='music'?'YouTube · Musikvideos':seriesKey?seriesTitle:heading()+' · '+(kind==='movies'?'Filme':'Serien');
     $('atlas-cross-back-series').hidden=!seriesKey;
-    $('atlas-cross-open-portal').hidden=source==='mediatheken'||source==='all';
+    $('atlas-cross-open-portal').hidden=source==='all';
   }
   function activate(name) {
     if (!VALID_SOURCES.includes(name)) return;
     source=name;seriesKey='';seriesTitle='';offset=0;sequence++;
     $('discover').dataset.source=name;
-    $('atlas-source-content').hidden=name==='abos';
-    if (typeof CustomEvent==='function') document.dispatchEvent?.(new CustomEvent('atlas-source',{detail:{source:name}}));   // 0.6.27: web/abo_shelf.js
+    if (kind==='abos'&&name!=='youtube') kind='movies';
+    $('atlas-source-content').hidden=false;
     updateControls();
-    if (name!=='abos') refresh();
+    refresh();
     // The overview must never block the catalogue itself.
     refreshPortalBoard().catch(e=>console.warn('MediathekAtlas: Katalog-Übersicht',e));
   }
@@ -587,8 +589,14 @@
     paintCategories([]);
     host.setAttribute('aria-busy','false');
   }
+  // 0.6.37 (Björn, 19.11.2026): „ich meinte, dass es Abos unter dem Bereich YouTube gibt, wie Live-TV“.
+  // YouTube → Abos zeigt die Abo-Videos je Kanal (web/abo_shelf.js) statt des Katalograsters.
+  function announce() {
+    if (typeof CustomEvent==='function') document.dispatchEvent?.(new CustomEvent('atlas-source',{detail:{source,kind}}));
+  }
   async function refresh() {
-    if (source==='abos') return;
+    announce();
+    if (kind==='abos') {sequence++;updateControls();$('atlas-cross-status').textContent='';$('atlas-cross-items').setAttribute('aria-busy','false');return;}
     const seq=++sequence;
     updateControls();
     $('atlas-cross-items').setAttribute('aria-busy','true');
@@ -708,7 +716,7 @@
   $('atlas-cross-next')?.addEventListener('click',()=>{offset+=48;refresh();});
   $('atlas-cross-open-portal')?.addEventListener('click',()=>{
     document.querySelector('[data-view="portals"]')?.click();
-    document.querySelector('.platform-tab[data-platform="'+(PORTALS[source]?source:'netzkino')+'"]')?.click();
+    document.querySelector('.platform-tab[data-platform="'+(PORTALS[source]||source==='mediatheken'?source:'netzkino')+'"]')?.click();
   });
   arrangeAdvanced();
   // The category tree is computed in the background after start; ask again until it is there.
@@ -725,12 +733,13 @@
     }).catch(()=>{if(attempt<20)setTimeout(()=>loadTree(attempt+1),5000);});
   }
   loadTree();
-  window.AtlasUnifiedCatalog={activate,refresh,source:()=>source};
+  window.AtlasUnifiedCatalog={activate,refresh,source:()=>source,kind:()=>kind};
   // Shared tile for the platform tabs (web/portal_panel.js, web/netzkino.js) and the preview.
   window.AtlasCards={card:makeCard,portalRow:plRow,netzkinoRow:nkRow,mediathekRow:medRow,rowOf,open:openItem};   // 0.6.8: open/rowOf for web/watch_mode.js
   // Start view from Verwaltung → Darstellung (default: all platforms, films).
   const start=prefs=>{
     if (TYPES.includes(prefs?.start_kind)) kind=prefs.start_kind;
+    if (prefs?.start_source==='abos') {kind='abos';activate('youtube');return;}   // 0.6.27-Einstellung: jetzt YouTube → Abos
     activate(VALID_SOURCES.includes(prefs?.start_source)?prefs.start_source:'all');
   };
   if (window.AtlasDisplay?.ready) {

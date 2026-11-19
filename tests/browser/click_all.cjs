@@ -62,12 +62,25 @@ async function clickThrough(name, url) {
     // Every area of the Verwaltung.
     await page.locator('aside nav .nav', { hasText: 'Verwaltung' }).click();
     const tabs = await page.locator('#admin-tabs .admin-tab').evaluateAll(n => n.map(x => x.dataset.view));
-    if (tabs.length < 10) problems.push('Verwaltung unvollständig: ' + tabs.join(','));
+    if (tabs.length < 9) problems.push('Verwaltung unvollständig: ' + tabs.join(','));
     for (const view of tabs) {
       await page.locator('#admin-tabs .admin-tab[data-view="' + view + '"]').click();
       await page.waitForTimeout(700);
       await expect('Bereich ' + view + ' sichtbar', v => { const s = document.getElementById(v); return !!s && !s.hidden; }, view);
     }
+
+    // 0.6.37: Werkkatalog ARD, ZDF & Co. unter Plattformen.
+    await page.evaluate(() => window.atlasShowView('portals'));
+    await page.locator('.platform-tab[data-platform="mediatheken"]').click();
+    await page.waitForTimeout(700);
+    await expect('Werkkatalog unter Plattformen sichtbar', () => { const s = document.getElementById('legacy'); return !!s && s.offsetParent !== null && !!document.getElementById('catalog-tree')?.offsetParent && document.getElementById('pluto').offsetParent === null; });
+    await page.locator('.platform-tab[data-platform="pluto"]').click();
+    await page.waitForTimeout(300);
+    await expect('Werkkatalog bei Pluto verborgen', () => document.getElementById('legacy').offsetParent === null);
+    await page.evaluate(() => window.atlasShowView('legacy'));
+    await page.waitForTimeout(300);
+    await expect('alter Link Werkkatalog führt zu Plattformen', () => !document.getElementById('portals').hidden && document.getElementById('legacy').offsetParent !== null);
+    await page.evaluate(() => window.atlasShowView('admin'));
 
     // System monitor and the blocks of the storage view.
     await page.locator('#admin-tabs .admin-tab[data-view="system"]').click();
@@ -123,12 +136,13 @@ async function clickThrough(name, url) {
     }
     await page.evaluate(() => window.atlasShowView('discover'));
     await page.waitForTimeout(800);
-    // 0.6.27: Quelle „YouTube-Abos“ (web/abo_shelf.js) und zurück zu „Alle“.
-    await page.locator('[data-catalog-source="abos"]').click();
-    await page.waitForFunction(() => { const s = document.getElementById('atlas-abo-shelf'); return s && !s.hidden && /Noch keine YouTube-Abos/.test(s.textContent) && document.getElementById('atlas-source-content').hidden; }, null, { timeout: 10000 }).catch(() => problems.push('YouTube-Abos im Dashboard fehlen'));
+    // 0.6.37: YouTube → Abos (web/abo_shelf.js) und zurück zu „Alle“.
+    await page.locator('[data-catalog-source="youtube"]').click();
+    await page.locator('[data-cross-kind="abos"]').click();
+    await page.waitForFunction(() => { const s = document.getElementById('atlas-abo-shelf'); return s && !s.hidden && /Noch keine YouTube-Abos/.test(s.textContent) && document.getElementById('atlas-source-content').classList.contains('is-abos'); }, null, { timeout: 10000 }).catch(() => problems.push('YouTube → Abos fehlt'));
     await page.locator('[data-catalog-source="all"]').click();
     await page.waitForTimeout(500);
-    await expect('Katalog nach „Alle“ wieder sichtbar', () => !document.getElementById('atlas-source-content').hidden);
+    await expect('Abos-Knopf nur unter YouTube', () => document.querySelector('[data-cross-kind="abos"]').hidden && !document.getElementById('atlas-source-content').classList.contains('is-abos'));
     // 0.6.27: Verwaltung → Status zeigt alle Plattformen in einer Tabelle.
     await page.evaluate(() => window.atlasShowView('status'));
     await page.waitForSelector('#atlas-portal-dashboard .atlas-portal-table tbody tr', { timeout: 15000 }).catch(() => problems.push('Katalogübersicht als Tabelle fehlt'));

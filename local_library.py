@@ -117,3 +117,99 @@ def candidates(job,allowed,max_files=25000,seconds=3):
             if incomplete:break
         if incomplete:break
     return {'matches':found,'incomplete':incomplete,'scanned':count}
+
+
+# 0.6.37 (Björn, 19.11.2026): „bei Videos, die nicht mehr gefunden werden, steht nur Pfad verknüpfen …
+# hier sollten lieber die Standardpfade geprüft werden, und dann auch die Einträge gelöscht werden können.“
+def _missing_jobs(c):
+    out=[]
+    for job_id,payload in c.execute("SELECT id,payload FROM jobs WHERE state='done'").fetchall():
+        try:j=json.loads(payload)
+        except (TypeError,ValueError):continue
+        path=j.get('path') or j.get('target') or ''
+        try:good=bool(path) and Path(path).is_file()
+        except OSError:good=False
+        if not good:out.append((job_id,j,str(path)))
+    return out
+
+def _relative_guesses(old,old_roots,new_roots):
+    """Same relative path below another known storage location (e.g. Downloads after a move)."""
+    old=Path(old)
+    for root in old_roots:
+        try:rel=old.relative_to(root)
+        except ValueError:continue
+        for base in new_roots:
+            yield Path(base)/rel
+    # Without a known old root: the last two parts (folder/file) and the file name directly below each root.
+    if len(old.parts)>=2:
+        for base in new_roots:
+            yield Path(base)/old.parent.name/old.name
+    for base in new_roots:
+        yield Path(base)/old.name
+
+def repair_missing(c,allowed,old_roots=(),seconds=20,max_files=200000):
+    """Looks for every finished download whose file is missing: first at the same relative path below
+    the current and earlier storage locations, then by file name (and size, if known) in all approved
+    folders. Exactly one hit is linked again; nothing is moved or deleted."""
+    missing=_missing_jobs(c)
+    result={'checked':len(missing),'relinked':0,'ambiguous':0,'missing':0,'incomplete':False,'relinked_ids':[]}
+    if not missing:return result
+    allowed=[Path(p) for p in allowed if Path(p).is_dir()]
+    olds=[]
+    for value in list(old_roots)+[str(p) for p in allowed]:
+        try:p=Path(str(value)).expanduser()
+        except (TypeError,ValueError):continue
+        if p.is_absolute() and p not in olds:olds.append(p)
+    olds.sort(key=lambda p:-len(str(p)))   # longest (most specific) first
+    def accept(j,p):
+        try:
+            p=validated_path(p,allowed);check_identity(j,p);return p
+        except (OSError,ValueError,RuntimeError):return None
+    open_jobs=[]
+    for job_id,j,old in missing:
+        hit=None
+        if old:
+            for guess in _relative_guesses(old,olds,allowed):
+                try:
+                    if guess.is_file():hit=accept(j,guess)
+                except OSError:hit=None
+                if hit:break
+        if hit:
+            relink(c,job_id,str(hit),allowed);result['relinked']+=1;result['relinked_ids'].append(job_id)
+        else:open_jobs.append((job_id,j,old))
+    if open_jobs:
+        # One bounded walk over all approved folders, indexed by file name.
+        wanted={Path(old).name for _,_,old in open_jobs if old}
+        index={};count=0;start=time.monotonic()
+        for base in allowed:
+            for folder,dirs,files in os.walk(str(base),followlinks=False):
+                dirs[:]=[d for d in dirs if not d.startswith('.') and not Path(folder,d).is_symlink()]
+                for name in files:
+                    count+=1
+                    if name in wanted:index.setdefault(name,[]).append(Path(folder,name))
+                if count>=max_files or time.monotonic()-start>=seconds:
+                    result['incomplete']=True;break
+            if result['incomplete']:break
+        for job_id,j,old in open_jobs:
+            hits=[p for p in (accept(j,x) for x in index.get(Path(old).name if old else '',[])) if p]
+            hits=list(dict.fromkeys(hits))
+            if len(hits)==1:
+                relink(c,job_id,str(hits[0]),allowed);result['relinked']+=1;result['relinked_ids'].append(job_id)
+            elif len(hits)>1:result['ambiguous']+=1
+            else:result['missing']+=1
+    return result
+
+def remove_missing(c,job_ids=None):
+    """Removes finished downloads whose file is missing (checked again here). Files are never touched;
+    the "already downloaded" mark of the catalogue goes with the entry."""
+    wanted=set(job_ids) if job_ids else None
+    removed=0
+    for job_id,j,old in _missing_jobs(c):
+        if wanted is not None and job_id not in wanted:continue
+        c.execute("DELETE FROM jobs WHERE id=? AND state='done'",(job_id,))
+        if old:c.execute("DELETE FROM downloaded_items WHERE path=?",(old,)) if _has_table(c,'downloaded_items') else None
+        invalidate(old);removed+=1
+    return removed
+
+def _has_table(c,name):
+    return bool(c.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name=?",(name,)).fetchone())

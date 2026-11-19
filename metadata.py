@@ -373,17 +373,43 @@ GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
 RUBRIC=re.compile(r'(?i)^\s*(?:politics and society|culture|history|discovery|sciences?|cinema|series and fiction|news|politik und gesellschaft|kultur|geschichte|entdeckung der welt|wissenschaft|kino|fernsehfilme und serien|aktuelles und gesellschaft|info und gesellschaft)\s+-\s+\S')
 def generic_topic(topic):return not topic or norm(topic) in GENERIC or bool(RUBRIC.match(topic))
+# 0.6.39 (Björn, 19.11.2026: still many unrecognised films and series at ARD/ZDF). Diagnosis sample of
+# 1,922 failed lookups: the broadcasters' titles carry episode counters and labels no film database
+# uses – "Donna Leon (12) – Das Gesetz der Lagune", "Gladbeck (2/2) - Audiodeskription",
+# "Küssen verboten (5) · NEU", "Hungry - Season 1 (2/6)". They are left out of the search title only;
+# the work's own title and identity stay as the broadcaster wrote them.
+QUERY_NOISE=(
+    re.compile(r'(?i)\s*[-–·|:]\s*(?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\s*$'),
+    re.compile(r'(?i)^\s*neu\s*[·|:-]\s*|\s*[·|-]\s*neu\s*$'),
+    re.compile(r'(?i)\s*[-–,]?\s*\b(?:season|saison|staffel|temporada|sezon|stagione)\s*\d{1,2}\b'),
+    re.compile(r'\s*\(\d{1,3}(?:\s*/\s*\d{1,3})?\)'),
+)
+PART=re.compile(r'\s*\(\d{1,3}\s*/\s*\d{1,3}\)')
 def query_title(title):
-    """Title without language-version or accessibility suffixes such as "(Originalversion mit Untertitel)"."""
+    """Title without language-version or accessibility suffixes such as "(Originalversion mit Untertitel)",
+    episode counters "(12)", "(2/6)", season labels and "NEU" (0.6.39)."""
     import catalog
-    return catalog.cleaned(title) or str(title or '')
+    base=catalog.cleaned(title) or str(title or '')
+    text=base
+    for rx in QUERY_NOISE:text=rx.sub('',text)
+    text=re.sub(r'\s+([:–-])',r' \1',re.sub(r'\s+',' ',text)).strip(' -–·|:,')
+    text=re.sub(r'\s+[-–]\s*$','',re.sub(r'^[-–:]\s*','',text)).strip()
+    return text if len(text)>=2 else base
+def part_series(title):
+    """'Die Rosenheim-Cops (13/20): Leben vergeht' -> 'Die Rosenheim-Cops' (a numbered part of a series)."""
+    m=PART.search(str(title or ''))
+    if not m:return ''
+    prefix=query_title(str(title)[:m.start()])
+    return prefix if 3<=len(prefix)<=80 else ''
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
     meta['title']=query_title(meta['title'])
     if kind=='series':queries=[('series',meta['title'])]
     elif kind=='movie':queries=[('movie',meta['title'])]
     else:
+        part=part_series(row.get('title'))
         if not generic_topic(topic) and norm(topic)!=norm(row['title']):queries.append(('series',topic))
+        elif part and not generic_topic(part):queries.append(('series',part))
         elif ' - ' in meta['title']:
             # "Mapping the World - Cyprus: A Divided Island": without a usable topic the series is the prefix.
             prefix=meta['title'].split(' - ',1)[0].strip()

@@ -18,7 +18,7 @@ function artImage(url,alt,cls){if(!safeArt(url))return null;const img=el('img',u
 
 let titleReturn='discover';
 // Title pages open from the catalogue or from a platform tab (0.5.42) and return there.
-function showTitleView(){if($('title-view').hidden){titleReturn=(typeof window.atlasCurrentView==='function'&&window.atlasCurrentView())||($('portals')&&!$('portals').hidden?'portals':'discover');titleScroll=window.scrollY;}for(const v of ['watch','discover','portals','livetv','queue','legacy','review','status','admin','display','subscriptions','logs','settings'])if($(v))$(v).hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
+function showTitleView(){if($('title-view').hidden){titleReturn=(typeof window.atlasCurrentView==='function'&&window.atlasCurrentView())||($('portals')&&!$('portals').hidden?'portals':'discover');titleScroll=window.scrollY;}for(const v of ['watch','discover','portals','livetv','queue','review','status','admin','display','subscriptions','logs','settings'])if($(v))$(v).hidden=true;$('title-view').hidden=false;document.body.classList.add('title-open');window.scrollTo(0,0);}
 function closeTitleView(fromHistory){if($('title-view').hidden)return;$('title-view').hidden=true;$('title-view').replaceChildren();titleState=null;document.body.classList.remove('title-open');($(titleReturn)||$('discover')).hidden=false;window.scrollTo(0,titleScroll);if(!fromHistory&&history.state&&history.state.atlasTitle)history.back();}
 window.addEventListener('popstate',()=>{if(!$('title-view').hidden)closeTitleView(true);});
 function pushTitle(){if(!(history.state&&history.state.atlasTitle))history.pushState({atlasTitle:1},'');}

@@ -20,9 +20,10 @@ class ExtensionPackageTests(unittest.TestCase):
         manifest = json.loads((EXT / 'manifest.json').read_text(encoding='utf-8'))
         self.assertEqual(manifest['manifest_version'], 3)
         self.assertEqual(manifest['version'], VERSION)
-        self.assertEqual(manifest['permissions'], ['storage'])
-        self.assertNotIn('host_permissions', manifest)
-        self.assertEqual(len(manifest['content_scripts']), 1)
+        # 0.6.38: dazu nur das Verbindungsskript für die eigene Seite (127.0.0.1/localhost), siehe test_v0638.
+        self.assertEqual(manifest['permissions'], ['storage', 'scripting'])
+        self.assertEqual(manifest['host_permissions'], ['http://127.0.0.1/*', 'http://localhost/*'])
+        self.assertEqual(len(manifest['content_scripts']), 2)
         script = manifest['content_scripts'][0]
         self.assertEqual(sorted(script['matches']), ['https://plus.rtl.de/*', 'https://www.crunchyroll.com/*', 'https://www.joyn.de/*', 'https://www.justwatch.com/*',
                                                      'https://www.rakuten.tv/*', 'https://www.toggo.de/*'])

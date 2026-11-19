@@ -515,6 +515,10 @@ dialog.player::backdrop{background:#000c;-webkit-backdrop-filter:none;backdrop-f
 #portals[data-platform="plex"] > #plex {display:block!important}
 #portals[data-platform="servustv"] > :not(.platform-tabs):not(#servustv) {display:none!important}
 #portals[data-platform="servustv"] > #servustv {display:block!important}
+/* 0.6.37: Werkkatalog ARD, ZDF & Co. als Plattform */
+#portals > #legacy{display:none}
+#portals[data-platform="mediatheken"] > :not(.platform-tabs):not(#legacy) {display:none!important}
+#portals[data-platform="mediatheken"] > #legacy {display:block!important}
 #portals[data-platform="rtlplus"] > :not(.platform-tabs):not(#rtlplus) {display:none!important}
 #portals[data-platform="rtlplus"] > #rtlplus {display:block!important}
 #portals[data-platform="pluto"] > :not(.platform-tabs):not(#pluto) {display:none!important}
@@ -1198,20 +1202,6 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .queue-shared-note{color:#f1cd8d}
 .queue-origin{padding:4px 0 10px}
 .queue-origin h4{margin:8px 0 8px;font-size:13px;color:#cfdbe8}
-.queue-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,520px),1fr));gap:10px}
-#jobs.job-queue .job{display:grid;grid-template-columns:112px minmax(0,1fr);min-height:0}
-#jobs.job-queue .job .art{height:auto!important;min-height:84px;padding:6px;border-radius:0}
-#jobs.job-queue .job .art strong{display:none}
-#jobs.job-queue .job .cardbody{padding:10px 12px;gap:4px}
-#jobs.job-queue .job .cardbody h3{font-size:14px;-webkit-line-clamp:1;line-clamp:1}
-#jobs.job-queue .job .eyebrow{font-size:9px}
-#jobs.job-queue .job .job-note{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;font-size:11px}
-#jobs.job-queue .job .file-details{margin-top:0;font-size:11px}
-#jobs.job-queue .job .file-details summary{cursor:pointer;color:#90a2b7}
-#jobs.job-queue .job-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
-#jobs.job-queue .job-actions button,#jobs.job-queue .job-actions .button-link{width:auto;padding:6px 10px;font-size:12px}
-#jobs.job-queue .job progress{height:6px}
-@media(max-width:650px){#jobs.job-queue .job{grid-template-columns:80px minmax(0,1fr)}}
 .atlas-portal-table td.muted{max-width:240px;font-size:12px;line-height:1.4}
 .atlas-portal-table .atlas-portal-work{min-width:130px;max-width:170px}
 .atlas-portal-table{font-size:12.5px}
@@ -1219,3 +1209,54 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .atlas-portal-table td.muted{max-width:200px}
 .atlas-portal-table .atlas-portal-phase{white-space:normal}
 .atlas-portal-extras-cell{max-width:220px;white-space:normal}
+
+/* 0.6.37: Downloads als Liste – je Gruppe eine Tabelle, ein Auftrag eine Zeile */
+.queue-tablewrap{overflow-x:auto;margin:6px 0 12px}
+.queue-table{width:100%;border-collapse:collapse;font-size:13px}
+.queue-table th{text-align:left;font-size:11px;font-weight:600;color:#93a7b9;padding:6px 8px;border-bottom:1px solid #2c3840;white-space:nowrap}
+.queue-table td{padding:6px 8px;border-bottom:1px solid #1f2a36;vertical-align:middle}
+.queue-table .num{text-align:right;white-space:nowrap;font-variant-numeric:tabular-nums}
+.queue-table tbody tr.q-row:hover{background:#131d2a}
+.queue-table .q-origin td{background:#0f1722;padding:9px 8px 6px;border-bottom:1px solid #2c3840}
+.queue-table .q-origin small{display:block;margin-top:2px}
+.queue-table .q-thumb{width:56px;padding-right:0}
+.queue-table .q-thumb img{display:block;width:48px;height:32px;object-fit:cover;border-radius:4px;background:#1c2837}
+.queue-table .q-title{min-width:220px;max-width:520px}
+.queue-table .q-toggle{display:block;max-width:100%;text-align:left;background:none;border:0;padding:0;color:#e9edf4;font-weight:600;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queue-table .q-toggle:hover{color:#8af1d1;filter:none}
+.queue-table .q-title small{display:block;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.queue-table .q-status{min-width:200px;max-width:460px}
+.queue-table .q-status small{display:block;font-size:11px}
+.queue-table .q-note{color:#a3b8ca;display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;overflow-wrap:anywhere}
+.queue-table .q-badge{font-size:12px;white-space:nowrap}
+.queue-table .q-done{color:#8ae2c7}.queue-table .q-error,.queue-table .q-missing{color:#ffb4a8}
+.queue-table .q-downloading,.queue-table .q-tagging{color:#a9cdf5}
+.queue-table .q-status progress{width:100%;height:6px;accent-color:#6ae5bc;display:block;margin:4px 0 2px}
+.queue-table .q-actions{white-space:nowrap;text-align:right}
+.queue-table .q-actions button,.queue-table .q-actions .button-link{padding:5px 9px;font-size:12px;margin-left:4px;width:auto}
+.queue-table .q-details td{background:#0f1722;font-size:12px;color:#a3b8ca;white-space:normal}
+.queue-table .q-details p{margin:3px 0}
+.queue-table .q-details .job-path{font:11px monospace;overflow-wrap:anywhere}
+.queue-table .q-details a{color:#8ae2c7}
+.queue-table .job-file-missing{margin-top:6px}
+.queue-table .job-file-actions{display:flex;gap:8px}
+.queue-table .job-file-actions input{flex:1}
+.queue-group>summary .queue-bulk+.queue-bulk{margin-left:6px}
+.queue-bulk.danger{border-color:#7a3d3a;color:#ffb4a8}
+.queue-missing{border-color:#6c5940}
+@media(max-width:800px){.queue-table .q-thumb,.queue-table th:first-child{display:none}.queue-table .q-actions{white-space:normal}}
+/* 0.6.37: YouTube → Abos ersetzt im Katalogbereich Suche, Genres, Raster und Blättern */
+#atlas-source-content.is-abos #atlas-cross-search,#atlas-source-content.is-abos #atlas-cross-categories,#atlas-source-content.is-abos #atlas-cross-items,#atlas-source-content.is-abos .atlas-cross-pager,#atlas-source-content.is-abos #atlas-cross-note,#atlas-source-content.is-abos #atlas-cross-status{display:none!important}
+/* 0.6.38: Einrichtungsassistent der Chrome-Erweiterung */
+.ext-wizard{margin-top:.6rem}
+.ext-state{margin:.2rem 0 .5rem;padding:.45rem .7rem;border-radius:8px;border:1px solid var(--line,#d6dbe4);font-weight:600}
+.ext-state[data-state="ok"]{border-color:#2e9b5f;background:rgba(46,155,95,.10)}
+.ext-state[data-state="update"],.ext-state[data-state="old"]{border-color:#d29a1e;background:rgba(210,154,30,.10)}
+.ext-state[data-state="missing"],.ext-state[data-state="unsupported"]{border-color:#c4533d;background:rgba(196,83,61,.08)}
+.ext-steps li{margin:.35rem 0}
+.ext-line{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin:.2rem 0}
+.ext-line button{margin:0}
+.ext-alt{margin:.3rem 0}
+.ext-alt summary{cursor:pointer;font-size:.92em}
+#direct-start-panel kbd{font:inherit;font-size:.9em;padding:0 .3em;border:1px solid var(--line,#c8ced8);border-radius:4px}
+#direct-start-path{word-break:break-all}

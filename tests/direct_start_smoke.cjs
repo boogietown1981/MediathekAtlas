@@ -36,3 +36,18 @@ const manifest=JSON.parse(fs.readFileSync(path.join(__dirname,'../web/browser-ex
 const matches=manifest.content_scripts[0].matches.map(m=>new URL(m.replace('*','x')).hostname).sort();
 assert.deepEqual(Object.values(D.HOSTS).flat().sort(),matches);
 console.log('direct_start_smoke ok');
+// 0.6.38: Versionsvergleich und Zustand des Einrichtungsassistenten
+assert.equal(D.newer('0.6.38','0.6.35'),true);
+assert.equal(D.newer('0.6.38','0.6.38'),false);
+assert.equal(D.newer('0.6.10','0.6.9'),true);
+assert.equal(D.newer('0.6.38','0.6.38.1'),false);
+assert.equal(D.newer('1.0','0.99.99'),true);
+const S=D.extensionState,I={version:'0.6.38',local:true};
+assert.equal(S(null,'',true,false),'checking');
+assert.equal(S(I,'0.6.38',true,false),'ok');
+assert.equal(S(I,'0.6.39',true,false),'ok');            // neuere Erweiterung als App: kein Rückschritt
+assert.equal(S(I,'0.6.37',true,false),'update');
+assert.equal(S(I,'0.6.37',true,true),'old');
+assert.equal(S(I,'',true,false),'missing');
+assert.equal(S(I,'',false,false),'unsupported');
+console.log('direct_start_smoke 0.6.38 ok');

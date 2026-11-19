@@ -54,8 +54,14 @@
     consentText = o.consent_text || '';
     $('youtube-offline-policy').textContent = o.policy || '';
     $('youtube-offline-switch').checked = !!o.enabled;
-    $('youtube-offline-tool').textContent = o.enabled ? (o.tool ? 'yt-dlp: ' + o.tool_origin + '. Für volle Qualität kann yt-dlp zusätzlich Deno oder Node.js benötigen.' : o.tool_hint) : '';
-    $('youtube-ytdlp-install').hidden = !o.enabled || !!o.tool;
+    // 0.6.36: kids' videos ("Made for Kids") need a JavaScript runtime (Deno) next to yt-dlp; one button sets up both.
+    const ready = o.tool && o.js_runtime && o.tool_current !== false;
+    $('youtube-offline-tool').textContent = !o.enabled ? '' : !o.tool ? o.tool_hint :
+      'yt-dlp: ' + o.tool_origin + ' · JavaScript: ' + (o.js_runtime || 'fehlt') + (ready ? '' : '. ' + (o.tool_hint || '')) +
+      (o.js_error ? ' · ' + o.js_error : '');
+    const install = $('youtube-ytdlp-install');
+    install.hidden = !o.enabled || ready;
+    install.textContent = !o.tool ? 'yt-dlp einrichten' : !o.js_runtime && o.tool_current !== false ? 'Deno einrichten' : 'yt-dlp und Deno einrichten';
     $('youtube-offline').hidden = !o.enabled;
   }
 
@@ -119,10 +125,11 @@
     catch (e) { say(e.message, true); ev.target.checked = !on; }
   };
   $('youtube-ytdlp-install').onclick = async ev => {
-    ev.target.disabled = true; ev.target.textContent = 'yt-dlp wird geladen …';
-    try { renderOffline(await window.api('youtube-ytdlp-install', {})); say('yt-dlp eingerichtet.'); }
-    catch (e) { say(e.message, true); }
-    ev.target.disabled = false; ev.target.textContent = 'yt-dlp einrichten';
+    const label = ev.target.textContent; ev.target.disabled = true; ev.target.textContent = 'Wird geladen (bis zu 50 MB) …';
+    try { const r = await window.api('youtube-ytdlp-install', {}); ev.target.textContent = label; renderOffline(r);
+      say(r.js_error ? r.js_error : 'yt-dlp und JavaScript-Laufzeit eingerichtet.' + (r.requeued ? ' ' + r.requeued + ' gescheiterte Videos werden erneut versucht.' : ''), !!r.js_error); }
+    catch (e) { ev.target.textContent = label; say(e.message, true); }
+    ev.target.disabled = false;
   };
   $('youtube-setup').addEventListener('toggle', () => { if ($('youtube-setup').open) load(); });
   window.MediathekAtlasYouTube = {refresh: () => { load(); return panel.refresh(); }, openDetail: panel.openDetail, openAlbum: panel.openAlbum};
