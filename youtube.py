@@ -33,6 +33,7 @@ import json
 import re
 import threading
 import time
+import http.client
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -49,6 +50,9 @@ MAX_PER_SOURCE = 5000             # videos read from one channel/playlist
 MAX_SOURCES = 60
 VIDEO_TTL = 7 * 86400             # video facts are re-read weekly
 REQUEST_GAP = 0.2
+RETRY_WAITS = (2, 6, 15)       # 0.6.28: pauses before repeating a request after a network error
+RETRY_PARTIAL = 2 * 3600      # 0.6.28: next run after a partly failed run (network), instead of 24 h
+_SLEEP = time.sleep
 MOVIE_MINUTES = 60
 EPISODE_MINUTES = 10
 VIDEO_ID = r'[A-Za-z0-9_-]{11}'
@@ -588,15 +592,27 @@ def _request(endpoint, query, key):
         raise ValueError('Ungültige YouTube-Anfrage')
     url = API + endpoint + '?' + urllib.parse.urlencode({**query, 'key': key})
     req = urllib.request.Request(url, headers={'Accept': 'application/json', 'User-Agent': 'MediathekAtlas'})
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            raw = response.read(MAX_ANSWER + 1)
-    except urllib.error.HTTPError as exc:
+    for attempt in range(len(RETRY_WAITS) + 1):
         try:
-            body = json.loads(exc.read(65536).decode('utf-8'))
-        except (ValueError, OSError, UnicodeDecodeError):
-            body = {}
-        raise ApiError(exc.code, body) from None
+            with urllib.request.urlopen(req, timeout=30) as response:
+                raw = response.read(MAX_ANSWER + 1)
+            break
+        except urllib.error.HTTPError as exc:
+            try:
+                body = json.loads(exc.read(65536).decode('utf-8'))
+            except (ValueError, OSError, UnicodeDecodeError):
+                body = {}
+            if exc.code in (500, 502, 503, 504) and attempt < len(RETRY_WAITS):
+                _SLEEP(RETRY_WAITS[attempt])
+                continue
+            raise ApiError(exc.code, body) from None
+        except (urllib.error.URLError, http.client.HTTPException, TimeoutError, OSError):
+            # 0.6.28 (Diagnose 19.11.): a single reset connection ("Verbindung vom Gegenüber oder
+            # einem Filter abgebrochen") made a whole source fail for 24 h. Transient errors are
+            # retried a few times before the source counts as failed.
+            if attempt >= len(RETRY_WAITS):
+                raise
+            _SLEEP(RETRY_WAITS[attempt])
     if len(raw) > MAX_ANSWER:
         raise ValueError('YouTube-Antwort zu groß')
     return json.loads(raw.decode('utf-8'))
@@ -741,6 +757,15 @@ def load_facts(request, db, ids, now, gap=0):
 FIELDS = ('kind', 'title', 'path', 'series_id', 'season', 'episode', 'year', 'duration', 'rating', 'genre',
           'summary', 'poster', 'imdb_id', 'imdb_score', 'imdb_votes', 'number', 'category', 'raw_title',
           'language', 'published', 'source_id', 'playable', 'reason', 'offline', 'drm', 'web_url')
+
+
+def visible_counts(db, since):
+    """Counters over the titles the catalogue lists (seen >= since), same rules as sync()."""
+    one = lambda sql: int(db.execute('SELECT COUNT(*) FROM youtube_items WHERE seen>=? AND ' + sql, (since,)).fetchone()[0] or 0)
+    return {'movies': one("kind='movie'"), 'series': one("kind='series'"), 'episodes': one("kind='episode'"),
+            'playable': one("kind IN ('movie','episode','track') AND playable"),
+            'music': one("(kind='album' OR (kind='track' AND COALESCE(series_id,'')=''))"),
+            'tracks': one("kind='track'")}
 
 
 def _store(db, items, now):
@@ -939,10 +964,16 @@ def sync(root, request=None, now=None, gap=None, key=None, store_post=None):
                                (album, video, position, now))
                 previous = float(_get(db, 'last_success', '0') or 0)
                 visible_since = previous if partial and previous else now
+                if partial and previous:
+                    # 0.6.28: titles of a failed source stay visible (seen >= last_success); the
+                    # counters show what the catalogue lists, not only what this run could read
+                    # (Diagnose 19.11.: 1.936 statt 4.265 Titel nach einem Netzfehler).
+                    counts = visible_counts(db, visible_since)
                 for k, value in [('last_success', visible_since), ('last_loaded', now),
                                  ('last_result', 'partial' if partial else 'complete'),
                                  ('last_error', ('%d von %d Quellen mit Fehler: %s' % (len(failures), len(active), failures[0])) if partial else ''),
-                                 ('next_attempt', now + 24 * 3600), *counts.items()]:
+                                 ('next_attempt', now + (RETRY_PARTIAL if partial and not quota_hit else 24 * 3600)),
+                                 *counts.items()]:
                     _set(db, k, value)
         finally:
             db.close()

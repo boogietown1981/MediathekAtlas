@@ -1,4 +1,21 @@
-# MediathekAtlas · 0.6.26
+# MediathekAtlas · 0.6.29
+
+## Neu in 0.6.29: Sammelstand
+
+- Fasst 0.6.24 (Episodensuche), 0.6.27 (YouTube-Abos im Dashboard, einheitliche Katalogübersicht, gegliederte Downloads) und 0.6.28 (exFAT-Downloads, YouTube-Abruf, Zähler der Werkzuordnung) in einem Paket zusammen.
+
+## Neu in 0.6.28: Downloads auf exFAT-Laufwerken, stabiler YouTube-Abruf, ehrliche Zähler
+
+- Downloads und YouTube-Abos lassen sich auf Laufwerke ohne Hardlinks speichern (exFAT, FAT32, viele Netzlaufwerke). Bisher scheiterte dort jeder fertige Download mit „[Errno 45] Operation not supported“; diese Aufträge laufen nach dem Update einmal neu.
+- YouTube-Katalog: eine kurz abgebrochene Verbindung wird wiederholt, statt die Quelle für 24 Stunden ausfallen zu lassen. Nach einem Teilfehler folgt der nächste Versuch nach 2 Stunden, und die Titelzahl bleibt bei dem, was der Katalog tatsächlich zeigt.
+- Verwaltung: „Werkzuordnung … von … geprüft“ zählt nur Titel, die heute im Katalog stehen (vorher z. B. „3.894 von 3.075“ bei Joyn).
+- Enthält die Episodensuche aus 0.6.24.
+
+## Neu in 0.6.27: YouTube-Abos im Dashboard, aufgeräumte Downloads
+
+- Dashboard → Quelle „YouTube-Abos“: alle abonnierten Videos je Kanal; unter „Alle“ steht oben „Neu aus deinen YouTube-Abos“.
+- Downloads nach Zustand gegliedert (läuft, wartet, geplant, fehlgeschlagen, fertig) und darin je Kanal bzw. Anbieter.
+- Verwaltung → Status: alle Kataloge in einer einheitlichen Tabelle; bei der Werkzuordnung steht, wann zuletzt geprüft wurde.
 
 ## Neu in 0.6.26: bedienbar auch während eines Umzugs
 
@@ -10,6 +27,14 @@
 - „Bisherigen Ort verwenden“ (beim Start, wenn das Laufwerk fehlt, und in Einstellungen → Speicherorte): MediathekAtlas arbeitet wieder mit dem Datenstand am bisherigen Ort. Es wird nichts kopiert und nichts gelöscht; die Kopie auf dem Laufwerk bleibt unverändert liegen.
 - Verschwindet das Laufwerk im Betrieb, hält MediathekAtlas sauber an und meldet es, statt mit Datenbankfehlern weiterzulaufen.
 - „Zurück an den Standardort“ überschreibt nie mehr einen dort noch liegenden früheren Datenstand.
+
+## Neu in 0.6.24: Episodensuche findet Folgen erkannter Serien
+
+- Die Folgensuche verwarf IMDb-Folgen, sobald TMDB/TVDB das Startjahr der Serie ein Jahr anders angab als IMDb, und fand Titel wie „Folge 12: Titel“ oder „Titel (S01/E12)“ nicht, weil IMDb nur „Titel“ führt. Beides ist behoben; die erkannte Serie (Titel, Jahr, Anbieter) bleibt dabei unverändert, IMDb ergänzt nur Staffel, Folge und Besetzung.
+- Ausgaben von Magazinen und Nachrichten, zu denen IMDb keine Folgen kennt, werden je Serie in einem Schritt um 30 Tage verschoben, statt jede Ausgabe einzeln zu prüfen. Echte Serienfolgen kommen dadurch schnell an die Reihe.
+- Die Auswahl der nächsten Folge dauerte bei 200.000 Einträgen etwa eine Sekunde je Prüfung, jetzt etwa eine Millisekunde.
+- Zurückgestellte Prüfungen (z. B. Senderabruf im Stundenlimit) zählen nicht mehr als Episodenprüfung; die Übersicht zeigt sie getrennt.
+- Bisher ungelöste Folgen werden nach dem Update einmal neu geprüft.
 
 ## Neu in 0.6.23: Umzug scheitert nicht mehr an Dateien, die die App gerade schreibt
 

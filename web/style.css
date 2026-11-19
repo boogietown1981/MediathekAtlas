@@ -1127,3 +1127,95 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .loc-volumes summary{cursor:pointer;font-size:12px;color:#acbed0}
 #storage-locations-problems .notice-error{margin:10px 0}
 @media(max-width:650px){.loc-location .loc-form{grid-template-columns:1fr}}
+/* 0.6.27: YouTube-Abos im Dashboard (web/abo_shelf.js) */
+.abs-shelf{margin:18px 0 8px}
+.abs-shelf-box{border:1px solid #2b3948;border-radius:14px;background:#111a26;padding:4px 16px 12px}
+.abs-shelf-summary{display:flex;align-items:center;gap:10px;cursor:pointer;padding:12px 0;font-size:15px}
+.abs-shelf-summary strong{font-size:16px}
+.abs-shelf-summary button{margin-left:auto;padding:7px 12px;font-size:12px}
+.abs-channel{border-top:1px solid #222e3b;padding:12px 0 6px}
+.abs-full .abs-channel{border:1px solid #2b3948;border-radius:14px;background:#111a26;padding:14px 16px;margin:12px 0}
+.abs-channel-head{display:flex;align-items:center;gap:12px;margin-bottom:10px}
+.abs-channel-head h3{margin:0;font-size:16px;display:flex;align-items:center;gap:8px}
+.abs-channel-text{display:flex;flex-direction:column;gap:2px;min-width:0;flex:1}
+.abs-channel-head .button-link{padding:7px 12px;font-size:12px;white-space:nowrap}
+.abs-avatar{position:relative;flex:none;width:40px;height:40px;border-radius:50%;overflow:hidden;display:grid;place-items:center;background:#24364a;color:#b9d6da;font-weight:650}
+.abs-avatar img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.abs-chip{font-size:10px;font-weight:600;letter-spacing:.4px;border:1px solid #4a7779;color:#8af1d1;border-radius:20px;padding:2px 8px}
+.abs-error{color:#ffb4a8;font-size:12px}
+.abs-strip{display:flex;gap:12px;overflow-x:auto;padding:2px 2px 10px;scroll-snap-type:x proximity}
+.abs-strip .abs-tile{width:220px;flex:none;scroll-snap-align:start}
+.abs-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(210px,1fr));gap:14px}
+.abs-tile{display:flex;flex-direction:column;gap:4px;text-align:left;background:transparent;border:0;padding:0;color:#e9edf4;border-radius:10px}
+.abs-tile:hover{filter:none}.abs-tile:hover .abs-art{box-shadow:0 8px 22px #0009;transform:translateY(-2px)}
+.abs-tile:focus-visible{outline:none}.abs-tile:focus-visible .abs-art{outline:3px solid #8af1d1;outline-offset:2px}
+.abs-art{position:relative;display:block;aspect-ratio:16/9;border-radius:10px;overflow:hidden;background:linear-gradient(140deg,#24364a,#162130);transition:transform .15s,box-shadow .15s}
+.abs-art img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.abs-fallback{position:absolute;inset:0;padding:10px;font-size:12px;color:#b9d6da;display:flex;align-items:flex-end}
+.abs-new{position:absolute;top:7px;left:7px;background:#67e1bc;color:#0c2822;font-size:10px;font-weight:700;border-radius:5px;padding:2px 6px}
+.abs-time{position:absolute;right:7px;bottom:7px;background:#000c;color:#fff;font-size:11px;border-radius:4px;padding:1px 5px}
+.abs-progress{position:absolute;left:0;right:0;bottom:0;height:4px;background:#0008}.abs-progress i{display:block;height:100%;background:#e5484d}
+.abs-tile.is-done .abs-art img{opacity:.55}
+.abs-name{font-size:13px;line-height:1.35;display:-webkit-box;-webkit-line-clamp:2;-webkit-box-orient:vertical;overflow:hidden}
+.abs-sub{font-size:11px;color:#90a2b7}
+.abs-toolbar{display:flex;flex-wrap:wrap;gap:10px;align-items:center}
+.abs-toolbar select,.abs-toolbar input[type=search]{width:auto;min-width:180px;margin:0}
+.abs-toolbar input[type=search]{flex:1;max-width:360px}
+.abs-toolbar label.check{margin:0}
+.abs-toolbar button{margin-left:auto}
+/* 0.6.27: Katalogübersicht einheitlich – eine Tabelle für alle Plattformen, gleiche Karte je Plattform */
+.atlas-portal-head{display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}
+.atlas-portal-head small{margin-left:auto}
+.atlas-portal-card .atlas-portal-tiles{grid-template-columns:repeat(3,minmax(0,1fr));grid-auto-rows:auto}
+.atlas-portal-phase{display:inline-block;font-size:11px;font-weight:600;border-radius:20px;padding:2px 9px;border:1px solid #3d5a4f;color:#8ae2c7;white-space:nowrap}
+.atlas-portal-phase.is-running{border-color:#4f6a8a;color:#a9cdf5}
+.atlas-portal-phase.is-warn{border-color:#665536;color:#f1cd8d}
+.atlas-portal-phase.is-error{border-color:#7a3d3a;color:#ffb4a8}
+.atlas-portal-extras{min-height:1.6em}
+.atlas-portal-tablewrap{overflow-x:auto;border:1px solid #2c3840;border-radius:12px}
+.atlas-portal-table{width:100%;border-collapse:collapse;font-size:13px}
+.atlas-portal-table th{position:sticky;top:0;background:#141e2b;text-align:left;font-size:11px;font-weight:600;color:#93a7b9;letter-spacing:.3px;padding:10px;border-bottom:1px solid #2c3840;white-space:nowrap}
+.atlas-portal-table td{padding:9px 10px;border-bottom:1px solid #1f2a36;vertical-align:middle}
+.atlas-portal-table tr:last-child td{border-bottom:0}
+.atlas-portal-table tbody tr:hover{background:#131d2a}
+.atlas-portal-table .num{text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap}
+.atlas-portal-table .atlas-portal-name{font-weight:650;white-space:nowrap}
+.atlas-portal-table td small{display:block;margin-top:3px}
+.atlas-portal-table .atlas-portal-work{min-width:150px}
+.atlas-portal-table .atlas-portal-rowactions{white-space:nowrap}
+.atlas-portal-table .atlas-portal-rowactions button{padding:6px 10px;font-size:12px;margin-left:4px}
+/* 0.6.27: Downloadwarteschlange nach Zustand und Herkunft gegliedert, kompakte Zeilen */
+.queue-summary{display:flex;flex-wrap:wrap;gap:8px;margin:14px 0 6px}
+.queue-chip{font-size:12px;padding:7px 12px;border-radius:20px}
+.queue-chip-running{border-color:#4f6a8a;color:#a9cdf5}.queue-chip-failed{border-color:#7a3d3a;color:#ffb4a8}
+.queue-chip-planned{border-color:#665536;color:#f1cd8d}.queue-chip-done{border-color:#3d5a4f;color:#8ae2c7}
+.queue-group{border:1px solid #2b3948;border-radius:14px;background:#111a26;padding:0 16px;margin:12px 0}
+.queue-group>summary{display:flex;align-items:center;gap:6px;cursor:pointer;padding:13px 0;font-size:15px;flex-wrap:wrap}
+.queue-group[open]>summary{border-bottom:1px solid #222e3b;margin-bottom:8px}
+.queue-group>summary .queue-bulk{margin-left:auto;padding:6px 11px;font-size:12px}
+.queue-running{border-color:#3b5370}.queue-failed{border-color:#5a3533}
+.queue-hint,.queue-shared-note{margin:4px 0 8px}
+.queue-shared-note{color:#f1cd8d}
+.queue-origin{padding:4px 0 10px}
+.queue-origin h4{margin:8px 0 8px;font-size:13px;color:#cfdbe8}
+.queue-rows{display:grid;grid-template-columns:repeat(auto-fill,minmax(min(100%,520px),1fr));gap:10px}
+#jobs.job-queue .job{display:grid;grid-template-columns:112px minmax(0,1fr);min-height:0}
+#jobs.job-queue .job .art{height:auto!important;min-height:84px;padding:6px;border-radius:0}
+#jobs.job-queue .job .art strong{display:none}
+#jobs.job-queue .job .cardbody{padding:10px 12px;gap:4px}
+#jobs.job-queue .job .cardbody h3{font-size:14px;-webkit-line-clamp:1;line-clamp:1}
+#jobs.job-queue .job .eyebrow{font-size:9px}
+#jobs.job-queue .job .job-note{display:-webkit-box;-webkit-box-orient:vertical;-webkit-line-clamp:2;line-clamp:2;overflow:hidden;font-size:11px}
+#jobs.job-queue .job .file-details{margin-top:0;font-size:11px}
+#jobs.job-queue .job .file-details summary{cursor:pointer;color:#90a2b7}
+#jobs.job-queue .job-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:4px}
+#jobs.job-queue .job-actions button,#jobs.job-queue .job-actions .button-link{width:auto;padding:6px 10px;font-size:12px}
+#jobs.job-queue .job progress{height:6px}
+@media(max-width:650px){#jobs.job-queue .job{grid-template-columns:80px minmax(0,1fr)}}
+.atlas-portal-table td.muted{max-width:240px;font-size:12px;line-height:1.4}
+.atlas-portal-table .atlas-portal-work{min-width:130px;max-width:170px}
+.atlas-portal-table{font-size:12.5px}
+.atlas-portal-table td,.atlas-portal-table th{padding:8px}
+.atlas-portal-table td.muted{max-width:200px}
+.atlas-portal-table .atlas-portal-phase{white-space:normal}
+.atlas-portal-extras-cell{max-width:220px;white-space:normal}

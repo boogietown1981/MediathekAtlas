@@ -1,3 +1,23 @@
+## 0.6.29 – Sammelstand 0.6.24 + 0.6.27 + 0.6.28
+- Zusammenführung von PR #74 (Episodensuche), PR #76 (Oberfläche) und PR #75 (Diagnose 19.11.) auf Basis PR #73.
+- Konflikt Werkzuordnung: Stand aus 0.6.27 übernommen (enthält bereits `listed` aus 0.6.28, dazu `last_checked`/`oldest_checked`/`stored`).
+
+## 0.6.28 – Diagnose 19.11.: Downloads auf exFAT, YouTube-Abruf, Zähler der Werkzuordnung
+- Björns Diagnose (19.11.2026, 0.6.26, Mac, Downloads/Zwischenspeicher auf /Volumes/Docking, System auf /Volumes/Docking-2).
+- Downloads: `os.link` (exklusives Veröffentlichen) scheiterte auf Laufwerken ohne Hardlinks mit `[Errno 45] Operation not supported` (15 YouTube-Abo-Aufträge, 17.11.). Neu `core.publish_exclusive`: Hardlink, sonst Name mit `O_EXCL` reservieren und per `os.replace` darauf verschieben; überschreibt nie. Genutzt in `downloads.py` und `artwork.py` (Bilder fielen dort still weg). Einmaliges Neueinreihen (`requeued_0628`).
+- YouTube-Katalog: `_request` wiederholt Netzfehler (Verbindungsabbruch, Zeitüberschreitung) und HTTP 500/502/503/504 nach 2, 6, 15 s. Teilweise geladener Lauf: Zähler aus den sichtbaren Titeln (`visible_counts`, vorher 1.936 statt 4.265), nächster Versuch nach 2 h statt 24 h (außer Kontingent).
+- `portal_enrichment.metrics`: zählt nur Prüfberichte von Titeln, die im aktuellen Katalog stehen, und liefert `listed`; die Übersicht rechnet „geprüft“, „noch offen“ und den Balken damit (RTL+: Hinweis auf mitgeprüfte Abo-Titel).
+- Enthält 0.6.24 (Episodensuche, PR #74).
+- Tests: `tests/test_v0628_diagnose_1911.py` (12).
+
+## 0.6.27 – YouTube-Abos im Dashboard, einheitliche Katalogübersicht, gegliederte Downloads
+- Björn (19.11.2026, 0.6.26): abonnierte YouTube-Videos fehlten in der normalen Dashboard-Übersicht; die Katalogkarten in der Verwaltung sahen je Anbieter anders aus (Kachelzahl und Reihenfolge wechselnd); die Downloadwarteschlange war undurchsichtig (wartende, geplante, fehlgeschlagene und fertige Aufträge als gleichförmige Kacheln durcheinander); bei der Werkzuordnung stand nur „geprüft“ ohne Zeitpunkt.
+- Dashboard: neue Quelle „YouTube-Abos“ (`web/abo_shelf.js`, `/api/youtube-abo-videos` → `youtube_abos.library`): alle offline gespeicherten Abo-Videos je Kanal, mit NEU/Fortschritt, Stand der letzten Prüfung, nächster Prüfung, Warteschlange und Fehlern je Kanal, Filter Profil/„Nur neue“/Suche. Unter „Alle“ und „YouTube“ zusätzlich der zuklappbare Block „Neu aus deinen YouTube-Abos“ (bis 12 neueste je Kanal). Auch als Startansicht wählbar (`ui_prefs.START_SOURCES`). `youtube_abos.kids(profile=None)` liefert alle Profile.
+- Verwaltung → Status: alle Plattformen in einer Tabelle (gleiche Spalten für jede Plattform); Plattform-Reiter: gleiche Karte mit sechs festen Kacheln, Stand im Kopf, Sonderwerte (Live-Sender, kopiergeschützt, abspielbar, Kanäle, Musik, API-Schlüssel) in einer Zeile „Besonderheiten“.
+- Werkzuordnung zählt nur noch Prüfungen der Titel im aktuellen Katalog (bisher auch längst entfernte Titel, z. B. RTL+ „1.042 von 65 geprüft“); neu `last_checked`/`oldest_checked` (`portal_enrichment.metrics`, Netzkino). Aufgaben und Katalogübersicht zeigen „zuletzt geprüft …“ und „ältester Stand …“.
+- Downloads: Gruppen Läuft gerade / Wartet / Geplant / Zurückgestellt / Fehlgeschlagen / Fertig (auf- und zuklappbar, Zustand gespeichert, Sprungleiste oben), darin je Herkunft (YouTube-Abo je Kanal, Anbieter, Sender), kompakte Zeilen, gemeinsamer Hinweis einer Gruppe nur einmal, „Alle erneut versuchen“ bei Fehlern, Fehlertexte auf zwei Zeilen gekürzt (voll im Tooltip). „Vorgemerkt ab …“ doppelte sich mit „Geplant für …“ und entfällt.
+- Tests: `tests/test_v0627_dashboard_abos.py` (5), Klicktest um YouTube-Abos und Katalogtabelle erweitert.
+
 ## 0.6.26 – Dienst bleibt bei Umzug und langsamem Laufwerk bedienbar, Protokoll-Download mit Frist
 - Björn (19.11.2026, 0.6.23/0.6.25, Datenordner auf /Volumes/Docking-2): „Protokoll herunterladen“ endete immer mit „seit 60 Sekunden nicht verfügbar“ (/api/diagnostics 84 s). Während des Downloadumzugs /api/state bis 579 s („catalog“ 532 s, „settings“ 239 s), /api/storage-locations bis 433 s (auch ohne Umzug 103 s), Katalog-Vorwärmen 449 s; auch ohne Umzug „catalog“ 2–20 s. Ursache: Datenbank (5,5 GB) und Umzug teilen sich dasselbe USB-Laufwerk; der Umzug kopierte ungebremst, die Oberfläche wartete synchron auf Laufwerksabfragen (`mount` je Laufwerk, freier Platz) und Zählungen.
 - Diagnose-Export: alle Teile parallel mit gemeinsamer Frist (20 s); ein hängender oder fehlerhafter Teil steht als `timeout`/`error` im Export statt den Download zu verhindern (`export_slow_parts`). Oberfläche wartet beim Export 180 s. `startup.log` kommt aus dem Startordner, auch wenn der Datenordner umgezogen ist (seit 0.6.20 fehlte es dann).
@@ -15,6 +35,21 @@
 - `inspect`: Umzug „System und Datenbank“ zurück an den Standardort überschreibt nie einen dort noch liegenden früheren Stand; stattdessen „Vorhandene Daten verwenden“ oder vorher löschen.
 - `copy_sqlite`: keine Umstellung der Kopie auf WAL mehr; ein bei der Prüfung entstandenes WAL wird zurückgeschrieben (`wal_checkpoint(TRUNCATE)`) statt blind gelöscht, ein nicht leeres WAL bricht den Schritt ab.
 - Tests: `tests/test_v0625_storage_safety.py` (10, Björns Fall nachgestellt), `test_move_back_to_default` angepasst.
+
+## 0.6.24 – Episodensuche an der Ursache repariert
+- Diagnosen 0.6.8–0.6.18 (Björns Mac): Episoden-Warteschlange 218.000 Einträge, 25.700 Prüfungen, 4 Treffer. Ursachen, mit nachgestellten Fällen belegt:
+  1. Die Folgensuche nutzte dieselbe Titelsuche wie die Erkennung. Gequeuete Werke tragen aber das Serienjahr des erkennenden Anbieters (TMDB/TVDB); weicht IMDbs Startjahr ab (häufig ±1), galt jede IMDb-Folge als „Erscheinungsjahr widersprüchlich“.
+  2. Folgentitel mit Nummerierung („Folge 12: Titel“, „Titel (S01/E12)“, „Titel (Folge 12)“) wurden wörtlich gesucht; IMDb führt nur „Titel“.
+  3. Die Warteschlange besteht überwiegend aus Ausgaben von Magazinen/Nachrichten (Schleswig-Holstein Magazin, NDR Info, Nano …), zu denen IMDb keine Folgen hat; jede Ausgabe wurde einzeln geprüft, echte Folgen warteten Wochen.
+  4. Die Auswahl der nächsten Folge durchsuchte alle erkannten Werke und sortierte sie (≈1 s je Prüfung bei 200.000 Einträgen).
+  5. Zurückgestellte Prüfungen (Senderabruf im Stundenlimit) zählten als Prüfung und blähten die Zahl auf.
+- `imdb_archive.episode_evidence`: Serie über bekannte IMDb-ID (IMDb/OMDb-Identität oder `imdb_id`), sonst exakter Titel mit ±1 Jahr; Ergebnis behält Titel, Jahr, Anbieter und Referenz des Werks (show_key unverändert) und ergänzt Staffel, Folge, Episoden-ID, Laufzeit und Besetzung. Mehrdeutige Treffer (verschiedene Episoden-IDs) bleiben ungelöst. Auch für den Serienvorlagen-Pfad, dort jetzt mit Laufzeitprüfung.
+- `episode_name`/`episode_search_terms`: Nummerierung (SxxEyy, NxM, „Staffel N, Folge M“, „Folge N“) wird für die Namenssuche entfernt; Staffel/Folge bleiben eigener Beleg. Serienpräfix weiter nur mit Trennzeichen.
+- `defer_series_without_episodes`: kennt IMDb zur Serie keine Folge, werden alle fälligen Geschwister mit gleicher Identität in einem Schritt um 30–37 Tage verschoben (`no_imdb_episodes`); Angebote mit ARD/ZDF-Seite bleiben bei erlaubter Senderabfrage fällig, Nutzerprioritäten ebenfalls.
+- `pick_episode`: feste Schleifenreihenfolge über den Fälligkeitsindex (CROSS JOIN), Prioritäten von `metadata_priority` aus; Folgen mit Nummer werden bevorzugt.
+- Zähler: `retry` zählt nicht mehr als Episodenprüfung; neu `episode_series_deferred_session`; Oberfläche „zurückgestellt“ und „Ohne IMDb-Folgenliste verschoben“.
+- Migration `episode_queue_recheck_v0624`: bisher `unresolved`/`retry` einmal sofort neu prüfen (Versuche bleiben erhalten).
+- Tests: `tests/test_v0624_episode_search.py` (19); angepasst `test_v0528`, `test_v0530` (Folgensuche über `episode_evidence`, Serienidentität bleibt).
 
 ## 0.6.23 – Speicherorte: Prüfung im laufenden Betrieb
 - Björn (16.11.2026): Umzug „System und Datenbank“ nach /Volumes/Docking-2/MediathekAtlas/System „Fehlgeschlagen – Prüfung am Ziel fehlgeschlagen: diagnostic.jsonl Größe weicht ab; verbund/nodes/…/events-005140…005143.jsonl fehlt“. Ursache: `verify_tree` las nach dem Kopieren den Quellordner neu ein; was die laufende App seitdem geschrieben hatte (Diagnoseprotokoll, neue Verbund-Ereignisse), galt als Fehler.

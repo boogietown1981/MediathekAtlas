@@ -131,7 +131,7 @@ class QueueTests(unittest.TestCase):
     def test_failed_local_evidence_is_persisted_across_restart(self):
         wid=self.work_ids()[0]
         self.recognize(wid)
-        offline=type('OfflineArchive',(),{'updated':1,'candidates':lambda self,*args:[]})()
+        offline=type('OfflineArchive',(),{'updated':1,'episode_evidence':lambda self,*args:{'candidates':[],'series_with_episodes':1}})()
         with patch.object(imdb_archive,'ACTIVE',offline):
             self.assertTrue(self.svc.metadata_once('episode'))
         with self.db() as c:
@@ -156,7 +156,7 @@ class QueueTests(unittest.TestCase):
                      'season':1,'episode':4,'episode_verified':True,
                      'similarity':1.0,'year_mismatch':False,
                      'runtime_mismatch':False}]
-        archive=type('Archive',(),{'updated':1,'candidates':lambda self,*args:found(*args)})()
+        archive=type('Archive',(),{'updated':1,'episode_evidence':lambda self,*args:{'candidates':found(*args),'series_with_episodes':1}})()
         with patch.object(imdb_archive,'ACTIVE',archive):
             self.assertTrue(self.svc.metadata_once('episode'))
         with self.db() as c:
