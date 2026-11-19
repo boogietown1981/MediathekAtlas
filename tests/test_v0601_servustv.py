@@ -277,7 +277,7 @@ class WiringTests(unittest.TestCase):
     def test_wiring(self):
         here = Path(__file__).resolve().parent.parent
         server = (here / 'server.py').read_text(encoding='utf-8')
-        for needle in ("'servustv',", "servustv=q.get('servustv',[''])[0]", "'servustv':servustv.state(ROOT)",
+        for needle in ("'servustv',", "servustv=q.get('servustv',[''])[0]", "'servustv':lambda:servustv.state(ROOT)",
                        "'/servustv.js'", "'source':'servustv'"):
             self.assertIn(needle, server)
         self.assertIn("'servustv.py','servustv_enrichment.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))

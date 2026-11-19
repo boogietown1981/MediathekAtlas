@@ -32,7 +32,7 @@ class Env:
     """Startordner, Datenordner, Downloads und catalog.db wie in der App."""
 
     def __init__(self, tmp):
-        self.base = Path(tmp)
+        self.base = Path(tmp).resolve()   # macOS: /var → /private/var
         self.home = self.base / 'home'
         self.home.mkdir()
         self.downloads = self.base / 'Movies' / 'MediathekAtlas'
@@ -147,7 +147,7 @@ class CopyTests(unittest.TestCase):
     def setUp(self):
         tmp = tempfile.TemporaryDirectory()
         self.addCleanup(tmp.cleanup)
-        self.base = Path(tmp.name)
+        self.base = Path(tmp.name).resolve()
 
     def test_open_wal_database_copied_consistently_and_resume_skips(self):
         src, dst = self.base / 'src', self.base / 'dst'
@@ -195,6 +195,79 @@ class CopyTests(unittest.TestCase):
         with self.assertRaises(InterruptedError):
             sl.sync_tree(src, dst, cancelled=cancelled)
         self.assertEqual([p.name for p in dst.iterdir()], [])
+
+
+class LargeDatabaseTests(unittest.TestCase):
+    """0.6.22: Björns Umzug stand bei catalog.db (5,5 GB) über 10 Minuten ohne Anzeige (quick_check am Ziel)."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory()
+        self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name).resolve()
+        self.src = self.base / 'catalog.db'
+        make_db(self.src, 4000).close()
+
+    def test_steps_report_progress_and_survive_concurrent_writes(self):
+        import threading
+        sl.BACKUP_PAGES, old = 20, sl.BACKUP_PAGES
+        self.addCleanup(setattr, sl, 'BACKUP_PAGES', old)
+        stop = threading.Event()
+        writes = [0]
+
+        def writer():
+            w = sqlite3.connect(self.src, timeout=30)
+            while not stop.is_set():
+                w.execute("INSERT INTO t(v) VALUES('neu')")
+                w.commit()
+                writes[0] += 1
+                time.sleep(0.001)
+            w.close()
+        th = threading.Thread(target=writer)
+        th.start()
+        stages = []
+        try:
+            sl.copy_sqlite(self.src, self.base / 'kopie.db', on_stage=lambda *a: stages.append(a))
+        finally:
+            stop.set()
+            th.join()
+        copies = [a for a in stages if a[0] == 'copy']
+        self.assertGreater(len(copies), 5)
+        self.assertEqual([a[1] for a in copies], sorted(a[1] for a in copies))   # kein Neubeginn
+        self.assertEqual(copies[-1][1], copies[-1][2])
+        self.assertIn('check', [a[0] for a in stages])
+        c = sqlite3.connect(self.base / 'kopie.db')
+        self.assertGreaterEqual(c.execute('SELECT count(*) FROM t').fetchone()[0], 4000)
+        self.assertEqual(c.execute('PRAGMA quick_check').fetchone()[0], 'ok')
+        c.close()
+
+    def test_cancel_inside_database_copy(self):
+        sl.BACKUP_PAGES, old = 10, sl.BACKUP_PAGES
+        self.addCleanup(setattr, sl, 'BACKUP_PAGES', old)
+        calls = []
+        with self.assertRaises(InterruptedError):
+            sl.copy_sqlite(self.src, self.base / 'kopie.db', cancelled=lambda: calls.append(1) or len(calls) > 3)
+        self.assertFalse((self.base / 'kopie.db').exists())
+        self.assertFalse((self.base / 'kopie.db.partial').exists())
+
+    def test_large_database_uses_structure_check(self):
+        sl.QUICK_CHECK_LIMIT, old = 0, sl.QUICK_CHECK_LIMIT
+        self.addCleanup(setattr, sl, 'QUICK_CHECK_LIMIT', old)
+        seen = []
+        sl.copy_sqlite(self.src, self.base / 'kopie.db', on_stage=lambda *a: seen.append(a[0]))
+        self.assertEqual(seen[-1], 'sync')
+        c = sqlite3.connect(self.base / 'kopie.db')
+        self.assertEqual(c.execute('SELECT count(*) FROM t').fetchone()[0], 4000)
+        c.close()
+
+    def test_mover_state_shows_file_progress(self):
+        src, dst = self.base / 'quelle', self.base / 'ziel'
+        src.mkdir()
+        make_db(src / 'catalog.db', 2000).close()
+        states = []
+        sl.sync_tree(src, dst, progress=states.append)
+        db_states = [x for x in states if x.get('current') == 'catalog.db' and x.get('file_total')]
+        self.assertTrue(db_states)
+        self.assertTrue({x['step'] for x in db_states} >= {'copy', 'check'})
 
 
 class DownloadMoveTests(unittest.TestCase):
@@ -249,6 +322,25 @@ class DownloadMoveTests(unittest.TestCase):
         self.assertEqual(sl.MOVER.status()['phase'], 'cancelled')
         self.assertFalse(sl.downloads_held())
         self.assertEqual(e.store['download_dir'], str(e.downloads))
+
+    def test_file_changed_during_copy_is_copied_again(self):
+        e = self.env
+        real = sl.verify_tree
+        calls = []
+
+        def change_once(*a, **k):
+            if not calls:
+                (e.downloads / 'Filme' / 'Film (2020)' / 'Film (2020).nfo').write_text('<movie>neu</movie>')
+            calls.append(1)
+            return real(*a, **k)
+        sl.verify_tree = change_once
+        try:
+            state = run(e.ctx, 'downloads', str(e.ext / 'D'))
+        finally:
+            sl.verify_tree = real
+        self.assertEqual(state['phase'], 'done', state)
+        self.assertEqual(len(calls), 2)
+        self.assertEqual((e.ext / 'D' / 'Filme' / 'Film (2020)' / 'Film (2020).nfo').read_text(), '<movie>neu</movie>')
 
     def test_switch_only_keeps_files_and_paths(self):
         e = self.env
@@ -358,6 +450,53 @@ class SystemMoveTests(unittest.TestCase):
         self.assertEqual(sl.data_root(e.home), target)
         self.assertFalse((e.home / sl.PROBLEM_FILE).exists())
 
+    def test_files_written_by_running_app_do_not_fail_the_move(self):
+        """0.6.23 (Björn): diagnostic.jsonl gewachsen, neue verbund/nodes/…/events-*.jsonl → Umzug „fehlgeschlagen“."""
+        e = self.env
+        (e.home / 'diagnostic.jsonl').write_text('{"a":1}\n')
+        nodes = e.home / 'verbund' / 'nodes' / 'abc'
+        nodes.mkdir(parents=True)
+        (nodes / 'events-005139.jsonl').write_text('{}\n')
+        real = sl.verify_tree
+
+        def app_keeps_writing(*a, **k):
+            with (e.home / 'diagnostic.jsonl').open('a') as f:
+                f.write('{"b":2}\n')
+            (nodes / 'events-005140.jsonl').write_text('{}\n')
+            (nodes / 'events-005139.jsonl').unlink()
+            return real(*a, **k)
+        sl.verify_tree = app_keeps_writing
+        try:
+            state = run(e.ctx, 'system', str(e.ext / 'S'))
+        finally:
+            sl.verify_tree = real
+        self.assertEqual(state['phase'], 'ready', state)
+        self.assertGreaterEqual(state['changed_since_copy'], 2)
+        root = sl.data_root(e.home, log=self.say.append)   # Abschluss beim Start zieht nach und prüft streng
+        self.assertEqual(root, e.ext / 'S')
+        self.assertEqual((root / 'diagnostic.jsonl').read_text(), '{"a":1}\n{"b":2}\n')
+        self.assertTrue((root / 'verbund' / 'nodes' / 'abc' / 'events-005140.jsonl').is_file())
+
+    def test_resumed_move_checks_files_taken_over(self):
+        e = self.env
+        bad = []
+        real = sl.verify_tree
+
+        def spy(*a, **k):
+            result = real(*a, **k)
+            bad.append((k.get('live'), len(k.get('manifest') or {})))
+            return result
+        sl.verify_tree = spy
+        try:
+            run(e.ctx, 'system', str(e.ext / 'S'))
+            e.ctx.cancel_pending()
+            (e.ext / 'S' / sl.STAGING).write_text(json.dumps({'source': str(e.home), 'files': {}}))
+            state = run(e.ctx, 'system', str(e.ext / 'S'))
+        finally:
+            sl.verify_tree = real
+        self.assertEqual(state['phase'], 'ready', state)
+        self.assertGreaterEqual(bad[-1][1], 3)   # übernommene Dateien stehen in der Prüfliste
+
     def test_cleanup_of_old_system_data_keeps_program_files(self):
         e = self.env
         target = e.ext / 'S'
@@ -390,6 +529,11 @@ class SystemMoveTests(unittest.TestCase):
         run(e.ctx, 'system', str(target))
         sl.data_root(e.home, log=self.say.append)
         ctx = sl.Context(e.home, target, e.ctx.settings, e.save, e.db)
+        # 0.6.25: solange der frühere Stand am Standardort liegt, wird er nie überschrieben
+        plan = ctx.plan('system', str(e.home))
+        self.assertFalse(plan['check']['ok'], plan['check'])
+        self.assertTrue(plan['check']['existing_data'])
+        ctx.cleanup('system', sl.CONFIRM)
         plan = ctx.plan('system', str(e.home))
         self.assertTrue(plan['check']['ok'], plan['check'])
         state = run(ctx, 'system', str(e.home))

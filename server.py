@@ -19,6 +19,7 @@ PORT=int(os.environ.get('MEDIATHEKATLAS_PORT','0') or 0)
 RESTART_PORT=int(os.environ.pop('MEDIATHEKATLAS_RESTART_PORT','0') or 0)
 if not PORT and RESTART_PORT:PORT=RESTART_PORT
 RESTART=threading.Event()
+LOST_EXIT=[0]
 NETWORK=LISTEN not in ('127.0.0.1','localhost','::1') or os.environ.get('MEDIATHEKATLAS_LOGIN')=='1'
 MANAGED=os.environ.get('MEDIATHEKATLAS_MANAGED','')
 def _default_download_dir():
@@ -48,7 +49,7 @@ ROOT.mkdir(parents=True,exist_ok=True)
 try:os.chmod(ROOT,0o700)
 except OSError:pass   # z. B. exFAT/SMB ohne Unix-Rechte
 os.environ['MEDIATHEKATLAS_DATA_DIR']=str(ROOT)
-diagnostics.setup(ROOT)
+diagnostics.setup(ROOT,HOME)
 metadata.configure_provider_state(ROOT/'provider-pauses.json')
 negative_cache.configure(ROOT/'provider-negative.sqlite')
 diagnostics.event('application_start',version=VERSION,network=NETWORK,managed=MANAGED or None)
@@ -186,8 +187,10 @@ def task_details():
             out['catalog:'+key]={'running':bool(st.get('running')),'auto':bool(st.get('auto')),'titles':titles,
                 'last_success':st.get('last_success') or 0,'next_attempt':st.get('next_attempt') or 0,
                 'last_result':st.get('last_result') or '','last_error':st.get('last_error') or ''}
-            checked=int((enrichment.metrics(ROOT) or {}).get('checked') or 0)
-            out['enrich:'+key]={'checked':min(checked,titles) if titles else checked,'total':titles}
+            ref=enrichment.metrics(ROOT) or {};checked=int(ref.get('checked') or 0)
+            # 0.6.27: Zeitpunkt der neuesten und der ältesten Prüfung („von wann ist der Stand?“)
+            out['enrich:'+key]={'checked':min(checked,titles) if titles else checked,'total':titles,
+                'last_checked':ref.get('last_checked') or 0,'oldest_checked':ref.get('oldest_checked') or 0}
         except Exception as e:
             out['catalog:'+key]={'error':core.safe_error(e)}
     try:
@@ -1079,6 +1082,11 @@ def get_kids_js(self,path):
 def get_kids(self,path):
     with db() as c:return self.send(youtube_abos.kids(ROOT,c))
 
+# 0.6.27: abonnierte Videos im Dashboard, je Kanal (web/abo_shelf.js)
+@ROUTES.get('/api/youtube-abo-videos')
+def get_youtube_abo_videos(self,path):
+    with db() as c:return self.send(youtube_abos.library(ROOT,c))
+
 # 0.6.8: Ansehen-Modus für Erwachsene – dieselbe Seite wie „/“, ohne Verwaltung (web/watch_mode.js)
 @ROUTES.get('/ansehen',stage='signed')
 def get_ansehen(self,path):
@@ -1199,12 +1207,46 @@ def get_play(self,path,v1=False):
 def get_logs(self,path):
     return self.send({'text':diagnostics.tail(),'sync':SERVICE.current})
 
+def _bounded_parts(parts,budget=20.0):
+    # 0.6.25 (Björn, 19.11.2026: „Protokoll herunterladen“ endete nach 60 s, /api/diagnostics 84 s): jeder Teil
+    # läuft parallel mit gemeinsamer Frist; was bei ausgelastetem Laufwerk nicht fertig wird, steht als Zeitüberschreitung drin.
+    results={}
+    def run(key,fn):
+        started=time.monotonic()
+        try:value=fn()
+        except Exception as e:value={'error':core.safe_error(e)}
+        results[key]=(value,round(time.monotonic()-started,2))
+    threads=[threading.Thread(target=run,args=(k,fn),daemon=True,name='diagnose_'+k) for k,fn in parts.items()]
+    for t in threads:t.start()
+    deadline=time.monotonic()+budget
+    for t in threads:t.join(max(0.0,deadline-time.monotonic()))
+    done=dict(results);out={};slow={}
+    for key in parts:
+        if key in done:
+            out[key]=done[key][0]
+            if done[key][1]>=2:slow[key]=done[key][1]
+        else:out[key]={'timeout':True,'seconds':budget};slow[key]='>'+str(budget)
+    out['export_slow_parts']=slow
+    return out
+
 @ROUTES.get('/api/diagnostics')
 def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
-    try:overview={'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(),'runtime':runtime_tools.cached_report()}
-    except Exception as e:overview={'catalog_error':core.safe_error(e)}
-    return self.send(diagnostics.export({**overview,'storage':_storage_for_export(),'imdb':IMDB.status(),'provider_statistics':provider_stats.snapshot(),'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,'providers':[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],'netzkino_downloads':netzkino_download_summary(),'ytdl_nightly':ytdl_bridge.status(),'pluto':pluto.state(ROOT),'justwatch':justwatch.state(ROOT),'rakuten':rakuten.state(ROOT),'joyn':joyn.state(ROOT),'toggo':toggo.state(ROOT),'crunchyroll':crunchyroll.state(ROOT),'samsung':samsung_tvplus.summary(ROOT),'plex':plex.state(ROOT),'servustv':servustv.state(ROOT),'rtlplus':rtlplus.state(ROOT),'youtube':{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':_safe(lambda:youtube_abos.summary(ROOT)),'live_tv':live_tv_summary(),'watch':watch_state.summary(ROOT),'archive_works':archive_recognition.summary(ROOT),'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot(),'network':{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':__import__('reference_share').stats(ROOT)}),ctype='application/zip')
+    def overview_parts():
+        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(15.0),'runtime':runtime_tools.cached_report()}
+    parts={'overview':overview_parts,'storage':_storage_for_export,'imdb':IMDB.status,'provider_statistics':provider_stats.snapshot,
+           'providers':lambda:[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],
+           'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),
+           'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
+           'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
+           'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),
+           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'archive_works':lambda:archive_recognition.summary(ROOT),
+           'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT)}
+    found=_bounded_parts(parts)
+    overview=found.pop('overview')
+    if not isinstance(overview,dict) or 'catalog' not in overview:overview={'catalog_error':overview}
+    return self.send(diagnostics.export({**overview,**found,'sync':SERVICE.current,'metadata':SERVICE.metadata_status,'mesh':SERVICE.mesh_status,
+        'threads':[t.name for t in threading.enumerate()],'http':http_timing.snapshot()}),ctype='application/zip')
 
 @ROUTES.get('/api/tools')
 def get_tools(self,path):
@@ -1255,6 +1297,7 @@ def post_storage_locations(self,path,d):
     if action=='cleanup':return self.send(STORAGE.cleanup(kind,d.get('confirm')))
     if action=='dismiss':return self.send(STORAGE.dismiss(kind))
     if action=='discard':return self.send(STORAGE.cancel_pending())
+    if action=='revert':return self.send(STORAGE.revert())
     if action=='restart':
         if os.name!='posix':raise ValueError('Bitte MediathekAtlas beenden und neu starten; der Umzug wird beim Start abgeschlossen.')
         if storage_locations.MOVER.running():raise ValueError('Bitte warten, bis der Umzug fertig ist.')
@@ -1861,7 +1904,7 @@ def post_save_metadata(self,path,d):
         o=c.execute('SELECT work_id FROM offers WHERE id=?',(d['id'],)).fetchone()
         if not o:raise ValueError('Katalogeintrag nicht gefunden')
         SERVICE.mesh_manual(c,o[0],catalog.save_metadata(c,o[0],m) or o[0],m)
-    _TREE_CACHE=(float("-inf"),[],[]);_STATUS_CACHE=(0,{})
+    _TREE_CACHE=(float("-inf"),[],[]);_STATUS_CACHE=(float("-inf"),_STATUS_CACHE[1])  # 0.6.25: alten Stand zeigen, im Hintergrund neu zählen
     return self.send({'ok':True})
 
 @ROUTES.post('/api/candidates')
@@ -2220,7 +2263,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2283,6 +2326,11 @@ if __name__=='__main__':
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
         threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()
         threading.Thread(target=ENCODER.loop,args=(STOP,),daemon=True,name='encoder').start()
+    def storage_lost(text):
+        # 0.6.25: Datenordner im Betrieb verschwunden (Björn, 19.11.2026) → sauber anhalten, Startskript zeigt Hinweis.
+        print(text,flush=True);LOST_EXIT[0]=storage_locations.UNAVAILABLE_EXIT;STOP.set()
+        threading.Thread(target=server.shutdown,daemon=True).start()
+    threading.Thread(target=storage_locations.watch_root,args=(HOME,ROOT,STOP,storage_lost),daemon=True,name='storage_watch').start()
     url=f'http://127.0.0.1:{server.server_port}';print(url,flush=True)
     if NETWORK:
         print(f'Netzwerkmodus: {LISTEN}:{server.server_port}, Anmeldung erforderlich',flush=True)
@@ -2302,3 +2350,4 @@ if __name__=='__main__':
             print('Neustart für den Speicherort-Umzug …',flush=True)
             argv=[a for a in sys.argv if a!='--no-browser']
             os.execv(sys.executable,[sys.executable]+argv+['--no-browser'])
+    if LOST_EXIT[0]:raise SystemExit(LOST_EXIT[0])

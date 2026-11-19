@@ -152,6 +152,10 @@ def data_root(home=None, wait=0.0, log=None) -> Path:
             text = ('Der Speicherort für System und Datenbank ist nicht erreichbar:\n%s\n\n'
                     'Bitte das Laufwerk bzw. die Netzwerkfreigabe verbinden und MediathekAtlas erneut starten. '
                     'Es wurde nichts verändert und kein neuer, leerer Katalog angelegt.' % root)
+            info = revert_info(home)
+            if info:
+                text += ('\n\nAlternativ „Bisherigen Ort verwenden“: startet mit dem Datenstand in\n%s\n(Stand %s). '
+                         'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (info['path'], info['stand'] or 'unbekannt'))
             try:
                 (home / PROBLEM_FILE).write_text(text + '\n', encoding='utf-8')
             except OSError:
@@ -163,6 +167,103 @@ def data_root(home=None, wait=0.0, log=None) -> Path:
         time.sleep(1.0)
     (home / PROBLEM_FILE).unlink(missing_ok=True)
     return root
+
+
+# ------------------------------------------------------------------ Sicherer Rückweg (0.6.25)
+
+def _stand(path):
+    try:
+        return time.strftime('%d.%m.%Y %H:%M', time.localtime(Path(path).stat().st_mtime))
+    except OSError:
+        return ''
+
+
+def revert_info(home) -> dict | None:
+    """Bisheriger Datenordner, auf den sich gefahrlos zurückstellen lässt – nur den Zeiger, ohne Kopie.
+
+    Björn (19.11.2026): Nach dem Abschluss des System-Umzugs fiel das Ziellaufwerk Sekunden später
+    weg. Der bisherige Ort war vollständig und unverändert, aber der einzige Weg zurück
+    („Zurück an den Standardort“) hätte die womöglich beschädigte Kopie darüber kopiert.
+    Kandidaten: der vermerkte alte Ort des letzten System-Umzugs, sonst der Startordner – jeweils nur
+    mit vorhandener ``catalog.db``. Am aktuellen Ort wird nichts verändert oder gelöscht.
+    """
+    home = Path(home)
+    cfg = read_pointer(home)
+    current = cfg.get('data_dir')
+    if not current:
+        return None
+    prev = (cfg.get('previous') or {}).get('system') or {}
+    candidates = [prev.get('source'), str(home)]
+    for cand in candidates:
+        if not cand or same(cand, current):
+            continue
+        folder = Path(cand)
+        try:
+            usable = (folder / 'catalog.db').is_file() and (same(folder, home) or (folder / DATA_MARKER).is_file())
+        except OSError:
+            usable = False
+        if usable:
+            return {'path': str(folder), 'current': str(current), 'stand': _stand(folder / 'catalog.db'),
+                    'is_default': same(folder, home)}
+    return None
+
+
+def revert_system(home) -> dict:
+    """Stellt System und Datenbank auf den bisherigen Ort zurück (wirksam beim nächsten Start)."""
+    home = Path(home)
+    info = revert_info(home)
+    if not info:
+        raise ValueError('Kein bisheriger Datenordner mit Katalog gefunden; es wurde nichts verändert.')
+    cfg = read_pointer(home)
+    if info['is_default']:
+        cfg.pop('data_dir', None)
+    else:
+        cfg['data_dir'] = info['path']
+    cfg.pop('pending', None)
+    previous = dict(cfg.get('previous') or {})
+    previous.pop('system', None)        # „Alte Daten löschen“ darf den jetzt aktiven Ort nie erreichen
+    cfg['previous'] = previous
+    cfg['abandoned'] = {'path': info['current'], 'at': time.time()}
+    cfg['last'] = {'kind': 'system', 'phase': 'reverted', 'at': time.time(), 'source': info['current'],
+                   'target': info['path']}
+    write_pointer(home, cfg)
+    (home / PROBLEM_FILE).unlink(missing_ok=True)
+    return info
+
+
+def lost_text(root, home):
+    text = ('Der Speicherort für System und Datenbank ist nicht mehr erreichbar:\n%s\n\n'
+            'MediathekAtlas wurde angehalten, damit nichts Halbes geschrieben wird. Bitte das Laufwerk bzw. '
+            'die Netzwerkfreigabe wieder verbinden und erneut starten.' % root)
+    info = revert_info(home)
+    if info:
+        text += ('\n\nAlternativ „Bisherigen Ort verwenden“: startet mit dem Datenstand in\n%s\n(Stand %s). '
+                 'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (info['path'], info['stand'] or 'unbekannt'))
+    return text
+
+
+def watch_root(home, root, stop, on_lost, interval=10.0, misses=2):
+    """Wächter (0.6.25): verschwindet der Datenordner im Betrieb (Laufwerk abgezogen, Ruhezustand),
+    wird ``on_lost(text)`` aufgerufen, statt mit Fehlern wie „database disk image is malformed“
+    weiterzulaufen. Nur für einen eingestellten Datenordner außerhalb des Startordners."""
+    home, root = Path(home), Path(root)
+    if same(home, root):
+        return
+    missing = 0
+    while not stop.wait(interval):
+        try:
+            ok = (root / DATA_MARKER).is_file()
+        except OSError:
+            ok = False
+        missing = 0 if ok else missing + 1
+        if missing >= misses:
+            text = lost_text(root, home)
+            try:
+                (home / PROBLEM_FILE).write_text(text + '\n', encoding='utf-8')
+            except OSError:
+                pass
+            on_lost(text)
+            return
 
 
 # ------------------------------------------------------------------ Dateien, Datenbanken
@@ -240,21 +341,54 @@ def _fsync_dir(path):
         os.close(fd)
 
 
+_PACE = threading.local()   # im Umzug im laufenden Betrieb: Laufwerk für die Datenbank der App freihalten
+PACE_RATIO = 0.5             # nach jedem Block halb so lange Pause, wie der Block gebraucht hat
+FLUSH_EVERY = 64 * 1024 * 1024
+
+
+def _low_io_priority():
+    """0.6.25 (Björn, 19.11.2026: während des Downloadumzugs /api/state bis 579 s): der Umzug-Thread
+    bekommt unter macOS die gedrosselte E/A-Klasse (``setiopolicy_np``, IOPOL_THROTTLE), damit die
+    Datenbankzugriffe der App Vorrang haben. Anderswo genügt die Pause zwischen den Blöcken."""
+    _PACE.on = True
+    if sys.platform != 'darwin':
+        return False
+    try:
+        import ctypes
+        libc = ctypes.CDLL('/usr/lib/libSystem.B.dylib', use_errno=True)
+        return libc.setiopolicy_np(0, 1, 3) == 0   # IOPOL_TYPE_DISK, IOPOL_SCOPE_THREAD, IOPOL_THROTTLE
+    except (OSError, AttributeError):
+        return False
+
+
+def _pace(started):
+    if getattr(_PACE, 'on', False):
+        time.sleep(min(2.0, max(0.0, time.monotonic() - started) * PACE_RATIO))
+
+
 def copy_file(src, dst, on_bytes=None, cancelled=None):
     dst = Path(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     part = dst.with_name(dst.name + '.partial')
+    written = flushed = 0
     try:
         with open(src, 'rb') as fin, open(part, 'wb') as fout:
             while True:
                 if cancelled and cancelled():
                     raise InterruptedError('abgebrochen')
+                started = time.monotonic()
                 block = fin.read(CHUNK)
                 if not block:
                     break
                 fout.write(block)
+                written += len(block)
+                if getattr(_PACE, 'on', False) and written - flushed >= FLUSH_EVERY:
+                    fout.flush()
+                    os.fsync(fout.fileno())   # kleine Schübe statt eines großen Rückstaus vor dem fsync der Datenbank
+                    flushed = written
                 if on_bytes:
                     on_bytes(len(block))
+                _pace(started)
             fout.flush()
             os.fsync(fout.fileno())
         shutil.copystat(src, part, follow_symlinks=False)
@@ -264,45 +398,82 @@ def copy_file(src, dst, on_bytes=None, cancelled=None):
         raise
 
 
-def copy_sqlite(src, dst, on_bytes=None):
-    """Konsistente Kopie einer (auch geöffneten) SQLite-Datei über die Backup-API."""
+QUICK_CHECK_LIMIT = 512 * 1024 * 1024   # größere Datenbanken: Strukturprüfung statt quick_check (0.6.22)
+BACKUP_PAGES = 4096
+
+
+def copy_sqlite(src, dst, on_bytes=None, cancelled=None, on_stage=None):
+    """Konsistente Kopie einer (auch geöffneten) SQLite-Datei über die Backup-API.
+
+    0.6.22 (Björn, 16.11.2026: Anzeige stand bei catalog.db 5,5 GB über 10 Minuten still): Die Quelle
+    hält einen Lesestand fest (offene Lesetransaktion), damit die Kopie in Schritten laufen kann, ohne
+    bei Schreibzugriffen der App neu zu beginnen. Jeder Schritt meldet Fortschritt und prüft den
+    Abbruch. Danach statt ``quick_check`` über die ganze Datei (bei 5,5 GB auf USB-Laufwerken viele
+    Minuten ohne Anzeige) bei großen Dateien eine Strukturprüfung: Kopf, Seitenzahl = Quelle,
+    Dateigröße, Schema lesbar; kleine Dateien weiter mit ``quick_check``.
+    """
     dst = Path(dst)
     dst.parent.mkdir(parents=True, exist_ok=True)
     part = dst.with_name(dst.name + '.partial')
     part.unlink(missing_ok=True)
-    done = threading.Event()
+    stage = on_stage or (lambda *a: None)
     seen = [0]
-
-    def watch():   # Fortschritt nach Dateigröße der Kopie (Backup in einem Schritt, kein Neustart bei Schreibzugriffen)
-        while not done.wait(0.5):
-            try:
-                size = part.stat().st_size
-            except OSError:
-                continue
-            if size > seen[0] and on_bytes:
-                on_bytes(size - seen[0])
-                seen[0] = size
-    watcher = threading.Thread(target=watch, daemon=True, name='storage_move_watch')
-    watcher.start()
     try:
-        source = sqlite3.connect(str(src), timeout=60)
+        source = sqlite3.connect(str(src), timeout=60, isolation_level=None)
         target = sqlite3.connect(str(part))
         try:
-            source.backup(target)
-            check = target.execute('PRAGMA quick_check').fetchone()[0]
-            if check != 'ok':
-                raise ValueError('Datenbankkopie fehlerhaft (%s): %s' % (Path(src).name, str(check)[:160]))
-            mode = source.execute('PRAGMA journal_mode').fetchone()[0]
-            if str(mode).lower() == 'wal':
-                target.execute('PRAGMA journal_mode=WAL')
+            source.execute('BEGIN')
+            page_size = source.execute('PRAGMA page_size').fetchone()[0]
+            pages = source.execute('PRAGMA page_count').fetchone()[0]   # Lesestand ab hier fest
+            total = page_size * pages
+
+            step = [time.monotonic()]
+
+            def progress(_status, remaining, count):
+                _pace(step[0])
+                step[0] = time.monotonic()
+                if cancelled and cancelled():
+                    raise InterruptedError('abgebrochen')
+                done = max(0, (count - remaining) * page_size)
+                if on_bytes and done > seen[0]:
+                    on_bytes(done - seen[0])
+                    seen[0] = done
+                stage('copy', done, total)
+            stage('copy', 0, total)
+            source.backup(target, pages=BACKUP_PAGES, progress=progress, sleep=0)
+            source.execute('COMMIT')
+            stage('check', 0, total)
+            if total <= QUICK_CHECK_LIMIT:
+                check = target.execute('PRAGMA quick_check').fetchone()[0]
+                if check != 'ok':
+                    raise ValueError('Datenbankkopie fehlerhaft (%s): %s' % (Path(src).name, str(check)[:160]))
+            else:
+                copied = target.execute('PRAGMA page_count').fetchone()[0]
+                if copied != pages:
+                    raise ValueError('Datenbankkopie unvollständig (%s): %d von %d Seiten' % (Path(src).name, copied, pages))
+                target.execute('SELECT count(*) FROM sqlite_master').fetchone()
             target.commit()
+            # 0.6.25: keine Umstellung des Journalmodus an der Kopie mehr; sollte die Prüfung dort ein
+            # WAL angelegt haben, wird es zurückgeschrieben statt blind gelöscht.
+            if str(target.execute('PRAGMA journal_mode').fetchone()[0]).lower() == 'wal':
+                target.execute('PRAGMA wal_checkpoint(TRUNCATE)')
         finally:
             target.close()
             source.close()
-        Path(part.with_name(part.name + '-wal')).unlink(missing_ok=True)
-        Path(part.with_name(part.name + '-shm')).unlink(missing_ok=True)
+        for suffix in ('-wal', '-shm'):
+            extra = part.with_name(part.name + suffix)
+            if extra.exists():
+                if suffix == '-wal' and extra.stat().st_size:
+                    raise ValueError('Datenbankkopie nicht vollständig zurückgeschrieben (%s)' % Path(src).name)
+                extra.unlink(missing_ok=True)
+        stage('sync', total, total)
         with open(part, 'rb') as f:
             os.fsync(f.fileno())
+        with open(part, 'rb') as f:
+            if f.read(16) != b'SQLite format 3\x00':
+                raise ValueError('Datenbankkopie ohne gültigen Kopf (%s)' % Path(src).name)
+        if total > QUICK_CHECK_LIMIT and part.stat().st_size < total:
+            raise ValueError('Datenbankkopie zu klein (%s)' % Path(src).name)
         try:
             os.chmod(part, 0o600)
         except OSError:
@@ -311,9 +482,6 @@ def copy_sqlite(src, dst, on_bytes=None):
     except BaseException:
         part.unlink(missing_ok=True)
         raise
-    finally:
-        done.set()
-        watcher.join(2)
     final = dst.stat().st_size
     if on_bytes and final > seen[0]:
         on_bytes(final - seen[0])
@@ -365,7 +533,41 @@ def disk(path):
         return {'free': 0, 'total': 0}
 
 
+_SLOW = {}
+_SLOW_LOCK = threading.Lock()
+
+
+def _bounded(key, fn, ttl=60.0, wait=3.0, default=None):
+    """0.6.25 (Björn, 19.11.2026: /api/storage-locations bis 433 s): Laufwerksabfragen (``mount``,
+    Platz auf schlafenden USB-Laufwerken oder hängenden Netzwerkfreigaben) laufen im Hintergrund.
+    Die Oberfläche wartet höchstens ``wait`` Sekunden und bekommt sonst den letzten bekannten Wert."""
+    with _SLOW_LOCK:
+        entry = _SLOW.setdefault(key, {})
+        fresh = 'value' in entry and time.monotonic() - entry['at'] < ttl
+        if fresh:
+            return entry['value']
+        thread = entry.get('thread')
+        if thread is None or not thread.is_alive():
+            def work():
+                try:
+                    value = fn()
+                except Exception:   # noqa: BLE001 – Anzeigewert, nie den Aufrufer stören
+                    value = default
+                with _SLOW_LOCK:
+                    entry.update(value=value, at=time.monotonic())
+            thread = threading.Thread(target=work, daemon=True, name='storage_probe')
+            entry['thread'] = thread
+            thread.start()
+    thread.join(wait)
+    with _SLOW_LOCK:
+        return entry.get('value', default)
+
+
 def _mounts():
+    return _bounded('mounts', _read_mounts, ttl=30.0, wait=6.0, default=[])
+
+
+def _read_mounts():
     rows = []
     try:
         if sys.platform.startswith('linux'):
@@ -519,7 +721,7 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
     staging = p / STAGING
     if p.is_dir():
         if kind == 'system':
-            if (p / DATA_MARKER).is_file() and (p / 'catalog.db').is_file():
+            if (p / 'catalog.db').is_file() and (is_home or (p / DATA_MARKER).is_file()):
                 result['existing_data'] = True
             entries = [x for x in p.iterdir() if x.name not in SKIP_NAMES]
             if entries and not is_home and not staging.is_file() and not result['existing_data']:
@@ -533,6 +735,12 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
                     warnings.append('Unterbrochener Umzug gefunden: bereits kopierte Dateien werden übernommen.')
             except (OSError, ValueError):
                 pass
+    if kind == 'system' and mode == 'copy' and is_home and result['existing_data'] and not staging.is_file():
+        # 0.6.25: am Standardort liegt noch ein früherer Stand – nie überschreiben.
+        problems.append('Am Standardort liegt noch ein früherer Datenstand (Katalog vom %s). Er wird nicht '
+                        'überschrieben. „Vorhandene MediathekAtlas-Daten am Ziel verwenden“ kehrt zu diesem Stand '
+                        'zurück; soll der aktuelle Stand umziehen, den früheren vorher löschen lassen oder im Finder '
+                        'wegräumen.' % (_stand(p / 'catalog.db') or 'unbekannt'))
     if mode == 'adopt':
         if not result['existing_data']:
             problems.append('Am Ziel liegen keine MediathekAtlas-Daten.')
@@ -624,10 +832,16 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
     state = {'files_total': len(files), 'files_done': 0, 'bytes_total': total, 'bytes_done': 0, 'current': ''}
     last_save = [time.monotonic()]
 
+    def _stage(step, done, total):
+        state.update(step=step, file_done=done, file_total=total)
+        if progress:
+            progress(dict(state))
+
     def tick(n=0, current=None):
         state['bytes_done'] += n
         if current is not None:
             state['current'] = current
+            state.update(step='copy', file_done=0, file_total=0, file_started=time.time())
         if progress:
             progress(dict(state))
     tick()
@@ -638,6 +852,8 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
         key = str(rel)
         db = is_sqlite(full)
         if dst.exists() and ((db and _unchanged(manifest.get(key), st, full)) or (not db and _present(dst, st))):
+            if not db:
+                manifest[key] = _stamp(st, full, False)   # auch übernommene Dateien gehören zur Prüfliste
             state['files_done'] += 1
             tick(st.st_size, key)
             continue
@@ -645,10 +861,16 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
         before = state['bytes_done']
         if db:
             stamp = _stamp(st, full, True)
-            copy_sqlite(full, dst, on_bytes=lambda n: tick(n))
+            copy_sqlite(full, dst, on_bytes=lambda n: tick(n), cancelled=cancelled,
+                        on_stage=lambda step, done, total: _stage(step, done, total))
         else:
             stamp = _stamp(st, full, False)
-            copy_file(full, dst, on_bytes=lambda n: tick(n), cancelled=cancelled)
+            state['file_total'] = st.st_size
+
+            def counted(n):
+                state['file_done'] = state.get('file_done', 0) + n
+                tick(n)
+            copy_file(full, dst, on_bytes=counted, cancelled=cancelled)
         state['bytes_done'] = before + st.st_size   # Datenbankkopie kann kleiner/größer sein als das Original
         state['files_done'] += 1
         manifest[key] = stamp
@@ -664,12 +886,46 @@ def sync_tree(source, target, *, top_exclude=(), exclude=(), progress=None, canc
     return manifest
 
 
-def verify_tree(source, target, *, top_exclude=(), exclude=(), progress=None, cancelled=None, manifest=None):
-    """Jede Datei des Quellordners liegt gleich am Ziel. Gibt Liste der Abweichungen zurück."""
+def _live_files(source, manifest):
+    """Prüfliste im laufenden Betrieb: nur die kopierten Dateien, deren Quelle seit der Kopie unverändert ist.
+
+    0.6.23 (Björn, 16.11.2026): Die Prüfung las den Quellordner neu ein und meldete Dateien, die die
+    laufende App seit der Kopie geschrieben hatte (diagnostic.jsonl, neue Verbund-Ereignisse
+    verbund/nodes/…/events-*.jsonl), als Fehler – der ganze Umzug galt als fehlgeschlagen. Solche
+    Dateien zieht beim System-Umzug der Abschluss beim Neustart nach (dann ohne laufende App und mit
+    strenger Prüfung aller Dateien).
+    """
+    files, changed = [], 0
+    for key, entry in sorted(manifest.items()):
+        full = Path(source) / key
+        try:
+            st = full.stat()
+        except OSError:
+            changed += 1   # seit der Kopie gelöscht oder umbenannt (z. B. rotiertes Protokoll)
+            continue
+        if not _unchanged(entry, st, full):
+            changed += 1
+            continue
+        files.append((full, Path(key), st))
+    return files, changed
+
+
+def verify_tree(source, target, *, top_exclude=(), exclude=(), progress=None, cancelled=None, manifest=None,
+                live=False, report=None):
+    """Jede Datei des Quellordners liegt gleich am Ziel. Gibt Liste der Abweichungen zurück.
+
+    ``live``: App läuft weiter – nur Dateien aus dem Manifest prüfen, deren Quelle unverändert ist;
+    die Zahl der seitdem geänderten Dateien steht danach in ``report['changed']``.
+    """
     source, target = Path(source), Path(target)
     manifest = manifest or {}
     bad = []
-    files = list(walk(source, top_exclude, exclude))
+    if live:
+        files, changed = _live_files(source, manifest)
+        if report is not None:
+            report['changed'] = changed
+    else:
+        files = list(walk(source, top_exclude, exclude))
     for i, (full, rel, st) in enumerate(files):
         if cancelled and cancelled():
             raise InterruptedError('abgebrochen')
@@ -933,6 +1189,7 @@ class Mover:
 
     def _run(self, ctx, plan):
         kind = plan['kind']
+        _low_io_priority()
         hold = kind in ('downloads', 'cache')
         try:
             if hold:
@@ -954,9 +1211,26 @@ class Mover:
                                      progress=lambda s: self._set(**s), cancelled=self.cancel.is_set,
                                      manifest=info['files'], staging_info=info)
                 self._set(phase='verifying', current='')
+                report = {}
                 bad = verify_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
                                   progress=lambda s: self._set(current=s.get('current', '')),
-                                  cancelled=self.cancel.is_set, manifest=manifest)
+                                  cancelled=self.cancel.is_set, manifest=manifest, live=True, report=report)
+                # Downloads/Zwischenspeicher haben keinen Abschluss beim Neustart: seit der Kopie geänderte
+                # Dateien noch einmal abgleichen (System und Datenbank: beim Neustart, App dann geschlossen).
+                passes = 1
+                while kind != 'system' and not bad and report.get('changed') and passes < 3:
+                    passes += 1
+                    self._set(phase='copying', current='')
+                    manifest = sync_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
+                                         progress=lambda s: self._set(**s), cancelled=self.cancel.is_set,
+                                         manifest=manifest, staging_info=info)
+                    self._set(phase='verifying', current='')
+                    report = {}
+                    bad = verify_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
+                                      cancelled=self.cancel.is_set, manifest=manifest, live=True, report=report)
+                if kind != 'system' and report.get('changed'):
+                    bad.append('%d Dateien ändern sich während des Umzugs noch' % report['changed'])
+                self._set(changed_since_copy=report.get('changed', 0))
                 if bad:
                     raise ValueError('Prüfung am Ziel fehlgeschlagen: ' + '; '.join(bad[:5]))
             self._set(phase='switching', current='')
@@ -1151,8 +1425,18 @@ class Context:
         cfg['previous'] = previous
         if kind == 'system' and (cfg.get('pending') or {}).get('state') == 'failed':
             cfg.pop('pending', None)
+        if kind == 'system':
+            cfg.pop('abandoned', None)
         write_pointer(self.home, cfg)
         return {'ok': True}
+
+    def revert(self):
+        """„Bisherigen Ort verwenden“: nur den Zeiger zurückstellen, wirksam beim Neustart."""
+        if MOVER.running():
+            raise ValueError('Bitte zuerst den laufenden Umzug abbrechen.')
+        info = revert_system(self.home)
+        self.event('storage_reverted', target=info['path'], left=info['current'])
+        return dict(info, restart_needed=True)
 
     def cancel_pending(self):
         """Vorbereiteten System-Umzug verwerfen (Kopie am Ziel bleibt liegen)."""
@@ -1171,9 +1455,12 @@ class Context:
         defaults = {'downloads': '', 'cache': '', 'system': str(self.home)}
         for kind in KINDS:
             path = location(s, kind, self.root)
-            space = disk(path)
+            space = _bounded(('disk', path), lambda p=path: disk(p), ttl=20.0, wait=2.0,
+                             default={'free': 0, 'total': 0}) or {'free': 0, 'total': 0}
+            reachable = _bounded(('exists', path), lambda p=path: bool(p) and Path(p).exists(), ttl=10.0, wait=2.0,
+                                 default=None)
             item = {'kind': kind, 'label': KINDS[kind], 'path': path, 'free': space['free'], 'total': space['total'],
-                    'reachable': bool(path) and Path(path).exists(), 'suggest': SUBFOLDER[kind]}
+                    'reachable': reachable, 'suggest': SUBFOLDER[kind]}
             if kind == 'cache':
                 item['base'] = s.get('cache_dir') or ''
                 item['shared_with_downloads'] = not s.get('cache_dir')
@@ -1187,5 +1474,35 @@ class Context:
                     row['problem'] = problem['text']
                     row['reachable'] = False
         return {'locations': rows, 'move': MOVER.status(), 'previous': cfg.get('previous') or {},
-                'pending': cfg.get('pending'), 'last': cfg.get('last'), 'volumes': volumes(),
+                'pending': cfg.get('pending'), 'last': cfg.get('last'), 'volumes': _bounded('volumes', volumes, ttl=60.0, wait=3.0, default=[]) or [],
+                'revert': revert_info(self.home), 'abandoned': cfg.get('abandoned'),
                 'restart_supported': os.name == 'posix', 'confirm': CONFIRM}
+
+
+def main(argv=None):
+    """Startskripte (0.6.25): ``--revert-info`` / ``--revert`` ohne laufenden Server."""
+    import argparse
+    parser = argparse.ArgumentParser(description='MediathekAtlas-Speicherorte')
+    parser.add_argument('--home', default=None)
+    group = parser.add_mutually_exclusive_group(required=True)
+    group.add_argument('--revert-info', action='store_true')
+    group.add_argument('--revert', action='store_true')
+    args = parser.parse_args(argv)
+    home = Path(args.home) if args.home else default_home()
+    if args.revert_info:
+        info = revert_info(home)
+        if not info:
+            return 1
+        print('%s (Stand %s)' % (info['path'], info['stand'] or 'unbekannt'))
+        return 0
+    try:
+        info = revert_system(home)
+    except ValueError as exc:
+        print(exc, file=sys.stderr)
+        return 1
+    print('Datenordner zurückgestellt auf %s; %s bleibt unverändert liegen.' % (info['path'], info['current']))
+    return 0
+
+
+if __name__ == '__main__':
+    raise SystemExit(main())

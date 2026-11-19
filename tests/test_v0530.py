@@ -135,7 +135,7 @@ class EpisodeWorkerTests(unittest.TestCase):
             return row['state'],json.loads(row['meta']),queue
 
     def test_off_by_default_preserves_imported_sender_page(self):
-        archive=type('Offline',(),{'updated':1,'candidates':lambda self,*a:[]})()
+        archive=type('Offline',(),{'updated':1,'episode_evidence':lambda self,*a:{'candidates':[],'series_with_episodes':1}})()
         with patch.object(imdb_archive,'ACTIVE',archive),patch('broadcaster.lookup_limited',side_effect=AssertionError('network')) as request:
             self.assertTrue(self.svc.metadata_once('episode'))
         request.assert_not_called()
@@ -159,7 +159,7 @@ class EpisodeWorkerTests(unittest.TestCase):
 
     def test_unnumbered_sender_item_does_not_become_episode(self):
         self.direct=True
-        archive=type('Offline',(),{'updated':1,'candidates':lambda self,*a:[]})()
+        archive=type('Offline',(),{'updated':1,'episode_evidence':lambda self,*a:{'candidates':[],'series_with_episodes':1}})()
         with patch('broadcaster.lookup_limited',return_value=info()),patch.object(imdb_archive,'ACTIVE',archive):
             self.assertTrue(self.svc.metadata_once('episode'))
         state,m,q=self.data()
@@ -173,7 +173,7 @@ class EpisodeWorkerTests(unittest.TestCase):
 
     def test_sender_outage_retries_and_preserves_queue(self):
         self.direct=True
-        archive=type('Offline',(),{'updated':1,'candidates':lambda self,*a:[]})()
+        archive=type('Offline',(),{'updated':1,'episode_evidence':lambda self,*a:{'candidates':[],'series_with_episodes':1}})()
         with patch('broadcaster.lookup_limited',side_effect=broadcaster.Unavailable('down')),patch.object(imdb_archive,'ACTIVE',archive):
             self.assertTrue(self.svc.metadata_once('episode'))
         state,m,q=self.data()
@@ -186,17 +186,19 @@ class EpisodeWorkerTests(unittest.TestCase):
         self.direct=True
         class Offline:
             updated=1
-            def candidates(self,src,m):
-                return [{**m,'provider':'IMDb Offline','reference_id':'ttshow',
-                         'episode_reference_id':'ttepisode','title':'Servicezeit',
+            def episode_evidence(self,src,m):
+                return {'series_with_episodes':1,'candidates':[{**m,
+                         'episode_reference_id':'ttepisode','imdb_series_id':'ttshow',
                          'season':1,'episode':2,'episode_verified':True,
-                         'similarity':1.0,'year_mismatch':False,'runtime_mismatch':False}]
+                         'similarity':1.0,'year_mismatch':False,'runtime_mismatch':False}]}
         with patch('broadcaster.lookup_limited',side_effect=broadcaster.Unavailable('down')),patch.object(imdb_archive,'ACTIVE',Offline()):
             self.assertTrue(self.svc.metadata_once('episode'))
         state,m,q=self.data()
         self.assertEqual(state,'matched')
         self.assertIsNone(q)
-        self.assertEqual(m['provider'],'IMDb Offline')
+        # 0.6.24: the series identity of the work stays; IMDb adds the episode.
+        self.assertNotEqual(m['provider'],'IMDb Offline')
+        self.assertEqual(m['episode_reference_id'],'ttepisode')
 
     def test_concurrent_manual_change_is_not_overwritten(self):
         self.direct=True

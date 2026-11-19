@@ -2,7 +2,7 @@
 from version import VERSION
 import io,json,logging,logging.handlers,platform,re,threading,time,traceback,zipfile
 from pathlib import Path
-_lock=threading.RLock();_root=None;_secrets=set()
+_lock=threading.RLock();_root=None;_home=None;_secrets=set()
 logger=logging.getLogger('atlas');logger.setLevel(logging.INFO);logger.propagate=False;logger.addHandler(logging.NullHandler())
 
 def register_secrets(*values):
@@ -18,9 +18,10 @@ def clean(value):
     value=re.sub(r'https?://[^\s\"\'<>]+','[URL]',value)
     value=re.sub(r'(?i)((?:api.?key|token|password|authorization)\s*[=:]\s*)\S+',r'\1[REDACTED]',value)
     return value[:12000]
-def setup(root):
-    global _root
-    _root=Path(root);_root.mkdir(parents=True,exist_ok=True)
+def setup(root,home=None):
+    # 0.6.25: startup.log liegt im Startordner (HOME), auch wenn der Datenordner umgezogen ist.
+    global _root,_home
+    _root=Path(root);_root.mkdir(parents=True,exist_ok=True);_home=Path(home) if home else None
     for h in list(logger.handlers):logger.removeHandler(h);h.close()
     h=logging.handlers.RotatingFileHandler(_root/'diagnostic.jsonl',maxBytes=2*1024*1024,backupCount=3,encoding='utf-8');logger.addHandler(h)
 _LEVELS=('DEBUG','INFO','WARNING','ERROR','CRITICAL')
@@ -52,8 +53,8 @@ def export(snapshot):
         z.writestr('status.json',json.dumps(clean({'version':VERSION,'system':platform.system(),'machine':platform.machine(),'python':platform.python_version(),**snapshot}),ensure_ascii=False,indent=2))
         if _root:
             for p in sorted(_root.glob('diagnostic.jsonl*')):z.writestr(p.name,p.read_bytes())
-            startup=_root/'startup.log'
-            if startup.exists():
+            startup=next((p for p in ((_home or _root)/'startup.log',_root/'startup.log') if p.exists()),None)
+            if startup:
                 with startup.open('rb') as f:
                     f.seek(max(0,startup.stat().st_size-128*1024));z.writestr('startup.txt',clean(f.read().decode('utf-8',errors='replace')))
         z.writestr('README.txt','Diagnose MediathekAtlas. Enthält Ereignisse und technischen Status. Keine Datenbank, Einstellungen, API-Schlüssel oder Medien. Protokoll vor Weitergabe bei Bedarf prüfen. Zeitangaben UTC.\n')

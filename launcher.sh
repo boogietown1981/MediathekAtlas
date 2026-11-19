@@ -12,7 +12,7 @@ mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 LOG="$STATE_DIR/startup.log"
 : > "$LOG"
-printf 'MediathekAtlas 0.6.21 Startprüfung\n' >> "$LOG"
+printf 'MediathekAtlas 0.6.29 Startprüfung\n' >> "$LOG"
 FOUND_PYTHON=""
 try_python() {
   local candidate="$1"
@@ -65,15 +65,25 @@ while :; do
   STATUS=$?
   # 0.6.20: Speicherort für System und Datenbank nicht erreichbar (z. B. externes Laufwerk abgezogen).
   if [ "$STATUS" -eq 3 ] && [ -x /usr/bin/osascript ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then
-    ANSWER="$(/usr/bin/osascript - "$STATE_DIR/storage-problem.txt" <<'APPLESCRIPT'
+    # 0.6.25: dritter Knopf „Bisherigen Ort verwenden“ stellt nur den Zeiger zurück (nichts wird kopiert oder gelöscht).
+    REVERT="no"
+    if "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert-info >> "$LOG" 2>&1; then REVERT="yes"; fi
+    ANSWER="$(/usr/bin/osascript - "$STATE_DIR/storage-problem.txt" "$REVERT" <<'APPLESCRIPT'
 on run argv
  set message to read POSIX file (item 1 of argv) as «class utf8»
- set answer to display dialog message buttons {"Beenden", "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
+ if item 2 of argv is "yes" then
+  set answer to display dialog message buttons {"Beenden", "Bisherigen Ort verwenden", "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
+ else
+  set answer to display dialog message buttons {"Beenden", "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
+ end if
  return button returned of answer
 end run
 APPLESCRIPT
 )"
     if [ "$ANSWER" = "Erneut versuchen" ]; then continue; fi
+    if [ "$ANSWER" = "Bisherigen Ort verwenden" ]; then
+      if "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert >> "$LOG" 2>&1; then continue; fi
+    fi
     exit 3
   fi
   break

@@ -1,3 +1,71 @@
+## 0.6.29 – Sammelstand 0.6.24 + 0.6.27 + 0.6.28
+- Zusammenführung von PR #74 (Episodensuche), PR #76 (Oberfläche) und PR #75 (Diagnose 19.11.) auf Basis PR #73.
+- Konflikt Werkzuordnung: Stand aus 0.6.27 übernommen (enthält bereits `listed` aus 0.6.28, dazu `last_checked`/`oldest_checked`/`stored`).
+
+## 0.6.28 – Diagnose 19.11.: Downloads auf exFAT, YouTube-Abruf, Zähler der Werkzuordnung
+- Björns Diagnose (19.11.2026, 0.6.26, Mac, Downloads/Zwischenspeicher auf /Volumes/Docking, System auf /Volumes/Docking-2).
+- Downloads: `os.link` (exklusives Veröffentlichen) scheiterte auf Laufwerken ohne Hardlinks mit `[Errno 45] Operation not supported` (15 YouTube-Abo-Aufträge, 17.11.). Neu `core.publish_exclusive`: Hardlink, sonst Name mit `O_EXCL` reservieren und per `os.replace` darauf verschieben; überschreibt nie. Genutzt in `downloads.py` und `artwork.py` (Bilder fielen dort still weg). Einmaliges Neueinreihen (`requeued_0628`).
+- YouTube-Katalog: `_request` wiederholt Netzfehler (Verbindungsabbruch, Zeitüberschreitung) und HTTP 500/502/503/504 nach 2, 6, 15 s. Teilweise geladener Lauf: Zähler aus den sichtbaren Titeln (`visible_counts`, vorher 1.936 statt 4.265), nächster Versuch nach 2 h statt 24 h (außer Kontingent).
+- `portal_enrichment.metrics`: zählt nur Prüfberichte von Titeln, die im aktuellen Katalog stehen, und liefert `listed`; die Übersicht rechnet „geprüft“, „noch offen“ und den Balken damit (RTL+: Hinweis auf mitgeprüfte Abo-Titel).
+- Enthält 0.6.24 (Episodensuche, PR #74).
+- Tests: `tests/test_v0628_diagnose_1911.py` (12).
+
+## 0.6.27 – YouTube-Abos im Dashboard, einheitliche Katalogübersicht, gegliederte Downloads
+- Björn (19.11.2026, 0.6.26): abonnierte YouTube-Videos fehlten in der normalen Dashboard-Übersicht; die Katalogkarten in der Verwaltung sahen je Anbieter anders aus (Kachelzahl und Reihenfolge wechselnd); die Downloadwarteschlange war undurchsichtig (wartende, geplante, fehlgeschlagene und fertige Aufträge als gleichförmige Kacheln durcheinander); bei der Werkzuordnung stand nur „geprüft“ ohne Zeitpunkt.
+- Dashboard: neue Quelle „YouTube-Abos“ (`web/abo_shelf.js`, `/api/youtube-abo-videos` → `youtube_abos.library`): alle offline gespeicherten Abo-Videos je Kanal, mit NEU/Fortschritt, Stand der letzten Prüfung, nächster Prüfung, Warteschlange und Fehlern je Kanal, Filter Profil/„Nur neue“/Suche. Unter „Alle“ und „YouTube“ zusätzlich der zuklappbare Block „Neu aus deinen YouTube-Abos“ (bis 12 neueste je Kanal). Auch als Startansicht wählbar (`ui_prefs.START_SOURCES`). `youtube_abos.kids(profile=None)` liefert alle Profile.
+- Verwaltung → Status: alle Plattformen in einer Tabelle (gleiche Spalten für jede Plattform); Plattform-Reiter: gleiche Karte mit sechs festen Kacheln, Stand im Kopf, Sonderwerte (Live-Sender, kopiergeschützt, abspielbar, Kanäle, Musik, API-Schlüssel) in einer Zeile „Besonderheiten“.
+- Werkzuordnung zählt nur noch Prüfungen der Titel im aktuellen Katalog (bisher auch längst entfernte Titel, z. B. RTL+ „1.042 von 65 geprüft“); neu `last_checked`/`oldest_checked` (`portal_enrichment.metrics`, Netzkino). Aufgaben und Katalogübersicht zeigen „zuletzt geprüft …“ und „ältester Stand …“.
+- Downloads: Gruppen Läuft gerade / Wartet / Geplant / Zurückgestellt / Fehlgeschlagen / Fertig (auf- und zuklappbar, Zustand gespeichert, Sprungleiste oben), darin je Herkunft (YouTube-Abo je Kanal, Anbieter, Sender), kompakte Zeilen, gemeinsamer Hinweis einer Gruppe nur einmal, „Alle erneut versuchen“ bei Fehlern, Fehlertexte auf zwei Zeilen gekürzt (voll im Tooltip). „Vorgemerkt ab …“ doppelte sich mit „Geplant für …“ und entfällt.
+- Tests: `tests/test_v0627_dashboard_abos.py` (5), Klicktest um YouTube-Abos und Katalogtabelle erweitert.
+
+## 0.6.26 – Dienst bleibt bei Umzug und langsamem Laufwerk bedienbar, Protokoll-Download mit Frist
+- Björn (19.11.2026, 0.6.23/0.6.25, Datenordner auf /Volumes/Docking-2): „Protokoll herunterladen“ endete immer mit „seit 60 Sekunden nicht verfügbar“ (/api/diagnostics 84 s). Während des Downloadumzugs /api/state bis 579 s („catalog“ 532 s, „settings“ 239 s), /api/storage-locations bis 433 s (auch ohne Umzug 103 s), Katalog-Vorwärmen 449 s; auch ohne Umzug „catalog“ 2–20 s. Ursache: Datenbank (5,5 GB) und Umzug teilen sich dasselbe USB-Laufwerk; der Umzug kopierte ungebremst, die Oberfläche wartete synchron auf Laufwerksabfragen (`mount` je Laufwerk, freier Platz) und Zählungen.
+- Diagnose-Export: alle Teile parallel mit gemeinsamer Frist (20 s); ein hängender oder fehlerhafter Teil steht als `timeout`/`error` im Export statt den Download zu verhindern (`export_slow_parts`). Oberfläche wartet beim Export 180 s. `startup.log` kommt aus dem Startordner, auch wenn der Datenordner umgezogen ist (seit 0.6.20 fehlte es dann).
+- Speicherorte: `mount`, freier Platz, Erreichbarkeit und Laufwerksliste laufen im Hintergrund (`_bounded`), die Anzeige wartet höchstens 2–6 s und nimmt sonst den letzten bekannten Wert.
+- Umzug im laufenden Betrieb: Umzug-Thread unter macOS mit gedrosselter E/A-Klasse (`setiopolicy_np` IOPOL_THROTTLE), Pause nach jedem Block (halbe Blockzeit), fsync alle 64 MB statt eines großen Rückstaus. Abschluss beim Start weiter mit voller Geschwindigkeit.
+- Folgen-Warteschlange: Zählung im Hintergrund (Anfrage wartet höchstens 1 s); manuelle Metadatenänderung zeigt den alten Katalogstand und zählt im Hintergrund neu statt synchron.
+- Tests: `tests/test_v0626_busy_drive.py` (9); sechs Verdrahtungstests auf die neue Form der Exportteile angepasst.
+
+## 0.6.25 – Speicherorte: sicherer Rückweg und Wächter für verschwundene Laufwerke
+- Björn (19.11.2026, 0.6.23): App hing beim Umzug des Downloadordners; beim Neustart wurde der vorbereitete System-Umzug nach /Volumes/Docking-2/MediathekAtlas/System abgeschlossen (78 Pfade angepasst, Zeiger umgestellt), etwa 3 s später war Docking-2 weg (Errno 6/5, „mkdir /Volumes/Docking-2 permission denied“). Folgefehler: „database disk image is malformed“, „unable to open database file“, „database is locked“. Der bisherige Ort blieb unverändert (der Umzug kopiert nur).
+- Lücke: Der einzige Weg zurück („Zurück an den Standardort“) hätte die womöglich beschädigte Kopie über den intakten Standardort kopiert; „Alte Daten löschen“ hätte den intakten Stand entfernt. Die App lief mit verschwundenem Datenordner weiter.
+- `revert_info`/`revert_system`: „Bisherigen Ort verwenden“ stellt nur `storage.json` zurück (nichts wird kopiert oder gelöscht), entfernt `previous.system` (Löschen kann den aktiven Ort nie treffen) und merkt die nicht mehr benutzte Kopie als `abandoned`. Nur angeboten, wenn am bisherigen Ort eine catalog.db liegt; Datenstand (Datum) wird angezeigt.
+- Startskript macOS: Dialog „Speicherort fehlt“ mit drittem Knopf „Bisherigen Ort verwenden“ (`storage_locations.py --revert-info/--revert`). Einstellungen → Speicherorte: Knopf „Bisherigen Ort wieder verwenden“ mit Neustart; Hinweis auf die nicht mehr benutzte Kopie.
+- `watch_root`: Wächter prüft alle 10 s die Markierung im Datenordner; fehlt sie zweimal in Folge, hält der Server sauber an (Exit 3, `storage-problem.txt`), das Startskript zeigt den Dialog.
+- `inspect`: Umzug „System und Datenbank“ zurück an den Standardort überschreibt nie einen dort noch liegenden früheren Stand; stattdessen „Vorhandene Daten verwenden“ oder vorher löschen.
+- `copy_sqlite`: keine Umstellung der Kopie auf WAL mehr; ein bei der Prüfung entstandenes WAL wird zurückgeschrieben (`wal_checkpoint(TRUNCATE)`) statt blind gelöscht, ein nicht leeres WAL bricht den Schritt ab.
+- Tests: `tests/test_v0625_storage_safety.py` (10, Björns Fall nachgestellt), `test_move_back_to_default` angepasst.
+
+## 0.6.24 – Episodensuche an der Ursache repariert
+- Diagnosen 0.6.8–0.6.18 (Björns Mac): Episoden-Warteschlange 218.000 Einträge, 25.700 Prüfungen, 4 Treffer. Ursachen, mit nachgestellten Fällen belegt:
+  1. Die Folgensuche nutzte dieselbe Titelsuche wie die Erkennung. Gequeuete Werke tragen aber das Serienjahr des erkennenden Anbieters (TMDB/TVDB); weicht IMDbs Startjahr ab (häufig ±1), galt jede IMDb-Folge als „Erscheinungsjahr widersprüchlich“.
+  2. Folgentitel mit Nummerierung („Folge 12: Titel“, „Titel (S01/E12)“, „Titel (Folge 12)“) wurden wörtlich gesucht; IMDb führt nur „Titel“.
+  3. Die Warteschlange besteht überwiegend aus Ausgaben von Magazinen/Nachrichten (Schleswig-Holstein Magazin, NDR Info, Nano …), zu denen IMDb keine Folgen hat; jede Ausgabe wurde einzeln geprüft, echte Folgen warteten Wochen.
+  4. Die Auswahl der nächsten Folge durchsuchte alle erkannten Werke und sortierte sie (≈1 s je Prüfung bei 200.000 Einträgen).
+  5. Zurückgestellte Prüfungen (Senderabruf im Stundenlimit) zählten als Prüfung und blähten die Zahl auf.
+- `imdb_archive.episode_evidence`: Serie über bekannte IMDb-ID (IMDb/OMDb-Identität oder `imdb_id`), sonst exakter Titel mit ±1 Jahr; Ergebnis behält Titel, Jahr, Anbieter und Referenz des Werks (show_key unverändert) und ergänzt Staffel, Folge, Episoden-ID, Laufzeit und Besetzung. Mehrdeutige Treffer (verschiedene Episoden-IDs) bleiben ungelöst. Auch für den Serienvorlagen-Pfad, dort jetzt mit Laufzeitprüfung.
+- `episode_name`/`episode_search_terms`: Nummerierung (SxxEyy, NxM, „Staffel N, Folge M“, „Folge N“) wird für die Namenssuche entfernt; Staffel/Folge bleiben eigener Beleg. Serienpräfix weiter nur mit Trennzeichen.
+- `defer_series_without_episodes`: kennt IMDb zur Serie keine Folge, werden alle fälligen Geschwister mit gleicher Identität in einem Schritt um 30–37 Tage verschoben (`no_imdb_episodes`); Angebote mit ARD/ZDF-Seite bleiben bei erlaubter Senderabfrage fällig, Nutzerprioritäten ebenfalls.
+- `pick_episode`: feste Schleifenreihenfolge über den Fälligkeitsindex (CROSS JOIN), Prioritäten von `metadata_priority` aus; Folgen mit Nummer werden bevorzugt.
+- Zähler: `retry` zählt nicht mehr als Episodenprüfung; neu `episode_series_deferred_session`; Oberfläche „zurückgestellt“ und „Ohne IMDb-Folgenliste verschoben“.
+- Migration `episode_queue_recheck_v0624`: bisher `unresolved`/`retry` einmal sofort neu prüfen (Versuche bleiben erhalten).
+- Tests: `tests/test_v0624_episode_search.py` (19); angepasst `test_v0528`, `test_v0530` (Folgensuche über `episode_evidence`, Serienidentität bleibt).
+
+## 0.6.23 – Speicherorte: Prüfung im laufenden Betrieb
+- Björn (16.11.2026): Umzug „System und Datenbank“ nach /Volumes/Docking-2/MediathekAtlas/System „Fehlgeschlagen – Prüfung am Ziel fehlgeschlagen: diagnostic.jsonl Größe weicht ab; verbund/nodes/…/events-005140…005143.jsonl fehlt“. Ursache: `verify_tree` las nach dem Kopieren den Quellordner neu ein; was die laufende App seitdem geschrieben hatte (Diagnoseprotokoll, neue Verbund-Ereignisse), galt als Fehler.
+- `verify_tree(live=True)` (im Umzug): prüft nur Dateien aus dem Manifest, deren Quelle seit der Kopie unverändert ist (Größe, mtime, WAL); geänderte/gelöschte zählen als `changed_since_copy`. Strenge Prüfung aller Dateien weiter beim Abschluss beim Start (App geschlossen).
+- `sync_tree` nimmt auch übernommene (schon vorhandene) Dateien ins Manifest auf, damit sie geprüft werden.
+- Downloads/Zwischenspeicher (kein Abschluss beim Start): bis zu zwei weitere Abgleiche geänderter Dateien, danach klare Meldung, falls sich noch Dateien ändern.
+- Oberfläche: „N Dateien hat die App seit der Kopie geändert; sie werden beim Neustart nachgezogen“.
+- Tests: `tests/test_v0620_storage_locations.py` (26, davon 3 neu; Björns Fall nachgestellt, schlägt mit 0.6.22 fehl).
+
+## 0.6.22 – Speicherorte: große Datenbanken mit Fortschritt, Abbruch und schneller Prüfung
+- Björn (16.11.2026, 0.6.21 auf dem MacBook Air): Umzug „System und Datenbank“ stand bei catalog.db (5,5 GB) über 10 Minuten ohne Aktualisierung. Ursache: `copy_sqlite` kopierte per Backup-API in einem Schritt (Fortschritt nur über die Dateigröße) und lief danach `PRAGMA quick_check` über die ganze 5,5-GB-Kopie am Ziel – ohne Anzeige, ohne Abbruch, bei 8 GB RAM überwiegend Zufallslesen vom USB-Laufwerk.
+- `copy_sqlite`: Lesetransaktion an der Quelle hält den Stand fest, Kopie in Schritten zu `BACKUP_PAGES` (4096 Seiten) ohne Neubeginn bei Schreibzugriffen der App (geprüft mit gleichzeitigem Schreiber), Fortschritt je Schritt, Abbruch je Schritt (`InterruptedError` aus dem Fortschrittsrückruf, `.partial` wird entfernt).
+- Prüfung: bis `QUICK_CHECK_LIMIT` (512 MB) weiter `quick_check`; darüber Seitenzahl = Quelle, Schema lesbar, Dateikopf, Mindestgröße nach fsync.
+- Zustand des Umzugs mit `step` (`copy`/`check`/`sync`), `file_done`, `file_total`, `file_started`; Oberfläche zeigt „catalog.db wird kopiert: 2,1 von 5,5 GB · seit 3 min“, „wird geprüft“, „wird auf das Laufwerk geschrieben“. Auch normale große Dateien zeigen ihren Fortschritt.
+- Tests: `tests/test_v0620_storage_locations.py` (23, davon 4 neu: Schritte mit gleichzeitigem Schreiber, Abbruch mitten in der Datenbank, Strukturprüfung großer Datenbanken, Dateifortschritt im Zustand).
+
 ## 0.6.21 – Sammelstand: 0.6.19 + 0.6.20 zusammen in main
 - Zusammengeführt (16.11.2026, Björn: „merge bitte die offenen PR und gib mir eine neue Testversion“): PR #70 (0.6.19 Korrekturen aus der Diagnose von 0.6.18) und PR #71 (0.6.20 Speicherorte mit Umzug).
 - Konflikte nur an Versionsstellen und in CHANGELOG/README/VALIDATION. `youtube_abos.py` ohne Konflikt: Wiederholung gescheiterter Abo-Downloads (0.6.19) und Zwischenspeicher aus den Speicherorten (0.6.20) stehen nebeneinander. Volles Laufwerk (`download_retry.NoSpace`, alle Quellen warten) und angehaltene Downloads während eines Umzugs (`storage_locations.downloads_held`) sind getrennte Sperren und greifen beide.

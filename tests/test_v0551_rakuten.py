@@ -295,7 +295,7 @@ class WiringTests(unittest.TestCase):
         s = (ROOT / 'server.py').read_text()
         for needle in ("path=='/api/rakuten'", "'/api/rakuten-details'", "'/api/rakuten-download-add'", "'/api/rakuten-downloads'",
                        "'/api/rakuten-sync'", "'/api/rakuten-auto'", "'/api/rakuten-enrich'", 'rakuten_enrichment.loop',
-                       'rakuten.loop', "rakuten=q.get('rakuten',[''])[0]", "'/rakuten.js'", "'rakuten':rakuten.state(ROOT)"):
+                       'rakuten.loop', "rakuten=q.get('rakuten',[''])[0]", "'/rakuten.js'", "'rakuten':lambda:rakuten.state(ROOT)"):
             self.assertTrue(__import__('_wiring').wired(needle), needle)
         html = (ROOT / 'web' / 'index.html').read_text()
         for needle in ('id="rakuten"', 'data-platform="rakuten"', 'data-catalog-source="rakuten"', 'id="rakuten-offline-jobs"',

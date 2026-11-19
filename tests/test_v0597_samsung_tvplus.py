@@ -148,7 +148,7 @@ class SamsungTvPlusTest(unittest.TestCase):
         here = Path(__file__).resolve().parent.parent
         server = (here / 'server.py').read_text(encoding='utf-8')
         for needle in ("'toggo','crunchyroll','samsung','plex','servustv','rtlplus')", "samsung=q.get('samsung',[''])[0]", "@ROUTES.post('/api/samsung-sync')",
-                       "planner.CatalogJob('samsung',samsung_tvplus)", "'samsung':samsung_tvplus.summary(ROOT)", "spec.get('portal')=='samsung'"):
+                       "planner.CatalogJob('samsung',samsung_tvplus)", "'samsung':lambda:samsung_tvplus.summary(ROOT)", "spec.get('portal')=='samsung'"):
             self.assertIn(needle, server)
         self.assertIn("'samsung_tvplus.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))
         self.assertIn('catalog:samsung', __import__('task_control').TASKS)

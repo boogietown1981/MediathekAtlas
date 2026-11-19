@@ -134,7 +134,7 @@ def save_image(url,stem):
         temp=named(suffix+'.part');dest=named(suffix)
         try:
             with temp.open('xb') as f:f.write(data)
-            try:os.link(temp,dest)
+            try:core.publish_exclusive(temp,dest)
             except FileExistsError:pass
         finally:temp.unlink(missing_ok=True)
         return True
