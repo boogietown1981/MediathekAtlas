@@ -51,7 +51,7 @@ class BoundedProbeTests(unittest.TestCase):
                 data = env.ctx.overview()
                 self.assertLess(time.monotonic() - started, 6.0)
                 self.assertEqual(data['volumes'], [])
-                self.assertEqual(len(data['locations']), 3)
+                self.assertEqual(len(data['locations']), 4)   # 0.6.30: IMDb-Archiv
             finally:
                 gate.set()
                 sl.volumes = real

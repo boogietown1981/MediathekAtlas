@@ -58,6 +58,7 @@ function renderCheck(kind,host){
  if(r.mode==='copy')go('Umziehen: kopieren, prüfen, umstellen','copy',true);
  if(kind!=='system'&&(r.mode==='copy'||r.mode==='switch'))go(r.mode==='switch'?'Umstellen':'Nur umstellen (vorhandene Dateien bleiben am alten Ort)','switch',r.mode==='switch');
  if(kind==='system'&&r.existing_data)go('Vorhandene MediathekAtlas-Daten am Ziel verwenden','adopt',false);
+ if(kind==='imdb'&&r.existing_data)go('Vorhandenes Archiv am Ziel verwenden'+(r.existing_stand?' (Stand '+r.existing_stand+')':''),'adopt',true);
  host.append(row);
 }
 function render(){
@@ -69,13 +70,14 @@ function render(){
  for(const row of data.locations){
   const card=el('div',undefined,'loc-location');
   card.append(el('h4',row.label));
-  const hint={downloads:'Fertige Filme und Folgen, auch zeitlich begrenzte Offline-Kopien von Netzkino, Pluto & Co.',cache:'Videos der YouTube-Abos. Ohne eigenen Ort liegen sie im Downloadordner (Unterordner „YouTube-Abos“).',system:'Katalogdatenbank, IMDb-Archiv, Sicherungen, Protokolle und Einstellungen.'}[row.kind];
+  const hint={downloads:'Fertige Filme und Folgen, auch zeitlich begrenzte Offline-Kopien von Netzkino, Pluto & Co.',cache:'Videos der YouTube-Abos. Ohne eigenen Ort liegen sie im Downloadordner (Unterordner „YouTube-Abos“).',system:'Katalogdatenbank, Sicherungen, Protokolle und Einstellungen'+(data.locations.find(x=>x.kind==='imdb')?.is_default?', dazu das IMDb-Archiv.':'.'),imdb:'Lokales IMDb-Archiv (rund 20 GB). Die Erkennung fragt es bei fast jedem Abgleich ab: auf einem langsamen Laufwerk wird sie langsamer, auf einer SSD kaum.'}[row.kind];
   card.append(line(hint));
   card.append(el('div',row.path||'–','loc-path'));
   const facts=[];
   if(row.total)facts.push('frei: '+gb(row.free)+' von '+gb(row.total));
   if(row.kind==='cache'&&row.shared_with_downloads)facts.push('liegt im Downloadordner');
   if(row.kind==='system')facts.push(row.is_default?'Standardort':'Standardort wäre: '+row.default);
+  if(row.kind==='imdb'){facts.push(row.is_default?'im Datenordner':'eigener Ort');if(row.timing?.queries)facts.push('Abfrage im Mittel '+row.timing.average_ms+' ms, langsamste '+row.timing.slowest_ms+' ms ('+row.timing.queries+' Abfragen)');}
   if(facts.length)card.append(el('div',facts.join(' · '),'loc-facts'));
   if(row.problem)card.append(line(row.problem,'loc-bad'));
   const form=el('div',undefined,'loc-form'),input=el('input');
@@ -105,6 +107,11 @@ function render(){
    const ab=el('div',undefined,'loc-check');ab.append(line('Nicht mehr benutzte Kopie: '+data.abandoned.path+'. Sie wird nicht automatisch gelöscht; nach einer Prüfung des Laufwerks lässt sie sich im Finder entfernen.'));
    const ar=el('div',undefined,'loc-actions'),h=el('button','Hinweis ausblenden');h.type='button';h.onclick=()=>busy(h,async()=>{await api('storage-locations',{action:'dismiss',kind:'system'});await load();});ar.append(h);ab.append(ar);card.append(ab);
   }
+  if(row.kind==='imdb'&&!row.is_default){
+   const back=el('button','Zurück in den Datenordner');back.type='button';back.disabled=busyMove;
+   back.onclick=()=>{input.value=row.default;check.click();};
+   const r=el('div',undefined,'loc-actions');r.append(back);card.append(r);
+  }
   if(row.kind==='system'&&!row.is_default){
    const back=el('button','Zurück an den Standardort');back.type='button';back.disabled=busyMove;
    back.onclick=()=>{input.value=row.default;check.click();};
@@ -127,13 +134,13 @@ function render(){
  else volumesBox.append(line('Klick übernimmt das Laufwerk in das zuletzt gewählte Feld (sonst System und Datenbank).'));
  for(const v of data.volumes||[]){
   const b=el('button',v.name+' · '+gb(v.free)+' frei'+(v.network?' · Netzwerk':''));b.type='button';b.title=v.path;
-  b.onclick=()=>{const target=lastInput||{kind:'system',input:inputs.system};if(!target.input)return;const leaf={downloads:'Downloads',cache:'Zwischenspeicher',system:'System'}[target.kind];target.input.value=joinPath(joinPath(v.path,'MediathekAtlas'),leaf);target.input.focus();};
+  b.onclick=()=>{const target=lastInput||{kind:'system',input:inputs.system};if(!target.input)return;const leaf={downloads:'Downloads',cache:'Zwischenspeicher',system:'System',imdb:'IMDb'}[target.kind];target.input.value=joinPath(joinPath(v.path,'MediathekAtlas'),leaf);target.input.focus();};
   volumesBox.append(b);
  }
 }
 async function start(kind,mode,button){
  const r=checks[kind];if(!r)return;
- const text={copy:'Alle Daten werden nach '+r.target+' kopiert und geprüft, erst dann wird umgestellt'+(kind==='system'?' (Abschluss beim nächsten Start)':'')+'. Der alte Ort bleibt erhalten. Starten?',switch:'Nur umstellen: neue Dateien landen in '+r.target+', vorhandene bleiben am alten Ort. Fortfahren?',adopt:'Beim nächsten Start werden die vorhandenen Daten in '+r.target+' verwendet. Der aktuelle Stand wird dabei nicht übernommen. Fortfahren?'}[mode];
+ const text={copy:'Alle Daten werden nach '+r.target+' kopiert und geprüft, erst dann wird umgestellt'+(kind==='system'?' (Abschluss beim nächsten Start)':'')+'. Der alte Ort bleibt erhalten. Starten?',switch:'Nur umstellen: neue Dateien landen in '+r.target+', vorhandene bleiben am alten Ort. Fortfahren?',adopt:kind==='imdb'?'Die Erkennung nutzt ab sofort das vorhandene IMDb-Archiv in '+r.target+(r.existing_stand?' (Stand '+r.existing_stand+')':'')+'. Das bisherige Archiv bleibt unverändert liegen. Fortfahren?':'Beim nächsten Start werden die vorhandenen Daten in '+r.target+' verwendet. Der aktuelle Stand wird dabei nicht übernommen. Fortfahren?'}[mode];
  if(!confirm(text))return;
  await busy(button,async()=>{await api('storage-locations',{action:'start',kind,target:r.target,mode});delete checks[kind];notice(mode==='copy'?'Umzug gestartet. Die App bleibt nutzbar.':'Umgestellt.');await load();});
 }

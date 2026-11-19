@@ -54,8 +54,12 @@ CHUNK = 8 * 1024 * 1024
 CONFIRM = 'ALTE DATEN LÖSCHEN'
 ABO_FOLDER = 'YouTube-Abos'
 UNAVAILABLE_EXIT = 3
-KINDS = {'downloads': 'Downloads', 'cache': 'Zwischenspeicher (YouTube-Abos)', 'system': 'System und Datenbank'}
-SUBFOLDER = {'downloads': 'Downloads', 'cache': 'Zwischenspeicher', 'system': 'System'}
+KINDS = {'downloads': 'Downloads', 'cache': 'Zwischenspeicher (YouTube-Abos)', 'system': 'System und Datenbank',
+         'imdb': 'IMDb-Archiv'}
+SUBFOLDER = {'downloads': 'Downloads', 'cache': 'Zwischenspeicher', 'system': 'System', 'imdb': 'IMDb'}
+IMDB_FOLDER = 'imdb'                       # Standard: Unterordner des Datenordners
+IMDB_DB = 'imdb_archive.db'
+IMDB_TRANSIENT = ('building.db', 'building.db-journal')   # Zwischenstand eines laufenden Neuaufbaus
 
 
 class Unavailable(RuntimeError):
@@ -264,6 +268,41 @@ def watch_root(home, root, stop, on_lost, interval=10.0, misses=2):
                 pass
             on_lost(text)
             return
+
+
+# ------------------------------------------------------------------ IMDb-Archiv mit eigenem Ort (0.6.30)
+
+def imdb_location(home, root, wait=0.0):
+    """Ordner des IMDb-Archivs und ob er erreichbar ist.
+
+    Björn (19.11.2026): Das IMDb-Archiv (21,8 GB) soll extern liegen können, während die
+    Hauptdatenbank auf der internen SSD bleibt. Ohne Eintrag liegt es wie bisher in
+    ``<Datenordner>/imdb``. Ein eingestellter externer Ort braucht die Ortsmarkierung; fehlt sie
+    (Laufwerk nicht verbunden), startet die App trotzdem – nur ohne IMDb-Abgleich – und legt nie
+    still ein neues, leeres Archiv an.
+    """
+    cfg = read_pointer(home)
+    custom = cfg.get('imdb_dir')
+    if not custom:
+        return Path(root) / IMDB_FOLDER, True
+    folder = Path(custom)
+    deadline = time.monotonic() + max(0.0, float(wait))
+    while True:
+        try:
+            if (folder / PLACE_MARKER).is_file():
+                return folder, True
+        except OSError:
+            pass
+        if time.monotonic() >= deadline:
+            return folder, False
+        time.sleep(1.0)
+
+
+_IMDB_HOLD = threading.Event()   # IMDb-Neuaufbau wartet während eines Archiv-Umzugs
+
+
+def imdb_held():
+    return _IMDB_HOLD.is_set()
 
 
 # ------------------------------------------------------------------ Dateien, Datenbanken
@@ -726,6 +765,9 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
             entries = [x for x in p.iterdir() if x.name not in SKIP_NAMES]
             if entries and not is_home and not staging.is_file() and not result['existing_data']:
                 problems.append('Der Zielordner ist nicht leer. Bitte einen leeren oder neuen Ordner wählen.')
+        if kind == 'imdb' and is_sqlite(p / IMDB_DB):
+            result['existing_data'] = True
+            result['existing_stand'] = _stand(p / IMDB_DB)
         if staging.is_file():
             try:
                 info = json.loads(staging.read_text(encoding='utf-8'))
@@ -741,9 +783,16 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
                         'überschrieben. „Vorhandene MediathekAtlas-Daten am Ziel verwenden“ kehrt zu diesem Stand '
                         'zurück; soll der aktuelle Stand umziehen, den früheren vorher löschen lassen oder im Finder '
                         'wegräumen.' % (_stand(p / 'catalog.db') or 'unbekannt'))
+    if kind == 'imdb' and mode == 'copy' and result['existing_data'] and not staging.is_file():
+        problems.append('Am Ziel liegt schon ein IMDb-Archiv (Stand %s). Es wird nicht überschrieben: „Vorhandenes '
+                        'Archiv am Ziel verwenden“ übernimmt es ohne Kopieren, sonst einen leeren Ordner wählen.'
+                        % (result.get('existing_stand') or 'unbekannt'))
+    if kind == 'imdb' and result['network']:
+        warnings.append('Das Ziel ist eine Netzwerkfreigabe (%s). Die Erkennung fragt das IMDb-Archiv bei fast jedem '
+                        'Abgleich ab und wird dort deutlich langsamer.' % fs)
     if mode == 'adopt':
         if not result['existing_data']:
-            problems.append('Am Ziel liegen keine MediathekAtlas-Daten.')
+            problems.append('Am Ziel liegt kein IMDb-Archiv.' if kind == 'imdb' else 'Am Ziel liegen keine MediathekAtlas-Daten.')
         return _finish(result)
     if mode == 'switch' or src is None or not src.is_dir():
         if mode != 'switch' and (src is None or not src.is_dir()):
@@ -751,6 +800,8 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
             result['mode'] = 'switch'
         if kind == 'system' and result['mode'] == 'switch':
             problems.append('System und Datenbank lassen sich nur mit Übernahme der Daten umstellen.')
+        if kind == 'imdb' and result['mode'] == 'switch' and mode == 'switch':
+            problems.append('Das IMDb-Archiv lässt sich nur mit Übernahme umstellen (oder ein vorhandenes Archiv verwenden).')
         return _finish(result)
     started = time.monotonic()
     plan = _plan_parts(kind, source, home)
@@ -794,6 +845,8 @@ def _plan_parts(kind, source, home):
     top = set()
     if kind == 'system':
         top = set(HOME_ONLY)
+    if kind == 'imdb':
+        top = set(IMDB_TRANSIENT)
     return {'top_exclude': sorted(top)}
 
 
@@ -1002,6 +1055,37 @@ def remove_verified(source, target, *, top_exclude=(), exclude=(), progress=None
 
 # ------------------------------------------------------------------ Pfade in der Datenbank
 
+def _remove_replaced_archive(source, target):
+    """0.6.30: altes IMDb-Archiv nach Übernahme eines anderen Archivs löschen – nur die bekannten
+    Archivdateien und nur, wenn das aktive Archiv am neuen Ort lesbar ist."""
+    active = Path(target) / IMDB_DB
+    try:
+        c = sqlite3.connect(active.as_uri() + '?mode=ro', uri=True)
+        try:
+            c.execute('SELECT updated FROM snapshot').fetchone()
+        finally:
+            c.close()
+    except sqlite3.Error as exc:
+        raise ValueError('Das aktive IMDb-Archiv in %s ist nicht lesbar; zur Sicherheit wird nichts gelöscht (%s).'
+                         % (target, exc)) from None
+    removed = freed = 0
+    folder = Path(source)
+    names = [IMDB_DB, IMDB_DB + '-journal', IMDB_DB + '-wal', IMDB_DB + '-shm', *IMDB_TRANSIENT]
+    names += [p.name for p in folder.glob('*.tsv.gz')] + [p.name for p in folder.glob('*.tsv.gz.part')]
+    for name in names:
+        path = folder / name
+        try:
+            if path.is_file() and not path.is_symlink():
+                size = path.stat().st_size
+                path.unlink()
+                removed += 1
+                freed += size
+        except OSError:
+            pass
+    kept = sum(1 for p in folder.rglob('*') if p.is_file()) if folder.is_dir() else 0
+    return {'removed': removed, 'freed': freed, 'kept': kept}
+
+
 def _swap(value, pairs):
     if not isinstance(value, str) or not value:
         return value
@@ -1070,9 +1154,10 @@ def finalize_system(home, cfg, pending, say):
         if time.monotonic() - last[0] > 5:
             last[0] = time.monotonic()
             say('Abgleich: %d/%d Dateien, %s' % (state.get('files_done', 0), state.get('files_total', 0), state.get('current', '')))
-    manifest = sync_tree(source, target, top_exclude=top, progress=progress, manifest=info.get('files') or {},
-                         staging_info=info)
-    bad = verify_tree(source, target, top_exclude=top, manifest=manifest)
+    exclude = info.get('exclude') or []   # 0.6.30: z. B. eigener Ort des IMDb-Archivs, Downloads im Datenordner
+    manifest = sync_tree(source, target, top_exclude=top, exclude=exclude, progress=progress,
+                         manifest=info.get('files') or {}, staging_info=info)
+    bad = verify_tree(source, target, top_exclude=top, exclude=exclude, manifest=manifest)
     if bad:
         raise ValueError('Prüfung am Ziel fehlgeschlagen: ' + '; '.join(bad[:5]))
     db = target / 'catalog.db'
@@ -1192,6 +1277,12 @@ class Mover:
         _low_io_priority()
         hold = kind in ('downloads', 'cache')
         try:
+            if kind == 'imdb':
+                _IMDB_HOLD.set()
+                self._set(phase='waiting', current='Wartet, bis der laufende IMDb-Neuaufbau fertig ist')
+                while ctx.imdb_busy():
+                    if self.cancel.wait(2):
+                        raise InterruptedError('abgebrochen')
             if hold:
                 _HOLD.set()
                 self._set(phase='waiting', current='Wartet, bis der laufende Download fertig ist')
@@ -1204,7 +1295,7 @@ class Mover:
                 target = Path(plan['target'])
                 target.mkdir(parents=True, exist_ok=True)
                 info = {'kind': kind, 'source': plan['source'], 'target': plan['target'], 'started': time.time(),
-                        'top_exclude': plan['top_exclude'], 'files': _read_staging(target)}
+                        'top_exclude': plan['top_exclude'], 'exclude': plan['exclude'], 'files': _read_staging(target)}
                 _write_staging(target, info)
                 self._set(phase='copying')
                 manifest = sync_tree(plan['source'], target, top_exclude=plan['top_exclude'], exclude=plan['exclude'],
@@ -1249,6 +1340,8 @@ class Mover:
         finally:
             if hold:
                 _HOLD.clear()
+            if kind == 'imdb':
+                _IMDB_HOLD.clear()
             ctx.remember(self.status())
 
 
@@ -1258,13 +1351,20 @@ MOVER = Mover()
 class Context:
     """Bindung an den laufenden Server (Einstellungen, catalog.db, Protokoll)."""
 
-    def __init__(self, home, root, settings, save_settings, db, event=None, error=None):
+    def __init__(self, home, root, settings, save_settings, db, event=None, error=None, imdb=None):
         self.home, self.root = Path(home), Path(root)
+        self.imdb = imdb   # Objekt mit busy() und relocate(folder, available) (server: IMDb-Archiv)
         self.settings, self.save_settings, self.db = settings, save_settings, db
         self.event = event or (lambda *a, **k: None)
         self.error = error or (lambda *a, **k: None)
 
     # -- Hilfen
+    def imdb_busy(self):
+        return bool(self.imdb and self.imdb.busy())
+
+    def imdb_dir(self):
+        return str(imdb_location(self.home, self.root)[0])
+
     def active_downloads(self):
         with self.db() as c:
             return c.execute("SELECT COUNT(*) FROM jobs WHERE state IN ('downloading','tagging')").fetchone()[0]
@@ -1274,6 +1374,8 @@ class Context:
         spots = {'downloads': ('Downloads', s.get('download_dir')),
                  'cache': ('Zwischenspeicher', s.get('cache_dir') and str(Path(s['cache_dir']) / ABO_FOLDER)),
                  'system': ('System und Datenbank', str(self.root))}
+        if read_pointer(self.home).get('imdb_dir'):
+            spots['imdb'] = ('IMDb-Archiv', self.imdb_dir())
         out = [spots[k] for k in spots if k != kind and spots[k][1]]
         if kind == 'downloads' and not s.get('cache_dir'):
             out = [o for o in out if o[0] != 'Zwischenspeicher']
@@ -1307,15 +1409,30 @@ class Context:
             source = str(self.root)
             others = self.others('system')
             exclude = [o[1] for o in others if o[1] and inside(o[1], source)]
+            if read_pointer(self.home).get('imdb_dir'):
+                # 0.6.30: das IMDb-Archiv hat einen eigenen Ort; ein alter Stand im Datenordner zieht nicht mit.
+                exclude.append(str(Path(source) / IMDB_FOLDER))
             check = inspect('system', source, target, home=self.home,
                             others=[o for o in others if not inside(o[1], source)], exclude=exclude, mode=mode)
             return {'kind': kind, 'source': source, 'target': check['target'], 'top_exclude': sorted(HOME_ONLY),
                     'exclude': exclude, 'check': check}
+        if kind == 'imdb':
+            source = self.imdb_dir()
+            others = [o for o in self.others('imdb') if o[0] != 'System und Datenbank']
+            default = Path(self.root) / IMDB_FOLDER
+            # Zurück in den Datenordner ist erlaubt; sonst darf das Archiv nicht in einem anderen Ort liegen.
+            if target and not same(target, default):
+                others.append(('System und Datenbank', str(self.root)))
+            check = inspect('imdb', source, target, home=self.home, others=others, mode=mode)
+            return {'kind': kind, 'source': source, 'target': check['target'], 'top_exclude': sorted(IMDB_TRANSIENT),
+                    'exclude': [], 'check': check}
         raise ValueError('Unbekannter Speicherort')
 
     def commit(self, plan, manifest):
         kind, source, target = plan['kind'], plan['source'], plan['target']
         mode = plan['check']['mode']
+        if kind == 'imdb':
+            return self._commit_imdb(plan, mode)
         if kind == 'system':
             if mode == 'adopt':
                 cfg = read_pointer(self.home)
@@ -1372,6 +1489,31 @@ class Context:
             write_pointer(self.home, cfg)
         return {'paths_changed': changed}
 
+    def _commit_imdb(self, plan, mode):
+        source, target = plan['source'], plan['target']
+        folder = Path(target)
+        folder.mkdir(parents=True, exist_ok=True)
+        default = same(folder, Path(self.root) / IMDB_FOLDER)
+        if not default:
+            _write_marker(folder, PLACE_MARKER, 'imdb')
+        (folder / STAGING).unlink(missing_ok=True)
+        cfg = read_pointer(self.home)
+        if default:
+            cfg.pop('imdb_dir', None)
+        else:
+            cfg['imdb_dir'] = str(folder)
+        if mode == 'copy' or (source and Path(source, IMDB_DB).is_file() and not same(source, folder)):
+            # Beim Übernehmen eines vorhandenen Archivs ist das bisherige nur noch ein ersetzbarer Zwischenstand
+            # (es lässt sich jederzeit neu von IMDb laden) und darf auf Wunsch gelöscht werden.
+            previous = dict(cfg.get('previous') or {})
+            previous['imdb'] = {'source': source, 'target': str(folder), 'at': time.time(),
+                                'top_exclude': plan['top_exclude'], 'exclude': [], 'replaceable': mode == 'adopt'}
+            cfg['previous'] = previous
+        write_pointer(self.home, cfg)
+        if self.imdb:
+            self.imdb.relocate(folder, True)   # ab sofort liest die Erkennung am neuen Ort
+        return {'adopted': mode == 'adopt', 'imdb_dir': str(folder)}
+
     def remember(self, state):
         cfg = read_pointer(self.home)
         cfg['last'] = {k: state.get(k) for k in ('kind', 'phase', 'source', 'target', 'error', 'finished', 'files_total')}
@@ -1389,7 +1531,8 @@ class Context:
             raise ValueError('Kein alter Speicherort vermerkt.')
         source, target = prev['source'], prev['target']
         s = self.settings()
-        current = {'downloads': s.get('download_dir'), 'cache': location(s, 'cache'), 'system': str(self.root)}
+        current = {'downloads': s.get('download_dir'), 'cache': location(s, 'cache'), 'system': str(self.root),
+                   'imdb': self.imdb_dir()}
         if not same(current[kind], target):
             raise ValueError('Der vermerkte neue Ort ist nicht mehr in Gebrauch; zur Sicherheit wird nichts gelöscht.')
         for label, path in current.items():
@@ -1400,7 +1543,10 @@ class Context:
             raise ValueError('Alter Ort nicht erreichbar: %s' % source)
         top = prev.get('top_exclude') or []
         exclude = prev.get('exclude') or []
-        result = remove_verified(source, target, top_exclude=top, exclude=exclude)
+        if kind == 'imdb' and prev.get('replaceable'):
+            result = _remove_replaced_archive(source, target)
+        else:
+            result = remove_verified(source, target, top_exclude=top, exclude=exclude)
         if kind != 'system' or not same(source, self.home):
             try:
                 if not any(Path(source).iterdir()):
@@ -1452,9 +1598,10 @@ class Context:
         s = self.settings()
         cfg = read_pointer(self.home)
         rows = []
-        defaults = {'downloads': '', 'cache': '', 'system': str(self.home)}
+        defaults = {'downloads': '', 'cache': '', 'system': str(self.home), 'imdb': str(Path(self.root) / IMDB_FOLDER)}
+        imdb_folder, imdb_ok = imdb_location(self.home, self.root)
         for kind in KINDS:
-            path = location(s, kind, self.root)
+            path = str(imdb_folder) if kind == 'imdb' else location(s, kind, self.root)
             space = _bounded(('disk', path), lambda p=path: disk(p), ttl=20.0, wait=2.0,
                              default={'free': 0, 'total': 0}) or {'free': 0, 'total': 0}
             reachable = _bounded(('exists', path), lambda p=path: bool(p) and Path(p).exists(), ttl=10.0, wait=2.0,
@@ -1467,6 +1614,15 @@ class Context:
             if kind == 'system':
                 item['default'] = defaults['system']
                 item['is_default'] = same(self.root, self.home)
+            if kind == 'imdb':
+                item['default'] = defaults['imdb']
+                item['is_default'] = not cfg.get('imdb_dir')
+                if self.imdb and hasattr(self.imdb, 'timing'):
+                    item['timing'] = self.imdb.timing()
+                if not imdb_ok:
+                    item['reachable'] = False
+                    item['problem'] = ('IMDb-Archiv nicht erreichbar: %s. Laufwerk verbinden; bis dahin läuft die '
+                                       'Erkennung ohne IMDb-Abgleich.' % path)
             rows.append(item)
         for problem in problems(s):
             for row in rows:

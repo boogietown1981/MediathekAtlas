@@ -99,7 +99,7 @@ async function clickThrough(name, url) {
     // 0.6.20: Einstellungen → Speicherorte aufklappen und ein nicht verbundenes Laufwerk prüfen lassen.
     await page.evaluate(() => { document.getElementById('storage-locations-panel').open = true; });
     await page.waitForSelector('#storage-locations-list .loc-location', { timeout: 10000 });
-    if (await page.locator('#storage-locations-list .loc-location').count() !== 3) problems.push('Speicherorte: drei Bereiche erwartet');
+    if (await page.locator('#storage-locations-list .loc-location').count() !== 4) problems.push('Speicherorte: vier Bereiche erwartet (0.6.30: IMDb-Archiv)');
     await page.locator('#storage-locations-list .loc-location input').first().fill('/Volumes/NichtVerbunden/MediathekAtlas');
     await page.locator('#storage-locations-list .loc-location button', { hasText: 'Ziel prüfen' }).first().click();
     await page.waitForSelector('#storage-locations-list .loc-bad', { timeout: 10000 });

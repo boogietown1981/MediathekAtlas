@@ -426,7 +426,10 @@ def imdb_updated():
         c.execute("UPDATE works SET next_try=0,state=CASE WHEN state='review' THEN 'retry' ELSE state END WHERE state IN ('pending','retry','identified','review')")
         c.execute('DELETE FROM metadata_cache')
     SERVICE.metadata_wake.set()
-IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated)
+# 0.6.30: eigener Speicherort für das IMDb-Archiv (storage.json imdb_dir); fehlt das Laufwerk, läuft die App ohne IMDb-Abgleich.
+_IMDB_DIR,_IMDB_OK=storage_locations.imdb_location(HOME,ROOT,wait=10 if __name__=='__main__' else 0)
+IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated,folder=_IMDB_DIR,available=_IMDB_OK)
+IMDB.locate=lambda:storage_locations.imdb_location(HOME,ROOT)
 imdb_archive.ACTIVE=IMDB
 _UNIFIED_SOURCES={k:_SnapshotSource(k,m[0]) for k,m in _PORTAL_MODULES.items()}
 _STATUS_CACHE=(0,{})
@@ -1276,7 +1279,7 @@ def _storage_for_export():
     except Exception as e:return {'error':core.safe_error(e)}
 def _save_settings(s):
     with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error)
+STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error,imdb=IMDB)
 
 @ROUTES.get('/api/storage-locations')
 def get_storage_locations(self,path):

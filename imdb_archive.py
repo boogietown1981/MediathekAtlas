@@ -150,16 +150,22 @@ def flush(c,kind,rows,names):
     c.commit();rows.clear();names.clear()
 
 class Archive:
-    def __init__(self,root,stop,on_update=lambda:None):
-        self.root=Path(root)/'imdb';self.root.mkdir(parents=True,exist_ok=True)
+    def __init__(self,root,stop,on_update=lambda:None,folder=None,available=True):
+        # 0.6.30: eigener Speicherort (folder); available=False = eingestellter Ort nicht erreichbar,
+        # dann ohne Archiv weiterarbeiten und nie still ein neues, leeres Archiv anlegen.
+        self.root=Path(folder) if folder else Path(root)/'imdb';self.available=bool(available)
+        if self.available:self.root.mkdir(parents=True,exist_ok=True)
         self.path=self.root/'imdb_archive.db';self.stop=stop;self.on_update=on_update
+        self._timing=[0,0.0,0.0]  # Abfragen, Summe Sekunden, langsamste
+        self.locate=None  # server: lambda -> (Ordner, erreichbar)
         self._reader_local=threading.local()  # one read-only connection and bounded caches per worker
         self._metrics_lock=threading.Lock();self._metrics={'reader_opens':0,'query_hits':0,'query_misses':0,'credits_hits':0,'credits_misses':0}
         self.lock=threading.Lock();self.wake=threading.Event();self.state={'phase':'waiting'};self.retry_at=0;self.updated=0;self.version=0;self.failures=0
         self.dataset_details=[{'key':name,'label':label,'file':FILES[name],
                                'available':False,'rows':None,'retrieved_at':None}
                               for name,label in DATASET_LABELS.items()]
-        if self.path.exists():
+        if not self.available:self.state={'phase':'unavailable','error':'IMDb-Archiv nicht erreichbar: '+str(self.root)}
+        elif self.path.exists():
             try:
                 with sqlite3.connect(self.path) as c:
                     self.updated=c.execute('SELECT updated FROM snapshot').fetchone()[0]
@@ -167,6 +173,38 @@ class Archive:
                     self.state={'phase':'ready'}
                     self.version=c.execute('PRAGMA user_version').fetchone()[0]
             except sqlite3.Error:self.state={'phase':'error','error':'Vorhandenes IMDb-Archiv nicht lesbar'}
+    def busy(self):
+        with self.lock:return self.state.get('phase') in ('downloading','importing','indexing','retrying')
+    def timing(self):
+        n,total,worst=self._timing
+        return {'queries':n,'average_ms':round(total/n*1000,1) if n else None,'slowest_ms':round(worst*1000,1) if n else None}
+    def relocate(self,folder,available=True):
+        """Archiv liest ab sofort am neuen Ort (nach Umzug oder wenn das Laufwerk zurück ist)."""
+        folder=Path(folder);path=folder/'imdb_archive.db'
+        updated=0;details=self.dataset_details;version=0;state={'phase':'waiting'}
+        if not available:state={'phase':'unavailable','error':'IMDb-Archiv nicht erreichbar: '+str(folder)}
+        elif path.exists():
+            try:
+                c=sqlite3.connect(path.as_uri()+'?mode=ro',uri=True)
+                try:
+                    updated=c.execute('SELECT updated FROM snapshot').fetchone()[0]
+                    details=read_snapshot_details(c);version=c.execute('PRAGMA user_version').fetchone()[0]
+                finally:c.close()
+                state={'phase':'ready'}
+            except sqlite3.Error:state={'phase':'error','error':'IMDb-Archiv am neuen Ort nicht lesbar'}
+        with self.lock:
+            self.root=folder;self.path=path;self.available=bool(available)
+            self.updated=updated if available else 0;self.version=version;self.dataset_details=details;self.state=state
+        self._timing=[0,0.0,0.0]
+        diagnostics.event('imdb_archive_location',path=str(folder),available=bool(available),ready=bool(updated))
+        self.on_update()
+    def _lost(self,exc):
+        # Laufwerk im Betrieb verschwunden: Abgleich ohne Archiv, bis es wieder da ist.
+        with self.lock:
+            if not self.available:return
+            self.available=False;self.updated=0
+            self.state={'phase':'unavailable','error':'IMDb-Archiv nicht erreichbar: '+str(self.root)}
+        diagnostics.error('imdb_archive_unavailable',exc,path=str(self.root))
     def _count(self,kind):
         with self._metrics_lock:self._metrics[kind]+=1
     def status(self):
@@ -188,7 +226,7 @@ class Archive:
             staged.append({'key':kind,'downloaded_bytes':complete,'partial_bytes':partial})
         return {**state,'staged_downloads':staged,'updated':updated,
                 'next_update':max(updated+WEEK if version==VERSION else 0,retry_at) if updated or retry_at else None,
-                'ready':bool(updated),'path':str(self.path),'performance':performance,
+                'ready':bool(updated),'path':str(self.path),'performance':performance,'timing':self.timing(),'available':self.available,
                 'datasets':datasets,'archive_bytes':size,'archive_version':version}
     def progress(self,**kw):
         with self.lock:self.state.update(kw)
@@ -199,10 +237,19 @@ class Archive:
     def due(self,now=None):
         return (time.time() if now is None else now)>=max(self.updated+WEEK if self.version==VERSION else 0,self.retry_at)
     def loop(self):
+        import storage_locations
         while not self.stop.is_set():
             requested=self.wake.is_set();self.wake.clear()
             import task_control
-            if task_control.paused('imdb'):
+            if not self.available:
+                # Ort wieder erreichbar? Dann ohne Neustart weiterarbeiten.
+                if self.locate:
+                    try:
+                        folder,ok=self.locate()
+                        if ok:self.relocate(folder,True)
+                    except Exception as e:diagnostics.error('imdb_archive_locate_failed',e)
+                self.wake.wait(30);continue
+            if task_control.paused('imdb') or storage_locations.imdb_held():
                 self.wake.wait(30);continue
             if requested or self.due():self.update()
             self.wake.wait(30)
@@ -290,7 +337,9 @@ class Archive:
                 for p in files.values():p.unlink(missing_ok=True);p.with_name(p.name+'.part').unlink(missing_ok=True)
     def _reader(self):
         """Reuse a read-only SQLite handle per worker; reopen after atomic snapshot replacement."""
-        st=self.path.stat()
+        try:st=self.path.stat()
+        except OSError as e:
+            self._lost(e);raise
         identity=(st.st_dev,st.st_ino,st.st_size,st.st_mtime_ns)
         opened=getattr(self._reader_local,'opened',None)
         if opened and opened[0]==identity:return opened[1]
@@ -308,7 +357,13 @@ class Archive:
         if key in cache:
             self._count('query_hits');return cache[key]
         self._count('query_misses')
-        hits=self._reader_local.opened[1].execute(sql,params).fetchall()
+        started=time.monotonic()
+        try:hits=self._reader_local.opened[1].execute(sql,params).fetchall()
+        except sqlite3.OperationalError as e:
+            if not self.path.exists():self._lost(e)
+            raise
+        spent=time.monotonic()-started;t=self._timing
+        t[0]+=1;t[1]+=spent;t[2]=max(t[2],spent)
         if len(cache)>=1024:cache.clear()
         cache[key]=hits
         return hits
