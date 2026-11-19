@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.40
+# MediathekAtlas · 0.6.41
+
+## Neu in 0.6.41: Episodensuche räumt Sendungsausgaben auf
+
+- Ausgaben von Nachrichten- und Regionalmagazinen („SWR Aktuell“, „buten un binnen“, „Sachsenspiegel vom 19.11.2026“) und ihre kurzen Beiträge haben keine eigene Folge in IMDb. Die Episodensuche legt sie jetzt als Ausgabe bzw. Beitrag ihrer Sendung ab, statt sie als „ohne Treffer“ oder „unsicher“ immer wieder zu prüfen. Echte Serienfolgen kommen dadurch schneller an die Reihe.
+- Talkshows und Magazine mit Datum im Titel werden über IMDbs Ausgabe zum Datum gefunden, Folgentitel auch ohne Zähler und „Audiodeskription“.
 
 ## Neu in 0.6.40: Sammelstand
 

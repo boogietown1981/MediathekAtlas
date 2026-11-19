@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.41 – Episodensuche: Sendungsausgaben und Beiträge (19. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktests Chromium (`click_all`, `player_tracks`); Ergebnisse im PR. Neu `tests/test_v0641_episode_editions.py`: Regeln mit Gegenbeispielen (Drama-Kurzclip, nummerierte Folgen, historisches Datum im Folgentitel, Trailer, Priorität, „Prüfen“-Auftrag), IMDb „Episode dated …“ (Treffer, falsches Datum, zwei Ausgaben am selben Tag), Folgentitel mit Zähler, Geschwister in einem Durchgang, kein Senderabruf für datierte Ausgaben, Diagnosebeispiele, einmalige Neuprüfung.
+- Muster an Björns Diagnose vom 19.11. 19:45 nachgezählt (Titel der erkannten Serienwerke, Laufzeitverdachte, Senderzähler). Die Diagnose enthält keine Titel je Episodenprüfung; deshalb neu `episode_unresolved_sample`.
+- Nicht geprüft: Wirkung auf Björns Bestand (erst mit der nächsten Diagnose), echtes IMDb-Archiv (Testumgebung ohne Zugriff auf datasets.imdbws.com), Safari, NAS, Windows.
+
 ## 0.6.40 – Sammelstand 0.6.36–0.6.39 (19. November 2026)
 - Nach dem Zusammenführen: gesamte Python-Suite (1437, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund, Player-Spuren in Ordnung, Erweiterungs-Assistent mit echter Erweiterung ok (ein erster Lauf scheiterte an einer Wartezeit, zwei weitere Läufe grün).
 - Pakete gebaut (SPK, QPKG, deb, Linux, Windows-ZIP/Setup, macOS-ZIP), SHA256 geprüft.

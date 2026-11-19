@@ -957,6 +957,83 @@ def foreign_version(source):
     if source.get('_foreign_only') is False:return False
     return languages.CHANNEL_LANGUAGE.get(str(source.get('channel') or '').strip().upper(),'de')!='de'
 
+# 0.6.41 (Björn, 19.11.2026: Episodensuche 2,4 % zugeordnet, 66 % ohne Treffer, 32 % unsicher). The 6,104
+# series identified in the diagnosis window were 82 % editions of news and regional magazines ("SWR Aktuell
+# Rheinland-Pfalz" 1,795, "buten un binnen | regionalmagazin" 1,211, "MDR Sachsenspiegel" 901, "DER TAG in
+# Berlin & Brandenburg" 746, …); 91 % of the runtime suspicions were 1–6 minute clips of 28-minute
+# Sendungen. Neither has an episode of its own in any database. They are filed as edition or contribution
+# of their (already identified) Sendung once the IMDb probe found nothing, never as a matched episode.
+FORMAT_SERIES=re.compile(r'(?i)magazin|nachrichten|\b(?:vor ort|der tag|infos?|spezial|extra|report|reportage)\b')
+EDITION_NUMBERING=re.compile(r'(?i)\b(?:folge|episode|teil|part)\s*\d+|\(\s*\d{1,3}\s*(?:/\s*\d{1,3}\s*)?\)|\bS\d{1,3}\s*[/._-]?\s*E\d{1,4}\b')
+
+def format_series(name):
+    """True for the title of a recurring news, regional or service programme (not a scripted series)."""
+    k=key(cleaned(name))
+    if not k or k in FORMAT_GENERIC:return False
+    return k in NEWS_TOPICS or bool(FORMAT_WORDS.search(k) or FORMAT_SERIES.search(k))
+
+def sendung_with_editions(c,show_key,minimum=3):
+    """True once a series has several works filed as editions of a Sendung (cheap, uses work_show)."""
+    if not show_key:return False
+    return len(c.execute("SELECT 1 FROM works WHERE show_key=? AND state='format' LIMIT ?",(show_key,minimum)).fetchall())>=minimum
+
+def broadcast_day(title,source):
+    """True if the date named in the title is the offer's broadcast date (within three days)."""
+    import imdb_archive
+    date=imdb_archive.title_date(title)
+    try:stamp=int(source.get('timestamp') or 0)
+    except (TypeError,ValueError):return False
+    if not date or stamp<=0:return False
+    try:named=time.mktime((date[1],date[2],date[3],12,0,0,0,0,-1))
+    except (OverflowError,ValueError):return False
+    return abs(named-stamp)<=3*86400
+
+def recurring_edition(meta,source,sendung=False):
+    """'edition', 'segment' or None for an identified series work without an episode of its own.
+
+    edition: the offer names a calendar date ("Sachsenspiegel vom 19.11.2026"; a drama episode is not
+    titled with its broadcast date, see DATED) or only repeats the name of a news/magazine Sendung.
+    segment: a clip shorter than 10 minutes of a news/magazine Sendung ("buten un binnen": 2-4 minute
+    contributions next to the 28-minute edition). Numbered offers (S01E02, Folge 3, (2/6)) never qualify;
+    neither does a work the user asked to check, a verified episode or a trailer. sendung=True: the
+    series is known to publish dated editions ("MDR Sachsenspiegel" has no format word in its name).
+    """
+    if not source or meta.get('kind')!='series' or meta.get('scan_requested') or meta.get('episode_verified'):return None
+    if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
+    title=cleaned(source.get('title'))
+    if not title or TRAILER.search(title) or EDITION_NUMBERING.search(title) or EP.search(title):return None
+    series=meta.get('title') or '';topic=source.get('topic') or ''
+    recurring=sendung or format_series(series) or format_series(topic)
+    if DATED.search(title):
+        # A scripted episode may carry a historic date ("Die Nacht vom 9. November 1989"); outside a known
+        # news/magazine Sendung the date must be the offer's own broadcast day (±3 days).
+        return 'edition' if recurring or broadcast_day(title,source) else None
+    if not recurring:return None
+    if key(title) in {key(cleaned(series)),key(cleaned(topic))}:return 'edition'
+    duration=int(source.get('duration') or 0)
+    if 0<duration<600:return 'segment'
+    return None
+
+def mark_recurring_edition(c,row,meta,source,role):
+    """File an identified series work as edition/contribution of its Sendung (state 'format').
+
+    The series identity (title, year, provider, reference) stays; the work leaves the episode queue
+    through its trigger. Only provisional 'identified' works change, never a user decision.
+    """
+    m={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings')}
+    series=m.get('title') or cleaned(source.get('topic'))
+    edition=cleaned(source.get('title'))
+    if key(edition)==key(series) and source.get('timestamp'):
+        try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
+        except (TypeError,ValueError,OverflowError,OSError):pass
+    m.update(state='format',format_grouping='edition' if role=='edition' else 'segment',
+             episode_title=edition or m.get('episode_title'),episode_verified=False,
+             episode_reference_id=None,video_role_needs_review=False,
+             reason=('Ausgabe der Sendung „%s“; Sendungsausgaben haben keine eigene Episodenkennung.' if role=='edition'
+                     else 'Beitrag (unter 10 Minuten) der Sendung „%s“; keine eigene Folge.')%series)
+    return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
+                     (json.dumps(m),row['id'])).rowcount>0
+
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
     topic=cleaned(source.get('topic'));title=cleaned(source.get('title'))
@@ -1270,10 +1347,20 @@ def index_ready(c,name=IDENTITY_INDEX):
     """True when the deferred index exists in this database (sqlite_master is small and cached)."""
     return c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",(name,)).fetchone() is not None
 
+def recheck_episode_queue_v0641(c,event=None):
+    """Make earlier "ohne Treffer" episode checks due once more (0.6.41 rules: editions, dated IMDb
+    episodes, cleaned titles). Runs after the server start: it walks the whole queue table once."""
+    if get_state(c,'episode_queue_recheck_v0641',False):return 0
+    n=c.execute("UPDATE episode_queue SET next_try=0 WHERE last_outcome IN ('unresolved','no_imdb_episodes')").rowcount
+    set_state(c,'episode_queue_recheck_v0641',True)
+    if event and n:event('episode_queue_recheck',version='0.6.41',works=n)
+    return n
+
 def build_deferred_indexes(connect,event=None,error=None):
     """Create indexes that need a full table pass, after the server is reachable.
     connect() returns a context-managed connection. Readers keep working (WAL); writers wait."""
     with connect() as c:
+        recheck_episode_queue_v0641(c,event)
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
     MAINTENANCE.update(phase='running',started=started,
