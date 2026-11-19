@@ -1247,3 +1247,16 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 @media(max-width:800px){.queue-table .q-thumb,.queue-table th:first-child{display:none}.queue-table .q-actions{white-space:normal}}
 /* 0.6.37: YouTube → Abos ersetzt im Katalogbereich Suche, Genres, Raster und Blättern */
 #atlas-source-content.is-abos #atlas-cross-search,#atlas-source-content.is-abos #atlas-cross-categories,#atlas-source-content.is-abos #atlas-cross-items,#atlas-source-content.is-abos .atlas-cross-pager,#atlas-source-content.is-abos #atlas-cross-note,#atlas-source-content.is-abos #atlas-cross-status{display:none!important}
+/* 0.6.38: Einrichtungsassistent der Chrome-Erweiterung */
+.ext-wizard{margin-top:.6rem}
+.ext-state{margin:.2rem 0 .5rem;padding:.45rem .7rem;border-radius:8px;border:1px solid var(--line,#d6dbe4);font-weight:600}
+.ext-state[data-state="ok"]{border-color:#2e9b5f;background:rgba(46,155,95,.10)}
+.ext-state[data-state="update"],.ext-state[data-state="old"]{border-color:#d29a1e;background:rgba(210,154,30,.10)}
+.ext-state[data-state="missing"],.ext-state[data-state="unsupported"]{border-color:#c4533d;background:rgba(196,83,61,.08)}
+.ext-steps li{margin:.35rem 0}
+.ext-line{display:inline-flex;align-items:center;gap:8px;flex-wrap:wrap;margin:.2rem 0}
+.ext-line button{margin:0}
+.ext-alt{margin:.3rem 0}
+.ext-alt summary{cursor:pointer;font-size:.92em}
+#direct-start-panel kbd{font:inherit;font-size:.9em;padding:0 .3em;border:1px solid var(--line,#c8ced8);border-radius:4px}
+#direct-start-path{word-break:break-all}

@@ -1,9 +1,19 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.40 – Sammelstand 0.6.36–0.6.39 (19. November 2026)
+- Automatisch: siehe Abschnitt im PR (gesamte Python-Suite, Node-Tests, Klicktests Chromium nach dem Zusammenführen).
+
 ## 0.6.39 – Erkennung ARD/ZDF (19. November 2026)
 - Automatisch: siehe PR. Neu `tests/test_v0639_recognition_noise.py`: Suchtitel bereinigt (und echte Titel unverändert), Serienabfrage für nummerierte Teile, Datumsregel mit Gegenbeispielen, ARTE-Fremdsprachfassungen (Länge, deutsche Fassung, Anzahl), Neuzuordnung geprüfter Werke ohne Treffer (Werke mit Vorschlag und Filme bleiben).
 - Regeln an den 1.086 erfolglosen Prüfungen aus Björns Diagnose 16:12 nachgezählt.
 - Nicht geprüft: Wirkung auf Björns Bestand (Zahlen erst nach dem Formatdurchlauf in einer neuen Diagnose), Trefferquote der bereinigten Suchtitel bei TMDB/TVDB (Testumgebung ohne Anbieterzugriff).
+
+## 0.6.38 – Einrichtungsassistent Chrome-Erweiterung (19. November 2026)
+- Automatisch: gesamte Python-Suite (1411, 4 übersprungen), Node-Tests, Klicktests Chromium (`click_all`, `player_tracks`). Neu `tests/test_v0638_extension_wizard.py` (10): Ordner anlegen, nur Geändertes neu schreiben, alte Dateien entfernen (Fremdes bleibt), Status, Finder/Explorer/xdg-open und fehlender Dateimanager, Manifest und Skripte ohne Datenversand, Routen.
+- Neuer Browsertest `tests/browser/extension_wizard.cjs` mit der echten Erweiterung in Chromium (geladen wie „Entpackte Erweiterung laden“, Entwicklermodus an): App legt den Ordner beim Start an; ohne Erweiterung Zustand „nicht installiert“ und Schritte; Erweiterung wird bei offener Seite geladen und meldet sich ohne Neuladen; App schreibt neue Fassung, Erweiterung lädt sich selbst neu und meldet die neue Version.
+- Befund dabei: Chrome deaktiviert entpackte Erweiterungen beim Neuladen, wenn der Entwicklermodus aus ist; der Assistent setzt den Entwicklermodus voraus (Schritt 2).
+- Pakete gebaut (SPK, QPKG, deb, Linux, Windows-ZIP/Setup, macOS-ZIP), SHA256 geprüft, `atlas_bridge.js` in jedem Paket.
+- Nicht geprüft: Ziehen des Ordners aus dem Finder auf `chrome://extensions` und ⌘⇧G im Ordnerdialog auf Björns Mac, „Ordner im Finder zeigen“ unter macOS (`open -R`), Edge/Brave, Windows.
 
 ## 0.6.37 – Downloads als Liste, fehlende Dateien, Abos unter YouTube, Werkkatalog unter Plattformen (19. November 2026)
 - Automatisch: gesamte Python-Suite (1421, 4 übersprungen), Node-Tests, Klicktest Chromium ohne Befund (neu: YouTube → Abos, Plattformen → ARD, ZDF & Co., alter Link „legacy“). Neu `tests/test_v0637_missing_files.py`: Wiederfinden über verschobenen Download-Ordner, Namenssuche mit Größenprüfung, zwei Kandidaten bleiben offen, Entfernen nur fehlender fertiger Einträge, Umzug „übernehmen“ schreibt nur vorhandene Pfade um.
