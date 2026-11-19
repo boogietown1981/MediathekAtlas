@@ -8,6 +8,7 @@
   Anzeige fiel von 4.265 auf 1.936 Titel, obwohl die Titel sichtbar blieben. Jetzt Wiederholung bei
   Netzfehlern, Zähler aus den sichtbaren Titeln und neuer Versuch nach 2 h."""
 import errno
+import io
 import json
 import os
 import sqlite3
@@ -150,7 +151,7 @@ class RequestRetryTests(unittest.TestCase):
 
         def urlopen(req, timeout):
             calls.append(1)
-            raise urllib.error.HTTPError(req.full_url, 403, 'Forbidden', {}, None)
+            raise urllib.error.HTTPError(req.full_url, 403, 'Forbidden', {}, io.BytesIO(b'{}'))  # fp=None breaks read() on 3.9
 
         with mock.patch('urllib.request.urlopen', urlopen), mock.patch.object(yt, '_SLEEP', lambda s: None):
             with self.assertRaises(yt.ApiError):
