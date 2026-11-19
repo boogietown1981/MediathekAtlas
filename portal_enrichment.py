@@ -197,16 +197,31 @@ def pending(spec, root, limit=10, now=None):
 
 
 def metrics(spec, root):
+    """Counts of the reports for the *current* catalogue (0.6.27).
+
+    Until 0.6.26 every stored report counted, also those of titles that have left the catalogue
+    since; Björn's overview showed e.g. RTL+ "1.042 von 65 geprüft" and 575 assigned of 65 titles.
+    Now only films and series of the latest catalogue run count (same rule as ``pending``).
+    ``last_checked``/``oldest_checked``: when the newest and the oldest of these checks ran."""
     db = _conn(spec, root)
     try:
+        last = float(spec.last_success(db) or 0)
         counts = {}
-        for payload, in db.execute('SELECT payload FROM %s' % spec.checks):
+        newest = oldest = 0.0
+        rows = db.execute('''SELECT r.payload, r.checked FROM %s r JOIN %s i ON i.id=r.item_id
+            WHERE i.kind IN ('movie','series') AND i.seen>=?''' % (spec.checks, spec.items), (last,))
+        for payload, checked in rows:
             try:
                 status = json.loads(payload).get('status')
             except (ValueError, AttributeError):
                 status = 'invalid'
             counts[status] = counts.get(status, 0) + 1
-        return {'checked': sum(counts.values()), 'by_status': counts}
+            checked = float(checked or 0)
+            newest = max(newest, checked)
+            oldest = checked if not oldest else min(oldest, checked)
+        stored = db.execute('SELECT COUNT(*) FROM %s' % spec.checks).fetchone()[0]
+        return {'checked': sum(counts.values()), 'by_status': counts, 'last_checked': newest,
+                'oldest_checked': oldest, 'stored': stored}
     finally:
         db.close()
 

@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.26
+# MediathekAtlas · 0.6.27
+
+## Neu in 0.6.27: YouTube-Abos im Dashboard, aufgeräumte Downloads
+
+- Dashboard → Quelle „YouTube-Abos“: alle abonnierten Videos je Kanal; unter „Alle“ steht oben „Neu aus deinen YouTube-Abos“.
+- Downloads nach Zustand gegliedert (läuft, wartet, geplant, fehlgeschlagen, fertig) und darin je Kanal bzw. Anbieter.
+- Verwaltung → Status: alle Kataloge in einer einheitlichen Tabelle; bei der Werkzuordnung steht, wann zuletzt geprüft wurde.
 
 ## Neu in 0.6.26: bedienbar auch während eines Umzugs
 

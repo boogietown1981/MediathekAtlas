@@ -92,6 +92,10 @@
       if (d.last_error) out.push('Hinweis: ' + d.last_error);
     } else if (task.id.startsWith('enrich:')) {
       out.push(num(d.checked) + ' von ' + num(d.total) + ' Titeln geprüft');
+      // 0.6.27 (Björn, 19.11.2026): „man sieht immer nur geprüft, aber nicht, von wann der Stand ist“
+      if (d.last_checked) out.push('zuletzt geprüft ' + when(d.last_checked));
+      if (d.oldest_checked && when(d.oldest_checked) !== when(d.last_checked)) out.push('ältester Stand ' + when(d.oldest_checked));
+      if (!d.last_checked && d.total) out.push('noch nie geprüft');
     }
     if (task.note && Date.now() / 1000 - task.note_at < 90 && !task.paused) out.push(task.note);
     return out.filter(Boolean).join(' · ');
@@ -221,7 +225,7 @@
     };
     const general = make('fieldset'); general.append(make('legend', 'Dashboard'));
     general.append(
-      field('Startansicht', choice('start_source', [['all', 'Alle Plattformen'], ['mediatheken', 'ARD, ZDF & Co.'], ['netzkino', 'Netzkino'], ['pluto', 'Pluto TV'], ['justwatch', 'JustWatch TV'], ['rakuten', 'Rakuten TV'], ['joyn', 'Joyn'], ['toggo', 'TOGGO'], ['crunchyroll', 'Crunchyroll'], ['plex', 'Plex'], ['servustv', 'ServusTV'], ['rtlplus', 'RTL+'], ['youtube', 'YouTube']])),
+      field('Startansicht', choice('start_source', [['all', 'Alle Plattformen'], ['abos', 'YouTube-Abos'], ['mediatheken', 'ARD, ZDF & Co.'], ['netzkino', 'Netzkino'], ['pluto', 'Pluto TV'], ['justwatch', 'JustWatch TV'], ['rakuten', 'Rakuten TV'], ['joyn', 'Joyn'], ['toggo', 'TOGGO'], ['crunchyroll', 'Crunchyroll'], ['plex', 'Plex'], ['servustv', 'ServusTV'], ['rtlplus', 'RTL+'], ['youtube', 'YouTube']])),
       field('Zuerst zeigen', choice('start_kind', [['movies', 'Filme'], ['series', 'Serien']])),
       field('Kachelgröße', choice('card_size', (meta.sizes || []).map(s => [s.key, s.label]))),
       field('Design', choice('theme', [['dark', 'Dunkel'], ['light', 'Hell'], ['auto', 'Wie das System']])));
