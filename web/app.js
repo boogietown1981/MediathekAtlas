@@ -338,7 +338,7 @@ function renderMetadata(m={},settings={},pauses={}){
  const outcomes={matched:'Vollständig zugeordnet',identified:'Werk erkannt – Folge offen',review:'Zuordnung prüfen',retry:'Wiederholung vorgesehen'};
  const current=$('metadata-status');
  current.replaceChildren();
- const name=el('strong',(labels[m.phase]||'Wird gestartet')+(m.title?' · '+m.title:''),'atlas-current-title');
+ const name=el('strong',(labels[m.phase]||'Sucht die nächste fällige Prüfung …')+(m.title?' · '+m.title:''),'atlas-current-title');
  name.title=name.textContent;
  const summary=el('small',(m.outcome?outcomes[m.outcome]+' · ':'')+countLabel(m.checked_session||0)+' Abgleiche seit Start');
  current.append(name,summary);

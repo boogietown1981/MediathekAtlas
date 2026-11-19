@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.31 – Hauptworker-Auswahl (19. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktests Chromium; neuer Test mit altem Code rot, mit neuem grün. Synthetische Messung 690.000 Werke: Auswahl 0,19 s → 0,002 s, ohne Zeilenlesen.
+- Nicht geprüft: Björns Datenbank auf Docking-2 (Dauer der einmaligen Indexanlage dort), NAS, Windows.
+
 ## 0.6.29 – Sammelstand (19. November 2026)
 - Automatisch: gesamte Python-Suite (1385, 4 übersprungen), Node-Tests, Klicktests Chromium (`click_all.cjs` ohne Befund, `player_tracks.cjs` in Ordnung).
 - Nicht geprüft: Björns Mac mit Docking/Docking-2, exFAT real, NAS, Windows.

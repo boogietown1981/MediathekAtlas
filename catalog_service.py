@@ -273,7 +273,9 @@ class Service:
         mode, film first passes always win over automatic series focus.
         """
         now=time.time()
-        row=c.execute("""SELECT w.* FROM metadata_priority p JOIN works w ON w.id=p.work_id
+        # 0.6.29: CROSS JOIN drives the lookup from the small priority table; SQLite otherwise walked
+        # all due works (≈220,000 queued series) through work_retry.
+        row=c.execute("""SELECT w.* FROM metadata_priority p CROSS JOIN works w ON w.id=p.work_id
             WHERE w.state NOT IN ('manual','matched','format') AND w.next_try<=?
               AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
               AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
@@ -297,12 +299,22 @@ class Service:
                 states=('pending','retry','identified') if fresh else ('retry','pending','identified')
                 for state in states:
                     predicate=' AND w.attempts=0' if fresh else ' AND w.attempts>0'
-                    row=c.execute("""SELECT w.* FROM works w WHERE w.kind=? AND w.state=?
-                        AND w.next_try<=?
+                    # 0.6.29: identified works go through the partial index work_identity_recheck,
+                    # which leaves out the ~220,000 queued series. Before, every selection read all
+                    # of them row by row; on a USB drive one pick took minutes ("Hauptworker 0 / 4").
+                    if state=='identified':
+                        head="""SELECT w.* FROM works w INDEXED BY work_identity_recheck WHERE w.kind=? AND """+catalog.IDENTITY_RECHECK+"""
+                        AND w.next_try<=?"""
+                        args=(kind,now)
+                    else:
+                        head="""SELECT w.* FROM works w WHERE w.kind=? AND w.state=?
+                        AND w.next_try<=?"""
+                        args=(kind,state,now)
+                    row=c.execute(head+"""
                         AND NOT EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)"""+predicate+where+"""
                         AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
                         AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
-                        ORDER BY w.next_try """+direction+""" LIMIT 1""",(kind,state,now)+params+(now,)).fetchone()
+                        ORDER BY w.next_try """+direction+""" LIMIT 1""",args+params+(now,)).fetchone()
                     if row:return row
             return None
         def focused():
