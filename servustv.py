@@ -76,6 +76,12 @@ NAV_PAGE = re.compile(r'https://www\.servustv\.com/[a-z]{2}/page/((?:AA-?|PN|AP)
 # Only when more than this share of the requests is refused does the run count as partial.
 REFUSED_SHARE = 0.03
 SKIPPABLE = (403, 404, 410, 451)
+# 0.6.45: in every run of 16.–20.11.2026 the very same 15 pages answered 403 ("refused": 15, "recovered": 0),
+# each after three tries with 4 s and 15 s pauses (~5 minutes per run and 45 refused requests at the Red Bull
+# edge). A page refused after all tries is remembered (address only) and skipped without a request for
+# REFUSED_RECHECK; after that it is tried once more, without the pauses. Pages that answer again are forgotten.
+REFUSED_RECHECK = 7 * 86400
+MAX_REFUSED_KEPT = 500
 # ServusTV live channels if the catalogue cannot be read (ids from the HAR of 13.11.2026).
 LIVE_FALLBACK = (('c.PN0B1EC15B2FE10', 'ServusTV', 1),)
 
@@ -257,28 +263,56 @@ def _base(card, kind):
             'playable': 1 if card.get('playable') is not False else 0, 'drm': -1, 'web_url': _web(card)}
 
 
+def _page_key(url):
+    """Address of a request without host (stable across runs)."""
+    parts = urllib.parse.urlsplit(str(url))
+    return (parts.path + ('?' + parts.query if parts.query else ''))[:300]
+
+
+def _known_refused(db):
+    try:
+        data = json.loads(_get(db, 'refused_pages', '{}') or '{}')
+    except ValueError:
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
 class Crawl:
     """Breadth-first walk over pages, shows and rails, with fixed request limits."""
 
-    def __init__(self, opener, gap, waits=()):
+    def __init__(self, opener, gap, waits=(), known_refused=None, now=None):
         self.gap, self.waits = gap, tuple(waits)
-        self.refused = self.recovered = 0
+        self.refused = self.recovered = self.known_skipped = 0
+        self.now = time.time() if now is None else float(now)
+        # 0.6.45: address -> time of the last refusal (see REFUSED_RECHECK)
+        self.known_refused = {str(k): float(v) for k, v in (known_refused or {}).items()
+                              if isinstance(v, (int, float)) and v > 0}
+        self.refused_pages = {}
         raw = opener
 
         def patient(url, headers, *args, **kwargs):
             """0.5.106: the edge answers bursts with 403 – wait and try again before giving up."""
-            for attempt in range(len(self.waits) + 1):
+            key = _page_key(url)
+            last = self.known_refused.get(key)
+            if last and self.now - last < REFUSED_RECHECK:
+                self.known_skipped += 1
+                self.refused_pages[key] = last
+                raise urllib.error.HTTPError(url, 403, 'zuletzt verweigert, wird spaeter erneut geprueft', None, None)
+            waits = () if last else self.waits      # due for a re-check: one try, no pauses
+            for attempt in range(len(waits) + 1):
                 try:
                     answer = raw(url, headers, *args, **kwargs)
                     if attempt:
                         self.recovered += 1
                     return answer
                 except urllib.error.HTTPError as exc:
-                    if exc.code not in (403, 429, 503) or attempt == len(self.waits):
+                    if exc.code not in (403, 429, 503) or attempt == len(waits):
                         if exc.code in (403, 429, 503):
                             self.refused += 1
+                        if exc.code == 403:
+                            self.refused_pages[key] = self.now
                         raise
-                    time.sleep(self.waits[attempt])
+                    time.sleep(waits[attempt])
         self.opener = patient
         self.items, self.shows, self.show_names = {}, {}, {}
         self.pending_products, self.done_products = [], set()
@@ -515,7 +549,12 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
         db.close()
     _notify('servustv_sync_started')
     try:
-        crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()))
+        db = _connect(root)
+        try:
+            known = _known_refused(db)
+        finally:
+            db.close()
+        crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()), known_refused=known, now=now)
         crawl.run()
         rows = crawl.rows()
         if not any(r['kind'] in ('movie', 'episode') for r in rows):
@@ -556,10 +595,15 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
                                    ('requests', crawl.requests), *counts.items()]:
                     _set(db, key, value)
+                kept = dict(sorted(crawl.refused_pages.items(), key=lambda kv: -kv[1])[:MAX_REFUSED_KEPT])
+                _set(db, 'refused_pages', json.dumps(kept, separators=(',', ':')))
         finally:
             db.close()
         _notify('servustv_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
                 recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated,
+                known_skipped=crawl.known_skipped, remembered=len(crawl.refused_pages),
+                # 0.6.45: the error texts (no addresses), so a partial run can be explained
+                error_texts=sorted(set(crawl.errors))[:3],
                 unavailable={str(k): v for k, v in sorted(crawl.unavailable.items())},
                 long_clips=crawl.long_clips, events=crawl.events, shows=len(crawl.shows), **counts)
         return {'ok': True, 'partial': partial, **counts}

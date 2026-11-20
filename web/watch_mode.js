@@ -44,7 +44,7 @@
     if (fullOn()) { const ex = document.exitFullscreen || document.webkitExitFullscreen; try { const p = ex && ex.call(document); if (p && p.catch) p.catch(() => {}); } catch (e) { /* egal */ } }
     else fullscreen(true);
   }
-  const playerMissing = () => window.notice?.(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', 'error');
+  const playerMissing = () => window.notice?.(window.atlasPlayerMissing?.('watch_mode') || 'Der Player ist nicht geladen; Seite neu laden.', 'error');
 
   // ------------------------------------------------------------------ Aktionen
   function openCatalog(item) {

@@ -27,7 +27,7 @@
   let mode = 'off', data = null, timer = 0, seq = 0, profile = 'all', onlyNew = false, query = '';
 
   function play(v) {
-    if (typeof window.playRef !== 'function') { window.notice?.(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
+    if (typeof window.playRef !== 'function') { window.notice?.(window.atlasPlayerMissing?.('abo_shelf') || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
     window.playRef({job: v.job}, v.title || 'Video', 'job:' + v.job);
   }
   function tile(v) {

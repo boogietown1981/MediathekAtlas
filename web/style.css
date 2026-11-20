@@ -1107,7 +1107,9 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 
 /* 0.6.14: Abo-Videos pro Stunde */
 .abo-pace{margin:.4rem 0 .8rem;font-size:.92em}
-.abo-pace select{margin:0 .35em;padding:.1em .3em}
+.abo-pace select{display:inline-block;width:auto;min-width:0;margin:0 .35em;padding:.1em .3em}
+.abo-reserve{display:block;margin-top:.35rem}
+.abo-budget-hint{margin:.3rem 0 0;font-size:.9em}
 /* 0.6.20: Einstellungen → Speicherorte */
 .loc-locations{display:grid;gap:14px;margin-top:14px}
 .loc-location{border:1px solid #2c3b49;border-radius:12px;padding:16px;background:#111a26}

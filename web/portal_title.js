@@ -63,7 +63,9 @@
   function section(title, cls) { const s = make('section', undefined, 'tv-section portal-title-section' + (cls ? ' ' + cls : '')); s.append(make('h2', title)); return s; }
   function play(m, label) {
     const fn = SOURCES[m.source].play();
-    if (typeof fn !== 'function') { window.notice?.(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
+    // 0.6.45: null = this provider has no player in MediathekAtlas (DRM), not a missing player
+    if (fn === null) { window.notice?.(window.atlasProviderOnly?.(m.provider, m.web_url) || 'Nur beim Anbieter abspielbar.'); return; }
+    if (typeof fn !== 'function') { window.notice?.(window.atlasPlayerMissing?.('portal_title:' + m.source) || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
     fn(m.id, label || m.title);
   }
 

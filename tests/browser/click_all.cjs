@@ -141,6 +141,15 @@ async function clickThrough(name, url) {
       const kids = [...s.children];
       return kids.indexOf(b) === 0 && kids.indexOf(a) === 1;
     }));
+    // 0.6.45: YouTube → Kanal-Abos: Reserve an freiem Speicher und Speicherbudget im Formular.
+    await page.locator('#portals button', { hasText: /^YouTube$/ }).first().click();
+    await page.evaluate(() => { const d = document.getElementById('youtube-abos'); d.open = true; d.dispatchEvent(new Event('toggle')); });
+    await page.waitForSelector('#youtube-abos-reserve', { timeout: 10000 }).catch(() => problems.push('Abo-Reserve (freier Speicher) fehlt'));
+    await page.locator('#youtube-abo-add button.abo-add-button').click().catch(() => problems.push('Abonnieren-Knopf fehlt'));
+    await expect('Speicherbudget im Abo-Formular', () => [...document.querySelectorAll('#youtube-abo-add label')].some(l => /Speicher höchstens/.test(l.textContent) && l.querySelector('input[type=number]')?.value === '10'));
+    await page.locator('#youtube-abo-add .abo-form-actions button:not(.primary)').click().catch(() => {});
+    // 0.6.45: a provider-only title (Joyn, RTL+, Crunchyroll) is not "Player nicht geladen".
+    await expect('Anbieter-Player-Hinweis', () => /nur im Player von Joyn/.test(window.atlasProviderOnly('Joyn', '')) && typeof window.playRef === 'function');
     await page.evaluate(() => window.atlasShowView('discover'));
     await page.waitForTimeout(800);
     // 0.6.37: YouTube → Abos (web/abo_shelf.js) und zurück zu „Alle“.
