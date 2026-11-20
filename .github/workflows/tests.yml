@@ -83,6 +83,12 @@ jobs:
       - name: Red Bull TV und WELT/n-tv im Live-TV (0.6.47)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/redbull_live.cjs
+      - name: DMAX/TLC/HGTV und Joyn-Folgen (0.6.48)
+        if: matrix.browser == 'chromium'
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/dmax_joyn.cjs
+      - name: Art offen je Sender (0.6.49)
+        if: matrix.browser == 'chromium'
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/unknown_reasons.cjs
 
   # Separate job: macOS runners are sometimes not assigned for a long time; that must not
   # hold back the NAS packages, which only need the Linux results.

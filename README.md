@@ -1,4 +1,24 @@
-# MediathekAtlas · 0.6.47
+# MediathekAtlas · 0.6.50
+
+## Neu in 0.6.50: DMAX & TLC wieder abrufbar, ServusTV-Listen „nur in Österreich“, Joyn-Titel lesbar
+
+- DMAX und TLC laden ihre Sendungen und Folgen wieder (die Sender haben ihre Schnittstelle umgestellt). Die Folgen öffnen vorerst auf der Website des Senders, bis die Wiedergabe geprüft ist. HGTV fällt vorerst weg (Schnittstelle für HGTV nicht gefunden).
+- ServusTV: Die Listen, die bei jedem Abruf mit „verweigert“ endeten, gibt es nur in Österreich. Sie werden sofort als solche erkannt, nicht mehr wiederholt und als Hinweis gezeigt; der Abruf gilt als vollständig.
+- Joyn: Folgentitel wie „Mensch, der Bulle is 'ne Frau“ erscheinen ohne HTML-Zeichencodes.
+
+## Neu in 0.6.49: Mehr Werke mit erkannter Art, „Art offen – warum?“
+
+- Beiträge von Sendungen werden auch dann ihrer Sendung zugeordnet, wenn die Filmdatenbanken nur unpassende Vorschläge lieferten (anderer Film gleichen Namens mit falscher Laufzeit, ungenauer Titel, die Sendung selbst mehrfach). Passende Vorschläge halten das Werk weiter offen.
+- ARTE-Rubriken in allen Sprachen gelten nicht mehr als Sendung; falsch abgelegte Werke werden neu geprüft.
+- „Auswahl erneut abgleichen“ hebt eine automatische Einordnung auf und bringt die Vorschläge zurück.
+- Verwaltung → Zuordnung → Erkennungsquote je Sender: Spalte „Art offen“ und die Gründe je Sender und Sendung, auch in der Diagnose.
+
+## Neu in 0.6.48: DMAX, TLC & HGTV, Joyn-Folgenlisten, Red Bull TV repariert
+
+- DMAX, TLC und HGTV sind eine neue Plattform: alle Sendungen der drei Sender mit ihren Folgen. Freie Folgen laufen im eigenen Player, Folgen nur mit discovery+ und kopiergeschützte Folgen sind gekennzeichnet und öffnen beim Sender.
+- Joyn-Serien zeigen jetzt alle Folgen mit Staffel, Laufzeit und „Kostenlos“ oder „Joyn+“ je Folge (gelesen von der Serienseite, 12 Stunden gemerkt). Abgespielt wird weiterhin bei Joyn (Kopierschutz).
+- Red Bull TV liefert wieder Videos: die neuen Kennungen der Website (rrn:content:…) werden erkannt, Links führen zu redbull.tv.
+- Mac: Wird eine hängende Instanz durch einen neuen Start ersetzt, erscheint kein Fehlerdialog „Anwendung konnte nicht gestartet werden“ mehr.
 
 ## Neu in 0.6.47: Red Bull TV, WELT und n-tv im Live-TV, Mac-App startet nach dem Beenden wieder
 

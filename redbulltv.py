@@ -12,7 +12,15 @@ NOT confirmed by a recording (the cloud build cannot reach redbull.com; checked 
   one whose start page ``discover`` answers is remembered for the next runs (``scope`` in the state);
 * player tenant ``rbtv``; if it names no stream the ServusTV tenant ``stv`` is asked as well (both serve
   one video store; the ServusTV player already plays the Red Bull TV live channel);
-* web links ``https://www.redbull.com/de-de/tv/video/<id>`` (pattern of the yt-dlp extractor).
+* web links: 0.6.47 guessed ``https://www.redbull.com/de-de/tv/video/<id>``.
+
+0.6.48, checked on Björn's Mac on the live network (20.11.2026): all three scopes answer; ``discover`` names
+collections as ``playlists::<uuid>``, ``<uuid>`` or ``rrn:content:collections:<uuid>``; a collection page
+(``?offset=0``) carries ``cards`` with ids ``page:rrn:content:films:<uuid>``, ``rrn:content:shows:<uuid>``,
+``rrn:content:event-profiles:<uuid>``; ``/products/v5.3/rbtv/de/int/rrn:content:films:<uuid>`` describes a film
+(duration in ms, share_url ``https://www.redbull.tv/de/video/<id>/<slug>``); the player answers with
+``tenant=rbtv`` (plain HLS on play.redbull.com, no key), ``tenant=stv`` gives 404. The engine (servustv.py)
+now accepts these resource names; ServusTV ids are unchanged.
 
 If none of the scopes answers, the run fails with a plain message and a ``redbulltv_scope_missing`` entry in
 the diagnosis (counts and HTTP status only). The Red Bull TV live channel stays playable through ServusTV in
@@ -28,7 +36,7 @@ import servustv as engine
 
 KEY = 'redbulltv'
 NAME = 'Red Bull TV'
-SITE = 'https://www.redbull.com'
+SITE = 'https://www.redbull.tv'   # 0.6.48: share_url https://www.redbull.tv/de/video/<rrn id>/<slug> (Björn's Mac)
 SCOPES = ('/rbtv/de/int/', '/rbtv/de/de/', '/rbtv/en/int/')
 SEEDS = ('discover',)
 VALID_ID = engine.VALID_ID
@@ -37,9 +45,9 @@ TENANT = engine.Tenant(
     key=KEY, name=NAME, site=SITE, scopes=SCOPES, seeds=SEEDS, player_tenants=('rbtv', 'stv'),
     table='redbulltv', dbfile='redbulltv.sqlite3', live_fallback=(),
     live_summary='Das laufende Programm von Red Bull TV.',
-    web_pattern=(r'https://www\.redbull\.com/[a-z]{2,3}-[a-z]{2}/(?:tv/)?(?:video|videos|episodes|films|live|page)/'
-                 r'[A-Za-z0-9:\-]{4,120}(?:/[a-z0-9\-]{1,160})?'),
-    web_item='%(site)s/de-de/tv/video/%(id)s', web_home=SITE + '/de-de/tv', web_shows=SITE + '/de-de/tv',
+    web_pattern=(r'https://www\.redbull\.(?:tv/[a-z]{2}|com/[a-z]{2,3}-[a-z]{2}/(?:tv/)?)/?(?:video|videos|episodes|episode|films|film|'
+                 r'shows|show|live|page)/[A-Za-z0-9:\-]{4,120}(?:/[a-z0-9\-]{1,160})?'),
+    web_item='%(site)s/de/video/%(id)s', web_home=SITE + '/de', web_shows=SITE + '/de',
     assumed_scope=True)
 T = TENANT
 

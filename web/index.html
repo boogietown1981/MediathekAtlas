@@ -116,6 +116,7 @@
   <button type="button" data-catalog-source="plex">Plex</button>
   <button type="button" data-catalog-source="servustv">ServusTV</button>
   <button type="button" data-catalog-source="redbulltv">Red Bull TV</button>
+  <button type="button" data-catalog-source="dmax">DMAX &amp; Co.</button>
   <button type="button" data-catalog-source="rtlplus">RTL+</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
@@ -161,6 +162,7 @@
     <button class="platform-tab" type="button" data-platform="plex">Plex</button>
     <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
     <button class="platform-tab" type="button" data-platform="redbulltv">Red Bull TV</button>
+    <button class="platform-tab" type="button" data-platform="dmax">DMAX &amp; Co.</button>
     <button class="platform-tab" type="button" data-platform="rtlplus">RTL+</button>
   </div>
 <section id="legacy" class="legacy-panel">
@@ -400,6 +402,33 @@
   <div class="netzkino-pages"><button type="button" id="servustv-prev">← Zurück</button>
     <span id="servustv-page-label" class="muted"></span>
     <button type="button" id="servustv-next">Weiter →</button></div>
+</section>
+<section id="dmax" class="pluto-panel dmax-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>DMAX &amp; TLC · Sendungen mit allen Folgen</h3>
+    <p class="muted">Die kostenlosen Mediatheken der drei Sender (ohne Konto, mit Werbung): Dokus, Reportagen, Reality, Haus und Garten, jeweils mit allen frei abrufbaren Folgen. Der Sender steht als Kategorie an jeder Sendung.
+       Folgen ohne Kopierschutz laufen im MediathekAtlas-Player. Folgen, die es nur mit discovery+ oder nur kopiergeschützt gibt, sind gekennzeichnet und öffnen die Seite des Senders.
+       Offline-Speichern gibt es nicht, die Sender erlauben Downloads nur in ihren eigenen Apps.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="dmax-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="dmax-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="dmax-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="DMAX-Ansicht">
+    <button type="button" id="dmax-view-movies" hidden>Filme</button>
+    <button type="button" id="dmax-view-series" class="primary">Sendungen</button>
+    <button type="button" id="dmax-back" hidden>← Zur Sendungsübersicht</button>
+    <span id="dmax-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Sendungen suchen<input type="search" id="dmax-filter" placeholder="Titel, Sender oder Genre"></label>
+    <label>Sortierung<select id="dmax-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="dmax-categories" class="portal-categories" role="group" aria-label="DMAX-Kategorien" hidden></div>
+  <p id="dmax-status" class="muted" role="status"></p>
+  <details id="dmax-offline" class="nk-offline dmax-offline" hidden><summary>Offline-Kopien <span id="dmax-offline-count" class="muted"></span></summary>
+    <div id="dmax-offline-jobs"></div></details>
+  <div id="dmax-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="dmax-prev">← Zurück</button>
+    <span id="dmax-page-label" class="muted"></span>
+    <button type="button" id="dmax-next">Weiter →</button></div>
 </section>
 <section id="redbulltv" class="pluto-panel redbulltv-panel">
   <div class="panel netzkino-sync-panel">
@@ -690,7 +719,7 @@
   <div id="video-audit-results" class="atlas-audit-results"></div>
 </div><h2>Zuordnungszentrale</h2><p class="muted">Quelltitel und Katalogtitel vergleichen. Jede Folge wird einzeln angezeigt. Vorschläge sind erst nach Prüfung bestätigt.</p>
 <details class="provider-panel"><summary>Metadatenquellen · Statistik seit App-Start</summary><p class="muted">Titelabfragen zählen Anbieterprüfungen inklusive interner Antwortcaches, keine einzelnen HTTP-Aufrufe. Treffer sind Kandidaten, keine bestätigten Zuordnungen.</p><div class="table-scroll"><table><thead><tr><th>Quelle</th><th>Status</th><th>Prüfungen</th><th>Mit Treffern</th><th>Kandidaten</th><th>Fehler</th><th>Pausiert übersprungen</th><th>Aus Nichttreffer-Cache</th><th>Letzte erfolgreiche Prüfung</th></tr></thead><tbody id="provider-table"></tbody></table></div></details>
-<details class="provider-panel"><summary>Erkennungsquote je Sender</summary><p class="muted">Erkannt = Werk bei TMDB, TVDB, IMDb oder als Sendereihe gefunden (vollständig zugeordnet oder Werk erkannt). Sendungsbeiträge (Nachrichten, Magazine) sind ihrer Sendung zugeordnet, werden nicht abgefragt und zählen nicht in die Quote.</p><p id="recognition-status" class="muted" role="status"></p><div class="table-scroll"><table><thead><tr><th>Sender</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th><th>Filme erkannt</th><th>Serien erkannt</th><th>Clips &amp; Extras</th></tr></thead><tbody id="recognition-table"></tbody></table></div><h4>Nach Medienart</h4><div class="table-scroll"><table><thead><tr><th>Medienart</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th></tr></thead><tbody id="recognition-kinds"></tbody></table></div></details>
+<details class="provider-panel"><summary>Erkennungsquote je Sender</summary><p class="muted">Erkannt = Werk bei TMDB, TVDB, IMDb oder als Sendereihe gefunden (vollständig zugeordnet oder Werk erkannt). Sendungsbeiträge (Nachrichten, Magazine) sind ihrer Sendung zugeordnet, werden nicht abgefragt und zählen nicht in die Quote.</p><p id="recognition-status" class="muted" role="status"></p><div class="table-scroll"><table><thead><tr><th>Sender</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th><th>Filme erkannt</th><th>Serien erkannt</th><th title="Werke, deren Art (Film, Serie, Sendungsbeitrag) noch nicht feststeht">Art offen</th><th>Clips &amp; Extras</th></tr></thead><tbody id="recognition-table"></tbody></table></div><h4>Nach Medienart</h4><div class="table-scroll"><table><thead><tr><th>Medienart</th><th>Werke</th><th>Vollständig</th><th>Werk erkannt</th><th>Sendungsbeiträge</th><th>Zu prüfen</th><th>Offen</th><th>Erkannt (ohne Beiträge)</th></tr></thead><tbody id="recognition-kinds"></tbody></table></div><div id="unknown-reasons" class="atlas-unknown-reasons" hidden><h4>Art offen – warum?</h4><p id="unknown-reasons-status" class="muted"></p><div class="table-scroll"><table><thead><tr><th>Sender</th><th>Offen</th><th>Gründe</th></tr></thead><tbody id="unknown-reasons-channels"></tbody></table></div><h4>Sendungen mit den meisten offenen Werken</h4><div class="table-scroll"><table><thead><tr><th>Sendung</th><th>Sender</th><th>Werke</th><th>Grund</th></tr></thead><tbody id="unknown-reasons-topics"></tbody></table></div></div></details>
 <form id="review-search" class="review-toolbar"><input id="review-query" placeholder="Katalogtitel oder Sendungsreihe suchen" aria-label="Zuordnungen durchsuchen"><select id="review-state" aria-label="Zuordnungsstatus"><option value="open">Alle offenen Fälle</option><option value="review">Zu prüfen</option><option value="identified">Werk erkannt · Folge offen</option><option value="pending">Vorgemerkt</option><option value="retry">Wiederholung</option><option value="matched">Automatisch zugeordnet</option><option value="manual">Manuell bestätigt</option><option value="format">Sendungsbeitrag · nicht abgeglichen</option></select><button>Suchen</button></form>
 <div class="sectionhead"><p id="review-count" role="status"></p><div><button id="review-prev">←</button><button id="review-next">→</button></div></div><div class="review-toolbar"><label class="check"><input type="checkbox" id="review-all"> Seite auswählen</label><button id="review-priority">Auswahl erneut abgleichen</button><span id="review-selected">0 ausgewählt</span></div><div id="review-list"></div></section>
 <section id="logs" hidden><div class="sectionhead"><h2>Live-Protokoll</h2><div><button id="pause-log">Ansicht pausieren</button><button id="export-log" class="primary">Diagnose-ZIP herunterladen</button></div></div><p class="muted">Automatische Aktualisierung alle 2,5 Sekunden. Das Protokoll bleibt lokal gespeichert, auch wenn die Ansicht pausiert. Der Export enthält technische Ereignisse, keine Katalogdatenbank oder API-Schlüssel.</p><p id="log-status" role="status"></p><pre id="live-log" tabindex="0">Protokoll wird geladen …</pre></section>
@@ -747,4 +776,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/redbulltv.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/youtube_abos.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/abo_shelf.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/storage_locations.js"></script><script src="/system.js"></script><script src="/watch_mode.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/redbulltv.js"></script><script src="/dmax.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/youtube_abos.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/abo_shelf.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/storage_locations.js"></script><script src="/system.js"></script><script src="/watch_mode.js"></script></body></html>

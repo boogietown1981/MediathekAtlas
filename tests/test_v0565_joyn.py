@@ -5,6 +5,7 @@ import json
 import sys
 import tempfile
 import unittest
+import urllib.error
 import urllib.parse
 from pathlib import Path
 
@@ -197,7 +198,13 @@ class JoynTest(unittest.TestCase):
         self.assertIn(['Angebot', 'Joyn+ (mit Joyn-Konto)'], m['provider_facts'])
         channel = portal_title.model(self.root, 'joyn', 'c.daserste-de-hd')
         self.assertFalse(channel['playable'])
-        series = portal_title.model(self.root, 'joyn', 's.a_stromberg')
+        def offline(url):
+            raise urllib.error.URLError('offline')
+        joyn.PAGE_FETCH = offline          # 0.6.48: series pages are read on opening; here joyn.de is unreachable
+        try:
+            series = portal_title.model(self.root, 'joyn', 's.a_stromberg')
+        finally:
+            joyn.PAGE_FETCH = None
         self.assertEqual(series['episodes'], [])
         self.assertTrue(any('bei Joyn ansehen' in n for n in series['notes']))
 

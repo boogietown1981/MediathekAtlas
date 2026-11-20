@@ -61,7 +61,7 @@ class FakeRedBull:
         parts = urllib.parse.urlsplit(url)
         q = dict(urllib.parse.parse_qsl(parts.query))
         self.calls.append((parts.path, q))
-        assert headers['Referer'] == 'https://www.redbull.com/'
+        assert headers['Referer'] == 'https://www.redbull.tv/'
         if parts.hostname == 'tv-api.redbull.com':
             if self.scope not in parts.path:
                 raise http_error(url, 404)

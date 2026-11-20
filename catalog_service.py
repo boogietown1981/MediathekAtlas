@@ -998,9 +998,17 @@ class Service:
         so that recognition and the web server keep their turn (USB drives, diagnosis 20.11.2026)."""
         with self.db() as c:
             last=catalog.get_state(c,'unknown_sweep',{}) or {}
-            if not force and time.time()-float(last.get('finished') or 0)<catalog.UNKNOWN_SWEEP_INTERVAL:return None
+            # 0.6.49: new rules (UNKNOWN_RULES_REV) are applied right after the update, not 6 h later.
+            current=int(last.get('rev') or 1)>=catalog.UNKNOWN_RULES_REV
+            if not force and current and time.time()-float(last.get('finished') or 0)<catalog.UNKNOWN_SWEEP_INTERVAL:return None
+        started=time.monotonic()
+        with self.db() as c:
+            reopened=catalog.unknown_rubric_fix(c)
+            restored=catalog.unknown_recheck_set_aside(c)
             ids,singles=catalog.unknown_candidates(c)
-        started=time.monotonic();summary={'candidates':len(ids),'singles_rechecked':len(singles)}
+        summary={'candidates':len(ids),'singles_rechecked':len(singles),'rev':catalog.UNKNOWN_RULES_REV}
+        if reopened:summary['rubric_reopened']=reopened
+        if restored:summary['set_aside_restored']=restored
         changed=0
         if ids or singles:
             with self.db() as c:
@@ -1016,14 +1024,21 @@ class Service:
                         if not sqlite_busy(e):raise
                         self.sqlite_busy_count+=1
                     if self.stop.wait(.05):return changed
+        catalog.finish_summary(summary)
         summary.update(changed=changed,seconds=round(time.monotonic()-started,1),finished=time.time(),
                        total_changed=int(last.get('total_changed') or 0)+changed)
         with self.db() as c:
+            summary['unknown_by_state']=catalog.unknown_overview(c)
+            remaining=sum(summary['unknown_by_state'].values())
+            summary['unknown_left']=remaining
             catalog.set_state(c,'unknown_sweep',summary)
-            remaining=c.execute("SELECT COUNT(*) FROM works WHERE kind='unknown'").fetchone()[0]
-        if changed:catalog.invalidate_listings()
+        if changed or reopened or restored:catalog.invalidate_listings()
         diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
                           classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
+                          set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,set_aside_restored=restored,
+                          remaining_channels=summary.get('remaining_channels',{}),
+                          remaining_topics=summary.get('remaining_topics',[])[:20],
+                          unknown_by_state=summary['unknown_by_state'],
                           channels=summary.get('channels',{}),samples=summary.get('samples',{}),seconds=summary['seconds'])
         return changed
     def metadata_loop(self,index=0):
