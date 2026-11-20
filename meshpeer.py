@@ -11,10 +11,10 @@ from pathlib import Path
 import meshjournal
 
 KEY_HEADER = 'X-Atlas-Mesh-Key'
-MAX_FILE = meshjournal.SEGMENT_BYTES + 2 * meshjournal.MAX_LINE
+MAX_FILE = max(meshjournal.SEGMENT_BYTES, meshjournal.STAGED_GZ_BYTES) + 2 * meshjournal.MAX_LINE  # 0.6.56: staged .gz segments
 MAX_INDEX = 8 * 1024 * 1024
 TIMEOUT = 60
-_PATH = re.compile(r'^nodes/([0-9a-f]{32})/(events-\d{6}\.jsonl|node\.json)$')
+_PATH = re.compile(r'^nodes/([0-9a-f]{32})/(events-\d{6}\.jsonl(?:\.gz)?|node\.json)$')  # .gz since 0.6.56
 _KEY = re.compile(r'^[A-Za-z0-9_-]{32,64}$')
 
 
@@ -145,7 +145,7 @@ class Peer:
         for rel, meta in sorted(remote.items()):
             if not safe_path(rel) or rel.split('/')[1] == own_node: continue
             have = local.get(rel)
-            if rel.endswith('.jsonl') and have: continue
+            if rel.endswith(('.jsonl', '.jsonl.gz')) and have: continue
             if rel.endswith('node.json') and have and have[1] >= int(meta[1]): continue
             data = self._call('GET', '/api/peer/file', {'path': rel})
             got += store(root, own_node, rel, data, int(meta[1]))
@@ -153,7 +153,7 @@ class Peer:
         for rel, meta in sorted(local.items()):
             if rel.split('/')[1] == peer_node: continue
             theirs = remote.get(rel)
-            if rel.endswith('.jsonl') and theirs: continue
+            if rel.endswith(('.jsonl', '.jsonl.gz')) and theirs: continue
             if rel.endswith('node.json') and theirs and int(theirs[1]) >= meta[1]: continue
             try: data = (Path(root) / rel).read_bytes()
             except OSError: continue

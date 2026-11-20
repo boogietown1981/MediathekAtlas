@@ -65,6 +65,8 @@ CREATE TABLE IF NOT EXISTS catalog_state(key TEXT PRIMARY KEY,value TEXT);
 CREATE TABLE IF NOT EXISTS mesh_downloads(key TEXT PRIMARY KEY,node TEXT,name TEXT,state TEXT,until REAL,path TEXT,size INTEGER,hlc INTEGER,local TEXT,works TEXT);
 CREATE TABLE IF NOT EXISTS mesh_download_works(work_id TEXT PRIMARY KEY,key TEXT);
 CREATE TABLE IF NOT EXISTS mesh_results(work_id TEXT PRIMARY KEY,rank INTEGER,providers INTEGER,hlc INTEGER,node TEXT,payload TEXT);
+CREATE TABLE IF NOT EXISTS mesh_episodes(work_id TEXT PRIMARY KEY,until INTEGER NOT NULL,archive INTEGER NOT NULL,sender INTEGER NOT NULL DEFAULT 0,node TEXT NOT NULL);
+CREATE TABLE IF NOT EXISTS mesh_conflicts(work_id TEXT PRIMARY KEY,node TEXT NOT NULL,name TEXT NOT NULL,payload TEXT NOT NULL,seen REAL NOT NULL);
 '''
 SPECIAL=re.compile(r'(?i)\b(audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung)\b|\((?:AD|DGS)\)')
 SUFFIX=re.compile(r'(?i)\s*[([](?:mit\s+)?(?:audiodeskription|audio[- ]?description|hörfassung|hörfilm|gebärdensprache|gebärdenfassung|AD|DGS|HD|UHD|4K|untertitel(?:n)?|UT|OmU|OV|Originalversion(?:\s+mit\s+Untertitel(?:n)?)?|Originalfassung(?:\s+mit\s+Untertitel(?:n)?)?|Original\s+mit\s+Untertitel(?:n)?|VOST(?:F)?|VO-?ST)[)\]]\s*')
