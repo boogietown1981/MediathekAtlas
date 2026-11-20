@@ -10,7 +10,7 @@ Mehrere MediathekAtlas-Installationen teilen sich die Metadatenerkennung und tau
 
 Ohne Verbundordner oder bei nicht erreichbarem Ordner erkennt jede Installation wie bisher alle Titel allein.
 
-## Schnelleinrichtung über einen Cloud-Ordner (seit 0.6.51)
+## Schnelleinrichtung über einen Cloud-Ordner (seit 0.6.53)
 
 Für mehrere Macs (oder PCs) ohne NAS: **Einstellungen → Verbund & andere Systeme → „Über iCloud Drive verbinden“** auf jedem Gerät einmal wählen. Gefunden werden iCloud Drive, Dropbox, OneDrive, Google Drive und Synology Drive. Angelegt wird nur der Unterordner `MediathekAtlas-Verbund`; danach gilt alles wie beim Verbundordner. Kein offener Port, kein NAS nötig; ausgeschaltete Geräte holen beim nächsten Start nach.
 
@@ -65,7 +65,7 @@ Segmente werden nach 2 MiB oder 5 Minuten per Umbenennung veröffentlicht. Leser
 | `match.result` | `matched`, `identified`, `review` | automatisches Ergebnis; `review` enthält höchstens 10 Vorschläge |
 | `match.manual` | `manual` | vom Nutzer bestätigte Zuordnung |
 
-### Episodensuche (seit 0.6.51)
+### Episodensuche (seit 0.6.53)
 
 Eine bestätigte Episode wird als `match.result` mit `outcome` `matched` veröffentlicht (`work` = Werk-ID vor der Bestätigung und ursprüngliche Werk-IDs). „Keine Episode gefunden“:
 
@@ -98,7 +98,7 @@ Beim ersten Verbinden veröffentlicht jedes System einmalig seine schon vorhande
 - 256 Bereiche nach den ersten zwei Hex-Zeichen der Werk-ID. Zuteilung wie MeshSync `hubwork.owners()`: jeder aktive Knoten mindestens ein Bereich, Rest nach `rate`.
 - Nutzerpriorisierte Titel werden immer lokal geprüft. Ist die eigene Warteschlange leer, hilft ein Knoten vom Ende der übrigen Bereiche aus. Treffen sich zwei Knoten, wird höchstens der gerade laufende Titel doppelt geprüft.
 - Vorrang: `manual` > `matched` > `identified` > `review`; bei gleichem Rang mehr Anbieter, dann jüngere `hlc`, dann größere Knoten-ID. Alle Knoten kommen so zum selben Ergebnis.
-- Eine lokale manuelle Zuordnung wird nie ersetzt, auch nicht durch eine fremde manuelle (seit 0.6.51). Eine abweichende fremde manuelle Zuordnung wird als Abweichung gemerkt (`mesh_conflicts`) und in der Oberfläche zur Entscheidung angeboten. Ein `review` eines Knotens mit weniger Anbietern blockiert einen besser ausgestatteten Knoten nicht.
+- Eine lokale manuelle Zuordnung wird nie ersetzt, auch nicht durch eine fremde manuelle (seit 0.6.53). Eine abweichende fremde manuelle Zuordnung wird als Abweichung gemerkt (`mesh_conflicts`) und in der Oberfläche zur Entscheidung angeboten. Ein `review` eines Knotens mit weniger Anbietern blockiert einen besser ausgestatteten Knoten nicht.
 
 ## Grenzen dieser Version
 

@@ -80,6 +80,21 @@ async function waitFor(url, seconds) {
     for (const t of ['Der Neue', 'Lebenslauf', 'Joyn+', 'Kostenlos']) if (!joynText.includes(t)) problems.push('Joyn-Serienseite ohne: ' + t);
     if (joynText.includes('Andere Serie')) problems.push('Joyn: Folge einer fremden Serie angezeigt');
     if (shots) await page.screenshot({ path: path.join(shots, 'joyn-folgen.png') });
+    // 0.6.52: filmfriend tab with films and series, every title only on filmfriend.de
+    await page.goto(url);
+    await page.waitForFunction(() => typeof window.atlasShowView === 'function' && !!window.AtlasDisplay, null, { timeout: 20000 });
+    await page.evaluate(() => window.AtlasDisplay.ready);
+    await page.evaluate(() => window.atlasShowView('portals'));
+    await page.locator('#portals button.platform-tab', { hasText: /^filmfriend$/ }).click();
+    await page.waitForSelector('#filmfriend-items .atlas-uc-card', { timeout: 30000 }).catch(() => problems.push('filmfriend: keine Kacheln'));
+    const ffText = await page.locator('#filmfriend').innerText();
+    if (!ffText.includes('Abschied')) problems.push('filmfriend: Film fehlt');
+    if (!ffText.includes('Mit Bibliotheksausweis')) problems.push('filmfriend: Hinweis auf den Bibliotheksausweis fehlt');
+    if (/▶ Abspielen/.test(ffText)) problems.push('filmfriend: Abspielen angeboten');
+    await page.locator('#filmfriend-view-series').click();
+    await page.waitForFunction(() => document.querySelector('#filmfriend').innerText.includes('Allein gegen die Zeit'), null, { timeout: 15000 })
+      .catch(() => problems.push('filmfriend: Serie fehlt'));
+    if (shots) await page.screenshot({ path: path.join(shots, 'filmfriend.png') });
   } catch (e) {
     problems.push('Abbruch: ' + (e && e.stack || e));
   } finally {

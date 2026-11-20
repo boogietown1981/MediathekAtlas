@@ -162,7 +162,7 @@ def _open(req):
             final = urllib.parse.urlsplit(response.geturl())
             if final.scheme != 'https' or final.hostname not in HOSTS:
                 raise ValueError('Crunchyroll leitete auf eine unerwartete Adresse um')
-            raw = response.read(MAX_ANSWER + 1)
+            raw = provider_base.read_capped(response, MAX_ANSWER)
     except urllib.error.HTTPError as exc:
         body = b''
         try:

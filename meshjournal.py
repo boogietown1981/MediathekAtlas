@@ -21,9 +21,9 @@ MAX_LINE = 256 * 1024
 READ_LIMIT = 5000           # events per import round, keeps weak NAS responsive
 HEARTBEAT = 300
 RECEIPT = 'archive.receipt'   # 0.5.95: signed proof of an Archive.org copy (archive_receipts); older versions skip the unknown type
-EPISODE = 'episode.result'    # 0.6.51: "no episode found until …" from another system; older versions skip the unknown type
+EPISODE = 'episode.result'    # 0.6.53: "no episode found until …" from another system; older versions skip the unknown type
 TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release', RECEIPT, EPISODE)
-GAP_WAIT = 6 * 3600           # 0.6.51: a missing earlier segment (still syncing) holds back later ones this long
+GAP_WAIT = 6 * 3600           # 0.6.53: a missing earlier segment (still syncing) holds back later ones this long
 ICLOUD_SUFFIX = '.icloud'     # evicted iCloud Drive file on macOS ≤ 13: ".<name>.icloud"
 DOWNLOAD_TYPES = TYPES[2:5]
 CLAIM_SECONDS = 7200          # a claim expires unless renewed, so a crashed node never blocks a title for long
@@ -37,7 +37,7 @@ _fetch_requested = {}
 
 
 def host_id():
-    """Stable, non-identifying fingerprint of this computer (0.6.51).
+    """Stable, non-identifying fingerprint of this computer (0.6.53).
 
     Used only to notice a data folder that was copied to a second computer: both copies
     would otherwise write under the same node ID and overwrite each other's node.json."""
@@ -113,7 +113,7 @@ CLOUD_SUBFOLDER = 'MediathekAtlas-Verbund'
 
 
 def cloud_folders(home=None):
-    """Synced cloud folders on this computer that can carry the Verbund (0.6.51).
+    """Synced cloud folders on this computer that can carry the Verbund (0.6.53).
 
     Every computer of the same person sees the same folder, so the Verbund needs no network
     share and no open port; computers that are off catch up when they come back."""
@@ -260,7 +260,7 @@ class Journal:
         self.root = Path(root); self.node = node_id; self.name = str(name or '')[:80]
         self.dir = self.root / 'nodes' / node_id
         self.dir.mkdir(parents=True, exist_ok=True)
-        # 0.6.51: with a cloud folder (iCloud Drive, Dropbox, …) the open segment is written in the
+        # 0.6.53: with a cloud folder (iCloud Drive, Dropbox, …) the open segment is written in the
         # local data folder and only the finished segment is moved into the shared folder; a growing
         # file there would be uploaded again after every result.
         self.staging = Path(staging) if staging else None
@@ -377,7 +377,7 @@ class Journal:
     def read(self, cursors, limit=READ_LIMIT, now=None):
         """New events of other nodes after cursors {node: [segment, line]}.
 
-        0.6.51: segments are numbered without gaps. If a later segment arrives before an earlier
+        0.6.53: segments are numbered without gaps. If a later segment arrives before an earlier
         one (cloud folder, MeshSync, direct connection), reading that node waits for the missing
         one instead of skipping it for good; after GAP_WAIT it is given up. Evicted iCloud files
         are requested and waited for the same way."""

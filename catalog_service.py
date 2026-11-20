@@ -786,7 +786,7 @@ class Service:
                            else 'IMDb-Episode zur erkannten Serie eindeutig bestätigt')
                 dest=catalog.save_metadata(c,selected_id,verified,'matched') or selected_id
                 outcome='matched'
-                # 0.6.51: the other systems of the Verbund take over the confirmed episode.
+                # 0.6.53: the other systems of the Verbund take over the confirmed episode.
                 providers=[m['provider']] if m.get('provider') in ('TMDB','TVDB','OMDb') else []
                 for wid in sorted({selected_id,*catalog.origin_ids(c,dest)}):self.mesh_publish(c,'match.result',wid,dest,'matched',dict(verified),providers)
             else:
@@ -1019,7 +1019,10 @@ class Service:
             ids,singles=catalog.unknown_candidates(c)
         summary={'candidates':len(ids),'singles_rechecked':len(singles),'rev':catalog.UNKNOWN_RULES_REV}
         if reopened:summary['rubric_reopened']=reopened
-        if restored:summary['set_aside_restored']=restored
+        if restored:
+            summary['set_aside_restored']=restored
+            with self.db() as c:fix=catalog.get_state(c,'unknown_set_aside_fix_v0649b',{}) or {}
+            summary['set_aside_kept']=fix.get('kept',0);summary['set_aside_kept_samples']=fix.get('kept_samples',[])
         changed=0
         if ids or singles:
             with self.db() as c:
@@ -1047,6 +1050,8 @@ class Service:
         diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
                           classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
                           set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,set_aside_restored=restored,
+                          set_aside_kept=summary.get('set_aside_kept',0),set_aside_kept_samples=summary.get('set_aside_kept_samples',[]),
+                          blocking_samples=summary.get('blocking_samples',[]),
                           remaining_channels=summary.get('remaining_channels',{}),
                           remaining_topics=summary.get('remaining_topics',[])[:20],
                           unknown_by_state=summary['unknown_by_state'],
@@ -1102,7 +1107,7 @@ class Service:
     def mesh_off(self,**state):
         with self.mesh_lock:self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_status={'enabled':False,**state}
     def mesh_node(self,root):
-        """This system's node ID; a new one when the data folder was copied from another computer (0.6.51)."""
+        """This system's node ID; a new one when the data folder was copied from another computer (0.6.53)."""
         host=meshjournal.host_id()
         with self.db() as c:
             node=catalog.get_state(c,'mesh_node_id');known=catalog.get_state(c,'mesh_node_host')
@@ -1133,7 +1138,7 @@ class Service:
                     if direct:Path(folder).mkdir(mode=0o700,exist_ok=True)
                     root=meshjournal.check_folder(folder,create=direct)
                     node=self.mesh_node(root)
-                    # 0.6.51: open segments stay in the data folder until they are complete (cloud folders).
+                    # 0.6.53: open segments stay in the data folder until they are complete (cloud folders).
                     staging=None if direct else Path(self.root)/'verbund-staging'/hashlib.sha256(str(root).encode()).hexdigest()[:12]
                     self.mesh=meshjournal.Journal(root,node,config.get('mesh_name') or platform.node(),staging=staging);self.mesh_beat=0
                     diagnostics.event('mesh_opened',node=node)
@@ -1152,7 +1157,7 @@ class Service:
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
-            # 0.6.51: episodes are split only with systems that share their episode results; a node of an
+            # 0.6.53: episodes are split only with systems that share their episode results; a node of an
             # older version keeps its partitions for works, but its episodes are still searched here.
             episode_parts=journal.assignment({n:r for n,r in members.items() if n==journal.node or 'episodes' in (nodes.get(n,{}).get('shares') or [])})
             self.mesh_names={n:str(i.get('name') or n[:8])[:80] for n,i in nodes.items()}
@@ -1185,7 +1190,7 @@ class Service:
             if self.stop.is_set():break
         self.mesh_peers=current
     MESH_IMPORT_BATCH=250;MESH_IMPORT_SECONDS=20;MESH_BACKFILL_PAUSE=20
-    MESH_SHARES=('episodes',)   # 0.6.51: announced in node.json; older nodes announce nothing
+    MESH_SHARES=('episodes',)   # 0.6.53: announced in node.json; older nodes announce nothing
     def mesh_import(self,journal):
         # Small transactions and a time budget per round: a large backlog from another system
         # (e.g. tens of thousands of earlier results) must not starve the web UI, the
@@ -1218,7 +1223,7 @@ class Service:
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
         if not better:
-            # 0.6.51: a differing manual assignment is shown even when the own one sorts first.
+            # 0.6.53: a differing manual assignment is shown even when the own one sorts first.
             if d['outcome']=='manual':
                 row=next((r for r in (c.execute('SELECT * FROM works WHERE id=?',(i,)).fetchone() for i in (d['work'],d.get('dest')) if i) if r),None)
                 if row and row['state']=='manual':self.mesh_conflict(c,row,event)
@@ -1232,7 +1237,7 @@ class Service:
     def mesh_adopt(self,c,row,event,known):
         d=event['data'];rank=meshjournal.RANK[d['outcome']];local=meshjournal.RANK.get(row['state'],0)
         if row['state']=='manual':
-            # 0.6.51: a manual assignment made on this system is never replaced from another system, not
+            # 0.6.53: a manual assignment made on this system is never replaced from another system, not
             # even by a manual one there. A different manual choice is kept as a visible conflict instead.
             if d['outcome']=='manual':self.mesh_conflict(c,row,event)
             return False
@@ -1252,7 +1257,7 @@ class Service:
             suggestions=meta.get('suggestions') if isinstance(meta.get('suggestions'),list) else []
             recognized=meta if d['outcome'] in ('matched','identified') else None
             if d['outcome']=='matched' and row['state']=='identified' and row['kind']=='series' and meshjournal.episode_meta(meta):
-                # 0.6.51: an episode confirmed on another system (IMDb archive / sender page); the series
+                # 0.6.53: an episode confirmed on another system (IMDb archive / sender page); the series
                 # itself is known here already, so nothing else is recalculated or propagated.
                 catalog.save_metadata(c,row['id'],{**meta,'state':'auto_matched'},'matched')
                 self.mesh_saved['episodes']+=1

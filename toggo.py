@@ -151,7 +151,7 @@ def _fetch(url, body=None):
         final = urllib.parse.urlsplit(response.geturl())
         if final.scheme != 'https' or final.hostname not in HOSTS:
             raise ValueError('TOGGO leitete auf eine unerwartete Adresse um')
-        raw = response.read(MAX_ANSWER + 1)
+        raw = provider_base.read_capped(response, MAX_ANSWER)
     if len(raw) > MAX_ANSWER:
         raise ValueError('TOGGO-Antwort zu groß')
     return raw

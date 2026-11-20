@@ -112,7 +112,7 @@ class RequestRetryTests(unittest.TestCase):
 
         class Resp:
             def __init__(self, raw):
-                self.raw = raw
+                self.raw = io.BytesIO(raw)        # 0.6.52: read in chunks like a real answer (provider_base.read_capped)
 
             def __enter__(self):
                 return self
@@ -121,7 +121,7 @@ class RequestRetryTests(unittest.TestCase):
                 return False
 
             def read(self, n):
-                return self.raw
+                return self.raw.read(n)
 
         def urlopen(req, timeout):
             a = answers.pop(0)

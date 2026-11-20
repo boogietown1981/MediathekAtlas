@@ -89,7 +89,7 @@ jobs:
       - name: Art offen je Sender (0.6.49)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/unknown_reasons.cjs
-      - name: Verbund zweier Instanzen über Cloud-Ordner (0.6.51)
+      - name: Verbund zweier Instanzen über Cloud-Ordner (0.6.53)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/mesh_two_nodes.cjs
 

@@ -1,4 +1,4 @@
-/* 0.6.51: two real MediathekAtlas instances form a Verbund over a shared cloud folder.
+/* 0.6.53: two real MediathekAtlas instances form a Verbund over a shared cloud folder.
 
    Both instances run with all background services (offline: every outbound connection goes to a dead
    proxy), the same HOME with "iCloud Drive" (Library/Mobile Documents/com~apple~CloudDocs) and their own
@@ -108,7 +108,7 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (!/übernommen statt selbst berechnet/.test(status)) problems.push('B: Ersparnis nicht angezeigt: ' + status);
     if (shots) {
       const card = pb.locator('details', { has: pb.locator('#mesh-quick') });
-      await card.screenshot({ path: path.join(shots, '0.6.51-verbund-icloud.png') });
+      await card.screenshot({ path: path.join(shots, '0.6.53-verbund-icloud.png') });
     }
     await pb.locator('#mesh-conflict-list button', { hasText: 'übernehmen' }).first().click();
     await pb.waitForSelector('#mesh-conflicts[hidden]', { state: 'attached', timeout: 15000 }).catch(() => problems.push('B: Abweichung nach Übernahme noch sichtbar'));

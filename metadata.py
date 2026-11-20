@@ -377,6 +377,10 @@ def wikidata(title,kind,year):
     return d
 
 GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten'}
+# 0.6.49 (third Gegenprobe, 20.11.2026): 3sat/ZDF/ARD file programmes under subject rubrics; Wikidata answered
+# "Reise" and "Musik" with the concepts themselves. They name no Sendung (866 works "Reise", 411 "Musik").
+GENERIC|={'reise','musik','politik','tiere','natur','wintersport','doku und reportage','dokumentationen und reportagen',
+          'filme dokus kabarett','dokumentation und reportage'}
 # arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
 # 0.6.49 (Diagnose 20.11.2026 abends): the French, Italian, Spanish and Polish ARTE sections

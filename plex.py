@@ -171,7 +171,7 @@ def _open(url, headers, data=None, limit=MAX_ANSWER):
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('Plex-Antwort zu groß')
-        raw = response.read(limit + 1)
+        raw = provider_base.read_capped(response, limit)
         final = response.geturl()
     if len(raw) > limit:
         raise ValueError('Plex-Antwort zu groß')

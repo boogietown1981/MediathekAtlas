@@ -116,7 +116,7 @@ def _notify(event, **details):
 
 def _connect(root):
     db = provider_base.connect(root, 'dmax.sqlite3')
-    db.executescript(SCHEMA)
+    provider_base.ensure_schema(db, SCHEMA)        # 0.6.52: once per process
     return db
 
 
@@ -180,7 +180,7 @@ def _open(url, headers, data=None, limit=MAX_ANSWER):
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('DMAX-Antwort zu groß')
-        raw = response.read(limit + 1)
+        raw = provider_base.read_capped(response, limit)
     if len(raw) > limit:
         raise ValueError('DMAX-Antwort zu groß')
     return raw

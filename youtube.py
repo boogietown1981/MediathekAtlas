@@ -595,7 +595,7 @@ def _request(endpoint, query, key):
     for attempt in range(len(RETRY_WAITS) + 1):
         try:
             with urllib.request.urlopen(req, timeout=30) as response:
-                raw = response.read(MAX_ANSWER + 1)
+                raw = provider_base.read_capped(response, MAX_ANSWER)
             break
         except urllib.error.HTTPError as exc:
             try:

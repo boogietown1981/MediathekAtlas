@@ -1,4 +1,4 @@
-"""0.6.51: recognition results are shared between devices instead of being recalculated.
+"""0.6.53: recognition results are shared between devices instead of being recalculated.
 
 Björn runs MediathekAtlas on several Macs with separate catalogues (MacBook Pro M3, MacBook Air,
 MacBook Pro M4 Pro). Every Mac recognised the same catalogue on its own; the Verbund was off

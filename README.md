@@ -1,11 +1,16 @@
-# MediathekAtlas · 0.6.51
+# MediathekAtlas · 0.6.53
 
-## Neu in 0.6.51: Erkennung zwischen Geräten teilen
+## Neu in 0.6.53: Erkennung zwischen Geräten teilen
 
 - Mehrere Macs (oder ein Mac und ein PC) teilen sich die Erkennung jetzt mit einem Klick: Einstellungen → Verbund & andere Systeme → „Über iCloud Drive verbinden“ (auch Dropbox, OneDrive, Google Drive, Synology Drive), auf jedem Gerät einmal. Ein NAS oder offener Port ist nicht nötig, die Geräte müssen nicht gleichzeitig laufen.
 - Jedes Gerät erkennt nur noch seinen Teil des Katalogs und übernimmt den Rest von den anderen. Neu geteilt werden auch bestätigte Episoden und „keine Episode gefunden“ der Episodensuche.
 - Eigene manuelle Zuordnungen werden nie von einem anderen Gerät überschrieben. Weicht ein anderes Gerät ab, erscheint das unter „Abweichende manuelle Zuordnungen“ mit „Eigene behalten“ oder „Übernehmen“.
 - Der Verbund zeigt, wie viele Erkennungen und Episodensuchen von anderen Geräten übernommen statt selbst berechnet wurden.
+
+## Neu in 0.6.52: filmfriend, die Filme und Serien der öffentlichen Bibliotheken
+
+- filmfriend ist eine neue Plattform: Spielfilme, Serien, Dokumentationen und Kinderfilme, die viele Bibliotheken ihren Mitgliedern kostenlos anbieten, mit Genre, Jahr, Laufzeit, FSK und IMDb-Verweis. Ansehen geht auf filmfriend.de nach Anmeldung mit dem Bibliotheksausweis; „Bei filmfriend ansehen“ öffnet den Titel dort.
+- Abrufe bei den Anbietern können nicht mehr minutenlang hängen: Jede Antwort hat eine Gesamtfrist von zwei Minuten.
 
 ## Neu in 0.6.50: DMAX & TLC wieder abrufbar, ServusTV-Listen „nur in Österreich“, Joyn-Titel lesbar
 

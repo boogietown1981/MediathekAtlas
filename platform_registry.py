@@ -34,6 +34,7 @@ import plex, plex_downloads, plex_enrichment
 import servustv, servustv_enrichment
 import redbulltv, redbulltv_enrichment
 import dmax, dmax_enrichment
+import filmfriend, filmfriend_enrichment
 import rtlplus, rtlplus_enrichment
 import youtube, youtube_downloads, youtube_enrichment
 
@@ -83,6 +84,8 @@ PLATFORMS = (
     Platform('redbulltv', redbulltv, redbulltv_enrichment),
     # 0.6.48: no offline copies (the channels allow downloads only in their own apps).
     Platform('dmax', dmax, dmax_enrichment),
+    # 0.6.52: catalogue with links only (library card login on filmfriend.de), no offline copies.
+    Platform('filmfriend', filmfriend, filmfriend_enrichment),
     # 0.5.102: RTL+ Free as a catalogue with links only (every stream Widevine).
     Platform('rtlplus', rtlplus, rtlplus_enrichment),
 )
