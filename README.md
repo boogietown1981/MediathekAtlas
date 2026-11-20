@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.49
+# MediathekAtlas · 0.6.50
+
+## Neu in 0.6.50: DMAX & TLC wieder abrufbar, ServusTV-Listen „nur in Österreich“, Joyn-Titel lesbar
+
+- DMAX und TLC laden ihre Sendungen und Folgen wieder (die Sender haben ihre Schnittstelle umgestellt). Die Folgen öffnen vorerst auf der Website des Senders, bis die Wiedergabe geprüft ist. HGTV fällt vorerst weg (Schnittstelle für HGTV nicht gefunden).
+- ServusTV: Die Listen, die bei jedem Abruf mit „verweigert“ endeten, gibt es nur in Österreich. Sie werden sofort als solche erkannt, nicht mehr wiederholt und als Hinweis gezeigt; der Abruf gilt als vollständig.
+- Joyn: Folgentitel wie „Mensch, der Bulle is 'ne Frau“ erscheinen ohne HTML-Zeichencodes.
 
 ## Neu in 0.6.49: Mehr Werke mit erkannter Art, „Art offen – warum?“
 

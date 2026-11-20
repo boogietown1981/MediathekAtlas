@@ -9,7 +9,7 @@ from __future__ import annotations
 import portal_enrichment as engine
 import dmax
 
-SPEC = engine.Spec(name='DMAX, TLC & HGTV', key='dmax', items='dmax_items', checks='dmax_reference_checks',
+SPEC = engine.Spec(name='DMAX & TLC', key='dmax', items='dmax_items', checks='dmax_reference_checks',
                    connect=dmax._connect, valid_id=lambda v: bool(dmax.VALID_ID.fullmatch(v)),
                    last_success=lambda db: dmax._get(db, 'last_success', '0'))
 UNCHECKED = engine.UNCHECKED

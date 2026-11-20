@@ -15,7 +15,11 @@ LOG="$STATE_DIR/startup.log"
 if [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ]; then
   : > "$LOG"
 fi
-printf 'MediathekAtlas 0.6.48 Startprüfung\n' >> "$LOG"
+printf 'MediathekAtlas 0.6.50 Startprüfung\n' >> "$LOG"
+# 0.6.48: dialogs only where someone can answer them (MEDIATHEKATLAS_NO_DIALOG=1 for tests and headless starts;
+# a dialog without a screen kept the script waiting for ever).
+OSASCRIPT=/usr/bin/osascript
+if [ "${MEDIATHEKATLAS_NO_DIALOG:-}" = "1" ]; then OSASCRIPT=/nonexistent/osascript; fi
 FOUND_PYTHON=""
 try_python() {
   local candidate="$1"
@@ -43,8 +47,8 @@ done
 if [ -z "$FOUND_PYTHON" ]; then
   MESSAGE="MediathekAtlas konnte kein startbares Python ab 3.9 finden. Eine vorhandene Installation wurde möglicherweise nicht erkannt. Details stehen im Startprotokoll. FFmpeg wurde noch nicht geprüft."
   printf '%s\n' "$MESSAGE" >> "$LOG"
-  if [ -x /usr/bin/osascript ]; then
-    /usr/bin/osascript - "$LOG" <<'APPLESCRIPT'
+  if [ -x "$OSASCRIPT" ]; then
+    "$OSASCRIPT" - "$LOG" <<'APPLESCRIPT'
 on run argv
  set answer to display dialog "Python konnte nicht gestartet werden. Details stehen im Startprotokoll. FFmpeg wurde noch nicht geprüft." buttons {"Schließen", "Protokoll öffnen"} default button "Protokoll öffnen" with title "MediathekAtlas – Startprüfung"
  if button returned of answer is "Protokoll öffnen" then
@@ -86,11 +90,11 @@ while :; do
   "$FOUND_PYTHON" server.py >> "$LOG" 2>&1
   STATUS=$?
   # 0.6.20: Speicherort für System und Datenbank nicht erreichbar (z. B. externes Laufwerk abgezogen).
-  if [ "$STATUS" -eq 3 ] && [ -x /usr/bin/osascript ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then
+  if [ "$STATUS" -eq 3 ] && [ -x "$OSASCRIPT" ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then
     # 0.6.25: dritter Knopf „Bisherigen Ort verwenden“ stellt nur den Zeiger zurück (nichts wird kopiert oder gelöscht).
     REVERT="no"
     if "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert-info >> "$LOG" 2>&1; then REVERT="yes"; fi
-    ANSWER="$(/usr/bin/osascript - "$STATE_DIR/storage-problem.txt" "$REVERT" <<'APPLESCRIPT'
+    ANSWER="$("$OSASCRIPT" - "$STATE_DIR/storage-problem.txt" "$REVERT" <<'APPLESCRIPT'
 on run argv
  set message to read POSIX file (item 1 of argv) as «class utf8»
  if item 2 of argv is "yes" then
@@ -117,8 +121,8 @@ if [ "$STATUS" -eq 137 ] || [ "$STATUS" -eq 143 ]; then
   printf 'MediathekAtlas wurde von außen beendet (Status %s, z. B. durch einen neuen Start); kein Startfehler.\n' "$STATUS" >> "$LOG"
   exit 0
 fi
-if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 3 ] && [ -x /usr/bin/osascript ]; then
-  /usr/bin/osascript - "$LOG" <<'APPLESCRIPT'
+if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 3 ] && [ -x "$OSASCRIPT" ]; then
+  "$OSASCRIPT" - "$LOG" <<'APPLESCRIPT'
 on run argv
  display dialog "Python wurde gefunden, aber die Anwendung konnte nicht gestartet werden. Das Startprotokoll enthält die genaue Fehlermeldung." buttons {"OK"} default button "OK" with title "MediathekAtlas"
  do shell script "/usr/bin/open -a TextEdit " & quoted form of (item 1 of argv)

@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.50 – DMAX/TLC über die Website-Schnittstelle, ServusTV-Geosperre, Joyn-Titel (20. November 2026)
+- Grundlage: Prüfung von 0.6.48 auf Björns Mac am echten Netz (Antworten von public.aurora.enhanced.live, 403 „geo blocked“ bei ServusTV, Joyn-Titel mit Zeichencodes).
+- Automatisch: siehe Bericht zum PR (Python-Suite, Node-Tests, Browser-Klicktests). DMAX-Tests mit Antworten in der auf dem Mac gefundenen Form; ServusTV: Geosperre ohne Wiederholung, nicht „teilweise“, Übernahme aus `refused_pages`, normales 403 weiter mit Wiederholungen; Joyn: Zeichencodes.
+- Nicht geprüft (aus der Cloud gesperrt): echter Abruf von public.aurora.enhanced.live (Feldnamen außer den auf dem Mac gesehenen), HGTV (weggelassen), Wiedergabe von DMAX/TLC (bewusst ausgeschaltet: Manifest 401 auf dem Mac).
+
 ## 0.6.49 – Werke ohne erkannte Art, Gründe je Sender (20. November 2026)
 - Automatisch: gesamte Python-Suite (1580, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund, neu `unknown_reasons.cjs` (Spalte „Art offen“, Gründe je Sender und Sendung, Bildschirmfoto) ohne Befund. Neu `tests/test_v0649_unknown_rest.py`: schwache/mögliche Vorschläge, alte und neue Anbieterfehler, Rücknahme mit „Erneut prüfen“, Regeln sofort nach Update, Rubrik-Korrektur einmalig, TVDB-404-Treffer, gemerkte Erkennungsquote.
 - Grundlage: Diagnose 20.11.2026 16:46 UTC (0.6.43, M3 Pro), Zahlen aus status.json; einzelne Vorschläge des echten Bestands waren nicht einsehbar.

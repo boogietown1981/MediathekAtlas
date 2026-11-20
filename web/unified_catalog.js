@@ -9,7 +9,7 @@
     return n;
   };
   const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','redbulltv','dmax','rtlplus'];
-  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX, TLC & HGTV',rtlplus:'RTL+'};
+  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',rtlplus:'RTL+'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
   const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,redbulltv:()=>window.playRedBullTV,dmax:()=>window.playDmax,rtlplus:()=>null};
   const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen',servustv:'Bei ServusTV ansehen',redbulltv:'Bei Red Bull TV ansehen',dmax:'Beim Sender ansehen',rtlplus:'Bei RTL+ ansehen'};

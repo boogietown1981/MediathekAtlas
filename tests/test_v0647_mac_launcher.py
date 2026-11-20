@@ -48,13 +48,23 @@ class MacLauncherTest(unittest.TestCase):
                     'MA_TEST_OUT': str(self.out)}
         self.env.pop('MEDIATHEKATLAS_SUPERVISED', None)
         self.env.pop('MEDIATHEKATLAS_FOREGROUND', None)
+        self.env['MEDIATHEKATLAS_NO_DIALOG'] = '1'          # no AppleScript dialog on a headless test machine
 
     def tearDown(self):
         if self.out.exists():
+            # 0.6.48: end the whole detached session (supervisor script and server). Killing only the server let
+            # the supervisor write its "von außen beendet" line while the folder was being removed (macOS CI).
             try:
-                os.kill(int(self.out.read_text().split()[0]), signal.SIGKILL)
+                pid, sid = (int(x) for x in self.out.read_text().split()[:2])
+                if sid != os.getsid(0):                     # never the session of the test run itself
+                    try:
+                        os.killpg(sid, signal.SIGKILL)
+                    except OSError:
+                        pass
+                os.kill(pid, signal.SIGKILL)
             except (OSError, ValueError):
                 pass
+            time.sleep(0.2)
         self.tmp.cleanup()
 
     def wait_for_server(self):

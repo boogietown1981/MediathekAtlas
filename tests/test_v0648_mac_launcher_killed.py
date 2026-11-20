@@ -19,7 +19,7 @@ class KilledServerTest(unittest.TestCase):
             server = 'import os, signal\nos.kill(os.getpid(), signal.%s)\n' % signal_name
             launcher = build_app(base, server=server)
             env = {**os.environ, 'MEDIATHEKATLAS_PYTHON': sys.executable, 'MEDIATHEKATLAS_HOME': str(base / 'state'),
-                   'MEDIATHEKATLAS_FOREGROUND': '1'}
+                   'MEDIATHEKATLAS_FOREGROUND': '1', 'MEDIATHEKATLAS_NO_DIALOG': '1'}
             env.pop('MEDIATHEKATLAS_SUPERVISED', None)
             r = subprocess.run(['/bin/bash', str(launcher)], env=env, capture_output=True, timeout=30)
             return r.returncode, (base / 'state' / 'startup.log').read_text()
@@ -35,7 +35,7 @@ class KilledServerTest(unittest.TestCase):
             base = Path(tmp)
             launcher = build_app(base, server='raise SystemExit(1)\n')
             env = {**os.environ, 'MEDIATHEKATLAS_PYTHON': sys.executable, 'MEDIATHEKATLAS_HOME': str(base / 'state'),
-                   'MEDIATHEKATLAS_FOREGROUND': '1'}
+                   'MEDIATHEKATLAS_FOREGROUND': '1', 'MEDIATHEKATLAS_NO_DIALOG': '1'}
             r = subprocess.run(['/bin/bash', str(launcher)], env=env, capture_output=True, timeout=30)
             self.assertEqual(r.returncode, 1)
 
