@@ -698,7 +698,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],dmax=q.get('dmax',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],dmax=q.get('dmax',[''])[0],filmfriend=q.get('filmfriend',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
                                                   youtube=q.get('youtube',[''])[0])
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
@@ -947,7 +947,7 @@ def get_v1_live(self,path):
 def get_v1_play(self,path):
     """Wiedergabe-Auskunft zu einem Eintrag: Art (direkt, HLS, eingebettet, nur Link), Adresse, Qualitätsstufen, Ticket.
     Parameter: genau eine Kennung (offer, job, netzkino, pluto, justwatch, rakuten, joyn, toggo, crunchyroll, samsung, plex,
-    servustv, redbulltv, dmax, sender, rtlplus, youtube), dazu quality (auto|max|Höhe). Adressen, die mit /api/v1/stream beginnen, brauchen
+    servustv, redbulltv, dmax, filmfriend, sender, rtlplus, youtube), dazu quality (auto|max|Höhe). Adressen, die mit /api/v1/stream beginnen, brauchen
     zusätzlich &ticket=<ticket>."""
     return get_play(self,path,v1=True)
 

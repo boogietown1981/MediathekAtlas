@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.50
+# MediathekAtlas · 0.6.52
+
+## Neu in 0.6.52: filmfriend, die Filme der öffentlichen Bibliotheken
+
+- filmfriend ist eine neue Plattform: Spielfilme, Dokumentationen und Kinderfilme, die viele Bibliotheken ihren Mitgliedern kostenlos anbieten, mit Genre, Jahr, Laufzeit, FSK und IMDb-Verweis. Ansehen geht auf filmfriend.de nach Anmeldung mit dem Bibliotheksausweis; „Bei filmfriend ansehen“ öffnet den Film dort.
 
 ## Neu in 0.6.50: DMAX & TLC wieder abrufbar, ServusTV-Listen „nur in Österreich“, Joyn-Titel lesbar
 

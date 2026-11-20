@@ -619,7 +619,7 @@
     const rbNeeded=(source==='all'||source==='redbulltv') && !seriesKey;
     const rpNeeded=(source==='all'||source==='rtlplus') && !seriesKey;
     const dxNeeded=(source==='all'||source==='dmax') && !seriesKey && kind!=='movies';   // 0.6.48: programmes only
-    const ffNeeded=(source==='all'||source==='filmfriend') && !seriesKey && kind!=='series';   // 0.6.52: films only
+    const ffNeeded=(source==='all'||source==='filmfriend') && !seriesKey;   // 0.6.52
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -666,7 +666,7 @@
       view:'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     if (ffNeeded)requests.push({source:'filmfriend',req:window.api('filmfriend?'+new URLSearchParams({
-      view:'movies',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));
     if (seq!==sequence) return;

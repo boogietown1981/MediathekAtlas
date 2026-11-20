@@ -1,15 +1,17 @@
 """0.6.52: filmfriend (film library of public libraries) as a catalogue with links.
 
-Shapes as explored on Björn's Mac on 20.11.2026 (tenant for www.filmfriend.de with landingPageId, navigation,
-pages with blocks and movie references {id, uriId, kind: "Movie"}, movie details with title, originalTitle,
-synopsis, releaseDate, ageRatings, runtime, genres, categories, productionCountries, imdbUrl, tmdbUrl). Ids and
-titles are made up. Watching needs a library card login: never a player here, every title opens on filmfriend.de."""
+Answers in the shape saved on Björn's Mac on 20.11.2026 (filmfriend_samples.zip): tenant, navigation with
+``primary[].target`` pages, pages whose ``FilterableThumbnails`` part names the full search, ``search`` with
+take/skip and ``totalCount`` null, details with ageRatings/imdbUrl/artworkUris. Ids and titles are made up here;
+if the saved answers are in the project folder, they are read as well. Watching needs a library card login:
+never a player here, every title opens on filmfriend.de."""
 import io
 import json
 import tempfile
 import unittest
 import urllib.error
 import urllib.parse
+import zipfile
 from pathlib import Path
 
 import filmfriend
@@ -17,40 +19,65 @@ import platform_registry
 import portal_title
 import unified_index
 
+SAMPLES = Path('/mnt/project-files/filmfriend_samples.zip')
 TENANT = 'fba2f8b5-6a3a-4da3-b555-21613a88d3ef'
 LANDING = 'e25869cd-2557-4bba-ba3b-672378285c2d'
-GENRE_PAGE = '11111111-2222-3333-4444-555555555555'
-GONE_PAGE = '99999999-2222-3333-4444-555555555555'
-M1, M2, M3, M4 = ('aaaaaaaa-0000-0000-0000-00000000000%d' % n for n in (1, 2, 3, 4))
+P_ALL, P_KIDS, P_COLL = ('4d1da4aa-f4bd-479f-ab60-b3e2878704%02d' % n for n in (36, 37, 38))
+CAT_ALL, CAT_KIDS = 'd36cbed2-7569-4b94-9080-03ce79c2ecee', 'b6278374-8536-48ff-9bd5-636ea3d3d975'
 NOW = 1795132800
 
 
-def ref(ident, uri, kind='Movie'):
-    return {'id': ident, 'uriId': uri, 'kind': kind}
+def uid(n):
+    return 'aaaaaaaa-0000-4000-8000-%012d' % n
 
 
-PAGES = {
-    LANDING: {'id': LANDING, 'blocks': [
-        {'kind': 'Banner', 'items': [ref(M1, 'das-boot')]},
-        {'kind': 'Collection', 'title': 'Neu', 'items': [ref(M1, 'das-boot'), ref(M2, 'paddington')]},
-        {'kind': 'Genres', 'items': [{'title': 'Kinderfilm', 'link': '/de/pages/' + GENRE_PAGE}]},
-        {'kind': 'Video', 'items': [ref('bbbbbbbb-0000-0000-0000-000000000001', 'trailer', kind='Video')]}]},
-    GENRE_PAGE: {'id': GENRE_PAGE, 'blocks': [{'kind': 'SearchResult', 'items': [ref(M2, 'paddington'), ref(M3, 'emil')]},
-                                              {'kind': 'Collection', 'items': [ref(M4, 'weg')]}]},
+def art(kind, url):
+    return {'kind': kind, 'resolution1x': url, 'resolution720': url}
+
+
+def movie(n, title, runtime=5400, **extra):
+    node = {'kind': 'Movie', 'id': uid(n), 'uriId': title.lower().replace(' ', '-'), 'title': title, 'originalTitle': None,
+            'synopsis': 'Über ' + title, 'releaseDate': None, 'ageRatings': None, 'imdbUrl': None, 'tmdbUrl': None,
+            'runtime': runtime, 'genres': [{'id': uid(900), 'name': 'Drama'}],
+            'categories': [{'id': CAT_ALL, 'name': 'Filme & Serien'}],
+            'productionCountries': [{'id': uid(901), 'name': 'Deutschland'}],
+            'artworkUris': [art('Background', 'https://filmwerte-vod.b-cdn.net/videos/%d/bg.jpg?width=1280&height=720' % n)]}
+    node.update(extra)
+    return node
+
+
+def series(n, title, **extra):
+    node = {'id': uid(n), 'uriId': title.lower().replace(' ', '-'), 'title': title, 'originalTitle': None,
+            'synopsis': 'Serie ' + title, 'imdbUrl': None, 'tmdbUrl': None, 'genres': [{'name': 'Krimi'}],
+            'categories': [{'name': 'Filme & Serien'}], 'artworkUris': []}
+    node.update(extra)
+    return node
+
+
+ALL = [{'kind': 'Movie', 'movie': movie(1, 'Abschied')}, {'kind': 'Series', 'series': series(2, 'Allein gegen die Zeit')}]
+ALL += [{'kind': 'Movie', 'movie': movie(10 + i, 'Film %02d' % i)} for i in range(23)]          # first page full (24)
+ALL += [{'kind': 'Movie', 'movie': movie(50, 'Zug')}]                                            # second page: 1
+KIDS = [{'kind': 'Movie', 'movie': movie(60, 'Emil', runtime=204)}, {'kind': 'Movie', 'movie': movie(1, 'Abschied')}]
+DETAILS = {
+    ('movies', uid(1)): movie(1, 'Abschied', originalTitle="L'Adieu", releaseDate='2023-11-01T00:00:00Z',
+                              ageRatings=[{'id': uid(902), 'name': 'FSK 12', 'minimumAge': 12, 'contentWarnings': []}],
+                              imdbUrl='https://www.imdb.com/title/tt18224752', tmdbUrl='https://www.themoviedb.org/movie/792614',
+                              artworkUris=[art('Thumbnail', 'https://filmwerte-vod.b-cdn.net/videos/1/thumb.jpg?width=640&height=360'),
+                                           {'kind': 'CoverPortrait', 'thumbnail': 'https://filmwerte-vod.b-cdn.net/videos/1/cover.jpg?width=224&height=320',
+                                            'resolution1x': 'https://filmwerte-vod.b-cdn.net/videos/1/cover.jpg?width=448&height=640'}]),
+    ('series', uid(2)): series(2, 'Allein gegen die Zeit', originalTitle='Allein gegen die Zeit',
+                               imdbUrl='https://www.imdb.com/title/tt1461962', tmdbUrl='https://www.themoviedb.org/tv/39902'),
+    ('movies', uid(60)): movie(60, 'Emil', runtime=204, ageRatings=[{'name': 'FSK 0', 'minimumAge': 0}], releaseDate='2018-01-01T00:00:00+00:00'),
 }
-MOVIES = {
-    M1: {'id': M1, 'uriId': 'das-boot', 'title': 'Das Boot', 'originalTitle': 'Das Boot',
-         'synopsis': 'U-Boot im Zweiten Weltkrieg.', 'releaseDate': '1981-09-17T00:00:00Z',
-         'ageRatings': [{'country': 'DE', 'value': 'FSK 12'}], 'runtime': 149,
-         'genres': [{'name': 'Drama'}, {'name': 'Kriegsfilm'}], 'categories': [{'name': 'Klassiker'}],
-         'productionCountries': [{'name': 'Deutschland'}], 'imdbUrl': 'https://www.imdb.com/title/tt0082096/',
-         'tmdbUrl': 'https://www.themoviedb.org/movie/387', 'hasTrailer': True,
-         'images': [{'type': 'Poster', 'url': 'https://images.filmwerte.de/poster/das-boot.jpg'}]},
-    M2: {'id': M2, 'uriId': 'paddington', 'title': 'Paddington', 'originalTitle': 'Paddington',
-         'synopsis': 'Ein Bär in London.', 'releaseDate': '2014-11-28', 'ageRatings': [{'country': 'DE', 'value': '0'}],
-         'runtime': 'PT1H35M', 'genres': ['Familie', 'Komödie'], 'imdbUrl': 'https://www.imdb.com/title/tt1109624'},
-    M3: {'id': M3, 'title': 'Emil und die Detektive', 'releaseDate': '2001', 'runtime': 6600,
-         'ageRatings': [{'country': 'AT', 'value': '10'}, {'country': 'DE', 'value': 'FSK 6'}]},
+PAGES = {
+    LANDING: {'id': LANDING, 'parts': [{'kind': 'Heading', 'heading': 'Willkommen'}]},
+    P_ALL: {'id': P_ALL, 'parts': [
+        {'kinds': ['Movie', 'Series', 'Collection'], 'categoryIds': [], 'collectionId': uid(990), 'displayMode': 'ScrollableHorizontalThumbnails'},
+        {'kinds': ['Movie', 'Series'], 'categoryIds': [CAT_ALL], 'genreIds': [], 'collectionId': None,
+         'displayMode': 'FilterableThumbnails', 'orderBy': 'Title', 'title': 'Alle Filme und Serien'}]},
+    P_KIDS: {'id': P_KIDS, 'parts': [{'kinds': ['Movie', 'Series'], 'categoryIds': [CAT_KIDS], 'genreIds': [],
+                                      'collectionId': None, 'displayMode': 'FilterableThumbnails'}]},
+    P_COLL: {'id': P_COLL, 'parts': [{'kinds': ['Collection'], 'categoryIds': [], 'displayMode': 'FilterableThumbnails'}]},
 }
 
 
@@ -64,24 +91,34 @@ class FakeFilmfriend:
         parts = urllib.parse.urlsplit(url)
         assert parts.hostname == 'api.tenant-group.frontend.vod.filmwerte.de'
         assert headers['Origin'] == 'https://www.filmfriend.de' and headers['User-Agent']
+        assert headers['Accept-Language'].startswith('de')
         path = parts.path[len('/v12/'):]
-        self.calls.append(path)
+        q = urllib.parse.parse_qs(parts.query)
+        self.calls.append((path, q))
         if path == 'www.filmfriend.de':
-            return json.dumps({'id': TENANT, 'name': 'filmfriend', 'landingPageId': LANDING}).encode()
+            return json.dumps({'id': TENANT, 'displayName': 'filmfriend', 'landingPageId': LANDING}).encode()
         if path == TENANT + '/navigation':
-            return json.dumps({'items': [{'title': 'Start', 'pageId': LANDING},
-                                         {'title': 'Weg', 'pageId': GONE_PAGE}]}).encode()
+            return json.dumps({'primary': [
+                {'title': 'Filme & Serien', 'target': {'id': P_ALL, 'uriId': 'filme-und-serien', 'kind': 'Page'}},
+                {'title': 'Sammlungen', 'target': {'id': P_COLL, 'uriId': 'sammlungen', 'kind': 'Page'}},
+                {'title': 'Kinder', 'target': {'id': P_KIDS, 'uriId': 'kinder', 'kind': 'Page'}}],
+                'secondary': [{'title': 'Ist meine Bibliothek dabei?', 'target': {'url': 'https://weristdabei.filmfriend.de/', 'kind': 'Url'}}]}).encode()
         if path.startswith(TENANT + '/pages/'):
-            page = path.rsplit('/', 1)[1]
-            if page not in PAGES:
-                raise urllib.error.HTTPError(url, 404, 'no', {}, io.BytesIO(b''))
-            return json.dumps(PAGES[page]).encode()
-        if path.startswith(TENANT + '/movies/'):
-            movie = path.rsplit('/', 1)[1]
-            if movie not in MOVIES:
-                raise urllib.error.HTTPError(url, 404, 'no', {}, io.BytesIO(b''))
-            return json.dumps(MOVIES[movie]).encode()
-        raise AssertionError(url)
+            return json.dumps(PAGES[path.rsplit('/', 1)[1]]).encode()
+        if path == TENANT + '/search':
+            assert q['orderBy'] == ['Title'] and q['take'] == ['24'] and q['kinds'] == ['Movie', 'Series']
+            source = KIDS if q['categoryIds'] == [CAT_KIDS] else ALL
+            skip = int(q['skip'][0])
+            return json.dumps({'results': source[skip:skip + 24], 'facets': None, 'totalCount': None}).encode()
+        section, ident = path[len(TENANT) + 1:].split('/')
+        if (section, ident) not in DETAILS and ident != uid(50):       # 'Zug' has no detail page (404)
+            for entry in ALL + KIDS:
+                node = entry.get('movie') or entry.get('series')
+                if node['id'] == ident:
+                    return json.dumps(node).encode()
+        if (section, ident) not in DETAILS:
+            raise urllib.error.HTTPError(url, 404, 'no', {}, io.BytesIO(b''))
+        return json.dumps(DETAILS[(section, ident)]).encode()
 
 
 class FilmfriendTest(unittest.TestCase):
@@ -96,50 +133,71 @@ class FilmfriendTest(unittest.TestCase):
     def load(self, now=NOW):
         return filmfriend.sync(self.root, opener=self.fake, now=now)
 
-    def test_catalogue_from_pages_and_movies(self):
+    def test_catalogue_from_the_searches(self):
         result = self.load()
         self.assertTrue(result['ok'], result)
-        self.assertEqual(result['movies'], 3)
         self.assertFalse(result['partial'])
+        self.assertEqual((result['movies'], result['series']), (26, 1))
+        searches = [c[1] for c in self.fake.calls if c[0].endswith('/search')]
+        self.assertEqual([(s['categoryIds'], s['skip']) for s in searches],
+                         [([CAT_ALL], ['0']), ([CAT_ALL], ['24']), ([CAT_KIDS], ['0'])])
         st = filmfriend.state(self.root)
-        self.assertEqual((st['last_result'], st['movies'], st['pages']), ('complete', 3, 2))
+        self.assertEqual((st['last_result'], st['movies'], st['series'], st['pages']), ('complete', 26, 1, 3))
         self.assertIn('Bibliotheksausweis', st['note'])
-        # every film read once, the vanished page and film skipped quietly
-        self.assertEqual(sum(1 for c in self.fake.calls if '/movies/' in c), 4)
-        page = filmfriend.listing(self.root, view='movies')
-        self.assertEqual([r['title'] for r in page['items']], ['Das Boot', 'Emil und die Detektive', 'Paddington'])
-        boot = page['items'][0]
-        self.assertEqual((boot['year'], boot['duration'], boot['rating'], boot['imdb_id']), (1981, 149 * 60, 'FSK 12', 'tt0082096'))
-        self.assertEqual(boot['web_url'], 'https://www.filmfriend.de/de/movies/das-boot')
-        self.assertEqual(boot['poster'], 'https://images.filmwerte.de/poster/das-boot.jpg')
-        self.assertIn('Kriegsfilm', boot['genre'])
-        self.assertIn('Klassiker', boot['genre'])
-        self.assertEqual(boot['badge'], 'Mit Bibliotheksausweis')
-        self.assertEqual(boot['playable'], 0)
-        self.assertEqual(filmfriend.listing(self.root, view='series')['total'], 0)
-        emil = page['items'][1]
-        self.assertEqual((emil['duration'], emil['rating'], emil['year']), (6600, 'FSK 6', 2001))
-        self.assertEqual(emil['web_url'], 'https://www.filmfriend.de/de/movies/emil')
-        pad = page['items'][2]
-        self.assertEqual((pad['duration'], pad['rating'], pad['genre']), (95 * 60, 'FSK 0', 'Familie, Komödie'))
-        detail = filmfriend.item(self.root, 'm.' + M1)['item']
-        self.assertEqual((detail['original_title'], detail['country'], detail['tmdb_id']), ('', 'Deutschland', '387'))
+        page = filmfriend.listing(self.root, view='movies', limit=100)
+        by_title = {r['title']: r for r in page['items']}
+        boot = by_title['Abschied']
+        self.assertEqual((boot['year'], boot['duration'], boot['rating'], boot['imdb_id'], boot['tmdb_id']),
+                         (2023, 5400, 'FSK 12', 'tt18224752', '792614'))
+        self.assertEqual(boot['original_title'], "L'Adieu")
+        self.assertEqual(boot['web_url'], 'https://www.filmfriend.de/de/movies/abschied')
+        self.assertEqual(boot['poster'], 'https://filmwerte-vod.b-cdn.net/videos/1/cover.jpg?width=448&height=640')
+        self.assertEqual((boot['badge'], boot['playable']), ('Mit Bibliotheksausweis', 0))
+        emil = by_title['Emil']
+        self.assertEqual((emil['duration'], emil['rating']), (204, 'FSK 0'))       # runtime is seconds
+        self.assertEqual(by_title['Zug']['poster'], 'https://filmwerte-vod.b-cdn.net/videos/50/bg.jpg?width=1280&height=720')
+        shows = filmfriend.listing(self.root, view='series')['items']
+        self.assertEqual([(s['title'], s['imdb_id'], s['web_url']) for s in shows],
+                         [('Allein gegen die Zeit', 'tt1461962', 'https://www.filmfriend.de/de/series/allein-gegen-die-zeit')])
+        self.assertEqual(shows[0]['original_title'], '')
+        self.assertIn('filmfriend.de', filmfriend.episodes(self.root, shows[0]['id'])['note'])
 
-    def test_search_finds_original_title(self):
-        MOVIES[M3]['originalTitle'] = 'Emil and the Detectives'
+    def test_details_are_fetched_gently_and_kept(self):
+        original = filmfriend.MAX_DETAILS
+        filmfriend.MAX_DETAILS = 5
         try:
             self.load()
+            first = sum(1 for c in self.fake.calls if '/movies/' in c[0] or '/series/' in c[0])
+            self.assertEqual(first, 5)
+            st = filmfriend.state(self.root)
+            self.assertEqual(st['details_waiting'], 22)
+            self.fake.calls.clear()
+            self.load(NOW + 86400)
+            second = [c[0] for c in self.fake.calls if '/movies/' in c[0] or '/series/' in c[0]]
+            self.assertEqual(len(second), 5)
+            self.assertEqual(filmfriend.state(self.root)['details_waiting'], 17)
         finally:
-            del MOVIES[M3]['originalTitle']
-        self.assertEqual(filmfriend.listing(self.root, query='Detectives')['total'], 1)
+            filmfriend.MAX_DETAILS = original
+        # details from the first run stay although the title was not read in detail again
+        rows = {r['title']: r for r in filmfriend.listing(self.root, limit=100)['items']}
+        self.assertEqual(rows['Abschied']['imdb_id'], 'tt18224752')
+        self.assertEqual(rows['Abschied']['rating'], 'FSK 12')
+
+    def test_detail_after_ttl_only(self):
+        self.load()
+        self.fake.calls.clear()
+        self.load(NOW + 3600)
+        self.assertFalse([c for c in self.fake.calls if '/movies/' in c[0]])
+        self.load(NOW + filmfriend.DETAIL_TTL + 10)
+        self.assertTrue([c for c in self.fake.calls if '/movies/' in c[0]])
 
     def test_never_plays_here(self):
         self.load()
         with self.assertRaisesRegex(ValueError, 'Bibliotheksausweis'):
-            filmfriend.play_source(self.root, 'm.' + M1)
-        model = portal_title.model(self.root, 'filmfriend', 'm.' + M1)
+            filmfriend.play_source(self.root, 'm.' + uid(1))
+        model = portal_title.model(self.root, 'filmfriend', 'm.' + uid(1))
         self.assertFalse(model['playable'])
-        self.assertEqual(model['web_url'], 'https://www.filmfriend.de/de/movies/das-boot')
+        self.assertEqual(model['web_url'], 'https://www.filmfriend.de/de/movies/abschied')
 
     def test_offline_keeps_old_catalogue(self):
         self.load()
@@ -149,10 +207,21 @@ class FilmfriendTest(unittest.TestCase):
         st = filmfriend.state(self.root)
         self.assertEqual(st['last_result'], 'failed')
         self.assertIn('nicht erreichbar', st['last_error'])
-        self.assertEqual(filmfriend.listing(self.root)['total'], 3)
+        self.assertEqual(filmfriend.listing(self.root, limit=100)['total'], 26)
+
+    def test_without_filterable_part_the_known_search_is_used(self):
+        saved = dict(PAGES)
+        for key in (P_ALL, P_KIDS):
+            PAGES[key] = {'id': key, 'parts': []}
+        try:
+            self.load()
+        finally:
+            PAGES.update(saved)
+        searches = [c[1]['categoryIds'] for c in self.fake.calls if c[0].endswith('/search')]
+        self.assertEqual(searches, [[filmfriend.ALL_CATEGORY]] * 2)
 
     def test_invalid_ids_and_hosts(self):
-        for bad in ('', 'm.abc', 's.' + M1, '../x', 'm.' + M1 + ';'):
+        for bad in ('', 'm.abc', 'x.' + uid(1), '../x', 'm.' + uid(1) + ';'):
             with self.assertRaises(ValueError):
                 filmfriend.item(self.root, bad)
         with self.assertRaises(ValueError):
@@ -160,14 +229,30 @@ class FilmfriendTest(unittest.TestCase):
         with self.assertRaises(ValueError):
             filmfriend._open('http://api.tenant-group.frontend.vod.filmwerte.de/v12/x', {})
 
-    def test_parsing_helpers(self):
-        self.assertEqual(filmfriend._runtime('PT2H'), 7200)
-        self.assertEqual(filmfriend._runtime(90), 5400)
-        self.assertIsNone(filmfriend._runtime('lang'))
-        self.assertEqual(filmfriend._age([{'country': 'US', 'value': 'R'}]), None)
-        self.assertEqual(filmfriend._age(['FSK 16']), 16)
-        self.assertEqual(filmfriend.tenant_of({'tenant': {'id': TENANT}, 'settings': {'landingPageId': LANDING}}),
-                         (TENANT, LANDING))
+    def test_age_ratings(self):
+        self.assertEqual(filmfriend._age([{'name': 'FSK 16', 'minimumAge': 16}]), 16)
+        self.assertEqual(filmfriend._age([{'name': 'USK 12', 'minimumAge': 12}]), None)
+        self.assertEqual(filmfriend._age([{'name': 'FSK 6'}, {'name': 'FSK 12', 'minimumAge': 12}]), 12)
+        self.assertIsNone(filmfriend._age(None))
+
+    @unittest.skipUnless(SAMPLES.exists(), 'gespeicherte filmfriend-Antworten vom 20.11.2026 fehlen')
+    def test_saved_answers_of_20_11_2026(self):
+        with zipfile.ZipFile(SAMPLES) as z:
+            read = lambda name: json.loads(z.read('filmfriend_samples/' + name))
+            self.assertEqual(filmfriend.tenant_of(read('01_tenant.json')), (TENANT, LANDING))
+            pages = filmfriend.menu_pages(read('02_navigation.json'))
+            self.assertEqual(len(pages), 4)
+            self.assertEqual(filmfriend.page_searches(read('04_seite_movies-and-series.json')),
+                             [(('Movie', 'Series'), (CAT_ALL,), (), '')])
+            entries = filmfriend.search_entries(read('05_suche_alle_seite1.json'))
+            self.assertEqual(len(entries), 24)
+            rows = [filmfriend.item_row(k, n) for k, n in entries]
+            self.assertTrue(all(r and r['web_url'].startswith('https://www.filmfriend.de/de/') for r in rows))
+            blake = filmfriend.item_row('movie', read('07_film_mit_imdbUrl.json'), detailed=True)
+            self.assertEqual((blake['imdb_id'], blake['rating'], blake['duration'], blake['year']), ('tt18224752', 'FSK 0', 6349, 2023))
+            self.assertIn('b-cdn.net', blake['poster'])
+            show = filmfriend.item_row('series', read('09_serie_13-hours.json'), detailed=True)
+            self.assertEqual((show['kind'], show['imdb_id'], show['tmdb_id']), ('series', 'tt1461962', '39902'))
 
     def test_wiring(self):
         self.assertIn('filmfriend', [p.key for p in platform_registry.PLATFORMS])

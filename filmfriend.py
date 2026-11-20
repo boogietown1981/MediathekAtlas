@@ -1,25 +1,32 @@
 """filmfriend: the film library of German public libraries as a catalogue with links (0.6.52).
 
-Björn (20.11.2026): fill the gaps of the video services. filmfriend (filmwerte GmbH) offers several thousand
-films, documentaries and children's films free of charge to members of participating public libraries. Watching
-needs a library card login on filmfriend.de; MediathekAtlas does not log in and has no player for it: every
-title opens on filmfriend.de ("Bei filmfriend ansehen"). Nothing is circumvented, no offline copies.
+Björn (20.11.2026): fill the gaps of the video services. filmfriend (filmwerte GmbH) offers films, series and
+documentaries free of charge to members of participating public libraries. Watching needs a library card login
+on filmfriend.de; MediathekAtlas does not log in and has no player for it: every title opens on filmfriend.de
+("Bei filmfriend ansehen"). Nothing is circumvented, no offline copies.
 
-Interface (explored read-only and without login on Björn's Mac, 20.11.2026; the API host is blocked in the
-build environment, so the field handling below is deliberately tolerant):
+Interface (original answers saved on Björn's Mac on 20.11.2026, without login: filmfriend_samples.zip; the API
+host is blocked in the build environment). Base ``https://api.tenant-group.frontend.vod.filmwerte.de/v12/``,
+headers User-Agent, ``Origin``/``Referer`` https://www.filmfriend.de:
 
-* ``GET https://api.tenant-group.frontend.vod.filmwerte.de/v12/www.filmfriend.de`` -> the tenant (``id``) and
-  ``landingPageId``. Headers: User-Agent and ``Origin: https://www.filmfriend.de``.
-* ``GET /v12/<tenant>/navigation`` -> menu with page references.
-* ``GET /v12/<tenant>/pages/<page id>`` -> blocks (Banner, Collection, Genres, Heading, Movie, SearchResult,
-  Video) with movie references ``{id, uriId, kind: "Movie"}`` and references to further pages.
-* ``GET /v12/<tenant>/movies/<id>`` -> ``title``, ``originalTitle``, ``synopsis``, ``releaseDate``,
-  ``ageRatings``, ``runtime``, ``genres``, ``categories``, ``productionCountries``, ``imdbUrl``, ``tmdbUrl``,
-  ``filmportalUrl``, ``hasTrailer``, ``bonusVideos``.
+* ``GET www.filmfriend.de`` -> tenant ``id`` (fba2f8b5-…), ``landingPageId``.
+* ``GET <tenant>/navigation`` -> ``primary[]`` with ``target {id, uriId, kind: "Page"}`` (Movies & Series, Kids,
+  Documentaries, Collections).
+* ``GET <tenant>/pages/<id>`` -> ``parts[]``; the part with ``displayMode: "FilterableThumbnails"`` ("All films and
+  series") names the search behind the page: ``kinds``, ``categoryIds``, ``genreIds``, ``collectionId``.
+* ``GET <tenant>/search?orderBy=Title&sortDirection=Ascending&kinds=Movie&kinds=Series&categoryIds=<id>&take=24
+  &skip=N`` -> ``{results: [{kind, movie|series}], facets, totalCount}``. ``totalCount`` stays null, the end is a
+  short page. The search rows carry title, synopsis, genres, categories, countries, runtime (seconds), uriId.
+* ``GET <tenant>/movies/<id>`` and ``<tenant>/series/<id>`` -> additionally ``originalTitle``, ``releaseDate``,
+  ``ageRatings [{name: "FSK 0", minimumAge: 0}]``, ``imdbUrl``, ``tmdbUrl``, ``artworkUris`` (CoverPortrait …).
+  Fetched gently: new titles first, at most MAX_DETAILS per run, again after DETAIL_TTL.
+* Episodes of a series: no endpoint found (``search?seriesId`` is ignored); series open on filmfriend.de.
+* Website: ``https://www.filmfriend.de/de/movies/<uriId>``, ``/de/series/<uriId>``.
+* Language: the tenant's default language is English (``defaultLanguageIsoCode``); the German website gets German
+  texts. MediathekAtlas asks with ``Accept-Language: de`` (to be confirmed on Björn's Mac).
 
-The catalogue is collected from the pages reachable from the start page and the menu (breadth first, fixed
-limits), then every film is read once. imdbUrl/tmdbUrl give the reference check a sure match; the age rating
-lets the shared rules (Kinderecke, FSK) work. Titles and addresses never go to logs or the diagnosis.
+The imdbUrl gives the reference check a sure match; the age rating lets the shared rules (Kinderecke, FSK) work.
+Titles and addresses never go to logs or the diagnosis.
 """
 from __future__ import annotations
 
@@ -41,17 +48,21 @@ SITE = 'https://www.filmfriend.de'
 API = 'https://api.tenant-group.frontend.vod.filmwerte.de/v12/'
 API_HOSTS = frozenset({'api.tenant-group.frontend.vod.filmwerte.de'})
 TENANT_HOST = 'www.filmfriend.de'
+ALL_CATEGORY = 'd36cbed2-7569-4b94-9080-03ce79c2ecee'   # "Movies & Series" (fallback when no page names a search)
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
 MAX_ANSWER = 8 * 1024 * 1024
-MAX_PAGES = 400               # pages of the website read per run
-MAX_ITEMS = 15000
-REQUEST_GAP = 0.3
-RETRY_WAITS = (3, 10)         # seconds before the 2nd and 3rd try after 429/5xx
+PAGE_SIZE = 24                # as the website asks
+MAX_SEARCH_PAGES = 600        # per run, over all searches (14,400 titles)
+MAX_DETAILS = 400             # detail requests per run
+DETAIL_TTL = 30 * 86400
+MAX_ITEMS = 20000
+REQUEST_GAP = 1.0             # gentle: one request per second
+RETRY_WAITS = (5, 20)         # seconds before the 2nd and 3rd try after 429/5xx
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
-VALID_ID = re.compile(r'm\.' + UUID.pattern)
+VALID_ID = re.compile(r'[ms]\.' + UUID.pattern)
 URI_ID = re.compile(r'[a-z0-9][a-z0-9\-]{0,200}')
-PAGE_LINK = re.compile(r'/pages/(' + UUID.pattern + r')')
+KINDS = {'movie': ('movie', 'm', 'movies'), 'series': ('series', 's', 'series')}
 LIBRARY_NOTE = 'Ansehen mit Bibliotheksausweis einer teilnehmenden Bibliothek auf filmfriend.de'
 
 _SYNC_LOCK = threading.Lock()
@@ -65,7 +76,8 @@ CREATE TABLE IF NOT EXISTS filmfriend_items(
   poster TEXT NOT NULL DEFAULT '', imdb_id TEXT NOT NULL DEFAULT '', imdb_score REAL, imdb_votes INTEGER,
   number INTEGER, category TEXT NOT NULL DEFAULT '', original_title TEXT NOT NULL DEFAULT '',
   country TEXT NOT NULL DEFAULT '', tmdb_id TEXT NOT NULL DEFAULT '', playable INTEGER NOT NULL DEFAULT 0,
-  drm INTEGER NOT NULL DEFAULT 1, web_url TEXT NOT NULL DEFAULT '', seen REAL NOT NULL, updated REAL NOT NULL);
+  drm INTEGER NOT NULL DEFAULT 1, web_url TEXT NOT NULL DEFAULT '', detail_at REAL NOT NULL DEFAULT 0,
+  seen REAL NOT NULL, updated REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS filmfriend_items_kind ON filmfriend_items(kind, seen);
 CREATE TABLE IF NOT EXISTS filmfriend_state(name TEXT PRIMARY KEY, value TEXT NOT NULL);
 '''
@@ -81,7 +93,7 @@ def _notify(event, **details):
 
 def _connect(root):
     db = provider_base.connect(root, 'filmfriend.sqlite3')
-    db.executescript(SCHEMA)
+    provider_base.ensure_schema(db, SCHEMA)        # once per process
     return db
 
 
@@ -111,7 +123,7 @@ def _int(value, low=None, high=None):
 # ---------------------------------------------------------------- network
 
 def _headers():
-    return {'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Accept-Language': 'de-DE,de;q=0.9',
+    return {'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Accept-Language': 'de-DE,de;q=0.9',  # German texts
             'Origin': SITE, 'Referer': SITE + '/'}
 
 
@@ -123,7 +135,7 @@ def _open(url, headers, limit=MAX_ANSWER):
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('filmfriend-Antwort zu groß')
-        raw = response.read(limit + 1)
+        raw = provider_base.read_capped(response, limit)
     if len(raw) > limit:
         raise ValueError('filmfriend-Antwort zu groß')
     return raw
@@ -147,19 +159,6 @@ def _error(exc):
 
 # ---------------------------------------------------------------- parsing
 
-def _walk(node, depth=0):
-    """Every dict inside an answer (depth limited)."""
-    if depth > 12:
-        return
-    if isinstance(node, dict):
-        yield node
-        for value in node.values():
-            yield from _walk(value, depth + 1)
-    elif isinstance(node, list):
-        for value in node[:2000]:
-            yield from _walk(value, depth + 1)
-
-
 def tenant_of(answer):
     """(tenant id, landing page id) of the answer for www.filmfriend.de."""
     tenant = ''
@@ -171,61 +170,69 @@ def tenant_of(answer):
             tenant = str(value)
             break
     landing = str(answer.get('landingPageId') or '')
-    if not UUID.fullmatch(landing):
-        landing = next((str(d['landingPageId']) for d in _walk(answer)
-                        if UUID.fullmatch(str(d.get('landingPageId') or ''))), '')
-    return tenant, landing
+    return tenant, landing if UUID.fullmatch(landing) else ''
 
 
-def page_refs(answer):
-    """Ids of pages an answer links to (``pageId``, ``kind: "Page"`` or ``…/pages/<id>`` links)."""
+def menu_pages(answer):
+    """[(page id, title)] of the menu (``primary[].target`` with ``kind: "Page"``)."""
     out = []
-    for node in _walk(answer):
-        candidates = [node.get('pageId'), node.get('landingPageId')]
-        if str(node.get('kind') or node.get('type') or '').casefold() == 'page':
-            candidates.append(node.get('id'))
-        for key in ('link', 'href', 'url', 'path', 'target'):
-            value = node.get(key)
-            if isinstance(value, str):
-                match = PAGE_LINK.search(value)
-                if match:
-                    candidates.append(match.group(1))
-        for value in candidates:
-            value = str(value or '')
-            if UUID.fullmatch(value) and value not in out:
-                out.append(value)
+    for group in ('primary', 'secondary'):
+        for entry in answer.get(group) or [] if isinstance(answer, dict) else []:
+            target = entry.get('target') if isinstance(entry, dict) and isinstance(entry.get('target'), dict) else {}
+            ident = str(target.get('id') or '')
+            if str(target.get('kind') or '') == 'Page' and UUID.fullmatch(ident) and ident not in [p for p, _ in out]:
+                out.append((ident, _text(entry.get('title'), 60)))
     return out
 
 
-def movie_refs(answer):
-    """[(movie id, uriId)] referenced in a page answer (``kind: "Movie"``)."""
-    out, seen = [], set()
-    for node in _walk(answer):
-        if str(node.get('kind') or '').casefold() != 'movie':
+def _ids(value):
+    return tuple(str(v) for v in value if UUID.fullmatch(str(v))) if isinstance(value, list) else ()
+
+
+def page_searches(answer):
+    """The searches behind a page: parts with ``displayMode: "FilterableThumbnails"`` (the page's full list)."""
+    out = []
+    for part in answer.get('parts') or [] if isinstance(answer, dict) else []:
+        if not isinstance(part, dict) or part.get('displayMode') != 'FilterableThumbnails':
             continue
-        ident = str(node.get('id') or '')
-        if UUID.fullmatch(ident) and ident not in seen:
-            seen.add(ident)
-            uri = str(node.get('uriId') or '')
-            out.append((ident, uri if URI_ID.fullmatch(uri) else ''))
+        kinds = tuple(k for k in part.get('kinds') or [] if k in ('Movie', 'Series'))
+        if not kinds:
+            continue
+        collection = str(part.get('collectionId') or '')
+        search = (kinds, _ids(part.get('categoryIds')), _ids(part.get('genreIds')),
+                  collection if UUID.fullmatch(collection) else '')
+        if search not in out:
+            out.append(search)
     return out
 
 
-def other_kinds(answer):
-    """Kinds of referenced entries that are not films or pages (counted for the diagnosis only)."""
-    kinds = {}
-    for node in _walk(answer):
-        kind = str(node.get('kind') or '')
-        if kind and kind.casefold() not in ('movie', 'page') and UUID.fullmatch(str(node.get('id') or '')):
-            kinds[kind[:30]] = kinds.get(kind[:30], 0) + 1
-    return kinds
+def search_path(tenant, search, skip):
+    kinds, categories, genres, collection = search
+    query = [('orderBy', 'Title'), ('sortDirection', 'Ascending')] + [('kinds', k) for k in kinds]
+    query += [('categoryIds', c) for c in categories] + [('genreIds', g) for g in genres]
+    if collection:
+        query.append(('collectionId', collection))
+    query += [('take', PAGE_SIZE), ('skip', skip)]
+    return '%s/search?%s' % (tenant, urllib.parse.urlencode(query))
+
+
+def search_entries(answer):
+    """[(kind, object)] of a search answer, kind 'movie' or 'series'."""
+    out = []
+    for entry in answer.get('results') or [] if isinstance(answer, dict) else []:
+        if not isinstance(entry, dict):
+            continue
+        kind = str(entry.get('kind') or '').casefold()
+        node = entry.get(kind)
+        if kind in KINDS and isinstance(node, dict) and UUID.fullmatch(str(node.get('id') or '')):
+            out.append((kind, node))
+    return out
 
 
 def _names(value, limit=6):
     out = []
     for entry in value if isinstance(value, list) else []:
-        name = entry if isinstance(entry, str) else (entry.get('name') or entry.get('title') or entry.get('label')) \
-            if isinstance(entry, dict) else ''
+        name = entry if isinstance(entry, str) else (entry.get('name') or entry.get('title')) if isinstance(entry, dict) else ''
         name = _text(name, 40)
         if name and name not in out:
             out.append(name)
@@ -233,90 +240,80 @@ def _names(value, limit=6):
 
 
 def _age(value):
-    """FSK age from ``ageRatings`` (list of {country/system, value/age} or plain numbers/texts)."""
-    entries = value if isinstance(value, list) else [value]
+    """FSK age from ``ageRatings`` ([{name: "FSK 12", minimumAge: 12}]); the highest German rating counts."""
     best = None
-    for entry in entries:
-        if isinstance(entry, dict):
-            system = str(entry.get('country') or entry.get('system') or entry.get('type') or '').casefold()
-            if system and not any(s in system for s in ('de', 'fsk', 'germany')):
-                continue
-            entry = next((entry.get(k) for k in ('value', 'age', 'minAge', 'rating', 'name') if entry.get(k) is not None), None)
-        match = re.search(r'\d{1,2}', str(entry if entry is not None else ''))
-        age = _int(match.group(0), 0, 21) if match else None
-        if age is not None and age in (0, 6, 12, 16, 18):
+    for entry in value if isinstance(value, list) else []:
+        if not isinstance(entry, dict):
+            continue
+        name = str(entry.get('name') or '')
+        if name and not re.match(r'(?i)fsk\b', name):
+            continue                      # other systems (e.g. USK, JMK) are not FSK
+        age = _int(entry.get('minimumAge'), 0, 21)
+        if age is None:
+            match = re.search(r'\d{1,2}', name)
+            age = _int(match.group(0), 0, 21) if match else None
+        if age in (0, 6, 12, 16, 18):
             best = age if best is None else max(best, age)
     return best
 
 
 def _year(value):
     match = re.match(r'(\d{4})', str(value or ''))
-    year = _int(match.group(1), 1880, 2100) if match else None
-    return year
+    return _int(match.group(1), 1880, 2100) if match else None
 
 
-def _runtime(value):
-    """Seconds. ``runtime`` may come in minutes (small numbers), seconds or ISO 8601 (PT1H32M)."""
-    if isinstance(value, str) and value.startswith('PT'):
-        match = re.fullmatch(r'PT(?:(\d+)H)?(?:(\d+)M)?(?:(\d+)S)?', value)
-        if not match:
-            return None
-        h, m, s = (int(x or 0) for x in match.groups())
-        return (h * 3600 + m * 60 + s) or None
-    number = _int(value, 1, 10 ** 7)
-    if number is None:
-        return None
-    return number * 60 if number < 600 else number          # 600+ can only be seconds for a film
-
-
-def _image(answer):
-    for node in _walk(answer):
-        for key in ('poster', 'posterUrl', 'cover', 'image', 'imageUrl', 'thumbnail', 'url', 'src'):
-            value = node.get(key)
-            if isinstance(value, str):
-                parts = urllib.parse.urlsplit(value)
-                if parts.scheme == 'https' and parts.hostname and not parts.port and not parts.username \
-                        and re.search(r'\.(?:jpe?g|png|webp)(?:\?|$)', parts.path + ('?' if parts.query else ''), re.I) \
-                        and not re.search(r'[\s<>"\'{}]', value) and len(value) < 600:
-                    return value
+def _poster(node):
+    """Portrait cover (448×640), else a thumbnail, else the background in 720p."""
+    artworks = [a for a in node.get('artworkUris') or [] if isinstance(a, dict)]
+    for kind, fields in (('CoverPortrait', ('resolution1x', 'thumbnail', 'resolution2x')),
+                         ('Thumbnail', ('resolution720', 'resolution1x', 'thumbnail')),
+                         ('Background', ('resolution720', 'resolution1080'))):
+        for art in artworks:
+            if art.get('kind') != kind:
+                continue
+            for field in fields:
+                url = str(art.get(field) or '')
+                parts = urllib.parse.urlsplit(url)
+                if parts.scheme == 'https' and parts.hostname and parts.hostname.endswith('b-cdn.net') \
+                        and not parts.port and not parts.username and not re.search(r'[\s<>"\'{}]', url) and len(url) < 600:
+                    return url
     return ''
 
 
-def web_url(uri_id, movie_id):
-    """Page of a film on filmfriend.de (the website addresses films by their uriId)."""
-    if URI_ID.fullmatch(uri_id or ''):
-        return '%s/de/movies/%s' % (SITE, uri_id)
-    return '%s/de/movies/%s' % (SITE, movie_id)
+def web_url(kind, uri_id, ident):
+    section = KINDS[kind][2]
+    return '%s/de/%s/%s' % (SITE, section, uri_id if URI_ID.fullmatch(uri_id or '') else ident)
 
 
-def movie_row(answer, movie_id, uri_id=''):
-    """Catalogue row of one film; None without a title."""
-    title = _text(answer.get('title') or answer.get('name'), 200)
-    if not title:
+def item_row(kind, node, detailed=False):
+    """Catalogue row of a film or series from a search entry or a detail answer; None without a title."""
+    title = _text(node.get('title'), 200)
+    ident = str(node.get('id') or '')
+    if not title or not UUID.fullmatch(ident):
         return None
-    imdb = re.search(r'tt\d{5,10}', str(answer.get('imdbUrl') or answer.get('imdbId') or ''))
-    tmdb = re.search(r'/movie/(\d{1,9})', str(answer.get('tmdbUrl') or ''))
-    uri = str(answer.get('uriId') or uri_id or '')
-    age = _age(answer.get('ageRatings') if answer.get('ageRatings') is not None else answer.get('ageRating'))
-    genres = _names(answer.get('genres'))
-    for name in _names(answer.get('categories'), 4):
-        if name not in genres:
-            genres.append(name)
-    original = _text(answer.get('originalTitle'), 200)
-    return {'id': 'm.' + movie_id, 'kind': 'movie', 'title': title, 'path': movie_id, 'series_id': '',
-            'season': None, 'episode': None, 'year': _year(answer.get('releaseDate') or answer.get('productionYear')),
-            'duration': _runtime(answer.get('runtime') if answer.get('runtime') is not None else answer.get('duration')),
-            'rating': ('FSK %d' % age) if age is not None else '', 'genre': ', '.join(genres[:8]),
-            'summary': _text(answer.get('synopsis') or answer.get('description'), 2000), 'poster': _image(answer),
+    imdb = re.search(r'tt\d{5,10}', str(node.get('imdbUrl') or ''))
+    tmdb = re.search(r'/(?:movie|tv)/(\d{1,9})', str(node.get('tmdbUrl') or ''))
+    age = _age(node.get('ageRatings'))
+    genres = _names(node.get('genres'))
+    original = _text(node.get('originalTitle'), 200)
+    runtime = _int(node.get('runtime'), 1, 100000) if kind == 'movie' else None   # seconds
+    return {'id': '%s.%s' % (KINDS[kind][1], ident), 'kind': KINDS[kind][0], 'title': title, 'path': ident,
+            'series_id': '', 'season': None, 'episode': None, 'year': _year(node.get('releaseDate')),
+            'duration': runtime, 'rating': ('FSK %d' % age) if age is not None else '', 'genre': ', '.join(genres),
+            'summary': _text(node.get('synopsis') or node.get('teaser'), 2000), 'poster': _poster(node),
             'imdb_id': imdb.group(0) if imdb else '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
-            'category': 'Bibliothek', 'original_title': original if original != title else '',
-            'country': ', '.join(_names(answer.get('productionCountries'), 4)),
+            'category': 'Bibliothek', 'original_title': original if original.casefold() != title.casefold() else '',
+            'country': ', '.join(_names(node.get('productionCountries'), 4)),
             'tmdb_id': tmdb.group(1) if tmdb else '', 'playable': 0, 'drm': 1,
-            'web_url': web_url(uri if URI_ID.fullmatch(uri) else '', movie_id)}
+            'web_url': web_url(kind, str(node.get('uriId') or ''), ident), 'detailed': detailed}
+
+
+# Fields only the detail answer carries: kept from an earlier run when a title is not re-read in detail.
+DETAIL_FIELDS = ('year', 'rating', 'poster', 'imdb_id', 'original_title', 'tmdb_id')
 
 
 class Crawl:
-    """Pages reachable from the start page and the menu, then every film found on them."""
+    """The searches behind the menu pages (all films and series), then details for new titles."""
 
     def __init__(self, opener, gap, waits=()):
         self.gap, self.waits = gap, tuple(waits)
@@ -332,80 +329,89 @@ class Crawl:
                     time.sleep(self.waits[attempt])
         self.opener = patient
         self.requests, self.errors, self.truncated = 0, [], False
-        self.pages_read, self.movie_404, self.kinds = 0, 0, {}
-        self.movies = {}                      # id -> uriId (order of discovery)
+        self.search_pages, self.details, self.detail_404 = 0, 0, 0
+        self.entries = {}                     # row id -> row (search data, then details)
+        self.tenant = ''
 
     def get(self, path):
         answer = json.loads(self.opener(API + path, _headers()).decode('utf-8'))
         self.requests += 1
-        if self.requests % 200 == 0:
-            _notify('filmfriend_sync_progress', requests=self.requests, movies=len(self.movies), errors=len(self.errors))
+        if self.requests % 100 == 0:
+            _notify('filmfriend_sync_progress', requests=self.requests, titles=len(self.entries), errors=len(self.errors))
         if self.gap:
             time.sleep(self.gap)
         if not isinstance(answer, (dict, list)):
             raise ValueError('Unerwartete filmfriend-Antwort')
         return answer
 
-    def collect(self):
+    def searches(self):
         start = self.get(TENANT_HOST)
-        tenant, landing = tenant_of(start if isinstance(start, dict) else {})
-        if not tenant:
+        self.tenant, _landing = tenant_of(start if isinstance(start, dict) else {})
+        if not self.tenant:
             raise ValueError('filmfriend nennt keinen Mandanten')
-        self.tenant = tenant
-        queue = [landing] if landing else []
+        found = []
         try:
-            for ref in page_refs(self.get(tenant + '/navigation')):
-                if ref not in queue:
-                    queue.append(ref)
+            pages = menu_pages(self.get(self.tenant + '/navigation'))
         except Exception as exc:
             self.errors.append('Menü: ' + _error(exc))
-        if not queue:
-            raise ValueError('filmfriend nennt keine Startseite')
-        done = set()
-        while queue:
-            if len(done) >= MAX_PAGES or len(self.movies) >= MAX_ITEMS:
-                self.truncated = True
-                break
-            page = queue.pop(0)
-            if page in done:
-                continue
-            done.add(page)
+            pages = []
+        for page, _title in pages:
             try:
-                answer = self.get('%s/pages/%s' % (tenant, page))
-            except urllib.error.HTTPError as exc:
-                if exc.code in (404, 410):
-                    continue
-                self.errors.append(_error(exc))
-                continue
+                for search in page_searches(self.get('%s/pages/%s' % (self.tenant, page))):
+                    if search not in found:
+                        found.append(search)
             except Exception as exc:
                 self.errors.append(_error(exc))
-                continue
-            self.pages_read += 1
-            for ident, uri in movie_refs(answer):
-                if ident not in self.movies:
-                    self.movies[ident] = uri
-            for kind, count in other_kinds(answer).items():
-                self.kinds[kind] = self.kinds.get(kind, 0) + count
-            queue += [ref for ref in page_refs(answer) if ref not in done and ref not in queue]
+        return found or [(('Movie', 'Series'), (ALL_CATEGORY,), (), '')]
 
-    def rows(self):
-        out = []
-        for ident, uri in list(self.movies.items())[:MAX_ITEMS]:
+    def collect(self):
+        for search in self.searches():
+            skip = 0
+            while True:
+                if self.search_pages >= MAX_SEARCH_PAGES or len(self.entries) >= MAX_ITEMS:
+                    self.truncated = True
+                    return
+                try:
+                    answer = self.get(search_path(self.tenant, search, skip))
+                except Exception as exc:
+                    self.errors.append(_error(exc))
+                    break
+                self.search_pages += 1
+                entries = search_entries(answer)
+                for kind, node in entries:
+                    row = item_row(kind, node)
+                    if row and row['id'] not in self.entries:
+                        self.entries[row['id']] = row
+                results = answer.get('results') if isinstance(answer, dict) else None
+                if not isinstance(results, list) or len(results) < PAGE_SIZE:
+                    break                     # totalCount stays null: a short page is the end
+                skip += PAGE_SIZE
+
+    def add_details(self, known, now):
+        """Details for titles never read in detail (first) or not for DETAIL_TTL, at most MAX_DETAILS."""
+        due = sorted((rid for rid in self.entries if now - known.get(rid, 0) >= DETAIL_TTL),
+                     key=lambda rid: known.get(rid, 0))
+        if len(due) > MAX_DETAILS:
+            due = due[:MAX_DETAILS]
+        for rid in due:
+            row = self.entries[rid]
+            kind = 'movie' if row['kind'] == 'movie' else 'series'
             try:
-                answer = self.get('%s/movies/%s' % (self.tenant, ident))
+                answer = self.get('%s/%s/%s' % (self.tenant, KINDS[kind][2], row['path']))
             except urllib.error.HTTPError as exc:
                 if exc.code in (404, 410):
-                    self.movie_404 += 1
+                    self.detail_404 += 1          # no details: asked again only after DETAIL_TTL
+                    self.entries[rid] = {**row, 'detail_checked': True}
                     continue
                 self.errors.append(_error(exc))
                 continue
             except Exception as exc:
                 self.errors.append(_error(exc))
                 continue
-            row = movie_row(answer if isinstance(answer, dict) else {}, ident, uri)
-            if row:
-                out.append(row)
-        return out
+            detail = item_row(kind, answer if isinstance(answer, dict) else {}, detailed=True)
+            if detail:
+                self.details += 1
+                self.entries[rid] = {**row, **{k: v for k, v in detail.items() if v not in (None, '') or k == 'detailed'}}
 
 
 # ---------------------------------------------------------------- storage
@@ -416,12 +422,17 @@ FIELDS = ('kind', 'title', 'path', 'series_id', 'season', 'episode', 'year', 'du
 
 
 def _store(db, items, now):
-    update = ','.join('%s=excluded.%s' % (f, f) for f in FIELDS)
+    """Search fields are always written; detail fields only from a detail answer (otherwise kept)."""
     for item in items:
-        db.execute('''INSERT INTO filmfriend_items(id,%s,seen,updated) VALUES(?,%s,?,?)
-            ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
-                   % (','.join(FIELDS), ','.join('?' * len(FIELDS)), update),
-                   (item['id'], *[item.get(f) for f in FIELDS], now, now))
+        fields = [f for f in FIELDS if item.get('detailed') or f not in DETAIL_FIELDS
+                  or not db.execute('SELECT 1 FROM filmfriend_items WHERE id=?', (item['id'],)).fetchone()]
+        update = ','.join('%s=excluded.%s' % (f, f) for f in fields)
+        detail_at = now if item.get('detailed') or item.get('detail_checked') else 0
+        db.execute('''INSERT INTO filmfriend_items(id,%s,detail_at,seen,updated) VALUES(?,%s,?,?,?)
+            ON CONFLICT(id) DO UPDATE SET %s,detail_at=MAX(filmfriend_items.detail_at,excluded.detail_at),
+            seen=excluded.seen,updated=excluded.updated'''
+                   % (','.join(fields), ','.join('?' * len(fields)), update),
+                   (item['id'], *[item.get(f) for f in fields], detail_at, now, now))
 
 
 def sync(root, opener=None, now=None, gap=None, waits=None):
@@ -439,14 +450,22 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
     try:
         crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()))
         crawl.collect()
-        rows = crawl.rows()
-        if not rows:
+        if not crawl.entries:
             raise ValueError(crawl.errors[0] if crawl.errors else 'filmfriend lieferte keine Filme')
+        db = _connect(root)
+        try:
+            known = {r[0]: float(r[1] or 0) for r in db.execute('SELECT id, detail_at FROM filmfriend_items')}
+        finally:
+            db.close()
+        crawl.add_details(known, now)
+        rows = list(crawl.entries.values())
+        waiting = sum(1 for r in rows if not (r.get('detailed') or r.get('detail_checked') or known.get(r['id'])))
         # a few failed pages leave the run complete; many make it partial (old titles stay visible)
         partial = crawl.truncated or len(crawl.errors) > max(3, 0.03 * crawl.requests)
         message = ('Katalog nur teilweise geladen: %s (%d Fehler)' % (crawl.errors[0], len(crawl.errors))
                    if crawl.errors and partial else 'Katalog nur teilweise geladen' if partial else '')
-        counts = {'movies': len(rows), 'series': 0, 'episodes': 0, 'channels': 0}
+        counts = {'movies': sum(1 for r in rows if r['kind'] == 'movie'),
+                  'series': sum(1 for r in rows if r['kind'] == 'series'), 'episodes': 0, 'channels': 0}
         db = _connect(root)
         try:
             with db:
@@ -456,13 +475,14 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'), ('last_error', message),
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
-                                   ('requests', crawl.requests), ('pages', crawl.pages_read), *counts.items()]:
+                                   ('requests', crawl.requests), ('pages', crawl.search_pages),
+                                   ('details_waiting', waiting), *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()
-        _notify('filmfriend_sync_completed', partial=partial, requests=crawl.requests, pages=crawl.pages_read,
-                errors=len(crawl.errors), truncated=crawl.truncated, movie_404=crawl.movie_404,
-                imdb=sum(1 for r in rows if r['imdb_id']), other_kinds=dict(sorted(crawl.kinds.items())[:10]), **counts)
+        _notify('filmfriend_sync_completed', partial=partial, requests=crawl.requests, pages=crawl.search_pages,
+                errors=len(crawl.errors), truncated=crawl.truncated, details=crawl.details, detail_404=crawl.detail_404,
+                details_waiting=waiting, imdb=sum(1 for r in rows if r['imdb_id']), **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)
@@ -501,20 +521,30 @@ def _labels(row):
 
 
 def episodes(root, series_id, now=None):
-    raise ValueError('filmfriend führt hier nur Filme')
+    """filmfriend names no episode list without login: the series page links to filmfriend.de."""
+    if not VALID_ID.fullmatch(str(series_id or '')) or not str(series_id).startswith('s.'):
+        raise ValueError('Ungültige filmfriend-Serie')
+    db = _connect(root)
+    try:
+        series = _row(db, series_id)
+    finally:
+        db.close()
+    if not series:
+        raise ValueError('filmfriend-Serie nicht im Katalog; bitte Katalog neu laden')
+    return {'series': {'id': series_id, 'title': series['title'], **_summary(root, series)}, 'items': [], 'error': '',
+            'note': 'Die Folgen stehen auf filmfriend.de (Anmeldung mit Bibliotheksausweis).'}
 
 
 def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection=''):
     import filmfriend_enrichment
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
     limit = 1000000 if limit == 'all' else max(1, min(_int(limit, 1) or 60, 200))
-    if view != 'movies':
-        return {'items': [], 'total': 0, 'offset': offset, 'view': view, 'genre_counts': []}
+    kind = 'series' if view == 'series' else 'movie'
     db = _connect(root)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
-        sql = "FROM filmfriend_items WHERE kind='movie' AND seen>=?"
-        args = [last]
+        sql = "FROM filmfriend_items WHERE kind=? AND seen>=?"
+        args = [kind, last]
         if query:
             sql += ' AND (title LIKE ? OR original_title LIKE ? OR genre LIKE ? OR summary LIKE ?)'
             like = '%' + str(query)[:100] + '%'
@@ -527,7 +557,7 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         row.update(_summary(root, row, reports))
         row.update(_labels(row))
     facets = portal_reference.facets(rows)
-    rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, 'movie')]
+    rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
         rows.sort(key=lambda r: (-(r['score'] or {}).get('value', -1), r['title'].casefold()))
     elif sort == 'year':
@@ -562,8 +592,10 @@ def state(root):
             'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _ACTIVE),
             'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
-            'movies': _int(_get(db, 'movies', '0')) or 0, 'series': 0, 'episodes': 0, 'channels': 0,
+            'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
+            'episodes': 0, 'channels': 0,
             'pages': _int(_get(db, 'pages', '0')) or 0, 'requests': _int(_get(db, 'requests', '0')) or 0,
+            'details_waiting': _int(_get(db, 'details_waiting', '0')) or 0,
             'note': LIBRARY_NOTE}
     finally:
         db.close()
