@@ -1,5 +1,5 @@
 """MediathekAtlas: ArchiveMedia identity/export core with a separate MVW adapter."""
-import sys, json, re, hashlib, time, urllib.request, urllib.parse, urllib.error, socket, ipaddress
+import sys, json, re, hashlib, time, unicodedata, urllib.request, urllib.parse, urllib.error, socket, ipaddress
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).parent/'vendor'/'archivemedia'))
 from catalog_identity import clean, normalize_title, EPISODE
@@ -123,6 +123,30 @@ def validate_meta(m,require_episode=True):
     if m['kind']=='movie':m['season']=m['episode']=None;m['episode_title']=''
     return m
 
+# 0.6.44 (Björn, 20.11.2026: „beim Runterladen bitte auch Dateinamen bereinigen, dass sie ein vernünftiges Format
+# haben und keine Sonderzeichen“). Titles from YouTube and the portals bring emojis, hashtags, fullwidth "｜",
+# "⧸" and typographic quotes into file names. Umlauts and ß stay (valid on APFS, NTFS, exFAT, ext4, Btrfs and SMB;
+# Plex/Jellyfin/Kodi show them correctly); names are NFC so macOS (NFD) and NAS see the same name.
+_NAME_TRANSLATE=str.maketrans({'“':'','”':'','„':'','«':'','»':'','‹':'','›':'','"':'','‘':"'",'’':"'",'‚':"'",
+                               '´':"'",'`':"'",'–':'-','—':'-','‐':'-','‑':'-','…':' ','·':'-','•':'-','~':'-'})
+_NAME_SEPARATORS=re.compile(r'\s*[|¦:;/\\⧸⁄∕]+\s*')
+_NAME_HASHTAG=re.compile(r'(?<![\w&])#[^\W\d_][^\s#]*')
+_NAME_KEEP=set(" -_.,()[]&+!'#")
+def tidy_name(value):
+    """File/folder name part without emojis, hashtags and special characters: 'Bluey ｜ Ganze Folge 🐶 #kinder'
+    -> 'Bluey - Ganze Folge'. Letters of every script, digits and - _ . , ( ) [ ] & + ! ' remain."""
+    text=unicodedata.normalize('NFKC',str(value or '')).translate(_NAME_TRANSLATE)
+    text=_NAME_HASHTAG.sub(' ',text)
+    text=_NAME_SEPARATORS.sub(' - ',text)
+    text=''.join(ch if ch in _NAME_KEEP or unicodedata.category(ch)[0] in 'LN' else ' ' for ch in text)
+    text=re.sub(r'\s+',' ',text)
+    text=re.sub(r'(?:\s*-\s*){2,}',' - ',text)
+    text=re.sub(r'\(\s*\)|\[\s*\]','',text)
+    text=re.sub(r'([!.,])\1+',r'\1',text)
+    text=re.sub(r'\s+([,!.)\]])',r'\1',text)
+    text=' '.join(text.split()).strip(' .-_,')
+    return unicodedata.normalize('NFC',text) or 'Unbekannt'
+
 def target(root,meta,source_id):
     """Planned destination of a download (before the file is measured).
 
@@ -130,14 +154,29 @@ def target(root,meta,source_id):
     Serien/<Serie> (<Jahr>)/Season NN/), file names follow ``<Titel> - (<Jahr>)``; after the
     download the measured resolution and codecs are appended (``final_target``):
     ``Spellbound - (2024) - 1080p - H264 E-AC-3.mkv`` with ``-poster``/``-backdrop`` images and NFO."""
+    return _target(root,meta,source_id,tidy_name)
+
+def legacy_target(root,meta,source_id):
+    """Destination before 0.6.44 (title with emojis/special characters), to find files loaded back then."""
+    return _target(root,meta,source_id,lambda t:t)
+
+def _target(root,meta,source_id,tidy):
     m=validate_meta(dict(meta))
-    g={**m,'match_state':'confirmed'}
+    title=tidy(m['title'])
+    g={**m,'title':title,'match_state':'confirmed'}
     v={'filename':'video.mkv','item_id':source_id,'season':m['season'],'episode':m['episode']}
     dest=canonical_target(root,g,v,{})[0]
     from package_media import clean_path_part
-    name=clean_path_part(m['title'])+(' - (%s)'%m['year'] if m.get('year') else '')
+    name=clean_path_part(title)+(' - (%s)'%m['year'] if m.get('year') else '')
     if m['kind']=='series':name+=' - S%02dE%02d'%(m['season'],m['episode'])
     return dest.with_name(clean_path_part(name)+dest.suffix)
+
+def existing_for(root,meta,source_id):
+    """A finished download of this title under the current name or the name before 0.6.44."""
+    found=existing_download(target(root,meta,source_id))
+    if found:return found
+    old=legacy_target(root,meta,source_id)
+    return existing_download(old) if old!=target(root,meta,source_id) else None
 
 VIDEO_CODECS={'h264':'H264','hevc':'HEVC','h265':'HEVC','av1':'AV1','vp9':'VP9','vp8':'VP8','mpeg2video':'MPEG2','mpeg4':'MPEG4','vc1':'VC-1'}
 AUDIO_CODECS={'aac':'AAC','ac3':'AC-3','eac3':'E-AC-3','mp2':'MP2','mp3':'MP3','opus':'Opus','vorbis':'Vorbis','flac':'FLAC',

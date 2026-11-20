@@ -72,20 +72,61 @@ def episode_name(raw):
     value=' '.join(value.split()).strip(' ()-:–—|.,')
     return value
 
+MONTH_NUMBERS={'januar':1,'jänner':1,'februar':2,'feber':2,'märz':3,'maerz':3,'april':4,'mai':5,'juni':6,'juli':7,
+               'august':8,'september':9,'oktober':10,'november':11,'dezember':12}
+ENGLISH_MONTHS=('January','February','March','April','May','June','July','August','September','October',
+                'November','December')
+TITLE_DATE=re.compile(r'(?i)(?<![\w/.])(?:([0-3]?\d)([./])([01]?\d)\2((?:19|20)\d{2})|vom\s+(?:(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag),?\s+)?([0-3]?\d)\.\s*('
+                      +'|'.join(MONTH_NUMBERS)+r')\s+((?:19|20)\d{2}))(?![\w/]|\.\d)')
+
+def title_date(raw):
+    """Calendar date named in a broadcaster title ("vom 19.11.2026", "(13/11/2026)", "vom 2. Februar 2025").
+
+    Returns (match text, year, month, day) or None. Only one unambiguous full date counts.
+    """
+    found=list(TITLE_DATE.finditer(str(raw or '')))
+    if len(found)!=1:return None
+    m=found[0]
+    try:
+        if m.group(1):day,month,year=int(m.group(1)),int(m.group(3)),int(m.group(4))
+        else:day,month,year=int(m.group(5)),MONTH_NUMBERS[m.group(6).casefold()],int(m.group(7))
+        time.strptime('%04d-%02d-%02d'%(year,month,day),'%Y-%m-%d')
+    except (KeyError,ValueError):return None
+    return m.group(0),year,month,day
+
+def dated_episode_name(raw):
+    """IMDb's name for an episode of a daily or weekly programme: "Episode dated 19 November 2026".
+
+    0.6.41: talk shows, magazines and news programmes are often listed this way in IMDb; their
+    Mediathek editions carry the same date in the title ("3nach9 vom 14.11.2026"). The name probe
+    is still exact and must return exactly one episode of the already identified series.
+    """
+    date=title_date(raw)
+    if not date:return ''
+    _,year,month,day=date
+    return 'Episode dated %d %s %d'%(day,ENGLISH_MONTHS[month-1],year)
+
 def episode_search_terms(row,meta,show_title):
     """Exact IMDb name probes: raw title, show prefix removed, numbering removed.
 
     No fuzzy assignment: IMDb's episode query must still return exactly one row,
     and supplied season/episode numbers and runtimes remain authoritative.
+    0.6.41: also without accessibility/version labels and counters (metadata.query_title:
+    "Donna Leon (12) – Das Gesetz der Lagune", "… - Audiodeskription"), and the IMDb
+    name of a dated edition ("Episode dated …") as the last probe.
     """
+    import metadata
     titles=(meta.get('episode_title'),row.get('title'))
     seen=set();out=[]
     for raw in titles:
         if not isinstance(raw,str) or not raw.strip():continue
         possibilities=[raw]
+        quiet=metadata.query_title(raw)
+        if quiet and quiet!=raw:possibilities.append(quiet)
         if show_title:
-            prefix=re.match(r'^\s*'+re.escape(str(show_title))+r'\s*[:\-–—|]\s*(.+?)\s*$',raw,re.I)
-            if prefix:possibilities.append(prefix.group(1))
+            for value in list(possibilities):
+                prefix=re.match(r'^\s*'+re.escape(str(show_title))+r'\s*[:\-–—|]\s*(.+?)\s*$',value,re.I)
+                if prefix:possibilities.append(prefix.group(1))
         possibilities+=[episode_name(x) for x in list(possibilities)]
         for name in possibilities:
             value=norm(name)
@@ -93,6 +134,10 @@ def episode_search_terms(row,meta,show_title):
             if not value or value.isdigit() or (show_title and value==norm(show_title)):continue
             if value not in seen:
                 seen.add(value);out.append(value)
+    for raw in titles:
+        dated=norm(dated_episode_name(raw))
+        if dated and dated not in seen:
+            seen.add(dated);out.append(dated)
     return out
 
 SERIES_TYPES=('tvSeries','tvMiniSeries')
@@ -105,10 +150,37 @@ def series_reference(meta):
     if IMDB_ID.fullmatch(str(meta.get('imdb_id') or '')):return str(meta['imdb_id'])
     return ''
 
+SCHEMA='CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,originalTitle TEXT,isAdult INTEGER,startYear INTEGER,endYear INTEGER,runtimeMinutes INTEGER,genres TEXT); CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER); CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER); CREATE TABLE names(name TEXT,tconst TEXT,title TEXT,localized INTEGER); CREATE TABLE title_akas(titleId TEXT,ordering INTEGER,title TEXT,region TEXT,language TEXT,types TEXT,attributes TEXT,isOriginalTitle INTEGER); CREATE TABLE title_crew(tconst TEXT PRIMARY KEY,directors TEXT,writers TEXT); CREATE TABLE title_principals(tconst TEXT,ordering INTEGER,nconst TEXT,category TEXT,job TEXT,characters TEXT); CREATE TABLE name_basics(nconst TEXT PRIMARY KEY,primaryName TEXT,birthYear INTEGER,deathYear INTEGER,primaryProfession TEXT,knownForTitles TEXT); CREATE TABLE snapshot(updated REAL,details TEXT); PRAGMA user_version=2;'
+
+def seed_file(path):
+    """0.6.42: Create the staging archive with a finished SQLite header instead of an empty file.
+
+    Björn (20.11.2026, 0.6.40): the weekly update on /Volumes/Docking-2 failed with „attempt to
+    write a readonly database“ on the first CREATE TABLE of a brand-new building.db. On exFAT/FAT
+    macOS derives the file ID of an empty file from its directory entry and of a non-empty file from
+    its first cluster, so the ID changes with the first write and SQLite reports the file as moved
+    (SQLITE_READONLY_DBMOVED). A file that already holds the schema keeps its ID. The schema is
+    built in a temporary file on the system disk (a few KB) and copied, which works on every Python.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='mediathekatlas-imdb-') as tmp:
+        seed=Path(tmp)/'seed.db'
+        c=sqlite3.connect(seed)
+        try:c.executescript('PRAGMA journal_mode=DELETE; '+SCHEMA)
+        finally:c.close()
+        data=seed.read_bytes()
+    with open(path,'wb') as f:
+        f.write(data);f.flush();os.fsync(f.fileno())
+
+def _free_bytes(folder):
+    try:return shutil.disk_usage(folder).free
+    except OSError:return None
+
 def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
+    seed_file(path)
     c=sqlite3.connect(path)
     try:
-        c.executescript('PRAGMA journal_mode=DELETE; PRAGMA temp_store=FILE; PRAGMA cache_size=-32768; CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,originalTitle TEXT,isAdult INTEGER,startYear INTEGER,endYear INTEGER,runtimeMinutes INTEGER,genres TEXT); CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER); CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER); CREATE TABLE names(name TEXT,tconst TEXT,title TEXT,localized INTEGER); CREATE TABLE title_akas(titleId TEXT,ordering INTEGER,title TEXT,region TEXT,language TEXT,types TEXT,attributes TEXT,isOriginalTitle INTEGER); CREATE TABLE title_crew(tconst TEXT PRIMARY KEY,directors TEXT,writers TEXT); CREATE TABLE title_principals(tconst TEXT,ordering INTEGER,nconst TEXT,category TEXT,job TEXT,characters TEXT); CREATE TABLE name_basics(nconst TEXT PRIMARY KEY,primaryName TEXT,birthYear INTEGER,deathYear INTEGER,primaryProfession TEXT,knownForTitles TEXT); CREATE TABLE snapshot(updated REAL,details TEXT); PRAGMA user_version=2;')
+        c.executescript('PRAGMA journal_mode=DELETE; PRAGMA temp_store=FILE; PRAGMA cache_size=-32768;')
         counts={}
         for kind in HEADERS:
             rows=[];names=[];count=0
@@ -327,7 +399,7 @@ class Archive:
             # Back off 1 h, 2 h, 4 h … up to a day instead of downloading 1 GB again every hour.
             self.failures+=1
             self.retry_at=time.time()+min(86400,3600*2**(self.failures-1));self.progress(phase='error',error=core.safe_error(e),retry_at=self.retry_at)
-            diagnostics.error('imdb_archive_failed',e,attempt=self.failures)
+            diagnostics.error('imdb_archive_failed',e,attempt=self.failures,sqlite_error=getattr(e,'sqlite_errorname',''),folder_free=_free_bytes(self.root))
             # Without free space, keeping the downloads would only make it worse.
             if isinstance(e,OSError) and 'Speicher' in str(e):done=True
         finally:
@@ -379,8 +451,9 @@ class Archive:
         return deepcopy(cache[tconst])
     def _episode(self,row,meta,series,show_title):
         """Episode fields for one IMDb series: unique name probe, then unique SxxExx."""
-        eps=[]
+        eps=[];matched_name=''
         for epname in episode_search_terms(row,meta,show_title):
+            matched_name=epname
             eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (series,epname),('episode',series,epname))
             if eps:break
         number_fallback=False
@@ -402,6 +475,10 @@ class Archive:
                            episode_title=(e['primaryTitle'] if number_fallback else episode_name(meta.get('episode_title') or row['title']) or meta.get('episode_title') or row['title']),
                            episode_reference_id=e['tconst'],
                            reason='IMDb-Episode anhand eindeutiger Staffel-/Folgenummer bestätigt' if number_fallback else 'Serien- und Episodentitel im IMDb-Archiv eindeutig zugeordnet')
+            if not number_fallback and matched_name.startswith('episode dated '):
+                # The IMDb name carries no title of its own; keep the broadcaster's edition title.
+                out.update(episode_match='date',episode_title=meta.get('episode_title') or row['title'],
+                           reason='IMDb-Ausgabe anhand des Sendedatums im Titel eindeutig zugeordnet')
         return out
     def has_episodes(self,series):
         return bool(self._lookup('SELECT 1 FROM title_episode WHERE parentTconst=? LIMIT 1',(series,),('has_episodes',series)))

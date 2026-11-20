@@ -212,7 +212,9 @@ class WorkerTests(unittest.TestCase):
         self.assertEqual(self.svc.episode_matched,1);self.assertEqual(self.svc.episode_checked,1)
 
     def test_editions_of_series_without_imdb_episodes_are_postponed_together(self):
-        ids=[self.add(offer('Schleswig-Holstein Magazin vom %d.11.2026'%d,'Schleswig-Holstein Magazin','sh%d'%d),
+        # 0.6.41: dated editions are filed as Ausgaben (test_v0641_episode_editions); undated
+        # contributions without an IMDb episode list are still postponed together.
+        ids=[self.add(offer('Neues aus Ort '+'ABCDE'[d-1],'Schleswig-Holstein Magazin','sh%d'%d),
                       'Schleswig-Holstein Magazin',1990,reference='9') for d in range(1,6)]
         other=self.add(offer('Folge 12: Das Vorsprechen','Find me in Paris','b'),'Find me in Paris',2018)
         with self.db() as c:catalog.prioritize(c,[ids[4]])
@@ -241,9 +243,9 @@ class WorkerTests(unittest.TestCase):
     def test_sender_linked_editions_stay_due_when_sender_lookup_allowed(self):
         self.direct=True
         ard='https://www.ardmediathek.de/video/sh-magazin/folge/ndr/Y3JpZDovL25kci5kZS9hYmMxMjM'
-        a=self.add(offer('Schleswig-Holstein Magazin vom 1.11.2026','Schleswig-Holstein Magazin','x1'),'Schleswig-Holstein Magazin',1990,'9')
-        b=self.add(offer('Schleswig-Holstein Magazin vom 2.11.2026','Schleswig-Holstein Magazin','x2',site=ard),'Schleswig-Holstein Magazin',1990,'9')
-        c_=self.add(offer('Schleswig-Holstein Magazin vom 3.11.2026','Schleswig-Holstein Magazin','x3'),'Schleswig-Holstein Magazin',1990,'9')
+        a=self.add(offer('Neues aus Ort X','Schleswig-Holstein Magazin','x1'),'Schleswig-Holstein Magazin',1990,'9')
+        b=self.add(offer('Neues aus Ort Y','Schleswig-Holstein Magazin','x2',site=ard),'Schleswig-Holstein Magazin',1990,'9')
+        c_=self.add(offer('Neues aus Ort Z','Schleswig-Holstein Magazin','x3'),'Schleswig-Holstein Magazin',1990,'9')
         with self.db() as c:
             c.execute('UPDATE episode_queue SET next_try=0')
             c.execute('UPDATE episode_queue SET next_try=1 WHERE work_id!=?',(a,))

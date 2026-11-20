@@ -136,6 +136,9 @@ setInterval(()=>{if(!$('subscriptions').hidden)loadSubscriptions();},30000);
 
 let catalogRetry=0;let filters={kind:'series',genre:'',show:'',archive:false},catalogRevision='',catalogBusy=false,lastMetadataChecks=-1,catalogSequence=0,catalogKey='';
 const kindLabels={movie:'Filme',series:'Serien',unknown:'Noch zuordnen',other:'Weitere Sendungen'};
+// 0.6.43: Art einer nicht abgeglichenen Sendung (Ausgabe, Beitrag, Teil, Folge, Einzelsendung).
+const formatGroupLabels={edition:'Ausgabe einer Sendung',segment:'Beitrag einer Sendung',part:'Teil einer Sendereihe',contribution:'Folge einer Sendung',news:'Nachrichtensendung',single:'Einzelsendung'};
+function formatLabel(m){return formatGroupLabels[(m||{}).format_grouping]||'Beitrag einer Sendung';}
 function selectFilter(change){$('collection-filter').value='';filters={kind:'',genre:'',show:'',archive:false,...change};offset=0;loadCatalog().catch(e=>notice(e.message,'error'));}
 function availabilityLabel(source){
  const value=source?.available_until;
@@ -178,7 +181,7 @@ if(m.video_role){
 if(m.kind==='series'&&m.networks?.length)body.append(el('small',m.networks.join(' · ')));const pick=pickLabel(m,item.state);if(pick){const badge=el('div',pick,'pick-badge');badge.title=pickReason(m);body.append(badge);}if(m.rating!=null&&Number.isFinite(Number(m.rating)))body.append(el('small','★ '+m.rating+' / 10 · '+ratingSource(m)));
 body.append(el('span',(m.genres||[]).slice(0,2).join(' · ')||'Genre offen','eyebrow'),heading,el('p',((item.series_parent?m.show_description:'')||m.description||r.description||'').slice(0,110),'synopsis'));
 if(m.kind==='series'&&!item.series_parent){const number=Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+' · ':'';body.append(el('p',number+(m.episode_title||r.title),'episode-heading'));}
-body.append(el('p',meshDownloadLabel(item.mesh_download)+(item.downloaded&&!item.mesh_download?(item.file_state==='missing'?'⚠ Datei am bisherigen Pfad nicht gefunden · ':'✓ Heruntergeladen · '):'')+({identified:'◐ Werk erkannt · Datei noch prüfen',matched:'✓ Metadaten zugeordnet',manual:'✓ Manuell geprüft',review:'◌ Zuordnung prüfen',pending:'◌ Metadaten vorgemerkt',retry:'◌ Abgleich wird wiederholt',format:(m.video_role?'◇ Kurzformat · nicht als Episode erkannt':'◇ Beitrag einer Sendung · nicht abgeglichen')}[item.state]||'◌ Metadaten prüfen')+(m.year?' · '+m.year:''),'badge'));
+body.append(el('p',meshDownloadLabel(item.mesh_download)+(item.downloaded&&!item.mesh_download?(item.file_state==='missing'?'⚠ Datei am bisherigen Pfad nicht gefunden · ':'✓ Heruntergeladen · '):'')+({identified:'◐ Werk erkannt · Datei noch prüfen',matched:'✓ Metadaten zugeordnet',manual:'✓ Manuell geprüft',review:'◌ Zuordnung prüfen',pending:'◌ Metadaten vorgemerkt',retry:'◌ Abgleich wird wiederholt',format:(m.video_role?'◇ Kurzformat · nicht als Episode erkannt':'◇ '+formatLabel(m)+' · nicht abgeglichen')}[item.state]||'◌ Metadaten prüfen')+(m.year?' · '+m.year:''),'badge'));
 if(item.series_parent){const b=el('button','Serie öffnen · '+item.episodes+' Folgen');b.onclick=()=>openShow(item.show_key);const bulk=el('button','Serie gesammelt laden');bulk.onclick=()=>openSeries(item.show_key);body.append(b,bulk);}
 else{const files=el('details',undefined,'file-details');files.append(el('summary','Dateien & Qualität'),sourceLinks(item.links));body.append(files);body.append(el('p',(item.available?'Bevorzugt: ':'Archiviert: ')+(item.special||'Reguläre Fassung')+' · '+r.channel+' · '+(item.best?.quality||'?')+' (Senderangabe)','qualityline'));if(r.available_until)body.append(el('p',availabilityLabel(r),'availability-line'));const b=el('button',item.available?'Beste Fassung prüfen & laden':'Metadaten ansehen');b.onclick=()=>edit(item);body.append(b);
 const details=el('details',undefined,'alternatives');details.append(el('summary','Weitere Fassungen ('+item.offer_count+')'));details.ontoggle=async()=>{if(!details.open||details.dataset.loaded)return;try{const d=await api('alternatives?work_id='+encodeURIComponent(item.work_id));for(const a of d.items){const box=el('div',undefined,'alternative');box.append(el('strong',a.source.channel+' · '+(a.special||'Regulär')+(a.available?'':' · nicht mehr gelistet')+(a.same_media_count>1?' · '+a.same_media_count+' identische Einträge gebündelt':'')));if(a.source.available_until)box.append(el('small',availabilityLabel(a.source)));for(const l of a.links){const line=el('p',linkQuality(l)+' · '+(l.supported?'Direktdatei':'Stream, derzeit kein Download'));if(/^https?:\/\//.test(l.url)){const link=el('a','Quelllink');link.href=l.url;link.target='_blank';link.rel='noopener noreferrer';line.append(' · ',link);}box.append(line);}const choose=el('button','Diese Fassung prüfen');choose.onclick=()=>edit(a);box.append(choose);details.append(box);}details.dataset.loaded='1';}catch(e){notice(e.message,'error');}};body.append(details);}
@@ -275,7 +278,9 @@ function catalogProgress(c){
      ['sender-matches','Sender-Folgen bestätigt: '+countLabel(c.episode_sender_matched_session||0)],
      ['episode-checks','Episodenprüfungen: '+countLabel(c.episode_checked_session||0)+' · zurückgestellt: '+countLabel(c.episode_retried_session||0)],
      ['episode-series','Ohne IMDb-Folgenliste verschoben: '+countLabel(c.episode_series_deferred_session||0)],
-     ['shorts','Kurzvideos vermutet: '+countLabel(c.episode_suspected_session||0)+' · Extras: '+countLabel(c.episode_extras_session||0)]
+     ['shorts','Kurzvideos vermutet: '+countLabel(c.episode_suspected_session||0)+' · Extras: '+countLabel(c.episode_extras_session||0)],
+     // 0.6.41: editions and short contributions of news/magazine Sendungen have no episode of their own.
+     ['editions','Sendungsausgaben: '+countLabel(c.episode_editions_session||0)+' · Beiträge: '+countLabel(c.episode_segments_session||0)]
    ];
    if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
    workers.replaceChildren();
@@ -283,7 +288,7 @@ function catalogProgress(c){
    const groupSpec=[
      ['Worker & Scan', ['identity','episode']],
      ['Erkennungsqualität', ['identified','confirmed']],
-     ['Episoden & Senderbelege', ['queue','due','episode-checks','episode-series','sender','sender-matches','shorts']],
+     ['Episoden & Senderbelege', ['queue','due','episode-checks','episode-series','editions','sender','sender-matches','shorts']],
      ['Fehler & Wiederholungen', ['retry']]
    ];
    for(const [name,kinds] of groupSpec){
@@ -540,7 +545,7 @@ function renderDetailExtras(item){
  const rating=Number(m.rating);$('detail-rating').textContent=m.rating!=null&&m.rating!==''&&Number.isFinite(rating)?'★ '+rating.toLocaleString('de-DE')+' / 10 · '+(m.rating_source||(['OMDb','IMDb Offline'].includes(m.provider)?'IMDb':m.provider||'Quelle unbekannt'))+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':''):'Bewertung noch nicht vorhanden';
  renderRatings(m);
  const data=$('detail-data');data.replaceChildren();const add=(k,v)=>{if(v!==undefined&&v!==null&&v!==''){data.append(el('dt',k),el('dd',String(v)));}};
- add('Empfehlung',pickLabel(m,item.state)?pickReason(m):null);add('Originalsender / Netzwerk',(m.networks||[]).join(', '));add('Produktionsfirmen',(m.studios||[]).join(', '));add('Metadatenquelle',m.provider);add('Anbieter-ID',m.reference_id);add('Zuordnung',({manual:'Manuell bestätigt',matched:'Automatisch bestätigt',identified:'Werk erkannt · Folge noch prüfen',pending:'Noch offen',review:'Prüfung erforderlich',retry:'Abgleich vorgemerkt',format:'Beitrag einer Sendung · nicht mit Filmdatenbanken abgeglichen'})[item.state]||item.state);
+ add('Empfehlung',pickLabel(m,item.state)?pickReason(m):null);add('Originalsender / Netzwerk',(m.networks||[]).join(', '));add('Produktionsfirmen',(m.studios||[]).join(', '));add('Metadatenquelle',m.provider);add('Anbieter-ID',m.reference_id);add('Zuordnung',({manual:'Manuell bestätigt',matched:'Automatisch bestätigt',identified:'Werk erkannt · Folge noch prüfen',pending:'Noch offen',review:'Prüfung erforderlich',retry:'Abgleich vorgemerkt',format:formatLabel(m)+' · nicht mit Filmdatenbanken abgeglichen'})[item.state]||item.state);
  if(m.video_role){
    add('Videotyp / Plausibilität',m.video_role_needs_review?'Vermutetes Kurzformat – keine bestätigte Episode':'Trailer, Ausschnitt oder Extra');
    add('Grund',m.video_role_reason);

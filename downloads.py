@@ -201,7 +201,8 @@ def run(row,meta,root,quality,update,cancelled):
     if not hls and ('.m3u8' in url.lower() or '.mpd' in url.lower()):raise ValueError('HLS/DASH ist in v0.1 noch nicht implementiert; bitte MP4-Fassung wählen')
     dest=planned_target(root,meta,row)
     dest.parent.mkdir(parents=True,exist_ok=True)
-    if core.existing_download(dest) or any(p.exists() for p in (dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
+    # 0.6.44: a file loaded before the name cleanup still counts (legacy name with special characters).
+    if (not row.get('_target') and core.existing_for(root,meta,row['_id'])) or core.existing_download(dest) or any(p.exists() for p in (dest.with_suffix('.nfo'),dest.with_suffix('.metadata.json'))):raise FileExistsError('Zieldatei oder Metadaten existieren bereits – nichts überschrieben')
     # Every staged name ends in .partial: MeshSync and similar tools skip these until publication.
     lock=dest.with_suffix('.lock.partial')
     fd=os.open(lock,os.O_CREAT|os.O_EXCL|os.O_WRONLY);os.close(fd)

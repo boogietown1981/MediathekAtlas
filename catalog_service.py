@@ -42,7 +42,7 @@ def sqlite_busy(exc):
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_series_deferred=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -139,6 +139,13 @@ class Service:
                 self.status(phase='error',error=core.safe_error(e));retry_after=time.time()+300
     def metadata_state(self,**state):
         self.metadata_status={**state,'checked_session':self.checked,'updated_at':time.time()}
+        # 0.6.44: the live status stays complete for the UI; the protocol keeps waiting/error states, results
+        # other than "identified"/"matched"/"review" and samples of those (was: two events per work; 4,600 "review"
+        # results for titles like "Sport-Clip" in 40 minutes).
+        phase=state.get('phase');outcome=state.get('outcome')
+        if phase=='checking':return
+        if phase=='result' and outcome in ('identified','matched','auto_matched') and self.checked%100:return
+        if phase=='result' and outcome=='review' and self.checked%10:return
         diagnostics.event('metadata_status',**self.metadata_status)
     def subscription_loop(self):
         """Create queued download jobs from user-approved subscriptions."""
@@ -424,6 +431,9 @@ class Service:
                 'episode_sender_items_session':self.episode_sender_items,
                 'episode_sender_matched_session':self.episode_sender_matched,
                 'episode_sender_deferred_session':self.episode_sender_deferred,
+                'episode_sender_budget_session':self.episode_sender_budget,
+                'episode_editions_session':self.episode_editions,
+                'episode_segments_session':self.episode_segments,
                 'episode_series_deferred_session':self.episode_series_deferred,
                 'first_pass_session':first,'repeat_session':repeat,
                 'series_template_session':template,
@@ -485,7 +495,7 @@ class Service:
         return outcome,dest
     def record_episode_result(self,outcome,imported=False,sender_verified=False,
                               sender_item=False,sender_deferred=False,
-                              sender_status='not_checked'):
+                              sender_status='not_checked',sender_budget=False):
         """Count each committed episode claim exactly once, including early exits.
 
         A short excerpt is *processed*, but neither matched nor unresolved.
@@ -502,11 +512,14 @@ class Service:
             elif outcome=='extra':self.episode_extras+=1
             elif outcome=='retry':self.episode_retried+=1
             elif outcome=='reset':self.episode_resets+=1
+            elif outcome=='edition':self.episode_editions+=1
+            elif outcome=='segment':self.episode_segments+=1
             if imported:
                 self.episode_sender_imported+=1
                 if sender_verified:self.episode_sender_matched+=1
                 if sender_item:self.episode_sender_items+=1
                 if sender_deferred:self.episode_sender_deferred+=1
+                if sender_budget:self.episode_sender_budget+=1
             n=self.episode_checked
             matched=self.episode_matched
             unresolved=self.episode_unresolved
@@ -516,6 +529,7 @@ class Service:
             sender_matches=self.episode_sender_matched
             retried=self.episode_retried
             series_deferred=self.episode_series_deferred
+            editions=self.episode_editions;segments=self.episode_segments
         # Individual short-video discoveries already have their own diagnostic
         # events; keep progress reports bounded so they don't evict errors.
         if outcome!='retry' and (outcome=='matched' or n==1 or n%100==0):
@@ -523,6 +537,7 @@ class Service:
                               checks=n,matched=matched,unresolved=unresolved,
                               suspected=suspect,extras=extras,retried=retried,
                               series_deferred=series_deferred,
+                              editions=editions,segments=segments,
                               sender_items=items,sender_matched=sender_matches,
                               sender_status=sender_status)
 
@@ -561,6 +576,69 @@ class Service:
                               provider=m.get('provider'),deferred=deferred)
         return max(0,deferred)
 
+    def classify_sibling_editions(self,c,show_key,m,selected_id,allow_editions,limit=500):
+        """File queued editions/contributions of the same Sendung in one pass (0.6.41).
+
+        Siblings share title, provider and reference, therefore the same IMDb answer. Each sibling's
+        own offer title still decides (catalog.recurring_edition); numbered episodes, user priorities and
+        dated editions of a series whose IMDb entry lists episodes stay in the queue.
+        """
+        if not show_key or not m.get('provider') or not m.get('reference_id'):return 0
+        rows=c.execute("""SELECT w.* FROM works w WHERE w.show_key=? AND w.id!=? AND w.state='identified'
+              AND json_extract(w.meta,'$.provider')=?
+              AND CAST(json_extract(w.meta,'$.reference_id') AS TEXT)=?
+              AND EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id)
+              AND NOT EXISTS(SELECT 1 FROM metadata_priority p WHERE p.work_id=w.id)
+              AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
+            LIMIT ?""",(show_key,selected_id,m['provider'],str(m['reference_id']),time.time(),limit)).fetchall()
+        counts={'edition':0,'segment':0};later=[]
+        sendung=catalog.sendung_with_editions(c,show_key)
+        for sibling in rows:
+            best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(sibling['id'],)).fetchone()
+            if not best:continue
+            try:meta=json.loads(sibling['meta'] or '{}');source=json.loads(best[0])
+            except (TypeError,ValueError):continue
+            role=catalog.recurring_edition(meta,source,sendung)
+            if role=='edition' and not allow_editions:continue
+            if role and catalog.mark_recurring_edition(c,sibling,meta,source,role):counts[role]+=1
+            elif not role and not sendung:later.append((sibling,meta,source))
+        # Editions filed just now show that this series is a Sendung; its short clips are contributions.
+        if later and catalog.sendung_with_editions(c,show_key):
+            for sibling,meta,source in later:
+                if catalog.recurring_edition(meta,source,True)=='segment' and catalog.mark_recurring_edition(c,sibling,meta,source,'segment'):
+                    counts['segment']+=1
+        if counts['edition'] or counts['segment']:
+            with self.worker_lock:
+                self.episode_editions+=counts['edition'];self.episode_segments+=counts['segment']
+            diagnostics.event('episode_series_editions_classified',title=m.get('title',''),
+                              provider=m.get('provider'),editions=counts['edition'],segments=counts['segment'])
+        return counts['edition']+counts['segment']
+
+    def same_date_editions(self,c,show_key,selected_id,source):
+        """True if another active offer of the same Sendung names the same broadcast date."""
+        import imdb_archive
+        date=imdb_archive.title_date(source.get('title'))
+        if not date or not show_key:return False
+        return bool(c.execute("""SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
+            WHERE w.show_key=? AND w.id!=? AND instr(json_extract(o.payload,'$.title'),?)>0 LIMIT 1""",
+            (show_key,selected_id,date[0])).fetchone())
+
+    def sample_unresolved(self,m,source,evidence):
+        """Bounded examples of episode checks without result, so the next diagnosis can count causes."""
+        with self.worker_lock:
+            self.episode_samples+=1;n=self.episode_samples
+        if n>40 and n%250:return
+        evidence=evidence or {}
+        if not evidence.get('series'):cause='imdb_series_not_found'
+        elif not evidence.get('series_with_episodes'):cause='imdb_series_without_episodes'
+        elif evidence.get('ambiguous'):cause='ambiguous'
+        else:cause='no_episode_match'
+        numbered=isinstance(m.get('episode'),int) and not isinstance(m.get('episode'),bool)
+        diagnostics.event('episode_unresolved_sample',cause=cause,series=m.get('title',''),
+                          title=source.get('title',''),topic=source.get('topic',''),
+                          duration=source.get('duration'),provider=m.get('provider'),
+                          imdb_known=bool(m.get('imdb_id')),numbered=numbered,sample=n)
+
     def _episode_once_claimed(self,selected_id):
         """Resolve a known show's episode from imported sender evidence first.
 
@@ -570,7 +648,7 @@ class Service:
         """
         # Finish the SQLite transaction before recording a session counter.
         # Early exits are real completed queue claims, not invisible work.
-        preflight=None
+        preflight=None;edition_role=None
         with self.db() as c:
             row=c.execute('SELECT * FROM works WHERE id=?',(selected_id,)).fetchone()
             task=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(selected_id,)).fetchone()
@@ -582,6 +660,14 @@ class Service:
                     diagnostics.event('video_extra_classified',work_id=selected_id,
                                       title=entry['source'].get('title',''),reason='explicit_title')
                     preflight='extra'
+                elif (edition_role:=catalog.recurring_edition(m,entry['source'],
+                        catalog.sendung_with_editions(c,row['show_key'])))=='segment':
+                    # 0.6.41: a short contribution of a news/magazine Sendung is no episode; file it with
+                    # its Sendung instead of the "unsicher" review list.
+                    if catalog.mark_recurring_edition(c,row,m,entry['source'],'segment'):
+                        self.classify_sibling_editions(c,row['show_key'],m,selected_id,allow_editions=False)
+                        preflight='segment'
+                    else:return True
                 else:
                     runtime_meta=dict(m)
                     if not runtime_meta.get('reference_runtime_seconds'):
@@ -590,12 +676,18 @@ class Service:
                             runtime_meta['reference_runtime_seconds']=typical
                             runtime_meta['reference_runtime_source']='Serien-Katalogmedian (mind. 5 Vergleichsangebote)'
                     causality=video_causality.evaluate(entry['source'],runtime_meta)
-                    if causality:
+                    if causality and edition_role=='edition' and causality.get('video_role')=='short_excerpt_suspected':
+                        # A short clip titled with a broadcast date is a piece of that edition, not a
+                        # questionable episode: no IMDb episode can be confirmed for it either.
+                        if not catalog.mark_recurring_edition(c,row,m,entry['source'],'edition'):return True
+                        preflight='edition'
+                    elif causality:
                         m.update(causality,video_role_needs_review=True,episode_verified=False,
                                  reason='Serienidentität bekannt, Videolaufzeit passt nicht zur ganzen Folge')
                         c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
                                   (json.dumps(m),time.time(),selected_id))
                         diagnostics.event('episode_runtime_suspect',work_id=selected_id,
+                                          series=m.get('title',''),title=entry['source'].get('title',''),
                                           actual=causality.get('source_duration_seconds'),
                                           expected=causality.get('expected_runtime_seconds'),
                                           source=causality.get('expected_runtime_source'),
@@ -617,10 +709,14 @@ class Service:
         sender_verified=None
         sender_error=False
         sender_deferred=False
+        sender_budget=False
         sender_status='no_sender_link' if not imported else 'imported'
         suspicion=None
         config=self.settings()
-        if imported and broadcaster.reference(source) and config.get('sender_direct_lookup',False):
+        # 0.6.41: a dated edition has no episode number on the sender page either. Asking for it used the
+        # hourly sender allowance (120) and postponed the same editions again and again (43,648 of 47,529
+        # sender claims in the diagnosis of 19.11.2026 ended "sender_deferred").
+        if imported and broadcaster.reference(source) and config.get('sender_direct_lookup',False) and edition_role!='edition':
             try:
                 info=broadcaster.lookup_limited(source)
                 if info:
@@ -636,6 +732,11 @@ class Service:
                             sender_verified=catalog.auto_choice(m,[candidate])
                     else:sender_status='sender_conflict'
                 else:sender_status='sender_not_found'
+            except broadcaster.BudgetExhausted:
+                # 0.6.44: the hourly allowance is spent, the sender is fine. The IMDb archive decides now;
+                # an unconfirmed work comes back in a week, when the allowance may reach it.
+                sender_budget=True
+                sender_status='sender_budget'
             except broadcaster.Unavailable:
                 sender_deferred=True
                 sender_status='sender_deferred'
@@ -647,7 +748,7 @@ class Service:
         import imdb_archive
         archive=imdb_archive.ACTIVE
         imdb_verified=None;imdb_error=False
-        imdb_without_episodes=False;siblings=0
+        imdb_without_episodes=False;siblings=0;evidence=None
         if not sender_verified and entry and archive and archive.updated:
             try:
                 evidence=archive.episode_evidence(source,m)
@@ -668,6 +769,10 @@ class Service:
         with self.db() as c:
             current=c.execute('SELECT meta,state FROM works WHERE id=?',(selected_id,)).fetchone()
             if not current or current['state']!='identified' or current['meta']!=original:return True
+            if verified and verified.get('episode_match')=='date' and self.same_date_editions(c,row['show_key'],selected_id,source):
+                # Two editions on the same day (e.g. 18:00 and 19:30) cannot both be IMDb's single
+                # "Episode dated …"; neither is matched automatically.
+                verified=None
             if verified and verified.get('episode_verified'):
                 verified.update(state='auto_matched',
                     reason='Originalsender: Folge eindeutig bestätigt' if sender_verified
@@ -705,6 +810,10 @@ class Service:
                 if suspicion:
                     outcome='suspected'
                     delay=0
+                elif (edition_role=='edition' and archive and archive.updated and not imdb_error
+                      and catalog.mark_recurring_edition(c,row,enriched,source,'edition')):
+                    outcome='edition'
+                    delay=0
                 elif sender_deferred or sender_error or imdb_error or not (archive and archive.updated):
                     outcome='retry'
                     delay=3600
@@ -713,17 +822,22 @@ class Service:
                     delay=max(60,min(6*3600,delay))
                 else:
                     outcome='unresolved'
-                    delay=30*86400
+                    delay=7*86400 if sender_budget else 30*86400
                 c.execute("""UPDATE episode_queue SET attempts=attempts+1,
                     last_outcome=?,next_try=?,updated=? WHERE work_id=?""",
                     (outcome,time.time()+delay,time.time(),selected_id))
+                if outcome=='edition':
+                    # Siblings share series and IMDb answer: without IMDb episodes no edition can match.
+                    self.classify_sibling_editions(c,row['show_key'],m,selected_id,allow_editions=imdb_without_episodes)
+                if outcome=='unresolved':
+                    self.sample_unresolved(m,source,evidence)
                 if outcome=='unresolved' and imdb_without_episodes:
                     siblings=self.defer_series_without_episodes(c,row['show_key'],m,selected_id,config)
         self.record_episode_result(outcome,imported=bool(imported),
                                    sender_verified=bool(sender_verified),
                                    sender_item=bool(sender_candidate and sender_candidate.get('sender_item_verified')),
                                    sender_deferred=sender_deferred,
-                                   sender_status=sender_status)
+                                   sender_status=sender_status,sender_budget=sender_budget)
         return True
 
     def _metadata_once_claimed(self,selected_id):
@@ -875,7 +989,43 @@ class Service:
                 if self.stop.wait(.05):return
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
+            self.unknown_sweep()
             self.format_wake.wait(3600);self.format_wake.clear()
+    def unknown_sweep(self,force=False,batch=200):
+        """0.6.43: give checked works of unknown kind their kind (Sendung, Einzelsendung, Film), in the background.
+
+        At most every UNKNOWN_SWEEP_INTERVAL; one read pass for the topic counts, then short write batches
+        so that recognition and the web server keep their turn (USB drives, diagnosis 20.11.2026)."""
+        with self.db() as c:
+            last=catalog.get_state(c,'unknown_sweep',{}) or {}
+            if not force and time.time()-float(last.get('finished') or 0)<catalog.UNKNOWN_SWEEP_INTERVAL:return None
+            ids,singles=catalog.unknown_candidates(c)
+        started=time.monotonic();summary={'candidates':len(ids),'singles_rechecked':len(singles)}
+        changed=0
+        if ids or singles:
+            with self.db() as c:
+                topics={r[0] for r in c.execute('SELECT DISTINCT topic FROM works WHERE kind=? AND state IN (?,?,?) AND attempts>0',
+                                                ('unknown','pending','retry','review'))}
+                topics|={r[0] for r in c.execute("SELECT DISTINCT topic FROM works WHERE kind='other' AND state='format' AND json_extract(meta,'$.format_grouping')='single'")}
+                counts=catalog.topic_counts(c,topics)
+            for group,is_single in ((ids,False),(singles,True)):
+                for i in range(0,len(group),batch):
+                    try:
+                        with self.db() as c:changed+=catalog.classify_unknown(c,group[i:i+batch],counts,summary,singles=is_single)
+                    except sqlite3.OperationalError as e:
+                        if not sqlite_busy(e):raise
+                        self.sqlite_busy_count+=1
+                    if self.stop.wait(.05):return changed
+        summary.update(changed=changed,seconds=round(time.monotonic()-started,1),finished=time.time(),
+                       total_changed=int(last.get('total_changed') or 0)+changed)
+        with self.db() as c:
+            catalog.set_state(c,'unknown_sweep',summary)
+            remaining=c.execute("SELECT COUNT(*) FROM works WHERE kind='unknown'").fetchone()[0]
+        if changed:catalog.invalidate_listings()
+        diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
+                          classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
+                          channels=summary.get('channels',{}),samples=summary.get('samples',{}),seconds=summary['seconds'])
+        return changed
     def metadata_loop(self,index=0):
         while not self.stop.is_set():
             requested=max(1,min(MAX_RECOGNITION_WORKERS,int(self.settings().get('metadata_workers',2))))
@@ -995,7 +1145,12 @@ class Service:
         with self.db() as c:cursors=catalog.get_state(c,'mesh_cursors',{})
         started=time.monotonic();self.mesh_pending=False
         while not self.stop.is_set():
+            before=json.dumps(cursors,sort_keys=True)
             events,cursors,invalid=journal.read(cursors,limit=self.MESH_IMPORT_BATCH)
+            # 0.6.42: nothing new from other nodes → no write transaction (Björn 20.11.: the
+            # Verbund round wrote its cursor every 30 s and failed with „database is locked“).
+            if not events and json.dumps(cursors,sort_keys=True)==before:
+                self.mesh_invalid+=invalid;break
             with self.db() as c:
                 for event in events:
                     if self.mesh_apply(c,event):self.mesh_imported+=1

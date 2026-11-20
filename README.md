@@ -1,4 +1,29 @@
-# MediathekAtlas · 0.6.40
+# MediathekAtlas · 0.6.44
+
+## Neu in 0.6.44: Episodensuche ohne Leerlauf, saubere Dateinamen, Verwaltung oben
+
+- Ist das Stundenkontingent für den direkten Senderabruf aufgebraucht, entscheidet die Episodensuche mit dem IMDb-Archiv weiter, statt Werke immer wieder zurückzustellen.
+- Ausgaben mit „vom Montag, 16. Februar 2026“, „Jänner“ oder „Teil 1 vom 15.04.2026“ werden erkannt.
+- YouTube-Abos werden zeitlich versetzt geprüft (mindestens 5 Minuten Abstand).
+- Dateinamen von Downloads ohne Emojis, Hashtags und Sonderzeichen; Umlaute bleiben. Alte Dateien werden weiter gefunden.
+- Auf jeder Plattformseite steht „… verwalten“ jetzt oben.
+- Das Diagnoseprotokoll reicht wieder deutlich länger.
+
+## Neu in 0.6.43: Werke ohne erkannte Art werden eingeordnet
+
+- Rund 40.000 Werke standen unter „Noch zuordnen“, meist Magazinbeiträge und Reportagen von SRF, ARTE, ORF und 3Sat, die keine Filmdatenbank kennt. Nach dem Abgleich ordnet MediathekAtlas sie jetzt ihrer Sendung zu (Ausgabe, Beitrag, Teil oder Folge), als Einzelsendung unter „Weitere Sendungen“ oder bei klarem Filmhinweis als Film.
+- Das läuft im Hintergrund und berührt keine eigenen Zuordnungen; „Erneut prüfen“ hebt die Einordnung auf.
+
+## Neu in 0.6.42: stabiler mit Datenbank auf USB-Laufwerk
+
+- Das IMDb-Update scheitert auf exFAT-Laufwerken nicht mehr mit „attempt to write a readonly database“.
+- Weniger „database is locked“: weniger Synchronisierungen je Schreibvorgang, Einstellungen werden zwischengespeichert, der Verbund schreibt nur noch bei Änderungen.
+- Das Diagnoseprotokoll reicht jetzt für eine ganze Nacht.
+
+## Neu in 0.6.41: Episodensuche räumt Sendungsausgaben auf
+
+- Ausgaben von Nachrichten- und Regionalmagazinen („SWR Aktuell“, „buten un binnen“, „Sachsenspiegel vom 19.11.2026“) und ihre kurzen Beiträge haben keine eigene Folge in IMDb. Die Episodensuche legt sie jetzt als Ausgabe bzw. Beitrag ihrer Sendung ab, statt sie als „ohne Treffer“ oder „unsicher“ immer wieder zu prüfen. Echte Serienfolgen kommen dadurch schneller an die Reihe.
+- Talkshows und Magazine mit Datum im Titel werden über IMDbs Ausgabe zum Datum gefunden, Folgentitel auch ohne Zähler und „Audiodeskription“.
 
 ## Neu in 0.6.40: Sammelstand
 

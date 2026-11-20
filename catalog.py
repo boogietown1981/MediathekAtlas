@@ -702,7 +702,8 @@ def stats(c):
         'review':states.get('review',0),
         'formats':states.get('format',0),
         'sync':get_state(c,'sync',{'phase':'waiting'}),
-        'last_complete':get_state(c,'last_complete',0)
+        'last_complete':get_state(c,'last_complete',0),
+        'unknown_sweep':get_state(c,'unknown_sweep',{})
     }
 
 def canonical(m):
@@ -948,14 +949,98 @@ TRAILER=re.compile(r'(?i)^\s*(?:trailer|teaser|vorschau)\b')
 # 2. Februar 2025", "Studio 2 vom 16.11.2026", "Hier und heute | 12.08.2025", "Invitation au voyage -
 # 04/11/2026". A full calendar date in the title marks one edition of a recurring Sendung; a film or a
 # drama episode is not titled with its broadcast date.
-MONTHS='januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember'
-DATED=re.compile(r'(?i)(?<![\w/.])(?:[0-3]?\d[./][01]?\d[./](?:19|20)\d{2}|vom\s+[0-3]?\d\.\s*(?:'+MONTHS+r')\s+(?:19|20)\d{2})(?![\w/]|\.\d)')
+# 0.6.44 (Diagnose 20.11.2026 abends): Austrian month names ("erLesen – Sendung vom 26. Jänner 2025") and a
+# weekday after "vom" ("logo! vom Montag, 16. Februar 2026") were not read as a date.
+MONTHS='januar|jänner|februar|feber|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember'
+WEEKDAY=r'(?:(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag),?\s+)?'
+DATED=re.compile(r'(?i)(?<![\w/.])(?:[0-3]?\d[./][01]?\d[./](?:19|20)\d{2}|vom\s+'+WEEKDAY+r'[0-3]?\d\.\s*(?:'+MONTHS+r')\s+(?:19|20)\d{2})(?![\w/]|\.\d)')
+# "hallo hessen – Teil 1 vom 15.04.2026": the part number belongs to the dated edition, it is no episode number.
+EDITION_PART=re.compile(r'(?i)\b(?:teil|part)\s*\d{1,2}\s+(?=vom\s)')
 
 def foreign_version(source):
     """True for an ARTE language version other than German (ARTE.FR, ARTE.ES, ARTE.IT, ARTE.PL, ARTE.EN)."""
     import languages
     if source.get('_foreign_only') is False:return False
     return languages.CHANNEL_LANGUAGE.get(str(source.get('channel') or '').strip().upper(),'de')!='de'
+
+# 0.6.41 (Björn, 19.11.2026: Episodensuche 2,4 % zugeordnet, 66 % ohne Treffer, 32 % unsicher). The 6,104
+# series identified in the diagnosis window were 82 % editions of news and regional magazines ("SWR Aktuell
+# Rheinland-Pfalz" 1,795, "buten un binnen | regionalmagazin" 1,211, "MDR Sachsenspiegel" 901, "DER TAG in
+# Berlin & Brandenburg" 746, …); 91 % of the runtime suspicions were 1–6 minute clips of 28-minute
+# Sendungen. Neither has an episode of its own in any database. They are filed as edition or contribution
+# of their (already identified) Sendung once the IMDb probe found nothing, never as a matched episode.
+FORMAT_SERIES=re.compile(r'(?i)magazin|nachrichten|\b(?:vor ort|der tag|infos?|spezial|extra|report|reportage)\b')
+EDITION_NUMBERING=re.compile(r'(?i)\b(?:folge|episode|teil|part)\s*\d+|\(\s*\d{1,3}\s*(?:/\s*\d{1,3}\s*)?\)|\bS\d{1,3}\s*[/._-]?\s*E\d{1,4}\b')
+
+def format_series(name):
+    """True for the title of a recurring news, regional or service programme (not a scripted series)."""
+    k=key(cleaned(name))
+    if not k or k in FORMAT_GENERIC:return False
+    return k in NEWS_TOPICS or bool(FORMAT_WORDS.search(k) or FORMAT_SERIES.search(k))
+
+def sendung_with_editions(c,show_key,minimum=3):
+    """True once a series has several works filed as editions of a Sendung (cheap, uses work_show)."""
+    if not show_key:return False
+    return len(c.execute("SELECT 1 FROM works WHERE show_key=? AND state='format' LIMIT ?",(show_key,minimum)).fetchall())>=minimum
+
+def broadcast_day(title,source):
+    """True if the date named in the title is the offer's broadcast date (within three days)."""
+    import imdb_archive
+    date=imdb_archive.title_date(title)
+    try:stamp=int(source.get('timestamp') or 0)
+    except (TypeError,ValueError):return False
+    if not date or stamp<=0:return False
+    try:named=time.mktime((date[1],date[2],date[3],12,0,0,0,0,-1))
+    except (OverflowError,ValueError):return False
+    return abs(named-stamp)<=3*86400
+
+def recurring_edition(meta,source,sendung=False):
+    """'edition', 'segment' or None for an identified series work without an episode of its own.
+
+    edition: the offer names a calendar date ("Sachsenspiegel vom 19.11.2026"; a drama episode is not
+    titled with its broadcast date, see DATED) or only repeats the name of a news/magazine Sendung.
+    segment: a clip shorter than 10 minutes of a news/magazine Sendung ("buten un binnen": 2-4 minute
+    contributions next to the 28-minute edition). Numbered offers (S01E02, Folge 3, (2/6)) never qualify;
+    neither does a work the user asked to check, a verified episode or a trailer. sendung=True: the
+    series is known to publish dated editions ("MDR Sachsenspiegel" has no format word in its name).
+    """
+    if not source or meta.get('kind')!='series' or meta.get('scan_requested') or meta.get('episode_verified'):return None
+    if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
+    title=cleaned(source.get('title'))
+    if not title or TRAILER.search(title):return None
+    if DATED.search(title):title=EDITION_PART.sub('',title)
+    if EDITION_NUMBERING.search(title) or EP.search(title):return None
+    series=meta.get('title') or '';topic=source.get('topic') or ''
+    recurring=sendung or format_series(series) or format_series(topic)
+    if DATED.search(title):
+        # A scripted episode may carry a historic date ("Die Nacht vom 9. November 1989"); outside a known
+        # news/magazine Sendung the date must be the offer's own broadcast day (±3 days).
+        return 'edition' if recurring or broadcast_day(title,source) else None
+    if not recurring:return None
+    if key(title) in {key(cleaned(series)),key(cleaned(topic))}:return 'edition'
+    duration=int(source.get('duration') or 0)
+    if 0<duration<600:return 'segment'
+    return None
+
+def mark_recurring_edition(c,row,meta,source,role):
+    """File an identified series work as edition/contribution of its Sendung (state 'format').
+
+    The series identity (title, year, provider, reference) stays; the work leaves the episode queue
+    through its trigger. Only provisional 'identified' works change, never a user decision.
+    """
+    m={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings')}
+    series=m.get('title') or cleaned(source.get('topic'))
+    edition=cleaned(source.get('title'))
+    if key(edition)==key(series) and source.get('timestamp'):
+        try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
+        except (TypeError,ValueError,OverflowError,OSError):pass
+    m.update(state='format',format_grouping='edition' if role=='edition' else 'segment',
+             episode_title=edition or m.get('episode_title'),episode_verified=False,
+             episode_reference_id=None,video_role_needs_review=False,
+             reason=('Ausgabe der Sendung „%s“; Sendungsausgaben haben keine eigene Episodenkennung.' if role=='edition'
+                     else 'Beitrag (unter 10 Minuten) der Sendung „%s“; keine eigene Folge.')%series)
+    return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
+                     (json.dumps(m),row['id'])).rowcount>0
 
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
@@ -1081,6 +1166,26 @@ def backfill_film_hints(c,limit=400):
     set_state(c,'film_hint_cursor_v0524',cursor if rows else 'complete')
     return len(rows)
 
+def file_under_sendung(c,row,m,source,fmt,grouping=None,reason=None):
+    """File one offer's work as contribution of the Sendung ``fmt`` (state 'format', provider 'Sendung')."""
+    import broadcaster
+    hints=broadcaster.genres(fmt,source.get('title',''))
+    m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers')}
+    edition=cleaned(source.get('title'))
+    if key(edition)==key(fmt) and source.get('timestamp'):
+        # Editions named like the Sendung are told apart by their broadcast date.
+        try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
+        except (TypeError,ValueError,OverflowError,OSError):pass
+    m.update(kind='series',title=fmt,episode_title=edition,year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
+             state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
+             reason=reason or 'Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
+    if grouping:m['format_grouping']=grouping
+    c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
+    c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+    for g in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+    c.execute('DELETE FROM film_hints WHERE work_id=?',(row['id'],))
+    return m
+
 # Raise when the format rules change: existing catalogues then get one more format pass.
 FORMAT_REV=5   # 0.5.80: clips ('other') and editions named like their Sendung; 0.6.39: dated editions (also after a check without hit)
 def assign_formats(c,limit=500):
@@ -1128,24 +1233,136 @@ def assign_formats(c,limit=500):
             c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
             assigned+=1;continue
         if not format_contribution(m,source,counts[topic]):continue
-        fmt=cleaned(source.get('topic'));hints=broadcaster.genres(fmt,source.get('title',''))
-        m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
-        edition=cleaned(source.get('title'))
-        if key(edition)==key(fmt) and source.get('timestamp'):
-            # Editions named like the Sendung are told apart by their broadcast date.
-            try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
-            except (TypeError,ValueError,OverflowError,OSError):pass
-        m.update(kind='series',title=fmt,episode_title=edition,year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
-                 state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
-                 reason='Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
-        c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
-        c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
-        for g in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+        file_under_sendung(c,row,m,source,cleaned(source.get('topic')))
         assigned+=1
     if not dirty_mode:set_state(c,'format_cursor',cursor if rows else 'complete')
     return len(rows),assigned
 
 def restart_formats(c):set_state(c,'format_cursor',0)
+
+# 0.6.43 (Björn, 20.11.2026, Nachtdiagnose 0.6.40 auf dem MacBook Air): 38,727 offene Werke blieben
+# „Noch zuordnen“ (Art unbekannt), 95 % davon Einzelbeiträge von SRF, ARTE, ORF und 3Sat. Der Import
+# erkennt die Art nur an Wörtern wie „Spielfilm“, „Serie“ oder „Nachrichten“; die Anbieter (IMDb, TMDB,
+# TVDB, Wikidata) kennen Magazinbeiträge, Reportagen und Einzelsendungen nicht. Bisher galten die
+# Sendungsregeln nur für Nachrichten-/Magazinwörter, Beiträge unter 10 Minuten und datierte Ausgaben –
+# und nur beim Import, wenn die Sendung schon genug Werke hatte. Nach einem Abgleich ohne Treffer wird
+# die Art jetzt aus der Sendung bestimmt:
+#   Sendung mit mehreren Werken → Ausgabe, Beitrag (< 10 Min.), Teil (nummeriert) oder Folge der Sendung
+#   Sendung nur mit diesem Werk oder Sammelrubrik („Dokumentation“, „Kultur - …“) → Einzelsendung
+#   ausdrücklicher Filmhinweis (Filmrubrik, „Spielfilm“ im Sendertext, 40–250 Min.) → Film
+# Nur Werke, die schon geprüft wurden (attempts>0) und weder Vorschläge noch Anbieterfehler haben;
+# nie Benutzerentscheidungen oder angeforderte Prüfungen. „Erneut prüfen“ hebt die Einordnung auf.
+UNKNOWN_SWEEP_INTERVAL=6*3600
+UNKNOWN_DEFERRABLE={'ARD Mediathek','ZDF Mediathek','OMDb'}
+FILM_TOPIC=re.compile(r'(?i)\b(?:film|filme|spielfilm|spielfilme|fernsehfilm|fernsehfilme|kinofilm|kino|cinema|cinéma|movie|movies)\b')
+UNKNOWN_GROUPINGS={'edition':'Ausgabe','segment':'Beitrag','part':'Teil','contribution':'Folge','single':'Einzelsendung','movie':'Film'}
+
+def unknown_open_reason(row,m):
+    """None if a work of unknown kind may be classified locally, else the reason it waits."""
+    if row['state'] in ('manual','matched','format','identified'):return 'state'
+    if m.get('scan_requested') or m.get('live'):return 'requested'
+    if not int(row['attempts'] or 0):return 'unchecked'
+    if m.get('suggestions'):return 'suggestions'
+    if m.get('metadata_warnings'):return 'warnings'
+    if set(m.get('deferred_providers') or [])-UNKNOWN_DEFERRABLE:return 'deferred'
+    return None
+
+def unknown_role(source,topic_works):
+    """(grouping, Sendung name) for a checked work of unknown kind; grouping is one of UNKNOWN_GROUPINGS.
+
+    topic_works counts all works under the offer's topic (this one included)."""
+    import metadata
+    title=cleaned(source.get('title'));topic=cleaned(source.get('topic'))
+    duration=int(source.get('duration') or 0)
+    sendung=bool(topic) and key(topic) not in FORMAT_GENERIC and not metadata.generic_topic(topic)
+    score,_=film_likelihood(source)
+    feature=2400<=duration<=15000
+    # Explicit film evidence: film rubric/film word in the topic or "Spielfilm" in the broadcaster's text.
+    if feature and (score>=2 or (FILM_TOPIC.search(topic) and duration>=3600)) and not DATED.search(title):
+        return 'movie',''
+    if sendung and topic_works>=2:
+        if key(title)==key(topic):
+            return ('edition',topic) if topic_works>=3 or format_series(topic) else ('single','')
+        if DATED.search(title):return 'edition',topic
+        if 0<duration<600:return 'segment',topic
+        if EDITION_NUMBERING.search(title) or metadata.PART.search(title):return 'part',topic
+        return 'contribution',topic
+    # No usable topic: a numbered part names its series ("Österreich - Die ganze Geschichte (7/10): …").
+    part=metadata.part_series(title)
+    if part and not metadata.generic_topic(part):return 'part',part
+    return 'single',''
+
+def unknown_candidates(c):
+    """IDs of unknown works that may get a kind, and earlier Einzelsendungen whose Sendung may have grown."""
+    rows=c.execute("""SELECT id FROM works WHERE kind='unknown' AND state IN ('pending','retry','review') AND attempts>0""").fetchall()
+    singles=c.execute("""SELECT id FROM works WHERE kind='other' AND state='format'
+        AND json_extract(meta,'$.format_grouping')='single'""").fetchall()
+    return [r[0] for r in rows],[r[0] for r in singles]
+
+def topic_counts(c,topics):
+    """Works per raw topic for the given topics: one read pass instead of a table scan per topic."""
+    wanted=set(topics);out={}
+    if not wanted:return out
+    for topic,n in c.execute('SELECT topic,COUNT(*) FROM works GROUP BY topic'):
+        if topic in wanted:out[topic]=n
+    return out
+
+def best_source(c,wid):
+    best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(wid,)).fetchone()
+    return json.loads(best[0]) if best else None
+
+def classify_unknown(c,ids,counts,summary=None,singles=False):
+    """Give each listed work of unknown kind its kind; returns the number of changed works.
+
+    ``summary`` (dict) collects counts per grouping/channel, remaining reasons and a few samples."""
+    summary=summary if summary is not None else {}
+    done=summary.setdefault('classified',{});left=summary.setdefault('remaining',{})
+    channels=summary.setdefault('channels',{});samples=summary.setdefault('samples',{})
+    changed=0
+    for wid in ids:
+        row=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        m=json.loads(row['meta'] or '{}')
+        if singles:
+            if row['kind']!='other' or row['state']!='format' or m.get('format_grouping')!='single':continue
+        else:
+            if row['kind']!='unknown':continue
+            reason=unknown_open_reason(row,m)
+            if reason:
+                left[reason]=left.get(reason,0)+1;continue
+        source=best_source(c,wid)
+        if not source:
+            left['no_offer']=left.get('no_offer',0)+1;continue
+        topic=row['topic'] or source.get('topic') or ''
+        grouping,name=unknown_role(source,counts.get(topic,1))
+        if singles and grouping in ('single','movie'):continue
+        if grouping=='movie':
+            m.update(kind='movie',season=None,episode=None,episode_title='',
+                     reason='Film laut Sender (Filmrubrik oder Filmhinweis); in den Filmdatenbanken noch nicht gefunden')
+            m.pop('format_grouping',None)
+            c.execute("UPDATE works SET kind='movie',show_key='',meta=? WHERE id=?",(json.dumps(m),wid))
+            c.execute('DELETE FROM film_hints WHERE work_id=?',(wid,))
+        elif grouping=='single':
+            m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers')}
+            m.update(kind='other',state='format',format_grouping='single',title=cleaned(source.get('title')) or m.get('title'),
+                     season=None,episode=None,episode_title='',episode_verified=False,
+                     reason='Einzelsendung'+(' aus „'+cleaned(source.get('topic'))+'“' if cleaned(source.get('topic')) else '')+
+                            '; in den Filmdatenbanken nicht gefunden und keine wiederkehrende Sendung.')
+            c.execute("UPDATE works SET title=?,kind='other',show_key='',meta=?,state='format',next_try=0 WHERE id=?",(m['title'],json.dumps(m),wid))
+            c.execute('DELETE FROM film_hints WHERE work_id=?',(wid,))
+        else:
+            label={'edition':'Ausgabe','segment':'Beitrag (unter 10 Minuten)','part':'Teil','contribution':'Folge'}[grouping]
+            if singles:m.pop('format_grouping',None)
+            file_under_sendung(c,row,m,source,name,grouping,
+                               reason=label+' der Sendung „'+name+'“; die Sendung ist in den Filmdatenbanken nicht verzeichnet, '
+                                      'deshalb wird sie nicht einzeln abgeglichen.')
+        changed+=1;done[grouping]=done.get(grouping,0)+1
+        ch=str(source.get('channel') or 'Unbekannt')
+        channels.setdefault(ch,{});channels[ch][grouping]=channels[ch].get(grouping,0)+1
+        bucket=samples.setdefault(grouping,[])
+        if len(bucket)<5:bucket.append({'title':str(source.get('title') or '')[:120],'topic':str(source.get('topic') or '')[:80],
+                                         'channel':ch,'duration':int(source.get('duration') or 0)})
+    return changed
 
 KIND_KEYS=('movie','series','unknown','other')
 def recognition(c):
@@ -1270,10 +1487,20 @@ def index_ready(c,name=IDENTITY_INDEX):
     """True when the deferred index exists in this database (sqlite_master is small and cached)."""
     return c.execute("SELECT 1 FROM sqlite_master WHERE type='index' AND name=?",(name,)).fetchone() is not None
 
+def recheck_episode_queue_v0641(c,event=None):
+    """Make earlier "ohne Treffer" episode checks due once more (0.6.41 rules: editions, dated IMDb
+    episodes, cleaned titles). Runs after the server start: it walks the whole queue table once."""
+    if get_state(c,'episode_queue_recheck_v0641',False):return 0
+    n=c.execute("UPDATE episode_queue SET next_try=0 WHERE last_outcome IN ('unresolved','no_imdb_episodes')").rowcount
+    set_state(c,'episode_queue_recheck_v0641',True)
+    if event and n:event('episode_queue_recheck',version='0.6.41',works=n)
+    return n
+
 def build_deferred_indexes(connect,event=None,error=None):
     """Create indexes that need a full table pass, after the server is reachable.
     connect() returns a context-managed connection. Readers keep working (WAL); writers wait."""
     with connect() as c:
+        recheck_episode_queue_v0641(c,event)
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
     MAINTENANCE.update(phase='running',started=started,

@@ -134,6 +134,13 @@ async function clickThrough(name, url) {
       await page.locator('#portals button', { hasText: new RegExp('^' + label + '$') }).first().click();
       await page.waitForTimeout(800);
     }
+    // 0.6.44: on every platform tab the „… verwalten“ block follows the status line, before the catalogue.
+    await expect('Verwaltung der Dienste oben', () => ['netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'rtlplus'].every(k => {
+      const s = document.getElementById(k), a = document.getElementById(k + '-admin'), b = document.getElementById(k + '-brief');
+      if (!s || !a || !b) return false;
+      const kids = [...s.children];
+      return kids.indexOf(b) === 0 && kids.indexOf(a) === 1;
+    }));
     await page.evaluate(() => window.atlasShowView('discover'));
     await page.waitForTimeout(800);
     // 0.6.37: YouTube → Abos (web/abo_shelf.js) und zurück zu „Alle“.

@@ -18,12 +18,15 @@ def clean(value):
     value=re.sub(r'https?://[^\s\"\'<>]+','[URL]',value)
     value=re.sub(r'(?i)((?:api.?key|token|password|authorization)\s*[=:]\s*)\S+',r'\1[REDACTED]',value)
     return value[:12000]
+LOG_BYTES=4*1024*1024;LOG_BACKUPS=7
 def setup(root,home=None):
     # 0.6.25: startup.log liegt im Startordner (HOME), auch wenn der Datenordner umgezogen ist.
     global _root,_home
     _root=Path(root);_root.mkdir(parents=True,exist_ok=True);_home=Path(home) if home else None
     for h in list(logger.handlers):logger.removeHandler(h);h.close()
-    h=logging.handlers.RotatingFileHandler(_root/'diagnostic.jsonl',maxBytes=2*1024*1024,backupCount=3,encoding='utf-8');logger.addHandler(h)
+    # 0.6.42: 8 × 4 MB statt 4 × 2 MB. Björns Nachtdiagnose (20.11.2026) reichte bei voller
+    # Erkennung nur 2,5 h zurück (rund 2,5 MB/h); 32 MB fassen eine Nacht. Im ZIP komprimiert ~3 MB.
+    h=logging.handlers.RotatingFileHandler(_root/'diagnostic.jsonl',maxBytes=LOG_BYTES,backupCount=LOG_BACKUPS,encoding='utf-8');logger.addHandler(h)
 _LEVELS=('DEBUG','INFO','WARNING','ERROR','CRITICAL')
 def event(name,level='INFO',**fields):
     # 0.5.74: a field that happens to be called "level" (e.g. a quality level "1.6 Mbit/s") must never
