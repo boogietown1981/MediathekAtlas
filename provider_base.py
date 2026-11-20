@@ -15,21 +15,35 @@ update until 0.5.108). This module holds that frame once:
 - ``read_capped`` (0.6.52): reads an answer with a size cap and a total deadline. ``urlopen(timeout=30)``
   limits every single socket read only; on Björn's Mac a DMAX catalogue run hung for more than five
   minutes in a trickling SSL read. Every catalogue request of the platforms now ends after READ_DEADLINE.
+- ``open_capped`` (0.6.54): the deadline also covers the time before the answer head. On Björn's Mac (check of
+  0.6.52) a DMAX request hung in ``http.client._read_status``, where only the 30 s socket timeout per read applies
+  (plus retries: 100 requests in about ten minutes). ``open_capped`` keeps the sockets it opens and shuts them
+  down when OPEN_DEADLINE has passed, which ends a hanging read at once (TimeoutError).
+- ``NET_FAILURE_BUDGET`` (0.6.54): a catalogue run stops after this many network failures (timeouts, refused or
+  reset connections) and counts as partial; the next try follows after NET_RETRY (2 h, as YouTube).
 
 What each platform fetches and how it maps titles stays in its own module. Standard library only.
 """
 from __future__ import annotations
 
+import contextlib
+import http.client
 import os
+import socket
 import sqlite3
 import threading
 import time
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 import portal_reference
 
 READ_DEADLINE = 120.0       # seconds for one answer (headers already received)
 READ_CHUNK = 64 * 1024
+OPEN_DEADLINE = 150.0       # seconds for one request from connecting to the last byte (0.6.54)
+NET_FAILURE_BUDGET = 3      # network failures per catalogue run before it stops as partial (0.6.54)
+NET_RETRY = 2 * 3600        # next try after a run stopped by the budget
 
 _WAL = set()
 _WAL_LOCK = threading.Lock()
@@ -120,6 +134,93 @@ def read_capped(response, limit, deadline=None):
         if time.monotonic() > ends and size <= limit:
             raise TimeoutError('Antwort kam nicht innerhalb von %d Sekunden vollständig an' % deadline)
     return b''.join(parts)
+
+
+class _Hold:
+    """Sockets of one request; after the deadline every one is shut down (also ones connected later)."""
+
+    def __init__(self):
+        self.socks, self.expired, self.lock = [], False, threading.Lock()
+
+    def add(self, sock):
+        with self.lock:
+            self.socks.append(sock)
+            late = self.expired
+        if late:
+            _shut(sock)
+
+    def expire(self):
+        with self.lock:
+            self.expired = True
+            socks = list(self.socks)
+        for sock in socks:
+            _shut(sock)
+
+
+def _shut(sock):
+    try:
+        sock.shutdown(socket.SHUT_RDWR)
+    except OSError:
+        pass
+
+
+def _held(base, hold):
+    class Held(base):
+        def connect(self):
+            super().connect()
+            hold.add(self.sock)
+    return Held
+
+
+class _HTTPHandler(urllib.request.HTTPHandler):
+    def __init__(self, hold):
+        super().__init__()
+        self.hold = hold
+
+    def http_open(self, req):
+        return self.do_open(_held(http.client.HTTPConnection, self.hold), req)
+
+
+class _HTTPSHandler(urllib.request.HTTPSHandler):
+    def __init__(self, hold):
+        super().__init__()
+        self.hold = hold
+
+    def https_open(self, req):
+        # the context is created per connection as before (netcheck may swap the trust store)
+        return self.do_open(_held(http.client.HTTPSConnection, self.hold), req, context=self._context)
+
+
+@contextlib.contextmanager
+def open_capped(req, timeout=30, deadline=None):
+    """``urllib.request.urlopen(req, timeout)`` with one deadline for the whole request, including the time
+    before the answer head. Raises TimeoutError when the deadline ends the request; HTTP errors stay HTTPError."""
+    deadline = OPEN_DEADLINE if deadline is None else float(deadline)
+    hold = _Hold()
+    timer = threading.Timer(deadline, hold.expire)
+    timer.daemon = True
+    timer.start()
+    try:
+        opener = urllib.request.build_opener(_HTTPHandler(hold), _HTTPSHandler(hold))
+        try:
+            with opener.open(req, timeout=timeout) as response:
+                yield response
+        except urllib.error.HTTPError:
+            raise
+        except (OSError, http.client.HTTPException, ValueError) as exc:
+            if hold.expired:
+                raise TimeoutError('Keine vollständige Antwort innerhalb von %d Sekunden' % deadline) from exc
+            raise
+    finally:
+        timer.cancel()
+
+
+def network_failure(exc):
+    """True for failures of the connection itself (no answer), not for HTTP answers or bad content."""
+    if isinstance(exc, urllib.error.HTTPError):
+        return False
+    return isinstance(exc, (TimeoutError, socket.timeout, urllib.error.URLError, ConnectionError, http.client.HTTPException)) \
+        or (isinstance(exc, OSError) and not isinstance(exc, FileNotFoundError))
 
 
 def ensure_schema(db, script):

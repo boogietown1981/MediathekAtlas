@@ -152,7 +152,7 @@ def _update(root, **values):
 def _fetch(url=DATA_URL):
     """The packed channel list (fixed address, size limited)."""
     req = urllib.request.Request(url, headers={'User-Agent': 'MediathekAtlas', 'Accept': '*/*'})
-    with urllib.request.urlopen(req, timeout=40) as response:
+    with provider_base.open_capped(req, timeout=40) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Senderliste zu groß')
         raw = provider_base.read_capped(response, MAX_ANSWER)

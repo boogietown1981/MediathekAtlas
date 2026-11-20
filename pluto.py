@@ -105,7 +105,7 @@ def _fetch_json(url, token=''):
     if token:
         headers['Authorization'] = 'Bearer ' + token
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Pluto-Antwort zu groß')
         data = provider_base.read_capped(response, MAX_ANSWER)

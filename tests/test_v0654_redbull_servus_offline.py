@@ -285,3 +285,111 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+# ------------------------------------------------------------------ 0.6.54 additions (check of 0.6.52 on the Mac)
+import os  # noqa: E402
+import socket  # noqa: E402
+import threading  # noqa: E402
+import urllib.error  # noqa: E402
+import urllib.request  # noqa: E402
+from unittest import mock  # noqa: E402
+
+import dmax  # noqa: E402
+import filmfriend  # noqa: E402
+import provider_base  # noqa: E402
+
+
+class SilentServer:
+    """Accepts connections and never answers (a request then hangs in http.client._read_status)."""
+
+    def __init__(self, answer=None):
+        self.sock = socket.socket()
+        self.sock.bind(('127.0.0.1', 0))
+        self.sock.listen(5)
+        self.port = self.sock.getsockname()[1]
+        self.answer, self.conns = answer, []
+        threading.Thread(target=self.serve, daemon=True).start()
+
+    def serve(self):
+        while True:
+            try:
+                conn, _ = self.sock.accept()
+            except OSError:
+                return
+            self.conns.append(conn)
+            if self.answer:
+                conn.recv(65536)
+                conn.sendall(self.answer)
+                conn.close()
+
+    def close(self):
+        for c in self.conns:
+            c.close()
+        self.sock.close()
+
+
+class DeadlineBeforeHeadTests(unittest.TestCase):
+    def setUp(self):
+        patch = mock.patch.dict(os.environ, {'no_proxy': '127.0.0.1,localhost', 'NO_PROXY': '127.0.0.1,localhost'})
+        patch.start()
+        self.addCleanup(patch.stop)
+
+    def test_hanging_answer_head_ends_after_the_deadline_not_the_socket_timeout(self):
+        server = SilentServer()
+        self.addCleanup(server.close)
+        req = urllib.request.Request('http://127.0.0.1:%d/x' % server.port)
+        started = time.monotonic()
+        with self.assertRaises(TimeoutError):
+            with provider_base.open_capped(req, timeout=30, deadline=1.0) as response:
+                response.read()
+        self.assertLess(time.monotonic() - started, 10)
+
+    def test_normal_answer_and_http_errors_pass(self):
+        ok = SilentServer(b'HTTP/1.1 200 OK\r\nContent-Length: 2\r\nConnection: close\r\n\r\nhi')
+        self.addCleanup(ok.close)
+        with provider_base.open_capped(urllib.request.Request('http://127.0.0.1:%d/' % ok.port), deadline=5) as r:
+            self.assertEqual(provider_base.read_capped(r, 100), b'hi')
+        bad = SilentServer(b'HTTP/1.1 404 Not Found\r\nContent-Length: 0\r\nConnection: close\r\n\r\n')
+        self.addCleanup(bad.close)
+        with self.assertRaises(urllib.error.HTTPError) as ctx:
+            with provider_base.open_capped(urllib.request.Request('http://127.0.0.1:%d/' % bad.port), deadline=5):
+                pass
+        self.assertEqual(ctx.exception.code, 404)
+
+    def test_catalogue_modules_use_the_deadline(self):
+        for name in ('dmax', 'filmfriend', 'servustv', 'plex', 'pluto', 'rakuten', 'toggo', 'joyn', 'crunchyroll', 'samsung_tvplus'):
+            text = (ROOT / (name + '.py')).read_text('utf-8')
+            self.assertIn('provider_base.open_capped(req', text, name)
+            self.assertNotIn('urllib.request.urlopen(req, timeout=30) as response:\n        if', text, name)
+
+    def test_network_failure_kinds(self):
+        self.assertTrue(provider_base.network_failure(TimeoutError()))
+        self.assertTrue(provider_base.network_failure(urllib.error.URLError('x')))
+        self.assertFalse(provider_base.network_failure(urllib.error.HTTPError('u', 500, 'x', {}, None)))
+        self.assertFalse(provider_base.network_failure(ValueError('kaputt')))
+
+
+class DmaxBudgetTests(unittest.TestCase):
+    def test_run_stops_after_three_network_failures_and_retries_in_two_hours(self):
+        from test_v0648_dmax import FakeDisco, NOW as DNOW
+        fake = FakeDisco()
+
+        def flaky(url, headers, data=None):
+            if '/site/shows/' in url and 'muenchen' not in url:
+                fake.calls.append(('timeout', url))
+                raise TimeoutError('hängt')
+            return fake(url, headers, data)
+        with tempfile.TemporaryDirectory() as tmp:
+            dmax._TOKENS.clear()
+            result = dmax.sync(tmp, opener=flaky, now=DNOW)
+            self.assertTrue(result['ok'] and result['partial'], result)
+            self.assertEqual(sum(1 for c in fake.calls if c[0] == 'timeout'), provider_base.NET_FAILURE_BUDGET)
+            state = dmax.state(tmp)
+            self.assertEqual(state['next_attempt'], DNOW + provider_base.NET_RETRY)
+
+
+class FilmfriendFskTests(unittest.TestCase):
+    def test_more_details_per_run(self):
+        self.assertEqual(filmfriend.MAX_DETAILS, 1200)
+        self.assertIn("'FSK noch unbekannt (wird im Hintergrund nachgeladen)'", (ROOT / 'portal_title.py').read_text('utf-8'))

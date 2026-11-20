@@ -238,7 +238,7 @@ def _open(url, headers, limit=MAX_ANSWER):
     if parts.scheme != 'https' or parts.hostname not in API_HOSTS or parts.port or parts.username:
         raise ValueError('Ungültige Anfrage an die Red-Bull-Plattform')
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('Antwort der Red-Bull-Plattform zu groß')
         raw = provider_base.read_capped(response, limit)

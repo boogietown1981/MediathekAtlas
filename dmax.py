@@ -177,7 +177,7 @@ def _open(url, headers, data=None, limit=MAX_ANSWER):
     if data is not None:
         headers = {**headers, 'Content-Type': 'application/json'}
     req = urllib.request.Request(url, headers=headers, data=data, method='POST' if data is not None else 'GET')
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('DMAX-Antwort zu groß')
         raw = provider_base.read_capped(response, limit)
@@ -386,6 +386,16 @@ class Crawl:
         self.requests, self.errors, self.truncated = 0, [], False
         self.per_channel = {}
         self.unavailable = []             # channels whose catalogue the website API does not know (0.6.50)
+        self.net_failures = 0             # 0.6.54: connection failures of this run (provider_base.NET_FAILURE_BUDGET)
+        self.stopped = False
+
+    def _failed(self, exc):
+        """Count a connection failure; True once the budget of this run is used up (the run stops as partial)."""
+        if provider_base.network_failure(exc):
+            self.net_failures += 1
+            if self.net_failures >= provider_base.NET_FAILURE_BUDGET:
+                self.stopped = self.truncated = True
+        return self.stopped
 
     def _pause(self):
         self.requests += 1
@@ -414,6 +424,7 @@ class Crawl:
                 break
             except Exception as exc:
                 failure = exc
+                self._failed(exc)
                 break
             if shows:
                 env, failure = candidate, None
@@ -446,6 +457,8 @@ class Crawl:
                 continue
             except Exception as exc:
                 self.errors.append('%s: %s' % (channel, _error(exc)))
+                if self._failed(exc):
+                    break                         # 0.6.54: network keeps failing, stop this run
                 continue
             for row in rows:
                 self.rows.setdefault(row['id'], row)
@@ -461,6 +474,8 @@ class Crawl:
 
     def run(self, sites=SITES):
         for site in sites:
+            if self.stopped:
+                break
             self.channel(site)
 
     def result(self):
@@ -541,7 +556,8 @@ def sync(root, opener=None, now=None, gap=None, waits=None, sites=SITES):
                 visible_since = previous if partial and previous else now
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'), ('last_error', message),
-                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
+                                   ('last_http_status', 0),
+                                   ('next_attempt', now + (provider_base.NET_RETRY if crawl.stopped else 24 * 3600)),
                                    ('requests', crawl.requests), ('per_channel', json.dumps(crawl.per_channel)),
                                    ('unavailable', json.dumps(crawl.unavailable)),
                                    *counts.items()]:
@@ -549,6 +565,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None, sites=SITES):
         finally:
             db.close()
         _notify('dmax_sync_completed', partial=partial, requests=crawl.requests, errors=len(crawl.errors),
+                net_failures=crawl.net_failures, stopped=crawl.stopped,
                 truncated=crawl.truncated, per_channel=crawl.per_channel, unavailable=crawl.unavailable,
                 premium=sum(1 for r in rows if r['kind'] == 'episode' and r['offer'] != 'free'),
                 protected=sum(1 for r in rows if r['kind'] == 'episode' and r['drm'] == 1), **counts)

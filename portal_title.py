@@ -241,6 +241,9 @@ def _portal(root, source, item_id):
             facts.append(['Stream', 'nur mit Kopierschutz (Widevine) – bei Crunchyroll ansehen'])
         m['notes'].append('Crunchyroll liefert alle Titel nur mit Kopierschutz und seit 1.1.2026 nur mit Abo aus; '
                           'MediathekAtlas umgeht nichts. Gratis-Folgen gibt es auf dem offiziellen YouTube-Kanal (Quelle „YouTube“).')
+    if source == 'filmfriend' and m['kind'] in ('movie', 'series'):
+        # 0.6.54: the search names no FSK; the detail requests (up to 1200 per run) fill it in over time.
+        facts.append(['Altersfreigabe', _text(it['rating'], 20) if it.get('rating') else 'FSK noch unbekannt (wird im Hintergrund nachgeladen)'])
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
