@@ -45,8 +45,13 @@ class RetryTests(unittest.TestCase):
 
 class LogTests(unittest.TestCase):
  def setUp(self):metadata._OMDB_PAUSED.clear();metadata._CACHE.clear()
- def test_one_event_per_provider_check_with_duration(self):
+ def test_fast_provider_answers_stay_out_of_the_protocol(self):
+  # 0.6.44: only slow answers are logged; counts live in provider_statistics.
   with patch('metadata.tmdb_candidates',return_value=[]),patch('metadata.wikidata',return_value=None),patch('diagnostics.event') as log:
+   metadata.candidates({'title':'Film'},{'kind':'movie','title':'Film'},{'tmdb':'k'})
+  self.assertNotIn('provider_complete',[c.args[0] for c in log.call_args_list])
+ def test_one_event_per_provider_check_with_duration(self):
+  with patch('metadata.tmdb_candidates',return_value=[]),patch('metadata.wikidata',return_value=None),patch('diagnostics.event') as log,patch.object(metadata,'PROVIDER_SLOW_SECONDS',0):
    metadata.candidates({'title':'Film'},{'kind':'movie','title':'Film'},{'tmdb':'k'})
   events=[(c.args[0],c.kwargs) for c in log.call_args_list]
   self.assertNotIn('provider_start',[e for e,_ in events])

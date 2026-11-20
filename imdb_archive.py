@@ -72,11 +72,11 @@ def episode_name(raw):
     value=' '.join(value.split()).strip(' ()-:–—|.,')
     return value
 
-MONTH_NUMBERS={'januar':1,'jänner':1,'februar':2,'märz':3,'maerz':3,'april':4,'mai':5,'juni':6,'juli':7,
+MONTH_NUMBERS={'januar':1,'jänner':1,'februar':2,'feber':2,'märz':3,'maerz':3,'april':4,'mai':5,'juni':6,'juli':7,
                'august':8,'september':9,'oktober':10,'november':11,'dezember':12}
 ENGLISH_MONTHS=('January','February','March','April','May','June','July','August','September','October',
                 'November','December')
-TITLE_DATE=re.compile(r'(?i)(?<![\w/.])(?:([0-3]?\d)([./])([01]?\d)\2((?:19|20)\d{2})|vom\s+([0-3]?\d)\.\s*('
+TITLE_DATE=re.compile(r'(?i)(?<![\w/.])(?:([0-3]?\d)([./])([01]?\d)\2((?:19|20)\d{2})|vom\s+(?:(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag),?\s+)?([0-3]?\d)\.\s*('
                       +'|'.join(MONTH_NUMBERS)+r')\s+((?:19|20)\d{2}))(?![\w/]|\.\d)')
 
 def title_date(raw):

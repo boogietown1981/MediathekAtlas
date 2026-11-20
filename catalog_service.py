@@ -42,7 +42,7 @@ def sqlite_busy(exc):
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -139,6 +139,13 @@ class Service:
                 self.status(phase='error',error=core.safe_error(e));retry_after=time.time()+300
     def metadata_state(self,**state):
         self.metadata_status={**state,'checked_session':self.checked,'updated_at':time.time()}
+        # 0.6.44: the live status stays complete for the UI; the protocol keeps waiting/error states, results
+        # other than "identified"/"matched"/"review" and samples of those (was: two events per work; 4,600 "review"
+        # results for titles like "Sport-Clip" in 40 minutes).
+        phase=state.get('phase');outcome=state.get('outcome')
+        if phase=='checking':return
+        if phase=='result' and outcome in ('identified','matched','auto_matched') and self.checked%100:return
+        if phase=='result' and outcome=='review' and self.checked%10:return
         diagnostics.event('metadata_status',**self.metadata_status)
     def subscription_loop(self):
         """Create queued download jobs from user-approved subscriptions."""
@@ -424,6 +431,7 @@ class Service:
                 'episode_sender_items_session':self.episode_sender_items,
                 'episode_sender_matched_session':self.episode_sender_matched,
                 'episode_sender_deferred_session':self.episode_sender_deferred,
+                'episode_sender_budget_session':self.episode_sender_budget,
                 'episode_editions_session':self.episode_editions,
                 'episode_segments_session':self.episode_segments,
                 'episode_series_deferred_session':self.episode_series_deferred,
@@ -487,7 +495,7 @@ class Service:
         return outcome,dest
     def record_episode_result(self,outcome,imported=False,sender_verified=False,
                               sender_item=False,sender_deferred=False,
-                              sender_status='not_checked'):
+                              sender_status='not_checked',sender_budget=False):
         """Count each committed episode claim exactly once, including early exits.
 
         A short excerpt is *processed*, but neither matched nor unresolved.
@@ -511,6 +519,7 @@ class Service:
                 if sender_verified:self.episode_sender_matched+=1
                 if sender_item:self.episode_sender_items+=1
                 if sender_deferred:self.episode_sender_deferred+=1
+                if sender_budget:self.episode_sender_budget+=1
             n=self.episode_checked
             matched=self.episode_matched
             unresolved=self.episode_unresolved
@@ -700,6 +709,7 @@ class Service:
         sender_verified=None
         sender_error=False
         sender_deferred=False
+        sender_budget=False
         sender_status='no_sender_link' if not imported else 'imported'
         suspicion=None
         config=self.settings()
@@ -722,6 +732,11 @@ class Service:
                             sender_verified=catalog.auto_choice(m,[candidate])
                     else:sender_status='sender_conflict'
                 else:sender_status='sender_not_found'
+            except broadcaster.BudgetExhausted:
+                # 0.6.44: the hourly allowance is spent, the sender is fine. The IMDb archive decides now;
+                # an unconfirmed work comes back in a week, when the allowance may reach it.
+                sender_budget=True
+                sender_status='sender_budget'
             except broadcaster.Unavailable:
                 sender_deferred=True
                 sender_status='sender_deferred'
@@ -807,7 +822,7 @@ class Service:
                     delay=max(60,min(6*3600,delay))
                 else:
                     outcome='unresolved'
-                    delay=30*86400
+                    delay=7*86400 if sender_budget else 30*86400
                 c.execute("""UPDATE episode_queue SET attempts=attempts+1,
                     last_outcome=?,next_try=?,updated=? WHERE work_id=?""",
                     (outcome,time.time()+delay,time.time(),selected_id))
@@ -822,7 +837,7 @@ class Service:
                                    sender_verified=bool(sender_verified),
                                    sender_item=bool(sender_candidate and sender_candidate.get('sender_item_verified')),
                                    sender_deferred=sender_deferred,
-                                   sender_status=sender_status)
+                                   sender_status=sender_status,sender_budget=sender_budget)
         return True
 
     def _metadata_once_claimed(self,selected_id):
