@@ -10,6 +10,9 @@
     justwatch: {name: 'JustWatch TV', action: 'offline-download-action'},
     rakuten: {name: 'Rakuten TV', action: 'offline-download-action'},
     plex: {name: 'Plex', action: 'offline-download-action'},   // 0.6.3: only titles without copy protection
+    // 0.6.54: private copies; the channels themselves offer no downloads (button title says so)
+    servustv: {name: 'ServusTV', action: 'offline-download-action', own: true},
+    redbulltv: {name: 'Red Bull TV', action: 'offline-download-action', own: true},
     youtube: {name: 'YouTube', action: 'offline-download-action'}};
   const ACTIVE = ['queued', 'downloading', 'tagging'], FAILED = ['error', 'cancelled', 'interrupted'];
   const LABELS = {queued: 'Vorgemerkt', downloading: 'Lädt', tagging: 'MKV wird erstellt', done: 'Offline verfügbar',
@@ -38,7 +41,8 @@
       note.textContent = 'Wird gespeichert · ' + st.days + ' Tage offline nutzbar';
     } else if (s === 'done') {
       button.disabled = true; button.classList.add('atlas-offline-done'); button.textContent = '✓ Offline verfügbar';
-      note.textContent = job.offline_until ? 'bis ' + day(job.offline_until) + ' · noch ' + job.days_left + (job.days_left === 1 ? ' Tag' : ' Tage') : 'ohne Ablauf';
+      note.textContent = job.offline_until ? 'Offline bis ' + day(job.offline_until) + ' · noch ' + job.days_left + (job.days_left === 1 ? ' Tag' : ' Tage') +
+        (job.offline_capped ? ' (Verfügbarkeitsende beim Sender)' : '') : 'ohne Ablauf';
       if (job.offline_until && job.days_left <= 3) note.className = 'atlas-offline-note nk-warning';
     } else if (FAILED.includes(s)) {
       button.disabled = !!st.tool; button.textContent = '↻ Erneut offline speichern';
@@ -49,7 +53,9 @@
       note.textContent = ctl.message || (ctl.night ? NIGHT : '');
     }
     button.title = st.tool || (s === 'done' || ACTIVE.includes(s) ? 'Bereits eingereiht oder offline verfügbar' :
-      SOURCES[ctl.source].name + ' erlaubt ' + st.days + ' Tage Offline-Nutzung; danach wird die Datei automatisch entfernt');
+      (SOURCES[ctl.source].own ? 'Private Kopie: ' + SOURCES[ctl.source].name + ' bietet selbst keine Downloads an. Höchstens ' + st.days +
+        ' Tage und nie länger als beim Sender verfügbar; danach wird die Datei automatisch entfernt' :
+        SOURCES[ctl.source].name + ' erlaubt ' + st.days + ' Tage Offline-Nutzung; danach wird die Datei automatisch entfernt'));
   }
 
   async function refresh(source) {

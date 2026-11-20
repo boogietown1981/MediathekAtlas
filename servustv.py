@@ -27,7 +27,11 @@ between the two (names, site, scope, seeds, player tenant, database, live fallba
 module-level functions below keep their signatures and use the ServusTV tenant unless ``t`` is given.
 
 Clips and trailers are left out (Björn: no "Sonstiges"); films, episodes and live channels are kept.
-No offline copies: ServusTV allows downloads only inside its own app. Titles and URLs never go to
+0.6.54 (Björn 20.11.2026: "ja bitte einbauen"): films and episodes can be kept offline for 30 days for personal
+viewing, like Pluto TV, Netzkino and Plex (servustv_downloads.py; until 0.6.53: no offline copies, because
+ServusTV offers downloads only inside its own app). Only titles the player interface releases right now as plain
+HLS without a key; youth protection hours, geo blocks and live channels are never stored. If the player names an
+end of availability (``availability_end``), the copy is removed then at the latest. Titles and URLs never go to
 logs or the diagnosis export.
 """
 from __future__ import annotations
@@ -1045,6 +1049,49 @@ def _stream_url(value):
     return str(value)
 
 
+# 0.6.54: explicit end of availability in the player answer (names as on other Red Bull Media House players and
+# the broadcaster interfaces). Nothing is guessed: an unknown or unreadable value means "no end known".
+END_KEYS = ('availableUntil', 'availableTo', 'availabilityEnd', 'availabilityUntil', 'expirationDate', 'expiryDate',
+            'currentSunset', 'sunset', 'sunsetDate', 'validUntil')
+
+
+def _when(value):
+    """Seconds since 1970 for an epoch (s or ms) or an ISO time with zone; None otherwise."""
+    import datetime
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value) / (1000 if value > 1e11 else 1)
+    elif isinstance(value, str) and value.strip():
+        text = value.strip()
+        if re.fullmatch(r'\d{9,13}', text):
+            return _when(int(text))
+        try:
+            dt = datetime.datetime.fromisoformat(text.replace('Z', '+00:00'))
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            return None   # unknown time zone: never invent a deadline
+        number = dt.timestamp()
+    else:
+        return None
+    return number if 946684800 <= number <= 4102444800 else None   # 2000 … 2100
+
+
+def availability_end(answer):
+    """End of availability named by the player interface (seconds), or None."""
+    if not isinstance(answer, dict):
+        return None
+    for source in (answer, answer.get('availability'), answer.get('meta')):
+        if not isinstance(source, dict):
+            continue
+        for key in END_KEYS:
+            when = _when(source.get(key))
+            if when:
+                return when
+    return None
+
+
 def _player_title(row, parent, t=STV):
     title = row['title']
     if row['kind'] == 'episode':
@@ -1081,7 +1128,7 @@ def play_source(root, item_id, opener=None, check=None, now=None, t=STV):
     cache_key = item_id if t.key == KEY else (t.key, item_id)
     cached = _SOURCES.get(cache_key)
     if cached and cached[0] > now:
-        url, duration = cached[1]
+        url, duration, until = (tuple(cached[1]) + (None,))[:3]
     else:
         try:
             answer = _player_answer(row['path'], opener, t)
@@ -1100,7 +1147,8 @@ def play_source(root, item_id, opener=None, check=None, now=None, t=STV):
         if row['drm'] != 0 and not live:
             _mark_drm(root, item_id, 0, t)
         duration = 0 if live else (_int(answer.get('duration'), 1, 24 * 3600) or row['duration'] or 0)
-        _SOURCES[cache_key] = (now + SOURCE_TTL, (url, duration))
+        until = None if live else availability_end(answer)
+        _SOURCES[cache_key] = (now + SOURCE_TTL, (url, duration, until))
     return {'kind': 'url', 'url': url, 'hls': True, 'title': _player_title(row, parent, t), 'provider': t.key,
             'quality': '%s live (kostenlos)' % t.name if live else '%s (kostenlos)' % t.name,
-            'duration': duration or 0, 'live': live}
+            'duration': duration or 0, 'live': live, 'available_until': until}

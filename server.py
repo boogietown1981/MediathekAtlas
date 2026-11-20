@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, redbulltv, redbulltv_enrichment, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos
 import api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
@@ -189,11 +189,11 @@ def film_platforms(offline):
         {'source':'servustv','name':'ServusTV','titles':(sv.get('movies',0) or 0)+(sv.get('series',0) or 0),'channels':sv.get('channels',0),
          'last_success':sv.get('last_success',0),'last_result':sv.get('last_result'),
          'running':sv.get('running'),'reference':servustv_enrichment.metrics(ROOT),
-         'offline':offline.get('servustv',{}),'offline_days':0,'offline_note':'ServusTV erlaubt Downloads nur in der eigenen App'},
+         'offline':offline.get('servustv',{}),'offline_days':servustv_downloads.OFFLINE_DAYS},
         {'source':'redbulltv','name':'Red Bull TV','titles':(rb.get('movies',0) or 0)+(rb.get('series',0) or 0),'channels':rb.get('channels',0),
          'last_success':rb.get('last_success',0),'last_result':rb.get('last_result'),
          'running':rb.get('running'),'reference':redbulltv_enrichment.metrics(ROOT),
-         'offline':offline.get('redbulltv',{}),'offline_days':0,'offline_note':'Red Bull TV bietet keine Downloads an'},
+         'offline':offline.get('redbulltv',{}),'offline_days':redbulltv_downloads.OFFLINE_DAYS},
         {'source':'dmax','name':'DMAX & TLC','titles':dx.get('series',0) or 0,'protected':dx.get('protected',0),
          'last_success':dx.get('last_success',0),'last_result':dx.get('last_result'),
          'running':dx.get('running'),'reference':dmax_enrichment.metrics(ROOT),
@@ -301,7 +301,7 @@ def live_tv_summary():
     except Exception as e:return {'error':core.safe_error(e)}
 
 def netzkino_download_summary():
-    with db() as c:return {**netzkino_downloads.summary(c),'pluto':netzkino_downloads.summary(c,'pluto'),'justwatch':netzkino_downloads.summary(c,'justwatch'),'rakuten':netzkino_downloads.summary(c,'rakuten'),'plex':netzkino_downloads.summary(c,'plex'),'youtube':netzkino_downloads.summary(c,'youtube')}
+    with db() as c:return {**netzkino_downloads.summary(c),'pluto':netzkino_downloads.summary(c,'pluto'),'justwatch':netzkino_downloads.summary(c,'justwatch'),'rakuten':netzkino_downloads.summary(c,'rakuten'),'plex':netzkino_downloads.summary(c,'plex'),'servustv':netzkino_downloads.summary(c,'servustv'),'redbulltv':netzkino_downloads.summary(c,'redbulltv'),'youtube':netzkino_downloads.summary(c,'youtube')}
 
 def jobs():
     with db() as c:rows=c.execute('SELECT payload,state FROM jobs ORDER BY rowid DESC LIMIT 100').fetchall()
@@ -1279,7 +1279,7 @@ def get_netzkino(self,path):
 def get_download_options(self,path):
     # 0.5.63: quality levels of one offer for the dialogue before an offline copy
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);source=q.get('source',[''])[0][:20];item=q.get('id',[''])[0][:80]
-    module={'pluto':pluto,'justwatch':justwatch,'rakuten':rakuten}.get(source)
+    module={'pluto':pluto,'justwatch':justwatch,'rakuten':rakuten,'servustv':servustv,'redbulltv':redbulltv}.get(source)
     return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
 
 @ROUTES.get('/api/play')

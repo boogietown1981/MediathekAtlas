@@ -286,7 +286,7 @@ class WiringTests(unittest.TestCase):
             self.assertIn(needle, index)
         import platform_registry
         self.assertIn('servustv', platform_registry.KEYS)
-        self.assertIsNone(platform_registry.BY_KEY['servustv'].offline)
+        self.assertIsNotNone(platform_registry.BY_KEY['servustv'].offline)   # 0.6.54: private 30-day copies
 
 
 if __name__ == '__main__':

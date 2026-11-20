@@ -21,9 +21,9 @@
       action: 'offline-download-action', enrich: 'joyn-enrich', external: 'Bei Joyn ansehen'},
     plex: {play: () => window.playPlex, jobs: id => 'plex-downloads?id=' + encodeURIComponent(id), add: 'plex-download-add',
       action: 'offline-download-action', enrich: 'plex-enrich', external: 'Bei Plex ansehen'},
-    servustv: {play: () => window.playServusTV, jobs: id => 'servustv-downloads?id=' + encodeURIComponent(id), add: '',
+    servustv: {play: () => window.playServusTV, jobs: id => 'servustv-downloads?id=' + encodeURIComponent(id), add: 'servustv-download-add',
       action: 'offline-download-action', enrich: 'servustv-enrich', external: 'Bei ServusTV ansehen'},
-    redbulltv: {play: () => window.playRedBullTV, jobs: id => 'redbulltv-downloads?id=' + encodeURIComponent(id), add: '',
+    redbulltv: {play: () => window.playRedBullTV, jobs: id => 'redbulltv-downloads?id=' + encodeURIComponent(id), add: 'redbulltv-download-add',
       action: 'offline-download-action', enrich: 'redbulltv-enrich', external: 'Bei Red Bull TV ansehen'},
     dmax: {play: () => window.playDmax, jobs: id => 'dmax-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'dmax-enrich', external: 'Beim Sender ansehen'},
@@ -89,8 +89,12 @@
   }
   async function offlineSection(m, host) {
     const src = SOURCES[m.source], sec = section('Offline ansehen · ' + m.offline.days + ' Tage');
-    const note = make('p', m.provider + ' erlaubt ' + m.offline.days + ' Tage Offline-Nutzung. Gespeichert wird wie bei Mediathek-Videos ' +
-      '(gleicher Ordner, gleiche Benennung, MKV mit NFO); die Datei enthält die Werbung des Anbieters und wird danach automatisch entfernt.', 'muted');
+    // 0.6.54: ServusTV and Red Bull TV offer no downloads themselves; the copy is a private one.
+    const own = m.source === 'servustv' || m.source === 'redbulltv';
+    const note = make('p', (own ? m.provider + ' bietet selbst keine Downloads an. Private Kopie für ' + m.offline.days +
+      ' Tage, nie länger als der Titel beim Sender verfügbar ist. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO); danach wird die Datei automatisch entfernt.' :
+      m.provider + ' erlaubt ' + m.offline.days + ' Tage Offline-Nutzung. Gespeichert wird wie bei Mediathek-Videos ' +
+      '(gleicher Ordner, gleiche Benennung, MKV mit NFO); die Datei enthält die Werbung des Anbieters und wird danach automatisch entfernt.'), 'muted');
     const list = make('div', undefined, 'portal-title-jobs');
     // 0.5.60: one offline button only (in the header); this section appears once a copy exists.
     window.AtlasOffline?.onChange(m.source, () => sec.isConnected ? (paint(), true) : false);

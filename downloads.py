@@ -109,13 +109,17 @@ def _source_url(row,quality='best'):
         # 0.6.3: Plex film or episode without copy protection (HLS or DASH, both copied by ffmpeg)
         import plex_downloads
         return plex_downloads.resolve(row)
+    if row.get('_resolver') in ('servustv','redbulltv'):
+        # 0.6.54: ServusTV / Red Bull TV film or episode, plain HLS released by the player right now
+        import servustv_downloads,redbulltv_downloads
+        return (redbulltv_downloads if row['_resolver']=='redbulltv' else servustv_downloads).resolve(row)
     if row.get('_resolver')=='youtube':return row.get('url')
     if row.get('_resolver'):raise ValueError('Unbekannte Downloadquelle')
     keys=QUALITY_KEYS
     import download_quality
     return row.get('_download_url') or next((row.get(k) for k in keys.get(download_quality.mediathek_key(quality),keys['hd']) if row.get(k)),None)
 
-HLS_RESOLVERS={'pluto','justwatch','rakuten','plex'}
+HLS_RESOLVERS={'pluto','justwatch','rakuten','plex','servustv','redbulltv'}
 
 def public_url(row,url):
     """Address written to metadata.json. Session-bound HLS addresses carry a token in the
@@ -217,7 +221,7 @@ def run(row,meta,root,quality,update,cancelled):
                 try:expected=float(row.get('duration') or 0)
                 except (TypeError,ValueError):expected=0
                 import download_quality
-                try:playlist,_level=download_quality.hls_playlist(url,quality,work)
+                try:playlist,_level=download_quality.hls_playlist(url,quality,work,prefer=str(row.get('_prefer_codec') or ''))
                 except Exception:playlist,_level=None,None   # no levels readable: best level as before
                 received=fetch_hls(url,src,dest.parent,expected,update,cancelled,reserve,playlist=playlist);total=0
             else:
