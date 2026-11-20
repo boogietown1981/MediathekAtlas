@@ -1310,10 +1310,28 @@ def broadcast_year(source):
     try:return time.localtime(int(source.get('timestamp') or 0)).tm_year if int(source.get('timestamp') or 0)>0 else None
     except (TypeError,ValueError,OverflowError,OSError):return None
 
-def suggestion_weak(s,source,sendung):
+def _year(value):
+    m=re.search(r'(?<!\d)(18\d\d|19\d\d|20\d\d|210\d)(?!\d)',str(value or ''))
+    return int(m.group(1)) if m else None
+
+def suggestion_brief(s):
+    """The fields of a suggestion that decide the rule, for the diagnosis (no descriptions or pictures)."""
+    if not isinstance(s,dict):return {'invalid':True}
+    out={k:s.get(k) for k in ('provider','kind','title','year','reference_id','similarity','confidence','runtime_mismatch',
+                               'year_mismatch','episode_verified','season','episode') if s.get(k) not in (None,'',False)}
+    if 'title' in out:out['title']=str(out['title'])[:80]
+    return out
+
+def suggestion_weak(s,source,sendung,work_title=''):
     """True if a film database suggestion is no evidence against filing the work under ``sendung``."""
     if not isinstance(s,dict):return True
-    kind=s.get('kind');similarity=float(s.get('similarity') or 0)
+    kind=s.get('kind')
+    try:similarity=float(s.get('similarity') or 0)
+    except (TypeError,ValueError):similarity=0.0
+    if kind=='movie' and sendung and work_title and key(s.get('title'))==key(sendung) and key(work_title)!=key(sendung):
+        # A film named like the Sendung ("Top Secret!" 1984 for the episodes of "Top Secret"): one film cannot
+        # be each of the Sendung's differently titled episodes.
+        return True
     if kind=='series':
         # Episode evidence (TVDB/IMDb episode titles, season and episode) is never weak.
         if s.get('episode_verified') or (s.get('season') is not None and s.get('episode') is not None):return False
@@ -1321,8 +1339,8 @@ def suggestion_weak(s,source,sendung):
         same=bool(sendung) and (key(s.get('title'))==key(sendung) or core.title_similarity(str(s.get('title') or ''),sendung)>=.85)
         if same or similarity>=.985:
             # The Sendung's own name: only a namesake far outside the broadcast period is no evidence.
-            year=s.get('year');aired=broadcast_year(source)
-            if isinstance(year,int) and aired and (year>aired+1 or aired-year>=UNKNOWN_NAMESAKE_YEARS):return True
+            year=_year(s.get('year'));aired=broadcast_year(source)
+            if year and aired and (year>aired+1 or aired-year>=UNKNOWN_NAMESAKE_YEARS):return True
             return False
         return True
     if kind=='movie':
@@ -1335,14 +1353,19 @@ def unknown_recheck_set_aside(c):
     """Once after the 0.6.49 correction: works the first 0.6.49 sweep filed against a suggestion that is no
     longer weak are open again, with their suggestions and their earlier state. Returns the number reopened."""
     if get_state(c,'unknown_set_aside_fix_v0649b'):return 0
-    reopened=0
+    reopened=0;kept=[]
     rows=c.execute("""SELECT * FROM works WHERE state='format' AND kind IN ('series','other')
         AND json_extract(meta,'$.unknown_before.rev')=2 AND json_extract(meta,'$.unknown_before.suggestions') IS NOT NULL""").fetchall()
     for row in rows:
         m=json.loads(row['meta'] or '{}');before=m.get('unknown_before') or {}
         source=best_source(c,row['id']) or {}
         name=m.get('title') if row['kind']=='series' else ''
-        if all(suggestion_weak(x,source,name) for x in before.get('suggestions') or []):continue
+        work_title=cleaned(source.get('title'))
+        weak=[suggestion_weak(x,source,name,work_title) for x in before.get('suggestions') or []]
+        if all(weak):
+            if len(kept)<25:kept.append({'title':work_title[:80],'sendung':str(name)[:80],'duration':int(source.get('duration') or 0),
+                                         'year_aired':broadcast_year(source),'suggestions':[suggestion_brief(x) for x in (before.get('suggestions') or [])[:3]]})
+            continue
         restored=restore_unknown(m)
         if not restored:continue
         title,kind,meta=restored
@@ -1350,7 +1373,8 @@ def unknown_recheck_set_aside(c):
                   (title,kind,json.dumps(meta),before.get('state') or ('retry' if before.get('metadata_warnings') else 'review'),row['id']))
         c.execute('DELETE FROM episode_queue WHERE work_id=?',(row['id'],))
         reopened+=1
-    set_state(c,'unknown_set_aside_fix_v0649b',{'reopened':reopened,'checked':len(rows),'at':time.time()})
+    set_state(c,'unknown_set_aside_fix_v0649b',{'reopened':reopened,'checked':len(rows),'kept':len(rows)-reopened,
+                                                 'kept_samples':kept,'at':time.time()})
     return reopened
 
 def unknown_soft_check(row,m,source,grouping,name,topic_works):
@@ -1359,7 +1383,7 @@ def unknown_soft_check(row,m,source,grouping,name,topic_works):
     if suggestions:
         if grouping not in SENDUNG_GROUPINGS:return 'suggestions_no_sendung'
         if topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
-        if not all(suggestion_weak(x,source,name) for x in suggestions):return 'suggestions'
+        if not all(suggestion_weak(x,source,name,cleaned(source.get('title'))) for x in suggestions):return 'suggestions'
     if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
     return None
 
@@ -1461,7 +1485,16 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
             _count(summary,'series_rubric',ch,cleaned(topic));continue
         soft=None if singles else unknown_soft_check(row,m,source,grouping,name,counts.get(topic,1))
         if soft:
-            _count(summary,soft,ch,cleaned(topic));continue
+            _count(summary,soft,ch,cleaned(topic))
+            if soft=='suggestions':
+                # 0.6.49: which suggestion keeps the work open, so that the diagnosis shows the evidence.
+                blocking=summary.setdefault('blocking_samples',[])
+                if len(blocking)<25:
+                    first=next((x for x in m.get('suggestions') or [] if not suggestion_weak(x,source,name,cleaned(source.get('title')))),None)
+                    blocking.append({'title':str(source.get('title') or '')[:80],'topic':cleaned(topic)[:80],'channel':ch,
+                                     'duration':int(source.get('duration') or 0),'year_aired':broadcast_year(source),
+                                     'suggestion':suggestion_brief(first)})
+            continue
         if not singles:
             if m.get('suggestions') or m.get('metadata_warnings'):
                 why='suggestions' if m.get('suggestions') else 'warnings'

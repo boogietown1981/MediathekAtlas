@@ -49,6 +49,11 @@ class WeakSuggestionTests(unittest.TestCase):
     def test_no_evidence_against_the_sendung(self):
         self.assertTrue(self.weak(series('DOK', year=1954)))                      # an old namesake (Top Secret 1954)
         self.assertTrue(self.weak(series('Arena', year=1975), sendung='Arena'))
+        self.assertTrue(self.weak(series('Arena', year='1975'), sendung='Arena'))         # year as text (Wikidata)
+        # Second Gegenprobe: a film named like the Sendung is no episode of it ("Top Secret!" 1984).
+        src = {'duration': 1500, 'timestamp': 1795100000}
+        self.assertTrue(catalog.suggestion_weak(movie('Top Secret'), src, 'Top Secret', 'Der Maulwurf im Ministerium'))
+        self.assertFalse(catalog.suggestion_weak(movie('Top Secret'), src, 'Top Secret', 'Top Secret'))
         self.assertTrue(self.weak(series('Dok Leipzig', similarity=.8)))          # fuzzy series name
         self.assertTrue(self.weak(movie('Heimweh', runtime_mismatch=True)))       # 90-min film vs. 25-min clip
         self.assertTrue(self.weak(movie('Heimweh', year_mismatch=True)))
@@ -154,6 +159,8 @@ class SweepTests(unittest.TestCase):
         self.assertEqual(info['remaining'], {'suggestions': 2, 'warnings': 1, 'suggestions_no_sendung': 1,
                                              'suggestions_small_sendung': 1})
         self.assertEqual(info['set_aside'], {'suggestions': 2, 'warnings': 1})
+        blocking = {b['title']: b for b in info['blocking_samples']}
+        self.assertEqual(blocking['Die Bergbauern']['suggestion'], {'provider': 'IMDb Offline', 'kind': 'movie', 'title': 'Die Bergbauern', 'similarity': 1.0})
         self.assertEqual(info['remaining_channels']['SRF'], {'suggestions': 2, 'warnings': 1})
         self.assertEqual(info['remaining_topics'][0], {'channel': 'SRF', 'topic': 'DOK', 'reason': 'suggestions', 'works': 2})
         self.assertEqual(info['unknown_left'], 5)
