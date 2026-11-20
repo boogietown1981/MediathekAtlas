@@ -436,7 +436,7 @@ for(const url of settings.mesh_peers||[]){const p=states[url]||{};const row=el('
  row.append(el('span',p.error?'⚠ '+url+': '+p.error+(p.last?' · zuletzt erfolgreich '+when(p.last):''):p.time?'● Verbunden mit „'+p.peer+'“ ('+url+') · Version '+(p.peer_version||'?')+' · letzter Abgleich '+when(p.time)+' · '+p.received+' empfangen, '+p.sent+' gesendet':'◌ Verbindung zu '+url+' wird aufgebaut …'));
  const rm=el('button','Entfernen');rm.type='button';rm.onclick=()=>busy(rm,async()=>{await api('mesh-direct',{action:'remove',url});notice('Verbindung zu '+url+' entfernt.');await refresh();});row.append(rm);host.append(row);}}
 function meshDownloadLabel(m){if(!m)return '';return ({loading:'↓ Wird auf „'+m.name+'“ geladen · ',local:'✓ Auf „'+m.name+'“ geladen, hier vorhanden · ',transfer:'✓ Auf „'+m.name+'“ geladen, MeshSync überträgt · ',remote:'✓ Auf „'+m.name+'“ geladen (Downloadordner dort nicht geteilt) · '})[m.state]||'';}
-// 0.6.53: one-click Verbund over a cloud folder, savings and differing manual assignments.
+// 0.6.56: one-click Verbund over a cloud folder, savings and differing manual assignments.
 let meshSetupLoaded=0,meshLastConflicts=-1;
 function meshFolderLabel(dir,folders){const f=(folders||[]).find(x=>x.path===dir);return f?f.label:'';}
 async function loadMeshSetup(){meshSetupLoaded=Date.now();let d;try{d=await api('mesh-setup');}catch(e){$('mesh-quick-status').textContent=e.message;return;}

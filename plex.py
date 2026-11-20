@@ -168,7 +168,7 @@ def _open(url, headers, data=None, limit=MAX_ANSWER):
     if parts.scheme != 'https' or parts.hostname not in API_HOSTS:
         raise ValueError('Ungültige Plex-Anfrage')
     req = urllib.request.Request(url, data=data, headers=headers, method='POST' if data is not None else 'GET')
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('Plex-Antwort zu groß')
         raw = provider_base.read_capped(response, limit)

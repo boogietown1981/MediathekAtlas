@@ -1,4 +1,4 @@
-"""0.6.53: recognition results are shared between devices instead of being recalculated.
+"""0.6.56: recognition results are shared between devices instead of being recalculated.
 
 Björn runs MediathekAtlas on several Macs with separate catalogues (MacBook Pro M3, MacBook Air,
 MacBook Pro M4 Pro). Every Mac recognised the same catalogue on its own; the Verbund was off
@@ -406,7 +406,7 @@ class SlimServiceTests(ServiceTests):
             for (wid,) in c.execute('SELECT id FROM works').fetchall():
                 catalog.save_metadata(c, wid, {'title': 'X' + wid, 'kind': 'movie', 'year': 2000, 'provider': 'TMDB', 'reference_id': wid, 'state': 'auto_matched'}, 'matched')
         for n in (self.a, self.b): n.service.MESH_BACKFILL_PAUSE = 0
-        with patch.object(meshjournal, 'SEGMENT_BYTES', 8000):
+        with patch.object(meshjournal, 'SEGMENT_BYTES', 8000), patch.object(meshjournal, 'STAGED_GZ_BYTES', 8000):
             self.a.service.mesh_tick()
             self.assertLessEqual(self.a.service.mesh_backlog.get('shared', 0), 500)
             for _ in range(6):
@@ -421,3 +421,33 @@ class SlimServiceTests(ServiceTests):
         self.assertGreater(lines, 1000)
         self.b.sync()
         with self.b.db() as c: self.assertGreater(c.execute("SELECT COUNT(*) FROM works WHERE state='matched'").fetchone()[0], 1000)
+
+    def test_backlog_fills_few_large_segments_for_cloud_folders(self):
+        # Mac check 3 (0.6.53): ~500 files of 40 KB per device, one per round. iCloud prefers few larger files.
+        rows = [{'title': 'Film %d' % i, 'channel': 'ARD', 'topic': 'Spielfilm', 'description': 'Spielfilm Deutschland lang genug %d' % i,
+                 'duration': 5400, 'url_video': 'https://example.org/%d.mp4' % i} for i in range(1600)]
+        for n in (self.a, self.b):
+            with n.db() as c: catalog.ingest(c, rows)
+        with self.a.db() as c:
+            for (wid,) in c.execute('SELECT id FROM works').fetchall():
+                catalog.save_metadata(c, wid, {'title': 'X' + wid, 'kind': 'movie', 'year': 2000, 'provider': 'TMDB', 'reference_id': wid, 'state': 'auto_matched'}, 'matched')
+        for n in (self.a, self.b): n.service.MESH_BACKFILL_PAUSE = 0
+        for _ in range(5):
+            for n in (self.a, self.b): n.service.mesh_tick()
+        j = self.a.service.mesh
+        self.assertEqual(j.limit(), meshjournal.STAGED_GZ_BYTES)
+        self.assertGreater(self.a.service.mesh_backlog.get('shared', 0), 1500)
+        done = [p.name for p in j.dir.iterdir() if p.name.startswith('events-') and not p.name.endswith('.partial')]
+        self.assertEqual(len(done), 1, done)   # four rounds, published once at the end of the backlog
+        self.assertTrue(done[0].endswith('.jsonl.gz'))
+        self.b.sync()
+        with self.b.db() as c: self.assertGreater(c.execute("SELECT COUNT(*) FROM works WHERE state='matched'").fetchone()[0], 1500)
+
+    def test_uncompressed_or_unstaged_segments_stay_small(self):
+        j = meshjournal.Journal(self.base / 'nas', '0' * 32)
+        j.compress = True
+        self.assertEqual(j.limit(), meshjournal.SEGMENT_BYTES)
+        k = meshjournal.Journal(self.base / 'nas2', '1' * 32, staging=self.base / 'st')
+        self.assertEqual(k.limit(), meshjournal.SEGMENT_BYTES)
+        k.compress = True
+        self.assertEqual(k.limit(), meshjournal.STAGED_GZ_BYTES)

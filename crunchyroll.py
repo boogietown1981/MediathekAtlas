@@ -158,7 +158,7 @@ def _cloudflare(code, head, body):
 def _open(req):
     """bytes of one answer; Cloudflare's challenge becomes ``Blocked``."""
     try:
-        with urllib.request.urlopen(req, timeout=40) as response:
+        with provider_base.open_capped(req, timeout=40) as response:
             final = urllib.parse.urlsplit(response.geturl())
             if final.scheme != 'https' or final.hostname not in HOSTS:
                 raise ValueError('Crunchyroll leitete auf eine unerwartete Adresse um')

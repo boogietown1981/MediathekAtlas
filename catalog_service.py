@@ -160,7 +160,10 @@ class Service:
                     if row['queued']:
                         diagnostics.event('subscription_jobs_queued',id=row['id'],
                                           queued=row['queued'],title=row['title'])
-            except Exception as e:diagnostics.error('subscription_scheduler_failed',e)
+            except Exception as e:
+                # 0.6.56: right after the start the index build holds the database; the next try is 60 s later.
+                if sqlite_busy(e):self.sqlite_busy_count+=1;diagnostics.event('subscription_scheduler_busy')
+                else:diagnostics.error('subscription_scheduler_failed',e)
             self.subscription_wake.wait(60);self.subscription_wake.clear()
 
     def lease_work(self,queue='identity'):
@@ -786,7 +789,7 @@ class Service:
                            else 'IMDb-Episode zur erkannten Serie eindeutig bestätigt')
                 dest=catalog.save_metadata(c,selected_id,verified,'matched') or selected_id
                 outcome='matched'
-                # 0.6.53: the other systems of the Verbund take over the confirmed episode.
+                # 0.6.56: the other systems of the Verbund take over the confirmed episode.
                 providers=[m['provider']] if m.get('provider') in ('TMDB','TVDB','OMDb') else []
                 for wid in sorted({selected_id,*catalog.origin_ids(c,dest)}):self.mesh_publish(c,'match.result',wid,dest,'matched',dict(verified),providers)
             else:
@@ -1119,7 +1122,7 @@ class Service:
     def mesh_display_name(self,config):
         return str(config.get('mesh_name') or '').strip()[:80] or meshjournal.default_name(self.mesh_salt())
     def mesh_node(self,root):
-        """This system's node ID; a new one when the data folder was copied from another computer (0.6.53)."""
+        """This system's node ID; a new one when the data folder was copied from another computer (0.6.56)."""
         with self.db() as c:
             host=meshjournal.host_id(self.mesh_salt(c))
             node=catalog.get_state(c,'mesh_node_id');known=catalog.get_state(c,'mesh_node_host')
@@ -1150,7 +1153,7 @@ class Service:
                     if direct:Path(folder).mkdir(mode=0o700,exist_ok=True)
                     root=meshjournal.check_folder(folder,create=direct)
                     node=self.mesh_node(root)
-                    # 0.6.53: open segments stay in the data folder until they are complete (cloud folders).
+                    # 0.6.56: open segments stay in the data folder until they are complete (cloud folders).
                     staging=None if direct else Path(self.root)/'verbund-staging'/hashlib.sha256(str(root).encode()).hexdigest()[:12]
                     self.mesh=meshjournal.Journal(root,node,self.mesh_display_name(config),staging=staging);self.mesh_beat=0
                     diagnostics.event('mesh_opened',node=node)
@@ -1162,7 +1165,7 @@ class Service:
             providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k)]
             if time.time()-self.mesh_beat>=meshjournal.HEARTBEAT:
                 journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers,'host':meshjournal.host_id(self.mesh_salt()),'shares':list(self.MESH_SHARES)});self.mesh_beat=time.time()
-            # 0.6.53: compressed segments only when every other system in the folder reads them; decided before
+            # 0.6.56: compressed segments only when every other system in the folder reads them; decided before
             # anything of this round is written (also the backlog of earlier results).
             known=journal.nodes()
             try:dirs={d.name for d in (journal.root/'nodes').iterdir() if meshjournal._NODE.match(d.name)}
@@ -1171,13 +1174,16 @@ class Service:
             if time.monotonic()-self.mesh_usage.get('at',-1e9)>=self.MESH_USAGE_SECONDS or self.mesh_usage.get('segment')!=journal.segment:
                 self.mesh_usage={**journal.usage(),'at':time.monotonic(),'segment':journal.segment}
             # Results from before joining the Verbund are shared once, in batches.
-            journal.flush(force=self.mesh_backfill(journal)>0)
+            # 0.6.56: the backlog fills segments instead of publishing one small file per round (Mac check 3:
+            # ~500 files of 40 KB per device); size or age (SEGMENT_AGE) publishes, the end of the backlog too.
+            before=self.mesh_backlog.get('done');self.mesh_backfill(journal)
+            journal.flush(force=bool(self.mesh_backlog.get('done') and not before))
             self.mesh_receipts(journal,folder)
             self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
-            # 0.6.53: episodes are split only with systems that share their episode results; a node of an
+            # 0.6.56: episodes are split only with systems that share their episode results; a node of an
             # older version keeps its partitions for works, but its episodes are still searched here.
             episode_parts=journal.assignment({n:r for n,r in members.items() if n==journal.node or 'episodes' in (nodes.get(n,{}).get('shares') or [])})
             self.mesh_names={n:str(i.get('name') or n[:8])[:80] for n,i in nodes.items()}
@@ -1210,8 +1216,8 @@ class Service:
             if self.stop.is_set():break
         self.mesh_peers=current
     MESH_IMPORT_BATCH=250;MESH_IMPORT_SECONDS=20;MESH_BACKFILL_PAUSE=20
-    MESH_SHARES=('episodes','gzip')   # 0.6.53: announced in node.json; older nodes announce nothing
-    MESH_BACKFILL_MB=300   # 0.6.53: earlier results are shared only while this system's journal stays below (setting mesh_journal_mb)
+    MESH_SHARES=('episodes','gzip')   # 0.6.56: announced in node.json; older nodes announce nothing
+    MESH_BACKFILL_MB=300   # 0.6.56: earlier results are shared only while this system's journal stays below (setting mesh_journal_mb)
     MESH_USAGE_SECONDS=60
     def mesh_import(self,journal):
         # Small transactions and a time budget per round: a large backlog from another system
@@ -1245,7 +1251,7 @@ class Service:
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
         if not better:
-            # 0.6.53: a differing manual assignment is shown even when the own one sorts first.
+            # 0.6.56: a differing manual assignment is shown even when the own one sorts first.
             if d['outcome']=='manual':
                 row=next((r for r in (c.execute('SELECT * FROM works WHERE id=?',(i,)).fetchone() for i in (d['work'],d.get('dest')) if i) if r),None)
                 if row and row['state']=='manual':self.mesh_conflict(c,row,event)
@@ -1259,7 +1265,7 @@ class Service:
     def mesh_adopt(self,c,row,event,known):
         d=event['data'];rank=meshjournal.RANK[d['outcome']];local=meshjournal.RANK.get(row['state'],0)
         if row['state']=='manual':
-            # 0.6.53: a manual assignment made on this system is never replaced from another system, not
+            # 0.6.56: a manual assignment made on this system is never replaced from another system, not
             # even by a manual one there. A different manual choice is kept as a visible conflict instead.
             if d['outcome']=='manual':self.mesh_conflict(c,row,event)
             return False
@@ -1280,7 +1286,7 @@ class Service:
             suggestions=meta.get('suggestions') if isinstance(meta.get('suggestions'),list) else []
             recognized=meta if d['outcome'] in ('matched','identified') else None
             if d['outcome']=='matched' and row['state']=='identified' and row['kind']=='series' and meshjournal.episode_meta(meta):
-                # 0.6.53: an episode confirmed on another system (IMDb archive / sender page); the series
+                # 0.6.56: an episode confirmed on another system (IMDb archive / sender page); the series
                 # itself is known here already, so nothing else is recalculated or propagated.
                 catalog.save_metadata(c,row['id'],{**meta,'state':'auto_matched'},'matched')
                 self.mesh_saved['episodes']+=1
@@ -1291,7 +1297,7 @@ class Service:
         c.execute('DELETE FROM metadata_priority WHERE work_id=?',(row['id'],))
         return True
     def mesh_merge(self,row,meta):
-        """0.6.53: the journal carries only the decision; this system's own offer data (description, episode
+        """0.6.56: the journal carries only the decision; this system's own offer data (description, episode
         title, broadcast details) stays, identity fields come from the other system."""
         try:local=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):local={}
@@ -1372,7 +1378,7 @@ class Service:
         # Pace with the other side: nothing new while the connection fails, at most one batch per 20 s.
         if (self.mesh_peers and all(p.get('error') for p in self.mesh_peers.values())) or time.monotonic()-self.mesh_backfill_at<self.MESH_BACKFILL_PAUSE:return 0
         self.mesh_backfill_at=time.monotonic()
-        # Size cap per system (its own share of the folder). Named 'cap': the first 0.6.53 build reused 'limit'
+        # Size cap per system (its own share of the folder). Named 'cap': the first build (0.6.56, never issued) reused 'limit'
         # (rows per batch) for the bytes, so the whole backlog went out in one round, before compression was on.
         try:cap=max(10,int(self.settings().get('mesh_journal_mb') or self.MESH_BACKFILL_MB))*1024*1024
         except (TypeError,ValueError):cap=self.MESH_BACKFILL_MB*1024*1024

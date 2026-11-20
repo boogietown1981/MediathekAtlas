@@ -16,14 +16,15 @@ MESHSYNC_MARKER = '.meshsync-folder'
 PARTS = 256
 STALE = 900                 # a node without heartbeat for 15 min loses its partitions
 SEGMENT_BYTES = 2 * 1024 * 1024
+STAGED_GZ_BYTES = 8 * 1024 * 1024   # 0.6.56: compressed + staged: open segment grows locally, ~1 MB .gz in the shared folder
 SEGMENT_AGE = 300           # bounded file count for MeshSync: at most 288 segments per node and day
 MAX_LINE = 256 * 1024
 READ_LIMIT = 5000           # events per import round, keeps weak NAS responsive
 HEARTBEAT = 300
 RECEIPT = 'archive.receipt'   # 0.5.95: signed proof of an Archive.org copy (archive_receipts); older versions skip the unknown type
-EPISODE = 'episode.result'    # 0.6.53: "no episode found until …" from another system; older versions skip the unknown type
+EPISODE = 'episode.result'    # 0.6.56: "no episode found until …" from another system; older versions skip the unknown type
 TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release', RECEIPT, EPISODE)
-GAP_WAIT = 6 * 3600           # 0.6.53: a missing earlier segment (still syncing) holds back later ones this long
+GAP_WAIT = 6 * 3600           # 0.6.56: a missing earlier segment (still syncing) holds back later ones this long
 ICLOUD_SUFFIX = '.icloud'     # evicted iCloud Drive file on macOS ≤ 13: ".<name>.icloud"
 DOWNLOAD_TYPES = TYPES[2:5]
 CLAIM_SECONDS = 7200          # a claim expires unless renewed, so a crashed node never blocks a title for long
@@ -31,13 +32,13 @@ CLAIM_RENEW = 1800
 _HEX64 = re.compile(r'^[0-9a-f]{64}$')
 RANK = {'manual': 4, 'matched': 3, 'identified': 2, 'review': 1}
 _NODE = re.compile(r'^[0-9a-f]{32}$')
-_SEGMENT = re.compile(r'^events-(\d{6})\.jsonl(\.gz)?$')   # 0.6.53: .gz once every node reads it (shares "gzip")
+_SEGMENT = re.compile(r'^events-(\d{6})\.jsonl(\.gz)?$')   # 0.6.56: .gz once every node reads it (shares "gzip")
 _EVICTED = re.compile(r'^\.(events-(\d{6})\.jsonl(?:\.gz)?|node\.json)\.icloud$')
 _fetch_requested = {}
 
 
 def host_id(salt=''):
-    """Fingerprint of this computer (0.6.51/0.6.53), keyed with a random value of this catalogue.
+    """Fingerprint of this computer (0.6.56), keyed with a random value of this catalogue.
 
     Used only to notice a data folder that was copied to a second computer: both copies would
     otherwise write under the same node ID. Not reversible to the computer name."""
@@ -134,7 +135,7 @@ CLOUD_SUBFOLDER = 'MediathekAtlas-Verbund'
 
 
 def cloud_folders(home=None):
-    """Synced cloud folders on this computer that can carry the Verbund (0.6.53).
+    """Synced cloud folders on this computer that can carry the Verbund (0.6.56).
 
     Every computer of the same person sees the same folder, so the Verbund needs no network
     share and no open port; computers that are off catch up when they come back."""
@@ -212,7 +213,7 @@ def clean_meta(meta):
     return dict(meta)
 
 
-# 0.6.53 (Mac check 20.11.2026: 6.4 KB per result, 1.6 GB per device): only what another system needs to take
+# 0.6.56 (Mac check 20.11.2026: 6.4 KB per result, 1.6 GB per device): only what another system needs to take
 # over the decision. Display data (descriptions, credits, ratings, artwork) stays local; the receiver keeps its
 # own offer data and fetches the rest with its own enrichment. Older receivers accept the slim form as well.
 SHARE_FIELDS = ('title', 'kind', 'year', 'provider', 'reference_id', 'imdb_id', 'imdb_series_id', 'season', 'episode',
@@ -308,14 +309,14 @@ class Journal:
         self.root = Path(root); self.node = node_id; self.name = str(name or '')[:80]
         self.dir = self.root / 'nodes' / node_id
         self.dir.mkdir(parents=True, exist_ok=True)
-        # 0.6.53: with a cloud folder (iCloud Drive, Dropbox, …) the open segment is written in the
+        # 0.6.56: with a cloud folder (iCloud Drive, Dropbox, …) the open segment is written in the
         # local data folder and only the finished segment is moved into the shared folder; a growing
         # file there would be uploaded again after every result.
         self.staging = Path(staging) if staging else None
         if self.staging: self.staging.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock(); self.seq = 0; self.hlc = 0; self.opened = 0
         self.segment = 1; self.size = 0; self.gaps = {}; self.waiting = {}
-        self.compress = False   # set by the service once every node of the folder reads .gz (0.6.53)
+        self.compress = False   # set by the service once every node of the folder reads .gz (0.6.56)
         self._recover()
 
     def _published(self):
@@ -375,12 +376,18 @@ class Journal:
                      'hlc': self.tick(), 'type': kind, 'data': data}
             line = (json.dumps(event, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
             if len(line) > MAX_LINE: self.seq -= 1; raise ValueError('Ereignis zu groß')
-            # 0.6.53: the size limit holds also within a round (backfill wrote 13 MB segments before).
-            if self.size and self.size + len(line) > SEGMENT_BYTES: self._publish()
+            # 0.6.56: the size limit holds also within a round (backfill wrote 13 MB segments before).
+            if self.size and self.size + len(line) > self.limit(): self._publish()
             with self._partial().open('ab') as f:
                 f.write(line); f.flush(); os.fsync(f.fileno())
             self.size += len(line); self.opened = self.opened or time.time()
             return event
+
+    def limit(self):
+        """Size of the open segment before it is published. Cloud folders (iCloud & Co.) handle a few larger
+        files better than hundreds of small ones; uncompressed or written straight into the shared folder
+        (NAS, MeshSync) segments stay at 2 MB, which also bounds what a direct connection transfers."""
+        return STAGED_GZ_BYTES if self.compress and self.staging else SEGMENT_BYTES
 
     def _publish(self):
         partial = self._partial(); raw = partial.read_bytes()
@@ -395,7 +402,7 @@ class Journal:
         """Publish the open segment once it is large or old enough."""
         with self.lock:
             if not self.size: return False
-            if not force and self.size < SEGMENT_BYTES and time.time() - self.opened < SEGMENT_AGE: return False
+            if not force and self.size < self.limit() and time.time() - self.opened < SEGMENT_AGE: return False
             self._publish()
             return True
 
@@ -449,7 +456,7 @@ class Journal:
     def read(self, cursors, limit=READ_LIMIT, now=None):
         """New events of other nodes after cursors {node: [segment, line]}.
 
-        0.6.53: segments are numbered without gaps. If a later segment arrives before an earlier
+        0.6.56: segments are numbered without gaps. If a later segment arrives before an earlier
         one (cloud folder, MeshSync, direct connection), reading that node waits for the missing
         one instead of skipping it for good; after GAP_WAIT it is given up. Evicted iCloud files
         are requested and waited for the same way."""

@@ -32,7 +32,8 @@ MAX_BUDGET_GB = 1_000_000
 MAX_ROWS = 400
 GIB = 1024 ** 3
 ORIGIN_LABEL = {'': 'ARD, ZDF & Co.', 'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV',
-                'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'internet_archive': 'Archive.org'}
+                'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'internet_archive': 'Archive.org',
+                'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV'}
 _LOCK = threading.Lock()
 
 

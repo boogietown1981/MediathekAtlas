@@ -260,7 +260,7 @@ class PlaybackTests(Base):
         m = portal_title.model(self.root, 'servustv', 's.AA-25RX849FN1W11')
         self.assertEqual(len(m['episodes']), 2)
         m = portal_title.model(self.root, 'servustv', 'v.AAU3HRL0S34IKQ6NINUP')
-        self.assertFalse(m['offline']['allowed'])
+        self.assertTrue(m['offline']['allowed'])   # 0.6.54: private 30-day copy
         self.assertIn(['Angebot', 'ServusTV On, kostenlos (ohne Konto)'], m['provider_facts'])
 
 
@@ -286,7 +286,7 @@ class WiringTests(unittest.TestCase):
             self.assertIn(needle, index)
         import platform_registry
         self.assertIn('servustv', platform_registry.KEYS)
-        self.assertIsNone(platform_registry.BY_KEY['servustv'].offline)
+        self.assertIsNotNone(platform_registry.BY_KEY['servustv'].offline)   # 0.6.54: private 30-day copies
 
 
 if __name__ == '__main__':

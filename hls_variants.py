@@ -89,13 +89,21 @@ def levels(variants):
     return out
 
 
-def choose(variants, quality='auto'):
+def choose(variants, quality='auto', prefer=''):
     """One level for a wish: 'max', 'auto' (up to 720p) or a height such as '480'.
 
     A height picks the best level that does not exceed it; if every level is larger, the smallest.
-    Within one resolution the lowest bitrate wins: it is the one a weak connection can carry."""
+    Within one resolution the lowest bitrate wins: it is the one a weak connection can carry.
+    0.6.54: ``prefer`` ('avc1') keeps only levels of that codec for wishes up to 1080p, if there are any
+    (Red Bull streams offer H.264 next to HEVC; H.264 plays on older hardware too)."""
     if not variants:
         return None
+    wish_height = _int(str(quality or '').strip())
+    if prefer and wish_height and wish_height <= 1080:
+        same = [v for v in variants
+                if any(c.strip().lower().startswith(prefer.lower()) for c in str(v.get('codecs') or '').split(','))]
+        if same:
+            variants = same
     wish = str(quality or 'auto').strip().lower()
     by_size = sorted(variants, key=lambda v: (v['height'] or 0, v['bandwidth'] or 0))
     if wish == 'max':

@@ -24,8 +24,10 @@ now accepts these resource names; ServusTV ids are unchanged.
 
 If none of the scopes answers, the run fails with a plain message and a ``redbulltv_scope_missing`` entry in
 the diagnosis (counts and HTTP status only). The Red Bull TV live channel stays playable through ServusTV in
-the Live-TV tab in any case. No offline copies (Red Bull TV offers no downloads), no account, no DRM bypass:
-streams with a key are refused by hls_guard.
+the Live-TV tab in any case. No account, no DRM bypass: streams with a key are refused by hls_guard.
+
+0.6.54 (Björn 20.11.2026): Red Bull TV offers no downloads itself; films and episodes without copy protection can be
+kept as a private copy for 30 days (redbulltv_downloads.py, same rules as ServusTV), never live channels.
 """
 from __future__ import annotations
 

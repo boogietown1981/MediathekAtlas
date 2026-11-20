@@ -70,6 +70,24 @@ async function waitFor(url, seconds) {
     const summary = await page.locator('#redbulltv-summary').textContent();
     check('Katalogstatus genannt: ' + summary, summary.length > 5 && !summary.includes('wird geladen'));
     if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.47-redbulltv.png') });
+    // 0.6.54: private 30-day copy offered on the film tile; the request reaches /api/redbulltv-download-add
+    const adds = [];
+    page.on('request', r => { if (new URL(r.url()).pathname === '/api/redbulltv-download-add') adds.push(r.url()); });
+    const save = page.locator('#redbulltv-items').getByRole('button', { name: /Offline speichern \(30 Tage\)/ }).first();
+    await save.waitFor({ timeout: 15000 });
+    check('Knopf „Offline speichern (30 Tage)“ mit Hinweis „private Kopie“: ' + await save.getAttribute('title'),
+      /private Kopie/i.test(await save.getAttribute('title') || ''));
+    const offlineText = await page.locator('#redbulltv-offline').textContent();
+    check('Offline-Liste sichtbar mit Regeln: ' + offlineText.slice(0, 120), offlineText.includes('30 Tage') && !(await page.locator('#redbulltv-offline').isHidden()));
+    await save.click();
+    const choice = page.locator('dialog.atlas-offline-choice');
+    await choice.waitFor({ timeout: 15000 });
+    check('Auswahldialog bietet Auflösungen an', await choice.locator('select[aria-label="Auflösung"]').count() === 1);
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.54-redbulltv-aufloesung.png') });
+    await choice.getByRole('button', { name: '⬇ Speichern' }).click();
+    await page.waitForTimeout(2500);
+    check('Speichern fragt /api/redbulltv-download-add an', adds.length === 1);
+    if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.54-redbulltv-offline.png') });
     await page.click('#redbulltv-view-series');
     await page.waitForFunction(() => document.querySelector('#redbulltv-items')?.innerText.includes('Frontiers'), null, { timeout: 30000 });
 

@@ -1,5 +1,5 @@
 """Seeds one data folder for the two-instance Verbund test (mesh_two_nodes.cjs).
-Usage: python3 tests/browser/seed_0651.py <data folder> a|b
+Usage: python3 tests/browser/seed_0656.py <data folder> a|b
 Both systems get the same 40 offers. A has recognised 30 films itself (before the Verbund);
 both assign the same film manually but differently (conflict)."""
 import json

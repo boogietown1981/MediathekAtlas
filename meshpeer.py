@@ -11,10 +11,10 @@ from pathlib import Path
 import meshjournal
 
 KEY_HEADER = 'X-Atlas-Mesh-Key'
-MAX_FILE = meshjournal.SEGMENT_BYTES + 2 * meshjournal.MAX_LINE
+MAX_FILE = max(meshjournal.SEGMENT_BYTES, meshjournal.STAGED_GZ_BYTES) + 2 * meshjournal.MAX_LINE  # 0.6.56: staged .gz segments
 MAX_INDEX = 8 * 1024 * 1024
 TIMEOUT = 60
-_PATH = re.compile(r'^nodes/([0-9a-f]{32})/(events-\d{6}\.jsonl(?:\.gz)?|node\.json)$')  # .gz since 0.6.53
+_PATH = re.compile(r'^nodes/([0-9a-f]{32})/(events-\d{6}\.jsonl(?:\.gz)?|node\.json)$')  # .gz since 0.6.56
 _KEY = re.compile(r'^[A-Za-z0-9_-]{32,64}$')
 
 

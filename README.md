@@ -1,11 +1,27 @@
-# MediathekAtlas · 0.6.53
+# MediathekAtlas · 0.6.56
 
-## Neu in 0.6.53: Erkennung zwischen Geräten teilen
+## Neu in 0.6.56: Erkennung zwischen Geräten teilen
 
 - Mehrere Macs (oder ein Mac und ein PC) teilen sich die Erkennung jetzt mit einem Klick: Einstellungen → Verbund & andere Systeme → „Über iCloud Drive verbinden“ (auch Dropbox, OneDrive, Google Drive, Synology Drive), auf jedem Gerät einmal. Ein NAS oder offener Port ist nicht nötig, die Geräte müssen nicht gleichzeitig laufen.
 - Jedes Gerät erkennt nur noch seinen Teil des Katalogs und übernimmt den Rest von den anderen. Neu geteilt werden auch bestätigte Episoden und „keine Episode gefunden“ der Episodensuche.
 - Eigene manuelle Zuordnungen werden nie von einem anderen Gerät überschrieben. Weicht ein anderes Gerät ab, erscheint das unter „Abweichende manuelle Zuordnungen“ mit „Eigene behalten“ oder „Übernehmen“.
 - Der Verbund zeigt, wie viele Erkennungen und Episodensuchen von anderen Geräten übernommen statt selbst berechnet wurden.
+
+## Neu in 0.6.55: Besetzung mit Fotos
+
+- Titelseiten von Filmen und Serien (auch auf den Plattformen) zeigen „Besetzung & Regie“ in einer Reihe: zuerst die Regie, dann die Darsteller mit ihrer Rolle, jeweils mit Foto von TMDB.
+- Die Fotos werden beim ersten Anzeigen einmal geladen und im Datenordner (`people-photos/`) gespeichert; danach kommen sie von MediathekAtlas selbst, auch ohne Internet. Der Speicher ist auf 48 MB begrenzt (rund 3000 Gesichter), die am längsten nicht gezeigten Fotos werden zuerst entfernt.
+- Ohne Foto bleibt der Name mit Initialen stehen. Es wird nie nach einem bloßen Namen gesucht: ein Foto erscheint nur, wenn die Person sicher zum Titel gehört (Besetzung des Titels bei TMDB oder IMDb-Personenkennung).
+- Ohne TMDB-Zugang sagt die Titelseite, wo er einzutragen ist („Einstellungen öffnen“ → Metadatenanbieter & Schlüssel).
+
+## Neu in 0.6.54: Offline-Kopien für ServusTV und Red Bull TV
+
+- Filme und Folgen von ServusTV und Red Bull TV lassen sich jetzt wie bei Pluto TV, Netzkino und Plex mit „⬇ Offline speichern (30 Tage)“ sichern: in der Kachel, auf der Titelseite, bei jeder Folge einer Sendung. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO), zu sehen in der Downloads-Liste, unter „Offline-Kopien von …“ und in der Speicherverwaltung.
+- Beide Sender bieten selbst keine Downloads an; die Kopie ist eine private Kopie nur für dich. Sie bleibt 30 Tage und nie länger, als der Sender den Titel anbietet (nennt der Player ein Verfügbarkeitsende, wird die Datei spätestens dann entfernt; Anzeige „Offline bis …“).
+- Gespeichert wird nur, was der Sender gerade ohne Kopierschutz freigibt: Live-Sender nie, Jugendschutz-Sperrzeiten und Geosperren gelten auch für das Speichern, nichts wird umgangen.
+- „Beste verfügbare“ lädt bis 1080p in H.264 (läuft auch auf älteren Macs und NAS-Playern); 4K (HEVC) nur, wenn 2160p gewählt wird.
+- Katalogabrufe aller Plattformen enden jetzt auch dann nach spätestens 150 Sekunden, wenn der Anbieter die Verbindung annimmt, aber nie antwortet (auf dem Mac hing so ein DMAX-Lauf). Ein DMAX-Lauf hört nach drei Verbindungsfehlern auf, gilt als teilweise geladen und versucht es nach zwei Stunden erneut. Beim ServusTV-Katalog macht eine einzelne Zeitüberschreitung den Lauf nicht mehr „teilweise“: die Seite wird einmal erneut versucht, sonst übersprungen und als Hinweis genannt.
+- filmfriend: pro Lauf werden jetzt bis zu 1200 statt 400 Titel im Detail gelesen (nur dort steht die FSK). Bis dahin zeigt die Titelseite „FSK noch unbekannt“; die Kinderecke nimmt filmfriend-Titel weiterhin nicht auf.
 
 ## Neu in 0.6.52: filmfriend, die Filme und Serien der öffentlichen Bibliotheken
 

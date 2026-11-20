@@ -10,13 +10,13 @@ Mehrere MediathekAtlas-Installationen teilen sich die Metadatenerkennung und tau
 
 Ohne Verbundordner oder bei nicht erreichbarem Ordner erkennt jede Installation wie bisher alle Titel allein.
 
-## Schnelleinrichtung über einen Cloud-Ordner (seit 0.6.53)
+## Schnelleinrichtung über einen Cloud-Ordner (seit 0.6.56)
 
 Für mehrere Macs (oder PCs) ohne NAS: **Einstellungen → Verbund & andere Systeme → „Über iCloud Drive verbinden“** auf jedem Gerät einmal wählen. Gefunden werden iCloud Drive, Dropbox, OneDrive, Google Drive und Synology Drive. Angelegt wird nur der Unterordner `MediathekAtlas-Verbund`; danach gilt alles wie beim Verbundordner. Kein offener Port, kein NAS nötig; ausgeschaltete Geräte holen beim nächsten Start nach.
 
 - Das offene Segment liegt im Datenordner (`verbund-staging/<hash>/`) und wird erst fertig in den Cloud-Ordner geschrieben.
 - Fehlt ein früheres Segment noch (Synchronisation läuft), wartet das Lesen dieses Knotens bis zu 6 Stunden darauf. Ausgelagerte iCloud-Dateien (`.events-NNNNNN.jsonl.icloud`) werden mit `brctl download` angefordert.
-- Ereignisse tragen nur die Entscheidung (`share_meta`, rund 500 Byte), keine Beschreibungen oder Besetzung. Segmente höchstens 2 MB; komprimiert als `events-NNNNNN.jsonl.gz`, sobald jedes System im Ordner `gzip` in `shares` meldet. Bisherige Ergebnisse werden in Runden zu höchstens 500 bis 300 MB eigenem Anteil je System geteilt (`mesh_journal_mb`; der Ordner wächst also mit der Zahl der Systeme). Die Komprimierung wird vor der ersten Runde entschieden.
+- Ereignisse tragen nur die Entscheidung (`share_meta`, rund 500 Byte), keine Beschreibungen oder Besetzung. Segmente höchstens 2 MB (komprimiert über einen Cloud-Ordner 8 MB unkomprimiert, rund 1 MB `.gz`, damit iCloud wenige größere statt Hunderter kleiner Dateien hat); komprimiert als `events-NNNNNN.jsonl.gz`, sobald jedes System im Ordner `gzip` in `shares` meldet. Bisherige Ergebnisse werden in Runden zu höchstens 500 bis 300 MB eigenem Anteil je System geteilt (`mesh_journal_mb`; der Ordner wächst also mit der Zahl der Systeme). Die Komprimierung wird vor der ersten Runde entschieden.
 - `node.json` enthält zusätzlich `host` (Hash aus Zufallswert und Rechnername) und `shares` (`["episodes"]`). Eine Datenbank, die auf einem anderen Rechner weiterläuft, bekommt eine eigene Knoten-ID.
 
 ## Direktverbindung ohne Sync-Ordner (seit 0.5.5)
@@ -66,7 +66,7 @@ Segmente werden nach 2 MiB oder 5 Minuten per Umbenennung veröffentlicht. Leser
 | `match.result` | `matched`, `identified`, `review` | automatisches Ergebnis; `review` enthält höchstens 10 Vorschläge |
 | `match.manual` | `manual` | vom Nutzer bestätigte Zuordnung |
 
-### Episodensuche (seit 0.6.53)
+### Episodensuche (seit 0.6.56)
 
 Eine bestätigte Episode wird als `match.result` mit `outcome` `matched` veröffentlicht (`work` = Werk-ID vor der Bestätigung und ursprüngliche Werk-IDs). „Keine Episode gefunden“:
 
@@ -99,7 +99,7 @@ Beim ersten Verbinden veröffentlicht jedes System einmalig seine schon vorhande
 - 256 Bereiche nach den ersten zwei Hex-Zeichen der Werk-ID. Zuteilung wie MeshSync `hubwork.owners()`: jeder aktive Knoten mindestens ein Bereich, Rest nach `rate`.
 - Nutzerpriorisierte Titel werden immer lokal geprüft. Ist die eigene Warteschlange leer, hilft ein Knoten vom Ende der übrigen Bereiche aus. Treffen sich zwei Knoten, wird höchstens der gerade laufende Titel doppelt geprüft.
 - Vorrang: `manual` > `matched` > `identified` > `review`; bei gleichem Rang mehr Anbieter, dann jüngere `hlc`, dann größere Knoten-ID. Alle Knoten kommen so zum selben Ergebnis.
-- Eine lokale manuelle Zuordnung wird nie ersetzt, auch nicht durch eine fremde manuelle (seit 0.6.53). Eine abweichende fremde manuelle Zuordnung wird als Abweichung gemerkt (`mesh_conflicts`) und in der Oberfläche zur Entscheidung angeboten. Ein `review` eines Knotens mit weniger Anbietern blockiert einen besser ausgestatteten Knoten nicht.
+- Eine lokale manuelle Zuordnung wird nie ersetzt, auch nicht durch eine fremde manuelle (seit 0.6.56). Eine abweichende fremde manuelle Zuordnung wird als Abweichung gemerkt (`mesh_conflicts`) und in der Oberfläche zur Entscheidung angeboten. Ein `review` eines Knotens mit weniger Anbietern blockiert einen besser ausgestatteten Knoten nicht.
 
 ## Grenzen dieser Version
 
