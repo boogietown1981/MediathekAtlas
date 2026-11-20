@@ -56,6 +56,10 @@ LIST_TIMEOUT = 180
 SHORTS_SECONDS = 61
 AVATAR_HOSTS = re.compile(r'^(?:[a-z0-9-]+\.)*(?:ytimg\.com|ggpht\.com|googleusercontent\.com)$')
 LIVE_STATES = ('queued', 'downloading', 'tagging', 'done')
+# 0.6.44 (Björn, 20.11.2026: „die Abos starten auch immer zur selben Zeit … bei mehreren aktuellen YouTube-Videos
+# für Versatz sorgen“): Abos, die zusammen angelegt wurden, blieben mit gleichem Intervall für immer im Gleichtakt
+# und wurden direkt nacheinander geprüft. Jetzt liegen zwischen zwei Abo-Prüfungen mindestens STAGGER Sekunden.
+STAGGER = 5 * 60
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS youtube_abos(
@@ -451,8 +455,13 @@ def build_job(root, download_dir, abo, video, now=None):
         'poster': video.get('poster') or _poster(video['video']), 'fanart': '', 'provider': youtube_downloads.NAME,
         'reference_id': None, 'state': 'manual',
         'reason': 'YouTube-Abo %s; Offline-Kopie auf eigene Verantwortung, zeitlich begrenzt.' % channel})
-    name = clean_path_part(('%s - ' % date if date else '') + title)[:150] or 'Video'
-    target = Path(download_dir) / FOLDER / (clean_path_part(channel)[:80] or 'YouTube') / ('%s [%s].mp4' % (name, video['video']))
+    # 0.6.44: names without emojis, hashtags and special characters (core.tidy_name). A channel folder that
+    # already exists under its old name stays in use, so one channel never ends up in two folders.
+    name = clean_path_part(('%s - ' % date if date else '') + core.tidy_name(title))[:150].rstrip(' .-') or 'Video'
+    folder = Path(download_dir) / FOLDER
+    old_channel = clean_path_part(channel)[:80] or 'YouTube'
+    channel_dir = old_channel if (folder / old_channel).is_dir() else (clean_path_part(core.tidy_name(channel))[:80].rstrip(' .-') or 'YouTube')
+    target = folder / channel_dir / ('%s [%s].mp4' % (name, video['video']))
     item_id = 'v.' + video['video']
     source = {'_id': 'youtube:' + item_id, '_resolver': 'youtube', '_youtube_id': item_id, '_youtube_home': str(root),
               '_video_id': video['video'], '_target': str(target), '_container': 'mp4', '_abo': int(abo['id']),
@@ -618,7 +627,7 @@ def check(root, abo_id, now=None, request=None, runner=None, c=None, download_di
             pending = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE abo_id=? AND state='wanted'", (abo_id,)).fetchone()[0]
             later = BACKLOG_RECHECK if pending and not note and not waiting else abo['interval_hours'] * 3600
             db.execute('UPDATE youtube_abos SET checked=?,next_check=?,last_new=?,last_error=? WHERE id=?',
-                       (now, now + later, added, note, abo_id))
+                       (now, _staggered(db, abo_id, now + later), added, note, abo_id))
         _notify('youtube_abo_checked', via=via, listed=len(videos), new=added, queued=queued, pending=pending)
         return {'ok': True, 'listed': len(videos), 'new': added, 'queued': queued, 'pending': pending, 'note': note}
     finally:
@@ -666,6 +675,16 @@ def _enqueue(root, db, abo, now, c=None, download_dir=None):
         return work(conn)
 
 
+def _staggered(db, abo_id, when):
+    """Nächster Prüfzeitpunkt, der von jedem anderen aktiven Abo mindestens STAGGER Sekunden entfernt liegt."""
+    others = sorted(r[0] for r in db.execute('SELECT next_check FROM youtube_abos WHERE enabled=1 AND id!=? AND next_check>0',
+                                             (abo_id,)))
+    for other in others:                      # aufsteigend: höchstens ein Durchgang nötig
+        if abs(other - when) < STAGGER:
+            when = other + STAGGER
+    return when
+
+
 def due(root, now=None):
     now = time.time() if now is None else float(now)
     db = _connect(root)
@@ -680,6 +699,18 @@ def run_due(root, now=None):
     global _PROGRESS
     results = []
     ids = due(root, now)
+    # 0.6.44: je Lauf nur ein Abo prüfen; die übrigen fälligen folgen im Abstand von STAGGER Sekunden, damit nicht
+    # mehrere Kanäle gleichzeitig gelesen werden und ihre neuen Videos nicht im selben Moment in die Warteschlange gehen.
+    if len(ids) > 1:
+        start = time.time() if now is None else float(now)
+        db = _connect(root)
+        try:
+            with db:
+                for number, later_id in enumerate(ids[1:], 1):
+                    db.execute('UPDATE youtube_abos SET next_check=? WHERE id=?', (start + number * STAGGER, later_id))
+        finally:
+            db.close()
+        ids = ids[:1]
     for number, abo_id in enumerate(ids, 1):
         _PROGRESS = 'Abo %d von %d' % (number, len(ids))
         try:

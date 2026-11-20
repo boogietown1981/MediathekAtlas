@@ -401,6 +401,14 @@ def part_series(title):
     if not m:return ''
     prefix=query_title(str(title)[:m.start()])
     return prefix if 3<=len(prefix)<=80 else ''
+# 0.6.44 (Diagnose 20.11.2026 abends): one event per provider answer filled 96 % of the 32 MB protocol, so a
+# diagnosis covered only three hours. Counts and hit rates per provider stay in status.json
+# (provider_statistics); the protocol keeps only slow answers, which are the ones worth a look.
+PROVIDER_SLOW_SECONDS=1.0
+def provider_complete(start,**fields):
+    seconds=round(time.monotonic()-start,2)
+    if seconds>=PROVIDER_SLOW_SECONDS:diagnostics.event('provider_complete',seconds=seconds,**fields)
+
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
     meta['title']=query_title(meta['title'])
@@ -433,7 +441,7 @@ def candidates(row,meta,settings):
                 video_causality.annotate(row,c)
                 c['plausibility_issues']=matching.issues(meta,c);out.append(c)
             checked({'provider':ref[0],'status':'checked','count':int(bool(c))})
-            diagnostics.event('provider_complete',provider=ref[0],title=row.get('title',''),candidates=int(bool(c)),seconds=round(time.monotonic()-start,2))
+            provider_complete(start,provider=ref[0],title=row.get('title',''),candidates=int(bool(c)))
         except broadcaster.Unavailable:
             if ref[0] not in deferred:deferred.append(ref[0])
             checked({'provider':ref[0],'status':'paused','count':0})
@@ -496,7 +504,7 @@ def candidates(row,meta,settings):
                 provider_success(provider)
                 if not hits:negative_cache.remember(provider,k,title,year,credential)
                 checked({'provider':provider,'status':'checked','count':len(hits)})
-                diagnostics.event('provider_complete',provider=provider,title=title,kind=k,candidates=len(hits),seconds=round(time.monotonic()-start,2))
+                provider_complete(start,provider=provider,title=title,kind=k,candidates=len(hits))
             except Exception as e:
                 if provider=='TVDB':
                     import tvdb
@@ -536,7 +544,7 @@ def candidates(row,meta,settings):
                 if not d:negative_cache.remember('Wikidata',k,title,year)
                 if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
-                diagnostics.event('provider_complete',provider='Wikidata',title=title,kind=k,candidates=int(bool(d)),seconds=round(time.monotonic()-start,2))
+                provider_complete(start,provider='Wikidata',title=title,kind=k,candidates=int(bool(d)))
             except Exception as e:
                 provider_failure('Wikidata',e)
                 checked({'provider':'Wikidata','status':'error','count':0})

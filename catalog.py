@@ -949,8 +949,13 @@ TRAILER=re.compile(r'(?i)^\s*(?:trailer|teaser|vorschau)\b')
 # 2. Februar 2025", "Studio 2 vom 16.11.2026", "Hier und heute | 12.08.2025", "Invitation au voyage -
 # 04/11/2026". A full calendar date in the title marks one edition of a recurring Sendung; a film or a
 # drama episode is not titled with its broadcast date.
-MONTHS='januar|februar|märz|april|mai|juni|juli|august|september|oktober|november|dezember'
-DATED=re.compile(r'(?i)(?<![\w/.])(?:[0-3]?\d[./][01]?\d[./](?:19|20)\d{2}|vom\s+[0-3]?\d\.\s*(?:'+MONTHS+r')\s+(?:19|20)\d{2})(?![\w/]|\.\d)')
+# 0.6.44 (Diagnose 20.11.2026 abends): Austrian month names ("erLesen – Sendung vom 26. Jänner 2025") and a
+# weekday after "vom" ("logo! vom Montag, 16. Februar 2026") were not read as a date.
+MONTHS='januar|jänner|februar|feber|märz|maerz|april|mai|juni|juli|august|september|oktober|november|dezember'
+WEEKDAY=r'(?:(?:montag|dienstag|mittwoch|donnerstag|freitag|samstag|sonntag),?\s+)?'
+DATED=re.compile(r'(?i)(?<![\w/.])(?:[0-3]?\d[./][01]?\d[./](?:19|20)\d{2}|vom\s+'+WEEKDAY+r'[0-3]?\d\.\s*(?:'+MONTHS+r')\s+(?:19|20)\d{2})(?![\w/]|\.\d)')
+# "hallo hessen – Teil 1 vom 15.04.2026": the part number belongs to the dated edition, it is no episode number.
+EDITION_PART=re.compile(r'(?i)\b(?:teil|part)\s*\d{1,2}\s+(?=vom\s)')
 
 def foreign_version(source):
     """True for an ARTE language version other than German (ARTE.FR, ARTE.ES, ARTE.IT, ARTE.PL, ARTE.EN)."""
@@ -1002,7 +1007,9 @@ def recurring_edition(meta,source,sendung=False):
     if not source or meta.get('kind')!='series' or meta.get('scan_requested') or meta.get('episode_verified'):return None
     if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
     title=cleaned(source.get('title'))
-    if not title or TRAILER.search(title) or EDITION_NUMBERING.search(title) or EP.search(title):return None
+    if not title or TRAILER.search(title):return None
+    if DATED.search(title):title=EDITION_PART.sub('',title)
+    if EDITION_NUMBERING.search(title) or EP.search(title):return None
     series=meta.get('title') or '';topic=source.get('topic') or ''
     recurring=sendung or format_series(series) or format_series(topic)
     if DATED.search(title):

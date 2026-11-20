@@ -38,6 +38,13 @@ _AUTOMATED_BUDGET={}
 class Unavailable(RuntimeError):
     """Mediathek temporarily unreachable; the work is retried later instead of being marked unknown."""
 
+class BudgetExhausted(Unavailable):
+    """0.6.44: the hourly allowance for unattended lookups is used up; the Mediathek itself is reachable.
+
+    Not an outage: with 120 lookups per hour and >100,000 queued works the allowance is used up in minutes,
+    so callers must not postpone every further work on it (diagnosis 20.11.2026: 15,000 retries in 70 min).
+    """
+
 def reference(row):
     """Return (provider, id) for an offer whose website is an ARD or ZDF Mediathek video page."""
     url=str(row.get('url_website') or '')
@@ -115,7 +122,7 @@ def lookup_limited(row):
         start,used=_AUTOMATED_BUDGET.get(provider,(now,0))
         if now-start>=3600:start,used=now,0
         if used>=AUTOMATED_HOURLY_LIMIT:
-            raise Unavailable(provider+': automatisches Stundenlimit erreicht')
+            raise BudgetExhausted(provider+': automatisches Stundenlimit erreicht')
         _AUTOMATED_BUDGET[provider]=(start,used+1)
     return lookup(row)
 

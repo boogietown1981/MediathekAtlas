@@ -647,9 +647,14 @@ def music_metadata(row, album=None):
 
 
 def music_target(download_dir, row, album=None):
+    import core
     from package_media import clean_path_part
-    folder = clean_path_part((album or {}).get('title') or row.get('category') or 'Einzelne Videos') or 'YouTube'
-    name = clean_path_part(row.get('title') or row.get('path') or 'Video') or 'Video'
+    # 0.6.44: tidy names (core.tidy_name); an existing playlist folder keeps its old name.
+    label = (album or {}).get('title') or row.get('category') or 'Einzelne Videos'
+    folder = clean_path_part(label) or 'YouTube'
+    if not (Path(download_dir) / MUSIC_FOLDER / folder).is_dir():
+        folder = clean_path_part(core.tidy_name(label)) or 'YouTube'
+    name = clean_path_part(core.tidy_name(row.get('title') or row.get('path') or 'Video')) or 'Video'
     if album and row.get('number') is not None:
         name = '%03d - %s' % (int(row['number']) + 1, name)
     return Path(download_dir) / MUSIC_FOLDER / folder / (name + '.mkv')

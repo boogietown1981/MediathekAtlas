@@ -2,8 +2,8 @@
    that manages the app lives here.
    - Aufgaben: every background task with its state; pause, continue, start now, priority.
    - Darstellung: what tiles and title pages show (web/display.js applies the choices).
-   - Platform tabs: catalogue first, the administration of the platform (catalogue run, stock and
-     work assignment, sources) collapsed below it. */
+   - Platform tabs: the administration of the platform (catalogue run, stock and work assignment,
+     sources) collapsed at the top, the catalogue below it (0.6.44; before: below the catalogue). */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -27,7 +27,6 @@
     // Panels (catalogue run, sources, manual links) move as live nodes: IDs and handlers stay.
     for (const child of [...section.children])
       if (child.classList.contains('panel') || (key === 'netzkino' && child.matches('p.muted'))) admin.append(child);
-    section.append(admin);
     // 0.5.60 (Björn, 12.11.2026): the daily refresh looked "not saved" because its switch sits in
     // the closed block. One line above the catalogue says whether it is on and when the
     // catalogue was loaded; "Verwalten" opens the block.
@@ -36,6 +35,10 @@
     open.onclick = () => { admin.open = true; admin.scrollIntoView({behavior: 'smooth', block: 'start'}); };
     brief.append(text, open);
     section.prepend(brief);
+    // 0.6.44 (Björn, 20.11.2026): „im Bereich Verwaltung für die jeweiligen Dienste bitte nach oben, nicht
+    // erst nach den geladenen Videos, TV etc.“ – the block follows the status line, before films, series,
+    // live channels and the offline list, so it no longer sits below 60 tiles and the paging.
+    brief.after(admin);
     const source = $(key === 'netzkino' ? 'netzkino-sync-summary' : key + '-summary'), auto = $(key + '-auto');
     const paint = () => {
       const state = (source?.textContent || '').trim();

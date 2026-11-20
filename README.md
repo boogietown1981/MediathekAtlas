@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.6.42
+# MediathekAtlas · 0.6.44
+
+## Neu in 0.6.44: Episodensuche ohne Leerlauf, saubere Dateinamen, Verwaltung oben
+
+- Ist das Stundenkontingent für den direkten Senderabruf aufgebraucht, entscheidet die Episodensuche mit dem IMDb-Archiv weiter, statt Werke immer wieder zurückzustellen.
+- Ausgaben mit „vom Montag, 16. Februar 2026“, „Jänner“ oder „Teil 1 vom 15.04.2026“ werden erkannt.
+- YouTube-Abos werden zeitlich versetzt geprüft (mindestens 5 Minuten Abstand).
+- Dateinamen von Downloads ohne Emojis, Hashtags und Sonderzeichen; Umlaute bleiben. Alte Dateien werden weiter gefunden.
+- Auf jeder Plattformseite steht „… verwalten“ jetzt oben.
+- Das Diagnoseprotokoll reicht wieder deutlich länger.
 
 ## Neu in 0.6.43: Werke ohne erkannte Art werden eingeordnet
 

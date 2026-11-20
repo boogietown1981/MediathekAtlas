@@ -1,5 +1,11 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.44 – Episodensuche, Ausgaben-Daten, Protokoll, Abo-Versatz, Dateinamen, Verwaltung oben (20. November 2026)
+- Automatisch: gesamte Python-Suite (1489, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund (neu: „… verwalten“ direkt unter der Statuszeile auf allen elf Plattformseiten), Player-Spuren in Ordnung. Neu `tests/test_v0644.py`: Kontingent erschöpft → IMDb entscheidet (7 Tage), Ausfall stellt weiter zurück (bestehender Test), drei Datumsformen mit Gegenbeispielen, Protokoll-Stichprobe, langsame Anbieterantwort, Abo-Abstand und ein Abo je Lauf, Dateinamen (Emojis, Hashtags, ｜ ⧸, NFC), alter Dateiname wird weiter gefunden, vorhandener Kanalordner bleibt.
+- Erkennungslücken mit den Stichproben-Titeln aus Björns Diagnose vom 20.11. 16:46 UTC nachgestellt (vorher None, jetzt Ausgabe).
+- Pakete gebaut (SPK, QPKG mit QDK v2.5.3, deb, Linux, Windows-ZIP/Setup, macOS-ZIP), SHA256 geprüft, Version und CFBundleVersion 6044 im Paket kontrolliert.
+- Nicht geprüft: Wirkung auf Björns Bestand (nächste Diagnose: `episode_sender_budget_session`, Protokolldauer), Dateinamen auf echtem exFAT/SMB, Safari, NAS, Windows.
+
 ## 0.6.43 – Werke ohne erkannte Art einordnen (20. November 2026)
 - Automatisch: gesamte Python-Suite (1468, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund. Neu `tests/test_v0643_unknown_kind.py`: Regeln je Art mit Gegenbeispielen (Filmwort ohne Spielfilmlänge, datierte Ausgabe, Sammelrubrik), Ausschlüsse (ungeprüft, Vorschläge, Anbieterfehler, Prüfauftrag, Benutzerentscheidung), Hintergrunddurchgang mit Diagnosezusammenfassung, Intervall, Wiederholbarkeit, Einzelsendung wandert zur Sendung.
 - Grundlage: Zählung „Art unbekannt“ je Sender aus status.json beider Diagnosen vom 20.11. (MacBook Air 0.6.40, MacBook Pro 0.6.42) und die Titelbeispiele aus `metadata_status`.
