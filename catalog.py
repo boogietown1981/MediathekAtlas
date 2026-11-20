@@ -1294,24 +1294,64 @@ def unknown_hard_reason(row,m):
 # set aside, not deleted: they stay in the work (unknown_before) and "Erneut prüfen" brings them back.
 # A suggestion that could be right (same title as a film of matching length, another series of exactly
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
-UNKNOWN_RULES_REV=2              # raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=3              # raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
+
+# 0.6.49 correction (Gegenprobe an einer Kopie von Björns Datenbank, 20.11.2026): "the Sendung itself" set aside
+# 5,561 works whose suggestion was the right series – NACHTCAFÉ (IMDb tt0862613), 1 gegen 100, Sag die Wahrheit
+# (TVDB with matching episode titles), Teletubbies, frontal. A series suggestion of the Sendung's name is evidence
+# for the work, not against it. Only an old namesake whose start lies decades before the broadcast (Top Secret
+# 1954, Made in Germany 1963, Arena 1975) or after it is no evidence. In doubt the work stays open.
+UNKNOWN_NAMESAKE_YEARS=50
+
+def broadcast_year(source):
+    try:return time.localtime(int(source.get('timestamp') or 0)).tm_year if int(source.get('timestamp') or 0)>0 else None
+    except (TypeError,ValueError,OverflowError,OSError):return None
 
 def suggestion_weak(s,source,sendung):
     """True if a film database suggestion is no evidence against filing the work under ``sendung``."""
     if not isinstance(s,dict):return True
     kind=s.get('kind');similarity=float(s.get('similarity') or 0)
     if kind=='series':
-        # The Sendung itself (possibly ambiguous between several entries) or a fuzzy series name.
-        if sendung and key(s.get('title'))==key(sendung):return True
-        return similarity<.985
+        # Episode evidence (TVDB/IMDb episode titles, season and episode) is never weak.
+        if s.get('episode_verified') or (s.get('season') is not None and s.get('episode') is not None):return False
+        import core
+        same=bool(sendung) and (key(s.get('title'))==key(sendung) or core.title_similarity(str(s.get('title') or ''),sendung)>=.85)
+        if same or similarity>=.985:
+            # The Sendung's own name: only a namesake far outside the broadcast period is no evidence.
+            year=s.get('year');aired=broadcast_year(source)
+            if isinstance(year,int) and aired and (year>aired+1 or aired-year>=UNKNOWN_NAMESAKE_YEARS):return True
+            return False
+        return True
     if kind=='movie':
         if s.get('runtime_mismatch') or s.get('year_mismatch'):return True
         duration=int(source.get('duration') or 0)
         return similarity<.985 and 0<duration<2400
     return similarity<.985
+
+def unknown_recheck_set_aside(c):
+    """Once after the 0.6.49 correction: works the first 0.6.49 sweep filed against a suggestion that is no
+    longer weak are open again, with their suggestions and their earlier state. Returns the number reopened."""
+    if get_state(c,'unknown_set_aside_fix_v0649b'):return 0
+    reopened=0
+    rows=c.execute("""SELECT * FROM works WHERE state='format' AND kind IN ('series','other')
+        AND json_extract(meta,'$.unknown_before.rev')=2 AND json_extract(meta,'$.unknown_before.suggestions') IS NOT NULL""").fetchall()
+    for row in rows:
+        m=json.loads(row['meta'] or '{}');before=m.get('unknown_before') or {}
+        source=best_source(c,row['id']) or {}
+        name=m.get('title') if row['kind']=='series' else ''
+        if all(suggestion_weak(x,source,name) for x in before.get('suggestions') or []):continue
+        restored=restore_unknown(m)
+        if not restored:continue
+        title,kind,meta=restored
+        c.execute("UPDATE works SET title=?,kind=?,show_key='',meta=?,state=?,next_try=0 WHERE id=?",
+                  (title,kind,json.dumps(meta),before.get('state') or ('retry' if before.get('metadata_warnings') else 'review'),row['id']))
+        c.execute('DELETE FROM episode_queue WHERE work_id=?',(row['id'],))
+        reopened+=1
+    set_state(c,'unknown_set_aside_fix_v0649b',{'reopened':reopened,'checked':len(rows),'at':time.time()})
+    return reopened
 
 def unknown_soft_check(row,m,source,grouping,name,topic_works):
     """None if suggestions/provider errors do not stand against ``grouping``, else the reason to wait."""
@@ -1371,7 +1411,7 @@ def best_source(c,wid):
 
 def unknown_before(row,m):
     """What the sweep replaces, so that "Erneut prüfen" can restore the open work (0.6.49)."""
-    before={'title':row['title'],'kind':row['kind'],'rev':UNKNOWN_RULES_REV}
+    before={'title':row['title'],'kind':row['kind'],'state':row['state'],'rev':UNKNOWN_RULES_REV}
     if m.get('suggestions'):before['suggestions']=list(m['suggestions'])[:10]
     if m.get('metadata_warnings'):before['metadata_warnings']=list(m['metadata_warnings'])[:5]
     return before

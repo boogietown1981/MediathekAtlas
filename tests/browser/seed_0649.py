@@ -40,7 +40,7 @@ with db() as c:
         m = json.loads(meta)
         attempts = 0 if m['title'] == 'Neu' else 2
         if m['title'].startswith('Auf und davon') and m['title'] < 'Auf und davon 3':
-            m['suggestions'] = [{'provider': 'IMDb Offline', 'kind': 'series', 'title': 'DOK', 'similarity': 1.0}]
+            m['suggestions'] = [{'provider': 'IMDb Offline', 'kind': 'series', 'title': 'DOK', 'similarity': 1.0, 'year': 1954}]
         elif m['title'].startswith('Auf und davon'):
             m['suggestions'] = [{'provider': 'IMDb Offline', 'kind': 'movie', 'title': m['title'], 'similarity': 1.0}]
         if m['title'].startswith('Kurzfilm'):

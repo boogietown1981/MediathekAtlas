@@ -1004,9 +1004,11 @@ class Service:
         started=time.monotonic()
         with self.db() as c:
             reopened=catalog.unknown_rubric_fix(c)
+            restored=catalog.unknown_recheck_set_aside(c)
             ids,singles=catalog.unknown_candidates(c)
         summary={'candidates':len(ids),'singles_rechecked':len(singles),'rev':catalog.UNKNOWN_RULES_REV}
         if reopened:summary['rubric_reopened']=reopened
+        if restored:summary['set_aside_restored']=restored
         changed=0
         if ids or singles:
             with self.db() as c:
@@ -1030,10 +1032,10 @@ class Service:
             remaining=sum(summary['unknown_by_state'].values())
             summary['unknown_left']=remaining
             catalog.set_state(c,'unknown_sweep',summary)
-        if changed or reopened:catalog.invalidate_listings()
+        if changed or reopened or restored:catalog.invalidate_listings()
         diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
                           classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
-                          set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,
+                          set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,set_aside_restored=restored,
                           remaining_channels=summary.get('remaining_channels',{}),
                           remaining_topics=summary.get('remaining_topics',[])[:20],
                           unknown_by_state=summary['unknown_by_state'],
