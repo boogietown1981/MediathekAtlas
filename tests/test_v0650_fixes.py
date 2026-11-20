@@ -1,10 +1,10 @@
-"""0.6.52: corrections after the check of 0.6.48 on Björn's Mac (20.11.2026, real network).
+"""0.6.50: corrections after the check of 0.6.48 on Björn's Mac (20.11.2026, real network).
 
 * ServusTV: the 15 pages refused in every run are lists for Austria only: 403 with body {"err":"geo blocked"}
   (the same ids under /stv/de/at/ answer 200). Such a page is final at once, without retries, not a partial run,
   shown as "nur in Österreich"; nothing is fetched from the Austrian scope.
 * Joyn: titles carried HTML entities ("Mensch, der Bulle is &#39;ne Frau").
-DMAX/TLC/HGTV over the website API: tests/test_v0648_dmax.py."""
+DMAX/TLC over the website API: tests/test_v0648_dmax.py."""
 import io
 import json
 import sys

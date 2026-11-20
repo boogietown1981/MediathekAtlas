@@ -1,6 +1,6 @@
-"""0.6.48/0.6.52: DMAX, TLC & HGTV – programmes with all episodes.
+"""0.6.48/0.6.50: DMAX & TLC (HGTV left out in 0.6.50) – programmes with all episodes.
 
-0.6.52: answers in the shape found on Björn's Mac on 20.11.2026 (public.aurora.enhanced.live/site/: page
+0.6.50: answers in the shape found on Björn's Mac on 20.11.2026 (public.aurora.enhanced.live/site/: page
 "sendungen" with ``blocks[0].items[]`` and programme pages with ``showHeaderBlock`` and ``seoSonicShowBlock``).
 Playback is not confirmed, so episodes open on the channel's website; the own-player path is still tested with
 ``PLAYBACK_CONFIRMED`` switched on. Titles and ids are made up."""
@@ -125,17 +125,16 @@ class DmaxTest(unittest.TestCase):
         self.assertTrue(result['ok'], result)
         self.assertEqual((result['series'], result['episodes']), (3, 5))
         st = dmax.state(self.root)
-        # HGTV: no environment name answers -> a note, not a partial or failed run
+        # HGTV is left out (environment name unknown): no request for it
         self.assertEqual(st['last_result'], 'complete')
-        self.assertEqual(st['per_channel'], {'dmax': 4, 'tlc': 1, 'hgtv': None})
-        self.assertEqual(st['unavailable'], ['HGTV'])
-        self.assertIn('HGTV: Katalog über die Website derzeit nicht abrufbar', st['note'])
-        self.assertIn('Folgen öffnen vorerst beim Sender', st['note'])
+        self.assertEqual(st['per_channel'], {'dmax': 4, 'tlc': 1})
+        self.assertEqual(st['unavailable'], [])
+        self.assertEqual(st['note'], 'Folgen öffnen vorerst beim Sender')
         self.assertEqual(st['protected'], 2)       # one paid episode, one with DRM
         hosts = {c[0] for c in self.fake.calls}
         self.assertEqual(hosts, {'public.aurora.enhanced.live'})      # no token, no loma-cms
         envs = [c[2]['filter[environment]'] for c in self.fake.calls if c[1] == '/site/page/sendungen/']
-        self.assertEqual(envs, ['dmaxde', 'tlcde', 'hgtvde', 'hgtv'])
+        self.assertEqual(envs, ['dmaxde', 'tlcde'])
         page = dmax.listing(self.root, view='series')
         titles = [r['title'] for r in page['items']]
         self.assertEqual(titles, ['Feuerwache 3 - Alarm in München', 'Ghost Adventures', 'Goldrausch in Australien'])
@@ -150,7 +149,7 @@ class DmaxTest(unittest.TestCase):
         # episodes in order; clip and expired episode left out; nothing plays in the own player yet
         eps = dmax.episodes(self.root, 's.dmaxde.101')['items']
         self.assertEqual([(e['season'], e['episode'], e['playable'], e['badge']) for e in eps],
-                         [(1, 1, 0, ''), (1, 2, 0, ''), (1, 3, 0, 'Nur mit discovery+')])
+                         [(1, 1, 0, 'Kostenlos'), (1, 2, 0, 'Kostenlos'), (1, 3, 0, 'Nur mit discovery+')])
         self.assertEqual(eps[0]['duration'], 2632)
         self.assertEqual(eps[0]['web_url'], 'https://dmax.de/sendungen/feuerwache-3-alarm-in-muenchen/season-1-episode-1')
         self.assertEqual(eps[0]['year'], 2025)

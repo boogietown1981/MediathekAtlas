@@ -95,7 +95,7 @@ SKIPPABLE = (403, 404, 410, 451)
 # edge). A page refused after all tries is remembered (address only) and skipped without a request for
 # REFUSED_RECHECK; after that it is tried once more, without the pauses. Pages that answer again are forgotten.
 REFUSED_RECHECK = 7 * 86400
-# 0.6.52 (Björn's Mac, 20.11.2026): those 15 pages are all /collections/v5.3/stv/de/de/<uuid> and answer 403 with
+# 0.6.50 (Björn's Mac, 20.11.2026): those 15 pages are all /collections/v5.3/stv/de/de/<uuid> and answer 403 with
 # the body {"err":"geo blocked"}; the same ids under /stv/de/at/ answer 200. They are lists for Austria only.
 # A 403 with that body is final at once: no retries, not counted as refused, not a partial run; the page is
 # remembered as "nur in Österreich" and asked again only after GEO_RECHECK (one try). Nothing is taken from the
@@ -340,7 +340,7 @@ def _page_key(url):
 
 
 class GeoBlocked(urllib.error.HTTPError):
-    """0.6.52: a page the platform offers only in Austria (403 with body "geo blocked")."""
+    """0.6.50: a page the platform offers only in Austria (403 with body "geo blocked")."""
 
 
 def _geo_blocked(exc):
@@ -386,7 +386,7 @@ class Crawl:
                               if isinstance(v, (int, float)) and v > 0}
         self.refused_pages = {}
         self.known_geo = dict(known_geo or {})
-        self.geo_pages = {}                   # 0.6.52: address -> time it was found geo blocked
+        self.geo_pages = {}                   # 0.6.50: address -> time it was found geo blocked
         raw = opener
 
         def patient(url, headers, *args, **kwargs):
@@ -432,7 +432,7 @@ class Crawl:
         """0.6.16: a single refused or vanished page is skipped; everything else is an error."""
         code = getattr(exc, 'code', None)
         if isinstance(exc, GeoBlocked):
-            return                            # 0.6.52: counted in geo_pages, not as refused
+            return                            # 0.6.50: counted in geo_pages, not as refused
         if isinstance(exc, urllib.error.HTTPError) and code in SKIPPABLE and not seed:
             self.unavailable[code] = self.unavailable.get(code, 0) + 1
             return

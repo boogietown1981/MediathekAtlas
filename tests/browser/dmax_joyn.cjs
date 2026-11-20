@@ -1,4 +1,4 @@
-/* 0.6.48: DMAX, TLC & HGTV tab and Joyn episode lists in a real browser.
+/* 0.6.48: DMAX & TLC tab and Joyn episode lists in a real browser.
 
    Seeds a data folder (tests/browser/seed_0648.py: made-up catalogue in the recorded shapes), starts
    MediathekAtlas without background work, opens the platform tab "DMAX & Co.", a programme with its

@@ -1,4 +1,4 @@
-"""Seeds a data folder with a DMAX/TLC/HGTV catalogue and a Joyn series with episodes (0.6.48 browser test).
+"""Seeds a data folder with a DMAX/TLC catalogue and a Joyn series with episodes (0.6.48 browser test).
 Usage: python3 tests/browser/seed_0648.py <data folder>"""
 import sys
 from pathlib import Path

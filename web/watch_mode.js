@@ -20,7 +20,7 @@
   const local = (kind, id) => '/api/kids-image?' + new URLSearchParams({[kind]: id, token: pageToken()});
   const clock = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? h + ' Std. ' + m + ' Min.' : m ? m + ' Min.' : ''; };
   const NAMES = {mediatheken: 'ARD, ZDF & Co.', netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV', rakuten: 'Rakuten TV',
-    youtube: 'YouTube', joyn: 'Joyn', toggo: 'TOGGO', crunchyroll: 'Crunchyroll', plex: 'Plex', servustv: 'ServusTV', redbulltv: 'Red Bull TV', dmax: 'DMAX, TLC & HGTV', rtlplus: 'RTL+', download: 'Offline'};
+    youtube: 'YouTube', joyn: 'Joyn', toggo: 'TOGGO', crunchyroll: 'Crunchyroll', plex: 'Plex', servustv: 'ServusTV', redbulltv: 'Red Bull TV', dmax: 'DMAX & TLC', rtlplus: 'RTL+', download: 'Offline'};
   const TABS = [['start', 'Startseite'], ['movies', 'Filme'], ['series', 'Serien'], ['live', 'Live-TV'], ['offline', 'Offline'], ['marked', 'Merkliste']];
   const PAGE = 48;
   const S = {tab: 'start', query: '', genre: '', home: null, watch: null, start: null, stations: null, grid: null, seq: 0, built: false, timer: 0};

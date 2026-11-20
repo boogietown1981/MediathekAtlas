@@ -107,7 +107,7 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         import redbulltv as red_bull_tv
         return red_bull_tv.play_source(root,redbulltv)
     if dmax:
-        # 0.6.48: DMAX, TLC & HGTV episode (plain HLS, checked by hls_guard, see dmax.py)
+        # 0.6.48: DMAX & TLC episode (plain HLS, checked by hls_guard, see dmax.py)
         if root is None:raise ValueError('DMAX-Katalog nicht verfügbar')
         import dmax as dmax_tv
         return dmax_tv.play_source(root,dmax)

@@ -1,4 +1,4 @@
-"""DMAX, TLC & HGTV: the free on-demand libraries of Warner Bros. Discovery Germany (0.6.48).
+"""DMAX & TLC: the free on-demand libraries of Warner Bros. Discovery Germany (0.6.48; HGTV left out in 0.6.50).
 
 Björn (20.11.2026): "welche dienste fehlen … hier kannst du auch alles angehen". dmax.de, tlc.de and
 de.hgtv.com show their programmes (documentaries, reality, home and garden) with adverts, without an
@@ -11,19 +11,21 @@ environment, so nothing here was checked live – the first catalogue run on Bj�
 
 * Token: ``GET https://eu1-prod.disco-api.com/token?realm=<realm>&deviceId=<hex>`` ->
   ``data.attributes.token`` (anonymous, kept in memory only). Realms ``dmaxde``, ``tlcde``, ``hgtv``.
-* 0.6.52 (checked on Björn's Mac, 20.11.2026): de-api.loma-cms.com no longer exists (NXDOMAIN, "Name nicht
+* 0.6.50 (checked on Björn's Mac, 20.11.2026): de-api.loma-cms.com no longer exists (NXDOMAIN, "Name nicht
   auflösbar"). The websites read ``https://public.aurora.enhanced.live/site/`` without login:
   - Programmes: ``GET /site/page/sendungen/?include=default&filter[environment]=dmaxde&v=2`` ->
     ``blocks[0].items[]`` with ``title``, ``slug``, ``attributes.showId``, ``metaMedia`` (DMAX 74, TLC 65 with
-    environment ``tlcde``; ``hgtv`` answered 500, the right name is unknown, so ``hgtvde`` is tried first).
+    environment ``tlcde``; ``hgtv`` answered 500 and the right name is unknown, so HGTV is left out).
   - Programme: ``GET /site/shows/<slug>/?include=default&filter[environment]=<env>&v=2`` -> ``showHeaderBlock``
     (``show.seasons``, pictures) and ``seoSonicShowBlock.items[]`` = episodes (``id``, ``alternateId``,
     ``videoType`` EPISODE, ``videoDuration`` ms, ``seasonNumber``, ``episodeNumber``, ``publishStart``/``End``,
     ``package.type`` free, ``meta.name``/``description``/``thumbnailUrl``/``embedUrl``). A programme without that
     block has no episodes online (19 of 20 checked had some).
-  - Playback is NOT confirmed: the token host answered 504/502 on the Mac and the website puts a consent
-    banner in front of its player. Until a recording shows how the free player gets its stream, every episode
-    opens on the channel's website (``PLAYBACK_CONFIRMED``); the code below for the own player stays, unused.
+  - Playback: the website player gets an anonymous token (``/token?realm=de``) and a stream address on
+    streaming.aurora.enhanced.live, but fetching the HLS manifest answered 401 (access control, probably the
+    advert/consent check) and the video did not start in the test browser. That access control is not
+    circumvented: every episode opens on the channel's website (``PLAYBACK_CONFIRMED = False``). The code
+    below for the own player (old disco-api) stays unused.
 * Episodes until 0.6.48 (disco-api, unconfirmed): ``GET …/content/videos/?filter[show.id]=<id>…``.
 * Playback: ``POST …/playback/v3/videoPlaybackInfo`` with ``deviceInfo.drmSupported=false`` ->
   ``data.attributes.streaming[]`` (HLS address). Some programmes are delivered only with FairPlay or
@@ -51,18 +53,17 @@ import portal_reference
 import provider_base
 
 KEY = 'dmax'
-NAME = 'DMAX, TLC & HGTV'
+NAME = 'DMAX & TLC'
 DISCO = 'https://eu1-prod.disco-api.com/'
 AURORA = 'https://public.aurora.enhanced.live/site/'
 API_HOSTS = frozenset({'eu1-prod.disco-api.com', 'public.aurora.enhanced.live'})
-# 0.6.52: the own player is used only once a recording confirms how the free player gets its stream.
+# 0.6.50: the own player is used only once a recording confirms how the free player gets its stream.
 PLAYBACK_CONFIRMED = False
 # key, channel name, realm, CMS environment, website
-# (key, channel, realm, website environments to try in order, website). 0.6.52: environments of the website API
-# (dmaxde and tlcde confirmed on Björn's Mac; for HGTV "hgtv" answered 500, "hgtvde" is a guess).
+# (key, channel, realm, website environments to try in order, website). 0.6.50: environments of the website API
+# confirmed on Björn's Mac. HGTV is left out: "hgtv" answered 500 and the right name is not known (no guessing).
 SITES = (('dmax', 'DMAX', 'dmaxde', ('dmaxde',), 'https://dmax.de'),
-         ('tlc', 'TLC', 'tlcde', ('tlcde',), 'https://tlc.de'),
-         ('hgtv', 'HGTV', 'hgtv', ('hgtvde', 'hgtv'), 'https://de.hgtv.com'))
+         ('tlc', 'TLC', 'tlcde', ('tlcde',), 'https://tlc.de'))
 REALMS = {s[2]: s for s in SITES}
 # Category the channel stands for, added after the episode's own genres (the shared categories.py rules map it):
 # DMAX documentary formats, TLC reality, HGTV home and garden. An assumption per channel, not a statement of
@@ -205,19 +206,19 @@ def _api_error(exc):
 def _error(exc, code=''):
     status = getattr(exc, 'code', None)
     if code == 'access.denied.geoblocked' or status == 451:
-        return 'DMAX, TLC und HGTV zeigen ihre Videos nur in Deutschland (Geosperre)'
+        return 'DMAX und TLC zeigen ihre Videos nur in Deutschland (Geosperre)'
     if status in (401, 403):
-        return 'DMAX/TLC/HGTV verweigert den Zugriff (HTTP %d)' % status
+        return 'DMAX/TLC verweigert den Zugriff (HTTP %d)' % status
     if status == 429:
-        return 'DMAX/TLC/HGTV bremst die Abrufe (HTTP 429), später erneut versuchen'
+        return 'DMAX/TLC bremst die Abrufe (HTTP 429), später erneut versuchen'
     if status:
-        return 'DMAX/TLC/HGTV antwortet mit HTTP %d' % status
+        return 'DMAX/TLC antwortet mit HTTP %d' % status
     if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
         import netcheck
-        return netcheck.with_cause('DMAX/TLC/HGTV ist nicht erreichbar', exc)
+        return netcheck.with_cause('DMAX/TLC ist nicht erreichbar', exc)
     if isinstance(exc, ValueError):
         return str(exc)[:200]
-    return 'Katalog von DMAX, TLC und HGTV konnte nicht geladen werden'
+    return 'Katalog von DMAX und TLC konnte nicht geladen werden'
 
 
 def token(realm, opener=None, now=None, fresh=False):
@@ -233,7 +234,7 @@ def token(realm, opener=None, now=None, fresh=False):
     answer = _json(opener or _open, DISCO + 'token?' + query, _headers(site, realm=realm))
     value = str((((answer.get('data') or {}).get('attributes') or {}).get('token')) or '')
     if not value or len(value) > 4096 or re.search(r'\s', value):
-        raise ValueError('DMAX/TLC/HGTV gibt kein Zugangstoken aus')
+        raise ValueError('DMAX/TLC gibt kein Zugangstoken aus')
     _TOKENS[realm] = (now + TOKEN_TTL, value)
     return value
 
@@ -308,7 +309,7 @@ def _offer_of_package(entry):
 
 
 def show_page(answer, site, show_id, slug, now):
-    """0.6.52: episodes of one programme from the website API (``seoSonicShowBlock.items``) and the programme's
+    """0.6.50: episodes of one programme from the website API (``seoSonicShowBlock.items``) and the programme's
     facts from ``showHeaderBlock``. Episodes outside their publishing window are left out."""
     key, channel, realm, _envs, base = site
     facts, rows = {}, []
@@ -384,7 +385,7 @@ class Crawl:
         self.rows, self.series = {}, {}
         self.requests, self.errors, self.truncated = 0, [], False
         self.per_channel = {}
-        self.unavailable = []             # channels whose catalogue the website API does not know (0.6.52)
+        self.unavailable = []             # channels whose catalogue the website API does not know (0.6.50)
 
     def _pause(self):
         self.requests += 1
@@ -526,7 +527,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None, sites=SITES):
         crawl.run(sites)
         rows = crawl.result()
         if not any(r['kind'] == 'episode' for r in rows):
-            raise ValueError(crawl.errors[0] if crawl.errors else 'DMAX, TLC und HGTV lieferten keine Videos')
+            raise ValueError(crawl.errors[0] if crawl.errors else 'DMAX und TLC lieferten keine Videos')
         partial = crawl.truncated or bool(crawl.errors)
         message = ('Katalog nur teilweise geladen: %s (%d Fehler)' % (crawl.errors[0], len(crawl.errors)) if crawl.errors
                    else 'Katalog nur teilweise geladen' if partial else '')
@@ -583,12 +584,12 @@ def _badge(row):
         return 'Nur mit discovery+'
     if row.get('drm') == 1:
         return 'Kopiergeschützt'
-    return ''
+    return 'Kostenlos' if row.get('kind') == 'episode' else ''    # 0.6.50: free episode (package "free")
 
 
 def _playable(row):
     if not PLAYBACK_CONFIRMED:
-        return 0                                   # 0.6.52: opens on the channel's website, see the module text
+        return 0                                   # 0.6.50: opens on the channel's website, see the module text
     return 0 if row['kind'] == 'series' or row.get('drm') == 1 or row.get('offer') == 'premium' else 1
 
 
@@ -801,7 +802,7 @@ def playback(realm, video_id, opener=None, now=None):
             if code == 'access.denied.missingpackage':
                 raise ValueError('Diese Folge gibt es nur mit discovery+; bitte beim Sender ansehen.') from None
             raise ValueError(_error(exc, code)) from None
-    raise ValueError('DMAX/TLC/HGTV gibt kein Zugangstoken aus')
+    raise ValueError('DMAX/TLC gibt kein Zugangstoken aus')
 
 
 def _player_title(row, parent):

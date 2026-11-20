@@ -205,7 +205,7 @@ def _text(value, limit):
 
 
 def _plain(value, limit):
-    """0.6.52 (Björn's Mac): episode titles of the series page carry HTML entities ("is &#39;ne Frau"),
+    """0.6.50 (Björn's Mac): episode titles of the series page carry HTML entities ("is &#39;ne Frau"),
     sometimes escaped twice; decoded at most twice."""
     text = str(value or '')
     for _ in range(2):
