@@ -1,5 +1,5 @@
 'use strict';
-const DEFAULTS = {autoplay: true, hdcp: true};
+const DEFAULTS = {autoplay: true, hdcp: true, fullscreen: true, fill: true};
 chrome.storage.sync.get(DEFAULTS, values => {
   for (const key of Object.keys(DEFAULTS)) {
     const box = document.getElementById(key);

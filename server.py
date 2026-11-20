@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment, youtube_abos
-import api_keys,page_scripts,watch_state,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -33,11 +33,12 @@ INSTANCE=None
 if __name__=='__main__':
     from instance import Instance
     INSTANCE=Instance(HOME)
-    if not INSTANCE.acquire():
-        existing=INSTANCE.existing()
-        if existing.get('url') and '--no-browser' not in __import__('sys').argv:webbrowser.open(existing['url'])
-        print('MediathekAtlas läuft bereits. Bestehende Instanz verwenden bzw. dort „App beenden“ wählen.',flush=True)
-        raise SystemExit(0)
+    # 0.6.46: gesunde Instanz im Browser öffnen; eine startende/endende abwarten; eine hängende beenden und übernehmen.
+    import instance as _instance
+    _claimed=_instance.claim(INSTANCE,opener=None if '--no-browser' in sys.argv else webbrowser.open,managed=bool(MANAGED),
+                             log=lambda text:print(text,flush=True))
+    if _claimed!='acquired':raise SystemExit(0 if _claimed=='reused' else 1)
+    INSTANCE.mark('starting',VERSION)
 try:
     # 0.6.20: schließt einen vorbereiteten Umzug ab und wartet bis zu 30 s auf ein externes Laufwerk.
     ROOT=storage_locations.data_root(HOME,wait=30 if __name__=='__main__' else 0)
@@ -1127,7 +1128,36 @@ def get_kids_js(self,path):
 
 @ROUTES.get('/api/kids')
 def get_kids(self,path):
-    with db() as c:return self.send(youtube_abos.kids(ROOT,c))
+    import watch_state
+    marks=watch_state.overview(ROOT).get('progress',{})
+    with db() as c:data=youtube_abos.kids(ROOT,c,watch=marks)
+    # 0.6.46: Kinderfilme und -serien aus dem Katalog (nur Kategorie „Kinder“, kids_catalog.py)
+    try:data['catalog']=kids_catalog.with_progress(_kids_shelf(),marks)
+    except Exception as e:data['catalog']={'movies':[],'series':[],'error':core.safe_error(e)}
+    return self.send(data)
+
+def _kids_shelf():
+    return kids_catalog.shelf(ROOT,db,modules=_UNIFIED_SOURCES,merge=ui_prefs.load(ROOT)['merge_duplicates'])
+
+@ROUTES.get('/api/kids-episodes')
+def get_kids_episodes(self,path):
+    import watch_state
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    try:
+        with db() as c:return self.send(kids_catalog.episodes(ROOT,c,_kids_shelf(),q.get('source',[''])[0][:20],q.get('series',[''])[0][:200],
+                                                             watch_state.overview(ROOT).get('progress',{})))
+    except ValueError as e:return self.send({'error':str(e)},404)
+
+@ROUTES.get('/api/kids-play')
+def get_kids_play(self,path):
+    # 0.6.46: the kids view plays only what its own list offers (films, checked episodes, abo videos).
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    ref={k:v[0] for k,v in q.items() if k in kids_catalog.REF_KEYS and v and v[0]}
+    if 'job' in ref and len(ref)==1:
+        with db() as c:ok=any(v['job']==ref['job'] for v in youtube_abos.kids(ROOT,c)['videos'])
+    else:ok=kids_catalog.allowed_ref(_kids_shelf(),ref)
+    if not ok:return self.send({'error':'Dieses Video gibt es in der Kinderecke nicht'},404)
+    return get_play(self,path)
 
 # 0.6.27: abonnierte Videos im Dashboard, je Kanal (web/abo_shelf.js)
 @ROUTES.get('/api/youtube-abo-videos')
@@ -1651,9 +1681,23 @@ def post_netzkino_auto(self,path,d):
 @ROUTES.post('/api/shutdown')
 def post_shutdown(self,path,d):
     if MANAGED:raise ValueError('Der Dienst wird vom NAS verwaltet. Bitte im Paket-Zentrum bzw. App Center stoppen.')
-    self.send({'ok':True});STOP.set()
+    self.send({'ok':True});_stopping();STOP.set()
     threading.Thread(target=self.server.shutdown,daemon=True).start()
     return
+
+_STOPPING=[False]
+def _stopping(seconds=None):
+    # 0.6.46: ab hier endet der Prozess sicher (instance.exit_guard), auch wenn ein Thread oder eine Verbindung hängt.
+    if _STOPPING[0] or INSTANCE is None:return
+    _STOPPING[0]=True
+    import instance as _instance
+    INSTANCE.mark('stopping')
+    _instance.exit_guard(lambda:LOST_EXIT[0] or 0,seconds or _instance.EXIT_GUARD,dump=str(HOME/'shutdown-hang.log'))
+
+@ROUTES.get('/api/instance',stage='open')
+def get_instance(self,path):
+    # 0.6.46: Lebenszeichen für einen zweiten Start (instance.claim); ohne Datenbank, ohne Anmeldung, keine Daten.
+    return self.send({'app':'MediathekAtlas','state':'stopping' if STOP.is_set() else 'running'})
 
 @ROUTES.post('/api/test-tvdb')
 def post_test_tvdb(self,path,d):
@@ -2425,7 +2469,7 @@ if __name__=='__main__':
         threading.Thread(target=ENCODER.loop,args=(STOP,),daemon=True,name='encoder').start()
     def storage_lost(text):
         # 0.6.25: Datenordner im Betrieb verschwunden (Björn, 19.11.2026) → sauber anhalten, Startskript zeigt Hinweis.
-        print(text,flush=True);LOST_EXIT[0]=storage_locations.UNAVAILABLE_EXIT;STOP.set()
+        print(text,flush=True);LOST_EXIT[0]=storage_locations.UNAVAILABLE_EXIT;_stopping();STOP.set()
         threading.Thread(target=server.shutdown,daemon=True).start()
     threading.Thread(target=storage_locations.watch_root,args=(HOME,ROOT,STOP,storage_lost),daemon=True,name='storage_watch').start()
     if os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
@@ -2453,7 +2497,22 @@ if __name__=='__main__':
     try:server.serve_forever()
     except KeyboardInterrupt:pass
     finally:
-        STOP.set();server.server_close();INSTANCE.close()
+        _stopping(60 if RESTART.is_set() else None)
+        STOP.set();server.server_close()
+        if not RESTART.is_set():
+            # 0.6.46: laufende Wiedergabe-Umwandlungen beenden, Sperre freigeben, dann endgültig hinaus. Die
+            # Aufräumrunde des Interpreters kann an Hintergrund-Threads hängen bleiben; dann blieb die Sperre
+            # belegt und der nächste Start meldete „läuft bereits“.
+            try:
+                for proc in list(streaming._RUNNING.values()):
+                    if proc.poll() is None:proc.kill()
+            except Exception:pass
+            _failed=sys.exc_info()[0] not in (None,KeyboardInterrupt,SystemExit)
+            if _failed:__import__('traceback').print_exc()
+            print('MediathekAtlas beendet.',flush=True)
+            INSTANCE.close()
+            __import__('instance').leave(LOST_EXIT[0] or (1 if _failed else 0))
+        INSTANCE.close()
         if RESTART.is_set():
             # 0.6.20: Neustart im selben Prozess (gleiche PID für NAS-Dienstskripte); schließt einen System-Umzug ab.
             os.environ['MEDIATHEKATLAS_RESTART_PORT']=str(server.server_port)

@@ -145,6 +145,7 @@
 ./mediathekatlas/ui_prefs.py
 ./mediathekatlas/live_tv.py
 ./mediathekatlas/watch_home.py
+./mediathekatlas/kids_catalog.py
 ./mediathekatlas/unified_index.py
 ./mediathekatlas/ytdl_bridge.py
 ./mediathekatlas/portal_snapshot.py

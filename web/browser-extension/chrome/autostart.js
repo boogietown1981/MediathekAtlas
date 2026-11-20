@@ -6,6 +6,10 @@
  *   - bestätigt sie einen Hinweis, der „HDCP“ erwähnt (Rakuten TV), mit „Weiter“/„OK“ o. ä.,
  *   - startet sie ein bereits geladenes, pausiertes Video; lehnt Chrome Autoplay mit Ton ab, startet es
  *     stumm und schaltet den Ton beim ersten Klick in die Seite ein.
+ *   - 0.6.46 (Björn, 20.11.2026: „Videos bei Anbietern gleich im Vollbild starten“): läuft das Video, stellt
+ *     sie das Chrome-Fenster auf Vollbild (background.js, chrome.windows) und lässt den Player das Fenster
+ *     füllen. Echtes Element-Vollbild erlaubt Chrome nur nach einer Eingabe des Nutzers: Der erste Klick
+ *     oder Tastendruck schaltet deshalb zusätzlich das Vollbild des Players ein. Esc beendet alles wieder.
  * Sie klickt nie auf Kaufen, Leihen, Abo, Anmelden, Cookie-Zustimmung oder Links zu anderen Seiten.
  * Kopierschutz wird nicht umgangen: das Video läuft im Player des Anbieters. Es werden keine Daten gesendet.
  */
@@ -35,7 +39,7 @@
     'continue', 'got it', 'accept', 'sd'];
   const STOP_WORDS = ['abbrech', 'cancel', 'schließ', 'close', 'mehr erfahren', 'hilfe', 'learn more'];
 
-  const settings = {autoplay: true, hdcp: true};
+  const settings = {autoplay: true, hdcp: true, fullscreen: true, fill: true};
   let ready = false, done = false, playClicks = 0, lastPlayClick = 0, triedVideo = new WeakSet(), clicked = new WeakSet(), timer = 0, observer = null;
   let overlayClicks = 0, lastOverlay = 0, lastVideoTry = 0;
   const begun = Date.now();
@@ -196,6 +200,92 @@
     return true;
   }
 
+  // ------------------------------------------------------------ 0.6.46: Vollbild
+  const FILL = 'mediathekatlas-fill', FILL_PATH = 'mediathekatlas-fill-path', FILL_ROOT = 'mediathekatlas-fill-root';
+  let fullOn = false, filled = null;
+  const tell = type => { try { chrome.runtime.sendMessage({type}, () => void chrome.runtime.lastError); } catch (e) { /* Erweiterung neu geladen */ } };
+  function fillStyle() {
+    if (document.getElementById(FILL + '-style')) return;
+    const st = document.createElement('style'); st.id = FILL + '-style';
+    st.textContent = 'html.' + FILL_ROOT + ',html.' + FILL_ROOT + ' body{overflow:hidden!important}' +
+      '.' + FILL_PATH + '{transform:none!important;filter:none!important;perspective:none!important;contain:none!important;' +
+      'backdrop-filter:none!important;will-change:auto!important;z-index:2147483646!important}' +
+      '.' + FILL + '{position:fixed!important;inset:0!important;left:0!important;top:0!important;width:100vw!important;height:100vh!important;' +
+      'max-width:none!important;max-height:none!important;min-width:0!important;min-height:0!important;margin:0!important;padding:0!important;' +
+      'border:0!important;border-radius:0!important;z-index:2147483646!important;background:#000!important}' +
+      'video.' + FILL + ',.' + FILL + ' video{width:100%!important;height:100%!important;max-height:none!important;object-fit:contain!important}';
+    (document.head || document.documentElement).append(st);
+  }
+  // Der Kasten des Players: der höchste Vorfahre, der noch etwa so groß ist wie das Video (mit seinen Bedienelementen).
+  function playerBox(v) {
+    const base = v.getBoundingClientRect(), area = Math.max(1, base.width * base.height);
+    let box = v;
+    for (let el = v.parentElement; el && el !== document.body && el !== document.documentElement; el = el.parentElement) {
+      const r = el.getBoundingClientRect();
+      if (r.width * r.height > area * 1.4 || r.width < base.width * 0.95) break;
+      box = el;
+    }
+    return box;
+  }
+  function fill(el) {
+    if (!settings.fill || filled || !el) return;
+    fillStyle(); filled = el;
+    el.classList.add(FILL);
+    for (let p = el.parentElement; p && p !== document.documentElement; p = p.parentElement) p.classList.add(FILL_PATH);
+    document.documentElement.classList.add(FILL_ROOT);
+    if (window !== window.top) { try { window.parent.postMessage({mediathekatlas: 'fill'}, '*'); } catch (e) { /* egal */ } }
+  }
+  function unfill() {
+    filled = null;
+    for (const cls of [FILL, FILL_PATH, FILL_ROOT]) for (const el of document.querySelectorAll('.' + cls)) el.classList.remove(cls);
+    for (const f of document.querySelectorAll('iframe')) { try { f.contentWindow.postMessage({mediathekatlas: 'unfill'}, '*'); } catch (e) { /* egal */ } }
+  }
+  function leaveFull(viaMessage) {
+    if (!fullOn && !filled) return;
+    fullOn = false; unfill(); tell('fullscreen-exit');
+    if (document.fullscreenElement) { try { document.exitFullscreen().catch(() => {}); } catch (e) { /* egal */ } }
+    if (!viaMessage && window !== window.top) { try { window.top.postMessage({mediathekatlas: 'unfill'}, '*'); } catch (e) { /* egal */ } }
+  }
+  // Echte Eingabe des Nutzers: erst jetzt erlaubt Chrome das Vollbild des Players selbst (ohne Leisten).
+  function onGesture(e) {
+    if (!fullOn || !e.isTrusted) return;
+    if (e.type === 'keydown') {
+      if (e.key === 'Escape') { if (!document.fullscreenElement) leaveFull(); return; }
+      if (e.metaKey || e.ctrlKey || e.altKey || e.key === 'Tab') return;
+    }
+    if (document.fullscreenElement || !filled || !filled.requestFullscreen) return;
+    try {
+      const p = filled.requestFullscreen({navigationUI: 'hide'});
+      if (p && p.catch) p.catch(() => {});
+      // Der Klick, der nur das Vollbild einschaltet, soll das Video nicht anhalten (Knöpfe des Players bleiben bedienbar).
+      if (e.type === 'pointerdown' && !e.target.closest('button, a, input, select, [role="button"], [role="slider"]')) {
+        const swallow = ev => { ev.stopImmediatePropagation(); ev.preventDefault(); };
+        for (const t of ['pointerup', 'mousedown', 'mouseup', 'click']) window.addEventListener(t, swallow, {capture: true, once: true});
+        setTimeout(() => { for (const t of ['pointerup', 'mousedown', 'mouseup', 'click']) window.removeEventListener(t, swallow, {capture: true}); }, 600);
+        e.stopImmediatePropagation();
+      }
+    } catch (err) { /* ohne Vollbild weiter */ }
+  }
+  function enterFull() {
+    if (!settings.fullscreen || fullOn) return;
+    const v = Array.from(document.querySelectorAll('video')).find(x => !x.paused && !x.ended && visible(x));
+    if (!v) return;
+    fullOn = true;
+    tell('fullscreen');
+    fill(playerBox(v));
+    window.addEventListener('pointerdown', onGesture, true);
+    window.addEventListener('keydown', onGesture, true);
+    toast('Vollbild. Ein Klick oder Tastendruck blendet auch die Chrome-Leisten aus, Esc beendet.', 6000);
+  }
+  // Player in einem eingebetteten Rahmen: die Seite darüber lässt den Rahmen das Fenster füllen.
+  window.addEventListener('message', e => {
+    const kind = e.data && e.data.mediathekatlas;
+    if (kind === 'fill' && settings.fill && settings.fullscreen) {
+      const frame = Array.from(document.querySelectorAll('iframe')).find(f => f.contentWindow === e.source);
+      if (frame) { fullOn = true; fill(frame); window.addEventListener('keydown', onGesture, true); }
+    } else if (kind === 'unfill') { if (fullOn || filled) leaveFull(true); }
+  });
+
   function finish(text) {
     if (done) return;
     done = true;
@@ -207,7 +297,7 @@
   function step() {
     if (done || !ready) return;
     if (Date.now() - since > WINDOW_MS) return finish('');
-    if (playing()) return finish('Video läuft.');
+    if (playing()) { finish(settings.fullscreen ? '' : 'Video läuft.'); enterFull(); return; }
     if (confirmHdcp()) return;
     if (clickPlay()) return;
     startVideo();
