@@ -84,7 +84,8 @@ class SourceChecks(unittest.TestCase):
         writes=re.findall(r"INSERT OR REPLACE INTO settings",self.server)
         self.assertEqual(len(writes),1)   # only inside store_settings
         body=self.server[self.server.index('def store_settings'):self.server.index('def _settings_payload')]
-        self.assertIn('invalidate_settings()',body)
+        # 0.6.53: write-through with a generation counter (a reader before the commit kept the old row).
+        self.assertIn("_SETTINGS_CACHE.update(payload=payload",body);self.assertIn("gen=_SETTINGS_CACHE['gen']+1",body)
         self.assertGreaterEqual(self.server.count('store_settings(c,s)'),4)
     def test_diagnostic_log_holds_a_night(self):
         self.assertGreaterEqual(diagnostics.LOG_BYTES*(diagnostics.LOG_BACKUPS+1),32*1024*1024)

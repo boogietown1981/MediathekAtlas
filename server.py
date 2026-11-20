@@ -105,18 +105,26 @@ _boot('Datenbank bereit')
 # (Björn 20.11.: Teil „settings“ von /api/state 2–12 s, je Aufruf eine neue Verbindung zur Datenbank
 # auf USB). Der gespeicherte Text bleibt kurz im Speicher; jede Änderung über store_settings
 # verwirft ihn sofort. Jeder Aufruf bekommt ein eigenes, frisch dekodiertes dict.
-_SETTINGS_CACHE={'payload':None,'at':0.0};_SETTINGS_LOCK=threading.Lock();SETTINGS_TTL=15.0
+_SETTINGS_CACHE={'payload':None,'at':0.0,'gen':0};_SETTINGS_LOCK=threading.Lock();SETTINGS_TTL=15.0
 def invalidate_settings():
-    with _SETTINGS_LOCK:_SETTINGS_CACHE['payload']=None;_SETTINGS_CACHE['at']=0.0
+    with _SETTINGS_LOCK:_SETTINGS_CACHE['payload']=None;_SETTINGS_CACHE['at']=0.0;_SETTINGS_CACHE['gen']+=1
 def store_settings(c,s):
-    c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
-    invalidate_settings()
+    payload=json.dumps(s)
+    c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(payload,))
+    # 0.6.53: write-through instead of only discarding. store_settings runs inside the caller's
+    # transaction; a reader between this call and the commit read the old row from the database and
+    # kept it for 15 s (CI: a removed Verbund connection was still listed). The generation counter
+    # stops a reader that started before the change from caching the old value afterwards.
+    with _SETTINGS_LOCK:_SETTINGS_CACHE.update(payload=payload,at=time.monotonic(),gen=_SETTINGS_CACHE['gen']+1)
 def _settings_payload():
     with _SETTINGS_LOCK:
         if _SETTINGS_CACHE['payload'] is not None and time.monotonic()-_SETTINGS_CACHE['at']<SETTINGS_TTL:return _SETTINGS_CACHE['payload']
+        gen=_SETTINGS_CACHE['gen']
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
     payload=r[0] if r else '{}'
-    with _SETTINGS_LOCK:_SETTINGS_CACHE['payload']=payload;_SETTINGS_CACHE['at']=time.monotonic()
+    with _SETTINGS_LOCK:
+        if _SETTINGS_CACHE['gen']!=gen:return _SETTINGS_CACHE['payload'] or payload
+        _SETTINGS_CACHE['payload']=payload;_SETTINGS_CACHE['at']=time.monotonic()
     return payload
 def settings():
     stored=json.loads(_settings_payload())
