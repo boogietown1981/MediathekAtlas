@@ -1294,7 +1294,7 @@ def unknown_hard_reason(row,m):
 # set aside, not deleted: they stay in the work (unknown_before) and "Erneut prüfen" brings them back.
 # A suggestion that could be right (same title as a film of matching length, another series of exactly
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
-UNKNOWN_RULES_REV=4              # raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=5              # raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1385,9 +1385,18 @@ def unknown_soft_check(row,m,source,grouping,name,topic_works):
     """None if suggestions/provider errors do not stand against ``grouping``, else the reason to wait."""
     suggestions=[x for x in (m.get('suggestions') or []) if x]
     if suggestions:
-        if grouping not in SENDUNG_GROUPINGS:return 'suggestions_no_sendung'
-        if topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
-        if not all(suggestion_weak(x,source,name,cleaned(source.get('title'))) for x in suggestions):return 'suggestions'
+        if grouping not in SENDUNG_GROUPINGS:
+            # Analyse der Datenbankkopie (20.11.2026, 13,004 open works): under a rubric the series lookup asks for
+            # the rubric name; Wikidata answers with the concept ("Reise", "Musik", "Wirtschaft", hr-Sinfonieorchester,
+            # 4,684 works) and TVDB/TMDB with fuzzy names ("Politik" → "POLITI", "Politika"). Series hits of that
+            # kind say nothing about the work itself; an Einzelsendung may be decided against them. A film
+            # suggestion still keeps it open (it may be the programme itself).
+            if grouping=='single' and all(isinstance(x,dict) and x.get('kind')=='series' and suggestion_weak(x,source,'',cleaned(source.get('title')))
+                                          for x in suggestions):
+                pass
+            else:return 'suggestions_no_sendung'
+        elif topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
+        elif not all(suggestion_weak(x,source,name,cleaned(source.get('title'))) for x in suggestions):return 'suggestions'
     if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
     return None
 

@@ -221,6 +221,23 @@ class SweepTests(unittest.TestCase):
         self.assertIsNone(self.service.unknown_sweep())                                          # then every 6 h again
 
 
+class SingleUnderRubricTests(unittest.TestCase):
+    """Analyse der Datenbankkopie: 4,684 works only with Wikidata concepts, ZDF "Politik" with fuzzy series names."""
+    def check(self, suggestions):
+        row = {'attempts': 2, 'state': 'review'}
+        return catalog.unknown_soft_check(row, {'suggestions': suggestions}, offer('Fernweh - In den Alpen 5v7', 'Reise', duration=2695), 'single', '', 1)
+
+    def test_series_hits_on_the_rubric_do_not_block_an_einzelsendung(self):
+        self.assertIsNone(self.check([{'provider': 'Wikidata', 'kind': 'series', 'title': 'Reise', 'reference_id': 'Q36875808',
+                                        'similarity': 1.0, 'confidence': 'possible'}]))
+        self.assertIsNone(self.check([{'provider': 'TVDB', 'kind': 'series', 'title': 'POLITI', 'year': 2023, 'similarity': .923},
+                                      {'provider': 'TMDB', 'kind': 'series', 'title': 'Politika', 'similarity': .933}]))
+
+    def test_a_film_or_an_exact_series_keeps_it_open(self):
+        self.assertEqual(self.check([movie('Fernweh - In den Alpen', similarity=.9)]), 'suggestions_no_sendung')
+        self.assertEqual(self.check([series('Mapping the World', year=2017)]), 'suggestions_no_sendung')
+
+
 class RubricFixTests(unittest.TestCase):
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
