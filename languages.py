@@ -39,7 +39,7 @@ CREATE TABLE IF NOT EXISTS title_languages(
   checked REAL NOT NULL, PRIMARY KEY(source, id, origin));
 '''
 SOURCES = ('mediathek', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll',
-           'plex', 'servustv', 'rtlplus', 'samsung', 'archive')
+           'plex', 'servustv', 'redbulltv', 'rtlplus', 'samsung', 'sender', 'archive')
 ORIGINS = ('stream', 'provider')
 MAX_ID = 200
 MAX_TRACKS = 16
@@ -96,7 +96,7 @@ _ALIASES = {
 _NONE = {'und', 'zxx', 'mis', 'mul', 'qaa', 'xx', 'none', 'unknown', 'unbekannt', 'n/a', ''}
 
 # Languages of German-language offers; shown as "vermutlich", never as checked.
-ASSUMED_GERMAN = {'mediathek', 'netzkino', 'joyn', 'toggo', 'rtlplus', 'servustv'}
+ASSUMED_GERMAN = {'mediathek', 'netzkino', 'joyn', 'toggo', 'rtlplus', 'servustv', 'sender'}
 # MediathekView channel names of the language versions of ARTE.
 CHANNEL_LANGUAGE = {'ARTE.FR': 'fr', 'ARTE.EN': 'en', 'ARTE.ES': 'es', 'ARTE.IT': 'it', 'ARTE.PL': 'pl',
                     'ARTE.DE': 'de'}
@@ -492,7 +492,8 @@ def counts(root):
 
 REF_SOURCE = {'offer': 'mediathek', 'netzkino': 'netzkino', 'pluto': 'pluto', 'justwatch': 'justwatch',
               'rakuten': 'rakuten', 'joyn': 'joyn', 'toggo': 'toggo', 'crunchyroll': 'crunchyroll',
-              'samsung': 'samsung', 'plex': 'plex', 'servustv': 'servustv', 'rtlplus': 'rtlplus', 'youtube': 'youtube'}
+              'samsung': 'samsung', 'plex': 'plex', 'servustv': 'servustv', 'rtlplus': 'rtlplus', 'youtube': 'youtube',
+              'redbulltv': 'redbulltv', 'sender': 'sender'}
 
 
 def ref_key(ref):

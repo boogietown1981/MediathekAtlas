@@ -228,7 +228,7 @@ class RtlPlusTest(unittest.TestCase):
     def test_wiring(self):
         here = Path(__file__).resolve().parent.parent
         server = (here / 'server.py').read_text(encoding='utf-8')
-        for needle in ("'rtlplus')", "rtlplus=q.get('rtlplus',[''])[0]", "'rtlplus':lambda:rtlplus.state(ROOT)",
+        for needle in ("'rtlplus',", "rtlplus=q.get('rtlplus',[''])[0]", "'rtlplus':lambda:rtlplus.state(ROOT)",
                        "'/rtlplus.js'", "'source':'rtlplus'"):
             self.assertIn(needle, server)
         self.assertIn("'rtlplus.py','rtlplus_enrichment.py'", (here / 'build_macos.py').read_text(encoding='utf-8'))

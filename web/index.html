@@ -115,6 +115,7 @@
   <button type="button" data-catalog-source="crunchyroll">Crunchyroll</button>
   <button type="button" data-catalog-source="plex">Plex</button>
   <button type="button" data-catalog-source="servustv">ServusTV</button>
+  <button type="button" data-catalog-source="redbulltv">Red Bull TV</button>
   <button type="button" data-catalog-source="rtlplus">RTL+</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
@@ -159,6 +160,7 @@
     <button class="platform-tab" type="button" data-platform="crunchyroll">Crunchyroll</button>
     <button class="platform-tab" type="button" data-platform="plex">Plex</button>
     <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
+    <button class="platform-tab" type="button" data-platform="redbulltv">Red Bull TV</button>
     <button class="platform-tab" type="button" data-platform="rtlplus">RTL+</button>
   </div>
 <section id="legacy" class="legacy-panel">
@@ -398,6 +400,35 @@
   <div class="netzkino-pages"><button type="button" id="servustv-prev">← Zurück</button>
     <span id="servustv-page-label" class="muted"></span>
     <button type="button" id="servustv-next">Weiter →</button></div>
+</section>
+<section id="redbulltv" class="pluto-panel redbulltv-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>Red Bull TV · Dokus, Serien, Filme und Live</h3>
+    <p class="muted">Die kostenlose Videothek von Red Bull TV (ohne Konto): Sport- und Abenteuerdokumentationen, Serien mit allen Folgen, Filme und die Live-Sender von Red Bull TV.
+       Red Bull TV läuft auf derselben Plattform wie Red Bull TV und liefert ohne Kopierschutz aus: Alles läuft im MediathekAtlas-Player. Manche Videos sind nur in bestimmten Ländern freigegeben; der Player nennt dann den Grund.
+       Offline-Speichern gibt es nicht, Red Bull TV bietet keine Downloads an.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="redbulltv-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="redbulltv-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="redbulltv-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="Red Bull TV-Ansicht">
+    <button type="button" id="redbulltv-view-movies" class="primary">Filme</button>
+    <button type="button" id="redbulltv-view-series">Sendungen</button>
+    <button type="button" id="redbulltv-view-live">Live-TV</button>
+    <button type="button" id="redbulltv-back" hidden>← Zur Serienübersicht</button>
+    <span id="redbulltv-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Red Bull TV-Videos suchen<input type="search" id="redbulltv-filter" placeholder="Titel oder Genre"></label>
+    <label>Sortierung<select id="redbulltv-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="redbulltv-categories" class="portal-categories" role="group" aria-label="Red Bull TV-Kategorien" hidden></div>
+  <p id="redbulltv-status" class="muted" role="status"></p>
+  <details id="redbulltv-offline" class="nk-offline redbulltv-offline" hidden><summary>Offline-Kopien von Red Bull TV <span id="redbulltv-offline-count" class="muted"></span></summary>
+    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+    <div id="redbulltv-offline-jobs"></div></details>
+  <div id="redbulltv-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="redbulltv-prev">← Zurück</button>
+    <span id="redbulltv-page-label" class="muted"></span>
+    <button type="button" id="redbulltv-next">Weiter →</button></div>
 </section>
 <section id="crunchyroll" class="pluto-panel crunchyroll-panel">
   <div class="panel netzkino-sync-panel">
@@ -643,7 +674,7 @@
 <section id="title-view" class="title-view" hidden aria-live="polite"></section>
 <section id="livetv" class="livetv" hidden aria-label="Live-TV nach Sendern">
   <div class="sectionhead"><div><h2>Live-TV nach Sendern</h2>
-    <p class="muted">Alle Live-Sender deiner Quellen an einem Ort: die offiziellen Livestreams von ARD, ZDF &amp; Co. aus der Filmliste und die Live-Sender von Pluto TV, Samsung TV Plus, Rakuten TV und Joyn (mit Werbung wie beim Anbieter; Joyn nur als Link). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Live-Sender lassen sich nicht offline speichern.</p></div>
+    <p class="muted">Alle Live-Sender deiner Quellen an einem Ort: die offiziellen Livestreams von ARD, ZDF &amp; Co. aus der Filmliste und die Live-Sender von Pluto TV, Samsung TV Plus, Plex, ServusTV, Red Bull TV, Rakuten TV und Joyn (mit Werbung wie beim Anbieter; Joyn nur als Link). WELT kommt direkt vom Sender, n-tv öffnet n-tv.de (kein frei abspielbarer Stream). Läuft ein Sender bei mehreren Anbietern, steht er einmal mit einem Knopf je Anbieter. Live-Sender lassen sich nicht offline speichern.</p></div>
     <button type="button" id="livetv-reload">↻ Aktualisieren</button></div>
   <div class="livetv-toolbar"><label>Sender suchen<input type="search" id="livetv-filter" placeholder="z. B. ZDF, arte, Krimi" autocomplete="off"></label></div>
   <div id="livetv-providers" class="portal-categories" role="group" aria-label="Anbieter"></div>
@@ -716,4 +747,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/youtube_abos.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/abo_shelf.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/storage_locations.js"></script><script src="/system.js"></script><script src="/watch_mode.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/redbulltv.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/youtube_abos.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/abo_shelf.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/storage_locations.js"></script><script src="/system.js"></script><script src="/watch_mode.js"></script></body></html>

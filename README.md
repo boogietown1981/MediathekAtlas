@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.46
+# MediathekAtlas · 0.6.47
+
+## Neu in 0.6.47: Red Bull TV, WELT und n-tv im Live-TV, Mac-App startet nach dem Beenden wieder
+
+- Red Bull TV ist eine neue Plattform: Sport- und Abenteuerdokus, Serien mit allen Folgen, Filme und die Red-Bull-TV-Sender, kostenlos und ohne Konto im eigenen Player (gleiche Technik wie ServusTV).
+- Im Live-TV gibt es die Gruppe „Nachrichten (privat)“: WELT läuft direkt mit dem offiziellen Stream des Senders, n-tv öffnet n-tv.de (dafür ist kein frei abspielbarer Stream bekannt). WELT von Samsung TV Plus steht im selben Eintrag.
+- Mac: Ein Doppelklick auf die App wirkt jetzt auch dann, wenn eine alte Instanz hängt; die App gilt nicht mehr dauerhaft als „läuft noch“.
 
 ## Neu in 0.6.46: Kinderfilme und -serien in der Kinderecke, Vollbild beim Anbieter, sicherer Neustart
 

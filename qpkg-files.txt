@@ -15,6 +15,9 @@
 ./mediathekatlas/local_library.py
 ./mediathekatlas/servustv_enrichment.py
 ./mediathekatlas/servustv.py
+./mediathekatlas/redbulltv.py
+./mediathekatlas/redbulltv_enrichment.py
+./mediathekatlas/sender_live.py
 ./mediathekatlas/artwork.py
 ./mediathekatlas/diagnostic_extensions.py
 ./mediathekatlas/youtube_downloads.py
@@ -51,6 +54,7 @@
 ./mediathekatlas/web/netzkino_downloads.js
 ./mediathekatlas/web/app.js
 ./mediathekatlas/web/servustv.js
+./mediathekatlas/web/redbulltv.js
 ./mediathekatlas/web/plex.js
 ./mediathekatlas/web/netzkino.js
 ./mediathekatlas/web/style.css
