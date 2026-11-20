@@ -1,3 +1,10 @@
+## 0.6.55 – Besetzung mit Fotos
+- Dauerauftrag Björn (Videoliste, Punkt „Besetzung mit Fotos“). Basis 0.6.54 (PR #94), ohne den Verbund-Teil von 0.6.53. Erweitert `cast_photos.py` (0.5.80) statt eines zweiten Wegs.
+- Regie in der Besetzungsreihe: `titleview.castPeople` setzt Regie (Film: `directors`, Serie: `show_credits.directors`, Plattform-Titelseiten: `directors`) vor die Darsteller, doppelte Namen werden zusammengeführt („Regie · Rolle“). Überschrift „Besetzung & Regie“. Fotos der Regie kommen aus den Crew-Angaben des Titels bei TMDB (bestehende Regel: keine Namenssuche).
+- Fotos lokal: neue Route `GET /api/cast-photo?p=<datei>&token=…` (Seitenschlüssel wie `/api/kids-image`). `cast_photos.photo` lädt ein Foto (w185) einmal von image.tmdb.org, prüft Bildformat und Größe (≤ 1 MB) und legt es in `people-photos/` ab; danach nur noch lokal (auch offline). Es werden nur Fotos geladen, die eine Abfrage zuvor ausgegeben hat (`people.sqlite`), kein freier Umweg zu TMDB. Fehlgeschlagene Fotos 30 min nicht erneut. Budget 48 MB, `prune` entfernt die am längsten nicht gezeigten bis 80 %. `lookup` liefert zusätzlich `files`. Diagnose: `cast_photos` (Anzahl, Größe, Budget).
+- Hinweise auf der Titelseite: ohne TMDB-Zugang „Fotos … sobald … TMDB-Zugang hinterlegt“ mit „Einstellungen öffnen“; TMDB nicht erreichbar → „Fotos folgen beim nächsten Öffnen“.
+- Tests: `tests/test_v0655_cast_photos.py` (7), Browsertest `tests/browser/cast_photos.cjs` mit `seed_0655.py`.
+
 ## 0.6.54 – Offline-Kopien für ServusTV und Red Bull TV
 - Basis 0.6.52 (PR #93, auf dem Mac geprüft), ohne den Verbund-Teil von 0.6.53; dieser folgt getrennt.
 - Übernommen aus 0.6.53: Einstellungs-Zwischenspeicher schreibt durch (CI test_meshpeer war auf der Basis 0.6.52 instabil).

@@ -19,6 +19,7 @@ from a title page.
 """
 from __future__ import annotations
 
+import os
 import re
 import sqlite3
 import threading
@@ -142,9 +143,17 @@ def lookup(root, key, people, context=None, tmdb=None):
     """Photos for the given people: {'photos': {name: url}, 'roles': {name: role}, 'configured': bool}."""
     people = _people(people)
     context = context if isinstance(context, dict) else {}
-    result = {'photos': {}, 'roles': {}, 'configured': bool(key), 'source': 'TMDB'}
+    result = {'photos': {}, 'roles': {}, 'files': {}, 'configured': bool(key), 'source': 'TMDB'}
     if not people or not key:
         return result
+    try:
+        return _lookup(root, key, people, context, tmdb, result)
+    finally:
+        # 0.6.55: the page loads photos through /api/cast-photo (stored locally), the remote URL stays for older pages.
+        result['files'] = {n: file_name(u) for n, u in result['photos'].items() if file_name(u)}
+
+
+def _lookup(root, key, people, context, tmdb, result):
     if tmdb is None:
         import core
 
@@ -201,3 +210,135 @@ def lookup(root, key, people, context=None, tmdb=None):
             return result
         finally:
             db.close()
+
+
+# --- 0.6.55: photos stored locally ------------------------------------------------------------
+# Björn's list item "Besetzung mit Fotos": the title page loads the pictures from MediathekAtlas
+# itself (/api/cast-photo), not from image.tmdb.org. The first view downloads one photo (w185,
+# ~10-20 KB), later views and offline use read the file from ``people-photos/`` in the data
+# folder. The folder has a size budget; the least recently shown photos go first.
+PHOTO_DIR = 'people-photos'
+BUDGET = 48 * 1024 * 1024      # ~3000 faces
+MAX_PHOTO = 1024 * 1024
+FILE = re.compile(r'^[A-Za-z0-9_-]{1,64}\.(?:jpg|jpeg|png|webp)$')
+FAIL_TTL = 30 * 60             # a photo TMDB did not deliver is not asked again for 30 min
+_FAILED = {}
+_FILE_LOCK = threading.Lock()
+
+
+def file_name(url):
+    """'abc.jpg' for a photo URL produced by _photo(), otherwise ''."""
+    url = str(url or '')
+    if not url.startswith(IMAGE + '/'):
+        return ''
+    name = url[len(IMAGE) + 1:]
+    return name if FILE.match(name) else ''
+
+
+def _image_type(data):
+    if data.startswith(b'\xff\xd8\xff'):
+        return 'image/jpeg'
+    if data.startswith(b'\x89PNG\r\n\x1a\n'):
+        return 'image/png'
+    if data[:4] == b'RIFF' and data[8:12] == b'WEBP':
+        return 'image/webp'
+    return ''
+
+
+def _known(root, name):
+    """Only photos that a lookup handed out are fetched (no free proxy for image.tmdb.org)."""
+    path = root / 'people.sqlite'
+    if not path.exists():
+        return False
+    db = sqlite3.connect(str(path), timeout=10)
+    try:
+        return bool(db.execute('SELECT 1 FROM photos WHERE url=? LIMIT 1', (IMAGE + '/' + name,)).fetchone())
+    finally:
+        db.close()
+
+
+def prune(folder, budget=None):
+    """Deletes the least recently shown photos until the folder is below 80 % of the budget."""
+    budget = BUDGET if budget is None else budget
+    try:
+        files = [(f.stat().st_mtime, f.stat().st_size, f) for f in folder.iterdir() if f.is_file()]
+    except OSError:
+        return 0
+    total = sum(size for _, size, _ in files)
+    if total <= budget:
+        return 0
+    removed = 0
+    for _, size, f in sorted(files, key=lambda x: x[0]):
+        if total <= budget * 0.8:
+            break
+        try:
+            f.unlink()
+            total -= size
+            removed += 1
+        except OSError:
+            pass
+    return removed
+
+
+def photo(root, name, fetch=None, budget=None):
+    """(bytes, content type) of one cast photo from the local store, downloaded once; None if unavailable."""
+    if not FILE.match(str(name or '')):
+        return None
+    folder = root / PHOTO_DIR
+    target = folder / name
+    try:
+        if target.is_file():
+            data = target.read_bytes()
+            kind = _image_type(data)
+            if kind:
+                try:
+                    os.utime(target)   # shown again: stays when the budget prunes
+                except OSError:
+                    pass
+                return data, kind
+    except OSError:
+        pass
+    now = time.time()
+    if now - _FAILED.get(name, 0) < FAIL_TTL or not _known(root, name):
+        return None
+    if fetch is None:
+        import core
+
+        def fetch(url):
+            with core.open_url(url, timeout=15) as r:
+                return r.read(MAX_PHOTO + 1)
+    try:
+        data = fetch(IMAGE + '/' + name)
+    except Exception:
+        _FAILED[name] = now
+        if len(_FAILED) > 2000:
+            _FAILED.clear()
+        return None
+    kind = _image_type(data or b'')
+    if not kind or len(data) > MAX_PHOTO:
+        _FAILED[name] = now
+        return None
+    with _FILE_LOCK:
+        try:
+            folder.mkdir(parents=True, exist_ok=True)
+            tmp = folder / ('.' + name + '.part')
+            tmp.write_bytes(data)
+            os.replace(tmp, target)
+            prune(folder, budget)
+        except OSError:
+            pass   # read-only or full disk: the photo is still shown this time
+    return data, kind
+
+
+def store_stats(root):
+    """Photo store for diagnostics and settings: {'files', 'bytes', 'budget'}."""
+    folder = root / PHOTO_DIR
+    count = size = 0
+    try:
+        for f in folder.iterdir():
+            if f.is_file() and not f.name.startswith('.'):
+                count += 1
+                size += f.stat().st_size
+    except OSError:
+        pass
+    return {'files': count, 'bytes': size, 'budget': BUDGET}

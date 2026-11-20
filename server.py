@@ -1360,7 +1360,7 @@ def get_diagnostics(self,path):
            'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'dmax':lambda:dmax.state(ROOT),'filmfriend':lambda:filmfriend.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
            'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),
            'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'archive_works':lambda:archive_recognition.summary(ROOT),
-           'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT)}
+           'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT),'cast_photos':lambda:__import__('cast_photos').store_stats(ROOT)}
     found=_bounded_parts(parts)
     overview=found.pop('overview')
     if not isinstance(overview,dict) or 'catalog' not in overview:overview={'catalog_error':overview}
@@ -2220,6 +2220,17 @@ def post_cast_photos(self,path,d):
     people=d.get('people',[]);context=d.get('context',{})
     if not isinstance(people,list) or not isinstance(context,dict):raise ValueError('Ungültige Besetzung')
     return self.send(cast_photos.lookup(ROOT,settings().get('tmdb',''),people[:cast_photos.MAX_PEOPLE],context))
+
+@ROUTES.get('/api/cast-photo',stage='signed')
+def get_cast_photo(self,path):
+    # 0.6.55: cast photos come from the local store (people-photos/, size budget), downloaded from TMDB once.
+    # <img> elements carry the page token in the query like /api/kids-image.
+    import cast_photos
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    if not secrets.compare_digest(q.get('token',[''])[0],TOKEN):return self.send({'error':'Sitzung abgelaufen'},403)
+    found=cast_photos.photo(ROOT,q.get('p',[''])[0])
+    if not found:return self.send({'error':'Kein Foto'},404)
+    return self.send(found[0],ctype=found[1])
 
 @ROUTES.post('/api/artwork-priority')
 def post_artwork_priority(self,path,d):
