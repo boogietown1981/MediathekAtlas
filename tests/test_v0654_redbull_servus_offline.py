@@ -393,3 +393,48 @@ class FilmfriendFskTests(unittest.TestCase):
     def test_more_details_per_run(self):
         self.assertEqual(filmfriend.MAX_DETAILS, 1200)
         self.assertIn("'FSK noch unbekannt (wird im Hintergrund nachgeladen)'", (ROOT / 'portal_title.py').read_text('utf-8'))
+
+
+class ServusSingleTimeoutTests(unittest.TestCase):
+    """Mac check of 0.6.50: one timeout in 2608 requests marked the whole ServusTV run as partial."""
+
+    def run_with(self, failing):
+        fake = FakeServus()
+
+        def flaky(url, headers, limit=None):
+            if any(f in url for f in failing):
+                raise TimeoutError('hängt')
+            return fake(url, headers, limit)
+        with tempfile.TemporaryDirectory() as tmp:
+            servustv._SOURCES.clear()
+            result = servustv.sync(tmp, opener=flaky, now=NOW)
+            return result, servustv.state(tmp)
+
+    def test_single_timeout_is_a_note_not_a_partial_run(self):
+        result, state = self.run_with(['27e85b45-1d42-43e7-9997-f97958db461a'])
+        self.assertTrue(result['ok'] and not result['partial'], result)
+        self.assertEqual(state['last_result'], 'complete')
+        self.assertIn('Zeitüberschreitung übersprungen', state['note'])
+
+    def test_many_timeouts_still_make_the_run_partial(self):
+        crawl = servustv.Crawl(FakeServus(), 0)
+        crawl.requests = 100
+        for _ in range(3):
+            crawl._failed(TimeoutError('hängt'))
+        self.assertFalse(crawl.net_failed_too_often())
+        crawl._failed(TimeoutError('hängt'))
+        self.assertTrue(crawl.net_failed_too_often())
+        crawl._failed(TimeoutError('hängt'), seed=True)          # a start page is still an error
+        self.assertEqual(len(crawl.errors), 1)
+
+    def test_timeout_gets_one_more_try(self):
+        calls = []
+
+        def once(url, headers, limit=None):
+            calls.append(url)
+            if len(calls) == 1:
+                raise TimeoutError('hängt')
+            return b'{}'
+        crawl = servustv.Crawl(once, 0, waits=(0, 0))
+        self.assertEqual(crawl.opener('https://tv-api.redbull.com/x', {}), b'{}')
+        self.assertEqual((len(calls), crawl.recovered), (2, 1))

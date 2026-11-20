@@ -424,12 +424,18 @@ class Crawl:
                             self.refused_pages[key] = self.now
                         raise
                     time.sleep(waits[attempt])
+                except Exception as exc:
+                    # 0.6.54: a timeout or reset connection gets one more try after the first pause
+                    if attempt or not waits or not provider_base.network_failure(exc):
+                        raise
+                    time.sleep(waits[0])
         self.opener = patient
         self.items, self.shows, self.show_names = {}, {}, {}
         self.pending_products, self.done_products = [], set()
         self.pending_collections, self.done_collections = [], set()
         self.requests, self.errors, self.truncated = 0, [], False
         self.unavailable = {}                 # HTTP status -> pages left out (0.6.16)
+        self.net_skipped = 0                  # 0.6.54: single pages lost to a timeout or a reset connection
         self.long_clips = self.events = 0
 
     def _failed(self, exc, seed=False):
@@ -442,7 +448,15 @@ class Crawl:
             return
         if isinstance(exc, urllib.error.HTTPError) and code == 404 and seed:
             return
+        # 0.6.54 (Mac check of 0.6.50: 1 timeout in 2608 requests marked the whole run partial): a single page lost
+        # to the network is skipped like a refused one; only above the REFUSED_SHARE threshold the run is partial.
+        if not seed and provider_base.network_failure(exc):
+            self.net_skipped += 1
+            return
         self.errors.append(_error(exc, self.t))
+
+    def net_failed_too_often(self):
+        return self.net_skipped > max(3, REFUSED_SHARE * max(self.requests, 1))
 
     def refused_too_often(self):
         refused = sum(n for code, n in self.unavailable.items() if code != 404)
@@ -719,12 +733,16 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
             rows += live_rows(t)
         refused = sum(n for code, n in crawl.unavailable.items() if code != 404)
         too_many = crawl.refused_too_often()
-        partial = crawl.truncated or bool(crawl.errors) or too_many
+        net_many = crawl.net_failed_too_often()
+        partial = crawl.truncated or bool(crawl.errors) or too_many or net_many
         if crawl.errors:
             message = 'Katalog nur teilweise geladen: %s (%d von %d Abrufen)' % (crawl.errors[0], len(crawl.errors), crawl.requests)
         elif too_many:
             message = ('Katalog nur teilweise geladen: %s verweigert den Zugriff (HTTP 403) (%d von %d Abrufen)'
                        % (t.name, refused, crawl.requests))
+        elif net_many:
+            message = ('Katalog nur teilweise geladen: Verbindung zu %s mehrfach abgebrochen oder zu langsam (%d von %d Abrufen)'
+                       % (t.name, crawl.net_skipped, crawl.requests))
         elif partial:
             message = 'Katalog nur teilweise geladen'
         else:
@@ -732,6 +750,10 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
         skipped = sum(crawl.unavailable.values())
         note = ('%d %s-Seite%s nicht freigegeben und übersprungen' % (skipped, t.name, '' if skipped == 1 else 'n')
                 if skipped and not partial else '')
+        if crawl.net_skipped and not partial:
+            net_note = '%d Abruf%s wegen Zeitüberschreitung übersprungen, nächster Lauf holt ihn nach' % (
+                crawl.net_skipped, '' if crawl.net_skipped == 1 else 'e')
+            note = note + ' · ' + net_note if note else net_note
         geo = len(crawl.geo_pages)
         if geo:
             geo_note = '%d Liste%s nur in Österreich verfügbar (Geosperre)' % (geo, '' if geo == 1 else 'n')
@@ -761,7 +783,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
         finally:
             db.close()
         _notify(t.key + '_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
-                recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated,
+                recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated, net_skipped=crawl.net_skipped,
                 known_skipped=crawl.known_skipped, remembered=len(crawl.refused_pages), geo_blocked=len(crawl.geo_pages),
                 # 0.6.45: the error texts (no addresses), so a partial run can be explained
                 error_texts=sorted(set(crawl.errors))[:3],
