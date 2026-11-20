@@ -1008,7 +1008,10 @@ class Service:
             ids,singles=catalog.unknown_candidates(c)
         summary={'candidates':len(ids),'singles_rechecked':len(singles),'rev':catalog.UNKNOWN_RULES_REV}
         if reopened:summary['rubric_reopened']=reopened
-        if restored:summary['set_aside_restored']=restored
+        if restored:
+            summary['set_aside_restored']=restored
+            with self.db() as c:fix=catalog.get_state(c,'unknown_set_aside_fix_v0649b',{}) or {}
+            summary['set_aside_kept']=fix.get('kept',0);summary['set_aside_kept_samples']=fix.get('kept_samples',[])
         changed=0
         if ids or singles:
             with self.db() as c:
@@ -1036,6 +1039,8 @@ class Service:
         diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
                           classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
                           set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,set_aside_restored=restored,
+                          set_aside_kept=summary.get('set_aside_kept',0),set_aside_kept_samples=summary.get('set_aside_kept_samples',[]),
+                          blocking_samples=summary.get('blocking_samples',[]),
                           remaining_channels=summary.get('remaining_channels',{}),
                           remaining_topics=summary.get('remaining_topics',[])[:20],
                           unknown_by_state=summary['unknown_by_state'],
