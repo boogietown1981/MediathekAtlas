@@ -102,7 +102,7 @@ class ServerTableTests(unittest.TestCase):
         self.assertEqual(opened, ['/api/instance', '/api/login-state', '/icon.svg', '/login.js', '/style.css', '/theme-light.css'])
         signed = sorted(p for m, p, s, _ in self.listing if s == 'signed')
         # 0.6.7: Kinderecke (Seite, Skript, Stil) und ihre Bilder (Token in der Adresse wie /api/stream)
-        self.assertEqual(signed, ['/', '/ansehen', '/api/download-file', '/api/kids-image', '/api/stream', '/hls.min.js', '/kids.css', '/kids.js', '/kinder', '/titleview.js'])
+        self.assertEqual(signed, ['/', '/ansehen', '/api/cast-photo', '/api/download-file', '/api/kids-image', '/api/stream', '/hls.min.js', '/kids.css', '/kids.js', '/kinder', '/titleview.js'])   # 0.6.55: /api/cast-photo prüft den Seitenschlüssel selbst
         self.assertTrue(all(s == 'api' or p.startswith('/api/v1/') for m, p, s, _ in self.listing if m == 'POST'))
         self.assertTrue(all((s == 'v1') == (p == '/api/v1' or p.startswith('/api/v1/')) for m, p, s, _ in self.listing))      # 0.6.2
         # the two addresses a <video> or <a download> calls check the token from the query themselves

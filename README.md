@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.54
+# MediathekAtlas · 0.6.55
+
+## Neu in 0.6.55: Besetzung mit Fotos
+
+- Titelseiten von Filmen und Serien (auch auf den Plattformen) zeigen „Besetzung & Regie“ in einer Reihe: zuerst die Regie, dann die Darsteller mit ihrer Rolle, jeweils mit Foto von TMDB.
+- Die Fotos werden beim ersten Anzeigen einmal geladen und im Datenordner (`people-photos/`) gespeichert; danach kommen sie von MediathekAtlas selbst, auch ohne Internet. Der Speicher ist auf 48 MB begrenzt (rund 3000 Gesichter), die am längsten nicht gezeigten Fotos werden zuerst entfernt.
+- Ohne Foto bleibt der Name mit Initialen stehen. Es wird nie nach einem bloßen Namen gesucht: ein Foto erscheint nur, wenn die Person sicher zum Titel gehört (Besetzung des Titels bei TMDB oder IMDb-Personenkennung).
+- Ohne TMDB-Zugang sagt die Titelseite, wo er einzutragen ist („Einstellungen öffnen“ → Metadatenanbieter & Schlüssel).
 
 ## Neu in 0.6.54: Offline-Kopien für ServusTV und Red Bull TV
 

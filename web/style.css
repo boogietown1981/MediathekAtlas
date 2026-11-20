@@ -1268,3 +1268,4 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .ext-alt summary{cursor:pointer;font-size:.92em}
 #direct-start-panel kbd{font:inherit;font-size:.9em;padding:0 .3em;border:1px solid var(--line,#c8ced8);border-radius:4px}
 #direct-start-path{word-break:break-all}
+.tv-cast-note{margin:6px 0 0;font-size:12px}.tv-cast-note .tv-more{margin-left:4px}

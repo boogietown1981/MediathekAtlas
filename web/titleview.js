@@ -29,17 +29,32 @@ function openTitle(item){if(item.series_parent||(item.metadata?.kind==='series'&
 
 // image: optional loader for portal artwork (Netzkino/Pluto/JustWatch hosts, 0.5.42).
 // 0.5.80 (Björn): cast photos from TMDB, loaded after the page is shown; initials stay where none is known.
+// 0.6.55: Regie joins the row, photos come from the local store (/api/cast-photo, works offline after the
+// first view, the browser never contacts TMDB), and the section says why faces are missing.
 function castContext(m){return m?{kind:m.kind,title:m.title,year:m.year,provider:m.provider,reference_id:m.reference_id,imdb_id:m.imdb_id}:null;}
-async function castPhotos(row,cast,context){
- if(!context||!cast?.length||!latestSettings?.tmdb_set)return;
- const seq=titleSequence;let d;
- try{d=await api('cast-photos',{people:cast.slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context});}catch{return;}
- if(seq!==titleSequence||!row.isConnected)return;
- for(const box of row.querySelectorAll('.tv-person')){const name=box.dataset.name,url=d.photos?.[name];
-  if(url&&safeArt(url)){const img=artImage(url,name,'tv-avatar tv-photo');if(img){img.onerror=()=>img.replaceWith(el('span',box.dataset.initials,'tv-avatar'));box.querySelector('.tv-avatar')?.replaceWith(img);}}
-  const role=d.roles?.[name];if(role&&!box.querySelector('small'))box.append(el('small',role));}
+function castToken(){return typeof token==='string'?token:document.querySelector('meta[name=atlas-token]')?.content||'';}
+function castPhotoUrl(file){return '/api/cast-photo?'+new URLSearchParams({p:file,token:castToken()});}
+function castPeople(cast,crew){
+ const out=[],seen=new Map(),fold=n=>String(n||'').toLocaleLowerCase('de').replace(/\s+/g,' ').trim();
+ for(const name of (crew||[]).slice(0,4)){const n=typeof name==='string'?name:name?.name;if(!n||seen.has(fold(n)))continue;const p={name:n,role:'Regie',imdb_id:name?.imdb_id||'',crew:true};seen.set(fold(n),p);out.push(p);}
+ for(const p of cast||[]){if(!p?.name)continue;const known=seen.get(fold(p.name));if(known){if(p.role&&known.crew)known.role='Regie · '+p.role;if(p.imdb_id&&!known.imdb_id)known.imdb_id=p.imdb_id;continue;}const q={name:p.name,role:p.role||'',imdb_id:p.imdb_id||''};seen.set(fold(p.name),q);out.push(q);}
+ return out.slice(0,24);
 }
-function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,image,castRef}){
+function castNote(sec,text,settingsLink){sec.querySelector('.tv-cast-note')?.remove();const note=el('p',text,'muted tv-cast-note');if(settingsLink){const b=el('button','Einstellungen öffnen','tv-more');b.onclick=()=>{closeTitleView();document.querySelector('[data-view="settings"]')?.click();};note.append(' ',b);}sec.append(note);}
+async function castPhotos(row,cast,context){
+ const sec=row.closest('.tv-section-cast');
+ if(!context||!cast?.length)return;
+ if(!latestSettings?.tmdb_set){if(sec)castNote(sec,'Fotos der Mitwirkenden erscheinen, sobald in den Einstellungen unter „Metadatenanbieter & Schlüssel“ ein TMDB-Zugang hinterlegt ist.',true);return;}
+ const seq=titleSequence;let d;
+ try{d=await api('cast-photos',{people:cast.slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context});}catch{if(sec&&row.isConnected)castNote(sec,'Fotos sind gerade nicht abrufbar. Es werden die Namen angezeigt.');return;}
+ if(seq!==titleSequence||!row.isConnected)return;
+ for(const box of row.querySelectorAll('.tv-person')){const name=box.dataset.name,file=d.files?.[name],url=d.photos?.[name];
+  const src=file?castPhotoUrl(file):(url&&safeArt(url)?url:'');
+  if(src){const img=el('img',undefined,'tv-avatar tv-photo');img.alt=name;img.loading='lazy';img.decoding='async';img.src=src;img.onerror=()=>img.replaceWith(el('span',box.dataset.initials,'tv-avatar'));box.querySelector('.tv-avatar')?.replaceWith(img);}
+  const role=d.roles?.[name];if(role&&!box.querySelector('small'))box.append(el('small',role));}
+ if(sec&&d.error&&!Object.keys(d.photos||{}).length)castNote(sec,'TMDB ist gerade nicht erreichbar. Fotos folgen beim nächsten Öffnen.');
+}
+function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,crew,image,castRef}){
  const art=image||artImage;
  const wrap=el('div',undefined,'tv-hero'),back=el('div',undefined,'tv-backdrop'),bg=art(meta.fanart||meta.poster,'');
  if(bg){if(!meta.fanart)back.classList.add('blurred');back.append(bg);}wrap.append(back);
@@ -57,7 +72,8 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,im
  const dl=el('dl',undefined,'tv-info');for(const [k,v] of info){if(v)dl.append(el('dt',k),el('dd',v));}if(dl.childElementCount)text.append(dl);
  body.append(cover,text);wrap.append(body);
  const out=[wrap];
- if(cast?.length){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of cast.slice(0,24)){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,cast,castRef===undefined?castContext(meta):castRef);}
+ const people=castPeople(cast,crew);
+ if(people.length){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2',people.some(p=>p.crew)?(people.some(p=>!p.crew)?'Besetzung & Regie':'Regie'):'Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of people){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,people,castRef===undefined?castContext(meta):castRef);}
  return out;
 }
 function ratingFact(m){const r=Number(m.rating);if(m.rating==null||m.rating===''||!Number.isFinite(r))return null;const s=el('span','★ '+r.toLocaleString('de-DE',{maximumFractionDigits:1}),'tv-rating');s.title=ratingSource(m)+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':'');return s;}
@@ -85,7 +101,7 @@ function renderShow(){
  const facts=[years,ratingFact(s),...extraRatings(s),nSeasons?nSeasons+(nSeasons===1?' Staffel':' Staffeln'):'',s.episode_count+(s.episode_count===1?' Folge':' Folgen')+' verfügbar',s.downloaded?s.downloaded+' heruntergeladen (Dateipfade ggf. prüfen)':'',(s.genres||[]).slice(0,3).join(' · '),AtlasLanguages.chip(s.languages)];
  const hint=s.state==='format'?'Sendung mit einzelnen Beiträgen. Sendungsbeiträge werden nicht mit Filmdatenbanken abgeglichen.':!latestSettings.tmdb_set&&!latestSettings.tvdb_set?'Noch keine Serienbeschreibung. Mit einem TMDB- oder TVDB-Zugang in den Einstellungen werden Beschreibung und Hintergrundbild ergänzt.':'Serienbeschreibung wird beim nächsten Abgleich ergänzt.';
  const info=[['Genres',(s.genres||[]).join(', ')],['Sender',s.channels.join(', ')],['Netzwerk',(s.networks||[]).join(', ')],['Studios',(s.studios||[]).join(', ')],...creditInfo(credits),...AtlasLanguages.rows(s.languages),matchInfo(s.state,s.provider,s.reference_id)];
- host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast,castRef:{...castContext(s),kind:'series'}}));
+ host.replaceChildren(...hero({meta:s,type:'Serie',facts,overview:s.show_description,overviewHint:hint,actions,info,cast:credits.cast,crew:credits.directors,castRef:{...castContext(s),kind:'series'}}));
  const sec=el('section',undefined,'tv-section');const head=el('div',undefined,'tv-sectionhead');head.append(el('h2','Staffeln & Folgen'));
  const tabs=el('div',undefined,'tv-tabs');tabs.setAttribute('role','tablist');
  const options=s.seasons.length>1?[{season:SEASON_ALL,episodes:eps.length},...s.seasons]:s.seasons;
@@ -145,7 +161,7 @@ function renderMovie(){
  const facts=[m.year?String(m.year):'',minutes(r.duration),ratingFact(m),...extraRatings(m),(m.genres||[]).slice(0,3).join(' · '),item.downloaded?(item.file_state==='missing'?'⚠ Lokale Datei verschoben':'✓ Heruntergeladen'):'',pickLabel(m,item.state)?pickLabel(m,item.state):'',AtlasLanguages.chip(item.languages)];
  const hint=item.state==='format'?'Beitrag einer Sendung.':(r.description?'':'Noch keine Beschreibung vorhanden.');
  const info=[['Genres',(m.genres||[]).join(', ')],...creditInfo(m),['Studios',(m.studios||[]).join(', ')],['Sender',r.channel],['Fassung',(selected.special||'Regulär')+(selected.available===false?' · nicht mehr gelistet':'')],...AtlasLanguages.rows(item.languages),matchInfo(item.state,m.provider,m.reference_id)];
- host.replaceChildren(...hero({meta:m,type:'Film',facts,overview:m.description||r.description||'',overviewHint:hint,actions,info,cast:m.cast}));
+ host.replaceChildren(...hero({meta:m,type:'Film',facts,overview:m.description||r.description||'',overviewHint:hint,actions,info,cast:m.cast,crew:m.directors}));
  const sec=el('section',undefined,'tv-section tv-section-versions');sec.append(el('h2','Fassungen & Dateien'));
  if(selected.available!==false){const quick=downloadVersions({...item,...selected,metadata:m});if(quick)sec.append(quick);}
  if(versions){const list=el('div',undefined,'tv-versionlist');for(const a of versions)list.append(versionRow(a,a.id===selected.id?null:x=>{titleState.selected=x;renderMovie();window.scrollTo(0,0);}));sec.append(list);}
