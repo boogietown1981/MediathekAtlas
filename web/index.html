@@ -117,6 +117,7 @@
   <button type="button" data-catalog-source="servustv">ServusTV</button>
   <button type="button" data-catalog-source="redbulltv">Red Bull TV</button>
   <button type="button" data-catalog-source="dmax">DMAX &amp; Co.</button>
+  <button type="button" data-catalog-source="filmfriend">filmfriend</button>
   <button type="button" data-catalog-source="rtlplus">RTL+</button>
 </div>
 <section id="atlas-source-content" aria-label="Gemeinsamer Film- und Serienkatalog">
@@ -163,6 +164,7 @@
     <button class="platform-tab" type="button" data-platform="servustv">ServusTV</button>
     <button class="platform-tab" type="button" data-platform="redbulltv">Red Bull TV</button>
     <button class="platform-tab" type="button" data-platform="dmax">DMAX &amp; Co.</button>
+    <button class="platform-tab" type="button" data-platform="filmfriend">filmfriend</button>
     <button class="platform-tab" type="button" data-platform="rtlplus">RTL+</button>
   </div>
 <section id="legacy" class="legacy-panel">
@@ -406,8 +408,8 @@
 <section id="dmax" class="pluto-panel dmax-panel">
   <div class="panel netzkino-sync-panel">
     <h3>DMAX &amp; TLC · Sendungen mit allen Folgen</h3>
-    <p class="muted">Die kostenlosen Mediatheken der drei Sender (ohne Konto, mit Werbung): Dokus, Reportagen, Reality, Haus und Garten, jeweils mit allen frei abrufbaren Folgen. Der Sender steht als Kategorie an jeder Sendung.
-       Folgen ohne Kopierschutz laufen im MediathekAtlas-Player. Folgen, die es nur mit discovery+ oder nur kopiergeschützt gibt, sind gekennzeichnet und öffnen die Seite des Senders.
+    <p class="muted">Die kostenlosen Mediatheken von DMAX und TLC (ohne Konto, mit Werbung): Dokus, Reportagen und Reality, jeweils mit allen frei abrufbaren Folgen. Der Sender steht als Kategorie an jeder Sendung.
+       Die Folgen öffnen auf der Website des Senders (dessen Player lässt sich nicht einbinden); Folgen nur mit discovery+ sind gekennzeichnet.
        Offline-Speichern gibt es nicht, die Sender erlauben Downloads nur in ihren eigenen Apps.</p>
     <div class="netzkino-sync-actions"><button type="button" id="dmax-sync" class="primary">↻ Katalog jetzt laden</button>
       <label class="check"><input type="checkbox" id="dmax-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
@@ -429,6 +431,32 @@
   <div class="netzkino-pages"><button type="button" id="dmax-prev">← Zurück</button>
     <span id="dmax-page-label" class="muted"></span>
     <button type="button" id="dmax-next">Weiter →</button></div>
+</section>
+<section id="filmfriend" class="pluto-panel filmfriend-panel">
+  <div class="panel netzkino-sync-panel">
+    <h3>filmfriend · Filme der öffentlichen Bibliotheken</h3>
+    <p class="muted">Spielfilme, Dokumentationen und Kinderfilme, die viele öffentliche Bibliotheken ihren Mitgliedern kostenlos anbieten. Ansehen geht nur auf filmfriend.de nach Anmeldung mit dem Ausweis einer teilnehmenden Bibliothek: „Bei filmfriend ansehen“ öffnet den Film dort.
+       MediathekAtlas meldet sich nicht an und speichert keine Zugangsdaten. Offline-Speichern gibt es nicht.</p>
+    <div class="netzkino-sync-actions"><button type="button" id="filmfriend-sync" class="primary">↻ Katalog jetzt laden</button>
+      <label class="check"><input type="checkbox" id="filmfriend-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
+    <p id="filmfriend-summary" class="muted">Katalogstatus wird geladen …</p>
+  </div>
+  <div class="netzkino-media-tabs" role="group" aria-label="filmfriend-Ansicht">
+    <button type="button" id="filmfriend-view-movies" class="primary">Filme</button>
+    <button type="button" id="filmfriend-view-series" hidden>Serien</button>
+    <button type="button" id="filmfriend-back" hidden>← Zur Übersicht</button>
+    <span id="filmfriend-heading" role="status"></span>
+  </div>
+  <div class="netzkino-toolbar"><label>Filme suchen<input type="search" id="filmfriend-filter" placeholder="Titel, Originaltitel oder Genre"></label>
+    <label>Sortierung<select id="filmfriend-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
+  <div id="filmfriend-categories" class="portal-categories" role="group" aria-label="filmfriend-Kategorien" hidden></div>
+  <p id="filmfriend-status" class="muted" role="status"></p>
+  <details id="filmfriend-offline" class="nk-offline filmfriend-offline" hidden><summary>Offline-Kopien <span id="filmfriend-offline-count" class="muted"></span></summary>
+    <div id="filmfriend-offline-jobs"></div></details>
+  <div id="filmfriend-items" class="netzkino-grid" aria-live="polite"></div>
+  <div class="netzkino-pages"><button type="button" id="filmfriend-prev">← Zurück</button>
+    <span id="filmfriend-page-label" class="muted"></span>
+    <button type="button" id="filmfriend-next">Weiter →</button></div>
 </section>
 <section id="redbulltv" class="pluto-panel redbulltv-panel">
   <div class="panel netzkino-sync-panel">
@@ -776,4 +804,4 @@
         </details><div id="atlas-nk-actions"></div>
     </div>
   </div>
-</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/redbulltv.js"></script><script src="/dmax.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/youtube_abos.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/abo_shelf.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/storage_locations.js"></script><script src="/system.js"></script><script src="/watch_mode.js"></script></body></html>
+</dialog><script src="/app.js"></script><script src="/direct_start.js"></script><script src="/titleview.js"></script><script src="/offline_button.js"></script><script src="/portal_title.js"></script><script src="/player.js"></script><script src="/portal_categories.js"></script><script src="/portal_panel.js"></script><script src="/pluto.js"></script><script src="/justwatch.js"></script><script src="/rakuten.js"></script><script src="/joyn.js"></script><script src="/toggo.js"></script><script src="/plex.js"></script><script src="/servustv.js"></script><script src="/redbulltv.js"></script><script src="/dmax.js"></script><script src="/filmfriend.js"></script><script src="/rtlplus.js"></script><script src="/crunchyroll.js"></script><script src="/youtube.js"></script><script src="/youtube_abos.js"></script><script src="/netzkino.js"></script><script src="/netzkino_detail.js"></script><script src="/netzkino_downloads.js"></script><script src="/display.js"></script><script src="/watchlist.js"></script><script src="/unified_catalog.js"></script><script src="/abo_shelf.js"></script><script src="/admin.js"></script><script src="/video_audit.js"></script><script src="/live_tv.js"></script><script src="/backups.js"></script><script src="/storage.js"></script><script src="/storage_locations.js"></script><script src="/system.js"></script><script src="/watch_mode.js"></script></body></html>
