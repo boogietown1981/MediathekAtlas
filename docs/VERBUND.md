@@ -109,3 +109,7 @@ Beim ersten Verbinden veröffentlicht jedes System einmalig seine schon vorhande
 - MeshSync-Ordner sind keine Zugriffskontrolle: Alle Geräte im selben Mesh erhalten den Ordner.
 - Wird ein Datenordner samt Datenbank auf ein zweites System kopiert, haben beide dieselbe Knoten-ID. Vor dem Kopieren den Verbund ausschalten oder auf dem Ziel die Datenbank neu anlegen.
 - Getestet mit simulierten Instanzen in getrennten Datenordnern und gemeinsamem Ordner, nicht mit echtem MeshSync auf zwei NAS.
+
+## Ausgelagerte iCloud-Dateien (seit 0.6.61)
+- macOS 13 und älter: Platzhalter `.<name>.icloud`, Nachladen per `brctl download`.
+- macOS 14 und neuer: Datei bleibt unter ihrem Namen, nur als „dataless“ markiert (`st_flags & SF_DATALESS`). Gelesen wird in einem Hilfsfaden mit Frist (20 s je Segment, 5 s für `node.json`); bis dahin „wartet auf …“, derselbe Ladevorgang läuft weiter und wird in der nächsten Runde abgeholt. Lesefehler halten die Leseposition.

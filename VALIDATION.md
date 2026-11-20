@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.61 – Verbund: Befunde der Mac-Prüfung (20. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0661_verbund_followup.py` (Feld `name` im Protokoll, auto_tick meldet und räumt auf, dataless-Erkennung, langsames Nachladen mit Frist ohne zweiten Ladevorgang, Lesefehler hält die Position, gesperrter Zwischenspeicher).
+- Nicht geprüft (nur auf dem Mac): echtes `SF_DATALESS` unter macOS 27, Dauer des Nachladens durch iCloud, Sicherung von 2,9 GB mit Protokolleintrag.
+
 ## 0.6.59 – Folgen als Kacheln mit Abspielknopf (20. November 2026)
 - Automatisch (Cloud, Chromium): gesamte Python-Suite 1668 Tests grün, `node tests/*.cjs` grün, `click_all.cjs`, `player_tracks.cjs`, `cast_photos.cjs`, `kids_corner.cjs` ohne Befund, neu `tests/browser/episode_tiles.cjs` (Raster 4 Spalten bei 1400 px, 1 Spalte bei 420 px ohne Querscrollen, Wege lokal/Player/Anbieter, Aufrufe `playMedia`/`playJob`/`playPluto`, Anbieterlink im neuen Tab, Gesehen/Fortschritt, Staffelwahl, Listenansicht, Offline-Kopie wechselt auf „Lokal“).
 - Nicht geprüft: echte Serien mit vielen Folgen auf Björns Datenbank, echte lokale Dateien, Autostart beim Anbieter mit der Erweiterung, Safari/Firefox. Mac-Prüfung steht aus.

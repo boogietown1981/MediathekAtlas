@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.59
+# MediathekAtlas · 0.6.61
+
+## Neu in 0.6.61: Verbund robuster mit iCloud
+
+- Ausgelagerte iCloud-Dateien (Finder → „Download entfernen“, macOS 14 und neuer) werden erkannt und mit Frist nachgeladen; solange zeigt der Verbund „wartet auf …“, statt hängen zu bleiben.
+- Die Meldung der automatischen Datenbanksicherung im Protokoll und unter Aufgaben funktioniert wieder (die Sicherungen selbst waren nicht betroffen).
+- Eine kurz gesperrte Datenbank verwirft kein Erkennungsergebnis mehr.
 
 ## Neu in 0.6.59: Folgen als Kacheln
 

@@ -934,8 +934,7 @@ class Service:
                 # Shared provider concurrency cap avoids overwhelming sender APIs.
                 with self.provider_slots:
                     result=core.candidates(entry['source'],m,{**config,'_force_provider_refresh':bool(priority)})
-                if not result['warnings'] and not result.get('deferred_providers'):
-                    with self.db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(ck,json.dumps(result),time.time()))
+                if not result['warnings'] and not result.get('deferred_providers'):self.cache_result(ck,result)
             chosen=catalog.auto_choice(m,result['candidates']);recognized=chosen or catalog.work_choice(m,result['candidates'])
             outcome='retry' if result['warnings'] or result.get('deferred_providers') else 'review'
             for write_attempt in range(4):
@@ -965,6 +964,17 @@ class Service:
                 self.sqlite_busy_count+=1
             self.metadata_state(phase='error',title=m['title'],error=core.safe_error(e),providers=providers)
         return True
+    def cache_result(self,ck,result):
+        """0.6.61: the provider cache is only a shortcut. When the database stays locked beyond the busy
+        timeout (backup, index build, Verbund import), the fetched result is still stored for the work instead
+        of being thrown away with a „metadata_failed“ and fetched again 30 s later (Mac check 20.11.2026)."""
+        try:
+            with self.db() as c:c.execute('INSERT OR REPLACE INTO metadata_cache VALUES(?,?,?)',(ck,json.dumps(result),time.time()))
+            return True
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1;diagnostics.event('metadata_cache_skipped',reason='busy')
+            return False
     def video_audit_loop(self):
         # Reads only local catalogue rows, in short persisted transactions.
         import video_backfill
