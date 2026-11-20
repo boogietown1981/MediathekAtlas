@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.45 – Anbieter-Player, Player-Diagnose, ServusTV 403, Abo-Speicherbudget (20. November 2026)
+- Automatisch: gesamte Python-Suite (1501, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund (neu: Reserve-Auswahl, Budgetfeld im Abo-Formular, Anbieter-Hinweis), Player-Spuren in Ordnung. Neu `tests/test_v0645.py`: verweigerte ServusTV-Seite gemerkt, übersprungen, nach 7 Tagen einmal ohne Pausen geprüft, wieder erreichbare Seite vergessen, Schub-403 weiter wiederholt; Joyn/RTL+/Crunchyroll nie abspielbar; Budget-Standard, Grenzen, Migration bestehender Tabelle; Budget voll → wartet, gesehenes Video macht Platz, ungesehenes bleibt; Reserve blockiert Einreihen und Start, „Jetzt versuchen“ nicht.
+- Grundlage ServusTV: `servustv_sync_completed` aus Björns Diagnosen vom 16.–20.11. (immer `refused: 15`, `recovered: 0`).
+- Nicht geprüft: echter Abruf bei ServusTV (tv-api.redbull.com aus der Cloud gesperrt), „Player nicht geladen“ in Björns Chrome (nicht nachstellbar; die nächste Diagnose zeigt `player_missing`, falls es wieder auftritt), echte Abo-Downloads mit Budget auf seinem Mac, Safari, NAS, Windows.
+
 ## 0.6.44 – Episodensuche, Ausgaben-Daten, Protokoll, Abo-Versatz, Dateinamen, Verwaltung oben (20. November 2026)
 - Automatisch: gesamte Python-Suite (1489, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund (neu: „… verwalten“ direkt unter der Statuszeile auf allen elf Plattformseiten), Player-Spuren in Ordnung. Neu `tests/test_v0644.py`: Kontingent erschöpft → IMDb entscheidet (7 Tage), Ausfall stellt weiter zurück (bestehender Test), drei Datumsformen mit Gegenbeispielen, Protokoll-Stichprobe, langsame Anbieterantwort, Abo-Abstand und ein Abo je Lauf, Dateinamen (Emojis, Hashtags, ｜ ⧸, NFC), alter Dateiname wird weiter gefunden, vorhandener Kanalordner bleibt.
 - Erkennungslücken mit den Stichproben-Titeln aus Björns Diagnose vom 20.11. 16:46 UTC nachgestellt (vorher None, jetzt Ausgabe).

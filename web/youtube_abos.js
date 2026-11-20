@@ -15,6 +15,7 @@
     const m = Math.round((Date.now() / 1000 - t) / 60);
     return 'geprüft ' + (m < 1 ? 'gerade eben' : m < 60 ? 'vor ' + m + ' Min.' : m < 1440 ? 'vor ' + Math.round(m / 60) + ' Std.' : 'am ' + new Date(t * 1000).toLocaleDateString('de-DE'));
   };
+  const gb = v => (Number(v) || 0).toLocaleString('de-DE', {maximumFractionDigits: 1});
   const PROFILES = {kinder: {icon: '★', label: 'Kinderecke', hint: 'erscheint nur in der Kinderecke'},
     erwachsene: {icon: '▶', label: 'Für mich', hint: 'erscheint nur im Ansehen-Modus'}};
   const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['retry', 'neuer Versuch geplant', 'wait'], ['wanted', 'warten', 'wait'],
@@ -34,6 +35,8 @@
     const include = input(values.include, {placeholder: 'z. B. Bluey, Folge'});
     const exclude = input(values.exclude, {placeholder: 'z. B. Trailer, Live'});
     const keep = input(values.keep ?? 30, {type: 'number', min: 1, max: 500});
+    // 0.6.45: Speicherbudget je Abo (GB, 0 = ohne Grenze)
+    const budget = input(values.budget_gb ?? (data.storage?.budget_default_gb ?? 10), {type: 'number', min: 0, max: 2000, step: 0.5});
     const quality = select([['480', '480p (spart Platz)'], ['720', '720p'], ['1080', '1080p']], values.quality || '720');
     const interval = select([[1, 'jede Stunde'], [3, 'alle 3 Stunden'], [6, 'alle 6 Stunden'], [12, 'alle 12 Stunden'], [24, 'einmal am Tag']], values.interval_hours || 3);
     const label = input(values.label, {placeholder: 'wie auf YouTube', maxLength: 80});
@@ -46,12 +49,13 @@
     const startField = field('Zum Start laden (neueste)', start);
     if (isNew) main.append(startField);
     main.append(field('Nur eine Reihe (Titelwörter)', include));
+    main.append(field('Speicher höchstens (GB, 0 = ohne Grenze)', budget));
     const more = make('details', undefined, 'abo-more'); more.append(make('summary', 'Weitere Einstellungen'));
     const grid = make('div', undefined, 'abo-form-grid');
     const sl = make('label', undefined, 'check'); sl.append(shorts, document.createTextNode(' Shorts auslassen'));
     grid.append(field('Ausschließen (Titelwörter)', exclude), field('Höchstens offline', keep), field('Qualität', quality),
       field('Prüfen', interval), field('Eigener Name', label), sl);
-    more.append(grid, make('p', 'Ist die Höchstzahl erreicht, macht das älteste schon gesehene Video Platz; ungesehene bleiben immer.', 'muted'));
+    more.append(grid, make('p', 'Ist die Höchstzahl oder der Speicher erreicht, macht das älteste schon gesehene Video Platz; ungesehene, gemerkte und angeheftete bleiben immer. Reicht das nicht, warten neue Videos.', 'muted'));
     const hint = make('p', PROFILES[profile.value].hint, 'muted abo-profile-hint');
     profile.onchange = () => { hint.textContent = PROFILES[profile.value].hint; };
     const sync = () => { startField.hidden = mode.value !== 'new'; }; mode.onchange = sync; sync();
@@ -63,7 +67,8 @@
     f.onsubmit = ev => {
       ev.preventDefault();
       const out = {profile: profile.value, mode: mode.value, include: include.value, exclude: exclude.value, keep: keep.value,
-        quality: quality.value, interval_hours: interval.value, label: label.value, min_seconds: shorts.checked ? 61 : 0};
+        quality: quality.value, interval_hours: interval.value, label: label.value, min_seconds: shorts.checked ? 61 : 0,
+        budget_gb: budget.value === '' ? 0 : Number(budget.value)};
       if (isNew) Object.assign(out, {url: url.value, start_count: start.value});
       onSubmit(out, save);
     };
@@ -102,15 +107,19 @@
     if (a.kind === 'playlist') head.append(make('span', 'Playlist', 'abo-badge'));
     body.append(head);
     const rules = [a.mode === 'all' ? 'alle Videos' : 'nur neue', a.include ? 'Reihe: ' + a.include : '', a.exclude ? 'ohne: ' + a.exclude : '',
-      a.quality + 'p', 'max. ' + a.keep, ago(a.checked) + (a.via ? ' (' + (a.via === 'api' ? 'API' : 'yt-dlp') + ')' : '')].filter(Boolean);
+      a.quality + 'p', 'max. ' + a.keep, a.budget_gb > 0 ? 'max. ' + gb(a.budget_gb) + ' GB' : 'ohne Speichergrenze', ago(a.checked) + (a.via ? ' (' + (a.via === 'api' ? 'API' : 'yt-dlp') + ')' : '')].filter(Boolean);
     body.append(make('p', rules.join(' · '), 'abo-rules'));
     const chips = make('div', undefined, 'abo-chips');
     const c = a.counts || {};
     for (const [key, text, tone] of CHIPS) if (c[key]) chips.append(make('span', c[key] + ' ' + text, 'abo-chip abo-' + tone));
     if (!chips.childNodes.length) chips.append(make('span', a.checked ? 'keine passenden Videos' : 'wird gleich gelesen', 'abo-chip abo-muted'));
+    // 0.6.45: belegter Speicher gegen das Budget
+    if (a.used_gb || a.planned_gb) chips.append(make('span', gb(a.used_gb) + (a.budget_gb > 0 ? ' von ' + gb(a.budget_gb) : '') + ' GB belegt' +
+      (a.planned_gb >= 0.05 ? ' (+ ca. ' + gb(a.planned_gb) + ' GB in Arbeit)' : ''), 'abo-chip ' + (a.budget_full ? 'abo-wait' : 'abo-muted')));
     if (a.last_new) chips.append(make('span', a.last_new + ' neu beim letzten Mal', 'abo-chip abo-ok'));
     body.append(chips);
     if (a.last_error) body.append(make('p', a.last_error, 'abo-error'));
+    if (a.budget_full) body.append(make('p', 'Speicherbudget erreicht: neue Videos warten, bis gesehene Platz machen. Mehr Platz unter ⚙ „Speicher höchstens“.', 'muted abo-budget-hint'));
     if (a.reasons?.length) {
       const why = make('details', undefined, 'abo-why'); why.append(make('summary', 'Warum ausgelassen oder verzögert?'));
       why.append(make('p', a.reasons.map(r => r.count + ' × ' + r.reason).join(' · '), 'muted')); body.append(why);
@@ -158,6 +167,9 @@
     // 0.6.13: YouTube hat Anfragen als Bot eingestuft; Abo-Downloads warten, statt die Sperre zu verlängern.
     if (d.pause?.until) problems.push('YouTube bremst gerade (' + d.pause.reason + '). Abo-Downloads pausieren bis ' +
       new Date(d.pause.until * 1000).toLocaleString('de-DE', {weekday: 'short', hour: '2-digit', minute: '2-digit'}) + ' Uhr und laufen danach von selbst weiter.');
+    // 0.6.45: Reserve an freiem Speicher unterschritten
+    if (d.storage?.low) problems.push('Am Abo-Speicherort sind nur noch ' + gb(d.storage.free_gb) + ' GB frei (Reserve ' + d.storage.reserve_gb +
+      ' GB): Abo-Downloads warten, bis wieder Platz ist. Gesehene Videos löschen oder die Reserve senken.');
     warn.hidden = !problems.length; warn.textContent = problems.join(' ');
     const total = (d.abos || []).length, done = (d.profiles || []).reduce((n, p) => n + p.done, 0);
     $('youtube-abos-state').textContent = total ? '· ' + total + (total === 1 ? ' Abo' : ' Abos') + ' · ' + done + ' Videos offline' + (d.running ? ' · prüft gerade' : '') : '';
@@ -168,7 +180,7 @@
   }
   // 0.6.14 (Björn: lieber nur wenige Videos pro Stunde, damit YouTube nicht sperrt)
   function pace(d) {
-    const host = $('youtube-abos-pace'); if (!host || document.activeElement?.id === 'youtube-abos-per-hour') return;
+    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve'].includes(document.activeElement?.id)) return;
     const pick = make('select'); pick.id = 'youtube-abos-per-hour'; pick.setAttribute('aria-label', 'Abo-Videos pro Stunde');
     for (const n of d.per_hour_choices || [d.per_hour || 4]) {
       const o = make('option', String(n)); o.value = n; o.selected = n === d.per_hour; pick.append(o);
@@ -179,6 +191,14 @@
       new Date(d.next_slot * 1000).toLocaleTimeString('de-DE', {hour: '2-digit', minute: '2-digit'}) + ' Uhr.' : '';
     host.replaceChildren('Höchstens ', pick, ' Abo-Videos pro Stunde laden (eines etwa alle ' + minutes + ' Min.), damit YouTube nicht sperrt.' + next +
       ' „Offline speichern“ von Hand startet sofort.');
+    // 0.6.45: gemeinsame Reserve an freiem Speicher für alle Abos
+    const st = d.storage; if (!st) return;
+    const res = make('select'); res.id = 'youtube-abos-reserve'; res.setAttribute('aria-label', 'Freien Speicher lassen (GB)');
+    for (const n of st.reserve_choices || [st.reserve_gb]) { const o = make('option', n + ' GB'); o.value = n; o.selected = n === st.reserve_gb; res.append(o); }
+    res.onchange = () => act({action: 'reserve', reserve_gb: Number(res.value)}, 'Gespeichert: Abos lassen mindestens ' + res.value + ' GB frei', res);
+    const line = make('span', undefined, 'abo-reserve'); line.append(' Abo-Downloads pausieren, wenn weniger als ', res,
+      ' frei sind' + (st.free_gb !== null && st.free_gb !== undefined ? ' (jetzt ' + gb(st.free_gb) + ' GB frei).' : '.'));
+    host.append(line);
   }
   async function act(payload, message, button) {
     if (button) button.disabled = true;

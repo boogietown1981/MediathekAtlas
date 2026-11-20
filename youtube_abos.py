@@ -14,6 +14,10 @@ Je Abo einstellbar:
 * ``keep``: höchstens so viele Videos dieses Abos liegen gleichzeitig offline. Kommt ein neues
   dazu, wird dafür das älteste **bereits gesehene** entfernt; ungesehene bleiben immer.
 * ``quality``: 480/720/1080 (Standard 720, spart Platz und Leitung), ``kids``: in der Kinderansicht.
+* ``budget_gb`` (0.6.45): höchstens so viel Speicher belegen die Videos dieses Abos (Standard 10 GB,
+  0 = ohne Grenze). Ist es erreicht, macht wie bei ``keep`` das älteste gesehene Video Platz; sonst warten
+  neue Videos. Dazu gilt für alle Abos eine **Reserve**: unterschreitet der freie Speicher am Abo-Ziel
+  ``abo_reserve_gb`` (Standard 5 GB), startet kein Abo-Download, bis wieder Platz ist.
 
 Rahmen, unverändert seit 0.5.53 (Björns Entscheidung 12.11.2026): Laden nur mit eingeschaltetem
 YouTube-Offline-Schalter (Zustimmung mit Zeitpunkt), keine Cookies, keine Anmeldung, nichts
@@ -61,6 +65,17 @@ LIVE_STATES = ('queued', 'downloading', 'tagging', 'done')
 # und wurden direkt nacheinander geprüft. Jetzt liegen zwischen zwei Abo-Prüfungen mindestens STAGGER Sekunden.
 STAGGER = 5 * 60
 
+# 0.6.45 (Björn, 20.11.2026: Speicherbudget für Abos, damit die Platte nicht vollläuft; sein Mac hatte zeitweise nur
+# ~2 GB frei): Budget je Abo und eine gemeinsame Reserve an freiem Speicher am Abo-Ziel.
+BUDGET_DEFAULT_GB = 10
+MAX_BUDGET_GB = 2000
+RESERVE_CHOICES = (1, 2, 5, 10, 20, 50)
+RESERVE_DEFAULT_GB = 5
+RESERVE_RECHECK = 30 * 60      # wartet ein Abo-Download auf Platz, prüft er alle 30 Minuten erneut
+# Geschätzte Größe eines noch nicht geladenen Videos (Byte je Sekunde, MP4 H.264/AAC bei YouTube üblich)
+RATE = {'480': 110_000, '720': 250_000, '1080': 500_000}
+GB = 1000 ** 3                 # Anzeige wie im Finder (Dezimal-GB)
+
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS youtube_abos(
   id INTEGER PRIMARY KEY AUTOINCREMENT, ref TEXT NOT NULL, profile TEXT NOT NULL DEFAULT 'kinder', kind TEXT NOT NULL DEFAULT 'channel',
@@ -71,7 +86,7 @@ CREATE TABLE IF NOT EXISTS youtube_abos(
   quality TEXT NOT NULL DEFAULT '720', kids INTEGER NOT NULL DEFAULT 1, interval_hours INTEGER NOT NULL DEFAULT 3,
   enabled INTEGER NOT NULL DEFAULT 1, added REAL NOT NULL, checked REAL NOT NULL DEFAULT 0,
   next_check REAL NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', last_new INTEGER NOT NULL DEFAULT 0,
-  via TEXT NOT NULL DEFAULT '', UNIQUE(ref, profile));
+  via TEXT NOT NULL DEFAULT '', budget_gb REAL NOT NULL DEFAULT 10, UNIQUE(ref, profile));
 CREATE TABLE IF NOT EXISTS youtube_abo_videos(
   abo_id INTEGER NOT NULL, video TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', published TEXT NOT NULL DEFAULT '',
   duration INTEGER, poster TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0,
@@ -111,7 +126,7 @@ PROFILES = {'kinder': 'Kinderecke', 'erwachsene': 'Für mich (Ansehen-Modus)'}
 
 _COLUMNS = ('id', 'ref', 'kind', 'label', 'title', 'channel_id', 'playlist', 'avatar', 'mode', 'start_count', 'keep',
             'include', 'exclude', 'min_seconds', 'max_seconds', 'quality', 'kids', 'interval_hours', 'enabled', 'added',
-            'checked', 'next_check', 'last_error', 'last_new', 'via')
+            'checked', 'next_check', 'last_error', 'last_new', 'via', 'budget_gb')
 
 
 def _migrate(db):
@@ -119,6 +134,11 @@ def _migrate(db):
     Jetzt Profil je Abo; kids=1 -> 'kinder', kids=0 -> 'erwachsene'. IDs bleiben (Videos hängen daran)."""
     columns = {r[1] for r in db.execute('PRAGMA table_info(youtube_abos)')}
     if 'profile' in columns:
+        if 'budget_gb' not in columns:
+            # 0.6.45: Speicherbudget je Abo. ADD COLUMN ändert nur das Schema (kein Tabellendurchlauf).
+            with db:
+                db.execute('ALTER TABLE youtube_abos ADD COLUMN budget_gb REAL NOT NULL DEFAULT %s' % BUDGET_DEFAULT_GB)
+            return True
         return False
     keep = [c for c in _COLUMNS if c in columns]
     with db:
@@ -190,6 +210,14 @@ def _clean(data, current=None):
                                     ('min_seconds', 0, 6 * 3600, SHORTS_SECONDS), ('max_seconds', 0, 12 * 3600, 0)):
         if key in data or not current:
             out[key] = _int(data.get(key, default), low, high, default)
+    if 'budget_gb' in data or not current:
+        try:
+            budget = float(str(data.get('budget_gb', BUDGET_DEFAULT_GB)).replace(',', '.'))
+        except ValueError:
+            raise ValueError('Speicherbudget: bitte eine Zahl in GB (0 = ohne Grenze)') from None
+        if budget != budget or budget < 0:
+            raise ValueError('Speicherbudget: bitte eine Zahl in GB (0 = ohne Grenze)')
+        out['budget_gb'] = round(min(budget, MAX_BUDGET_GB), 1)
     for key in ('include', 'exclude'):
         if key in data or not current:
             out[key] = ', '.join(_words(data.get(key)))[:300]
@@ -474,6 +502,105 @@ def build_job(root, download_dir, abo, video, now=None):
                                 % youtube_downloads.OFFLINE_DAYS}}
 
 
+# ---------------------------------------------------------------- Speicherbudget (0.6.45)
+
+def estimate(video, quality='720'):
+    """Geschätzte Größe eines noch nicht geladenen Videos in Byte (ohne Dauer: 10 Minuten)."""
+    try:
+        seconds = float(video.get('duration') or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    return int((seconds if seconds > 0 else 600) * RATE.get(str(quality), RATE['720']))
+
+
+def _file_size(payload):
+    try:
+        job = json.loads(payload)
+    except (TypeError, ValueError):
+        return 0
+    path = str(job.get('path') or job.get('target') or '')
+    try:
+        return os.path.getsize(path) if path else 0
+    except OSError:
+        return int(job.get('total') or job.get('received') or 0)
+
+
+def held(c, db, abo):
+    """(Byte fertiger Videos, geschätzte Byte wartender Aufträge) dieses Abos."""
+    rows = db.execute("SELECT video,state,job_id,duration FROM youtube_abo_videos WHERE abo_id=? AND state IN ('queued','done')",
+                      (abo['id'],)).fetchall()
+    states = _job_states(c, [r['job_id'] for r in rows if r['state'] == 'done']) if c is not None else {}
+    done = queued = 0
+    for r in rows:
+        if r['state'] == 'done':
+            done += _file_size(states.get(r['job_id'], (None, None))[1])
+        else:
+            queued += estimate({'duration': r['duration']}, abo.get('quality'))
+    return done, queued
+
+
+def budget_bytes(abo):
+    try:
+        value = float(abo.get('budget_gb') or 0)
+    except (TypeError, ValueError):
+        value = 0
+    return int(value * GB) if value > 0 else 0
+
+
+def reserve_gb(root):
+    db = youtube._connect(root)
+    try:
+        value = youtube._get(db, 'abo_reserve_gb', str(RESERVE_DEFAULT_GB))
+    finally:
+        db.close()
+    try:
+        value = int(float(value))
+    except ValueError:
+        return RESERVE_DEFAULT_GB
+    return value if value in RESERVE_CHOICES else RESERVE_DEFAULT_GB
+
+
+def set_reserve(root, value):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError('Bitte eine Reserve in GB wählen') from None
+    if value not in RESERVE_CHOICES:
+        raise ValueError('Erlaubt sind %s GB Reserve' % ', '.join(map(str, RESERVE_CHOICES)))
+    db = youtube._connect(root)
+    try:
+        with db:
+            youtube._set(db, 'abo_reserve_gb', value)
+    finally:
+        db.close()
+    return value
+
+
+def free_bytes(path):
+    """Freier Speicher am Ziel; ein noch nicht angelegter Ordner zählt über seinen nächsten vorhandenen Elternordner."""
+    if not path:
+        return None
+    p = Path(path)
+    for candidate in (p, *p.parents):
+        try:
+            if candidate.exists():
+                import shutil
+                return shutil.disk_usage(candidate).free
+        except OSError:
+            return None
+    return None
+
+
+def no_room(root, target_dir, extra=0):
+    """Hinweis, wenn nach ``extra`` Byte weniger als die Reserve frei bliebe, sonst ''."""
+    free = free_bytes(target_dir)
+    reserve = reserve_gb(root) * GB
+    if free is None or free - extra >= reserve:
+        return ''
+    return ('Weniger als %d GB frei am Abo-Speicherort (%.1f GB frei): Abo-Downloads warten, bis wieder Platz ist'
+            % (reserve // GB, free / GB))
+
+
 def _make_room(c, db, abo, now):
     """Platz für ein neues Video: das älteste schon gesehene Video dieses Abos entfernen."""
     import netzkino_downloads, watch_state
@@ -646,11 +773,28 @@ def _enqueue(root, db, abo, now, c=None, download_dir=None):
         wanted = [dict(r) for r in db.execute("SELECT * FROM youtube_abo_videos WHERE abo_id=? AND state='wanted'", (abo['id'],))]
         wanted.sort(key=lambda v: _order_key(v, abo['kind']), reverse=True)
         queued = waiting = 0
+        budget = budget_bytes(abo)
         for v in wanted[:MAX_QUEUE]:
-            held = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE abo_id=? AND state IN ('queued','done')",
-                              (abo['id'],)).fetchone()[0]
-            if held >= abo['keep'] and not _make_room(c, db, abo, now):
+            count = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE abo_id=? AND state IN ('queued','done')",
+                               (abo['id'],)).fetchone()[0]
+            if count >= abo['keep'] and not _make_room(c, db, abo, now):
                 waiting += 1
+                break
+            size = estimate(v, abo.get('quality'))
+            if budget:
+                # 0.6.45: Speicherbudget je Abo. Gesehene Videos machen Platz (wie bei ``keep``), gemerkte,
+                # angeheftete und ungesehene bleiben; reicht das nicht, wartet das Video. Ein einzelnes Video,
+                # das allein größer ist als das Budget, darf geladen werden, wenn sonst nichts liegt.
+                used = sum(held(c, db, abo))
+                while used and used + size > budget and _make_room(c, db, abo, now):
+                    used = sum(held(c, db, abo))
+                if used and used + size > budget:
+                    waiting += 1
+                    _notify('youtube_abo_budget_full', used_gb=round(used / GB, 1), budget_gb=abo.get('budget_gb'))
+                    break
+            if no_room(root, target_dir, size):
+                waiting += 1
+                _notify('youtube_abo_reserve_reached', reserve_gb=reserve_gb(root))
                 break
             try:
                 job = build_job(root, target_dir, abo, v, now)
@@ -810,6 +954,12 @@ def pace(root, job, now=None, force=False):
     if not job.get('youtube_abo'):
         return False
     now = time.time() if now is None else float(now)
+    # 0.6.45: auch schon eingereihte Abo-Aufträge starten nicht, solange die Reserve unterschritten wäre.
+    room = no_room(root, job.get('root') or str(Path(str(job.get('target') or '')).parent),
+                   estimate({'duration': (job.get('source') or {}).get('duration')}, job.get('quality')))
+    if room and not force:
+        job.update(not_before=now + RESERVE_RECHECK, note=room)
+        return True
     limit = per_hour(root)
     db = youtube._connect(root)
     try:
@@ -983,7 +1133,22 @@ def overview(root, c=None):
             reasons.setdefault(r[0], []).append({'reason': r[1], 'count': r[2]})
     finally:
         db.close()
+    usage = {}
+    if c is not None:
+        db = _connect(root)
+        try:
+            for a in abos:
+                usage[a['id']] = held(c, db, a)
+        finally:
+            db.close()
     for a in abos:
+        done_bytes, queued_bytes = usage.get(a['id'], (0, 0))
+        budget = budget_bytes(a)
+        a['used_gb'] = round(done_bytes / GB, 2)
+        a['planned_gb'] = round(queued_bytes / GB, 2)
+        # Budget (fast) erreicht und noch Videos, die warten
+        a['budget_full'] = bool(budget and done_bytes + queued_bytes >= budget * 0.95
+                                and (counts.get(a['id'], {}).get('wanted') or 0))
         a['counts'] = counts.get(a['id'], {})
         a['reasons'] = reasons.get(a['id'], [])[:5]
         a['name'] = a['label'] or a['title'] or a['ref']
@@ -995,7 +1160,18 @@ def overview(root, c=None):
     return {'abos': abos, 'profiles': profiles, 'offline': {'enabled': offline.get('enabled'), 'tool': bool(offline.get('tool'))},
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
             'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause(),
-            'per_hour': per_hour(root), 'per_hour_choices': list(PER_HOUR_CHOICES), 'next_slot': next_slot(root)}
+            'per_hour': per_hour(root), 'per_hour_choices': list(PER_HOUR_CHOICES), 'next_slot': next_slot(root),
+            'storage': _storage(root)}
+
+
+def _storage(root):
+    """0.6.45: Reserve und freier Speicher am Abo-Ziel für die Verwaltung."""
+    target = storage_locations.abo_base(_SETTINGS() or {})
+    free = free_bytes(target)
+    reserve = reserve_gb(root)
+    return {'reserve_gb': reserve, 'reserve_choices': list(RESERVE_CHOICES),
+            'free_gb': round(free / GB, 1) if free is not None else None,
+            'low': bool(free is not None and free < reserve * GB), 'budget_default_gb': BUDGET_DEFAULT_GB}
 
 
 def _pause(now=None):

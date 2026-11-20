@@ -11,7 +11,19 @@ const tries={},again=tag=>{let name;try{const u=new URL(tag.src,location.href);i
 window.addEventListener('error',e=>{if(e.message)keep(e.message,e.filename,e.lineno);else if(e.target&&e.target.tagName==='SCRIPT'&&!again(e.target)){const src=e.target.src,i=window.atlasScriptErrors.length;keep('Skript nicht ladbar',(e.target.dataset.name?e.target.dataset.name+'.js':src),'');
  // why: the server's answer, or the browser's refusal (an extension or security program blocks the address)
  fetch(src,{cache:'no-store'}).then(r=>r.ok?'Server liefert die Datei, der Browser führt sie nicht aus':'Server antwortet mit HTTP '+r.status,x=>'Anfrage vom Browser abgelehnt: '+(x&&x.message||x)+' – blockiert eine Erweiterung oder ein Schutzprogramm die Adresse?').then(why=>{if(window.atlasScriptErrors[i])window.atlasScriptErrors[i]+=' – '+why;report('Skript nicht ladbar: '+(e.target.dataset.name||src.split('/').pop())+' – '+why,'','');});}},true);
-window.atlasPlayerMissing=()=>'Der Player ist nicht geladen'+(window.atlasScriptErrors.length?' (Ursache: '+window.atlasScriptErrors[0]+')':'')+'. Bitte die Seite neu laden; bleibt es dabei, Diagnose senden.';
+// 0.6.45: the message itself goes to the diagnosis as well (once per page), with what the page knows at that moment:
+// which player functions exist, whether player.js is part of the page, the first script errors and the browser.
+// Until 0.6.44 only script errors were sent, so a report without one ("Player nicht geladen" in Chrome) left no trace.
+let missingSent=0;const PLAYER_FNS=['playMedia','playRef','playLive','playPluto','playJustWatch','playRakuten','playToggo','playPlex','playServusTV','playNetzkino','playYouTube','playJob'];
+window.atlasPlayerMissing=(wanted)=>{if(missingSent<3){missingSent+=1;const absent=PLAYER_FNS.filter(n=>typeof window[n]!=='function');
+ const inPage=!!document.querySelector('script[data-file="player.js"]'),dialog=!!document.getElementById('player-dialog')||!!document.getElementById('player-video');
+ report('player_missing: wanted='+String(wanted||'?')+' absent='+(absent.join(',')||'none')+' inline='+inPage+' player_dom='+dialog+' ready='+document.readyState+
+  ' errors='+(window.atlasScriptErrors.slice(0,3).join(' | ')||'none'),'player.js','');}
+ return 'Der Player ist nicht geladen'+(window.atlasScriptErrors.length?' (Ursache: '+window.atlasScriptErrors[0]+')':'')+'. Bitte die Seite neu laden; bleibt es dabei, Diagnose senden.';};
+// 0.6.45: Joyn, RTL+ and Crunchyroll have no player in MediathekAtlas (DRM): their titles open at the provider.
+// Until 0.6.44 such a click ended in "Der Player ist nicht geladen", which pointed at a fault that did not exist.
+window.atlasProviderOnly=(name,url)=>{const label=name||'dem Anbieter';if(url&&/^https:\/\//i.test(url)){window.open(url,'_blank','noopener,noreferrer');return 'Dieser Titel läuft nur im Player von '+label+' und wurde dort geöffnet.';}
+ return 'Dieser Titel läuft nur im Player von '+label+' (kopiergeschützt), nicht in MediathekAtlas.';};
 window.addEventListener('error',e=>report(e.message,e.filename,e.lineno));
 window.addEventListener('unhandledrejection',e=>report('Promise: '+(e.reason?.message||e.reason),'',''));})();
 let providerPauses={},lastArtwork=-1;const artworkRequested=new Set();

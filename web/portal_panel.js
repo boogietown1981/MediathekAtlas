@@ -118,7 +118,9 @@ window.AtlasPortalPanel = function (cfg) {
     } else {
       const play = make('button', item.kind === 'channel' ? '▶ Live ansehen' : '▶ Ansehen', 'primary'); play.type = 'button';
       play.onclick = () => {
-        if (typeof cfg.play() !== 'function') { say(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', true); return; }
+        const fn = cfg.play();
+        if (fn === null) { say(window.atlasProviderOnly?.(NAME, item.web_url) || 'Nur beim Anbieter abspielbar.'); return; }   // 0.6.45
+        if (typeof fn !== 'function') { say(window.atlasPlayerMissing?.('portal_panel:' + K) || 'Der Player ist nicht geladen; Seite neu laden.', true); return; }
         if (item.kind === 'track' && view === 'tracks' && window.playYouTubeList) {
           const list = lastTracks.filter(playable), at = list.findIndex(t => t.id === item.id);
           window.playYouTubeList(list.map(t => ({id: t.id, label: t.title})), Math.max(0, at));

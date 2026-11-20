@@ -1105,6 +1105,7 @@ def post_youtube_abos(self,path,d):
     action=str(d.get('action','update'))[:10]
     if action=='add':youtube_abos.add(ROOT,d)
     elif action=='pace':youtube_abos.set_per_hour(ROOT,d.get('per_hour'))   # 0.6.14: Abo-Videos pro Stunde
+    elif action=='reserve':youtube_abos.set_reserve(ROOT,d.get('reserve_gb'))   # 0.6.45: freier Speicher, den Abos lassen
     else:youtube_abos.change(ROOT,d.get('id'),d)
     diagnostics.event('youtube_abos_changed',action=action)
     # A new abo or "Jetzt prüfen" is read right away (a running check takes it on its next round).

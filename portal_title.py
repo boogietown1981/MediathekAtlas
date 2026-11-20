@@ -60,6 +60,11 @@ def _cast_ref(report):
             'imdb_id': str(meta.get('imdb_id') or '')[:20]}
 
 
+# 0.6.45: providers whose titles play only in their own (DRM) player. A missing ``playable`` field in a row
+# used to count as playable, and the click then ended in "Der Player ist nicht geladen".
+PROVIDER_PLAYER_ONLY = frozenset({'joyn', 'rtlplus', 'crunchyroll'})
+
+
 def _base(source, item_id, report):
     import portal_reference
     meta = (report or {}).get('metadata') or {}
@@ -108,9 +113,9 @@ def _portal(root, source, item_id):
         m['series'] = {'id': parent.get('id'), 'title': _text(parent.get('title'), 200)}
     if m['kind'] == 'channel':
         # 0.5.65: Joyn channels are listed without a released stream (playable=0).
-        m['playable'] = it.get('playable') not in (0, False)
+        m['playable'] = it.get('playable') not in (0, False) and source not in PROVIDER_PLAYER_ONLY
     elif m['kind'] != 'series':
-        m['playable'] = it.get('playable') not in (0, False)
+        m['playable'] = it.get('playable') not in (0, False) and source not in PROVIDER_PLAYER_ONLY
         # 0.5.48: JustWatch releases some titles only at night (youth protection): reserve the download.
         # 0.5.52: only with a real time window; without one the title is copy protected (JustWatch player only).
         night = source == 'justwatch' and not m['playable'] and bool(it.get('night'))
@@ -298,7 +303,7 @@ def _episode(source, e, series_poster=''):
             return None
         return v if 0 <= v <= hi else None
     title = _text(e.get('episode_title') or e.get('title'), 200)
-    playable = e.get('playable') not in (0, False)
+    playable = e.get('playable') not in (0, False) and source not in PROVIDER_PLAYER_ONLY
     night = source == 'justwatch' and not playable and bool(e.get('night'))
     return {'id': str(e.get('id') or ''), 'title': title, 'season': num(e.get('season'), 999),
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,

@@ -94,7 +94,7 @@
     } catch (e) { window.notice?.('Titel konnte nicht geöffnet werden: ' + e.message, 'error'); }
   }
   function resume(entry) {
-    if (typeof window.playRef !== 'function') { window.notice?.(window.atlasPlayerMissing?.() || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
+    if (typeof window.playRef !== 'function') { window.notice?.(window.atlasPlayerMissing?.('watchlist') || 'Der Player ist nicht geladen; Seite neu laden.', 'error'); return; }
     if (!entry.ref || !Object.keys(entry.ref).length) { openEntry(entry); return; }
     window.playRef(entry.ref, entry.title, entry.key);
   }

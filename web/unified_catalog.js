@@ -363,7 +363,7 @@
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
       watch.onclick=async()=>{
         watch.disabled=true;
-        try {if(!window.AtlasNetzkinoDetail)throw new Error(window.atlasPlayerMissing?.()||'Die Netzkino-Wiedergabe ist nicht geladen; Seite neu laden.');await window.AtlasNetzkinoDetail.play(item.id,item.title);}
+        try {if(!window.AtlasNetzkinoDetail)throw new Error(window.atlasPlayerMissing?.('unified_catalog')||'Die Netzkino-Wiedergabe ist nicht geladen; Seite neu laden.');await window.AtlasNetzkinoDetail.play(item.id,item.title);}
         catch(e){if($('atlas-cross-status'))$('atlas-cross-status').textContent='Integrierte Wiedergabe: '+e.message;}
         finally{watch.disabled=false;}
       };
@@ -371,7 +371,8 @@
     }
     if (PORTALS[item.source] && item.kind!=='series' && item.playable) {
       const watch=el('button','▶ Ansehen','atlas-uc-play');watch.type='button';
-      watch.onclick=()=>{const fn=PLAY[item.source]?.();if(typeof fn==='function')fn(item.id,item.title);else window.notice?.(window.atlasPlayerMissing?.()||'Der Player ist nicht geladen; Seite neu laden.','error');};
+      // 0.6.45: null = only the provider's own player (Joyn, RTL+, Crunchyroll), not a missing player
+      watch.onclick=()=>{const fn=PLAY[item.source]?.();if(typeof fn==='function')fn(item.id,item.title);else if(fn===null)window.notice?.(window.atlasProviderOnly?.(PORTALS[item.source],item.web_url)||'Nur beim Anbieter abspielbar.');else window.notice?.(window.atlasPlayerMissing?.('unified:'+item.source)||'Der Player ist nicht geladen; Seite neu laden.','error');};
       nodes.push(watch);
     }
     if (PORTALS[item.source] && item.kind!=='series' && !item.playable && hrefOkay(item.web_url)) {

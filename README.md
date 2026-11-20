@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.44
+# MediathekAtlas · 0.6.45
+
+## Neu in 0.6.45: Speicherbudget für YouTube-Abos, weniger Wiedergabe-Störungen
+
+- Je Abo lässt sich festlegen, wie viel Speicher die Videos höchstens belegen (Standard 10 GB). Ist es voll, machen gesehene Videos Platz; ungesehene und gemerkte bleiben.
+- Abo-Downloads pausieren, wenn am Speicherort weniger als 5 GB frei sind (einstellbar).
+- Titel von Joyn, RTL+ und Crunchyroll öffnen beim Anbieter statt „Der Player ist nicht geladen“ zu melden. Tritt die Meldung doch auf, steht der Befund in der Diagnose.
+- ServusTV: Seiten, die dauerhaft gesperrt sind, werden nicht mehr bei jedem Lauf dreimal abgefragt.
 
 ## Neu in 0.6.44: Episodensuche ohne Leerlauf, saubere Dateinamen, Verwaltung oben
 
