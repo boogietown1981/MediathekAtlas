@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.59 – Folgen als Kacheln mit Abspielknopf (20. November 2026)
+- Automatisch (Cloud, Chromium): gesamte Python-Suite 1668 Tests grün, `node tests/*.cjs` grün, `click_all.cjs`, `player_tracks.cjs`, `cast_photos.cjs`, `kids_corner.cjs` ohne Befund, neu `tests/browser/episode_tiles.cjs` (Raster 4 Spalten bei 1400 px, 1 Spalte bei 420 px ohne Querscrollen, Wege lokal/Player/Anbieter, Aufrufe `playMedia`/`playJob`/`playPluto`, Anbieterlink im neuen Tab, Gesehen/Fortschritt, Staffelwahl, Listenansicht, Offline-Kopie wechselt auf „Lokal“).
+- Nicht geprüft: echte Serien mit vielen Folgen auf Björns Datenbank, echte lokale Dateien, Autostart beim Anbieter mit der Erweiterung, Safari/Firefox. Mac-Prüfung steht aus.
+
 ## 0.6.57 – Vollständige Besetzung (20. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0657_cast_more.py` (weitere Personen in Abspannreihenfolge ohne gezeigte und ohne sonstige Crew, Begrenzung 40, zweites Öffnen ohne TMDB, Fotos weiterer Personen ladbar, Seite ohne eigene Besetzung, Fehler nicht gespeichert, unbekannter Titel als Fehlanzeige gemerkt, Serie aus den Werken, vorhandene Seriendaten haben Vorrang, Verdrahtung). Browsertest `cast_photos.cjs` erweitert: „Weitere 6 anzeigen“, Film ohne Besetzung mit 14 Personen und „Alle 2 anzeigen“. Klicktest `click_all.cjs`.
 - Nicht geprüft (TMDB und Plex aus der Cloud gesperrt): „Der Pass“ auf echten Daten, Plex-Titel mit eigener IMDb-ID, echte TMDB-Credits großer Serien.

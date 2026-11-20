@@ -80,6 +80,9 @@ jobs:
         run: |
           sudo apt-get update -q && sudo apt-get install -y -q ffmpeg
           NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/kids_corner.cjs
+      - name: Folgen als Kacheln mit Abspielknopf (0.6.59)
+        if: matrix.browser == 'chromium'
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/episode_tiles.cjs
       - name: Red Bull TV und WELT/n-tv im Live-TV (0.6.47)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/redbull_live.cjs

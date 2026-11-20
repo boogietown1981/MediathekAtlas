@@ -1,3 +1,12 @@
+## 0.6.59 – Folgen als Kacheln mit Abspielknopf auf dem Bild
+- Wunsch Björn (20.11.2026): Folgen einer Serie nebeneinander und untereinander als Kacheln, mit einem Knopf direkt auf dem Bild, der den besten Weg nimmt: lokale Datei (Download/Offline-Kopie) → eingebauter Player → Direktlink zum Anbieter. Basis 0.6.57 (PR #96).
+- `titleview.js`: gemeinsame Bausteine `episodeTile`, `episodeRoute`, `tileRoute`, `watchState`, `episodeViewSwitch` für Werkkatalog-Serien und Plattform-Serien (`portal_title.js`), kein zweiter Abspielweg: Werkkatalog über `playMedia` (der Server nimmt bei `offer` die lokale Datei zuerst), Plattformen über `playJob` (fertige Offline-Kopie), sonst die vorhandene Player-Funktion des Anbieters; nur beim Anbieter abspielbar (Joyn, RTL+, Crunchyroll, DRM, nicht mehr gelistet) öffnet einen neuen Tab mit `AtlasDirect.href` (Autostart/Vollbild der Chrome-Erweiterung wie in 0.6.46).
+- Kennzeichnung auf dem Bild („Lokal“ grün, „Player“ blau, „Anbieter“ gelb mit ↗), Tooltip mit dem Weg; das ganze Bild ist klickbar. „✓ Gesehen“ und Fortschrittsbalken aus der Fortsetzen-Position des Players.
+- Erscheint eine Offline-Kopie während die Seite offen ist, wechselt der Knopf ohne Neuladen auf „Lokal“.
+- Staffelwahl, Reihenfolge und alle Aktionen je Folge (Prüfen & laden, Weitere Fassungen, Dateien & Qualität, Offline speichern, Beim Anbieter ansehen, Details) bleiben. Umschalter „▦ Kacheln / ☰ Liste“ (bisherige Liste), gemerkt je Gerät.
+- Viele Folgen: Bilder laden verzögert (`loading=lazy`), Kacheln außerhalb des Fensters werden nicht gezeichnet (`content-visibility:auto`). Spalten passen sich der Fensterbreite an (1400 px: 4, Handy: 1).
+- Tests: neu `tests/browser/episode_tiles.cjs` (auch in CI).
+
 ## 0.6.57 – Vollständige Besetzung: Serien ohne Seriendaten, „Weitere anzeigen“, Plex
 - Hinweise aus der Mac-Prüfung von 0.6.55 (Dauerauftrag Björn). Basis 0.6.56 (Verbund, PR #92).
 - `catalog.series_credits_from_works`: Serienseite ohne `show_credits` (Beispiel „Der Pass“, TMDB 85526) setzt die Besetzung aus `cast`/`directors`/`writers` der Werke zusammen; häufigste Personen zuerst, Rolle und IMDb-Kennung aus der ersten Angabe, `source: works`. Vorhandene `show_credits` bleiben unverändert.

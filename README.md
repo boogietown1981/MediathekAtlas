@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.57
+# MediathekAtlas · 0.6.59
+
+## Neu in 0.6.59: Folgen als Kacheln
+
+- Beim Öffnen einer Serie stehen die Folgen als Kacheln neben- und untereinander, mit einem Abspielknopf direkt auf dem Bild.
+- Der Knopf nimmt den besten Weg: liegt die Folge lokal (Download oder Offline-Kopie), wird sie lokal abgespielt; sonst im eingebauten Player; geht sie nur beim Anbieter, öffnet er die Folge dort (mit Autostart über die Chrome-Erweiterung). Ein Schild auf dem Bild zeigt den Weg: Lokal, Player oder Anbieter.
+- Gesehene Folgen tragen „✓ Gesehen“, angefangene einen Fortschrittsbalken. Über „☰ Liste“ gibt es die bisherige Liste weiterhin.
 
 ## Neu in 0.6.57: vollständige Besetzung
 
