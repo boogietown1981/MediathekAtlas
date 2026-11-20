@@ -1217,7 +1217,12 @@ class Service:
         d=event['data'];rank=meshjournal.RANK[d['outcome']]
         key=meshjournal.order(rank,d.get('providers'),event['hlc'],event['node'])
         better,known=self.mesh_better(c,d['work'],key)
-        if not better:return False
+        if not better:
+            # 0.6.51: a differing manual assignment is shown even when the own one sorts first.
+            if d['outcome']=='manual':
+                row=next((r for r in (c.execute('SELECT * FROM works WHERE id=?',(i,)).fetchone() for i in (d['work'],d.get('dest')) if i) if r),None)
+                if row and row['state']=='manual':self.mesh_conflict(c,row,event)
+            return False
         old=c.execute('SELECT payload FROM mesh_results WHERE work_id=?',(d['work'],)).fetchone()
         c.execute('INSERT OR REPLACE INTO mesh_results VALUES(?,?,?,?,?,?)',(d['work'],*key,json.dumps(event)))
         # The work may already be merged here under its own canonical ID (earlier result for the same origin).
