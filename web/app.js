@@ -296,14 +296,19 @@ function catalogProgress(c){
    ];
    // 0.6.65: without the IMDb offline archive the episode search can only postpone (Mac-Gegenprüfung 0.6.58).
    if(c.episode_imdb_ready===false&&(c.episode_queue_total||0)>0)chips.push(['imdb-wait','Folgensuche wartet auf das IMDb-Offline-Archiv – Prüfungen werden stündlich wiederholt']);
-   if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
+   if(c.sqlite_busy_retries_session){
+     // 0.6.67: where the locks happened (episode search, recognition …)
+     const places=Object.entries(c.sqlite_busy_by_label||{}).map(([k,v])=>({episode:'Episodensuche'}[k]||k)+' '+countLabel(v)).join(', ');
+     chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)+(places?' ('+places+')':'')]);
+   }
+   if(c.episode_show_skipped_session)chips.push(['show-skip','Sendung gerade bei anderem Worker: '+countLabel(c.episode_show_skipped_session)+'× später']);
    workers.replaceChildren();
    // The grouping is presentation only: keep every existing session counter.
    const groupSpec=[
      ['Worker & Scan', ['identity','episode']],
      ['Erkennungsqualität', ['identified','confirmed']],
      ['Episoden & Senderbelege', ['queue','due','imdb-wait','episode-checks','episode-series','editions','sender','sender-matches','shorts']],
-     ['Fehler & Wiederholungen', ['retry']]
+     ['Fehler & Wiederholungen', ['retry','show-skip']]
    ];
    for(const [name,kinds] of groupSpec){
      const group=el('section',undefined,'atlas-worker-group');group.dataset.group=String(groupSpec.findIndex(g=>g[0]===name));

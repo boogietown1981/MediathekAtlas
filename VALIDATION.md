@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.67 – Episoden-Einordnung absichern (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0667.py`: zurückgerollte Runde ohne Zähler/Ereignis, Wiederholung zählt einmal und meldet den Ort, Wirkungen erst nach der Einheit, fehlgeschlagene Einheit verwirft sie, Sendungssperre exklusiv und nach der Einheit frei, vier Worker legen 12 Beiträge genau einmal ab.
+- Nicht geprüft: Verhalten unter echter Last auf Björns Katalog (Anzahl Sperren je Stelle).
+
 ## 0.6.66 – Abo-Speicherbudget (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0660.py`: Aufträge aus der Zeit ohne Budget gehen über dem Budget zurück auf „gewünscht“, kein weiterer Start; Download-Start wartet mit Hinweis, „Jetzt versuchen“ startet; erstes Video eines leeren Abos startet; gelernte Rate (Untergrenze fest, Obergrenze 4×); Anzeige und Verdrahtung.
 - Nicht geprüft: Björns echtes Abo mit 18,7 GB (welches Abo, welche Videos), echte Dateigrößen von YouTube.

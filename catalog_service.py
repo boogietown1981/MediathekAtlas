@@ -42,7 +42,7 @@ def sqlite_busy(exc):
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_saved={'results':0,'episodes':0,'episodes_skipped':0};self.mesh_waiting={};self.mesh_usage={};self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_saved={'results':0,'episodes':0,'episodes_skipped':0};self.mesh_waiting={};self.mesh_usage={};self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0;self.sqlite_busy_by_label={};self.episode_show_skipped=0
     def start(self):
         for fn in (self.sync_loop,self.refile_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -205,6 +205,76 @@ class Service:
                 if self.stop.wait(min(.75,.04*(attempt+1))):return None
         return None
 
+    # 0.6.63 (Code-Review Schritt 1, Befunde A1/A2/B1): one write unit for the episode path.
+    def write(self,fn,label='write',attempts=4):
+        """Run ``fn`` (one unit of work with its own ``with self.db()`` blocks) and return its result.
+
+        "database is locked" rolls the unit back; it is repeated with a short, growing pause (0.1, 0.2, 0.3 s)
+        and counted once per lock in ``sqlite_busy_count``/``sqlite_busy_by_label``. Session counters and
+        protocol events registered with ``after_commit`` run only once the unit has finished, so a rolled-back
+        attempt leaves no trace (diagnosis 20.11.2026: 164,984 "Beiträge" counted for a few hundred real ones).
+        Show locks taken with ``show_lock`` are released when the unit ends.
+        """
+        local=self._write_local()
+        if local.effects is not None:return fn()          # nested: the outer unit decides
+        try:
+            for attempt in range(attempts):
+                local.effects=[];local.locks=[]
+                try:result=fn()
+                except sqlite3.OperationalError as exc:
+                    if not sqlite_busy(exc) or attempt==attempts-1:raise
+                    with self.worker_lock:
+                        self.sqlite_busy_count+=1
+                        self.sqlite_busy_by_label[label]=self.sqlite_busy_by_label.get(label,0)+1
+                    self.release_show_locks()
+                    if self.stop.wait(.1*(attempt+1)):raise
+                    continue
+                effects=local.effects
+                local.effects=None
+                self.release_show_locks()
+                for effect in effects:effect()
+                return result
+        finally:
+            local.effects=None
+            self.release_show_locks()
+
+    def _write_local(self):
+        local=self.__dict__.get('_write_state')
+        if local is None:
+            with self.worker_lock:
+                local=self.__dict__.setdefault('_write_state',threading.local())
+        if not hasattr(local,'effects'):local.effects=None;local.locks=[]
+        return local
+
+    def after_commit(self,effect):
+        """Run ``effect`` after the current write unit succeeded (at once outside a unit)."""
+        local=self._write_local()
+        if local.effects is None:effect()
+        else:local.effects.append(effect)
+
+    def show_lock(self,show_key):
+        """Non-blocking lock of one Sendung for this write unit (A2). False: another worker files it now."""
+        local=self._write_local()
+        if local.effects is None:return True               # outside a write unit nothing would release it
+        with self.worker_lock:
+            locks=self.__dict__.setdefault('_show_locks',{})
+            lock=locks.setdefault(show_key,threading.Lock())
+        if not lock.acquire(blocking=False):
+            with self.worker_lock:self.episode_show_skipped=getattr(self,'episode_show_skipped',0)+1
+            return False
+        local.locks.append((show_key,lock))
+        return True
+
+    def release_show_locks(self):
+        local=self._write_local()
+        held,local.locks=local.locks,[]
+        for show_key,lock in held:
+            try:lock.release()
+            except RuntimeError:pass
+            with self.worker_lock:
+                locks=self.__dict__.get('_show_locks',{})
+                if locks.get(show_key) is lock and not lock.locked():locks.pop(show_key,None)
+
     def metadata_once(self,queue='identity'):
         if not self.settings().get('auto_metadata',True):return False
         claim=self.lease_work('episode') if queue=='episode' else self.lease_work()
@@ -219,7 +289,7 @@ class Service:
             self.active_checks+=1;self.active_work[thread]=wid
             if queue=='episode':self.episode_active+=1
         try:
-            return self._episode_once_claimed(wid) if queue=='episode' else self._metadata_once_claimed(wid)
+            return self.write(lambda:self._episode_once_claimed(wid),'episode') if queue=='episode' else self._metadata_once_claimed(wid)
         finally:
             try:
                 for attempt in range(4):
@@ -466,6 +536,9 @@ class Service:
                 'identified_rate_session':round(100*(counts['matched']+counts['identified'])/total,1) if total else 0.0,
                 'matched_per_hour_session':round(counts['matched']*3600/elapsed,1),
                 'sqlite_busy_retries_session':self.sqlite_busy_count,
+                # 0.6.67: where the locks happened, and how often a show was left to the worker filing it
+                'sqlite_busy_by_label':dict(self.sqlite_busy_by_label),
+                'episode_show_skipped_session':self.episode_show_skipped,
                 'recognition_workers_active':active,
                 'recognition_workers_configured':max(1,min(MAX_RECOGNITION_WORKERS,int(self.settings().get('metadata_workers',2)))),
                 'recognition_worker_ids':running}
@@ -593,9 +666,11 @@ class Service:
               AND NOT EXISTS(SELECT 1 FROM metadata_priority p WHERE p.work_id=w.id) """+sender+""")""",
             (now,now+30*86400,now,show_key,selected_id,m['provider'],str(m['reference_id']))).rowcount
         if deferred>0:
-            with self.worker_lock:self.episode_series_deferred+=deferred
-            diagnostics.event('episode_series_without_imdb_episodes',title=m.get('title',''),
-                              provider=m.get('provider'),deferred=deferred)
+            def counted():
+                with self.worker_lock:self.episode_series_deferred+=deferred
+                diagnostics.event('episode_series_without_imdb_episodes',title=m.get('title',''),
+                                  provider=m.get('provider'),deferred=deferred)
+            self.after_commit(counted)
         return max(0,deferred)
 
     def classify_sibling_editions(self,c,show_key,m,selected_id,allow_editions,limit=500):
@@ -606,6 +681,8 @@ class Service:
         dated editions of a series whose IMDb entry lists episodes stay in the queue.
         """
         if not show_key or not m.get('provider') or not m.get('reference_id'):return 0
+        # 0.6.63: one worker per Sendung; the other one leaves the siblings for its next turn (A2).
+        if not self.show_lock(show_key):return 0
         rows=c.execute("""SELECT w.* FROM works w WHERE w.show_key=? AND w.id!=? AND w.state='identified'
               AND json_extract(w.meta,'$.provider')=?
               AND CAST(json_extract(w.meta,'$.reference_id') AS TEXT)=?
@@ -630,10 +707,13 @@ class Service:
                 if catalog.recurring_edition(meta,source,True)=='segment' and catalog.mark_recurring_edition(c,sibling,meta,source,'segment'):
                     counts['segment']+=1
         if counts['edition'] or counts['segment']:
-            with self.worker_lock:
-                self.episode_editions+=counts['edition'];self.episode_segments+=counts['segment']
-            diagnostics.event('episode_series_editions_classified',title=m.get('title',''),
-                              provider=m.get('provider'),editions=counts['edition'],segments=counts['segment'])
+            # 0.6.63 (A1): counted and logged only once the transaction is stored.
+            def counted():
+                with self.worker_lock:
+                    self.episode_editions+=counts['edition'];self.episode_segments+=counts['segment']
+                diagnostics.event('episode_series_editions_classified',title=m.get('title',''),
+                                  provider=m.get('provider'),editions=counts['edition'],segments=counts['segment'])
+            self.after_commit(counted)
         return counts['edition']+counts['segment']
 
     def same_date_editions(self,c,show_key,selected_id,source):
@@ -683,8 +763,9 @@ class Service:
             elif entry:
                 import video_causality
                 if catalog.mark_explicit_extra(c,row,entry['source']):
-                    diagnostics.event('video_extra_classified',work_id=selected_id,
-                                      title=entry['source'].get('title',''),reason='explicit_title')
+                    title=entry['source'].get('title','')
+                    self.after_commit(lambda:diagnostics.event('video_extra_classified',work_id=selected_id,
+                                                               title=title,reason='explicit_title'))
                     preflight='extra'
                 elif (edition_role:=catalog.recurring_edition(m,entry['source'],
                         catalog.sendung_with_editions(c,row['show_key'])))=='segment':
@@ -712,12 +793,11 @@ class Service:
                                  reason='Serienidentität bekannt, Videolaufzeit passt nicht zur ganzen Folge')
                         c.execute('UPDATE works SET meta=?,updated=? WHERE id=?',
                                   (json.dumps(m),time.time(),selected_id))
-                        diagnostics.event('episode_runtime_suspect',work_id=selected_id,
-                                          series=m.get('title',''),title=entry['source'].get('title',''),
-                                          actual=causality.get('source_duration_seconds'),
-                                          expected=causality.get('expected_runtime_seconds'),
-                                          source=causality.get('expected_runtime_source'),
-                                          role=causality['video_role'])
+                        fields=dict(work_id=selected_id,series=m.get('title',''),title=entry['source'].get('title',''),
+                                    actual=causality.get('source_duration_seconds'),
+                                    expected=causality.get('expected_runtime_seconds'),
+                                    source=causality.get('expected_runtime_source'),role=causality['video_role'])
+                        self.after_commit(lambda:diagnostics.event('episode_runtime_suspect',**fields))
                         preflight='suspected'
             if preflight is None and (not m.get('provider') or not m.get('reference_id')):
                 c.execute("UPDATE works SET state='pending',next_try=0 WHERE id=?",(selected_id,))
@@ -779,7 +859,7 @@ class Service:
         import imdb_archive
         archive=imdb_archive.ACTIVE
         imdb_verified=None;imdb_error=False
-        imdb_without_episodes=False;siblings=0;evidence=None
+        imdb_without_episodes=False;evidence=None
         if not sender_verified and entry and archive and archive.updated:
             try:
                 evidence=archive.episode_evidence(source,m)
@@ -823,10 +903,9 @@ class Service:
                     enriched['video_role_needs_review']=True
                     enriched['episode_verified']=False
                     enriched['reason']='Serie erkannt, diese Videodatei ist möglicherweise nur ein Kurzformat'
-                    diagnostics.event('episode_runtime_suspect',work_id=selected_id,
-                                      actual=enriched.get('source_duration_seconds'),
-                                      expected=enriched.get('expected_runtime_seconds'),
-                                      role=enriched.get('video_role'))
+                    fields=dict(work_id=selected_id,actual=enriched.get('source_duration_seconds'),
+                                expected=enriched.get('expected_runtime_seconds'),role=enriched.get('video_role'))
+                    self.after_commit(lambda:diagnostics.event('episode_runtime_suspect',**fields))
                 if imported:
                     # Offer identity is NOT a verified episode number.
                     for field in ('sender_provider','sender_page_id','sender_evidence','sender_episode_title'):
@@ -858,8 +937,8 @@ class Service:
                         self.after_waiting_archive=getattr(self,'after_waiting_archive',0)
                         if time.time()-self.after_waiting_archive>3600:
                             self.after_waiting_archive=time.time()
-                            diagnostics.event('episode_waiting_for_imdb_archive','WARNING',
-                                              archive='missing' if not archive else 'not_ready')
+                            state='missing' if not archive else 'not_ready'
+                            self.after_commit(lambda:diagnostics.event('episode_waiting_for_imdb_archive','WARNING',archive=state))
                     delay=max(60,min(6*3600,delay))
                 else:
                     outcome='unresolved'
@@ -871,10 +950,11 @@ class Service:
                     # Siblings share series and IMDb answer: without IMDb episodes no edition can match.
                     self.classify_sibling_editions(c,row['show_key'],m,selected_id,allow_editions=imdb_without_episodes)
                 if outcome=='unresolved':
-                    self.sample_unresolved(m,source,evidence)
+                    self.after_commit(lambda:self.sample_unresolved(m,source,evidence))
                     self.mesh_episode_publish(c,selected_id,time.time()+delay,archive.updated,config.get('sender_direct_lookup',False))
                 if outcome=='unresolved' and imdb_without_episodes:
-                    siblings=self.defer_series_without_episodes(c,row['show_key'],m,selected_id,config)
+                    # counted as episode_series_deferred ("Ohne IMDb-Folgenliste verschoben") after the commit
+                    self.defer_series_without_episodes(c,row['show_key'],m,selected_id,config)
         self.record_episode_result(outcome,imported=bool(imported),
                                    sender_verified=bool(sender_verified),
                                    sender_item=bool(sender_candidate and sender_candidate.get('sender_item_verified')),

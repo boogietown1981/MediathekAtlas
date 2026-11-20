@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.66
+# MediathekAtlas · 0.6.67
+
+## Neu in 0.6.67: Episoden-Einordnung abgesichert
+
+- Zähler und Protokoll der Episodensuche zählen nur noch, was wirklich gespeichert wurde. Eine kurz gesperrte Datenbank wird wiederholt, ohne doppelt zu zählen.
+- Eine Sendung wird gleichzeitig nur von einem Worker eingeordnet.
+- Die Übersicht zeigt, wo Datenbank-Sperren auftraten und wie oft eine Sendung später drankam.
 
 ## Neu in 0.6.66: Speicherbudget für YouTube-Abos gilt hart
 

@@ -1,3 +1,11 @@
+## 0.6.67 – Episoden-Einordnung absichern (Code-Review 0.6.59, Schritt 1)
+- Björn: „ok erst schritt 1“. Katalog `berichte/codereview-0659.md`, Befunde A1/A2/B1 am Code bestätigt; A6 (Anzeige „Ohne IMDb-Folgenliste verschoben“) war schon vorhanden. Einordnungsregeln, Schema und Oberfläche sonst unverändert. Basis 0.6.66 (zuerst als 0.6.63 reserviert, nie gebaut).
+- `Service.write(fn,label)`: eine Schreibeinheit der Episodensuche; „database is locked“ rollt sie zurück und wiederholt sie bis zu 4-mal (0,1/0,2/0,3 s), gezählt in `sqlite_busy_count` und `sqlite_busy_by_label`.
+- `after_commit`: Sitzungszähler (Ausgaben, Beiträge, „ohne IMDb-Folgenliste verschoben“) und Ereignisse (`episode_series_editions_classified`, `video_extra_classified`, `episode_runtime_suspect`, `episode_unresolved_sample`, `episode_waiting_for_imdb_archive`) erst nach dem Speichern (Diagnose 20.11.: 164.984 gezählte „Beiträge“).
+- `show_lock`: je Sendung ordnet nur ein Worker Geschwister ein; der andere überspringt sie (`episode_show_skipped_session`).
+- Übersicht: SQLite-Wiederholungen mit Ort, „Sendung gerade bei anderem Worker“.
+- Tests: `tests/test_v0667.py` (6).
+
 ## 0.6.66 – YouTube-Abos: Speicherbudget hart durchgesetzt
 - Grundlage: Björns Diagnose vom 20.11.2026 23:29 Uhr: ein Abo belegte 18,7 GB bei 10 GB Budget (Ereignis `youtube_abo_budget_full`, unverändert von 19:35 bis 22:34 Uhr). Basis 0.6.65 (PR #98, enthält main 0.6.56). Zuerst als 0.6.60 gebaut, nie ausgegeben; neu als 0.6.66.
 - Ursache (aus Code und Protokoll, nicht an Björns Datenbank geprüft): Das Budget (0.6.45) wirkte nur beim Einreihen neuer Videos. Aufträge, die schon in der Warteschlange standen (vier Kinderkanäle „alle Videos“ wurden um 18:06–18:25 Uhr unter 0.6.43 ohne Budget angelegt), liefen einfach weiter; dazu war die feste Schätzung 720p = 250 kB/s für wartende Videos eher zu niedrig.
