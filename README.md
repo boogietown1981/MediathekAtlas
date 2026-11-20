@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.56
+# MediathekAtlas · 0.6.57
+
+## Neu in 0.6.57: vollständige Besetzung
+
+- Serien, für die keine Besetzung der ganzen Serie vorliegt (z. B. „Der Pass“), zeigen jetzt die Darsteller und die Regie aus ihren Folgen; wer in den meisten Folgen mitspielt, steht vorn.
+- „Weitere … anzeigen“ blendet die übrige Besetzung laut TMDB ein (bis zu 40 Personen mit Rolle und Foto), sonst bleibt die Seite kurz.
+- Titel ohne eigene Besetzungsangaben, etwa bei Plex, bekommen die Besetzung über ihre IMDb-Kennung von TMDB: die ersten 14 sofort, der Rest mit „Alle … anzeigen“.
 
 ## Neu in 0.6.56: Erkennung zwischen Geräten teilen
 

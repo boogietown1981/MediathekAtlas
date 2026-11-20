@@ -1,3 +1,11 @@
+## 0.6.57 – Vollständige Besetzung: Serien ohne Seriendaten, „Weitere anzeigen“, Plex
+- Hinweise aus der Mac-Prüfung von 0.6.55 (Dauerauftrag Björn). Basis 0.6.56 (Verbund, PR #92).
+- `catalog.series_credits_from_works`: Serienseite ohne `show_credits` (Beispiel „Der Pass“, TMDB 85526) setzt die Besetzung aus `cast`/`directors`/`writers` der Werke zusammen; häufigste Personen zuerst, Rolle und IMDb-Kennung aus der ersten Angabe, `source: works`. Vorhandene `show_credits` bleiben unverändert.
+- `cast_photos.lookup(..., more=True)`: liefert `more` mit weiteren Personen des Titels aus den TMDB-Credits (Film: Regie zuerst, dann Darsteller in Abspannreihenfolge; Serie: `aggregate_credits`), höchstens 40, ohne die schon gezeigten und ohne sonstige Crew. Die Liste je Titel liegt in `people.sqlite` (Tabelle `titles`, Treffer 90 Tage, kein Treffer 14 Tage); die Fotos dieser Personen sind über `/api/cast-photo` ladbar. `credit_list` ersetzt die interne Logik von `credits` (Ergebnis gleich).
+- Titelseite: „Weitere N anzeigen“ hängt die übrigen Personen an; eine Seite ohne eigene Besetzung (Plex, Serie ohne Angaben) zeigt die ersten 14 aus TMDB, der Rest hinter „Alle N anzeigen“. Leere Besetzung bleibt ausgeblendet.
+- `portal_title`: die IMDb-ID des Anbieters (Plex) dient als Zuordnung für Besetzung und Fotos, wenn der Referenzbericht keine hat.
+- Tests: `tests/test_v0657_cast_more.py` (7), `tests/browser/cast_photos.cjs` erweitert.
+
 ## 0.6.56 – Erkennung zwischen Geräten teilen: Verbund mit einem Klick über iCloud Drive & Co., Episodensuche geteilt, manuelle Zuordnungen geschützt
 - Inhalt von 0.6.53 (auf dem Mac geprüft, nie ausgegeben, weil auf Basis 0.6.52 gebaut) jetzt auf Basis 0.6.55 (Offline-Kopien 0.6.54, Besetzung mit Fotos 0.6.55 bleiben erhalten).
 - Gebaut zuerst als 0.6.51 (nie ausgegeben, zurückgezogen); 0.6.53 ist derselbe Inhalt auf Basis 0.6.52 (filmfriend, Gesamtfrist für Anbieter-Abrufe).
