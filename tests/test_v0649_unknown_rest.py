@@ -50,6 +50,11 @@ class WeakSuggestionTests(unittest.TestCase):
         self.assertTrue(self.weak(series('DOK', year=1954)))                      # an old namesake (Top Secret 1954)
         self.assertTrue(self.weak(series('Arena', year=1975), sendung='Arena'))
         self.assertTrue(self.weak(series('Arena', year='1975'), sendung='Arena'))         # year as text (Wikidata)
+        # Third Gegenprobe (Rohdaten 4a2e9ad): fuzzy namesake and Wikidata concepts are no evidence.
+        self.assertTrue(self.weak({'provider': 'TMDB', 'kind': 'series', 'title': '3 von oben', 'year': 2018,
+                                   'similarity': 0.889}, sendung='...von oben'))
+        self.assertTrue(self.weak({'provider': 'Wikidata', 'kind': 'series', 'title': 'Reise', 'similarity': 1.0,
+                                   'confidence': 'possible', 'reference_id': 'Q36875808'}, sendung='Reise'))
         # Second Gegenprobe: a film named like the Sendung is no episode of it ("Top Secret!" 1984).
         src = {'duration': 1500, 'timestamp': 1795100000}
         self.assertTrue(catalog.suggestion_weak(movie('Top Secret'), src, 'Top Secret', 'Der Maulwurf im Ministerium'))
@@ -64,6 +69,9 @@ class WeakSuggestionTests(unittest.TestCase):
         # Gegenprobe 20.11.2026: the Sendung's own series is evidence for the work (NACHTCAFÉ, 1 gegen 100).
         self.assertFalse(self.weak(series('Nachtcafé', year=1987), sendung='NACHTCAFÉ'))
         self.assertFalse(self.weak(series('DOK')))                                # year unknown: in doubt open
+        self.assertFalse(self.weak(series('Arena', year=1993), sendung='Arena'))  # several namesakes, one fits
+        self.assertFalse(self.weak({'provider': 'Wikidata', 'kind': 'series', 'title': 'Hau Ruck', 'year': 2005,
+                                    'similarity': 1.0, 'confidence': 'possible'}, sendung='Hau Ruck'))
         self.assertFalse(self.weak(series('Sag die Wahrheit', year=2016, episode_verified=True), sendung='Sag die Wahrheit'))
         self.assertFalse(self.weak(series('Sag die Wahrheit', year=1954, season=3, episode=4), sendung='Sag die Wahrheit'))
         self.assertFalse(self.weak(movie('Heimweh')))                             # same title, running time unknown/agrees

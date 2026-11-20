@@ -1294,7 +1294,7 @@ def unknown_hard_reason(row,m):
 # set aside, not deleted: they stay in the work (unknown_before) and "Erneut prüfen" brings them back.
 # A suggestion that could be right (same title as a film of matching length, another series of exactly
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
-UNKNOWN_RULES_REV=3              # raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=4              # raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1335,8 +1335,12 @@ def suggestion_weak(s,source,sendung,work_title=''):
     if kind=='series':
         # Episode evidence (TVDB/IMDb episode titles, season and episode) is never weak.
         if s.get('episode_verified') or (s.get('season') is not None and s.get('episode') is not None):return False
-        import core
-        same=bool(sendung) and (key(s.get('title'))==key(sendung) or core.title_similarity(str(s.get('title') or ''),sendung)>=.85)
+        # Third Gegenprobe (20.11.2026): Wikidata answers a generic Sendung name with the concept itself
+        # ("Reise" Q36875808, "Musik" Q638 for 1,277 works of 3sat), confidence "possible" and no year.
+        if s.get('provider')=='Wikidata' and s.get('confidence')!='high' and not _year(s.get('year')):return True
+        # Only the Sendung's exact name counts as the Sendung; a fuzzy match is no evidence ("...von oben" →
+        # TMDB "3 von oben", similarity 0.889, held 3sat's 2023–2025 "… von oben" films open).
+        same=bool(sendung) and key(s.get('title'))==key(sendung)
         if same or similarity>=.985:
             # The Sendung's own name: only a namesake far outside the broadcast period is no evidence.
             year=_year(s.get('year'));aired=broadcast_year(source)
@@ -1549,7 +1553,7 @@ def unknown_rubric_fix(c,limit=5000):
     from a series section, become open works of unknown kind again; the next sweep decides with the new rules.
 
     Returns the number of reopened works."""
-    if get_state(c,'unknown_rubric_fix_v0649'):return 0
+    if get_state(c,'unknown_rubric_fix_v0649c'):return 0
     import metadata
     names=[r[0] for r in c.execute("SELECT DISTINCT title FROM works WHERE kind='series' AND state='format'") if metadata.generic_topic(r[0]) and r[0]]
     reopened=0
@@ -1568,7 +1572,7 @@ def unknown_rubric_fix(c,limit=5000):
             m=json.loads(row['meta'] or '{}')
             if m.get('reference_id') or m.get('scan_requested'):continue
             reopened+=_reopen(c,row,m)
-    set_state(c,'unknown_rubric_fix_v0649',{'reopened':reopened,'at':time.time()})
+    set_state(c,'unknown_rubric_fix_v0649c',{'reopened':reopened,'at':time.time()})
     return reopened
 
 def _reopen(c,row,m):
