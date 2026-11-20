@@ -1,3 +1,10 @@
+## 0.6.64 – Samsung TV Plus: Region und Automatik im Live-TV
+- Aus dem Code-Review vom 21.11.2026 (Befund C2, Björn: „ja für Samsung TV“). Basis 0.6.61 (PR #99). 0.6.62 (dailyme TV) und 0.6.63 (Episoden-Einordnung absichern) sind von anderen Threads belegt.
+- Bis 0.6.61 konnte der Server Region und Automatik von Samsung TV Plus schon ändern (`/api/samsung-region`, `/api/samsung-auto`, seit 0.5.97), die Seite rief beide aber nie auf: Region blieb Deutschland, Automatik immer an.
+- Live-TV: neuer aufklappbarer Block „Samsung TV Plus · Region und Automatik“ (Gestaltung wie die YouTube-Blöcke) mit Regionswahl, Schalter „Senderliste automatisch alle 12 Stunden aktualisieren“, Knopf „↻ Senderliste jetzt laden“ und Statuszeile (Zahl der Sender, Stand, nächste Aktualisierung, Sender nur mit Kopierschutz, letzter Fehler). Kopfzeile nennt Region und Automatik auch zugeklappt. Fehler beim Speichern setzen den Schalter zurück und werden im Block gemeldet.
+- `samsung_tvplus.change_region`: eine andere Region startet sofort einen Abruf der Senderliste; dieselbe Region startet keinen. Vorher wäre die Liste der alten Region bis zu 12 Stunden (bei ausgeschalteter Automatik dauerhaft) stehen geblieben. `/api/samsung-region` antwortet zusätzlich mit `started`.
+- Tests: neu `tests/test_v0664_samsung_settings.py` (6), neu `tests/browser/samsung_setup.cjs` (auch in CI).
+
 ## 0.6.61 – Verbund: Befunde der Mac-Prüfung von 0.6.56
 - Basis 0.6.59 (PR #97 auf #96 auf #92). 0.6.60 ist von einem anderen Thread belegt.
 - Datenbanksicherung: Die Meldung `db_backup_created` scheiterte mit „event() got multiple values for argument 'name'“ (automatisch, auf Anfrage und manuell). Die Sicherung entstand, alte automatische Sicherungen wurden schon vorher aufgeräumt; es fehlten nur der Protokolleintrag und die Anzeige „Letzte Sicherung“ unter Aufgaben (stand auf „Fehler“). `diagnostics.event`/`error` nehmen den Ereignisnamen jetzt nur positionell, ein Feld `name` ist damit erlaubt.

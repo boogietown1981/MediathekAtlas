@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.61
+# MediathekAtlas · 0.6.64
+
+## Neu in 0.6.64: Samsung TV Plus einstellbar
+
+- Live-TV → „Samsung TV Plus · Region und Automatik“: Land der Senderliste (Deutschland, Österreich, Schweiz), automatische Aktualisierung alle 12 Stunden an oder aus und „Senderliste jetzt laden“, dazu Stand und nächste Aktualisierung.
+- Nach einem Wechsel der Region lädt MediathekAtlas die Senderliste sofort neu.
 
 ## Neu in 0.6.61: Verbund robuster mit iCloud
 

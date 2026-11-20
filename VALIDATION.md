@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.64 – Samsung TV Plus: Region und Automatik (21. November 2026)
+- Automatisch (Cloud, Chromium): gesamte Python-Suite, neu `tests/test_v0664_samsung_settings.py` (neue Region lädt sofort, gleiche Region nicht, unbekannte Region abgelehnt, Liste der neuen Region, Automatik aus verhindert Neuabruf, Verdrahtung), neu `tests/browser/samsung_setup.cjs` (Block zeigt Stand, Automatik aus/an wird gespeichert, Regionswahl gesendet), `click_all.cjs`.
+- Nicht geprüft: echter Abruf der Senderliste für Österreich/Schweiz (Netz in der Cloud gesperrt), Wiedergabe österreichischer/schweizerischer Sender aus Deutschland, Safari/Firefox.
+
 ## 0.6.61 – Verbund: Befunde der Mac-Prüfung (20. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0661_verbund_followup.py` (Feld `name` im Protokoll, auto_tick meldet und räumt auf, dataless-Erkennung, langsames Nachladen mit Frist ohne zweiten Ladevorgang, Lesefehler hält die Position, gesperrter Zwischenspeicher).
 - Nicht geprüft (nur auf dem Mac): echtes `SF_DATALESS` unter macOS 27, Dauer des Nachladens durch iCloud, Sicherung von 2,9 GB mit Protokolleintrag.

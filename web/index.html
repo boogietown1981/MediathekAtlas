@@ -737,6 +737,15 @@
   <div id="livetv-providers" class="portal-categories" role="group" aria-label="Anbieter"></div>
   <div id="livetv-groups" class="portal-categories" role="group" aria-label="Sendergruppen"></div>
   <p id="livetv-status" class="muted" role="status">Live-Sender werden geladen …</p>
+  <details id="samsung-setup" class="youtube-setup samsung-setup"><summary>Samsung TV Plus · Region und Automatik <span id="samsung-setup-state" class="muted"></span></summary>
+    <div class="youtube-setup-body">
+      <p class="muted">Samsung TV Plus bietet je Land eigene Live-Sender an. Wähle das Land, in dem du schaust; Sender eines anderen Landes laufen dort meist nicht. Nach einem Wechsel lädt MediathekAtlas die Senderliste sofort neu.</p>
+      <label>Region<select id="samsung-region"><option value="de">Deutschland</option><option value="at">Österreich</option><option value="ch">Schweiz</option></select></label>
+      <label class="check"><input type="checkbox" id="samsung-auto"> Senderliste automatisch alle 12 Stunden aktualisieren</label>
+      <p class="muted">Ausgeschaltet lädt MediathekAtlas die Liste nur beim ersten Start und wenn du sie hier selbst lädst. Die Programmangaben reichen etwa einen Tag.</p>
+      <p class="youtube-row"><button type="button" id="samsung-sync">↻ Senderliste jetzt laden</button></p>
+      <p id="samsung-setup-status" class="muted" role="status"></p>
+    </div></details>
   <div id="livetv-list" aria-live="polite"></div>
 </section>
 <section id="review" hidden><div class="panel atlas-video-audit" id="video-audit-panel">
