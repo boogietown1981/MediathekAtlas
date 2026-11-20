@@ -42,7 +42,7 @@ def sqlite_busy(exc):
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
 class Service:
-    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_saved={'results':0,'episodes':0,'episodes_skipped':0};self.mesh_waiting={};self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
+    def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_saved={'results':0,'episodes':0,'episodes_skipped':0};self.mesh_waiting={};self.mesh_usage={};self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
     def start(self):
         for fn in (self.sync_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
@@ -1099,17 +1099,29 @@ class Service:
     def mesh_loop(self):
         while not self.stop.is_set():
             self.mesh_tick()
-            if self.stop.wait(2 if self.mesh_pending or self.mesh_backlog.get('done') is False else 30):break
+            if self.stop.wait(2 if self.mesh_pending or (self.mesh_backlog.get('done') is False and not self.mesh_backlog.get('paused')) else 30):break
         with self.mesh_lock:
             if self.mesh:
                 try:self.mesh.flush(force=True)
                 except OSError:pass
     def mesh_off(self,**state):
         with self.mesh_lock:self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_status={'enabled':False,**state}
+    def mesh_salt(self,c=None):
+        if getattr(self,'_mesh_salt',None):return self._mesh_salt
+        def run(c):
+            salt=catalog.get_state(c,'mesh_host_salt')
+            if not salt:salt=secrets.token_hex(8);catalog.set_state(c,'mesh_host_salt',salt)
+            return salt
+        if c is not None:self._mesh_salt=run(c)
+        else:
+            with self.db() as c:self._mesh_salt=run(c)
+        return self._mesh_salt
+    def mesh_display_name(self,config):
+        return str(config.get('mesh_name') or '').strip()[:80] or meshjournal.default_name(self.mesh_salt())
     def mesh_node(self,root):
         """This system's node ID; a new one when the data folder was copied from another computer (0.6.53)."""
-        host=meshjournal.host_id()
         with self.db() as c:
+            host=meshjournal.host_id(self.mesh_salt(c))
             node=catalog.get_state(c,'mesh_node_id');known=catalog.get_state(c,'mesh_node_host')
             renew=bool(node and known and known!=host)
             if node and not known:
@@ -1140,21 +1152,27 @@ class Service:
                     node=self.mesh_node(root)
                     # 0.6.53: open segments stay in the data folder until they are complete (cloud folders).
                     staging=None if direct else Path(self.root)/'verbund-staging'/hashlib.sha256(str(root).encode()).hexdigest()[:12]
-                    self.mesh=meshjournal.Journal(root,node,config.get('mesh_name') or platform.node(),staging=staging);self.mesh_beat=0
+                    self.mesh=meshjournal.Journal(root,node,self.mesh_display_name(config),staging=staging);self.mesh_beat=0
                     diagnostics.event('mesh_opened',node=node)
-                journal=self.mesh;journal.name=str(config.get('mesh_name') or platform.node())[:80]
+                journal=self.mesh;journal.name=self.mesh_display_name(config)
             elapsed=time.monotonic()-self.mesh_mark[0]
             if elapsed>=60:
                 rate=(self.checked-self.mesh_mark[1])*60/elapsed;self.mesh_rate=rate if not self.mesh_rate else self.mesh_rate*.7+rate*.3;self.mesh_mark=(time.monotonic(),self.checked)
             recognizing=bool(config.get('auto_metadata',True))
             providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k)]
             if time.time()-self.mesh_beat>=meshjournal.HEARTBEAT:
-                journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers,'host':meshjournal.host_id(),'shares':list(self.MESH_SHARES)});self.mesh_beat=time.time()
+                journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers,'host':meshjournal.host_id(self.mesh_salt()),'shares':list(self.MESH_SHARES)});self.mesh_beat=time.time()
+            if time.monotonic()-self.mesh_usage.get('at',-1e9)>=self.MESH_USAGE_SECONDS or self.mesh_usage.get('segment')!=journal.segment:
+                self.mesh_usage={**journal.usage(),'at':time.monotonic(),'segment':journal.segment}
             # Results from before joining the Verbund are shared once, in batches.
             journal.flush(force=self.mesh_backfill(journal)>0)
             self.mesh_receipts(journal,folder)
             self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
+            # 0.6.53: compressed segments only when every system in the folder reads them; older ones never see a .gz.
+            try:dirs={d.name for d in (journal.root/'nodes').iterdir() if meshjournal._NODE.match(d.name)}
+            except OSError:dirs=set()
+            journal.compress=all('gzip' in (nodes.get(n,{}).get('shares') or []) for n in dirs-{journal.node})
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
             # 0.6.53: episodes are split only with systems that share their episode results; a node of an
@@ -1168,7 +1186,7 @@ class Service:
                 self.mesh_filter=None if len(parts)==meshjournal.PARTS else parts
                 self.mesh_episode_filter=None if len(episode_parts)==meshjournal.PARTS else episode_parts
                 current=time.time() if now is None else now
-                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,'direct':direct,'peers':list(self.mesh_peers.values()),'backlog':self.mesh_backlog,'importing':self.mesh_pending,'episode_partitions':len(episode_parts),'saved':dict(self.mesh_saved),'conflicts':conflicts,'waiting':[self.mesh_names.get(n,n[:8]) for n in sorted(journal.waiting)],'staged':journal.staging is not None,
+                self.mesh_status={'enabled':True,'folder':folder,'node':journal.node,'name':journal.name,'partitions':len(parts),'media_shared':bool(meshjournal.sync_root(config.get('download_dir') or '')),'imported':self.mesh_imported,'invalid':self.mesh_invalid,'direct':direct,'peers':list(self.mesh_peers.values()),'backlog':self.mesh_backlog,'importing':self.mesh_pending,'episode_partitions':len(episode_parts),'saved':dict(self.mesh_saved),'conflicts':conflicts,'waiting':[self.mesh_names.get(n,n[:8]) for n in sorted(journal.waiting)],'staged':journal.staging is not None,'compressed':journal.compress,'usage':{k:v for k,v in self.mesh_usage.items() if k in ('own','total','files')},
                     'nodes':[{'node':n,'name':str(i.get('name') or n[:8])[:80],'self':n==journal.node,'active':n in members,'recognizing':i.get('recognizing') is True,'rate':i.get('rate'),'version':str(i.get('version',''))[:20],'age':max(0,int(current-float(i.get('time') or 0))),'episodes':n==journal.node or 'episodes' in (i.get('shares') or [])} for n,i in sorted(nodes.items())]}
         except (meshjournal.MeshError,OSError) as e:
             # Standalone fallback: a missing mount never blocks local recognition.
@@ -1190,7 +1208,9 @@ class Service:
             if self.stop.is_set():break
         self.mesh_peers=current
     MESH_IMPORT_BATCH=250;MESH_IMPORT_SECONDS=20;MESH_BACKFILL_PAUSE=20
-    MESH_SHARES=('episodes',)   # 0.6.53: announced in node.json; older nodes announce nothing
+    MESH_SHARES=('episodes','gzip')   # 0.6.53: announced in node.json; older nodes announce nothing
+    MESH_BACKFILL_MB=300   # 0.6.53: earlier results are shared only while this system's journal stays below (setting mesh_journal_mb)
+    MESH_USAGE_SECONDS=60
     def mesh_import(self,journal):
         # Small transactions and a time budget per round: a large backlog from another system
         # (e.g. tens of thousands of earlier results) must not starve the web UI, the
@@ -1245,6 +1265,7 @@ class Service:
         if rank<local or (rank==local and not known):return False
         meta=meshjournal.clean_meta(d['meta'])
         if meta is None:return False
+        if d['outcome']!='review':meta=self.mesh_merge(row,meta)
         if d['outcome']=='review':
             # A weaker instance's "nothing found" must not stop a better equipped one.
             config=self.settings();mine={p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k)}
@@ -1267,6 +1288,16 @@ class Service:
         self.mesh_saved['results']+=1
         c.execute('DELETE FROM metadata_priority WHERE work_id=?',(row['id'],))
         return True
+    def mesh_merge(self,row,meta):
+        """0.6.53: the journal carries only the decision; this system's own offer data (description, episode
+        title, broadcast details) stays, identity fields come from the other system."""
+        try:local=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):local={}
+        keep={k:v for k,v in local.items() if k not in meshjournal.SHARE_FIELDS and k not in ('suggestions','metadata_warnings','reason')}
+        if any(local.get(k)!=meta.get(k) for k in ('provider','reference_id','kind')):
+            # Another work: display data recognised for the old identity does not belong to it.
+            for k in ('poster','fanart','show_description','show_credits','rating','votes','ratings','networks','studios','discovery_enriched','artwork_provider'):keep.pop(k,None)
+        return {**keep,**meta}
     CONFLICT_FIELDS=('kind','title','year','provider','reference_id','season','episode')
     def mesh_conflict(self,c,row,event):
         """Remember a differing manual assignment of another system next to the local one."""
@@ -1339,6 +1370,12 @@ class Service:
         # Pace with the other side: nothing new while the connection fails, at most one batch per 20 s.
         if (self.mesh_peers and all(p.get('error') for p in self.mesh_peers.values())) or time.monotonic()-self.mesh_backfill_at<self.MESH_BACKFILL_PAUSE:return 0
         self.mesh_backfill_at=time.monotonic()
+        try:limit=max(10,int(self.settings().get('mesh_journal_mb') or self.MESH_BACKFILL_MB))*1024*1024
+        except (TypeError,ValueError):limit=self.MESH_BACKFILL_MB*1024*1024
+        if self.mesh_usage.get('own',0)>=limit:
+            # Size cap: earlier results wait, new results are still shared (they are few and small).
+            if not self.mesh_backlog.get('paused'):diagnostics.event('mesh_backfill_paused',bytes=self.mesh_usage.get('own'),limit=limit)
+            self.mesh_backlog={**self.mesh_backlog,'done':self.mesh_backlog.get('done',False),'paused':'size','limit_mb':limit//(1024*1024)};return 0
         with self.db() as c:
             cursor=catalog.get_state(c,state,0)
             if cursor=='complete':
@@ -1382,8 +1419,7 @@ class Service:
     def mesh_publish(self,c,kind,wid,dest,outcome,meta,providers):
         with self.mesh_lock:journal=self.mesh
         if journal is None:return None
-        meta={k:v for k,v in meta.items() if k not in ('metadata_warnings',)}
-        if 'suggestions' in meta:meta['suggestions']=meta['suggestions'][:10] if isinstance(meta['suggestions'],list) else []
+        meta=meshjournal.share_meta(meta,outcome)
         data={'work':wid,'dest':dest,'outcome':outcome,'meta':meta,'providers':[p for p in providers if p in ('TMDB','TVDB','OMDb')]}
         try:
             try:event=journal.append(kind,data)

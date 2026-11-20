@@ -94,6 +94,8 @@ const sleep = ms => new Promise(r => setTimeout(r, ms));
     if (!((b.saved || {}).results >= 30)) problems.push('B hat A-Ergebnisse nicht übernommen: ' + JSON.stringify(b.saved));
     if (a.conflicts !== 1 || b.conflicts !== 1) problems.push('Abweichung nicht gemeldet: ' + a.conflicts + '/' + b.conflicts);
     const fsNames = fs.readdirSync(path.join(cloud, 'MediathekAtlas-Verbund', 'nodes')).flatMap(d => fs.readdirSync(path.join(cloud, 'MediathekAtlas-Verbund', 'nodes', d)));
+    if (!a.compressed || !fsNames.some(f => f.endsWith('.jsonl.gz'))) problems.push('Segmente nicht komprimiert: ' + fsNames.join(', '));
+    if (!(a.usage && a.usage.files)) problems.push('Ordnergröße fehlt: ' + JSON.stringify(a.usage));
     if (fsNames.some(f => f.endsWith('.jsonl.partial'))) problems.push('Offenes Segment liegt im Cloud-Ordner: ' + fsNames.join(', '));
     // B: works recognised through A.
     const matched = Number(execFileSync(PY, ['-c', 'import sqlite3,sys;print(sqlite3.connect(sys.argv[1]).execute("SELECT COUNT(*) FROM works WHERE state=\'matched\'").fetchone()[0])', path.join(nodes[1].data, 'catalog.db')]).toString());

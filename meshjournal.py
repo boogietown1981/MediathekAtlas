@@ -7,7 +7,7 @@ folder sync) never produces conflict copies. The SQLite catalog stays local.
 Segments are appended as events-NNNNNN.jsonl.partial (skipped by MeshSync) and
 published by an atomic rename. Published segments are immutable.
 """
-import hashlib, json, math, os, platform, re, secrets, shutil, subprocess, sys, threading, time
+import gzip, hashlib, json, math, os, platform, re, secrets, shutil, subprocess, sys, threading, time
 from pathlib import Path
 
 FORMAT = 'mediathekatlas-events-v1'
@@ -31,17 +31,38 @@ CLAIM_RENEW = 1800
 _HEX64 = re.compile(r'^[0-9a-f]{64}$')
 RANK = {'manual': 4, 'matched': 3, 'identified': 2, 'review': 1}
 _NODE = re.compile(r'^[0-9a-f]{32}$')
-_SEGMENT = re.compile(r'^events-(\d{6})\.jsonl$')
-_EVICTED = re.compile(r'^\.(events-(\d{6})\.jsonl|node\.json)\.icloud$')
+_SEGMENT = re.compile(r'^events-(\d{6})\.jsonl(\.gz)?$')   # 0.6.53: .gz once every node reads it (shares "gzip")
+_EVICTED = re.compile(r'^\.(events-(\d{6})\.jsonl(?:\.gz)?|node\.json)\.icloud$')
 _fetch_requested = {}
 
 
-def host_id():
-    """Stable, non-identifying fingerprint of this computer (0.6.53).
+def host_id(salt=''):
+    """Fingerprint of this computer (0.6.51/0.6.53), keyed with a random value of this catalogue.
 
-    Used only to notice a data folder that was copied to a second computer: both copies
-    would otherwise write under the same node ID and overwrite each other's node.json."""
-    return hashlib.sha256(('mediathekatlas-host|' + platform.node().lower().removesuffix('.local')).encode()).hexdigest()[:16]
+    Used only to notice a data folder that was copied to a second computer: both copies would
+    otherwise write under the same node ID. Not reversible to the computer name."""
+    return hashlib.sha256(('mediathekatlas-host|%s|%s' % (salt, platform.node().lower().removesuffix('.local'))).encode()).hexdigest()[:16]
+
+
+def default_name(salt=''):
+    """Neutral device name for node.json when the user has not chosen one (no computer or user name)."""
+    kind = 'Mac' if sys.platform == 'darwin' else 'Windows-PC' if sys.platform.startswith('win') else 'System'
+    return '%s %s' % (kind, host_id(salt)[:4].upper())
+
+
+def segment_path(directory, number):
+    """Published segment file (plain or compressed) or None."""
+    for name in ('events-%06d.jsonl' % number, 'events-%06d.jsonl.gz' % number):
+        p = Path(directory) / name
+        if p.is_file(): return p
+    return None
+
+
+def segment_lines(path):
+    data = path.read_bytes()
+    if path.name.endswith('.gz'):
+        with gzip.GzipFile(fileobj=__import__('io').BytesIO(data)) as f: data = f.read(64 * 1024 * 1024)
+    return data.splitlines()
 
 
 def request_download(path):
@@ -191,6 +212,33 @@ def clean_meta(meta):
     return dict(meta)
 
 
+# 0.6.53 (Mac check 20.11.2026: 6.4 KB per result, 1.6 GB per device): only what another system needs to take
+# over the decision. Display data (descriptions, credits, ratings, artwork) stays local; the receiver keeps its
+# own offer data and fetches the rest with its own enrichment. Older receivers accept the slim form as well.
+SHARE_FIELDS = ('title', 'kind', 'year', 'provider', 'reference_id', 'imdb_id', 'imdb_series_id', 'season', 'episode',
+                'episode_title', 'episode_reference_id', 'episode_verified', 'episode_match', 'genres', 'genre_source',
+                'reference_runtime_seconds', 'state', 'video_role', 'video_role_needs_review', 'format_grouping',
+                'deferred_providers', 'sender_provider', 'sender_page_id', 'sender_item_verified')
+SUGGESTION_FIELDS = ('provider', 'reference_id', 'kind', 'title', 'year', 'similarity', 'imdb_id')
+SHARE_TEXT = 300
+SUGGESTIONS_SHARED = 3
+
+
+def _short(value):
+    if isinstance(value, str): return value[:SHARE_TEXT]
+    if isinstance(value, list): return [_short(v) for v in value[:20]]
+    return value
+
+
+def share_meta(meta, outcome):
+    """Slim copy of a result's metadata for the journal (a few hundred bytes)."""
+    out = {k: _short(meta[k]) for k in SHARE_FIELDS if meta.get(k) not in (None, '', [], {})}
+    if outcome == 'review' and isinstance(meta.get('suggestions'), list):
+        out['suggestions'] = [{k: _short(c[k]) for k in SUGGESTION_FIELDS if isinstance(c, dict) and c.get(k) not in (None, '')}
+                              for c in meta['suggestions'][:SUGGESTIONS_SHARED] if isinstance(c, dict)]
+    return out
+
+
 def episode_meta(meta):
     """A confirmed single episode (season/episode or a dated IMDb episode), not just the series."""
     return bool(meta.get('episode_verified')) and (isinstance(meta.get('episode'), int) or bool(meta.get('episode_match')))
@@ -267,10 +315,11 @@ class Journal:
         if self.staging: self.staging.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock(); self.seq = 0; self.hlc = 0; self.opened = 0
         self.segment = 1; self.size = 0; self.gaps = {}; self.waiting = {}
+        self.compress = False   # set by the service once every node of the folder reads .gz (0.6.53)
         self._recover()
 
     def _published(self):
-        return sorted(int(m.group(1)) for m in map(_SEGMENT.match, os.listdir(self.dir)) if m)
+        return sorted({int(m.group(1)) for m in map(_SEGMENT.match, os.listdir(self.dir)) if m})
 
     def _recover(self):
         published = self._published()
@@ -304,7 +353,7 @@ class Journal:
         elif published:
             self.segment = published[-1] + 1
         if last is None and published:
-            lines = (self.dir / ('events-%06d.jsonl' % published[-1])).read_bytes().splitlines()
+            lines = segment_lines(segment_path(self.dir, published[-1]))
             last = lines[-1] if lines else None
         if last:
             try: event = json.loads(last); self.seq = int(event['seq']); self.hlc = int(event['hlc'])
@@ -326,22 +375,45 @@ class Journal:
                      'hlc': self.tick(), 'type': kind, 'data': data}
             line = (json.dumps(event, ensure_ascii=False, separators=(',', ':')) + '\n').encode()
             if len(line) > MAX_LINE: self.seq -= 1; raise ValueError('Ereignis zu groß')
+            # 0.6.53: the size limit holds also within a round (backfill wrote 13 MB segments before).
+            if self.size and self.size + len(line) > SEGMENT_BYTES: self._publish()
             with self._partial().open('ab') as f:
                 f.write(line); f.flush(); os.fsync(f.fileno())
             self.size += len(line); self.opened = self.opened or time.time()
             return event
+
+    def _publish(self):
+        partial = self._partial(); raw = partial.read_bytes()
+        if self.compress:
+            _write_atomic(self.dir / ('events-%06d.jsonl.gz' % self.segment), gzip.compress(raw, 6, mtime=0)); partial.unlink()
+        elif self.staging:
+            _write_atomic(self.dir / ('events-%06d.jsonl' % self.segment), raw); partial.unlink()
+        else: os.replace(partial, self.dir / ('events-%06d.jsonl' % self.segment))
+        self.segment += 1; self.size = 0; self.opened = 0
 
     def flush(self, force=False):
         """Publish the open segment once it is large or old enough."""
         with self.lock:
             if not self.size: return False
             if not force and self.size < SEGMENT_BYTES and time.time() - self.opened < SEGMENT_AGE: return False
-            final = self.dir / ('events-%06d.jsonl' % self.segment)
-            if self.staging:
-                _write_atomic(final, self._partial().read_bytes()); self._partial().unlink()
-            else: os.replace(self._partial(), final)
-            self.segment += 1; self.size = 0; self.opened = 0
+            self._publish()
             return True
+
+    def usage(self):
+        """Bytes and files of the published journal: (own, all nodes)."""
+        own = total = files = 0
+        try: dirs = list((self.root / 'nodes').iterdir())
+        except OSError: return {'own': 0, 'total': 0, 'files': 0}
+        for d in dirs:
+            try: entries = list(os.scandir(d))
+            except OSError: continue
+            for e in entries:
+                if not _SEGMENT.match(e.name): continue
+                try: size = e.stat().st_size
+                except OSError: continue
+                total += size; files += 1
+                if d.name == self.node: own += size
+        return {'own': own, 'total': total, 'files': files}
 
     def heartbeat(self, info):
         node = {'format': FORMAT, 'node': self.node, 'name': self.name, 'time': int(time.time()), 'seq': self.seq, **info}
@@ -390,7 +462,7 @@ class Journal:
             seg, line = cursors.get(nid, [0, 0])[:2]
             try: names = os.listdir(d)
             except OSError: continue
-            numbers = sorted(int(m.group(1)) for m in map(_SEGMENT.match, names) if m)
+            numbers = sorted({int(m.group(1)) for m in map(_SEGMENT.match, names) if m})
             away = evicted(d)['segments'] if any(n.endswith(ICLOUD_SUFFIX) for n in names) else set()
             for number in numbers:
                 if number < seg: continue
@@ -402,8 +474,8 @@ class Journal:
                         if now - since < GAP_WAIT:
                             self.waiting[nid] = expected; break
                     seg, line = number, 0
-                try: rows = (d / ('events-%06d.jsonl' % number)).read_bytes().splitlines()
-                except OSError: break
+                try: rows = segment_lines(segment_path(d, number))
+                except (OSError, EOFError, TypeError, AttributeError, gzip.BadGzipFile): break
                 for raw in rows[line:]:
                     line += 1
                     try: event = json.loads(raw) if len(raw) <= MAX_LINE else None

@@ -16,7 +16,8 @@ Für mehrere Macs (oder PCs) ohne NAS: **Einstellungen → Verbund & andere Syst
 
 - Das offene Segment liegt im Datenordner (`verbund-staging/<hash>/`) und wird erst fertig in den Cloud-Ordner geschrieben.
 - Fehlt ein früheres Segment noch (Synchronisation läuft), wartet das Lesen dieses Knotens bis zu 6 Stunden darauf. Ausgelagerte iCloud-Dateien (`.events-NNNNNN.jsonl.icloud`) werden mit `brctl download` angefordert.
-- `node.json` enthält zusätzlich `host` (Hash des Rechnernamens) und `shares` (`["episodes"]`). Eine Datenbank, die auf einem anderen Rechner weiterläuft, bekommt eine eigene Knoten-ID.
+- Ereignisse tragen nur die Entscheidung (`share_meta`, rund 500 Byte), keine Beschreibungen oder Besetzung. Segmente höchstens 2 MB; komprimiert als `events-NNNNNN.jsonl.gz`, sobald jedes System im Ordner `gzip` in `shares` meldet. Bisherige Ergebnisse werden bis 300 MB eigenem Anteil geteilt (`mesh_journal_mb`).
+- `node.json` enthält zusätzlich `host` (Hash aus Zufallswert und Rechnername) und `shares` (`["episodes"]`). Eine Datenbank, die auf einem anderen Rechner weiterläuft, bekommt eine eigene Knoten-ID.
 
 ## Direktverbindung ohne Sync-Ordner (seit 0.5.5)
 

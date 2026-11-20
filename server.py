@@ -2157,7 +2157,7 @@ def post_settings(self,path,d):
 @ROUTES.get('/api/mesh-setup')
 def get_mesh_setup(self,path):
     s=settings()
-    return self.send({'folders':meshjournal.cloud_folders(),'mesh_dir':s.get('mesh_dir',''),'conflicts':SERVICE.mesh_conflicts()})
+    return self.send({'folders':meshjournal.cloud_folders(),'mesh_dir':s.get('mesh_dir',''),'name':SERVICE.mesh_display_name(s),'conflicts':SERVICE.mesh_conflicts()})
 
 @ROUTES.post('/api/mesh-conflict')
 def post_mesh_conflict(self,path,d):
@@ -2203,7 +2203,8 @@ def post_mesh_direct(self,path,d):
         try:Path(choice['path']).mkdir(exist_ok=True)
         except PermissionError:raise ValueError('Kein Zugriff auf '+choice['label']+'. Am Mac unter Systemeinstellungen → Datenschutz & Sicherheit → Dateien und Ordner MediathekAtlas den Zugriff erlauben und erneut versuchen.')
         s['mesh_dir']=str(meshjournal.check_folder(choice['path'],create=True))
-        if not str(s.get('mesh_name') or '').strip():s['mesh_name']=platform.node().removesuffix('.local')[:80]
+        name=str(d.get('name') or '').strip()[:80]
+        if name:s['mesh_name']=name
     elif action=='folder-off':s['mesh_dir']=''
     else:raise ValueError('Unbekannte Aktion')
     with db() as c:store_settings(c,s)

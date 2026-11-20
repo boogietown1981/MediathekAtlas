@@ -296,3 +296,101 @@ class ServiceTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class SlimJournalTests(unittest.TestCase):
+    """0.6.53 after the Mac check (20.11.2026): 6.4 KB per result, segments up to 13 MB, 1.6 GB per device."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory(); self.addCleanup(tmp.cleanup)
+        self.base = Path(tmp.name); self.root = self.base / 'shared'; self.root.mkdir()
+        meshjournal.check_folder(self.root, create=True)
+
+    def big_meta(self):
+        sugg = {'provider': 'TMDB', 'reference_id': '1', 'kind': 'series', 'title': 'Tatort', 'year': 1970, 'similarity': .9,
+                'description': 'x' * 2000, 'show_credits': {'cast': ['Name %d' % i for i in range(60)]}}
+        return {'title': 'Tatort', 'kind': 'series', 'year': 1970, 'provider': 'TMDB', 'reference_id': '13', 'imdb_id': 'tt0806910',
+                'season': 3, 'episode': 4, 'episode_title': 'Folge', 'genres': ['Krimi', 'Drama'], 'state': 'auto_matched',
+                'description': 'Beschreibung ' * 200, 'show_description': 'Serie ' * 300, 'show_credits': {'cast': ['Person %d' % i for i in range(80)]},
+                'poster': 'https://image.example/' + 'p' * 80, 'ratings': [{'source': 'IMDb', 'value': '7.1'}] * 5,
+                'suggestions': [sugg] * 10, 'metadata_warnings': ['x']}
+
+    def test_result_event_is_a_few_hundred_bytes(self):
+        j = meshjournal.Journal(self.root, 'a' * 32)
+        event = j.append('match.result', {'work': 'w' * 28, 'dest': 'd' * 28, 'outcome': 'matched',
+                                          'meta': meshjournal.share_meta(self.big_meta(), 'matched'), 'providers': ['TMDB']})
+        size = len(json.dumps(event, ensure_ascii=False, separators=(',', ':')))
+        self.assertLess(size, 700, size)
+        for gone in ('description', 'show_description', 'show_credits', 'poster', 'ratings', 'suggestions', 'metadata_warnings'):
+            self.assertNotIn(gone, event['data']['meta'])
+        self.assertIsNotNone(meshjournal.clean_meta(event['data']['meta']))   # older receivers accept it too
+        review = meshjournal.share_meta(self.big_meta(), 'review')
+        self.assertEqual(len(review['suggestions']), 3)
+        self.assertNotIn('description', review['suggestions'][0])
+        self.assertLess(len(json.dumps(review)), 900)
+
+    def test_segment_limit_holds_within_a_round(self):
+        j = meshjournal.Journal(self.root, 'a' * 32)
+        with patch.object(meshjournal, 'SEGMENT_BYTES', 2000):
+            for i in range(40): j.append('match.result', event_data('%02d' % i))
+        files = sorted(j.dir.glob('events-*.jsonl'))
+        self.assertGreater(len(files), 3)
+        self.assertTrue(all(f.stat().st_size <= 2000 for f in files), [f.stat().st_size for f in files])
+        j.flush(force=True)
+        events, _, _ = meshjournal.Journal(self.root, 'b' * 32).read({})
+        self.assertEqual([e['data']['work'] for e in events], ['%02d' % i for i in range(40)])
+
+    def test_compressed_segments_are_read_and_mirrored(self):
+        a = meshjournal.Journal(self.root, 'a' * 32); a.compress = True
+        a.append('match.result', event_data('01')); a.flush(force=True)
+        a.compress = False
+        a.append('match.result', event_data('02')); a.flush(force=True)
+        self.assertEqual(sorted(p.name for p in a.dir.iterdir()), ['events-000001.jsonl.gz', 'events-000002.jsonl'])
+        events, _, _ = meshjournal.Journal(self.root, 'b' * 32).read({})
+        self.assertEqual([e['data']['work'] for e in events], ['01', '02'])
+        again = meshjournal.Journal(self.root, 'a' * 32); self.assertEqual((again.seq, again.segment), (2, 3))
+        import meshpeer
+        self.assertTrue(meshpeer.safe_path('nodes/%s/events-000001.jsonl.gz' % ('a' * 32)))
+        self.assertEqual(a.usage()['files'], 2)
+
+    def test_default_name_has_no_computer_name(self):
+        with patch('platform.node', return_value='ITSO-adms-MacBook-Pro.local'):
+            name = meshjournal.default_name('salt'); fp = meshjournal.host_id('salt')
+        self.assertNotIn('ITSO', name); self.assertNotIn('adms', name)
+        with patch('platform.node', return_value='ITSO-adms-MacBook-Pro.local'):
+            self.assertNotEqual(meshjournal.host_id('other'), fp)
+
+
+class SlimServiceTests(ServiceTests):
+    def test_receiver_keeps_its_own_offer_data(self):
+        src = {'title': 'Spielfilm', 'channel': 'ARD', 'topic': 'Spielfilm', 'description': 'Eigene Senderbeschreibung, lang genug', 'duration': 5400, 'url_video': 'https://example.org/k.mp4'}
+        for n in (self.a, self.b):
+            with n.db() as c: catalog.ingest(c, [src])
+        self.join(); wid = self._ids(self.a)[0]
+        with self.a.db() as c:
+            meta = {'title': 'Der Film', 'kind': 'movie', 'year': 2001, 'provider': 'TMDB', 'reference_id': '9', 'description': 'TMDB-Text ' * 100, 'state': 'auto_matched'}
+            dest = catalog.save_metadata(c, wid, meta, 'matched') or wid
+            self.a.service.mesh_publish(c, 'match.result', wid, dest, 'matched', meta, ['TMDB'])
+        self.a.sync(); self.b.sync()
+        with self.b.db() as c:
+            row = c.execute("SELECT * FROM works WHERE state='matched'").fetchone()
+        m = json.loads(row['meta'])
+        self.assertEqual((m['title'], m['reference_id']), ('Der Film', '9'))
+        self.assertEqual(m['description'], 'Eigene Senderbeschreibung, lang genug')
+
+    def test_compression_only_when_every_system_reads_it(self):
+        self.join()
+        self.assertTrue(self.a.service.mesh.compress)
+        node = self.b.service.mesh.dir / 'node.json'
+        info = json.loads(node.read_text()); info['shares'] = ['episodes']; node.write_text(json.dumps(info))
+        self.a.sync(); self.assertFalse(self.a.service.mesh.compress)
+
+    def test_backfill_pauses_at_the_size_limit(self):
+        self.join()
+        self.a.service.MESH_BACKFILL_PAUSE = 0
+        self.a.service.mesh_usage = {'own': 400 * 1024 * 1024, 'total': 1, 'files': 1, 'at': time.monotonic()}
+        self.assertEqual(self.a.service.mesh_backfill(self.a.service.mesh), 0)
+        self.assertEqual(self.a.service.mesh_backlog['paused'], 'size')
+        self.a.config['mesh_journal_mb'] = 1000
+        self.a.service.mesh_backfill(self.a.service.mesh)
+        self.assertFalse(self.a.service.mesh_backlog.get('paused'))
