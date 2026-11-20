@@ -351,7 +351,7 @@ def worker():
             # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
             # 0.6.14: subscription videos start at most N per hour, evenly spaced (single clicks are not paced).
             forced=bool(j.get('force_now'))
-            if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced):
+            if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced,c=c):
                 c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
             c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
         def cancelled():

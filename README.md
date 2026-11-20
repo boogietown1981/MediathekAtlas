@@ -1,5 +1,10 @@
-# MediathekAtlas · 0.6.65
+# MediathekAtlas · 0.6.66
 
+## Neu in 0.6.66: Speicherbudget für YouTube-Abos gilt hart
+
+- Das Budget je Abo („Speicher höchstens“) gilt jetzt auch für Videos, die schon in der Warteschlange stehen, und wird beim Start jedes Downloads geprüft. Liegt ein Abo darüber, gehen noch nicht gestartete Videos zurück auf „gewünscht“ und warten, bis gesehene Videos Platz machen; ungesehene werden nie gelöscht.
+- Die Größe wartender Videos schätzt MediathekAtlas aus den schon geladenen Dateien des Abos statt mit einem festen Wert.
+- Die Abo-Verwaltung zeigt deutlich „Über dem Speicherbudget: … von … GB belegt“.
 ## Neu in 0.6.65: Episodensuche läuft sichtbar weiter
 
 - „Davon bereit“ zählt nur noch Folgen, die die Episodensuche auch prüfen kann; Werke ohne aktuelles Angebot standen bisher als „bereit“ in der Liste, wurden aber nie geprüft.

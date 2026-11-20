@@ -119,7 +119,9 @@
     if (a.last_new) chips.append(make('span', a.last_new + ' neu beim letzten Mal', 'abo-chip abo-ok'));
     body.append(chips);
     if (a.last_error) body.append(make('p', a.last_error, 'abo-error'));
-    if (a.budget_full) body.append(make('p', 'Speicherbudget erreicht: neue Videos warten, bis gesehene Platz machen. Mehr Platz unter ⚙ „Speicher höchstens“.', 'muted abo-budget-hint'));
+    // 0.6.60: über dem Budget (z. B. Videos aus der Zeit vor dem Budget) deutlich benennen
+    if (a.over_budget) body.append(make('p', 'Über dem Speicherbudget: ' + gb(a.used_gb) + ' von ' + gb(a.budget_gb) + ' GB belegt. Es wird nichts Neues geladen, bis gesehene Videos Platz machen; ungesehene bleiben. Mehr Platz unter ⚙ „Speicher höchstens“.', 'abo-error abo-budget-hint'));
+    else if (a.budget_full) body.append(make('p', 'Speicherbudget erreicht: neue Videos warten, bis gesehene Platz machen. Mehr Platz unter ⚙ „Speicher höchstens“.', 'muted abo-budget-hint'));
     if (a.reasons?.length) {
       const why = make('details', undefined, 'abo-why'); why.append(make('summary', 'Warum ausgelassen oder verzögert?'));
       why.append(make('p', a.reasons.map(r => r.count + ' × ' + r.reason).join(' · '), 'muted')); body.append(why);

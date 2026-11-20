@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.66 – Abo-Speicherbudget (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0660.py`: Aufträge aus der Zeit ohne Budget gehen über dem Budget zurück auf „gewünscht“, kein weiterer Start; Download-Start wartet mit Hinweis, „Jetzt versuchen“ startet; erstes Video eines leeren Abos startet; gelernte Rate (Untergrenze fest, Obergrenze 4×); Anzeige und Verdrahtung.
+- Nicht geprüft: Björns echtes Abo mit 18,7 GB (welches Abo, welche Videos), echte Dateigrößen von YouTube.
+
 ## 0.6.65 – Episodensuche nach Mac-Gegenprüfung (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0665.py`: große Warteschlange bei aufgebrauchtem Senderkontingent mit vier Workern läuft mit und ohne IMDb-Archiv vollständig durch, „bereit“ ohne abgelaufene Werke, zurückgesetzte Ausgaben ohne Angebot einmalig wieder abgelegt (Nutzer-Neuprüfung bleibt), Wikidata-Film/-Serie mit unbekannter Klasse bleibt, Person bleibt draußen.
 - Nicht geprüft: Björns echter Katalog bzw. die Mac-Testkopie (Zahlen zu Einträgen ohne Angebot und Archivstatus sind angefragt), echte Wikidata-Antworten für „Der Baum“ und „100% Wolf“.
