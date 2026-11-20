@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.52 – filmfriend, Gesamtfrist für Anbieter-Abrufe (20. November 2026)
+- Grundlage: Original-Antworten von filmfriend vom Mac (filmfriend_samples.zip, 14 Antworten ohne Login); die Tests lesen sie mit, wenn sie im Projektordner liegen.
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest Chromium, `dmax_joyn.cjs` mit filmfriend (Filme, Serien, kein Abspielen, Hinweis Bibliotheksausweis).
+- Nicht geprüft (aus der Cloud gesperrt): echter Lauf über den ganzen filmfriend-Katalog (Zahl der Titel, Laufzeit, ob die Kinder- und Doku-Seiten eigene Suchen haben), ob `Accept-Language: de` deutsche Titel liefert (der Mac bekam ohne diese Angabe Englisch), Gesamtfrist am echten Netz.
+
 ## 0.6.50 – DMAX/TLC über die Website-Schnittstelle, ServusTV-Geosperre, Joyn-Titel (20. November 2026)
 - Grundlage: Prüfung von 0.6.48 auf Björns Mac am echten Netz (Antworten von public.aurora.enhanced.live, 403 „geo blocked“ bei ServusTV, Joyn-Titel mit Zeichencodes).
 - Automatisch: siehe Bericht zum PR (Python-Suite, Node-Tests, Browser-Klicktests). DMAX-Tests mit Antworten in der auf dem Mac gefundenen Form; ServusTV: Geosperre ohne Wiederholung, nicht „teilweise“, Übernahme aus `refused_pages`, normales 403 weiter mit Wiederholungen; Joyn: Zeichencodes.
