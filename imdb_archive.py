@@ -150,10 +150,37 @@ def series_reference(meta):
     if IMDB_ID.fullmatch(str(meta.get('imdb_id') or '')):return str(meta['imdb_id'])
     return ''
 
+SCHEMA='CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,originalTitle TEXT,isAdult INTEGER,startYear INTEGER,endYear INTEGER,runtimeMinutes INTEGER,genres TEXT); CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER); CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER); CREATE TABLE names(name TEXT,tconst TEXT,title TEXT,localized INTEGER); CREATE TABLE title_akas(titleId TEXT,ordering INTEGER,title TEXT,region TEXT,language TEXT,types TEXT,attributes TEXT,isOriginalTitle INTEGER); CREATE TABLE title_crew(tconst TEXT PRIMARY KEY,directors TEXT,writers TEXT); CREATE TABLE title_principals(tconst TEXT,ordering INTEGER,nconst TEXT,category TEXT,job TEXT,characters TEXT); CREATE TABLE name_basics(nconst TEXT PRIMARY KEY,primaryName TEXT,birthYear INTEGER,deathYear INTEGER,primaryProfession TEXT,knownForTitles TEXT); CREATE TABLE snapshot(updated REAL,details TEXT); PRAGMA user_version=2;'
+
+def seed_file(path):
+    """0.6.42: Create the staging archive with a finished SQLite header instead of an empty file.
+
+    Björn (20.11.2026, 0.6.40): the weekly update on /Volumes/Docking-2 failed with „attempt to
+    write a readonly database“ on the first CREATE TABLE of a brand-new building.db. On exFAT/FAT
+    macOS derives the file ID of an empty file from its directory entry and of a non-empty file from
+    its first cluster, so the ID changes with the first write and SQLite reports the file as moved
+    (SQLITE_READONLY_DBMOVED). A file that already holds the schema keeps its ID. The schema is
+    built in a temporary file on the system disk (a few KB) and copied, which works on every Python.
+    """
+    import tempfile
+    with tempfile.TemporaryDirectory(prefix='mediathekatlas-imdb-') as tmp:
+        seed=Path(tmp)/'seed.db'
+        c=sqlite3.connect(seed)
+        try:c.executescript('PRAGMA journal_mode=DELETE; '+SCHEMA)
+        finally:c.close()
+        data=seed.read_bytes()
+    with open(path,'wb') as f:
+        f.write(data);f.flush();os.fsync(f.fileno())
+
+def _free_bytes(folder):
+    try:return shutil.disk_usage(folder).free
+    except OSError:return None
+
 def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
+    seed_file(path)
     c=sqlite3.connect(path)
     try:
-        c.executescript('PRAGMA journal_mode=DELETE; PRAGMA temp_store=FILE; PRAGMA cache_size=-32768; CREATE TABLE title_basics(tconst TEXT PRIMARY KEY,titleType TEXT,primaryTitle TEXT,originalTitle TEXT,isAdult INTEGER,startYear INTEGER,endYear INTEGER,runtimeMinutes INTEGER,genres TEXT); CREATE TABLE title_ratings(tconst TEXT PRIMARY KEY,averageRating REAL,numVotes INTEGER); CREATE TABLE title_episode(tconst TEXT PRIMARY KEY,parentTconst TEXT,seasonNumber INTEGER,episodeNumber INTEGER); CREATE TABLE names(name TEXT,tconst TEXT,title TEXT,localized INTEGER); CREATE TABLE title_akas(titleId TEXT,ordering INTEGER,title TEXT,region TEXT,language TEXT,types TEXT,attributes TEXT,isOriginalTitle INTEGER); CREATE TABLE title_crew(tconst TEXT PRIMARY KEY,directors TEXT,writers TEXT); CREATE TABLE title_principals(tconst TEXT,ordering INTEGER,nconst TEXT,category TEXT,job TEXT,characters TEXT); CREATE TABLE name_basics(nconst TEXT PRIMARY KEY,primaryName TEXT,birthYear INTEGER,deathYear INTEGER,primaryProfession TEXT,knownForTitles TEXT); CREATE TABLE snapshot(updated REAL,details TEXT); PRAGMA user_version=2;')
+        c.executescript('PRAGMA journal_mode=DELETE; PRAGMA temp_store=FILE; PRAGMA cache_size=-32768;')
         counts={}
         for kind in HEADERS:
             rows=[];names=[];count=0
@@ -372,7 +399,7 @@ class Archive:
             # Back off 1 h, 2 h, 4 h … up to a day instead of downloading 1 GB again every hour.
             self.failures+=1
             self.retry_at=time.time()+min(86400,3600*2**(self.failures-1));self.progress(phase='error',error=core.safe_error(e),retry_at=self.retry_at)
-            diagnostics.error('imdb_archive_failed',e,attempt=self.failures)
+            diagnostics.error('imdb_archive_failed',e,attempt=self.failures,sqlite_error=getattr(e,'sqlite_errorname',''),folder_free=_free_bytes(self.root))
             # Without free space, keeping the downloads would only make it worse.
             if isinstance(e,OSError) and 'Speicher' in str(e):done=True
         finally:

@@ -1094,7 +1094,12 @@ class Service:
         with self.db() as c:cursors=catalog.get_state(c,'mesh_cursors',{})
         started=time.monotonic();self.mesh_pending=False
         while not self.stop.is_set():
+            before=json.dumps(cursors,sort_keys=True)
             events,cursors,invalid=journal.read(cursors,limit=self.MESH_IMPORT_BATCH)
+            # 0.6.42: nothing new from other nodes → no write transaction (Björn 20.11.: the
+            # Verbund round wrote its cursor every 30 s and failed with „database is locked“).
+            if not events and json.dumps(cursors,sort_keys=True)==before:
+                self.mesh_invalid+=invalid;break
             with self.db() as c:
                 for event in events:
                     if self.mesh_apply(c,event):self.mesh_imported+=1

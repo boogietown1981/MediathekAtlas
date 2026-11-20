@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.41
+# MediathekAtlas · 0.6.42
+
+## Neu in 0.6.42: stabiler mit Datenbank auf USB-Laufwerk
+
+- Das IMDb-Update scheitert auf exFAT-Laufwerken nicht mehr mit „attempt to write a readonly database“.
+- Weniger „database is locked“: weniger Synchronisierungen je Schreibvorgang, Einstellungen werden zwischengespeichert, der Verbund schreibt nur noch bei Änderungen.
+- Das Diagnoseprotokoll reicht jetzt für eine ganze Nacht.
 
 ## Neu in 0.6.41: Episodensuche räumt Sendungsausgaben auf
 

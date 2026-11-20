@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.42 – Datenbank auf USB-Laufwerk (20. November 2026)
+- Automatisch: gesamte Python-Suite (1458, 4 übersprungen), alle Node-Tests. Neu `tests/test_v0642_usb_locks.py`: Staging-Datei beim Öffnen nie leer (Test schlägt ohne die Änderung fehl), vollständiges Schema, Fehlername im Protokoll, Verbund ohne Schreibvorgang bei leerer Runde, Einstellungen nur über `store_settings`, Protokollgröße.
+- Befund aus Björns Diagnose vom 20.11. 08:32 UTC (0.6.40) ausgewertet: berichte/diagnose-2026-11-20.md.
+- Nicht geprüft: exFAT-Verhalten selbst (Linux-Testumgebung ohne macOS/exFAT; Hypothese wird mit `sqlite_error` in der nächsten Diagnose bestätigt oder widerlegt), Wirkung auf die Sperren bei Björn, Safari, NAS, Windows.
+
 ## 0.6.41 – Episodensuche: Sendungsausgaben und Beiträge (19. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktests Chromium (`click_all`, `player_tracks`); Ergebnisse im PR. Neu `tests/test_v0641_episode_editions.py`: Regeln mit Gegenbeispielen (Drama-Kurzclip, nummerierte Folgen, historisches Datum im Folgentitel, Trailer, Priorität, „Prüfen“-Auftrag), IMDb „Episode dated …“ (Treffer, falsches Datum, zwei Ausgaben am selben Tag), Folgentitel mit Zähler, Geschwister in einem Durchgang, kein Senderabruf für datierte Ausgaben, Diagnosebeispiele, einmalige Neuprüfung.
 - Muster an Björns Diagnose vom 19.11. 19:45 nachgezählt (Titel der erkannten Serienwerke, Laufzeitverdachte, Senderzähler). Die Diagnose enthält keine Titel je Episodenprüfung; deshalb neu `episode_unresolved_sample`.

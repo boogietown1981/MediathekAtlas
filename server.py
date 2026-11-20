@@ -67,6 +67,11 @@ def job_ids(q):
 @contextmanager
 def db():
     c=sqlite3.connect(ROOT/'catalog.db',timeout=30);c.row_factory=sqlite3.Row
+    # 0.6.42: WAL + NORMAL syncs only at checkpoints instead of on every small commit. On an
+    # external USB disk (Björn: /Volumes/Docking-2) FULL made each commit wait for the disk and
+    # other writers ran into „database is locked“. WAL+NORMAL cannot corrupt the database; after a
+    # power cut at most the last commits are missing and are redone by the workers.
+    c.execute('PRAGMA synchronous=NORMAL')
     try:
         with c:yield c
     finally:c.close()
@@ -95,9 +100,25 @@ with db() as c:
     catalog.recover_download_queue(c)
 _boot('Datenbank bereit')
 
-def settings():
+# 0.6.42: Einstellungen werden von allen Hintergrundschleifen und jeder Statusabfrage gelesen
+# (Björn 20.11.: Teil „settings“ von /api/state 2–12 s, je Aufruf eine neue Verbindung zur Datenbank
+# auf USB). Der gespeicherte Text bleibt kurz im Speicher; jede Änderung über store_settings
+# verwirft ihn sofort. Jeder Aufruf bekommt ein eigenes, frisch dekodiertes dict.
+_SETTINGS_CACHE={'payload':None,'at':0.0};_SETTINGS_LOCK=threading.Lock();SETTINGS_TTL=15.0
+def invalidate_settings():
+    with _SETTINGS_LOCK:_SETTINGS_CACHE['payload']=None;_SETTINGS_CACHE['at']=0.0
+def store_settings(c,s):
+    c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+    invalidate_settings()
+def _settings_payload():
+    with _SETTINGS_LOCK:
+        if _SETTINGS_CACHE['payload'] is not None and time.monotonic()-_SETTINGS_CACHE['at']<SETTINGS_TTL:return _SETTINGS_CACHE['payload']
     with db() as c:r=c.execute('SELECT payload FROM settings WHERE id=1').fetchone()
-    stored=json.loads(r[0]) if r else {}
+    payload=r[0] if r else '{}'
+    with _SETTINGS_LOCK:_SETTINGS_CACHE['payload']=payload;_SETTINGS_CACHE['at']=time.monotonic()
+    return payload
+def settings():
+    stored=json.loads(_settings_payload())
     diagnostics.register_secrets(stored.get('tmdb'),stored.get('omdb'),stored.get('youtube'),stored.get('tvdb'),stored.get('tvdb_pin'),stored.get('fanart'),stored.get('fanart_personal'),stored.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(stored)])
     return {'download_dir':DEFAULT_DOWNLOAD_DIR,'cache_dir':'','tmdb':'','omdb':'','youtube':'','tvdb':'','tvdb_pin':'','fanart':'','fanart_personal':'','auto_catalog':True,'auto_metadata':True,'scan_priority':'balanced','complete_series':True,'metadata_workers':2,'episode_workers':2,'sender_direct_lookup':False,'library_dirs':[],**stored,'imdb_generation':IMDB.updated if 'IMDB' in globals() else 0}
 
@@ -1300,7 +1321,7 @@ def _storage_for_export():
         o=STORAGE.overview();return {'locations':o['locations'],'move':o['move'],'pending':o['pending'],'last':o['last'],'previous':o['previous']}
     except Exception as e:return {'error':core.safe_error(e)}
 def _save_settings(s):
-    with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+    with db() as c:store_settings(c,s)
 STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error,imdb=IMDB)
 
 @ROUTES.get('/api/storage-locations')
@@ -1564,7 +1585,7 @@ def post_youtube_key(self,path,d):
     elif key:
         if not __import__('re').fullmatch(r'[A-Za-z0-9_\-]{20,80}',key):raise ValueError('Das sieht nicht wie ein Google-API-Schlüssel aus')
         s['youtube']=key
-    with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+    with db() as c:store_settings(c,s)
     started=bool(s.get('youtube')) and youtube.start_sync(ROOT)
     return self.send({'status':youtube.state(ROOT),'started':started})
 
@@ -2040,7 +2061,7 @@ def post_settings(self,path,d):
         s['mesh_dir']=folder
     if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
     with db() as c:
-        c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+        store_settings(c,s)
         if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
             c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
     if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
@@ -2075,7 +2096,7 @@ def post_mesh_direct(self,path,d):
     elif action=='unshare':s['mesh_peers']=meshpeer.peer_list(s);s.pop('mesh_peer',None);s.pop('mesh_key',None)
     elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None);s.pop('mesh_peers',None)
     else:raise ValueError('Unbekannte Aktion')
-    with db() as c:c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(json.dumps(s),))
+    with db() as c:store_settings(c,s)
     diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
     threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}
