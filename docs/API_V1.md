@@ -29,7 +29,7 @@ Stand: 14.11.2026, Phase C aus `docs/REVIEW_05107.md`. Die Schnittstelle ist fü
 | GET | `/api/v1/title` | Titelseite eines Plattform-Titels | `source`, `id` | `/api/portal-title` |
 | GET | `/api/v1/show` | Serie der Mediatheken mit Staffeln | `show`, `archive` | `/api/show` |
 | GET | `/api/v1/live` | Live-Sender, nach Sender zusammengeführt | `q`, `provider`, `group` | `/api/live-tv` |
-| GET | `/api/v1/play` | Wiedergabe-Auskunft mit Ticket | eine Kennung (`offer`, `job`, `netzkino`, `pluto`, `justwatch`, `rakuten`, `joyn`, `toggo`, `crunchyroll`, `samsung`, `plex`, `servustv`, `redbulltv`, `sender`, `rtlplus`, `youtube`), `quality` | `/api/play` |
+| GET | `/api/v1/play` | Wiedergabe-Auskunft mit Ticket | eine Kennung (`offer`, `job`, `netzkino`, `pluto`, `justwatch`, `rakuten`, `joyn`, `toggo`, `crunchyroll`, `samsung`, `plex`, `servustv`, `redbulltv`, `dmax`, `sender`, `rtlplus`, `youtube`), `quality` | `/api/play` |
 | GET | `/api/v1/stream` | Videodaten (MP4; mit `raw=1` die lokale Datei) | wie `play`, dazu `t`, `session`, `quality`, `raw`, `ticket` | `/api/stream` |
 | GET | `/api/v1/file` | Fertigen Download laden oder abspielen | `id`, `inline`, `ticket` | `/api/download-file` |
 | GET | `/api/v1/downloads` | Fertige Downloads | | eigene, schlanke Liste |

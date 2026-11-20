@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.47
+# MediathekAtlas · 0.6.48
+
+## Neu in 0.6.48: DMAX, TLC & HGTV, Joyn-Folgenlisten, Red Bull TV repariert
+
+- DMAX, TLC und HGTV sind eine neue Plattform: alle Sendungen der drei Sender mit ihren Folgen. Freie Folgen laufen im eigenen Player, Folgen nur mit discovery+ und kopiergeschützte Folgen sind gekennzeichnet und öffnen beim Sender.
+- Joyn-Serien zeigen jetzt alle Folgen mit Staffel, Laufzeit und „Kostenlos“ oder „Joyn+“ je Folge (gelesen von der Serienseite, 12 Stunden gemerkt). Abgespielt wird weiterhin bei Joyn (Kopierschutz).
+- Red Bull TV liefert wieder Videos: die neuen Kennungen der Website (rrn:content:…) werden erkannt, Links führen zu redbull.tv.
+- Mac: Wird eine hängende Instanz durch einen neuen Start ersetzt, erscheint kein Fehlerdialog „Anwendung konnte nicht gestartet werden“ mehr.
 
 ## Neu in 0.6.47: Red Bull TV, WELT und n-tv im Live-TV, Mac-App startet nach dem Beenden wieder
 

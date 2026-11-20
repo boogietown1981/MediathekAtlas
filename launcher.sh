@@ -15,7 +15,7 @@ LOG="$STATE_DIR/startup.log"
 if [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ]; then
   : > "$LOG"
 fi
-printf 'MediathekAtlas 0.6.47 Startprüfung\n' >> "$LOG"
+printf 'MediathekAtlas 0.6.48 Startprüfung\n' >> "$LOG"
 FOUND_PYTHON=""
 try_python() {
   local candidate="$1"
@@ -110,6 +110,13 @@ APPLESCRIPT
   fi
   break
 done
+# 0.6.48 (Björns Mac, 20.11.2026): Ein neuer Start ersetzt eine hängende Instanz und beendet sie (SIGTERM, nach
+# Frist SIGKILL). Der Python-Prozess endet dann mit 143 bzw. 137 (128 + Signal); das ist kein Startfehler und
+# bekommt keinen Fehlerdialog, nur einen Eintrag im Startprotokoll.
+if [ "$STATUS" -eq 137 ] || [ "$STATUS" -eq 143 ]; then
+  printf 'MediathekAtlas wurde von außen beendet (Status %s, z. B. durch einen neuen Start); kein Startfehler.\n' "$STATUS" >> "$LOG"
+  exit 0
+fi
 if [ "$STATUS" -ne 0 ] && [ "$STATUS" -ne 3 ] && [ -x /usr/bin/osascript ]; then
   /usr/bin/osascript - "$LOG" <<'APPLESCRIPT'
 on run argv

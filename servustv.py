@@ -66,10 +66,17 @@ SOURCE_TTL = 120
 MIN_FILM = 20 * 60           # seconds; shorter videos without a show are clips
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
-RB_ID = re.compile(r'(?:AA-?|AP-?|PN)[A-Z0-9]{8,30}|[a-z][a-z0-9\-]{2,40}')
-COLLECTION_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][a-z0-9\-]{2,40}')
-# 0.6.47: Red Bull TV ids also start with AP- (yt-dlp redbulltv tests: AP-1Q6XCDTAN1W11)
-VALID_ID = re.compile(r'(?:[vc]\.(?:AA-?|AP-?|PN)[A-Z0-9]{8,30}|s\.(?:(?:AA|AP)-?[A-Z0-9]{8,30}|n-[a-z0-9\-]{1,80}))')
+# 0.6.48 (Björn's Mac, live network, 20.11.2026): Red Bull TV names its content with resource names
+# ("rrn:content:films:<uuid>", "rrn:content:shows:<uuid>", "rrn:content:event-profiles:<uuid>"), cards may carry
+# a "page:" prefix, collections are "<uuid>", "playlists::<uuid>" or "rrn:content:collections:<uuid>".
+# 0.6.47 accepted only the ServusTV forms, so every Red Bull TV card was dropped ("lieferte keine Videos").
+_UUID = r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}'
+RRN = r'rrn:content:[a-z][a-z\-]{1,40}:' + _UUID + r'(?::[A-Za-z]{2}(?:-[A-Za-z]{2,3})?)?'
+RRN_ID = re.compile(RRN)
+RB_ID = re.compile(r'(?:AA-?|AP-?|PN)[A-Z0-9]{8,30}|[a-z][a-z0-9\-]{2,40}|' + RRN)
+COLLECTION_ID = re.compile(_UUID + r'|playlists::' + _UUID + r'|rrn:content:collections:' + _UUID + r'|[a-z][a-z0-9\-]{2,40}')
+# 0.6.47: Red Bull TV ids also start with AP- (yt-dlp redbulltv tests: AP-1Q6XCDTAN1W11); 0.6.48: rrn ids
+VALID_ID = re.compile(r'(?:[vc]\.(?:AA-?|AP-?|PN)[A-Z0-9]{8,30}|s\.(?:(?:AA|AP)-?[A-Z0-9]{8,30}|n-[a-z0-9\-]{1,80})|[vcs]\.' + RRN + ')')
 SKIP_TYPES = {'clip', 'trailer', 'stop', 'live_program', 'person', 'promo', 'external'}
 # 0.6.16: sport and event pages (MotoGP, Superbike, DTM …) carry full replays and documentaries.
 PAGE_TYPES = {'subchannel', 'page', 'system', 'topic', 'channel', 'event'}
@@ -414,14 +421,23 @@ class Crawl:
         if not isinstance(card, dict):
             return
         ident, ctype = str(card.get('id') or ''), str(card.get('content_type') or '')
+        if ident.startswith('page:') and RRN_ID.fullmatch(ident[5:]):
+            ident = ident[5:]                            # 0.6.48: Red Bull TV tile of a film page
+            card = {**card, 'id': ident}                 # the player and the stored path need the bare name
         if ctype == 'any':
             # 0.6.16: teaser tiles ("Alle Folgen: Jetzt streamen!") that point to a ServusTV page
             match = NAV_PAGE.fullmatch(str(card.get('nav_url') or ''))
             if match:
                 self.want_product(match.group(1))
             return
-        if not RB_ID.fullmatch(ident) or ident.islower():
+        if not RB_ID.fullmatch(ident) or (ident.islower() and not RRN_ID.fullmatch(ident)):
             return
+        if ctype in ('event_profile', 'event-profile', 'event_profiles'):
+            ctype = 'event'                              # 0.6.48: Red Bull TV event pages (replays, upcoming events)
+        if not ctype and RRN_ID.fullmatch(ident):
+            # 0.6.48: the content type is part of a Red Bull TV resource name
+            ctype = {'films': 'film', 'shows': 'show', 'episodes': 'episode', 'videos': 'video',
+                     'event-profiles': 'event', 'live-videos': 'video_channel'}.get(ident.split(':')[2], '')
         if ctype in PAGE_TYPES:
             if ctype == 'event' and ident not in self.done_products and ident not in self.pending_products:
                 self.events += 1
