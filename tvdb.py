@@ -29,6 +29,7 @@ class TVDBError(ValueError):
             403: 'Zugang nicht freigeschaltet. API-Berechtigung bzw. Abonnement prüfen.',
             429: 'Anfragelimit erreicht; automatische Abfragen werden vorübergehend pausiert.',
         }
+        messages[404] = 'Eintrag bei TVDB nicht gefunden.'
         if status in messages:
             message = messages[status]
         elif reason == 'timeout' or status == 408:

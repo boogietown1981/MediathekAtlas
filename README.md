@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.48
+# MediathekAtlas · 0.6.49
+
+## Neu in 0.6.49: Mehr Werke mit erkannter Art, „Art offen – warum?“
+
+- Beiträge von Sendungen werden auch dann ihrer Sendung zugeordnet, wenn die Filmdatenbanken nur unpassende Vorschläge lieferten (anderer Film gleichen Namens mit falscher Laufzeit, ungenauer Titel, die Sendung selbst mehrfach). Passende Vorschläge halten das Werk weiter offen.
+- ARTE-Rubriken in allen Sprachen gelten nicht mehr als Sendung; falsch abgelegte Werke werden neu geprüft.
+- „Auswahl erneut abgleichen“ hebt eine automatische Einordnung auf und bringt die Vorschläge zurück.
+- Verwaltung → Zuordnung → Erkennungsquote je Sender: Spalte „Art offen“ und die Gründe je Sender und Sendung, auch in der Diagnose.
 
 ## Neu in 0.6.48: DMAX, TLC & HGTV, Joyn-Folgenlisten, Red Bull TV repariert
 
