@@ -9,6 +9,7 @@
 - Kopierter Datenordner: Die Knoten-ID ist an einen Rechner-Fingerabdruck gebunden (`mesh_node_host`, Hash des Rechnernamens). Läuft eine kopierte Datenbank auf einem anderen Rechner, bekommt sie eine eigene ID (Ereignis `mesh_node_renewed`), statt mit dem Original dieselbe `node.json` zu überschreiben. Beim Update erkennt das System eine Kopie an einem frischen Lebenszeichen eines anderen Rechners unter derselben ID.
 - Anzeige: Kopfzeile der Karte („Aktiv · 2 Systeme · 1 Abweichung“ bzw. „Aus“), Ersparnis seit dem Start (übernommene Erkennungen, Episoden, Episodensuchen), Hinweis bei Systemen, die noch keine Episoden teilen.
 - Unverändert: Datenbanken werden nie synchronisiert, API-Schlüssel nie geteilt, kein neuer Netzwerkdienst, Direktverbindung und MeshSync wie bisher (kombinierbar mit dem Cloud-Ordner). Keine KI.
+- Einstellungen (`server.store_settings`): Der Zwischenspeicher aus 0.6.42 schreibt jetzt durch, mit Generationszähler. Vorher konnte eine Abfrage zwischen dem Speichern und dem Commit den alten Stand für 15 Sekunden festhalten (CI: eine entfernte Verbund-Verbindung wurde noch angezeigt).
 - Tests: neu `tests/test_v0653_mesh_share.py` (14), Browsertest `tests/browser/mesh_two_nodes.cjs` (zwei echte Instanzen mit allen Hintergrunddiensten, offline, gemeinsamer iCloud-Ordner).
 
 ## 0.6.52 – filmfriend als Katalog mit Link, Gesamtfrist für Anbieter-Abrufe
