@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import categories
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'rtlplus': 'RTL+'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'rtlplus': 'RTL+'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -62,7 +62,7 @@ def _cast_ref(report):
 
 # 0.6.45: providers whose titles play only in their own (DRM) player. A missing ``playable`` field in a row
 # used to count as playable, and the click then ended in "Der Player ist nicht geladen".
-PROVIDER_PLAYER_ONLY = frozenset({'joyn', 'rtlplus', 'crunchyroll'})
+PROVIDER_PLAYER_ONLY = frozenset({'joyn', 'rtlplus', 'crunchyroll', 'filmfriend'})
 
 
 def _base(source, item_id, report):
@@ -311,7 +311,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'servustv', 'redbulltv', 'dmax', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 

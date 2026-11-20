@@ -1294,7 +1294,7 @@ def unknown_hard_reason(row,m):
 # set aside, not deleted: they stay in the work (unknown_before) and "Erneut prüfen" brings them back.
 # A suggestion that could be right (same title as a film of matching length, another series of exactly
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
-UNKNOWN_RULES_REV=3              # raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=5              # raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1310,19 +1310,41 @@ def broadcast_year(source):
     try:return time.localtime(int(source.get('timestamp') or 0)).tm_year if int(source.get('timestamp') or 0)>0 else None
     except (TypeError,ValueError,OverflowError,OSError):return None
 
-def suggestion_weak(s,source,sendung):
+def _year(value):
+    m=re.search(r'(?<!\d)(18\d\d|19\d\d|20\d\d|210\d)(?!\d)',str(value or ''))
+    return int(m.group(1)) if m else None
+
+def suggestion_brief(s):
+    """The fields of a suggestion that decide the rule, for the diagnosis (no descriptions or pictures)."""
+    if not isinstance(s,dict):return {'invalid':True}
+    out={k:s.get(k) for k in ('provider','kind','title','year','reference_id','similarity','confidence','runtime_mismatch',
+                               'year_mismatch','episode_verified','season','episode') if s.get(k) not in (None,'',False)}
+    if 'title' in out:out['title']=str(out['title'])[:80]
+    return out
+
+def suggestion_weak(s,source,sendung,work_title=''):
     """True if a film database suggestion is no evidence against filing the work under ``sendung``."""
     if not isinstance(s,dict):return True
-    kind=s.get('kind');similarity=float(s.get('similarity') or 0)
+    kind=s.get('kind')
+    try:similarity=float(s.get('similarity') or 0)
+    except (TypeError,ValueError):similarity=0.0
+    if kind=='movie' and sendung and work_title and key(s.get('title'))==key(sendung) and key(work_title)!=key(sendung):
+        # A film named like the Sendung ("Top Secret!" 1984 for the episodes of "Top Secret"): one film cannot
+        # be each of the Sendung's differently titled episodes.
+        return True
     if kind=='series':
         # Episode evidence (TVDB/IMDb episode titles, season and episode) is never weak.
         if s.get('episode_verified') or (s.get('season') is not None and s.get('episode') is not None):return False
-        import core
-        same=bool(sendung) and (key(s.get('title'))==key(sendung) or core.title_similarity(str(s.get('title') or ''),sendung)>=.85)
+        # Third Gegenprobe (20.11.2026): Wikidata answers a generic Sendung name with the concept itself
+        # ("Reise" Q36875808, "Musik" Q638 for 1,277 works of 3sat), confidence "possible" and no year.
+        if s.get('provider')=='Wikidata' and s.get('confidence')!='high' and not _year(s.get('year')):return True
+        # Only the Sendung's exact name counts as the Sendung; a fuzzy match is no evidence ("...von oben" →
+        # TMDB "3 von oben", similarity 0.889, held 3sat's 2023–2025 "… von oben" films open).
+        same=bool(sendung) and key(s.get('title'))==key(sendung)
         if same or similarity>=.985:
             # The Sendung's own name: only a namesake far outside the broadcast period is no evidence.
-            year=s.get('year');aired=broadcast_year(source)
-            if isinstance(year,int) and aired and (year>aired+1 or aired-year>=UNKNOWN_NAMESAKE_YEARS):return True
+            year=_year(s.get('year'));aired=broadcast_year(source)
+            if year and aired and (year>aired+1 or aired-year>=UNKNOWN_NAMESAKE_YEARS):return True
             return False
         return True
     if kind=='movie':
@@ -1335,14 +1357,19 @@ def unknown_recheck_set_aside(c):
     """Once after the 0.6.49 correction: works the first 0.6.49 sweep filed against a suggestion that is no
     longer weak are open again, with their suggestions and their earlier state. Returns the number reopened."""
     if get_state(c,'unknown_set_aside_fix_v0649b'):return 0
-    reopened=0
+    reopened=0;kept=[]
     rows=c.execute("""SELECT * FROM works WHERE state='format' AND kind IN ('series','other')
         AND json_extract(meta,'$.unknown_before.rev')=2 AND json_extract(meta,'$.unknown_before.suggestions') IS NOT NULL""").fetchall()
     for row in rows:
         m=json.loads(row['meta'] or '{}');before=m.get('unknown_before') or {}
         source=best_source(c,row['id']) or {}
         name=m.get('title') if row['kind']=='series' else ''
-        if all(suggestion_weak(x,source,name) for x in before.get('suggestions') or []):continue
+        work_title=cleaned(source.get('title'))
+        weak=[suggestion_weak(x,source,name,work_title) for x in before.get('suggestions') or []]
+        if all(weak):
+            if len(kept)<25:kept.append({'title':work_title[:80],'sendung':str(name)[:80],'duration':int(source.get('duration') or 0),
+                                         'year_aired':broadcast_year(source),'suggestions':[suggestion_brief(x) for x in (before.get('suggestions') or [])[:3]]})
+            continue
         restored=restore_unknown(m)
         if not restored:continue
         title,kind,meta=restored
@@ -1350,16 +1377,26 @@ def unknown_recheck_set_aside(c):
                   (title,kind,json.dumps(meta),before.get('state') or ('retry' if before.get('metadata_warnings') else 'review'),row['id']))
         c.execute('DELETE FROM episode_queue WHERE work_id=?',(row['id'],))
         reopened+=1
-    set_state(c,'unknown_set_aside_fix_v0649b',{'reopened':reopened,'checked':len(rows),'at':time.time()})
+    set_state(c,'unknown_set_aside_fix_v0649b',{'reopened':reopened,'checked':len(rows),'kept':len(rows)-reopened,
+                                                 'kept_samples':kept,'at':time.time()})
     return reopened
 
 def unknown_soft_check(row,m,source,grouping,name,topic_works):
     """None if suggestions/provider errors do not stand against ``grouping``, else the reason to wait."""
     suggestions=[x for x in (m.get('suggestions') or []) if x]
     if suggestions:
-        if grouping not in SENDUNG_GROUPINGS:return 'suggestions_no_sendung'
-        if topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
-        if not all(suggestion_weak(x,source,name) for x in suggestions):return 'suggestions'
+        if grouping not in SENDUNG_GROUPINGS:
+            # Analyse der Datenbankkopie (20.11.2026, 13,004 open works): under a rubric the series lookup asks for
+            # the rubric name; Wikidata answers with the concept ("Reise", "Musik", "Wirtschaft", hr-Sinfonieorchester,
+            # 4,684 works) and TVDB/TMDB with fuzzy names ("Politik" → "POLITI", "Politika"). Series hits of that
+            # kind say nothing about the work itself; an Einzelsendung may be decided against them. A film
+            # suggestion still keeps it open (it may be the programme itself).
+            if grouping=='single' and all(isinstance(x,dict) and x.get('kind')=='series' and suggestion_weak(x,source,'',cleaned(source.get('title')))
+                                          for x in suggestions):
+                pass
+            else:return 'suggestions_no_sendung'
+        elif topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
+        elif not all(suggestion_weak(x,source,name,cleaned(source.get('title'))) for x in suggestions):return 'suggestions'
     if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
     return None
 
@@ -1461,7 +1498,16 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
             _count(summary,'series_rubric',ch,cleaned(topic));continue
         soft=None if singles else unknown_soft_check(row,m,source,grouping,name,counts.get(topic,1))
         if soft:
-            _count(summary,soft,ch,cleaned(topic));continue
+            _count(summary,soft,ch,cleaned(topic))
+            if soft=='suggestions':
+                # 0.6.49: which suggestion keeps the work open, so that the diagnosis shows the evidence.
+                blocking=summary.setdefault('blocking_samples',[])
+                if len(blocking)<25:
+                    first=next((x for x in m.get('suggestions') or [] if not suggestion_weak(x,source,name,cleaned(source.get('title')))),None)
+                    blocking.append({'title':str(source.get('title') or '')[:80],'topic':cleaned(topic)[:80],'channel':ch,
+                                     'duration':int(source.get('duration') or 0),'year_aired':broadcast_year(source),
+                                     'suggestion':suggestion_brief(first)})
+            continue
         if not singles:
             if m.get('suggestions') or m.get('metadata_warnings'):
                 why='suggestions' if m.get('suggestions') else 'warnings'
@@ -1516,7 +1562,7 @@ def unknown_rubric_fix(c,limit=5000):
     from a series section, become open works of unknown kind again; the next sweep decides with the new rules.
 
     Returns the number of reopened works."""
-    if get_state(c,'unknown_rubric_fix_v0649'):return 0
+    if get_state(c,'unknown_rubric_fix_v0649c'):return 0
     import metadata
     names=[r[0] for r in c.execute("SELECT DISTINCT title FROM works WHERE kind='series' AND state='format'") if metadata.generic_topic(r[0]) and r[0]]
     reopened=0
@@ -1535,7 +1581,7 @@ def unknown_rubric_fix(c,limit=5000):
             m=json.loads(row['meta'] or '{}')
             if m.get('reference_id') or m.get('scan_requested'):continue
             reopened+=_reopen(c,row,m)
-    set_state(c,'unknown_rubric_fix_v0649',{'reopened':reopened,'at':time.time()})
+    set_state(c,'unknown_rubric_fix_v0649c',{'reopened':reopened,'at':time.time()})
     return reopened
 
 def _reopen(c,row,m):

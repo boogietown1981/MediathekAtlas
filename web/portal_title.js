@@ -27,6 +27,8 @@
       action: 'offline-download-action', enrich: 'redbulltv-enrich', external: 'Bei Red Bull TV ansehen'},
     dmax: {play: () => window.playDmax, jobs: id => 'dmax-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'dmax-enrich', external: 'Beim Sender ansehen'},
+    filmfriend: {play: () => null, jobs: id => 'filmfriend-downloads?id=' + encodeURIComponent(id), add: '',
+      action: 'offline-download-action', enrich: 'filmfriend-enrich', external: 'Bei filmfriend ansehen'},
     rtlplus: {play: () => null, jobs: id => 'rtlplus-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'rtlplus-enrich', external: 'Bei RTL+ ansehen'},
     toggo: {play: () => window.playToggo, jobs: id => 'toggo-downloads?id=' + encodeURIComponent(id), add: '',
@@ -231,7 +233,7 @@
       const save = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night});
       if (save) actions.push(save);
     }
-    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo' || source === 'crunchyroll' || source === 'plex' || source === 'servustv' || source === 'redbulltv' || source === 'dmax' || source === 'rtlplus')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
+    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo' || source === 'crunchyroll' || source === 'plex' || source === 'servustv' || source === 'redbulltv' || source === 'dmax' || source === 'filmfriend' || source === 'rtlplus')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : m.source === 'toggo' ? '🔒 Kopiergeschützt · nur bei TOGGO' : m.source === 'crunchyroll' ? '🔒 Kopiergeschützt · nur bei Crunchyroll (Abo)' : m.source === 'rtlplus' ? '🔒 Kopiergeschützt · nur bei RTL+' : 'Nur beim Anbieter abspielbar') : ''];

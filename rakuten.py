@@ -134,7 +134,7 @@ def _request(path, query=None, body=None):
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Rakuten-Antwort zu groß')
-        raw = response.read(MAX_ANSWER + 1)
+        raw = provider_base.read_capped(response, MAX_ANSWER)
     if len(raw) > MAX_ANSWER:
         raise ValueError('Rakuten-Antwort zu groß')
     return json.loads(raw.decode('utf-8'))

@@ -108,7 +108,7 @@ def _fetch_json(url, token=''):
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Pluto-Antwort zu groß')
-        data = response.read(MAX_ANSWER + 1)
+        data = provider_base.read_capped(response, MAX_ANSWER)
     if len(data) > MAX_ANSWER:
         raise ValueError('Pluto-Antwort zu groß')
     return json.loads(data.decode('utf-8'))

@@ -12,6 +12,9 @@ update until 0.5.108). This module holds that frame once:
   the last run was partial or failed, the daily automatic run).
 - ``loop``: the old per-platform loop, kept for callers and tests; the server itself uses the
   single planner in ``planner.py`` instead of one thread per platform.
+- ``read_capped`` (0.6.52): reads an answer with a size cap and a total deadline. ``urlopen(timeout=30)``
+  limits every single socket read only; on Björn's Mac a DMAX catalogue run hung for more than five
+  minutes in a trickling SSL read. Every catalogue request of the platforms now ends after READ_DEADLINE.
 
 What each platform fetches and how it maps titles stays in its own module. Standard library only.
 """
@@ -25,8 +28,13 @@ from pathlib import Path
 
 import portal_reference
 
+READ_DEADLINE = 120.0       # seconds for one answer (headers already received)
+READ_CHUNK = 64 * 1024
+
 _WAL = set()
 _WAL_LOCK = threading.Lock()
+_SCHEMA = set()
+_SCHEMA_LOCK = threading.Lock()
 
 
 def connect(root, filename, *, private=False, timeout=5):
@@ -94,3 +102,37 @@ def loop(root, stop, key, module, interval=60):
             continue
         if module.should_sync(root):
             module.start_sync(root)
+
+
+def read_capped(response, limit, deadline=None):
+    """Up to ``limit + 1`` bytes of ``response`` (callers compare with ``limit`` as before), read in chunks;
+    raises TimeoutError when the whole answer takes longer than ``deadline`` seconds (default READ_DEADLINE).
+    One chunk can still wait for the socket timeout of the request, so the worst case is deadline + timeout."""
+    deadline = READ_DEADLINE if deadline is None else float(deadline)
+    ends = time.monotonic() + deadline
+    parts, size = [], 0
+    while size <= limit:
+        chunk = response.read(min(READ_CHUNK, limit + 1 - size))
+        if not chunk:
+            break
+        parts.append(chunk)
+        size += len(chunk)
+        if time.monotonic() > ends and size <= limit:
+            raise TimeoutError('Antwort kam nicht innerhalb von %d Sekunden vollständig an' % deadline)
+    return b''.join(parts)
+
+
+def ensure_schema(db, script):
+    """Run a ``CREATE … IF NOT EXISTS`` script once per process and database file (0.6.52). Running it on
+    every connect made simultaneous status requests at start-up wait for each other's write lock
+    (CI: 500 on /api/film-platforms). A file that is replaced later (new path) gets the script again."""
+    row = db.execute('PRAGMA database_list').fetchone()
+    key = (str(row[2] if row else ''), hash(script))
+    if key[0] and key in _SCHEMA:
+        return
+    with _SCHEMA_LOCK:
+        if key[0] and key in _SCHEMA:
+            return
+        db.executescript(script)
+        if key[0]:
+            _SCHEMA.add(key)

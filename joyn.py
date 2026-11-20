@@ -160,7 +160,7 @@ def _request(operation, variables=None):
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Joyn-Antwort zu groß')
-        raw = response.read(MAX_ANSWER + 1)
+        raw = provider_base.read_capped(response, MAX_ANSWER)
     if len(raw) > MAX_ANSWER:
         raise ValueError('Joyn-Antwort zu groß')
     return json.loads(raw.decode('utf-8'))
@@ -588,7 +588,7 @@ def series_page(path, opener=None):
     with urllib.request.urlopen(req, timeout=30) as response:
         if urllib.parse.urlsplit(response.geturl()).hostname != 'www.joyn.de':
             raise ValueError('Joyn leitet die Serienseite auf eine fremde Adresse um')
-        raw = response.read(MAX_PAGE + 1)
+        raw = provider_base.read_capped(response, MAX_PAGE)
     if len(raw) > MAX_PAGE:
         raise ValueError('Joyn-Serienseite zu groß')
     return raw.decode('utf-8', 'replace')

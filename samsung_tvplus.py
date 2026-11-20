@@ -32,6 +32,8 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+
+import provider_base
 from pathlib import Path
 
 KEY = 'samsung'
@@ -153,12 +155,12 @@ def _fetch(url=DATA_URL):
     with urllib.request.urlopen(req, timeout=40) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Senderliste zu groß')
-        raw = response.read(MAX_ANSWER + 1)
+        raw = provider_base.read_capped(response, MAX_ANSWER)
     if len(raw) > MAX_ANSWER:
         raise ValueError('Senderliste zu groß')
     if raw[:2] == b'\x1f\x8b':
         with gzip.GzipFile(fileobj=__import__('io').BytesIO(raw)) as packed:
-            raw = packed.read(MAX_ANSWER + 1)
+            raw = provider_base.read_capped(packed, MAX_ANSWER)
         if len(raw) > MAX_ANSWER:
             raise ValueError('Senderliste zu groß')
     return json.loads(raw.decode('utf-8'))

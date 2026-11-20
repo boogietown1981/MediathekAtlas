@@ -6,12 +6,14 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[2]
 sys.path[:0] = [str(ROOT), str(ROOT / 'tests')]
 
-import dmax, joyn, storage_locations                     # noqa: E402
+import dmax, filmfriend, joyn, storage_locations         # noqa: E402
 import test_v0648_dmax as D                              # noqa: E402
 import test_v0648_joyn_episodes as J                     # noqa: E402
+import test_v0652_filmfriend as F                        # noqa: E402
 
 root = storage_locations.data_root(Path(sys.argv[1]))
 assert dmax.sync(root, opener=D.FakeDisco(), now=D.NOW)['ok']
+assert filmfriend.sync(root, opener=F.FakeFilmfriend(), now=F.NOW)['ok']        # 0.6.52
 db = joyn._connect(root)
 with db:
     joyn._store(db, [{'id': 's.a_stromberg', 'kind': 'series', 'title': 'Stromberg', 'path': '/serien/stromberg',
