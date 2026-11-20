@@ -111,7 +111,7 @@ def invalidate_settings():
 def store_settings(c,s):
     payload=json.dumps(s)
     c.execute('INSERT OR REPLACE INTO settings VALUES(1,?)',(payload,))
-    # 0.6.53: write-through instead of only discarding. store_settings runs inside the caller's
+    # 0.6.53 (ported into 0.6.54): write-through instead of only discarding. store_settings runs inside the caller's
     # transaction; a reader between this call and the commit read the old row from the database and
     # kept it for 15 s (CI: a removed Verbund connection was still listed). The generation counter
     # stops a reader that started before the change from caching the old value afterwards.
