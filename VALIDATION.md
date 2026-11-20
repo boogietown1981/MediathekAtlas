@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.51 – Erkennung zwischen Geräten teilen (20. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0651_mesh_share.py` (Staging, Absturz/Ordnerwechsel, Lücken und ausgelagerte iCloud-Dateien, Ereignisprüfung, Cloud-Ordner-Suche, Episode übernommen ohne Suche, „keine Episode“ nicht erneut gesucht außer mit neuerem Archiv/Senderabfrage, ältere Knoten, manuelle Abweichung behalten/übernehmen, kopierter Datenordner). Zwei-Instanzen-Test `tests/browser/mesh_two_nodes.cjs`: zwei Server mit allen Hintergrunddiensten (offline), gemeinsamer iCloud-Ordner, Klick „Über iCloud Drive verbinden“ auf beiden, je 128 Bereiche, 30 Ergebnisse von A auf B übernommen (B ohne Anbieterabfrage), kein offenes Segment im Cloud-Ordner, Abweichung auf beiden Seiten gemeldet, Übernahme auf B, A unverändert.
+- Nicht geprüft (nur auf echten Geräten): echtes iCloud Drive (Laufzeit der Synchronisation, ausgelagerte Dateien unter macOS 14+, Rückfrage „Zugriff auf iCloud Drive“), Dropbox/OneDrive/Google Drive, Größe des Journals bei Björns Beständen (Bestand beim Beitritt wird einmal geteilt), Windows.
+
 ## 0.6.50 – DMAX/TLC über die Website-Schnittstelle, ServusTV-Geosperre, Joyn-Titel (20. November 2026)
 - Grundlage: Prüfung von 0.6.48 auf Björns Mac am echten Netz (Antworten von public.aurora.enhanced.live, 403 „geo blocked“ bei ServusTV, Joyn-Titel mit Zeichencodes).
 - Automatisch: siehe Bericht zum PR (Python-Suite, Node-Tests, Browser-Klicktests). DMAX-Tests mit Antworten in der auf dem Mac gefundenen Form; ServusTV: Geosperre ohne Wiederholung, nicht „teilweise“, Übernahme aus `refused_pages`, normales 403 weiter mit Wiederholungen; Joyn: Zeichencodes.
