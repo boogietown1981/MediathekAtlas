@@ -1162,6 +1162,12 @@ class Service:
             providers=[p for p,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if config.get(k)]
             if time.time()-self.mesh_beat>=meshjournal.HEARTBEAT:
                 journal.heartbeat({'version':core.UA.rsplit('/',1)[-1],'recognizing':recognizing,'rate':round(self.mesh_rate,2),'providers':providers,'host':meshjournal.host_id(self.mesh_salt()),'shares':list(self.MESH_SHARES)});self.mesh_beat=time.time()
+            # 0.6.53: compressed segments only when every other system in the folder reads them; decided before
+            # anything of this round is written (also the backlog of earlier results).
+            known=journal.nodes()
+            try:dirs={d.name for d in (journal.root/'nodes').iterdir() if meshjournal._NODE.match(d.name)}
+            except OSError:dirs=set()
+            journal.compress=all('gzip' in (known.get(n,{}).get('shares') or []) for n in dirs-{journal.node})
             if time.monotonic()-self.mesh_usage.get('at',-1e9)>=self.MESH_USAGE_SECONDS or self.mesh_usage.get('segment')!=journal.segment:
                 self.mesh_usage={**journal.usage(),'at':time.monotonic(),'segment':journal.segment}
             # Results from before joining the Verbund are shared once, in batches.
@@ -1169,10 +1175,6 @@ class Service:
             self.mesh_receipts(journal,folder)
             self.mesh_peer_sync(config,journal)
             nodes=journal.nodes();members=journal.members(nodes,now)
-            # 0.6.53: compressed segments only when every system in the folder reads them; older ones never see a .gz.
-            try:dirs={d.name for d in (journal.root/'nodes').iterdir() if meshjournal._NODE.match(d.name)}
-            except OSError:dirs=set()
-            journal.compress=all('gzip' in (nodes.get(n,{}).get('shares') or []) for n in dirs-{journal.node})
             if recognizing:members.setdefault(journal.node,self.mesh_rate)
             parts=journal.assignment(members)
             # 0.6.53: episodes are split only with systems that share their episode results; a node of an
@@ -1370,12 +1372,14 @@ class Service:
         # Pace with the other side: nothing new while the connection fails, at most one batch per 20 s.
         if (self.mesh_peers and all(p.get('error') for p in self.mesh_peers.values())) or time.monotonic()-self.mesh_backfill_at<self.MESH_BACKFILL_PAUSE:return 0
         self.mesh_backfill_at=time.monotonic()
-        try:limit=max(10,int(self.settings().get('mesh_journal_mb') or self.MESH_BACKFILL_MB))*1024*1024
-        except (TypeError,ValueError):limit=self.MESH_BACKFILL_MB*1024*1024
-        if self.mesh_usage.get('own',0)>=limit:
-            # Size cap: earlier results wait, new results are still shared (they are few and small).
-            if not self.mesh_backlog.get('paused'):diagnostics.event('mesh_backfill_paused',bytes=self.mesh_usage.get('own'),limit=limit)
-            self.mesh_backlog={**self.mesh_backlog,'done':self.mesh_backlog.get('done',False),'paused':'size','limit_mb':limit//(1024*1024)};return 0
+        # Size cap per system (its own share of the folder). Named 'cap': the first 0.6.53 build reused 'limit'
+        # (rows per batch) for the bytes, so the whole backlog went out in one round, before compression was on.
+        try:cap=max(10,int(self.settings().get('mesh_journal_mb') or self.MESH_BACKFILL_MB))*1024*1024
+        except (TypeError,ValueError):cap=self.MESH_BACKFILL_MB*1024*1024
+        if self.mesh_usage.get('own',0)>=cap:
+            # Earlier results wait, new results are still shared (they are few and small).
+            if not self.mesh_backlog.get('paused'):diagnostics.event('mesh_backfill_paused',bytes=self.mesh_usage.get('own'),limit=cap)
+            self.mesh_backlog={**self.mesh_backlog,'done':self.mesh_backlog.get('done',False),'paused':'size','limit_mb':cap//(1024*1024)};return 0
         with self.db() as c:
             cursor=catalog.get_state(c,state,0)
             if cursor=='complete':

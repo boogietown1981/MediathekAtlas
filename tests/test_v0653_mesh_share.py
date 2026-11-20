@@ -394,3 +394,30 @@ class SlimServiceTests(ServiceTests):
         self.a.config['mesh_journal_mb'] = 1000
         self.a.service.mesh_backfill(self.a.service.mesh)
         self.assertFalse(self.a.service.mesh_backlog.get('paused'))
+
+    def test_large_backlog_is_written_compressed_in_batches(self):
+        # Mac check 2 of 0.6.53: no .gz on disk, because the whole backlog went out in the first round,
+        # before compression was decided. This checks the real files in the shared folder.
+        rows = [{'title': 'Film %d' % i, 'channel': 'ARD', 'topic': 'Spielfilm', 'description': 'Spielfilm Deutschland lang genug %d' % i,
+                 'duration': 5400, 'url_video': 'https://example.org/%d.mp4' % i} for i in range(1200)]
+        for n in (self.a, self.b):
+            with n.db() as c: catalog.ingest(c, rows)
+        with self.a.db() as c:
+            for (wid,) in c.execute('SELECT id FROM works').fetchall():
+                catalog.save_metadata(c, wid, {'title': 'X' + wid, 'kind': 'movie', 'year': 2000, 'provider': 'TMDB', 'reference_id': wid, 'state': 'auto_matched'}, 'matched')
+        for n in (self.a, self.b): n.service.MESH_BACKFILL_PAUSE = 0
+        with patch.object(meshjournal, 'SEGMENT_BYTES', 8000):
+            self.a.service.mesh_tick()
+            self.assertLessEqual(self.a.service.mesh_backlog.get('shared', 0), 500)
+            for _ in range(6):
+                for n in (self.a, self.b): n.service.mesh_tick()
+        self.assertTrue(self.a.service.mesh_backlog.get('done'))
+        names = [p.name for p in self.a.service.mesh.dir.iterdir() if p.name.startswith('events-')]
+        done = [x for x in names if not x.endswith('.partial')]
+        self.assertGreater(len(done), 5)
+        self.assertEqual([x for x in done if not x.endswith('.jsonl.gz')], [])
+        import gzip
+        lines = sum(len(gzip.decompress((self.a.service.mesh.dir / x).read_bytes()).splitlines()) for x in done)
+        self.assertGreater(lines, 1000)
+        self.b.sync()
+        with self.b.db() as c: self.assertGreater(c.execute("SELECT COUNT(*) FROM works WHERE state='matched'").fetchone()[0], 1000)
