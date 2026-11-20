@@ -11,12 +11,20 @@ environment, so nothing here was checked live – the first catalogue run on Bj�
 
 * Token: ``GET https://eu1-prod.disco-api.com/token?realm=<realm>&deviceId=<hex>`` ->
   ``data.attributes.token`` (anonymous, kept in memory only). Realms ``dmaxde``, ``tlcde``, ``hgtv``.
-* Programmes: ``GET https://de-api.loma-cms.com/feloma/page/sendungen/?environment=<dmax|tlc|hgtv>&v=2``
-  -> ``blocks[].items[]`` with ``title`` and ``attributes.showId`` (the website's "Sendungen A–Z").
-* Episodes: ``GET …/content/videos/?include=show,images,genres&filter[show.id]=<id>&filter[videoType]=EPISODE
-  &sort=-seasonNumber,-episodeNumber&page[number]=<n>&page[size]=100`` (JSON:API: ``data[].attributes``
-  ``name``, ``description``, ``seasonNumber``, ``episodeNumber``, ``videoDuration`` ms, ``alternateId``,
-  ``drmEnabled``, ``availabilityWindows``; ``included`` show and images; ``meta.totalPages``).
+* 0.6.52 (checked on Björn's Mac, 20.11.2026): de-api.loma-cms.com no longer exists (NXDOMAIN, "Name nicht
+  auflösbar"). The websites read ``https://public.aurora.enhanced.live/site/`` without login:
+  - Programmes: ``GET /site/page/sendungen/?include=default&filter[environment]=dmaxde&v=2`` ->
+    ``blocks[0].items[]`` with ``title``, ``slug``, ``attributes.showId``, ``metaMedia`` (DMAX 74, TLC 65 with
+    environment ``tlcde``; ``hgtv`` answered 500, the right name is unknown, so ``hgtvde`` is tried first).
+  - Programme: ``GET /site/shows/<slug>/?include=default&filter[environment]=<env>&v=2`` -> ``showHeaderBlock``
+    (``show.seasons``, pictures) and ``seoSonicShowBlock.items[]`` = episodes (``id``, ``alternateId``,
+    ``videoType`` EPISODE, ``videoDuration`` ms, ``seasonNumber``, ``episodeNumber``, ``publishStart``/``End``,
+    ``package.type`` free, ``meta.name``/``description``/``thumbnailUrl``/``embedUrl``). A programme without that
+    block has no episodes online (19 of 20 checked had some).
+  - Playback is NOT confirmed: the token host answered 504/502 on the Mac and the website puts a consent
+    banner in front of its player. Until a recording shows how the free player gets its stream, every episode
+    opens on the channel's website (``PLAYBACK_CONFIRMED``); the code below for the own player stays, unused.
+* Episodes until 0.6.48 (disco-api, unconfirmed): ``GET …/content/videos/?filter[show.id]=<id>…``.
 * Playback: ``POST …/playback/v3/videoPlaybackInfo`` with ``deviceInfo.drmSupported=false`` ->
   ``data.attributes.streaming[]`` (HLS address). Some programmes are delivered only with FairPlay or
   Widevine (yt-dlp issue reports: ``hls_fairPlay_ts``); such titles are recognised (``drmEnabled``,
@@ -45,12 +53,16 @@ import provider_base
 KEY = 'dmax'
 NAME = 'DMAX, TLC & HGTV'
 DISCO = 'https://eu1-prod.disco-api.com/'
-CMS = 'https://de-api.loma-cms.com/feloma/page/sendungen/'
-API_HOSTS = frozenset({'eu1-prod.disco-api.com', 'de-api.loma-cms.com'})
+AURORA = 'https://public.aurora.enhanced.live/site/'
+API_HOSTS = frozenset({'eu1-prod.disco-api.com', 'public.aurora.enhanced.live'})
+# 0.6.52: the own player is used only once a recording confirms how the free player gets its stream.
+PLAYBACK_CONFIRMED = False
 # key, channel name, realm, CMS environment, website
-SITES = (('dmax', 'DMAX', 'dmaxde', 'dmax', 'https://dmax.de'),
-         ('tlc', 'TLC', 'tlcde', 'tlc', 'https://tlc.de'),
-         ('hgtv', 'HGTV', 'hgtv', 'hgtv', 'https://de.hgtv.com'))
+# (key, channel, realm, website environments to try in order, website). 0.6.52: environments of the website API
+# (dmaxde and tlcde confirmed on Björn's Mac; for HGTV "hgtv" answered 500, "hgtvde" is a guess).
+SITES = (('dmax', 'DMAX', 'dmaxde', ('dmaxde',), 'https://dmax.de'),
+         ('tlc', 'TLC', 'tlcde', ('tlcde',), 'https://tlc.de'),
+         ('hgtv', 'HGTV', 'hgtv', ('hgtvde', 'hgtv'), 'https://de.hgtv.com'))
 REALMS = {s[2]: s for s in SITES}
 # Category the channel stands for, added after the episode's own genres (the shared categories.py rules map it):
 # DMAX documentary formats, TLC reality, HGTV home and garden. An assumption per channel, not a statement of
@@ -62,7 +74,6 @@ USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
 MAX_ANSWER = 8 * 1024 * 1024
 MAX_SHOWS = 1500             # per channel
-MAX_PAGES = 30               # 100 episodes each, per programme
 MAX_ITEMS = 60000
 REQUEST_GAP = 0.3
 RETRY_WAITS = (3, 10)        # seconds before the 2nd and 3rd try after 429/5xx
@@ -233,7 +244,7 @@ def _https_image(value):
     url = str(value or '')
     parts = urllib.parse.urlsplit(url)
     if parts.scheme == 'https' and parts.hostname and not parts.port and not parts.username \
-            and re.search(r'(?:^|\.)(?:disco-api\.com|loma-cms\.com|dmax\.de|tlc\.de|hgtv\.com|discovery\.com|'
+            and re.search(r'(?:^|\.)(?:disco-api\.com|enhanced\.live|dmax\.de|tlc\.de|hgtv\.com|discovery\.com|'
                           r'dnitv\.com|akamaized\.net|imgix\.net|cloudfront\.net)$', parts.hostname) \
             and not re.search(r'[\s<>"\'{}]', url) and len(url) < 600:
         return url
@@ -242,12 +253,13 @@ def _https_image(value):
 
 def _find_image(node, depth=0):
     """First usable picture address in a CMS tile (field names differ between tile types)."""
-    if depth > 3:
+    if depth > 5:
         return ''
     if isinstance(node, str):
         return _https_image(node) if re.search(r'\.(?:jpe?g|png|webp)(?:\?|$)', node, re.I) or 'images' in node else ''
     if isinstance(node, dict):
-        for key in ('poster', 'image', 'images', 'src', 'url', 'thumbnail', 'teaserImage', 'logo'):
+        for key in ('poster', 'image', 'images', 'metaMedia', 'media', 'thumbnailUrl', 'src', 'url', 'thumbnail',
+                    'teaserImage', 'logo'):
             if key in node:
                 found = _find_image(node[key], depth + 1)
                 if found:
@@ -284,82 +296,72 @@ def programmes(answer):
     return out
 
 
-def _included(answer):
-    out = {}
-    for entry in answer.get('included') or []:
-        if isinstance(entry, dict) and entry.get('type') and entry.get('id') is not None:
-            out[(str(entry['type']), str(entry['id']))] = entry.get('attributes') if isinstance(entry.get('attributes'), dict) else {}
-    return out
+def _blocks(answer):
+    blocks = answer.get('blocks') if isinstance(answer.get('blocks'), list) else []
+    return [b for b in blocks if isinstance(b, dict)]
 
 
-def _related(video, name):
-    rel = video.get('relationships') if isinstance(video.get('relationships'), dict) else {}
-    data = (rel.get(name) or {}).get('data') if isinstance(rel.get(name), dict) else None
-    if isinstance(data, dict):
-        return [data]
-    return [d for d in data if isinstance(d, dict)] if isinstance(data, list) else []
+def _offer_of_package(entry):
+    package = entry.get('package')
+    kind = str((package.get('type') if isinstance(package, dict) else package) or '').casefold()
+    return 'free' if not kind or kind in FREE_PACKAGES else 'premium'
 
 
-def offer_of(attrs, now):
-    """'free' when a free (ad-supported) availability window is open now, 'premium' when only paid
-    windows are listed (discovery+), 'free' when the answer names no windows at all."""
-    windows = attrs.get('availabilityWindows') if isinstance(attrs.get('availabilityWindows'), list) else []
-    if not windows:
-        return 'free'
-    for window in windows:
-        if not isinstance(window, dict):
+def show_page(answer, site, show_id, slug, now):
+    """0.6.52: episodes of one programme from the website API (``seoSonicShowBlock.items``) and the programme's
+    facts from ``showHeaderBlock``. Episodes outside their publishing window are left out."""
+    key, channel, realm, _envs, base = site
+    facts, rows = {}, []
+    for block in _blocks(answer):
+        name = str(block.get('type') or block.get('name') or block.get('blockType') or '')
+        show = block.get('show') if isinstance(block.get('show'), dict) else None
+        if show and not facts:
+            facts = {'title': _text(show.get('title') or show.get('name'), 200),
+                     'summary': _text(show.get('description') or show.get('teaser'), 1600),
+                     'poster': _find_image(show) or _find_image(block), 'seasons': _int(show.get('seasons'), 0, 200)}
+        items = block.get('items') if isinstance(block.get('items'), list) else []
+        if 'showheader' in name.casefold() or not items:
             continue
-        if str(window.get('package') or '').casefold() not in FREE_PACKAGES:
-            continue
-        start, end = _stamp(window.get('playableStart')), _stamp(window.get('playableEnd'))
-        if (start is None or start <= now) and (end is None or end > now):
-            return 'free'
-    return 'premium'
-
-
-def episode_rows(answer, site, show_id, show_slug, now):
-    """Episode rows of one page of content/videos plus the programme's own facts (name, picture)."""
-    key, channel, realm, _env, base = site
-    inc = _included(answer)
-    rows, show_info = [], {}
-    for video in answer.get('data') or []:
-        if not isinstance(video, dict) or not NUMBER.fullmatch(str(video.get('id') or '')):
-            continue
-        attrs = video.get('attributes') if isinstance(video.get('attributes'), dict) else {}
-        title = _text(attrs.get('name'), 200)
-        if not title:
-            continue
-        shows = _related(video, 'show')
-        show_attrs = inc.get(('show', str(shows[0].get('id')))) if shows else None
-        if show_attrs and not show_info:
-            show_info = {'title': _text(show_attrs.get('name'), 200), 'summary': _text(show_attrs.get('description'), 1600),
-                         'slug': str(show_attrs.get('alternateId') or '')}
-        genres = []
-        for ref in _related(video, 'genres') + _related(video, 'tags'):
-            name = _text((inc.get((str(ref.get('type')), str(ref.get('id')))) or {}).get('name'), 40)
-            if name and name not in genres:
-                genres.append(name)
-        poster = ''
-        for ref in _related(video, 'images'):
-            poster = _https_image((inc.get(('image', str(ref.get('id')))) or {}).get('src'))
-            if poster:
-                break
-        slug = show_slug or show_info.get('slug') or ''
-        alternate = str(attrs.get('alternateId') or '')
-        web = '%s/sendungen/%s/%s' % (base, slug, alternate) if SLUG.fullmatch(slug) and SLUG.fullmatch(alternate) \
-            else ('%s/sendungen/%s' % (base, slug) if SLUG.fullmatch(slug) else base + '/sendungen')
-        published = _stamp(attrs.get('airDate') or attrs.get('publishStart'))
-        offer = offer_of(attrs, now)
-        drm = 1 if attrs.get('drmEnabled') is True else -1
-        rows.append({'id': 'e.' + str(video['id']), 'kind': 'episode', 'title': title, 'path': str(video['id']),
-                     'series_id': 's.%s.%s' % (realm, show_id), 'season': _int(attrs.get('seasonNumber'), 0, 999),
-                     'episode': _int(attrs.get('episodeNumber'), 0, 9999), 'year': int(time.gmtime(published).tm_year) if published else None,
-                     'duration': (_int(attrs.get('videoDuration'), 1000, 24 * 3600 * 1000) or 0) // 1000 or None,
-                     'rating': '', 'genre': ', '.join([channel] + genres[:5] + [CHANNEL_GENRE.get(realm, '')]).strip(', '), 'summary': _text(attrs.get('description'), 1600),
-                     'poster': poster, 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
-                     'category': channel, 'published': published, 'realm': realm, 'offer': offer,
-                     'playable': 0 if offer != 'free' or drm == 1 else 1, 'drm': drm, 'web_url': web})
-    return rows, show_info
+        for entry in items:
+            if not isinstance(entry, dict) or not NUMBER.fullmatch(str(entry.get('id') or '')):
+                continue
+            if str(entry.get('videoType') or 'EPISODE').upper() != 'EPISODE':
+                continue
+            if 'alternateId' not in entry and 'seasonNumber' not in entry and 'videoDuration' not in entry:
+                continue                                  # a teaser of another block, not an episode
+            meta = entry.get('meta') if isinstance(entry.get('meta'), dict) else {}
+            title = _text(meta.get('name') or entry.get('title') or entry.get('name'), 200)
+            if not title:
+                continue
+            start, end = _stamp(entry.get('publishStart')), _stamp(entry.get('publishEnd'))
+            if (start is not None and start > now) or (end is not None and end <= now):
+                continue
+            alternate = str(entry.get('alternateId') or '')
+            embed = str(meta.get('embedUrl') or '')
+            match = re.fullmatch(r'(?:\{domain\}|https://(?:www\.)?(?:dmax\.de|tlc\.de|de\.hgtv\.com))'
+                                 r'(/sendungen/[a-z0-9][a-z0-9\-]{0,160}/[a-z0-9][a-z0-9\-]{0,160})/?', embed)
+            if match:
+                web = base + match.group(1)
+            elif SLUG.fullmatch(slug or '') and SLUG.fullmatch(alternate):
+                web = '%s/sendungen/%s/%s' % (base, slug, alternate)
+            else:
+                web = '%s/sendungen/%s' % (base, slug) if SLUG.fullmatch(slug or '') else base + '/sendungen'
+            published = start or _stamp(entry.get('airDate'))
+            offer = _offer_of_package(entry)
+            drm = 1 if entry.get('drmEnabled') is True else -1
+            rows.append({'id': 'e.' + str(entry['id']), 'kind': 'episode', 'title': title, 'path': str(entry['id']),
+                         'series_id': 's.%s.%s' % (realm, show_id), 'season': _int(entry.get('seasonNumber'), 0, 999),
+                         'episode': _int(entry.get('episodeNumber'), 0, 9999),
+                         'year': int(time.gmtime(published).tm_year) if published else None,
+                         'duration': (_int(entry.get('videoDuration'), 1000, 24 * 3600 * 1000) or 0) // 1000 or None,
+                         'rating': '', 'genre': ', '.join(g for g in (channel, CHANNEL_GENRE.get(realm, '')) if g),
+                         'summary': _text(meta.get('description') or entry.get('description'), 1600),
+                         'poster': _https_image(meta.get('thumbnailUrl')) or _find_image(entry), 'imdb_id': '',
+                         'imdb_score': None, 'imdb_votes': None, 'number': None, 'category': channel,
+                         'published': published, 'realm': realm, 'offer': offer,
+                         'playable': 1 if PLAYBACK_CONFIRMED and offer == 'free' and drm != 1 else 0, 'drm': drm,
+                         'web_url': web})
+    return rows, facts
 
 
 class Crawl:
@@ -382,6 +384,7 @@ class Crawl:
         self.rows, self.series = {}, {}
         self.requests, self.errors, self.truncated = 0, [], False
         self.per_channel = {}
+        self.unavailable = []             # channels whose catalogue the website API does not know (0.6.52)
 
     def _pause(self):
         self.requests += 1
@@ -391,18 +394,37 @@ class Crawl:
         if self.gap:
             time.sleep(self.gap)
 
+    def _site_json(self, path, env, base):
+        query = urllib.parse.urlencode({'include': 'default', 'filter[environment]': env, 'v': '2'})
+        answer = _json(self.opener, AURORA + path + '?' + query, _headers(base))
+        self._pause()
+        return answer
+
     def channel(self, site):
-        key, channel, realm, env, base = site
-        try:
-            answer = _json(self.opener, CMS + '?' + urllib.parse.urlencode({'environment': env, 'v': '2'}), _headers(base))
-            self._pause()
-            shows = programmes(answer)
-            if not shows:
-                raise ValueError('%s nennt keine Sendungen' % channel)
-            bearer = token(realm, self.opener, self.now, fresh=True)
-            self._pause()
-        except Exception as exc:
-            self.errors.append('%s: %s' % (channel, _error(exc, _api_error(exc) if isinstance(exc, urllib.error.HTTPError) else '')))
+        key, channel, realm, envs, base = site
+        shows, env, failure = [], '', None
+        for candidate in envs:
+            try:
+                shows = programmes(self._site_json('page/sendungen/', candidate, base))
+            except urllib.error.HTTPError as exc:
+                failure = exc
+                if exc.code in (400, 404, 500):
+                    continue                      # unknown environment name: try the next one
+                break
+            except Exception as exc:
+                failure = exc
+                break
+            if shows:
+                env, failure = candidate, None
+                break
+        if not env:
+            unknown = failure is None or isinstance(failure, urllib.error.HTTPError) and failure.code in (400, 404, 500)
+            if unknown and len(envs) > 1:
+                # the website API knows no catalogue under the names tried: a note, not a failed run
+                self.unavailable.append(channel)
+                self.per_channel[key] = None
+                return
+            self.errors.append('%s: %s' % (channel, _error(failure) if failure else '%s nennt keine Sendungen' % channel))
             return
         if len(shows) > MAX_SHOWS:
             shows, self.truncated = shows[:MAX_SHOWS], True
@@ -411,43 +433,29 @@ class Crawl:
             if len(self.rows) >= MAX_ITEMS:
                 self.truncated = True
                 break
+            if not SLUG.fullmatch(slug or ''):
+                continue                          # the programme page is addressed by its slug
             sid = 's.%s.%s' % (realm, show_id)
-            info, page, pages = {}, 1, 1
             try:
-                while page <= pages and page <= MAX_PAGES:
-                    query = urllib.parse.urlencode({
-                        'include': 'show,images,genres', 'filter[show.id]': show_id, 'filter[videoType]': 'EPISODE',
-                        'sort': '-seasonNumber,-episodeNumber', 'page[number]': page, 'page[size]': 100})
-                    answer = _json(self.opener, DISCO + 'content/videos/?' + query, _headers(base, bearer, realm))
-                    self._pause()
-                    rows, facts = episode_rows(answer, site, show_id, slug, self.now)
-                    info = info or facts
-                    for row in rows:
-                        self.rows.setdefault(row['id'], row)
-                    found += len(rows)
-                    meta = answer.get('meta') if isinstance(answer.get('meta'), dict) else {}
-                    pages = _int(meta.get('totalPages'), 0, 100000) or 1
-                    if not rows:
-                        break
-                    page += 1
-                if page <= pages:
-                    self.truncated = True
+                rows, info = show_page(self._site_json('shows/%s/' % slug, env, base), site, show_id, slug, self.now)
             except urllib.error.HTTPError as exc:
-                if exc.code in (400, 404):
-                    continue                      # programme without videos (or withdrawn)
-                self.errors.append('%s: %s' % (channel, _error(exc, _api_error(exc))))
+                if exc.code in (400, 404, 410):
+                    continue                      # programme withdrawn
+                self.errors.append('%s: %s' % (channel, _error(exc)))
                 continue
             except Exception as exc:
                 self.errors.append('%s: %s' % (channel, _error(exc)))
                 continue
-            slug = slug or info.get('slug', '')
+            for row in rows:
+                self.rows.setdefault(row['id'], row)
+            found += len(rows)
             self.series[sid] = {'id': sid, 'kind': 'series', 'title': title or info.get('title') or 'Ohne Titel', 'path': show_id,
                                 'series_id': '', 'season': None, 'episode': None, 'year': None, 'duration': None,
-                                'rating': '', 'genre': channel, 'summary': info.get('summary', ''), 'poster': picture,
+                                'rating': '', 'genre': channel, 'summary': info.get('summary', ''),
+                                'poster': picture or info.get('poster', ''),
                                 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
                                 'category': channel, 'published': None, 'realm': realm, 'offer': 'free',
-                                'playable': 1, 'drm': -1,
-                                'web_url': '%s/sendungen/%s' % (base, slug) if SLUG.fullmatch(slug or '') else base + '/sendungen'}
+                                'playable': 1, 'drm': -1, 'web_url': '%s/sendungen/%s' % (base, slug)}
         self.per_channel[key] = found
 
     def run(self, sites=SITES):
@@ -534,12 +542,13 @@ def sync(root, opener=None, now=None, gap=None, waits=None, sites=SITES):
                                    ('last_result', 'partial' if partial else 'complete'), ('last_error', message),
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
                                    ('requests', crawl.requests), ('per_channel', json.dumps(crawl.per_channel)),
+                                   ('unavailable', json.dumps(crawl.unavailable)),
                                    *counts.items()]:
                     _set(db, key, value)
         finally:
             db.close()
         _notify('dmax_sync_completed', partial=partial, requests=crawl.requests, errors=len(crawl.errors),
-                truncated=crawl.truncated, per_channel=crawl.per_channel,
+                truncated=crawl.truncated, per_channel=crawl.per_channel, unavailable=crawl.unavailable,
                 premium=sum(1 for r in rows if r['kind'] == 'episode' and r['offer'] != 'free'),
                 protected=sum(1 for r in rows if r['kind'] == 'episode' and r['drm'] == 1), **counts)
         return {'ok': True, 'partial': partial, **counts}
@@ -578,6 +587,8 @@ def _badge(row):
 
 
 def _playable(row):
+    if not PLAYBACK_CONFIRMED:
+        return 0                                   # 0.6.52: opens on the channel's website, see the module text
     return 0 if row['kind'] == 'series' or row.get('drm') == 1 or row.get('offer') == 'premium' else 1
 
 
@@ -677,6 +688,12 @@ def state(root):
             per_channel = json.loads(_get(db, 'per_channel', '{}') or '{}')
         except ValueError:
             per_channel = {}
+        try:
+            unavailable = [str(c)[:20] for c in json.loads(_get(db, 'unavailable', '[]') or '[]')][:3]
+        except (ValueError, TypeError):
+            unavailable = []
+        note = ('%s: Katalog über die Website derzeit nicht abrufbar' % ' und '.join(unavailable)) if unavailable else ''
+        note = (note + '. ' if note else '') + 'Folgen öffnen vorerst beim Sender' if not PLAYBACK_CONFIRMED else note
         return {
             'running': _ACTIVE, 'auto': _get(db, 'auto', '0') == '1',
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0), 'last_success': last,
@@ -687,7 +704,8 @@ def state(root):
             'movies': 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'episodes': _int(_get(db, 'episodes', '0')) or 0, 'channels': 0, 'protected': protected,
             'requests': _int(_get(db, 'requests', '0')) or 0,
-            'per_channel': per_channel if isinstance(per_channel, dict) else {}}
+            'per_channel': per_channel if isinstance(per_channel, dict) else {}, 'unavailable': unavailable,
+            'note': note}
     finally:
         db.close()
 
@@ -809,6 +827,9 @@ def play_source(root, item_id, opener=None, check=None, now=None):
         raise ValueError('Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':
         raise ValueError('Bitte eine Folge der Sendung auswählen')
+    if not PLAYBACK_CONFIRMED:
+        raise ValueError('%s-Folgen laufen vorerst nur auf der Website des Senders; bitte „Beim Sender ansehen“ wählen.'
+                         % REALMS.get(row['realm'], ('', 'DMAX'))[1])
     if row['offer'] == 'premium':
         raise ValueError('Diese Folge gibt es nur mit discovery+; bitte beim Sender ansehen.')
     if row['drm'] == 1:

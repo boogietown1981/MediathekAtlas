@@ -95,6 +95,13 @@ SKIPPABLE = (403, 404, 410, 451)
 # edge). A page refused after all tries is remembered (address only) and skipped without a request for
 # REFUSED_RECHECK; after that it is tried once more, without the pauses. Pages that answer again are forgotten.
 REFUSED_RECHECK = 7 * 86400
+# 0.6.52 (Björn's Mac, 20.11.2026): those 15 pages are all /collections/v5.3/stv/de/de/<uuid> and answer 403 with
+# the body {"err":"geo blocked"}; the same ids under /stv/de/at/ answer 200. They are lists for Austria only.
+# A 403 with that body is final at once: no retries, not counted as refused, not a partial run; the page is
+# remembered as "nur in Österreich" and asked again only after GEO_RECHECK (one try). Nothing is taken from the
+# Austrian scope.
+GEO_RECHECK = 30 * 86400
+GEO_MARK = re.compile(rb'geo[ _-]?block', re.I)
 MAX_REFUSED_KEPT = 500
 # ServusTV live channels if the catalogue cannot be read (ids from the HAR of 13.11.2026).
 LIVE_FALLBACK = (('c.PN0B1EC15B2FE10', 'ServusTV', 1),)
@@ -332,6 +339,32 @@ def _page_key(url):
     return (parts.path + ('?' + parts.query if parts.query else ''))[:300]
 
 
+class GeoBlocked(urllib.error.HTTPError):
+    """0.6.52: a page the platform offers only in Austria (403 with body "geo blocked")."""
+
+
+def _geo_blocked(exc):
+    """True for a 403 whose body says "geo blocked" (reads at most 4 KB of the error body)."""
+    if isinstance(exc, GeoBlocked):
+        return True
+    if getattr(exc, 'code', None) != 403:
+        return False
+    try:
+        body = exc.read(4096) if getattr(exc, 'fp', None) is not None else b''
+    except (OSError, ValueError, AttributeError):
+        return False
+    return bool(GEO_MARK.search(body or b''))
+
+
+def _known_geo(db):
+    try:
+        data = json.loads(_get(db, 'geo_pages', '{}') or '{}')
+    except ValueError:
+        return {}
+    return {str(k): float(v) for k, v in data.items() if isinstance(v, (int, float)) and v > 0} \
+        if isinstance(data, dict) else {}
+
+
 def _known_refused(db):
     try:
         data = json.loads(_get(db, 'refused_pages', '{}') or '{}')
@@ -343,7 +376,7 @@ def _known_refused(db):
 class Crawl:
     """Breadth-first walk over pages, shows and rails, with fixed request limits."""
 
-    def __init__(self, opener, gap, waits=(), known_refused=None, now=None, t=STV, scope=None):
+    def __init__(self, opener, gap, waits=(), known_refused=None, now=None, t=STV, scope=None, known_geo=None):
         self.gap, self.waits = gap, tuple(waits)
         self.t, self.scope = t, scope or t.scopes[0]
         self.refused = self.recovered = self.known_skipped = 0
@@ -352,11 +385,17 @@ class Crawl:
         self.known_refused = {str(k): float(v) for k, v in (known_refused or {}).items()
                               if isinstance(v, (int, float)) and v > 0}
         self.refused_pages = {}
+        self.known_geo = dict(known_geo or {})
+        self.geo_pages = {}                   # 0.6.52: address -> time it was found geo blocked
         raw = opener
 
         def patient(url, headers, *args, **kwargs):
             """0.5.106: the edge answers bursts with 403 – wait and try again before giving up."""
             key = _page_key(url)
+            seen_geo = self.known_geo.get(key)
+            if seen_geo and self.now - seen_geo < GEO_RECHECK:
+                self.geo_pages[key] = seen_geo
+                raise GeoBlocked(url, 403, 'nur in Oesterreich', None, None)
             last = self.known_refused.get(key)
             if last and self.now - last < REFUSED_RECHECK:
                 self.known_skipped += 1
@@ -370,6 +409,10 @@ class Crawl:
                         self.recovered += 1
                     return answer
                 except urllib.error.HTTPError as exc:
+                    if _geo_blocked(exc):
+                        self.geo_pages[key] = self.now
+                        self.known_refused.pop(key, None)
+                        raise GeoBlocked(url, 403, 'nur in Oesterreich', None, None) from None
                     if exc.code not in (403, 429, 503) or attempt == len(waits):
                         if exc.code in (403, 429, 503):
                             self.refused += 1
@@ -388,6 +431,8 @@ class Crawl:
     def _failed(self, exc, seed=False):
         """0.6.16: a single refused or vanished page is skipped; everything else is an error."""
         code = getattr(exc, 'code', None)
+        if isinstance(exc, GeoBlocked):
+            return                            # 0.6.52: counted in geo_pages, not as refused
         if isinstance(exc, urllib.error.HTTPError) and code in SKIPPABLE and not seed:
             self.unavailable[code] = self.unavailable.get(code, 0) + 1
             return
@@ -646,6 +691,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
         db = _connect(root, t)
         try:
             known = _known_refused(db)
+            known_geo = _known_geo(db)
             stored_scope = _get(db, 'scope')
         finally:
             db.close()
@@ -656,7 +702,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
                 _notify(t.key + '_scope_missing', tried=len(t.scopes), http_status=getattr(problem, 'code', 0) or 0)
                 raise problem if problem is not None else ValueError('%s lieferte keine Startseite' % t.name)
         crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()), known_refused=known,
-                      now=now, t=t, scope=scope)
+                      now=now, t=t, scope=scope, known_geo=known_geo)
         crawl.run()
         rows = crawl.rows()
         if not any(r['kind'] in ('movie', 'episode') for r in rows):
@@ -682,6 +728,10 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
         skipped = sum(crawl.unavailable.values())
         note = ('%d %s-Seite%s nicht freigegeben und übersprungen' % (skipped, t.name, '' if skipped == 1 else 'n')
                 if skipped and not partial else '')
+        geo = len(crawl.geo_pages)
+        if geo:
+            geo_note = '%d Liste%s nur in Österreich verfügbar (Geosperre)' % (geo, '' if geo == 1 else 'n')
+            note = note + ' · ' + geo_note if note else geo_note
         counts = {'movies': sum(1 for r in rows if r['kind'] == 'movie'),
                   'series': sum(1 for r in rows if r['kind'] == 'series'),
                   'episodes': sum(1 for r in rows if r['kind'] == 'episode'),
@@ -698,13 +748,17 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
                                    ('requests', crawl.requests), ('scope', scope), *counts.items()]:
                     _set(db, key, value)
-                kept = dict(sorted(crawl.refused_pages.items(), key=lambda kv: -kv[1])[:MAX_REFUSED_KEPT])
+                kept = dict(sorted(((k, v) for k, v in crawl.refused_pages.items() if k not in crawl.geo_pages),
+                                   key=lambda kv: -kv[1])[:MAX_REFUSED_KEPT])
                 _set(db, 'refused_pages', json.dumps(kept, separators=(',', ':')))
+                geo_kept = dict(sorted(crawl.geo_pages.items(), key=lambda kv: -kv[1])[:MAX_REFUSED_KEPT])
+                _set(db, 'geo_pages', json.dumps(geo_kept, separators=(',', ':')))
+                _set(db, 'geo_blocked', geo)
         finally:
             db.close()
         _notify(t.key + '_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
                 recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated,
-                known_skipped=crawl.known_skipped, remembered=len(crawl.refused_pages),
+                known_skipped=crawl.known_skipped, remembered=len(crawl.refused_pages), geo_blocked=len(crawl.geo_pages),
                 # 0.6.45: the error texts (no addresses), so a partial run can be explained
                 error_texts=sorted(set(crawl.errors))[:3],
                 unavailable={str(k): v for k, v in sorted(crawl.unavailable.items())},
@@ -861,6 +915,7 @@ def state(root, t=STV):
             'episodes': _int(_get(db, 'episodes', '0')) or 0, 'channels': _int(_get(db, 'channels', '0')) or 0, 'protected': protected,
             'requests': _int(_get(db, 'requests', '0')) or 0,
             'unavailable': _int(_get(db, 'unavailable', '0')) or 0, 'note': _get(db, 'note'),
+            'geo_blocked': _int(_get(db, 'geo_blocked', '0')) or 0,
             'scope_assumed': t.assumed_scope}
     finally:
         db.close()

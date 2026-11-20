@@ -32,6 +32,7 @@ Titles, tokens and URLs never go to logs or the diagnosis export.
 from __future__ import annotations
 import sys
 
+import html
 import json
 import re
 import threading
@@ -201,6 +202,17 @@ def _error(exc):
 
 def _text(value, limit):
     return ' '.join(str(value or '').split())[:limit]
+
+
+def _plain(value, limit):
+    """0.6.52 (Björn's Mac): episode titles of the series page carry HTML entities ("is &#39;ne Frau"),
+    sometimes escaped twice; decoded at most twice."""
+    text = str(value or '')
+    for _ in range(2):
+        if not re.search(r'&(?:#\d{1,7}|#x[0-9a-fA-F]{1,6}|[a-zA-Z]{2,10});', text):
+            break
+        text = html.unescape(text)
+    return _text(text, limit)
 
 
 def _int(value, low=None, high=None):
@@ -611,7 +623,7 @@ def page_episodes(html_text, series_asset=''):
 
 def episode_row(node, series_id, now):
     """Row of table joyn_episodes; None for objects without id, title or a known licence."""
-    ident, title = str(node.get('id') or ''), _text(node.get('title'), 200)
+    ident, title = str(node.get('id') or ''), _plain(node.get('title'), 200)
     kind_offer = offer(node)
     if not VALID_ASSET.fullmatch(ident) or not title or not kind_offer:
         return None
