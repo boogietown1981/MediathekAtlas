@@ -66,14 +66,15 @@ def youtube_format(quality):
         'bv*[height<=1080][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=1080]+ba/b[height<=1080]/b'
 
 
-def hls_playlist(url, quality, folder, fetch=None):
+def hls_playlist(url, quality, folder, fetch=None, prefer=''):
     """Local playlist with the one level that fits the wish. Returns (path, level) or (None, None)
-    when the address has no levels or the wish is "best" (ffmpeg then takes the largest itself)."""
+    when the address has no levels or the wish is "best" (ffmpeg then takes the largest itself).
+    0.6.54: ``prefer`` (e.g. 'avc1') picks that codec up to 1080p when the provider offers it next to HEVC."""
     limit = height(quality)
     if limit is None:
         return None, None
     text, final, variants = hls_variants.load(url, fetch)
-    chosen = hls_variants.choose(variants, str(limit))
+    chosen = hls_variants.choose(variants, str(limit), prefer=prefer)
     if not chosen:
         return None, None
     folder = Path(folder)
@@ -115,7 +116,7 @@ def set_job(c, result, wish):
 
 def options(source, play_source=None, fetch=None):
     """What the dialogue shows for one offer: the levels the provider has, or why none are known."""
-    if source in ('pluto', 'justwatch', 'rakuten'):
+    if source in ('pluto', 'justwatch', 'rakuten', 'servustv', 'redbulltv'):
         try:
             found = play_source()
             if found.get('kind') == 'url' and found.get('hls'):

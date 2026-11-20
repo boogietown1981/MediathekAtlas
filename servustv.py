@@ -27,7 +27,11 @@ between the two (names, site, scope, seeds, player tenant, database, live fallba
 module-level functions below keep their signatures and use the ServusTV tenant unless ``t`` is given.
 
 Clips and trailers are left out (Björn: no "Sonstiges"); films, episodes and live channels are kept.
-No offline copies: ServusTV allows downloads only inside its own app. Titles and URLs never go to
+0.6.54 (Björn 20.11.2026: "ja bitte einbauen"): films and episodes can be kept offline for 30 days for personal
+viewing, like Pluto TV, Netzkino and Plex (servustv_downloads.py; until 0.6.53: no offline copies, because
+ServusTV offers downloads only inside its own app). Only titles the player interface releases right now as plain
+HLS without a key; youth protection hours, geo blocks and live channels are never stored. If the player names an
+end of availability (``availability_end``), the copy is removed then at the latest. Titles and URLs never go to
 logs or the diagnosis export.
 """
 from __future__ import annotations
@@ -234,7 +238,7 @@ def _open(url, headers, limit=MAX_ANSWER):
     if parts.scheme != 'https' or parts.hostname not in API_HOSTS or parts.port or parts.username:
         raise ValueError('Ungültige Anfrage an die Red-Bull-Plattform')
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('Antwort der Red-Bull-Plattform zu groß')
         raw = provider_base.read_capped(response, limit)
@@ -420,12 +424,18 @@ class Crawl:
                             self.refused_pages[key] = self.now
                         raise
                     time.sleep(waits[attempt])
+                except Exception as exc:
+                    # 0.6.54: a timeout or reset connection gets one more try after the first pause
+                    if attempt or not waits or not provider_base.network_failure(exc):
+                        raise
+                    time.sleep(waits[0])
         self.opener = patient
         self.items, self.shows, self.show_names = {}, {}, {}
         self.pending_products, self.done_products = [], set()
         self.pending_collections, self.done_collections = [], set()
         self.requests, self.errors, self.truncated = 0, [], False
         self.unavailable = {}                 # HTTP status -> pages left out (0.6.16)
+        self.net_skipped = 0                  # 0.6.54: single pages lost to a timeout or a reset connection
         self.long_clips = self.events = 0
 
     def _failed(self, exc, seed=False):
@@ -438,7 +448,15 @@ class Crawl:
             return
         if isinstance(exc, urllib.error.HTTPError) and code == 404 and seed:
             return
+        # 0.6.54 (Mac check of 0.6.50: 1 timeout in 2608 requests marked the whole run partial): a single page lost
+        # to the network is skipped like a refused one; only above the REFUSED_SHARE threshold the run is partial.
+        if not seed and provider_base.network_failure(exc):
+            self.net_skipped += 1
+            return
         self.errors.append(_error(exc, self.t))
+
+    def net_failed_too_often(self):
+        return self.net_skipped > max(3, REFUSED_SHARE * max(self.requests, 1))
 
     def refused_too_often(self):
         refused = sum(n for code, n in self.unavailable.items() if code != 404)
@@ -715,12 +733,16 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
             rows += live_rows(t)
         refused = sum(n for code, n in crawl.unavailable.items() if code != 404)
         too_many = crawl.refused_too_often()
-        partial = crawl.truncated or bool(crawl.errors) or too_many
+        net_many = crawl.net_failed_too_often()
+        partial = crawl.truncated or bool(crawl.errors) or too_many or net_many
         if crawl.errors:
             message = 'Katalog nur teilweise geladen: %s (%d von %d Abrufen)' % (crawl.errors[0], len(crawl.errors), crawl.requests)
         elif too_many:
             message = ('Katalog nur teilweise geladen: %s verweigert den Zugriff (HTTP 403) (%d von %d Abrufen)'
                        % (t.name, refused, crawl.requests))
+        elif net_many:
+            message = ('Katalog nur teilweise geladen: Verbindung zu %s mehrfach abgebrochen oder zu langsam (%d von %d Abrufen)'
+                       % (t.name, crawl.net_skipped, crawl.requests))
         elif partial:
             message = 'Katalog nur teilweise geladen'
         else:
@@ -728,6 +750,10 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
         skipped = sum(crawl.unavailable.values())
         note = ('%d %s-Seite%s nicht freigegeben und übersprungen' % (skipped, t.name, '' if skipped == 1 else 'n')
                 if skipped and not partial else '')
+        if crawl.net_skipped and not partial:
+            net_note = '%d Abruf%s wegen Zeitüberschreitung übersprungen, nächster Lauf holt ihn nach' % (
+                crawl.net_skipped, '' if crawl.net_skipped == 1 else 'e')
+            note = note + ' · ' + net_note if note else net_note
         geo = len(crawl.geo_pages)
         if geo:
             geo_note = '%d Liste%s nur in Österreich verfügbar (Geosperre)' % (geo, '' if geo == 1 else 'n')
@@ -757,7 +783,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
         finally:
             db.close()
         _notify(t.key + '_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
-                recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated,
+                recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated, net_skipped=crawl.net_skipped,
                 known_skipped=crawl.known_skipped, remembered=len(crawl.refused_pages), geo_blocked=len(crawl.geo_pages),
                 # 0.6.45: the error texts (no addresses), so a partial run can be explained
                 error_texts=sorted(set(crawl.errors))[:3],
@@ -1045,6 +1071,49 @@ def _stream_url(value):
     return str(value)
 
 
+# 0.6.54: explicit end of availability in the player answer (names as on other Red Bull Media House players and
+# the broadcaster interfaces). Nothing is guessed: an unknown or unreadable value means "no end known".
+END_KEYS = ('availableUntil', 'availableTo', 'availabilityEnd', 'availabilityUntil', 'expirationDate', 'expiryDate',
+            'currentSunset', 'sunset', 'sunsetDate', 'validUntil')
+
+
+def _when(value):
+    """Seconds since 1970 for an epoch (s or ms) or an ISO time with zone; None otherwise."""
+    import datetime
+    if isinstance(value, bool):
+        return None
+    if isinstance(value, (int, float)):
+        number = float(value) / (1000 if value > 1e11 else 1)
+    elif isinstance(value, str) and value.strip():
+        text = value.strip()
+        if re.fullmatch(r'\d{9,13}', text):
+            return _when(int(text))
+        try:
+            dt = datetime.datetime.fromisoformat(text.replace('Z', '+00:00'))
+        except ValueError:
+            return None
+        if dt.tzinfo is None:
+            return None   # unknown time zone: never invent a deadline
+        number = dt.timestamp()
+    else:
+        return None
+    return number if 946684800 <= number <= 4102444800 else None   # 2000 … 2100
+
+
+def availability_end(answer):
+    """End of availability named by the player interface (seconds), or None."""
+    if not isinstance(answer, dict):
+        return None
+    for source in (answer, answer.get('availability'), answer.get('meta')):
+        if not isinstance(source, dict):
+            continue
+        for key in END_KEYS:
+            when = _when(source.get(key))
+            if when:
+                return when
+    return None
+
+
 def _player_title(row, parent, t=STV):
     title = row['title']
     if row['kind'] == 'episode':
@@ -1081,7 +1150,7 @@ def play_source(root, item_id, opener=None, check=None, now=None, t=STV):
     cache_key = item_id if t.key == KEY else (t.key, item_id)
     cached = _SOURCES.get(cache_key)
     if cached and cached[0] > now:
-        url, duration = cached[1]
+        url, duration, until = (tuple(cached[1]) + (None,))[:3]
     else:
         try:
             answer = _player_answer(row['path'], opener, t)
@@ -1100,7 +1169,8 @@ def play_source(root, item_id, opener=None, check=None, now=None, t=STV):
         if row['drm'] != 0 and not live:
             _mark_drm(root, item_id, 0, t)
         duration = 0 if live else (_int(answer.get('duration'), 1, 24 * 3600) or row['duration'] or 0)
-        _SOURCES[cache_key] = (now + SOURCE_TTL, (url, duration))
+        until = None if live else availability_end(answer)
+        _SOURCES[cache_key] = (now + SOURCE_TTL, (url, duration, until))
     return {'kind': 'url', 'url': url, 'hls': True, 'title': _player_title(row, parent, t), 'provider': t.key,
             'quality': '%s live (kostenlos)' % t.name if live else '%s (kostenlos)' % t.name,
-            'duration': duration or 0, 'live': live}
+            'duration': duration or 0, 'live': live, 'available_until': until}

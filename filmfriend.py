@@ -54,7 +54,7 @@ USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1
 MAX_ANSWER = 8 * 1024 * 1024
 PAGE_SIZE = 24                # as the website asks
 MAX_SEARCH_PAGES = 600        # per run, over all searches (14,400 titles)
-MAX_DETAILS = 400             # detail requests per run
+MAX_DETAILS = 1200            # detail requests per run (0.6.54: was 400; at 1 s gap about 20 min in the background)
 DETAIL_TTL = 30 * 86400
 MAX_ITEMS = 20000
 REQUEST_GAP = 1.0             # gentle: one request per second
@@ -132,7 +132,7 @@ def _open(url, headers, limit=MAX_ANSWER):
     if parts.scheme != 'https' or parts.hostname not in API_HOSTS or parts.port or parts.username:
         raise ValueError('Ungültige filmfriend-Anfrage')
     req = urllib.request.Request(url, headers=headers)
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
             raise ValueError('filmfriend-Antwort zu groß')
         raw = provider_base.read_capped(response, limit)

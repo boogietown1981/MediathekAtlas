@@ -1,4 +1,13 @@
-# MediathekAtlas · 0.6.52
+# MediathekAtlas · 0.6.54
+
+## Neu in 0.6.54: Offline-Kopien für ServusTV und Red Bull TV
+
+- Filme und Folgen von ServusTV und Red Bull TV lassen sich jetzt wie bei Pluto TV, Netzkino und Plex mit „⬇ Offline speichern (30 Tage)“ sichern: in der Kachel, auf der Titelseite, bei jeder Folge einer Sendung. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO), zu sehen in der Downloads-Liste, unter „Offline-Kopien von …“ und in der Speicherverwaltung.
+- Beide Sender bieten selbst keine Downloads an; die Kopie ist eine private Kopie nur für dich. Sie bleibt 30 Tage und nie länger, als der Sender den Titel anbietet (nennt der Player ein Verfügbarkeitsende, wird die Datei spätestens dann entfernt; Anzeige „Offline bis …“).
+- Gespeichert wird nur, was der Sender gerade ohne Kopierschutz freigibt: Live-Sender nie, Jugendschutz-Sperrzeiten und Geosperren gelten auch für das Speichern, nichts wird umgangen.
+- „Beste verfügbare“ lädt bis 1080p in H.264 (läuft auch auf älteren Macs und NAS-Playern); 4K (HEVC) nur, wenn 2160p gewählt wird.
+- Katalogabrufe aller Plattformen enden jetzt auch dann nach spätestens 150 Sekunden, wenn der Anbieter die Verbindung annimmt, aber nie antwortet (auf dem Mac hing so ein DMAX-Lauf). Ein DMAX-Lauf hört nach drei Verbindungsfehlern auf, gilt als teilweise geladen und versucht es nach zwei Stunden erneut. Beim ServusTV-Katalog macht eine einzelne Zeitüberschreitung den Lauf nicht mehr „teilweise“: die Seite wird einmal erneut versucht, sonst übersprungen und als Hinweis genannt.
+- filmfriend: pro Lauf werden jetzt bis zu 1200 statt 400 Titel im Detail gelesen (nur dort steht die FSK). Bis dahin zeigt die Titelseite „FSK noch unbekannt“; die Kinderecke nimmt filmfriend-Titel weiterhin nicht auf.
 
 ## Neu in 0.6.52: filmfriend, die Filme und Serien der öffentlichen Bibliotheken
 

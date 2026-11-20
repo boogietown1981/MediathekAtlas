@@ -147,7 +147,7 @@ def _fetch(url, body=None):
     else:
         head = {'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Origin': SITE, 'Referer': SITE + '/'}
     req = urllib.request.Request(url, data=data, headers=head, method='POST' if data is not None else 'GET')
-    with urllib.request.urlopen(req, timeout=40) as response:
+    with provider_base.open_capped(req, timeout=40) as response:
         final = urllib.parse.urlsplit(response.geturl())
         if final.scheme != 'https' or final.hostname not in HOSTS:
             raise ValueError('TOGGO leitete auf eine unerwartete Adresse um')

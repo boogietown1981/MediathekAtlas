@@ -131,7 +131,7 @@ def _request(path, query=None, body=None):
     req = urllib.request.Request(url, data=data, method='POST' if data is not None else 'GET', headers={
         'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Content-Type': 'application/json',
         'Origin': SITE, 'Referer': SITE + '/'})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Rakuten-Antwort zu groß')
         raw = provider_base.read_capped(response, MAX_ANSWER)

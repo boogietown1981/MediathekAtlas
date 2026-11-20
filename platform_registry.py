@@ -31,8 +31,8 @@ import joyn, joyn_enrichment
 import toggo, toggo_enrichment
 import crunchyroll, crunchyroll_enrichment
 import plex, plex_downloads, plex_enrichment
-import servustv, servustv_enrichment
-import redbulltv, redbulltv_enrichment
+import servustv, servustv_enrichment, servustv_downloads
+import redbulltv, redbulltv_enrichment, redbulltv_downloads
 import dmax, dmax_enrichment
 import filmfriend, filmfriend_enrichment
 import rtlplus, rtlplus_enrichment
@@ -78,10 +78,11 @@ PLATFORMS = (
     Platform('crunchyroll', crunchyroll, crunchyroll_enrichment),
     # 0.5.98 without, 0.6.3 with offline copies (Björn 14.11.2026); protected titles stay excluded.
     Platform('plex', plex, plex_enrichment, plex_downloads),
-    # 0.5.101: no offline copies (ServusTV allows downloads only in its own app).
-    Platform('servustv', servustv, servustv_enrichment),
-    # 0.6.47: Red Bull TV on the ServusTV engine (same platform, own tenant); no offline copies.
-    Platform('redbulltv', redbulltv, redbulltv_enrichment),
+    # 0.5.101 without offline copies (the channel offers downloads only in its own app); 0.6.54 with private
+    # 30-day copies of films and episodes without copy protection (Björn 20.11.2026), never live channels.
+    Platform('servustv', servustv, servustv_enrichment, servustv_downloads),
+    # 0.6.47: Red Bull TV on the ServusTV engine (same platform, own tenant); 0.6.54 offline copies as ServusTV.
+    Platform('redbulltv', redbulltv, redbulltv_enrichment, redbulltv_downloads),
     # 0.6.48: no offline copies (the channels allow downloads only in their own apps).
     Platform('dmax', dmax, dmax_enrichment),
     # 0.6.52: catalogue with links only (library card login on filmfriend.de), no offline copies.

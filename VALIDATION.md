@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.54 – Offline-Kopien für ServusTV und Red Bull TV (20. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0654_redbull_servus_offline.py` (Film und Folge in die gemeinsame Warteschlange, Ablehnung Live/Sendung/Geosperre/Jugendschutz/Kopierschutz ohne Eintrag, Verfügbarkeitsende begrenzt die Frist und löscht pünktlich, Titel mit < 1 h Restlaufzeit abgelehnt, frische Adresse beim Download ohne Token auf der Platte, H.264 bis 1080p bevorzugt, Red-Bull-Mandant `rbtv`, Verdrahtung Routen/Pakete/Oberfläche). Nachträge: `provider_base.open_capped` gegen einen lokalen Server, der annimmt und nie antwortet (Abbruch nach 1 s Frist statt 30 s Socket-Timeout), normale Antwort und HTTP-Fehler unverändert; DMAX-Lauf stoppt nach 3 Zeitüberschreitungen, teilweise, nächster Versuch nach 2 h; filmfriend 1200 Detailabrufe; ServusTV-Lauf mit einer Zeitüberschreitung bleibt „vollständig“ mit Hinweis, ab 4 (bzw. 3 %) teilweise, Startseite weiterhin Fehler. Klicktest Chromium (`click_all.cjs`), `redbull_live.cjs` erweitert: Knopf „Offline speichern (30 Tage)“ mit Hinweis „private Kopie“, Auflösungsdialog, Anfrage an `/api/redbulltv-download-add` (in der Cloud: verständliche Meldung „nicht erreichbar“).
+- Nicht geprüft (Red-Bull-Hosts aus der Cloud gesperrt): echter Download je eines Films von ServusTV und Red Bull TV, Abspielen der MKV offline, ob und unter welchem Namen der Player ein Verfügbarkeitsende liefert (`servustv.END_KEYS`), Codec-Leiter von ServusTV.
+
 ## 0.6.52 – filmfriend, Gesamtfrist für Anbieter-Abrufe (20. November 2026)
 - Grundlage: Original-Antworten von filmfriend vom Mac (filmfriend_samples.zip, 14 Antworten ohne Login); die Tests lesen sie mit, wenn sie im Projektordner liegen.
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktest Chromium, `dmax_joyn.cjs` mit filmfriend (Filme, Serien, kein Abspielen, Hinweis Bibliotheksausweis).

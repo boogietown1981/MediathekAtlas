@@ -206,10 +206,18 @@ def _portal(root, source, item_id):
         # 0.6.47: Red Bull TV runs on the same platform (redbulltv.py).
         label = PROVIDERS[source]
         facts.append(['Angebot', ('ServusTV On' if source == 'servustv' else label) + ', kostenlos (ohne Konto)'])
-        m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # downloads only inside the provider's app
+        # 0.6.54 (Björn 20.11.2026): the channels offer downloads only in their own apps; MediathekAtlas keeps
+        # films and episodes without copy protection as a private copy for 30 days (servustv_downloads),
+        # removed at the end of availability at the latest. Live channels never.
+        m['offline'] = {'allowed': m['kind'] in ('movie', 'episode') and it.get('drm') != 1 and m['playable'],
+                        'days': OFFLINE_DAYS, 'night': False}
         if m['kind'] not in ('series', 'channel'):
             facts.append(['Stream', 'nur mit Kopierschutz – bei %s ansehen' % label if it.get('drm') == 1 else
-                          'ohne Kopierschutz – läuft im MediathekAtlas-Player'])
+                          'ohne Kopierschutz – läuft im MediathekAtlas-Player, als private Kopie %d Tage offline speicherbar'
+                          % OFFLINE_DAYS])
+            m['notes'].append('%s bietet selbst keine Downloads an. Die Offline-Kopie ist nur für dich, bleibt höchstens '
+                              '%d Tage und nie länger als der Titel bei %s verfügbar ist; Jugendschutz-Sperrzeiten und '
+                              'Geosperren gelten auch für das Speichern.' % (label, OFFLINE_DAYS, label))
             if it.get('published'):
                 import time as _t
                 facts.append(['Veröffentlicht', _t.strftime('%d.%m.%Y', _t.localtime(float(it['published'])))])
@@ -233,6 +241,9 @@ def _portal(root, source, item_id):
             facts.append(['Stream', 'nur mit Kopierschutz (Widevine) – bei Crunchyroll ansehen'])
         m['notes'].append('Crunchyroll liefert alle Titel nur mit Kopierschutz und seit 1.1.2026 nur mit Abo aus; '
                           'MediathekAtlas umgeht nichts. Gratis-Folgen gibt es auf dem offiziellen YouTube-Kanal (Quelle „YouTube“).')
+    if source == 'filmfriend' and m['kind'] in ('movie', 'series'):
+        # 0.6.54: the search names no FSK; the detail requests (up to 1200 per run) fill it in over time.
+        facts.append(['Altersfreigabe', _text(it['rating'], 20) if it.get('rating') else 'FSK noch unbekannt (wird im Hintergrund nachgeladen)'])
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
@@ -311,7 +322,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'dmax', 'filmfriend', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 

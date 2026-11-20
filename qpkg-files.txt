@@ -17,6 +17,8 @@
 ./mediathekatlas/servustv.py
 ./mediathekatlas/redbulltv.py
 ./mediathekatlas/redbulltv_enrichment.py
+./mediathekatlas/redbulltv_downloads.py
+./mediathekatlas/servustv_downloads.py
 ./mediathekatlas/dmax.py
 ./mediathekatlas/dmax_enrichment.py
 ./mediathekatlas/filmfriend.py

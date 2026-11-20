@@ -381,7 +381,7 @@
     <h3>ServusTV On · Sendungen, Filme und Live</h3>
     <p class="muted">Die kostenlose Videothek von ServusTV (ohne Konto): Dokumentationen, Sendungen mit allen Folgen, Spielfilme sowie ServusTV Deutschland und Österreich live.
        ServusTV liefert ohne Kopierschutz aus: Alles läuft im MediathekAtlas-Player. Manche Filme gibt ServusTV aus Jugendschutzgründen nur abends frei, manche nur in Deutschland oder Österreich; der Player nennt dann den Grund.
-       Offline-Speichern gibt es nicht, ServusTV erlaubt Downloads nur in der eigenen App.</p>
+       ServusTV selbst bietet Downloads nur in der eigenen App an; MediathekAtlas speichert Filme und Folgen auf Wunsch als private Kopie für 30 Tage (nie Live-Sender).</p>
     <div class="netzkino-sync-actions"><button type="button" id="servustv-sync" class="primary">↻ Katalog jetzt laden</button>
       <label class="check"><input type="checkbox" id="servustv-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
     <p id="servustv-summary" class="muted">Katalogstatus wird geladen …</p>
@@ -397,8 +397,8 @@
     <label>Sortierung<select id="servustv-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
   <div id="servustv-categories" class="portal-categories" role="group" aria-label="ServusTV-Kategorien" hidden></div>
   <p id="servustv-status" class="muted" role="status"></p>
-  <details id="servustv-offline" class="nk-offline servustv-offline" hidden><summary>Offline-Kopien von ServusTV <span id="servustv-offline-count" class="muted"></span></summary>
-    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+  <details id="servustv-offline" class="nk-offline servustv-offline"><summary>Offline-Kopien von ServusTV <span id="servustv-offline-count" class="muted"></span></summary>
+    <p class="muted">ServusTV bietet selbst keine Downloads an. Filme und Folgen ohne Kopierschutz werden als private Kopie 30 Tage offline vorgehalten, höchstens bis ServusTV den Titel zurückzieht, und danach automatisch entfernt. Live-Sender, Jugendschutz-Sperrzeiten und Geosperren werden nicht umgangen. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO).</p>
     <div id="servustv-offline-jobs"></div></details>
   <div id="servustv-items" class="netzkino-grid" aria-live="polite"></div>
   <div class="netzkino-pages"><button type="button" id="servustv-prev">← Zurück</button>
@@ -462,8 +462,8 @@
   <div class="panel netzkino-sync-panel">
     <h3>Red Bull TV · Dokus, Serien, Filme und Live</h3>
     <p class="muted">Die kostenlose Videothek von Red Bull TV (ohne Konto): Sport- und Abenteuerdokumentationen, Serien mit allen Folgen, Filme und die Live-Sender von Red Bull TV.
-       Red Bull TV läuft auf derselben Plattform wie Red Bull TV und liefert ohne Kopierschutz aus: Alles läuft im MediathekAtlas-Player. Manche Videos sind nur in bestimmten Ländern freigegeben; der Player nennt dann den Grund.
-       Offline-Speichern gibt es nicht, Red Bull TV bietet keine Downloads an.</p>
+       Red Bull TV läuft auf derselben Plattform wie ServusTV und liefert ohne Kopierschutz aus: Alles läuft im MediathekAtlas-Player. Manche Videos sind nur in bestimmten Ländern freigegeben; der Player nennt dann den Grund.
+       Red Bull TV selbst bietet keine Downloads an; MediathekAtlas speichert Filme und Folgen auf Wunsch als private Kopie für 30 Tage (nie Live-Sender).</p>
     <div class="netzkino-sync-actions"><button type="button" id="redbulltv-sync" class="primary">↻ Katalog jetzt laden</button>
       <label class="check"><input type="checkbox" id="redbulltv-auto"> Alle 24 Stunden automatisch aktualisieren</label></div>
     <p id="redbulltv-summary" class="muted">Katalogstatus wird geladen …</p>
@@ -479,8 +479,8 @@
     <label>Sortierung<select id="redbulltv-sort"><option value="title">Titel</option><option value="rating">Bewertung</option><option value="year">Jahr</option></select></label></div>
   <div id="redbulltv-categories" class="portal-categories" role="group" aria-label="Red Bull TV-Kategorien" hidden></div>
   <p id="redbulltv-status" class="muted" role="status"></p>
-  <details id="redbulltv-offline" class="nk-offline redbulltv-offline" hidden><summary>Offline-Kopien von Red Bull TV <span id="redbulltv-offline-count" class="muted"></span></summary>
-    <p class="muted">Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO). Abspielen nur in MediathekAtlas.</p>
+  <details id="redbulltv-offline" class="nk-offline redbulltv-offline"><summary>Offline-Kopien von Red Bull TV <span id="redbulltv-offline-count" class="muted"></span></summary>
+    <p class="muted">Red Bull TV bietet selbst keine Downloads an. Filme und Folgen ohne Kopierschutz werden als private Kopie 30 Tage offline vorgehalten, höchstens bis Red Bull TV den Titel zurückzieht, und danach automatisch entfernt. Live-Sender, Jugendschutz-Sperrzeiten und Geosperren werden nicht umgangen. Gespeichert wird wie bei Mediathek-Videos (gleicher Ordner, gleiche Benennung, MKV mit NFO).</p>
     <div id="redbulltv-offline-jobs"></div></details>
   <div id="redbulltv-items" class="netzkino-grid" aria-live="polite"></div>
   <div class="netzkino-pages"><button type="button" id="redbulltv-prev">← Zurück</button>

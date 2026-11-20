@@ -157,7 +157,7 @@ def query_url(operation, variables=None):
 
 def _request(operation, variables=None):
     req = urllib.request.Request(query_url(operation, variables), headers=headers())
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > MAX_ANSWER:
             raise ValueError('Joyn-Antwort zu groß')
         raw = provider_base.read_capped(response, MAX_ANSWER)
@@ -585,7 +585,7 @@ def series_page(path, opener=None):
         return opener(url)
     req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml',
                                                'Accept-Language': 'de-DE,de;q=0.9'})
-    with urllib.request.urlopen(req, timeout=30) as response:
+    with provider_base.open_capped(req, timeout=30) as response:
         if urllib.parse.urlsplit(response.geturl()).hostname != 'www.joyn.de':
             raise ValueError('Joyn leitet die Serienseite auf eine fremde Adresse um')
         raw = provider_base.read_capped(response, MAX_PAGE)
