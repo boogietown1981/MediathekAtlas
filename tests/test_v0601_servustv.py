@@ -260,7 +260,7 @@ class PlaybackTests(Base):
         m = portal_title.model(self.root, 'servustv', 's.AA-25RX849FN1W11')
         self.assertEqual(len(m['episodes']), 2)
         m = portal_title.model(self.root, 'servustv', 'v.AAU3HRL0S34IKQ6NINUP')
-        self.assertFalse(m['offline']['allowed'])
+        self.assertTrue(m['offline']['allowed'])   # 0.6.54: private 30-day copy
         self.assertIn(['Angebot', 'ServusTV On, kostenlos (ohne Konto)'], m['provider_facts'])
 
 
