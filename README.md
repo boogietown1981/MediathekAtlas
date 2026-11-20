@@ -1,5 +1,10 @@
 # MediathekAtlas · 0.6.42
 
+## Neu in 0.6.43: Werke ohne erkannte Art werden eingeordnet
+
+- Rund 40.000 Werke standen unter „Noch zuordnen“, meist Magazinbeiträge und Reportagen von SRF, ARTE, ORF und 3Sat, die keine Filmdatenbank kennt. Nach dem Abgleich ordnet MediathekAtlas sie jetzt ihrer Sendung zu (Ausgabe, Beitrag, Teil oder Folge), als Einzelsendung unter „Weitere Sendungen“ oder bei klarem Filmhinweis als Film.
+- Das läuft im Hintergrund und berührt keine eigenen Zuordnungen; „Erneut prüfen“ hebt die Einordnung auf.
+
 ## Neu in 0.6.42: stabiler mit Datenbank auf USB-Laufwerk
 
 - Das IMDb-Update scheitert auf exFAT-Laufwerken nicht mehr mit „attempt to write a readonly database“.

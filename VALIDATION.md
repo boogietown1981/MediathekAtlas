@@ -1,5 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.43 – Werke ohne erkannte Art einordnen (20. November 2026)
+- Automatisch: gesamte Python-Suite (1468, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund. Neu `tests/test_v0643_unknown_kind.py`: Regeln je Art mit Gegenbeispielen (Filmwort ohne Spielfilmlänge, datierte Ausgabe, Sammelrubrik), Ausschlüsse (ungeprüft, Vorschläge, Anbieterfehler, Prüfauftrag, Benutzerentscheidung), Hintergrunddurchgang mit Diagnosezusammenfassung, Intervall, Wiederholbarkeit, Einzelsendung wandert zur Sendung.
+- Grundlage: Zählung „Art unbekannt“ je Sender aus status.json beider Diagnosen vom 20.11. (MacBook Air 0.6.40, MacBook Pro 0.6.42) und die Titelbeispiele aus `metadata_status`.
+- Nicht geprüft: Wirkung auf Björns Bestand (die Diagnosen enthalten keine Titelliste der unbekannten Werke; die nächste Diagnose zeigt sie im Ereignis `unknown_classified`), Dauer des Lesedurchgangs auf USB, Safari, NAS, Windows.
+
 ## 0.6.42 – Datenbank auf USB-Laufwerk (20. November 2026)
 - Automatisch: gesamte Python-Suite (1458, 4 übersprungen), alle Node-Tests. Neu `tests/test_v0642_usb_locks.py`: Staging-Datei beim Öffnen nie leer (Test schlägt ohne die Änderung fehl), vollständiges Schema, Fehlername im Protokoll, Verbund ohne Schreibvorgang bei leerer Runde, Einstellungen nur über `store_settings`, Protokollgröße.
 - Befund aus Björns Diagnose vom 20.11. 08:32 UTC (0.6.40) ausgewertet: berichte/diagnose-2026-11-20.md.

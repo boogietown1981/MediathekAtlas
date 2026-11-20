@@ -974,7 +974,43 @@ class Service:
                 if self.stop.wait(.05):return
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
+            self.unknown_sweep()
             self.format_wake.wait(3600);self.format_wake.clear()
+    def unknown_sweep(self,force=False,batch=200):
+        """0.6.43: give checked works of unknown kind their kind (Sendung, Einzelsendung, Film), in the background.
+
+        At most every UNKNOWN_SWEEP_INTERVAL; one read pass for the topic counts, then short write batches
+        so that recognition and the web server keep their turn (USB drives, diagnosis 20.11.2026)."""
+        with self.db() as c:
+            last=catalog.get_state(c,'unknown_sweep',{}) or {}
+            if not force and time.time()-float(last.get('finished') or 0)<catalog.UNKNOWN_SWEEP_INTERVAL:return None
+            ids,singles=catalog.unknown_candidates(c)
+        started=time.monotonic();summary={'candidates':len(ids),'singles_rechecked':len(singles)}
+        changed=0
+        if ids or singles:
+            with self.db() as c:
+                topics={r[0] for r in c.execute('SELECT DISTINCT topic FROM works WHERE kind=? AND state IN (?,?,?) AND attempts>0',
+                                                ('unknown','pending','retry','review'))}
+                topics|={r[0] for r in c.execute("SELECT DISTINCT topic FROM works WHERE kind='other' AND state='format' AND json_extract(meta,'$.format_grouping')='single'")}
+                counts=catalog.topic_counts(c,topics)
+            for group,is_single in ((ids,False),(singles,True)):
+                for i in range(0,len(group),batch):
+                    try:
+                        with self.db() as c:changed+=catalog.classify_unknown(c,group[i:i+batch],counts,summary,singles=is_single)
+                    except sqlite3.OperationalError as e:
+                        if not sqlite_busy(e):raise
+                        self.sqlite_busy_count+=1
+                    if self.stop.wait(.05):return changed
+        summary.update(changed=changed,seconds=round(time.monotonic()-started,1),finished=time.time(),
+                       total_changed=int(last.get('total_changed') or 0)+changed)
+        with self.db() as c:
+            catalog.set_state(c,'unknown_sweep',summary)
+            remaining=c.execute("SELECT COUNT(*) FROM works WHERE kind='unknown'").fetchone()[0]
+        if changed:catalog.invalidate_listings()
+        diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
+                          classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
+                          channels=summary.get('channels',{}),samples=summary.get('samples',{}),seconds=summary['seconds'])
+        return changed
     def metadata_loop(self,index=0):
         while not self.stop.is_set():
             requested=max(1,min(MAX_RECOGNITION_WORKERS,int(self.settings().get('metadata_workers',2))))
