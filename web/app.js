@@ -441,7 +441,8 @@ $('test-omdb').onclick=e=>busy(e.target,async()=>{$('omdb-test-result').textCont
 
 $('test-tvdb').onclick=e=>busy(e.target,async()=>{$('tvdb-test-result').textContent='TVDB wird direkt abgefragt …';try{const d=await api('test-tvdb',{});$('tvdb-test-result').textContent=d.message;}catch(error){$('tvdb-test-result').textContent=error.message;}});
 
-$('quit-app').onclick=e=>busy(e.target,async()=>{await api('shutdown',{});appStopped=true;clearTimeout(treeRetry);notice('MediathekAtlas wurde beendet. Dieses Browserfenster kann geschlossen werden.');});
+// 0.6.46 (Björn: „aus Versehen beendet“): erst nachfragen; der Knopf sitzt in der Seitenleiste neben der Navigation.
+$('quit-app').onclick=e=>{if(!confirm('MediathekAtlas wirklich beenden?\n\nLaufende Downloads und der Abgleich werden unterbrochen und beim nächsten Start fortgesetzt.'))return;busy(e.target,async()=>{await api('shutdown',{});appStopped=true;clearTimeout(treeRetry);notice('MediathekAtlas wurde beendet. Zum Weiterarbeiten die App einfach wieder starten; dieses Browserfenster kann geschlossen werden.');});};
 
 let reviewRows=[],reviewOffset=0,reviewSequence=0,reviewSelection=new Set(),latestSettings={};
 const reviewLabels={pending:'Vorgemerkt',retry:'Wiederholung',review:'Zu prüfen',identified:'Werk erkannt · Folge offen',matched:'Automatisch zugeordnet',manual:'Manuell bestätigt',format:'Beitrag einer Sendung · nicht abgeglichen'};

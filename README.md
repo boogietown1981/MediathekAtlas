@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.45
+# MediathekAtlas · 0.6.46
+
+## Neu in 0.6.46: Kinderfilme und -serien in der Kinderecke, Vollbild beim Anbieter, sicherer Neustart
+
+- Die Kinderecke zeigt neben den YouTube-Abos auch Filme und Serien aus dem Katalog, aber nur, was eindeutig als „Kinder“ eingeordnet ist und im eigenen Player läuft.
+- Mit der Chrome-Erweiterung „Videostart“ starten Videos bei Joyn, TOGGO, Crunchyroll, RTL+, Rakuten TV und JustWatch im Vollbild-Fenster; der erste Klick blendet auch die Chrome-Leisten aus, Esc beendet.
+- Nach „App beenden“ startet MediathekAtlas wieder zuverlässig. Hängt eine alte Instanz, räumt der Start sie selbst weg. „App beenden“ fragt vorher nach.
 
 ## Neu in 0.6.45: Speicherbudget für YouTube-Abos, weniger Wiedergabe-Störungen
 

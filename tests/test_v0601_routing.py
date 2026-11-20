@@ -99,7 +99,7 @@ class ServerTableTests(unittest.TestCase):
 
     def test_what_is_open_before_the_login(self):
         opened = sorted(p for m, p, s, _ in self.listing if s == 'open')
-        self.assertEqual(opened, ['/api/login-state', '/icon.svg', '/login.js', '/style.css', '/theme-light.css'])
+        self.assertEqual(opened, ['/api/instance', '/api/login-state', '/icon.svg', '/login.js', '/style.css', '/theme-light.css'])
         signed = sorted(p for m, p, s, _ in self.listing if s == 'signed')
         # 0.6.7: Kinderecke (Seite, Skript, Stil) und ihre Bilder (Token in der Adresse wie /api/stream)
         self.assertEqual(signed, ['/', '/ansehen', '/api/download-file', '/api/kids-image', '/api/stream', '/hls.min.js', '/kids.css', '/kids.js', '/kinder', '/titleview.js'])

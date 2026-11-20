@@ -77,3 +77,13 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-next-bar span.run{width:100%;transition:width 6s linear}
 @media (max-width:600px){.kids-logo{font-size:22px}.kids-chip{width:76px}.kids-chip-face{width:62px;height:62px;font-size:24px}
   .kids-strip{grid-auto-columns:78vw}.kids-grid{grid-template-columns:1fr}.kids-main{padding:4px 14px 110px}}
+/* 0.6.46: Filme und Serien aus dem Katalog als Hochkant-Kacheln, Serienseite mit „Zurück“ */
+.kids-strip.is-posters{grid-auto-columns:minmax(170px,200px)}
+.kids-grid.is-posters{grid-template-columns:repeat(auto-fill,minmax(170px,1fr))}
+.kids-tile.is-poster .kids-thumb{aspect-ratio:2/3}
+.kids-thumb.no-picture{background:linear-gradient(160deg,var(--chip,#6c5ce7),#20194f)}
+.kids-letter{position:absolute;inset:0;display:grid;place-items:center;font-size:72px;font-weight:900;color:rgba(255,255,255,.85)}
+.kids-series-head{display:flex;align-items:center;gap:16px;margin:8px 0 4px;flex-wrap:wrap}
+.kids-series-head h2{margin:0;font-size:26px;font-weight:800}
+.kids-back{font-size:18px}
+@media (max-width:600px){.kids-strip.is-posters{grid-auto-columns:44vw}.kids-grid.is-posters{grid-template-columns:repeat(2,1fr)}}

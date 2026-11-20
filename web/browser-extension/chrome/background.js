@@ -8,6 +8,43 @@
 'use strict';
 const ATLAS_TABS = ['http://127.0.0.1/*', 'http://localhost/*'];
 
+// 0.6.46: Fenster des Anbieter-Tabs auf Vollbild stellen, sobald das Video läuft (autostart.js), und den
+// vorherigen Zustand wiederherstellen, wenn der Nutzer mit Esc beendet oder den Tab schließt.
+// chrome.windows braucht dafür keine zusätzliche Berechtigung und keine Eingabe des Nutzers.
+const store = chrome.storage.session || chrome.storage.local;
+const KEY = 'fullscreenTabs';
+const saved = () => new Promise(resolve => store.get({[KEY]: {}}, v => resolve((v && v[KEY]) || {})));
+const save = map => new Promise(resolve => store.set({[KEY]: map}, resolve));
+async function enterFullscreen(tab) {
+  const map = await saved();
+  chrome.windows.get(tab.windowId, win => {
+    if (chrome.runtime.lastError || !win) return;
+    if (win.state !== 'fullscreen') {
+      map[tab.id] = {windowId: win.id, state: win.state || 'normal'};
+      save(map);
+      chrome.windows.update(win.id, {state: 'fullscreen'}, () => void chrome.runtime.lastError);
+    }
+  });
+}
+async function leaveFullscreen(tabId) {
+  const map = await saved();
+  const entry = map[tabId];
+  if (!entry) return;
+  delete map[tabId];
+  await save(map);
+  if (Object.values(map).some(e => e.windowId === entry.windowId)) return;   // ein anderes Video in diesem Fenster läuft noch
+  chrome.windows.get(entry.windowId, win => {
+    if (chrome.runtime.lastError || !win || win.state !== 'fullscreen') return;
+    chrome.windows.update(win.id, {state: ['normal', 'maximized'].includes(entry.state) ? entry.state : 'normal'}, () => void chrome.runtime.lastError);
+  });
+}
+chrome.runtime.onMessage.addListener((message, sender) => {
+  if (!message || !sender.tab) return;
+  if (message.type === 'fullscreen') enterFullscreen(sender.tab);
+  else if (message.type === 'fullscreen-exit') leaveFullscreen(sender.tab.id);
+});
+chrome.tabs.onRemoved.addListener(tabId => { leaveFullscreen(tabId); });
+
 chrome.runtime.onMessage.addListener((message, sender) => {
   if (!message || message.type !== 'reload' || !sender.tab || !sender.url) return;
   let host = '';
