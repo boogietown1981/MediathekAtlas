@@ -395,6 +395,11 @@ class Archive:
             done=True;self.progress(phase='ready',counts=counts,error='')
             diagnostics.event('imdb_archive_updated',counts=counts)
             self.on_update()
+        except InterruptedError as e:
+            # 0.6.56: ending the app (or the download being stopped) is no failure: no back-off, no error entry;
+            # downloaded parts stay and are continued next time (Mac check 20.11.2026: "imdb_archive_failed" on quit).
+            self.progress(phase='ready' if self.updated else 'waiting',error='')
+            diagnostics.event('imdb_archive_interrupted',reason=str(e))
         except Exception as e:
             # Back off 1 h, 2 h, 4 h … up to a day instead of downloading 1 GB again every hour.
             self.failures+=1
