@@ -74,7 +74,7 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus='',redbulltv='',sender=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus='',redbulltv='',sender='',dmax=''):
     """Best playable source: a finished local download wins over the online stream."""
     if samsung:
         # 0.5.97: Samsung TV Plus live channel (HLS without copy protection, see samsung_tvplus.py)
@@ -106,6 +106,11 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         if root is None:raise ValueError('Red-Bull-TV-Katalog nicht verfügbar')
         import redbulltv as red_bull_tv
         return red_bull_tv.play_source(root,redbulltv)
+    if dmax:
+        # 0.6.48: DMAX, TLC & HGTV episode (plain HLS, checked by hls_guard, see dmax.py)
+        if root is None:raise ValueError('DMAX-Katalog nicht verfügbar')
+        import dmax as dmax_tv
+        return dmax_tv.play_source(root,dmax)
     if sender:
         # 0.6.47: official live stream straight from the broadcaster (WELT; see sender_live.py)
         import sender_live

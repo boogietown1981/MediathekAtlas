@@ -29,7 +29,7 @@ PRIORITY_LABEL = {'high': 'Hoch', 'normal': 'Normal', 'low': 'Niedrig'}
 
 PORTALS = (('netzkino', 'Netzkino'), ('pluto', 'Pluto TV'), ('justwatch', 'JustWatch TV'),
            ('rakuten', 'Rakuten TV'), ('youtube', 'YouTube'), ('joyn', 'Joyn'), ('toggo', 'TOGGO'), ('crunchyroll', 'Crunchyroll'),
-           ('plex', 'Plex'), ('servustv', 'ServusTV'), ('redbulltv', 'Red Bull TV'), ('rtlplus', 'RTL+'))
+           ('plex', 'Plex'), ('servustv', 'ServusTV'), ('redbulltv', 'Red Bull TV'), ('dmax', 'DMAX, TLC & HGTV'), ('rtlplus', 'RTL+'))
 
 # id -> definition. ``can``: pause, start (run now), priority, cancel.
 TASKS = {

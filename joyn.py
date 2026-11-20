@@ -20,8 +20,8 @@ Formats as recorded in Björn's HAR (12.11.2026 23:09, www.joyn.de in Chrome, no
 * ``PageOverviewGenre`` (path, first, offset): one genre page (grid of Movie/Series cards with
   id, title, description, path, licenseTypes, markings, genres, brands, ageRating, images).
 
-NOT in the recording and therefore not implemented: episode lists (query ``Season``, variables
-unknown), the pages of the single Mediatheken (SAT.1, ProSieben …) and every playback request
+Episode lists (0.6.48): read from the series page itself (see "episodes" below), not from GraphQL.
+NOT recorded and therefore not implemented: the pages of the single Mediatheken (SAT.1, ProSieben …) and every playback request
 (entitlement, playlist, licence). Joyn is known to deliver with Widevine in the browser; until a
 recording of a playback shows an unprotected stream, every title and channel opens the official
 page ("Bei Joyn ansehen"). Nothing is circumvented.
@@ -62,7 +62,7 @@ REQUEST_GAP = 0.4                  # 0.5.68: 1 s made the first run take many mi
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
 ASSET_ID = r'[a-z0-9][a-z0-9_\-]{0,80}'
-VALID_ID = re.compile(r'[msc]\.' + ASSET_ID)       # m.<film>, s.<series>, c.<live stream>
+VALID_ID = re.compile(r'[mesc]\.' + ASSET_ID)      # m.<film>, e.<episode> (0.6.48), s.<series>, c.<live stream>
 VALID_ASSET = re.compile(ASSET_ID)
 GENRE_PATH = re.compile(r'/(?:plus/)?(?:filme|serien)/genre/[a-z0-9\-]{1,80}')
 VALID_BRAND = re.compile(r'[A-Za-z0-9][A-Za-z0-9_\-]{0,80}')   # Brand.id: "165", "bbc-earth"
@@ -99,6 +99,12 @@ CREATE TABLE IF NOT EXISTS joyn_items(
   playable INTEGER NOT NULL DEFAULT 0, drm INTEGER NOT NULL DEFAULT 1, web_url TEXT NOT NULL DEFAULT '',
   seen REAL NOT NULL, updated REAL NOT NULL);
 CREATE INDEX IF NOT EXISTS joyn_items_kind ON joyn_items(kind, seen);
+CREATE TABLE IF NOT EXISTS joyn_episodes(
+  id TEXT PRIMARY KEY, series_id TEXT NOT NULL, season INTEGER, episode INTEGER, title TEXT NOT NULL,
+  path TEXT NOT NULL DEFAULT '', published REAL, duration INTEGER, offer TEXT NOT NULL DEFAULT 'free',
+  poster TEXT NOT NULL DEFAULT '', rating TEXT NOT NULL DEFAULT '', genre TEXT NOT NULL DEFAULT '',
+  available_until REAL, fetched REAL NOT NULL);
+CREATE INDEX IF NOT EXISTS joyn_episodes_series ON joyn_episodes(series_id, season, episode);
 CREATE TABLE IF NOT EXISTS joyn_state(name TEXT PRIMARY KEY, value TEXT NOT NULL);
 '''
 
@@ -535,21 +541,182 @@ def _plus_fix(row):
     return row
 
 
-def episodes(root, series_id):
-    """Episode lists are not recorded yet (query 'Season'): the series page links to Joyn."""
+# ---------------------------------------------------------------- episodes (0.6.48)
+#
+# Björn's Mac (20.11.2026, live network): an ordinary request for https://www.joyn.de/serien/<slug> (normal
+# browser User-Agent, no login) carries every episode of every season in the page's React Server Components
+# payload (``self.__next_f.push([1,"…"])``): objects ``{"id":"b_…","__typename":"Episode", number, title, path,
+# airdate, endsAt, season{id,seasonNumber}, series{id}, video{id,duration}, licenseTypes, ageRating,
+# primaryImage, genres}``. Switching seasons in the browser sends no further request. Checked on four series
+# (Großstadtrevier 240 episodes in 20 seasons, 60 of them Joyn+; Navy CIS 445/23; Dittsche 184/20; Geordie
+# Shore 212/23). Playback stays with Joyn (Widevine, see module text); each episode is marked free (AVOD) or
+# Joyn+ (SVOD) and links to its page.
+
+EPISODE_TTL = 12 * 3600            # the series page is read again after this time (when the page is opened)
+EPISODE_RETRY = 15 * 60            # after a failed read
+MAX_PAGE = 8 * 1024 * 1024         # a series page with 445 episodes is about 1.3 MB
+MAX_EPISODES = 3000
+SERIES_PATH = re.compile(r'/serien/[a-z0-9][a-z0-9\-]{0,160}')
+_PUSH = re.compile(r'self\.__next_f\.push\(\[1,"((?:[^"\\]|\\.)*)"\]\)')
+_EPISODE = re.compile(r'\{"id":"[a-z]_[a-z0-9]{1,40}","__typename":"Episode"')
+_EPISODE_TIME = {}                 # series id -> time of the last failed read (memory only)
+PAGE_FETCH = None                  # tests: replacement for the page request (url -> html)
+
+
+def series_page(path, opener=None):
+    """HTML of one series page on www.joyn.de (no API, no account)."""
+    if not SERIES_PATH.fullmatch(str(path or '')):
+        raise ValueError('Ungültige Joyn-Serienadresse')
+    url = SITE + path
+    opener = opener or PAGE_FETCH
+    if opener is not None:
+        return opener(url)
+    req = urllib.request.Request(url, headers={'User-Agent': USER_AGENT, 'Accept': 'text/html,application/xhtml+xml',
+                                               'Accept-Language': 'de-DE,de;q=0.9'})
+    with urllib.request.urlopen(req, timeout=30) as response:
+        if urllib.parse.urlsplit(response.geturl()).hostname != 'www.joyn.de':
+            raise ValueError('Joyn leitet die Serienseite auf eine fremde Adresse um')
+        raw = response.read(MAX_PAGE + 1)
+    if len(raw) > MAX_PAGE:
+        raise ValueError('Joyn-Serienseite zu groß')
+    return raw.decode('utf-8', 'replace')
+
+
+def page_episodes(html_text, series_asset=''):
+    """Episode objects of a series page (RSC payload); with ``series_asset`` only that series' episodes
+    (the page also lists other series as recommendations)."""
+    parts = []
+    for chunk in _PUSH.findall(str(html_text or '')):
+        try:
+            parts.append(json.loads('"' + chunk + '"'))
+        except ValueError:
+            continue
+    text = ''.join(parts)
+    decoder, found = json.JSONDecoder(), {}
+    for match in _EPISODE.finditer(text):
+        try:
+            node, _ = decoder.raw_decode(text, match.start())
+        except ValueError:
+            continue
+        if not isinstance(node, dict):
+            continue
+        series = node.get('series') if isinstance(node.get('series'), dict) else {}
+        if series_asset and str(series.get('id') or '') != series_asset:
+            continue
+        found.setdefault(str(node.get('id')), node)
+        if len(found) >= MAX_EPISODES:
+            break
+    return list(found.values())
+
+
+def episode_row(node, series_id, now):
+    """Row of table joyn_episodes; None for objects without id, title or a known licence."""
+    ident, title = str(node.get('id') or ''), _text(node.get('title'), 200)
+    kind_offer = offer(node)
+    if not VALID_ASSET.fullmatch(ident) or not title or not kind_offer:
+        return None
+    season = node.get('season') if isinstance(node.get('season'), dict) else {}
+    video = node.get('video') if isinstance(node.get('video'), dict) else {}
+    age = _int((node.get('ageRating') or {}).get('minAge') if isinstance(node.get('ageRating'), dict) else None, 0, 21)
+    path = _text(node.get('path'), 300)
+    ends = _int(node.get('endsAt'), 0)
+    return {'id': 'e.' + ident, 'series_id': series_id, 'season': _int(season.get('seasonNumber'), 0, 999),
+            'episode': _int(node.get('number'), 0, 99999), 'title': title,
+            'path': path if re.fullmatch(r'/serien/[a-z0-9\-]{1,160}/[a-z0-9\-]{1,200}', path) else '',
+            'published': _int(node.get('airdate'), 0), 'duration': _int(video.get('duration'), 1, 24 * 3600),
+            'offer': kind_offer, 'poster': _image(node, 'primaryImage'), 'rating': ('FSK %d' % age) if age is not None else '',
+            'genre': ', '.join(_names(node.get('genres'))),
+            'available_until': ends if ends and ends < 32503680000 else None, 'fetched': now}
+
+
+EPISODE_FIELDS = ('series_id', 'season', 'episode', 'title', 'path', 'published', 'duration', 'offer', 'poster',
+                  'rating', 'genre', 'available_until', 'fetched')
+
+
+def load_episodes(root, series, fetch=None, now=None):
+    """Read the series page and store its episodes; returns the number found."""
+    now = time.time() if now is None else now
+    html_text = series_page(series['path'], fetch)
+    asset = series['id'][2:]
+    nodes = page_episodes(html_text, asset)
+    rows = [r for r in (episode_row(n, series['id'], now) for n in nodes) if r]
+    db = _connect(root)
+    try:
+        with db:
+            db.execute('DELETE FROM joyn_episodes WHERE series_id=?', (series['id'],))
+            for row in rows:
+                db.execute('INSERT OR REPLACE INTO joyn_episodes(id,%s) VALUES(?,%s)'
+                           % (','.join(EPISODE_FIELDS), ','.join('?' * len(EPISODE_FIELDS))),
+                           (row['id'], *[row[f] for f in EPISODE_FIELDS]))
+            _set(db, 'episodes_loaded', now)
+    finally:
+        db.close()
+    _notify('joyn_episodes_loaded', episodes=len(rows), plus=sum(1 for r in rows if r['offer'] == 'plus'),
+            seasons=len({r['season'] for r in rows}))
+    return len(rows)
+
+
+def _episode_view(row, series):
+    out = {**row, 'kind': 'episode', 'year': int(time.gmtime(row['published']).tm_year) if row.get('published') else None,
+           'summary': '', 'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
+           'brand': series.get('brand', ''), 'seasons': None, 'quality': '', 'playable': 0, 'drm': 1,
+           'category': PLUS if row['offer'] == 'plus' else FREE,
+           'badge': 'Joyn+' if row['offer'] == 'plus' else 'Kostenlos',
+           'poster': row.get('poster') or series.get('poster') or '',
+           'web_url': web_url(row['path']) if row.get('path') and TITLE_PATH.fullmatch(row['path']) else series.get('web_url', '')}
+    out['offer_label'] = out['category']
+    return out
+
+
+def episodes(root, series_id, fetch=None, now=None):
+    """All episodes of a series, read from its page on joyn.de when the page is opened (kept 12 hours)."""
     if not VALID_ID.fullmatch(str(series_id or '')) or not str(series_id).startswith('s.'):
         raise ValueError('Ungültige Joyn-Serie')
+    now = time.time() if now is None else now
     db = _connect(root)
     try:
         series = _row(db, series_id)
+        newest = db.execute('SELECT MAX(fetched) FROM joyn_episodes WHERE series_id=?', (series_id,)).fetchone()[0]
     finally:
         db.close()
     if not series or series['kind'] != 'series':
         raise ValueError('Joyn-Serie nicht im Katalog; bitte Katalog neu laden')
+    error = ''
+    due = not newest or now - float(newest) >= EPISODE_TTL
+    if due and now - _EPISODE_TIME.get(series_id, 0) >= EPISODE_RETRY and SERIES_PATH.fullmatch(series.get('path') or ''):
+        try:
+            load_episodes(root, series, fetch, now)
+        except Exception as exc:          # the stored list (if any) stays; the page names the cause
+            _EPISODE_TIME[series_id] = now
+            error = _error(exc) if not isinstance(exc, ValueError) else str(exc)[:200]
+            import netcheck
+            _notify('joyn_episodes_failed', http_status=getattr(exc, 'code', 0) or 0, error_type=netcheck.kind(exc))
+    db = _connect(root)
+    try:
+        rows = [dict(r) for r in db.execute(
+            'SELECT * FROM joyn_episodes WHERE series_id=? ORDER BY season IS NULL, season, episode IS NULL, episode, title',
+            (series_id,))]
+    finally:
+        db.close()
     extra = _summary(root, series)
+    items = [{**_episode_view(r, series), **{k: v for k, v in extra.items() if k not in ('web_url', 'offer_label')}}
+             for r in rows]
+    for row, raw in zip(items, rows):
+        row['badge'] = 'Joyn+' if raw['offer'] == 'plus' else 'Kostenlos'
+    note = ''
+    if not items:
+        note = ('Die Folgen konnten nicht gelesen werden (%s) – bitte bei Joyn ansehen.' % error if error
+                else 'Joyn nennt für diese Serie keine Folgen – bitte bei Joyn ansehen.')
+    plus = sum(1 for r in rows if r['offer'] == 'plus')
     return {'series': {'id': series_id, 'title': series['title'], 'web_url': series['web_url'], **extra},
-            'items': [], 'error': '',
-            'note': 'Die Folgen dieser Serie zeigt MediathekAtlas noch nicht an – bitte bei Joyn ansehen.'}
+            'items': items, 'error': '' if items else error, 'note': note,
+            'counts': {'episodes': len(rows), 'plus': plus, 'free': len(rows) - plus,
+                       'seasons': len({r['season'] for r in rows if r['season'] is not None})}}
+
+
+def _episode(db, item_id):
+    row = db.execute('SELECT * FROM joyn_episodes WHERE id=?', (item_id,)).fetchone()
+    return dict(row) if row else None
 
 
 def _summary(root, row, reports=None):
@@ -629,8 +796,18 @@ def item(root, item_id):
     db = _connect(root)
     try:
         row = _row(db, item_id)
+        episode = _episode(db, item_id) if not row and item_id.startswith('e.') else None
+        parent = _row(db, episode['series_id']) if episode else None
     finally:
         db.close()
+    if episode and parent:
+        # 0.6.48: an episode of a series page; facts and reference check of the series
+        report = joyn_enrichment.cached(root, parent['id'])
+        view = _episode_view(episode, parent)
+        summary = _summary(root, parent, {parent['id']: report})
+        summary.pop('web_url', None)
+        summary['offer_label'] = view['offer_label']
+        return {'item': {**view, **summary}, 'series': parent, 'reference': report}
     if not row:
         raise ValueError('Joyn-Titel nicht im Katalog; bitte Katalog neu laden')
     report = joyn_enrichment.cached(root, item_id) if row['kind'] != 'channel' else dict(joyn_enrichment.UNCHECKED)

@@ -19,7 +19,7 @@ import provider_base  # noqa: E402
 import task_control  # noqa: E402
 
 PLATFORMS = ('netzkino', 'pluto', 'justwatch', 'rakuten', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv',
-             'redbulltv', 'rtlplus', 'youtube')   # 0.6.47: Red Bull TV
+             'redbulltv', 'rtlplus', 'youtube', 'dmax')   # 0.6.47: Red Bull TV
 
 
 class ProfileTests(unittest.TestCase):
