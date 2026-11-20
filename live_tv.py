@@ -17,6 +17,9 @@ Sources so far:
   via /api/play?samsung=<id>; channels Samsung delivers only with Widevine are not listed.
 - Plex (0.5.98): free live channels of the Plex catalogue (plex.py), HLS via /api/play?plex=<id>.
 - ServusTV (0.5.101, rebuilt from the HAR in 0.5.102): live channels from the ServusTV catalogue (ServusTV, Red Bull TV, Wetterpanorama; servustv.py), HLS via /api/play?servustv=<id>.
+- Direkt vom Sender (0.6.47): private news stations from their own websites (sender_live.py): WELT plays its
+  official stream via /api/play?sender=welt, n-tv is a link to n-tv.de (no free official stream known).
+- Red Bull TV (0.6.47): live channels of the Red Bull TV catalogue (redbulltv.py), HLS via /api/play?redbulltv=<id>.
 
 A new provider only needs a loader returning channel dicts (see _channel) and an entry in
 PROVIDERS. Live streams are never stored offline. Nothing here fetches from the network:
@@ -34,7 +37,8 @@ from catalog import LIVE_TOPICS  # one definition: catalog.mark_live keeps them 
 
 PUBLIC = 'Öffentlich-rechtlich'
 REGIONAL = 'Regional (ARD)'
-GROUP_ORDER = (PUBLIC, REGIONAL)
+PRIVATE_NEWS = 'Nachrichten (privat)'          # 0.6.47: WELT, n-tv
+GROUP_ORDER = (PUBLIC, PRIVATE_NEWS, REGIONAL)
 
 # Canonical station keys -> display name, group, sort position. Keys are normalised names
 # (lower case, letters and digits only). Several spellings map onto one station.
@@ -63,14 +67,18 @@ STATIONS = [
     ('sr', 'SR Fernsehen', REGIONAL, ('sr', 'srfernsehen')),
     ('swr', 'SWR', REGIONAL, ('swr', 'swrfernsehen')),
     ('wdr', 'WDR', REGIONAL, ('wdr', 'wdrfernsehen')),
+    # 0.6.47: private news stations; Samsung TV Plus calls WELT "Welt", the station page "WELT TV"
+    ('welt', 'WELT', PRIVATE_NEWS, ('welt', 'welttv', 'weltde', 'weltnachrichtensender', 'n24')),
+    ('ntv', 'n-tv', PRIVATE_NEWS, ('ntv', 'ntvde', 'ntvnachrichten')),
 ]
 _ALIAS = {alias: key for key, _, _, aliases in STATIONS for alias in aliases}
 _KNOWN = {key: (name, group, pos) for pos, (key, name, group, _) in enumerate(STATIONS)}
 # Regional windows keep their own entry ("BR Nord", "NDR Hamburg") but sort under the station.
 _REGIONAL_PREFIXES = sorted((k for k, (_, g, _) in _KNOWN.items() if g == REGIONAL), key=len, reverse=True)
 
-PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('pluto', 'Pluto TV'), ('samsung', 'Samsung TV Plus'),
-             ('plex', 'Plex'), ('servustv', 'ServusTV'), ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
+PROVIDERS = (('mediathek', 'ARD, ZDF & Co.'), ('sender', 'Direkt vom Sender'), ('pluto', 'Pluto TV'),
+             ('samsung', 'Samsung TV Plus'), ('plex', 'Plex'), ('servustv', 'ServusTV'), ('redbulltv', 'Red Bull TV'),
+             ('rakuten', 'Rakuten TV'), ('joyn', 'Joyn'))
 PROVIDER_NAMES = dict(PROVIDERS)
 
 
@@ -200,6 +208,26 @@ def servustv_channels(root):
             for row in servustv.channels(root)]
 
 
+def sender_channels(root):
+    """0.6.47: WELT (official stream, /api/play?sender=welt) and n-tv (link to n-tv.de only)."""
+    import sender_live
+    return [_channel('sender', row['id'], row['title'], {'sender': row['id']} if row['stream'] else None,
+                     group=PRIVATE_NEWS, number=row.get('number'), summary=row.get('summary') or '',
+                     quality='kostenlos, offizieller Stream des Senders' if row['stream']
+                     else 'nur beim Sender ansehen (kein freier Stream bekannt)',
+                     link=row.get('web_url') or '')
+            for row in sender_live.channels(root)]
+
+
+def redbulltv_channels(root):
+    """0.6.47: Red Bull TV live channels from its catalogue (redbulltv.py), HLS via /api/play?redbulltv=<id>."""
+    import redbulltv
+    return [_channel('redbulltv', row['id'], row['title'], {'redbulltv': row['id']}, group='Red Bull TV',
+                     logo=row.get('poster') or '', number=row.get('number'), summary=row.get('summary') or '',
+                     quality='kostenlos, je nach Land gesperrt')
+            for row in redbulltv.channels(root)]
+
+
 def joyn_channels(root):
     """Joyn live channels (0.5.65): link to joyn.de only (no playback released, see joyn.py)."""
     import joyn
@@ -236,6 +264,7 @@ def channels(c, root, budget=None):
     found, errors, results = [], {}, {}
     loaders = (('pluto', lambda: pluto_channels(root)), ('samsung', lambda: samsung_channels(root)),
                ('plex', lambda: plex_channels(root)), ('servustv', lambda: servustv_channels(root)),
+               ('sender', lambda: sender_channels(root)), ('redbulltv', lambda: redbulltv_channels(root)),
                ('rakuten', lambda: rakuten_channels(root)), ('joyn', lambda: joyn_channels(root)))
 
     def work(key, loader):

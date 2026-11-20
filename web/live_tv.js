@@ -74,7 +74,9 @@
       // 0.5.65: Joyn channels only open joyn.de (no released stream, see joyn.py).
       if (!src.play) {
         if (!safeImage(src.link)) return;
-        const a = make('a', '↗ ' + (many ? src.provider_name : 'Bei ' + src.provider_name + ' ansehen'), 'button');
+        // 0.6.47: a station straight from its broadcaster (n-tv) names the station, not "Direkt vom Sender"
+        const where = src.provider === 'sender' ? station.name : src.provider_name;
+        const a = make('a', '↗ ' + (many ? where : 'Bei ' + where + ' ansehen'), 'button');
         a.href = window.AtlasDirect ? window.AtlasDirect.href(src.provider, src.link) : src.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
         a.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
         actions.append(a);
@@ -195,7 +197,7 @@
 
   // Live strip at the provider (0.5.50): the catalogue source "ARD, ZDF & Co." and "Pluto TV" show their
   // live stations above the search, collapsed by default. Sources without live channels show nothing.
-  const STRIP = {mediatheken: 'mediathek', pluto: 'pluto', rakuten: 'rakuten', joyn: 'joyn', plex: 'plex', servustv: 'servustv'};
+  const STRIP = {mediatheken: 'mediathek', pluto: 'pluto', rakuten: 'rakuten', joyn: 'joyn', plex: 'plex', servustv: 'servustv', redbulltv: 'redbulltv'};
   let stripSeq = 0;
   async function strip() {
     const discover = $('discover'), anchor = $('atlas-cross-search');

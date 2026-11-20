@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, rtlplus, rtlplus_enrichment, youtube_abos
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, redbulltv, redbulltv_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos
 import api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
@@ -153,7 +153,7 @@ def put_job(j):
 
 def film_platforms(offline):
     # Film platforms with own catalogues (dashboard cards): catalogue, IMDb/TVDB check, offline copies.
-    nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT);rk=rakuten.state(ROOT);yt=youtube.state(ROOT);jy=joyn.state(ROOT);tg=toggo.state(ROOT);cr=crunchyroll.state(ROOT);px=plex.state(ROOT);sv=servustv.state(ROOT);rp=rtlplus.state(ROOT)
+    nk=netzkino.state(ROOT);pl=pluto.state(ROOT);jw=justwatch.state(ROOT);rk=rakuten.state(ROOT);yt=youtube.state(ROOT);jy=joyn.state(ROOT);tg=toggo.state(ROOT);cr=crunchyroll.state(ROOT);px=plex.state(ROOT);sv=servustv.state(ROOT);rb=redbulltv.state(ROOT);rp=rtlplus.state(ROOT)
     return [
         {'source':'netzkino','name':'Netzkino','titles':nk.get('catalog_count',0),'last_success':nk.get('last_success',0),
          'last_result':nk.get('last_result'),'running':nk.get('running'),'reference':netzkino_enrichment.metrics(ROOT),
@@ -190,6 +190,10 @@ def film_platforms(offline):
          'last_success':sv.get('last_success',0),'last_result':sv.get('last_result'),
          'running':sv.get('running'),'reference':servustv_enrichment.metrics(ROOT),
          'offline':offline.get('servustv',{}),'offline_days':0,'offline_note':'ServusTV erlaubt Downloads nur in der eigenen App'},
+        {'source':'redbulltv','name':'Red Bull TV','titles':(rb.get('movies',0) or 0)+(rb.get('series',0) or 0),'channels':rb.get('channels',0),
+         'last_success':rb.get('last_success',0),'last_result':rb.get('last_result'),
+         'running':rb.get('running'),'reference':redbulltv_enrichment.metrics(ROOT),
+         'offline':offline.get('redbulltv',{}),'offline_days':0,'offline_note':'Red Bull TV bietet keine Downloads an'},
         {'source':'rtlplus','name':'RTL+','titles':(rp.get('movies',0) or 0)+(rp.get('series',0) or 0),
          'protected':(rp.get('movies',0) or 0)+(rp.get('series',0) or 0),'protection':'drm','last_success':rp.get('last_success',0),
          'last_result':rp.get('last_result'),'running':rp.get('running'),'reference':rtlplus_enrichment.metrics(ROOT),
@@ -664,7 +668,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],root=ROOT,quality=_play_quality(q),
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
                                                   youtube=q.get('youtube',[''])[0])
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
@@ -913,7 +917,7 @@ def get_v1_live(self,path):
 def get_v1_play(self,path):
     """Wiedergabe-Auskunft zu einem Eintrag: Art (direkt, HLS, eingebettet, nur Link), Adresse, Qualitätsstufen, Ticket.
     Parameter: genau eine Kennung (offer, job, netzkino, pluto, justwatch, rakuten, joyn, toggo, crunchyroll, samsung, plex,
-    servustv, rtlplus, youtube), dazu quality (auto|max|Höhe). Adressen, die mit /api/v1/stream beginnen, brauchen
+    servustv, redbulltv, sender, rtlplus, youtube), dazu quality (auto|max|Höhe). Adressen, die mit /api/v1/stream beginnen, brauchen
     zusätzlich &ticket=<ticket>."""
     return get_play(self,path,v1=True)
 
@@ -1250,7 +1254,7 @@ def get_download_options(self,path):
 
 @ROUTES.get('/api/play')
 def get_play(self,path,v1=False):
-    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')}
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','sender')}
     direct_youtube=q.get('direct',[''])[0]=='1'
     yt_id=q.get('youtube',[''])[0]
     if yt_id:
@@ -1315,7 +1319,7 @@ def get_diagnostics(self,path):
            'providers':lambda:[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],
            'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),
            'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
-           'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
+           'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
            'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),
            'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'archive_works':lambda:archive_recognition.summary(ROOT),
            'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT)}
@@ -2219,7 +2223,7 @@ def post_languages_observe(self,path,d):
 
 # 0.6.6: audio tracks and subtitles the player can offer for a source played through ffmpeg or as a file
 def _track_source(q):
-    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus')}
+    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','sender')}
     if q.get('direct',[''])[0]=='1':ref['youtube']=q.get('youtube',[''])[0]   # own player only; the embedded player has its own subtitles
     with db() as c:return ref,streaming.resolve(c,root=ROOT,quality=_play_quality(q),**ref)
 
@@ -2398,7 +2402,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

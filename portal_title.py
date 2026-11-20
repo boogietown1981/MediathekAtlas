@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import categories
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'rtlplus': 'RTL+'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'rtlplus': 'RTL+'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -201,12 +201,14 @@ def _portal(root, source, item_id):
         m['offline'] = {'allowed': False, 'days': 0, 'night': False}
         m['notes'].append('RTL+ liefert alle Videos nur mit Kopierschutz aus; MediathekAtlas umgeht ihn nicht. '
                           '„Bei RTL+ ansehen“ öffnet den Titel auf plus.rtl.de.')
-    if source == 'servustv':
+    if source in ('servustv', 'redbulltv'):
         # 0.5.101: free, plain HLS; youth protection and geo blocks are named at playback.
-        facts.append(['Angebot', 'ServusTV On, kostenlos (ohne Konto)'])
-        m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # downloads only inside the ServusTV app
+        # 0.6.47: Red Bull TV runs on the same platform (redbulltv.py).
+        label = PROVIDERS[source]
+        facts.append(['Angebot', ('ServusTV On' if source == 'servustv' else label) + ', kostenlos (ohne Konto)'])
+        m['offline'] = {'allowed': False, 'days': 0, 'night': False}   # downloads only inside the provider's app
         if m['kind'] not in ('series', 'channel'):
-            facts.append(['Stream', 'nur mit Kopierschutz – bei ServusTV ansehen' if it.get('drm') == 1 else
+            facts.append(['Stream', 'nur mit Kopierschutz – bei %s ansehen' % label if it.get('drm') == 1 else
                           'ohne Kopierschutz – läuft im MediathekAtlas-Player'])
             if it.get('published'):
                 import time as _t
@@ -309,7 +311,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'servustv', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'servustv', 'redbulltv', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 

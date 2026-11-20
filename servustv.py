@@ -21,6 +21,11 @@ Red Bull Media House platform; no login, no token, only the usual Referer:
   available, geo block). Live channels (``video_channel``: ServusTV, Red Bull TV, Wetterpanorama)
   answer the same way (ServusTV live: ``freqsyndlin.servustv.com``).
 
+0.6.47: the same engine serves Red Bull TV (``redbulltv.py``): Red Bull TV runs on the same Red Bull Media
+House platform (tv-api.redbull.com, api-player.redbull.com) under its own tenant. Everything that differs
+between the two (names, site, scope, seeds, player tenant, database, live fallback) is a ``Tenant``; the
+module-level functions below keep their signatures and use the ServusTV tenant unless ``t`` is given.
+
 Clips and trailers are left out (Björn: no "Sonstiges"); films, episodes and live channels are kept.
 No offline copies: ServusTV allows downloads only inside its own app. Titles and URLs never go to
 logs or the diagnosis export.
@@ -36,6 +41,7 @@ import time
 import urllib.error
 import urllib.parse
 import urllib.request
+from dataclasses import dataclass
 
 import portal_reference
 import provider_base
@@ -60,9 +66,10 @@ SOURCE_TTL = 120
 MIN_FILM = 20 * 60           # seconds; shorter videos without a show are clips
 USER_AGENT = ('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/605.1.15 '
               '(KHTML, like Gecko) Version/17.0 Safari/605.1.15')
-RB_ID = re.compile(r'(?:AA-?|PN|AP)[A-Z0-9]{8,30}|[a-z][a-z0-9\-]{2,40}')
+RB_ID = re.compile(r'(?:AA-?|AP-?|PN)[A-Z0-9]{8,30}|[a-z][a-z0-9\-]{2,40}')
 COLLECTION_ID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}|[a-z][a-z0-9\-]{2,40}')
-VALID_ID = re.compile(r'(?:[vc]\.(?:AA-?|PN)[A-Z0-9]{8,30}|s\.(?:AA-?[A-Z0-9]{8,30}|n-[a-z0-9\-]{1,80}))')
+# 0.6.47: Red Bull TV ids also start with AP- (yt-dlp redbulltv tests: AP-1Q6XCDTAN1W11)
+VALID_ID = re.compile(r'(?:[vc]\.(?:AA-?|AP-?|PN)[A-Z0-9]{8,30}|s\.(?:(?:AA|AP)-?[A-Z0-9]{8,30}|n-[a-z0-9\-]{1,80}))')
 SKIP_TYPES = {'clip', 'trailer', 'stop', 'live_program', 'person', 'promo', 'external'}
 # 0.6.16: sport and event pages (MotoGP, Superbike, DTM …) carry full replays and documentaries.
 PAGE_TYPES = {'subchannel', 'page', 'system', 'topic', 'channel', 'event'}
@@ -70,7 +77,7 @@ PAGE_TYPES = {'subchannel', 'page', 'system', 'topic', 'channel', 'event'}
 # full-length videos as ``clip`` (whole debates, vodcasts, docu series, race replays; in the HAR of
 # 13.11.2026 185 of 787 clips ran 20 minutes or longer, spread over 23 formats). Clips of at least
 # MIN_FILM count as episodes of their format; shorter clips stay out (no "Sonstiges").
-NAV_PAGE = re.compile(r'https://www\.servustv\.com/[a-z]{2}/page/((?:AA-?|PN|AP)[A-Z0-9]{8,30})(?:[/?#].*)?')
+NAV_PAGE = re.compile(r'https://www\.servustv\.com/[a-z]{2}/page/((?:AA-?|AP-?|PN)[A-Z0-9]{8,30})(?:[/?#].*)?')
 # 0.6.16: a single page that keeps answering 403/404/410/451 after the retries is left out (in the
 # diagnosis of 16.11.2026 always the same 10 of 2,361 requests, never recovered: not a rate limit).
 # Only when more than this share of the requests is refused does the run count as partial.
@@ -85,9 +92,47 @@ MAX_REFUSED_KEPT = 500
 # ServusTV live channels if the catalogue cannot be read (ids from the HAR of 13.11.2026).
 LIVE_FALLBACK = (('c.PN0B1EC15B2FE10', 'ServusTV', 1),)
 
+
+
+@dataclass(frozen=True)
+class Tenant:
+    """What differs between the services of the Red Bull Media House platform (0.6.47)."""
+    key: str                       # provider key (routes, diagnosis events, play parameter)
+    name: str                      # shown name, also in messages
+    site: str                      # web site for links and Referer
+    scopes: tuple                  # catalogue scopes, tried in this order until one answers
+    seeds: tuple                   # pages the crawl starts at
+    player_tenants: tuple          # tenant parameter of the player interface, tried in this order
+    table: str                     # table prefix in the own database file
+    dbfile: str
+    live_fallback: tuple = ()      # (id, title, number) of channels shown when the catalogue lists none
+    live_summary: str = ''
+    web_pattern: str = ''          # share_url accepted as link (full match)
+    web_item: str = ''             # link for an id: '%(site)s/…/%(id)s'
+    web_home: str = ''
+    web_shows: str = ''
+    locale: str = 'de'
+    assumed_scope: bool = False    # True: the scopes are not confirmed by a recording (diagnosis says so)
+
+
+STV = Tenant(
+    key=KEY, name=NAME, site=SITE, scopes=(SCOPE,), seeds=SEEDS, player_tenants=('stv',), table='servustv',
+    dbfile='servustv.sqlite3', live_fallback=LIVE_FALLBACK, live_summary='Das laufende Programm von ServusTV.',
+    web_pattern=r'https://www\.servustv\.com/[a-z]{2}/(?:page|video)/[A-Za-z0-9:\-]{4,60}(?:/[a-z0-9\-]{1,160})?',
+    web_item='%(site)s/de/page/%(id)s', web_home=SITE + '/de', web_shows=SITE + '/de/sendungen')
+
 _SOURCES = {}
 _SYNC_LOCK = threading.Lock()
 _ACTIVE = False
+_RUNNING = {}                      # tenant key -> catalogue run active (ServusTV keeps _ACTIVE as well)
+
+
+def _active(t):
+    return _ACTIVE if t.key == KEY else bool(_RUNNING.get(t.key))
+
+
+def _sql(t, text):
+    return text.replace('servustv_', t.table + '_') if t.table != 'servustv' else text
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS servustv_items(
@@ -113,19 +158,29 @@ def _notify(event, **details):
         pass
 
 
-def _connect(root):
-    db = provider_base.connect(root, 'servustv.sqlite3')   # 0.6.0: WAL, busy timeout (provider_base)
-    db.executescript(SCHEMA)
+def _connect(root, t=STV):
+    db = provider_base.connect(root, t.dbfile)   # 0.6.0: WAL, busy timeout (provider_base)
+    db.executescript(_sql(t, SCHEMA))
+    # sqlite3 connections take neither attributes nor weak references: remember the tenant by object id.
+    # Every connection handed to _get/_set/_store comes from here, so a reused id is always overwritten.
+    _DB_TENANT[id(db)] = t
     return db
 
 
+_DB_TENANT = {}
+
+
+def _tenant_of(db):
+    return _DB_TENANT.get(id(db)) or STV
+
+
 def _get(db, key, default=''):
-    row = db.execute('SELECT value FROM servustv_state WHERE name=?', (key,)).fetchone()
+    row = db.execute(_sql(_tenant_of(db), 'SELECT value FROM servustv_state WHERE name=?'), (key,)).fetchone()
     return row[0] if row else default
 
 
 def _set(db, key, value):
-    db.execute('INSERT OR REPLACE INTO servustv_state(name,value) VALUES(?,?)', (key, str(value)))
+    db.execute(_sql(_tenant_of(db), 'INSERT OR REPLACE INTO servustv_state(name,value) VALUES(?,?)'), (key, str(value)))
 
 
 def _text(value, limit):
@@ -155,58 +210,59 @@ def slug(value):
 
 # ---------------------------------------------------------------- network
 
-def _headers():
+def _headers(t=STV):
     return {'User-Agent': USER_AGENT, 'Accept': 'application/json', 'Accept-Language': 'de-DE,de;q=0.9',
-            'Origin': SITE, 'Referer': SITE + '/'}
+            'Origin': t.site, 'Referer': t.site + '/'}
 
 
 def _open(url, headers, limit=MAX_ANSWER):
     parts = urllib.parse.urlsplit(url)
     if parts.scheme != 'https' or parts.hostname not in API_HOSTS or parts.port or parts.username:
-        raise ValueError('Ungültige ServusTV-Anfrage')
+        raise ValueError('Ungültige Anfrage an die Red-Bull-Plattform')
     req = urllib.request.Request(url, headers=headers)
     with urllib.request.urlopen(req, timeout=30) as response:
         if int(response.headers.get('Content-Length', '0') or 0) > limit:
-            raise ValueError('ServusTV-Antwort zu groß')
+            raise ValueError('Antwort der Red-Bull-Plattform zu groß')
         raw = response.read(limit + 1)
     if len(raw) > limit:
-        raise ValueError('ServusTV-Antwort zu groß')
+        raise ValueError('Antwort der Red-Bull-Plattform zu groß')
     return raw
 
 
-def _json(opener, url):
-    answer = json.loads(opener(url, _headers()).decode('utf-8'))
+def _json(opener, url, t=STV):
+    answer = json.loads(opener(url, _headers(t)).decode('utf-8'))
     if not isinstance(answer, dict):
-        raise ValueError('Unerwartete ServusTV-Antwort')
+        raise ValueError('Unerwartete %s-Antwort' % t.name)
     return answer
 
 
-def product(opener, ident):
+def product(opener, ident, t=STV, scope=None):
     if not RB_ID.fullmatch(str(ident or '')):
-        raise ValueError('Ungültige ServusTV-Seite')
-    return _json(opener, TV_API + '/products/v5.3' + SCOPE + ident)
+        raise ValueError('Ungültige %s-Seite' % t.name)
+    return _json(opener, TV_API + '/products/v5.3' + (scope or t.scopes[0]) + ident, t)
 
 
-def collection(opener, ident, offset=0):
+def collection(opener, ident, offset=0, t=STV, scope=None):
     if not COLLECTION_ID.fullmatch(str(ident or '')):
-        raise ValueError('Ungültige ServusTV-Liste')
-    return _json(opener, TV_API + '/collections/v5.3' + SCOPE + ident + '?' + urllib.parse.urlencode({'offset': int(offset)}))
+        raise ValueError('Ungültige %s-Liste' % t.name)
+    return _json(opener, TV_API + '/collections/v5.3' + (scope or t.scopes[0]) + ident + '?'
+                 + urllib.parse.urlencode({'offset': int(offset)}), t)
 
 
-def _error(exc):
+def _error(exc, t=STV):
     code = getattr(exc, 'code', None)
     if code in (401, 403):
-        return 'ServusTV verweigert den Zugriff (HTTP %d)' % code
+        return '%s verweigert den Zugriff (HTTP %d)' % (t.name, code)
     if code == 451:
-        return 'ServusTV bietet seine Videos in diesem Land nicht an (HTTP 451)'
+        return '%s bietet seine Videos in diesem Land nicht an (HTTP 451)' % t.name
     if code:
-        return 'ServusTV antwortet mit HTTP %d' % code
+        return '%s antwortet mit HTTP %d' % (t.name, code)
     if isinstance(exc, (urllib.error.URLError, TimeoutError, OSError)):
         import netcheck
-        return netcheck.with_cause('ServusTV ist nicht erreichbar', exc)
+        return netcheck.with_cause('%s ist nicht erreichbar' % t.name, exc)
     if isinstance(exc, ValueError):
         return str(exc)[:200]
-    return 'ServusTV-Katalog konnte nicht geladen werden'
+    return '%s-Katalog konnte nicht geladen werden' % t.name
 
 
 # ---------------------------------------------------------------- parsing
@@ -238,12 +294,12 @@ def _genres(card):
     return out[:6]
 
 
-def _web(card):
+def _web(card, t=STV):
     url = str(card.get('share_url') or '')
-    if re.fullmatch(r'https://www\.servustv\.com/[a-z]{2}/(?:page|video)/[A-Za-z0-9:\-]{4,60}(?:/[a-z0-9\-]{1,160})?', url):
+    if t.web_pattern and re.fullmatch(t.web_pattern, url):
         return url.replace('/page/page:', '/page/')
     ident = str(card.get('id') or '')
-    return '%s/de/page/%s' % (SITE, ident) if RB_ID.fullmatch(ident) else SITE + '/de'
+    return t.web_item % {'site': t.site, 'id': ident} if RB_ID.fullmatch(ident) else t.web_home
 
 
 def _summary_of(card):
@@ -254,13 +310,13 @@ def _summary_of(card):
     return ''
 
 
-def _base(card, kind):
+def _base(card, kind, t=STV):
     return {'kind': kind, 'title': _text(card.get('title'), 200), 'path': str(card.get('id')), 'series_id': '',
             'season': None, 'episode': None, 'year': None, 'duration': _ms(card.get('duration')),
             'rating': '', 'genre': ', '.join(_genres(card)), 'summary': _summary_of(card), 'poster': image(card),
             'imdb_id': '', 'imdb_score': None, 'imdb_votes': None, 'number': None,
             'category': (_genres(card) or [''])[0], 'published': None,
-            'playable': 1 if card.get('playable') is not False else 0, 'drm': -1, 'web_url': _web(card)}
+            'playable': 1 if card.get('playable') is not False else 0, 'drm': -1, 'web_url': _web(card, t)}
 
 
 def _page_key(url):
@@ -280,8 +336,9 @@ def _known_refused(db):
 class Crawl:
     """Breadth-first walk over pages, shows and rails, with fixed request limits."""
 
-    def __init__(self, opener, gap, waits=(), known_refused=None, now=None):
+    def __init__(self, opener, gap, waits=(), known_refused=None, now=None, t=STV, scope=None):
         self.gap, self.waits = gap, tuple(waits)
+        self.t, self.scope = t, scope or t.scopes[0]
         self.refused = self.recovered = self.known_skipped = 0
         self.now = time.time() if now is None else float(now)
         # 0.6.45: address -> time of the last refusal (see REFUSED_RECHECK)
@@ -329,7 +386,7 @@ class Crawl:
             return
         if isinstance(exc, urllib.error.HTTPError) and code == 404 and seed:
             return
-        self.errors.append(_error(exc))
+        self.errors.append(_error(exc, self.t))
 
     def refused_too_often(self):
         refused = sum(n for code, n in self.unavailable.items() if code != 404)
@@ -339,7 +396,7 @@ class Crawl:
         self.requests += 1
         if self.requests % 200 == 0:
             # 0.5.104: progress in the diagnosis (counts only, no titles or addresses)
-            _notify('servustv_sync_progress', requests=self.requests, items=len(self.items),
+            _notify(self.t.key + '_sync_progress', requests=self.requests, items=len(self.items),
                     shows=len(self.shows), errors=len(self.errors), refused=self.refused, recovered=self.recovered)
         if self.gap:
             time.sleep(self.gap)
@@ -372,19 +429,19 @@ class Crawl:
             return
         if ctype == 'show':
             if ident not in self.shows:
-                self.shows[ident] = {**_base(card, 'series'), 'id': 's.' + ident, 'duration': None}
+                self.shows[ident] = {**_base(card, 'series', self.t), 'id': 's.' + ident, 'duration': None}
                 self.show_names.setdefault(_text(card.get('title'), 200).casefold(), ident)
             self.want_product(ident)
             return
         if ctype == 'video_channel':
-            self.items.setdefault('c.' + ident, {**_base(card, 'channel'), 'id': 'c.' + ident, 'genre': 'Live',
+            self.items.setdefault('c.' + ident, {**_base(card, 'channel', self.t), 'id': 'c.' + ident, 'genre': 'Live',
                                                  'category': 'Live', 'duration': None})
             return
         long_clip = ctype == 'clip' and (_ms(card.get('duration')) or 0) >= MIN_FILM
         if (ctype in SKIP_TYPES and not long_clip) \
                 or card.get('type') not in ((None, 'video', 'page') if ctype == 'film' else (None, 'video')):
             return
-        row = _base(card, 'movie')
+        row = _base(card, 'movie', self.t)
         if not row['title']:
             return
         show_name = _text(card.get('show_name') or (card.get('subheading') if ctype in ('episode', 'clip') else ''), 200)
@@ -407,7 +464,7 @@ class Crawl:
     def run_collection(self, ident, show=None):
         offset, pages = 0, 0
         while pages < MAX_COLLECTION_PAGES and len(self.items) < MAX_ITEMS:
-            answer = collection(self.opener, ident, offset)
+            answer = collection(self.opener, ident, offset, self.t, self.scope)
             self._pause()
             cards = answer.get('cards') if isinstance(answer.get('cards'), list) else []
             for card in cards:
@@ -421,7 +478,7 @@ class Crawl:
         self.truncated = True
 
     def run_product(self, ident):
-        answer = product(self.opener, ident)
+        answer = product(self.opener, ident, self.t, self.scope)
         self._pause()
         show = ident if str(answer.get('content_type') or '') == 'show' else None
         if show and ident not in self.shows and _text(answer.get('title'), 200):
@@ -442,7 +499,7 @@ class Crawl:
                 self.want_collection(cid)
 
     def run(self):
-        for seed in SEEDS:
+        for seed in self.t.seeds:
             self.want_product(seed)
         while (self.pending_products or self.pending_collections) and len(self.items) < MAX_ITEMS:
             if self.pending_collections and len(self.done_collections) < MAX_COLLECTIONS:
@@ -464,7 +521,7 @@ class Crawl:
             try:
                 self.run_product(pid)
             except Exception as exc:
-                self._failed(exc, seed=pid in SEEDS)
+                self._failed(exc, seed=pid in self.t.seeds)
         if self.pending_products or self.pending_collections:
             self.truncated = True
 
@@ -480,7 +537,7 @@ class Crawl:
             if show:
                 sid = 's.' + show
             elif name:
-                sid = 's.n-' + (slug(name) or 'servustv')
+                sid = 's.n-' + (slug(name) or self.t.key)
                 named.setdefault(sid, {'title': name, 'poster': row['poster'], 'genre': row['genre'],
                                        'category': row['category']})
             else:
@@ -504,7 +561,7 @@ class Crawl:
                             'season': None, 'episode': None, 'year': None, 'duration': None, 'rating': '',
                             'genre': info['genre'], 'summary': '', 'poster': info['poster'], 'imdb_id': '',
                             'imdb_score': None, 'imdb_votes': None, 'number': None, 'category': info['category'],
-                            'published': None, 'playable': 1, 'drm': -1, 'web_url': SITE + '/de/sendungen'})
+                            'published': None, 'playable': 1, 'drm': -1, 'web_url': self.t.web_shows})
         return out
 
 
@@ -519,25 +576,46 @@ _KEEP = ('drm',)
 def _store(db, items, now):
     update = ','.join('%s=excluded.%s' % (f, f) for f in FIELDS if f not in _KEEP)
     for item in items:
-        db.execute('''INSERT INTO servustv_items(id,%s,seen,updated) VALUES(?,%s,?,?)
+        db.execute(_sql(_tenant_of(db), '''INSERT INTO servustv_items(id,%s,seen,updated) VALUES(?,%s,?,?)
             ON CONFLICT(id) DO UPDATE SET %s,seen=excluded.seen,updated=excluded.updated'''
-                   % (','.join(FIELDS), ','.join('?' * len(FIELDS)), update),
+                   % (','.join(FIELDS), ','.join('?' * len(FIELDS)), update)),
                    (item['id'], *[item.get(f) for f in FIELDS], now, now))
 
 
-def live_rows():
+def live_rows(t=STV):
     return [{'id': cid, 'kind': 'channel', 'title': title, 'path': cid[2:], 'series_id': '', 'season': None,
              'episode': None, 'year': None, 'duration': None, 'rating': '', 'genre': 'Live',
-             'summary': 'Das laufende Programm von ServusTV.', 'poster': '', 'imdb_id': '', 'imdb_score': None,
+             'summary': t.live_summary, 'poster': '', 'imdb_id': '', 'imdb_score': None,
              'imdb_votes': None, 'number': number, 'category': 'Live', 'published': None, 'playable': 1, 'drm': -1,
-             'web_url': SITE + '/de/video/' + cid[2:]} for cid, title, number in LIVE_FALLBACK]
+             'web_url': t.site + '/de/video/' + cid[2:]} for cid, title, number in t.live_fallback]
 
 
-def sync(root, opener=None, now=None, gap=None, waits=None):
-    """Read the ServusTV library. Rows stay, but only titles seen in the latest successful run are listed."""
+def find_scope(t, opener, stored=''):
+    """0.6.47: catalogue scope of a tenant whose scope is not confirmed by a recording (Red Bull TV).
+
+    The stored scope of the last successful run is tried first, then the candidates in order; the first
+    one whose start page answers wins. Returns (scope, first page answer or None, error of the last try)."""
+    candidates = [stored] if stored in t.scopes else []
+    candidates += [x for x in t.scopes if x not in candidates]
+    last = None
+    for scope in candidates:
+        try:
+            return scope, product(opener, t.seeds[0], t, scope), None
+        except urllib.error.HTTPError as exc:
+            last = exc
+            if exc.code not in (400, 403, 404, 410):
+                break                          # throttling or server trouble: not a question of the scope
+        except (ValueError, OSError) as exc:
+            last = exc
+            break
+    return '', None, last
+
+
+def sync(root, opener=None, now=None, gap=None, waits=None, t=STV):
+    """Read the library of a tenant. Rows stay, but only titles seen in the latest successful run are listed."""
     now = time.time() if now is None else float(now)
     gap = (REQUEST_GAP if opener is None else 0) if gap is None else gap
-    db = _connect(root)
+    db = _connect(root, t)
     try:
         with db:
             _set(db, 'last_attempt', now)
@@ -547,43 +625,52 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 _set(db, 'last_error', '')
     finally:
         db.close()
-    _notify('servustv_sync_started')
+    _notify(t.key + '_sync_started')
     try:
-        db = _connect(root)
+        db = _connect(root, t)
         try:
             known = _known_refused(db)
+            stored_scope = _get(db, 'scope')
         finally:
             db.close()
-        crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()), known_refused=known, now=now)
+        scope = t.scopes[0]
+        if len(t.scopes) > 1:
+            scope, _, problem = find_scope(t, opener or _open, stored_scope)
+            if not scope:
+                _notify(t.key + '_scope_missing', tried=len(t.scopes), http_status=getattr(problem, 'code', 0) or 0)
+                raise problem if problem is not None else ValueError('%s lieferte keine Startseite' % t.name)
+        crawl = Crawl(opener or _open, gap, RETRY_WAITS if opener is None else (waits or ()), known_refused=known,
+                      now=now, t=t, scope=scope)
         crawl.run()
         rows = crawl.rows()
         if not any(r['kind'] in ('movie', 'episode') for r in rows):
-            raise ValueError(crawl.errors[0] if crawl.errors else 'ServusTV lieferte keine Videos')
+            raise ValueError(crawl.errors[0] if crawl.errors else '%s lieferte keine Videos' % t.name)
         channels = [r for r in rows if r['kind'] == 'channel']
-        for number, row in enumerate(sorted(channels, key=lambda r: (r['id'] != LIVE_FALLBACK[0][0], r['title'])), 1):
+        first = t.live_fallback[0][0] if t.live_fallback else ''
+        for number, row in enumerate(sorted(channels, key=lambda r: (r['id'] != first, r['title'])), 1):
             row['number'] = number
         if not channels:
-            rows += live_rows()
+            rows += live_rows(t)
         refused = sum(n for code, n in crawl.unavailable.items() if code != 404)
         too_many = crawl.refused_too_often()
         partial = crawl.truncated or bool(crawl.errors) or too_many
         if crawl.errors:
             message = 'Katalog nur teilweise geladen: %s (%d von %d Abrufen)' % (crawl.errors[0], len(crawl.errors), crawl.requests)
         elif too_many:
-            message = ('Katalog nur teilweise geladen: ServusTV verweigert den Zugriff (HTTP 403) (%d von %d Abrufen)'
-                       % (refused, crawl.requests))
+            message = ('Katalog nur teilweise geladen: %s verweigert den Zugriff (HTTP 403) (%d von %d Abrufen)'
+                       % (t.name, refused, crawl.requests))
         elif partial:
             message = 'Katalog nur teilweise geladen'
         else:
             message = ''
         skipped = sum(crawl.unavailable.values())
-        note = ('%d ServusTV-Seite%s nicht freigegeben und übersprungen' % (skipped, '' if skipped == 1 else 'n')
+        note = ('%d %s-Seite%s nicht freigegeben und übersprungen' % (skipped, t.name, '' if skipped == 1 else 'n')
                 if skipped and not partial else '')
         counts = {'movies': sum(1 for r in rows if r['kind'] == 'movie'),
                   'series': sum(1 for r in rows if r['kind'] == 'series'),
                   'episodes': sum(1 for r in rows if r['kind'] == 'episode'),
                   'channels': sum(1 for r in rows if r['kind'] == 'channel')}
-        db = _connect(root)
+        db = _connect(root, t)
         try:
             with db:
                 _store(db, rows, now)
@@ -593,13 +680,13 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                                    ('last_result', 'partial' if partial else 'complete'),
                                    ('last_error', message), ('note', note), ('unavailable', skipped),
                                    ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
-                                   ('requests', crawl.requests), *counts.items()]:
+                                   ('requests', crawl.requests), ('scope', scope), *counts.items()]:
                     _set(db, key, value)
                 kept = dict(sorted(crawl.refused_pages.items(), key=lambda kv: -kv[1])[:MAX_REFUSED_KEPT])
                 _set(db, 'refused_pages', json.dumps(kept, separators=(',', ':')))
         finally:
             db.close()
-        _notify('servustv_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
+        _notify(t.key + '_sync_completed', partial=partial, requests=crawl.requests, refused=crawl.refused,
                 recovered=crawl.recovered, errors=len(crawl.errors), truncated=crawl.truncated,
                 known_skipped=crawl.known_skipped, remembered=len(crawl.refused_pages),
                 # 0.6.45: the error texts (no addresses), so a partial run can be explained
@@ -608,8 +695,8 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 long_clips=crawl.long_clips, events=crawl.events, shows=len(crawl.shows), **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
-        message = _error(exc)
-        db = _connect(root)
+        message = _error(exc, t)
+        db = _connect(root, t)
         try:
             with db:
                 for key, value in [('last_result', 'failed'), ('last_error', message),
@@ -618,14 +705,14 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
         finally:
             db.close()
         import netcheck
-        _notify('servustv_sync_failed', http_status=getattr(exc, 'code', 0) or 0, error_type=netcheck.kind(exc))
+        _notify(t.key + '_sync_failed', http_status=getattr(exc, 'code', 0) or 0, error_type=netcheck.kind(exc))
         return {'ok': False, 'error': message}
 
 
 # ---------------------------------------------------------------- reading
 
 def _row(db, item_id):
-    row = db.execute('SELECT * FROM servustv_items WHERE id=?', (item_id,)).fetchone()
+    row = db.execute(_sql(_tenant_of(db), 'SELECT * FROM servustv_items WHERE id=?'), (item_id,)).fetchone()
     return dict(row) if row else None
 
 
@@ -633,27 +720,31 @@ def own_score(row):
     return None
 
 
-def _summary(root, row, reports=None):
-    import servustv_enrichment
-    report = (reports if reports is not None else servustv_enrichment.all_cached(root)).get(row['id'])
+def _enrichment(t):
+    import importlib
+    return importlib.import_module(t.key + '_enrichment')
+
+
+def _summary(root, row, reports=None, t=STV):
+    report = (reports if reports is not None else _enrichment(t).all_cached(root)).get(row['id'])
     return portal_reference.summary(row.get('genre'), report, age=portal_reference.age_of(row))
 
 
-def episodes(root, series_id, now=None):
+def episodes(root, series_id, now=None, t=STV):
     if not VALID_ID.fullmatch(str(series_id or '')) or not str(series_id).startswith('s.'):
-        raise ValueError('Ungültige ServusTV-Sendung')
-    db = _connect(root)
+        raise ValueError('Ungültige %s-Sendung' % t.name)
+    db = _connect(root, t)
     try:
         series = _row(db, series_id)
         if not series or series['kind'] != 'series':
-            raise ValueError('ServusTV-Sendung nicht im Katalog; bitte Katalog neu laden')
+            raise ValueError('%s-Sendung nicht im Katalog; bitte Katalog neu laden' % t.name)
         last = float(_get(db, 'last_success', '0') or 0)
-        rows = [dict(r) for r in db.execute(
+        rows = [dict(r) for r in db.execute(_sql(t,
             "SELECT * FROM servustv_items WHERE kind='episode' AND series_id=? AND seen>=? "
-            "ORDER BY season IS NULL, season, episode IS NULL, episode, published DESC, title", (series_id, last))]
+            "ORDER BY season IS NULL, season, episode IS NULL, episode, published DESC, title"), (series_id, last))]
     finally:
         db.close()
-    extra = _summary(root, series)
+    extra = _summary(root, series, t=t)
     for row in rows:
         row.update(extra)
         row['poster'] = row['poster'] or series['poster']
@@ -661,16 +752,15 @@ def episodes(root, series_id, now=None):
     return {'series': {'id': series_id, 'title': series['title'], **extra}, 'items': rows, 'error': ''}
 
 
-def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection=''):
+def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='title', collection='', t=STV):
     """One page of films, formats (series) or the live channels, with canonical categories."""
-    import servustv_enrichment
     kind = {'movies': 'movie', 'series': 'series', 'live': 'channel'}.get(view, 'movie')
     offset = max(0, min(_int(offset, 0) or 0, 1000000))
     limit = 1000000 if limit == 'all' else max(1, min(_int(limit, 1) or 60, 200))
-    db = _connect(root)
+    db = _connect(root, t)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
-        sql = 'FROM servustv_items WHERE kind=? AND seen>=?'
+        sql = _sql(t, 'FROM servustv_items WHERE kind=? AND seen>=?')
         args = [kind, last]
         if query:
             sql += ' AND (title LIKE ? OR genre LIKE ? OR summary LIKE ?)'
@@ -679,8 +769,8 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         order = 'number,title' if kind == 'channel' else 'title COLLATE NOCASE'
         rows = [dict(r) for r in db.execute('SELECT * ' + sql + ' ORDER BY ' + order, args)]
         if kind == 'series':
-            counts = dict(db.execute("SELECT series_id,COUNT(*) FROM servustv_items WHERE kind='episode' AND seen>=? "
-                                     "GROUP BY series_id", (last,)).fetchall())
+            counts = dict(db.execute(_sql(t, "SELECT series_id,COUNT(*) FROM servustv_items WHERE kind='episode' AND seen>=? "
+                                     "GROUP BY series_id"), (last,)).fetchall())
             for row in rows:
                 row['episodes'] = counts.get(row['id'], 0)
     finally:
@@ -689,9 +779,9 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
         row['playable'] = 0 if row['drm'] == 1 else 1
     if kind == 'channel':
         return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view, 'genre_counts': []}
-    reports = servustv_enrichment.all_cached(root)
+    reports = _enrichment(t).all_cached(root)
     for row in rows:
-        row.update(_summary(root, row, reports))
+        row.update(_summary(root, row, reports, t))
     counts = portal_reference.facets(rows)
     rows = [r for r in rows if portal_reference.matches(r, genre) and portal_reference.in_collection(r, collection, kind)]
     if sort == 'rating':
@@ -701,93 +791,99 @@ def listing(root, view='movies', query='', offset=0, limit=60, genre='', sort='t
     return {'items': rows[offset:offset + limit], 'total': len(rows), 'offset': offset, 'view': view, 'genre_counts': counts}
 
 
-def channels(root):
-    """Live channels of the latest run (ServusTV, Red Bull TV, Wetterpanorama …); the ServusTV stream as a
+def channels(root, t=STV):
+    """Live channels of the latest run (ServusTV, Red Bull TV, Wetterpanorama …); the tenant's own stream as a
     fallback once a catalogue run was attempted, even if it failed."""
-    db = _connect(root)
+    db = _connect(root, t)
     try:
         tried = float(_get(db, 'last_attempt', '0') or 0)
         last = float(_get(db, 'last_success', '0') or 0)
-        rows = [dict(r) for r in db.execute(
+        rows = [dict(r) for r in db.execute(_sql(t,
             "SELECT id,title,number,genre,category,summary,poster,web_url,drm FROM servustv_items "
-            "WHERE kind='channel' AND seen>=? ORDER BY number,title", (last,))] if last else []
+            "WHERE kind='channel' AND seen>=? ORDER BY number,title"), (last,))] if last else []
     finally:
         db.close()
     if rows or not tried:
         return rows
     return [{k: r[k] for k in ('id', 'title', 'number', 'genre', 'category', 'summary', 'poster', 'web_url', 'drm')}
-            for r in live_rows()]
+            for r in live_rows(t)]
 
 
-def item(root, item_id):
-    import servustv_enrichment
+def item(root, item_id, t=STV):
     if not VALID_ID.fullmatch(str(item_id or '')):
-        raise ValueError('Ungültiger ServusTV-Titel')
-    db = _connect(root)
+        raise ValueError('Ungültiger %s-Titel' % t.name)
+    db = _connect(root, t)
     try:
-        row = _row(db, item_id) or (next((r for r in live_rows() if r['id'] == item_id), None) if item_id.startswith('c.') else None)
+        row = _row(db, item_id) or (next((r for r in live_rows(t) if r['id'] == item_id), None) if item_id.startswith('c.') else None)
         if not row:
-            raise ValueError('ServusTV-Titel nicht im Katalog; bitte Katalog neu laden')
+            raise ValueError('%s-Titel nicht im Katalog; bitte Katalog neu laden' % t.name)
         parent = _row(db, row['series_id']) if row.get('series_id') else None
     finally:
         db.close()
     row['playable'] = 0 if row['drm'] == 1 or row['kind'] == 'series' else 1
-    report = servustv_enrichment.cached(root, item_id)
+    report = _enrichment(t).cached(root, item_id)
     base = parent if row['kind'] == 'episode' and parent else row
-    summary = _summary(root, {**base, 'genre': row.get('genre') or base.get('genre')}, {base['id']: report})
+    summary = _summary(root, {**base, 'genre': row.get('genre') or base.get('genre')}, {base['id']: report}, t)
     return {'item': {**row, **summary, 'poster': row.get('poster') or (parent or {}).get('poster') or ''},
             'series': parent, 'reference': report}
 
 
-def state(root):
-    db = _connect(root)
+def state(root, t=STV):
+    db = _connect(root, t)
     try:
         last = float(_get(db, 'last_success', '0') or 0)
-        protected = db.execute("SELECT COUNT(*) FROM servustv_items WHERE drm=1 AND kind IN ('movie','episode') AND seen>=?",
+        protected = db.execute(_sql(t, "SELECT COUNT(*) FROM servustv_items WHERE drm=1 AND kind IN ('movie','episode') AND seen>=?"),
                                (last,)).fetchone()[0]
         return {
-            'running': _ACTIVE, 'auto': _get(db, 'auto', '0') == '1',
+            'running': _active(t), 'auto': _get(db, 'auto', '0') == '1',
             'last_attempt': float(_get(db, 'last_attempt', '0') or 0), 'last_success': last,
             'next_attempt': float(_get(db, 'next_attempt', '0') or 0),
-            'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _ACTIVE),
+            'last_result': portal_reference.stored_result(_get(db, 'last_result', 'never'), _active(t)),
             'last_error': _get(db, 'last_error'),
             'last_http_status': _int(_get(db, 'last_http_status', '0')) or 0,
             'movies': _int(_get(db, 'movies', '0')) or 0, 'series': _int(_get(db, 'series', '0')) or 0,
             'episodes': _int(_get(db, 'episodes', '0')) or 0, 'channels': _int(_get(db, 'channels', '0')) or 0, 'protected': protected,
             'requests': _int(_get(db, 'requests', '0')) or 0,
-            'unavailable': _int(_get(db, 'unavailable', '0')) or 0, 'note': _get(db, 'note')}
+            'unavailable': _int(_get(db, 'unavailable', '0')) or 0, 'note': _get(db, 'note'),
+            'scope_assumed': t.assumed_scope}
     finally:
         db.close()
 
 
-def set_auto(root, enabled):
+def set_auto(root, enabled, t=STV):
     if type(enabled) is not bool:
         raise ValueError('Automatik muss ausdrücklich ein- oder ausgeschaltet werden')
-    db = _connect(root)
+    db = _connect(root, t)
     try:
         with db:
             _set(db, 'auto', int(enabled))
     finally:
         db.close()
-    return state(root)
+    return state(root, t)
 
 
-def _run(root):
+def _mark_running(t, value):
     global _ACTIVE
+    if t.key == KEY:
+        _ACTIVE = value
+    else:
+        _RUNNING[t.key] = value
+
+
+def _run(root, t=STV):
     try:
-        sync(root)
+        sync(root, t=t)
     finally:
         with _SYNC_LOCK:
-            _ACTIVE = False
+            _mark_running(t, False)
 
 
-def start_sync(root):
-    global _ACTIVE
+def start_sync(root, t=STV):
     with _SYNC_LOCK:
-        if _ACTIVE:
+        if _active(t):
             return False
-        _ACTIVE = True
-    threading.Thread(target=_run, args=(root,), daemon=True, name='servustv_catalog_sync').start()
+        _mark_running(t, True)
+    threading.Thread(target=_run, args=(root, t), daemon=True, name=t.key + '_catalog_sync').start()
     return True
 
 
@@ -806,24 +902,49 @@ def loop(root, stop):
 
 # ---------------------------------------------------------------- playback
 
-def player_info(ident, opener=None):
+def player_info(ident, opener=None, t=STV, tenant=None):
     """Answer of the Red Bull player interface for one video or live channel."""
     if not RB_ID.fullmatch(str(ident or '')):
-        raise ValueError('Ungültiges ServusTV-Video')
+        raise ValueError('Ungültiges %s-Video' % t.name)
     return _json(opener or _open, PLAYER + '?' + urllib.parse.urlencode(
-        {'videoId': ident, 'deviceGroup': 'group_5', 'locale': 'de', 'tenant': 'stv'}))
+        {'videoId': ident, 'deviceGroup': 'group_5', 'locale': t.locale, 'tenant': tenant or t.player_tenants[0]}), t)
 
 
-def _mark_drm(root, item_id, value):
-    db = _connect(root)
+def _player_answer(ident, opener, t):
+    """0.6.47: the first player tenant that names a stream; otherwise the answer (or error) of the first one.
+    Red Bull TV's own tenant is not confirmed by a recording, so the ServusTV tenant is the second try
+    (both share one video store; the ServusTV player serves the Red Bull TV live channel)."""
+    first = first_error = None
+    for number, tenant in enumerate(t.player_tenants):
+        try:
+            answer = player_info(ident, opener, t, tenant)
+        except urllib.error.HTTPError as exc:
+            if first_error is None and first is None:
+                first_error = exc
+            if exc.code not in (400, 403, 404):
+                break
+            continue
+        if _stream_url(answer.get('videoUrl')) and not answer.get('playabilityErrors'):
+            if number:
+                _notify(t.key + '_player_fallback', tenant_position=number)
+            return answer
+        if first is None:
+            first = answer
+    if first is not None:
+        return first
+    raise first_error if first_error is not None else ValueError('%s nennt für dieses Video keinen Stream.' % t.name)
+
+
+def _mark_drm(root, item_id, value, t=STV):
+    db = _connect(root, t)
     try:
         with db:
-            db.execute('UPDATE servustv_items SET drm=? WHERE id=?', (int(value), item_id))
+            db.execute(_sql(t, 'UPDATE servustv_items SET drm=? WHERE id=?'), (int(value), item_id))
     finally:
         db.close()
 
 
-def playability(answer):
+def playability(answer, t=STV):
     """Plain-language reason why the player interface gives no stream."""
     errors = answer.get('playabilityErrors') if isinstance(answer, dict) else None
     errors = [str(e) for e in errors] if isinstance(errors, list) else []
@@ -832,18 +953,18 @@ def playability(answer):
         d = details.get('FSK_BLOCKED') if isinstance(details.get('FSK_BLOCKED'), dict) else {}
         start, end, age = _int(d.get('minEveningHour'), 0, 23), _int(d.get('maxMorningHour'), 0, 23), _int(d.get('minAge'), 0, 21)
         window = ' von %02d:00 bis %02d:00 Uhr' % (start, end) if start is not None and end is not None else ''
-        return ('Jugendschutz: ServusTV zeigt dieses Video nur%s%s.' % (window, ' (ab %d Jahren)' % age if age else '')).replace('nur.', 'zu bestimmten Uhrzeiten.')
+        return ('Jugendschutz: %s zeigt dieses Video nur%s%s.' % (t.name, window, ' (ab %d Jahren)' % age if age else '')).replace('nur.', 'zu bestimmten Uhrzeiten.')
     if 'NOT_YET_AVAILABLE' in errors:
         d = details.get('NOT_YET_AVAILABLE') if isinstance(details.get('NOT_YET_AVAILABLE'), dict) else {}
         when = _text(d.get('availableFrom') or answer.get('currentSunrise'), 40)
-        return 'Dieses Video ist bei ServusTV noch nicht freigegeben' + (' (ab %s).' % when if when else '.')
+        return 'Dieses Video ist bei %s noch nicht freigegeben' % t.name + (' (ab %s).' % when if when else '.')
     if any('GEO' in e.upper() for e in errors):
-        return 'ServusTV zeigt dieses Video in deinem Land nicht (Geosperre).'
+        return '%s zeigt dieses Video in deinem Land nicht (Geosperre).' % t.name
     if any('EXPIRED' in e.upper() or 'SUNSET' in e.upper() for e in errors):
-        return 'Dieses Video ist bei ServusTV nicht mehr verfügbar.'
+        return 'Dieses Video ist bei %s nicht mehr verfügbar.' % t.name
     if errors:
-        return 'ServusTV gibt dieses Video nicht frei (%s).' % ', '.join(_text(e, 40) for e in errors[:3])
-    return 'ServusTV nennt für dieses Video keinen Stream.'
+        return '%s gibt dieses Video nicht frei (%s).' % (t.name, ', '.join(_text(e, 40) for e in errors[:3]))
+    return '%s nennt für dieses Video keinen Stream.' % t.name
 
 
 def _stream_url(value):
@@ -853,10 +974,10 @@ def _stream_url(value):
     return str(value)
 
 
-def _player_title(row, parent):
+def _player_title(row, parent, t=STV):
     title = row['title']
     if row['kind'] == 'episode':
-        series = (parent or {}).get('title') or 'ServusTV'
+        series = (parent or {}).get('title') or t.name
         if row['season'] is not None and row['episode'] is not None:
             return '%s · S%02dE%02d · %s' % (series, row['season'], row['episode'], title)
         return '%s · %s' % (series, title)
@@ -865,49 +986,50 @@ def _player_title(row, parent):
     return title + (' (%s)' % row['year'] if row.get('year') else '')
 
 
-def play_source(root, item_id, opener=None, check=None, now=None):
+def play_source(root, item_id, opener=None, check=None, now=None, t=STV):
     """Source for streaming.plan: HLS checked by hls_guard, played with hls.js or ffmpeg."""
     import hls_guard
     if not VALID_ID.fullmatch(str(item_id or '')):
-        raise ValueError('Ungültiger ServusTV-Titel')
+        raise ValueError('Ungültiger %s-Titel' % t.name)
     now = time.time() if now is None else now
-    db = _connect(root)
+    db = _connect(root, t)
     try:
         row = _row(db, item_id)
         parent = _row(db, row['series_id']) if row and row.get('series_id') else None
     finally:
         db.close()
     if not row and item_id.startswith('c.'):
-        row = next((r for r in live_rows() if r['id'] == item_id), None)
+        row = next((r for r in live_rows(t) if r['id'] == item_id), None)
     if not row:
-        raise ValueError('ServusTV-Titel nicht im Katalog; bitte Katalog neu laden')
+        raise ValueError('%s-Titel nicht im Katalog; bitte Katalog neu laden' % t.name)
     if row['kind'] == 'series':
         raise ValueError('Bitte eine Folge der Sendung auswählen')
     if row['drm'] == 1:
         raise hls_guard.DrmProtected(hls_guard.DRM_MESSAGE)
     live = row['kind'] == 'channel'
-    cached = _SOURCES.get(item_id)
+    cache_key = item_id if t.key == KEY else (t.key, item_id)
+    cached = _SOURCES.get(cache_key)
     if cached and cached[0] > now:
         url, duration = cached[1]
     else:
         try:
-            answer = player_info(row['path'], opener)
+            answer = _player_answer(row['path'], opener, t)
         except urllib.error.HTTPError as exc:
-            raise ValueError(_error(exc)) from None
+            raise ValueError(_error(exc, t)) from None
         except (urllib.error.URLError, OSError) as exc:
-            raise ValueError(_error(exc)) from None
+            raise ValueError(_error(exc, t)) from None
         url = _stream_url(answer.get('videoUrl'))
         if not url or answer.get('playabilityErrors'):
-            raise ValueError(playability(answer))
+            raise ValueError(playability(answer, t))
         try:
             (check or hls_guard.check)(url)
         except hls_guard.DrmProtected:
-            _mark_drm(root, item_id, 1)
+            _mark_drm(root, item_id, 1, t)
             raise
         if row['drm'] != 0 and not live:
-            _mark_drm(root, item_id, 0)
+            _mark_drm(root, item_id, 0, t)
         duration = 0 if live else (_int(answer.get('duration'), 1, 24 * 3600) or row['duration'] or 0)
-        _SOURCES[item_id] = (now + SOURCE_TTL, (url, duration))
-    return {'kind': 'url', 'url': url, 'hls': True, 'title': _player_title(row, parent), 'provider': KEY,
-            'quality': 'ServusTV live (kostenlos)' if live else 'ServusTV (kostenlos)',
+        _SOURCES[cache_key] = (now + SOURCE_TTL, (url, duration))
+    return {'kind': 'url', 'url': url, 'hls': True, 'title': _player_title(row, parent, t), 'provider': t.key,
+            'quality': '%s live (kostenlos)' % t.name if live else '%s (kostenlos)' % t.name,
             'duration': duration or 0, 'live': live}

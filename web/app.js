@@ -14,7 +14,7 @@ window.addEventListener('error',e=>{if(e.message)keep(e.message,e.filename,e.lin
 // 0.6.45: the message itself goes to the diagnosis as well (once per page), with what the page knows at that moment:
 // which player functions exist, whether player.js is part of the page, the first script errors and the browser.
 // Until 0.6.44 only script errors were sent, so a report without one ("Player nicht geladen" in Chrome) left no trace.
-let missingSent=0;const PLAYER_FNS=['playMedia','playRef','playLive','playPluto','playJustWatch','playRakuten','playToggo','playPlex','playServusTV','playNetzkino','playYouTube','playJob'];
+let missingSent=0;const PLAYER_FNS=['playMedia','playRef','playLive','playPluto','playJustWatch','playRakuten','playToggo','playPlex','playServusTV','playRedBullTV','playNetzkino','playYouTube','playJob'];
 window.atlasPlayerMissing=(wanted)=>{if(missingSent<3){missingSent+=1;const absent=PLAYER_FNS.filter(n=>typeof window[n]!=='function');
  const inPage=!!document.querySelector('script[data-file="player.js"]'),dialog=!!document.getElementById('player-dialog')||!!document.getElementById('player-video');
  report('player_missing: wanted='+String(wanted||'?')+' absent='+(absent.join(',')||'none')+' inline='+inPage+' player_dom='+dialog+' ready='+document.readyState+
@@ -662,7 +662,7 @@ const QUEUE_GROUPS=[
  {key:'missing',title:'Datei fehlt',open:true,hint:'Die Datei liegt nicht mehr am gespeicherten Pfad. MediathekAtlas sucht beim Öffnen dieser Ansicht automatisch am Download-Ordner, Zwischenspeicher, in den Bibliotheksordnern und an früheren Speicherorten und verknüpft eindeutige Funde neu. Was danach fehlt, lässt sich entfernen (es wird keine Datei gelöscht).',test:j=>j.state==='done'&&j.file_state==='missing'},
  {key:'done',title:'Fertig',open:false,test:j=>j.state==='done'},
  {key:'other',title:'Abgelaufen oder entfernt',open:false,test:()=>true}];
-const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
+const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',redbulltv:'Red Bull TV',sender:'Direkt vom Sender',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
 function jobOrigin(j){if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
 function queueOpen(key,fallback){try{const v=localStorage.getItem('atlas-queue-'+key);return v===null?fallback:v==='1';}catch(_){return fallback;}}
 function queueTime(t){return new Date(t*1000).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
@@ -1117,6 +1117,7 @@ function portalView(name){
   if(name==='crunchyroll')window.MediathekAtlasCrunchyroll?.refresh?.();
   if(name==='plex')window.MediathekAtlasPlex?.refresh?.();
   if(name==='servustv')window.MediathekAtlasServusTV?.refresh?.();
+  if(name==='redbulltv')window.MediathekAtlasRedBullTV?.refresh?.();
   if(name==='rtlplus')window.MediathekAtlasRtlPlus?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))

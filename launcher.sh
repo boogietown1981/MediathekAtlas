@@ -11,8 +11,11 @@ STATE_DIR="${MEDIATHEKATLAS_HOME:-$HOME/Library/Application Support/MediathekAtl
 mkdir -p "$STATE_DIR"
 chmod 700 "$STATE_DIR"
 LOG="$STATE_DIR/startup.log"
-: > "$LOG"
-printf 'MediathekAtlas 0.6.46 Startprüfung\n' >> "$LOG"
+# 0.6.47: the detached supervisor (see below) keeps the log of the start that launched it.
+if [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ]; then
+  : > "$LOG"
+fi
+printf 'MediathekAtlas 0.6.47 Startprüfung\n' >> "$LOG"
 FOUND_PYTHON=""
 try_python() {
   local candidate="$1"
@@ -59,6 +62,25 @@ RUNTIME_DIR="$("$FOUND_PYTHON" "$APP_DIR/stable_runtime.py" "$APP_DIR" "$STATE_D
 cd "$RUNTIME_DIR" || exit 1
 if [ "${1:-}" = "--diagnose" ]; then
   exec "$FOUND_PYTHON" diagnostics_cli.py
+fi
+# 0.6.47 (found on Björn's MacBook Pro M4, 20.11.2026): this script is the executable of the macOS app. While it
+# waited here for a hanging Python process, macOS still counted the app as running and a double click did nothing
+# at all ("already running"), so the start check of 0.6.46 (open a healthy instance, replace a hanging one) never
+# ran. Inside the .app the script therefore hands the server loop to a detached copy of itself in a new session
+# and ends at once; every double click then reaches server.py and its start check. Paths do not matter: the
+# runtime is copied by content hash (stable_runtime.py) and the instance lock lives in the data folder, so App
+# Translocation (a random path for every start from a quarantined download) changes nothing.
+# Start from Terminal (Start.command, launcher.sh) keeps running in the foreground as before.
+if [ "$APP_DIR" != "$LAUNCH_DIR" ] && [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ] && [ "${MEDIATHEKATLAS_FOREGROUND:-}" != "1" ]; then
+  printf 'Startskript übergibt an einen eigenständigen Prozess (App gilt danach nicht mehr als „läuft noch“).\n' >> "$LOG"
+  if MEDIATHEKATLAS_SUPERVISED=1 MEDIATHEKATLAS_PYTHON="$FOUND_PYTHON" "$FOUND_PYTHON" -c '
+import subprocess, sys
+log = open(sys.argv[1], "ab")
+subprocess.Popen(sys.argv[2:], start_new_session=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log, close_fds=True)
+' "$LOG" /bin/bash "$0" "$@" >> "$LOG" 2>&1; then
+    exit 0
+  fi
+  printf 'Übergabe fehlgeschlagen, Start im Vordergrund.\n' >> "$LOG"
 fi
 while :; do
   "$FOUND_PYTHON" server.py >> "$LOG" 2>&1

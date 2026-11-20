@@ -20,7 +20,8 @@ BEFORE = {
             '/api/joyn-downloads', '/api/toggo-downloads', '/api/crunchyroll-downloads', '/api/youtube-downloads',
             '/api/plex', '/api/plex-details', '/api/plex-downloads',
             '/api/servustv', '/api/servustv-details', '/api/servustv-downloads',
-            '/api/rtlplus', '/api/rtlplus-details', '/api/rtlplus-downloads'],   # 0.5.100: Plex, via the registry only
+            '/api/rtlplus', '/api/rtlplus-details', '/api/rtlplus-downloads',
+            '/api/redbulltv', '/api/redbulltv-details', '/api/redbulltv-downloads'],   # 0.6.47   # 0.5.100: Plex, via the registry only
     'POST': ['/api/pluto-sync', '/api/pluto-auto', '/api/pluto-enrich', '/api/pluto-download-add',
              '/api/justwatch-sync', '/api/justwatch-auto', '/api/justwatch-enrich', '/api/justwatch-download-add',
              '/api/rakuten-sync', '/api/rakuten-auto', '/api/rakuten-enrich', '/api/rakuten-download-add',
@@ -29,13 +30,14 @@ BEFORE = {
              '/api/youtube-sync', '/api/youtube-auto', '/api/youtube-enrich',
              '/api/plex-sync', '/api/plex-auto', '/api/plex-enrich', '/api/plex-download-add',   # 0.6.3: Plex offline
              '/api/servustv-sync', '/api/servustv-auto', '/api/servustv-enrich',
-             '/api/rtlplus-sync', '/api/rtlplus-auto', '/api/rtlplus-enrich'],
+             '/api/rtlplus-sync', '/api/rtlplus-auto', '/api/rtlplus-enrich',
+             '/api/redbulltv-sync', '/api/redbulltv-auto', '/api/redbulltv-enrich'],
 }
 # Routes that only one platform has; they stay in server.py and must not be taken over here.
 OWN = [('GET', '/api/youtube'), ('GET', '/api/youtube-sources'), ('POST', '/api/youtube-download-add'), ('POST', '/api/youtube-sources'),
        ('POST', '/api/youtube-key'), ('POST', '/api/youtube-offline'), ('GET', '/api/netzkino'), ('GET', '/api/netzkino-details'),
        ('GET', '/api/netzkino-downloads'), ('POST', '/api/netzkino-sync'), ('POST', '/api/netzkino-auto'), ('POST', '/api/netzkino-enrich'),
-       ('POST', '/api/netzkino-download-add'), ('POST', '/api/joyn-download-add'), ('POST', '/api/toggo-download-add'), ('POST', '/api/crunchyroll-download-add'), ('POST', '/api/servustv-download-add'), ('POST', '/api/rtlplus-download-add')]
+       ('POST', '/api/netzkino-download-add'), ('POST', '/api/joyn-download-add'), ('POST', '/api/toggo-download-add'), ('POST', '/api/crunchyroll-download-add'), ('POST', '/api/servustv-download-add'), ('POST', '/api/rtlplus-download-add'), ('POST', '/api/redbulltv-download-add')]
 
 
 class RouteTableTests(unittest.TestCase):
@@ -48,7 +50,7 @@ class RouteTableTests(unittest.TestCase):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
         for method, path in OWN:
             self.assertFalse(registry.serves(method, path), path)
-            if 'joyn-download' not in path and 'toggo-download' not in path and 'crunchyroll-download' not in path and 'servustv-download' not in path and 'rtlplus-download' not in path:
+            if 'joyn-download' not in path and 'toggo-download' not in path and 'crunchyroll-download' not in path and 'servustv-download' not in path and 'rtlplus-download' not in path and 'redbulltv-download' not in path:
                 self.assertIn("'%s'" % path, server)
         # None of the shared routes is written out a second time.
         for method, paths in BEFORE.items():
