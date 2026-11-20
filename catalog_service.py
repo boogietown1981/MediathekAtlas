@@ -44,7 +44,7 @@ def sqlite_busy(exc):
 class Service:
     def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0
     def start(self):
-        for fn in (self.sync_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
+        for fn in (self.sync_loop,self.refile_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
         # Eight long-lived workers are cheap while idle; actual concurrency is configurable.
         # Provider concurrency remains limited independently to two.
@@ -403,7 +403,10 @@ class Service:
         try:
             with self.db() as c:
                 total_ep=c.execute('SELECT COUNT(*) FROM episode_queue').fetchone()[0]
-                due_ep=c.execute('SELECT COUNT(*) FROM episode_queue WHERE next_try<=?',(time.time(),)).fetchone()[0]
+                # 0.6.65: "bereit" counts only what the episode workers can take: a work without an active
+                # offer is never selected (Mac-Gegenprüfung 0.6.58: 5,748 "bereit", none of them taken).
+                due_ep=c.execute('''SELECT COUNT(*) FROM episode_queue q WHERE q.next_try<=?
+                    AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=q.work_id AND o.active=1)''',(time.time(),)).fetchone()[0]
             self.episode_last_count=(time.monotonic(),total_ep,due_ep)
         except sqlite3.OperationalError as e:
             self.episode_last_count=(time.monotonic(),)+tuple(self.episode_last_count[1:])
@@ -427,7 +430,11 @@ class Service:
             counter=threading.Thread(target=self._count_episode_queue,daemon=True,name='episode_queue_count')
             counter.start();counter.join(1.0)
         _,ep_total,ep_due=self.episode_last_count
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
         return {'episode_queue_total':ep_total,'episode_queue_due':ep_due,
+                # 0.6.65: without the IMDb offline archive every episode claim can only be postponed (1 h)
+                'episode_imdb_ready':bool(archive and getattr(archive,'updated',None)),
                 'episode_workers_active':self.episode_active,
                 'episode_workers_configured':max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2)))),
                 'episode_checked_session':self.episode_checked,
@@ -833,6 +840,13 @@ class Service:
                     delay=3600
                     if sender_deferred and imported:
                         delay=max(delay,broadcaster.automated_retry_at(imported['sender_provider'])-time.time())
+                    if not (archive and archive.updated):
+                        # 0.6.65: name the reason in the diagnosis (Mac-Gegenprüfung 0.6.58: 3,124 silent postponements)
+                        self.after_waiting_archive=getattr(self,'after_waiting_archive',0)
+                        if time.time()-self.after_waiting_archive>3600:
+                            self.after_waiting_archive=time.time()
+                            diagnostics.event('episode_waiting_for_imdb_archive','WARNING',
+                                              archive='missing' if not archive else 'not_ready')
                     delay=max(60,min(6*3600,delay))
                 else:
                     outcome='unresolved'
@@ -1074,6 +1088,32 @@ class Service:
             # immediate interruption, also with more than one worker.
             self.metadata_wake.wait(METADATA_PAUSE if busy else 2)
             self.metadata_wake.clear()
+
+    def refile_loop(self):
+        """0.6.65: file again, once, the editions/contributions that 0.6.41–0.6.55 set back to 'identified'.
+
+        Independent of the episode queue's selection, which takes only works with an active offer. Short
+        write batches after the web server is up; a busy database only postpones the next batch."""
+        with self.db() as c:
+            if catalog.get_state(c,'refile_reset_v0665',False):return
+        total={'edition':0,'segment':0}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:ids=catalog.reset_editions(c)
+                if not ids:break
+                for start in range(0,len(ids),200):
+                    with self.db() as c:done=catalog.refile_reset_editions(c,ids[start:start+200])
+                    for k in total:total[k]+=done[k]
+                    if self.stop.wait(.05):return
+                if not sum(total.values()):break      # nothing could be filed: never loop on the same rows
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        with self.worker_lock:
+            self.episode_editions+=total['edition'];self.episode_segments+=total['segment']
+        if sum(total.values()):diagnostics.event('episode_reset_editions_refiled',**total)
+        with self.db() as c:catalog.set_state(c,'refile_reset_v0665',True)
 
     def episode_loop(self,index=0):
         while not self.stop.is_set():

@@ -1076,6 +1076,29 @@ def refile_reset_edition(c,row,meta):
     done=c.execute("UPDATE works SET state='format',next_try=0 WHERE id=? AND state='identified'",(row['id'],)).rowcount
     return role if done else None
 
+def reset_editions(c,limit=5000):
+    """0.6.65: ids of identified works that still carry their earlier filing (see refile_reset_edition).
+
+    Read only. Reset editions are often old news editions whose offers have expired; the episode queue never
+    takes a work without an active offer, so they waited there for ever (Mac-Gegenprüfung 0.6.58: 777 stayed).
+    """
+    return [r[0] for r in c.execute("""SELECT w.id FROM episode_queue q CROSS JOIN works w ON w.id=q.work_id
+        WHERE w.state='identified' AND json_extract(w.meta,'$.state')='format'
+          AND json_extract(w.meta,'$.format_grouping') IN ('edition','segment')
+          AND COALESCE(json_extract(w.meta,'$.scan_requested'),0)=0 LIMIT ?""",(limit,))]
+
+def refile_reset_editions(c,ids):
+    """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
+    done={'edition':0,'segment':0}
+    for wid in ids:
+        row=c.execute('SELECT id,state,meta FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        try:meta=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        role=refile_reset_edition(c,row,meta)
+        if role:done[role]+=1
+    return done
+
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""
     topic=cleaned(source.get('topic'));title=cleaned(source.get('title'))

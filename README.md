@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.58
+# MediathekAtlas · 0.6.65
+
+## Neu in 0.6.65: Episodensuche läuft sichtbar weiter
+
+- „Davon bereit“ zählt nur noch Folgen, die die Episodensuche auch prüfen kann; Werke ohne aktuelles Angebot standen bisher als „bereit“ in der Liste, wurden aber nie geprüft.
+- Früher zurückgesetzte Sendungsausgaben und Beiträge werden einmalig im Hintergrund wieder abgelegt, auch wenn ihr Angebot schon abgelaufen ist.
+- Fehlt das IMDb-Offline-Archiv, zeigt die Übersicht „Folgensuche wartet auf das IMDb-Offline-Archiv“ statt scheinbar stillzustehen.
+- Wikidata: Filme und Serien mit Regie, Besetzung, Folgenzahl oder IMDb-Titelkennung bleiben Vorschläge, auch wenn ihre Klasse unbekannt ist („Der Baum“, „100% Wolf“).
+- 0.6.58 wurde nicht ausgegeben; 0.6.65 enthält dessen Korrekturen.
 
 ## Neu in 0.6.58: Erkennung und Episodensuche
 

@@ -294,13 +294,15 @@ function catalogProgress(c){
      // 0.6.41: editions and short contributions of news/magazine Sendungen have no episode of their own.
      ['editions','Sendungsausgaben: '+countLabel(c.episode_editions_session||0)+' · Beiträge: '+countLabel(c.episode_segments_session||0)]
    ];
+   // 0.6.65: without the IMDb offline archive the episode search can only postpone (Mac-Gegenprüfung 0.6.58).
+   if(c.episode_imdb_ready===false&&(c.episode_queue_total||0)>0)chips.push(['imdb-wait','Folgensuche wartet auf das IMDb-Offline-Archiv – Prüfungen werden stündlich wiederholt']);
    if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
    workers.replaceChildren();
    // The grouping is presentation only: keep every existing session counter.
    const groupSpec=[
      ['Worker & Scan', ['identity','episode']],
      ['Erkennungsqualität', ['identified','confirmed']],
-     ['Episoden & Senderbelege', ['queue','due','episode-checks','episode-series','editions','sender','sender-matches','shorts']],
+     ['Episoden & Senderbelege', ['queue','due','imdb-wait','episode-checks','episode-series','editions','sender','sender-matches','shorts']],
      ['Fehler & Wiederholungen', ['retry']]
    ];
    for(const [name,kinds] of groupSpec){

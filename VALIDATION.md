@@ -1,6 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
-## 0.6.58 – Erkennung (20. November 2026)
+## 0.6.65 – Episodensuche nach Mac-Gegenprüfung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0665.py`: große Warteschlange bei aufgebrauchtem Senderkontingent mit vier Workern läuft mit und ohne IMDb-Archiv vollständig durch, „bereit“ ohne abgelaufene Werke, zurückgesetzte Ausgaben ohne Angebot einmalig wieder abgelegt (Nutzer-Neuprüfung bleibt), Wikidata-Film/-Serie mit unbekannter Klasse bleibt, Person bleibt draußen.
+- Nicht geprüft: Björns echter Katalog bzw. die Mac-Testkopie (Zahlen zu Einträgen ohne Angebot und Archivstatus sind angefragt), echte Wikidata-Antworten für „Der Baum“ und „100% Wolf“.
+
+## 0.6.58 – Erkennung (20. November 2026, Mac-Gegenprüfung nicht bestanden, nicht ausgegeben)
 - Automatisch: gesamte Python-Suite (1639 Tests, grün), neu `tests/test_v0658.py`: abgelegte Beiträge bleiben nach weiteren Erkennungen in der Serie abgelegt, kein erneutes Einordnen (Zähler bleibt 12 statt zu wachsen), unveränderte Geschwister unberührt, zurückgesetzte Werke werden ohne IMDb-Abfrage wieder abgelegt, Nutzer-Neuprüfung bleibt, Reihenfolge bei verbrauchtem Senderkontingent, Wikidata-Personen/-Taxa/-Begriffe verworfen und gemerkt, Filme behalten Genres, 429 pausiert nach Retry-After (60 s bis 15 min), Prüfung „pausiert“ ohne Fehler. Gegenprobe: mit dem Code von 0.6.55 schlagen 10 der 11 Tests fehl.
 - Nicht geprüft (keine Datenbank in der Cloud): Wirkung auf Björns echten Katalog (Anzahl zurückgesetzter Werke, Trefferquote danach), echte Wikidata-Antworten.
 

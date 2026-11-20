@@ -394,9 +394,20 @@ def wikidata_media(ent,candidate):
     """False for a Wikidata candidate that is plainly no film or programme (see WIKIDATA_NOT_MEDIA)."""
     classes=set(_wikidata_classes(ent))
     if classes & WIKIDATA_NOT_MEDIA:return False
-    # Classes, but none of the film/series classes and no film words in the description: a concept.
-    if candidate.get('evidence_type')=='unknown_type' and classes:return False
+    # Classes, but none of the film/series classes and no film words in the description: a concept –
+    # unless the item carries what only films and programmes carry (0.6.65, Mac-Gegenprüfung 0.6.58: the
+    # film „Der Baum“ and the series „100% Wolf“ are filed under classes outside the film/series list).
+    if candidate.get('evidence_type')=='unknown_type' and classes and not _wikidata_media_claims(ent):return False
     return True
+# Director, cast, screenwriter, producer, composer, duration, number of episodes/seasons, TMDB/fernsehserien.de IDs.
+WIKIDATA_MEDIA_PROPS=('P57','P161','P58','P162','P86','P2047','P1113','P2437','P4947','P4983','P5327','P1874','P1258')
+def _wikidata_media_claims(ent):
+    claims=(ent or {}).get('claims',{})
+    if any(claims.get(p) for p in WIKIDATA_MEDIA_PROPS):return True
+    for x in claims.get('P345',[]):           # IMDb: only a title ID (tt…), people have nm…
+        value=((x.get('mainsnak') or {}).get('datavalue') or {}).get('value')
+        if isinstance(value,str) and value.startswith('tt'):return True
+    return False
 
 def wikidata(title,kind,year):
     ck=(title,kind,year)
