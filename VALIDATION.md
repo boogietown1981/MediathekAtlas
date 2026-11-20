@@ -1,6 +1,10 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
-## 0.6.48 – DMAX/TLC/HGTV, Joyn-Folgen, Red-Bull-Kennungen, Mac-Start (20. November 2026)
+## 0.6.49 – Werke ohne erkannte Art, Gründe je Sender (20. November 2026)
+- Automatisch: gesamte Python-Suite (1580, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund, neu `unknown_reasons.cjs` (Spalte „Art offen“, Gründe je Sender und Sendung, Bildschirmfoto) ohne Befund. Neu `tests/test_v0649_unknown_rest.py`: schwache/mögliche Vorschläge, alte und neue Anbieterfehler, Rücknahme mit „Erneut prüfen“, Regeln sofort nach Update, Rubrik-Korrektur einmalig, TVDB-404-Treffer, gemerkte Erkennungsquote.
+- Grundlage: Diagnose 20.11.2026 16:46 UTC (0.6.43, M3 Pro), Zahlen aus status.json; einzelne Vorschläge des echten Bestands waren nicht einsehbar.
+- Nicht geprüft: Wirkung am echten Bestand (wie viele der 14.270 Werke mit Vorschlägen jetzt eingeordnet werden), Laufzeit der einmaligen Korrektur auf 685.000 Werken; Gegenprobe an einer Kopie auf Björns Mac steht aus.
+ DMAX/TLC/HGTV, Joyn-Folgen, Red-Bull-Kennungen, Mac-Start (20. November 2026)
 - Automatisch: gesamte Python-Suite (1568, 4 übersprungen), alle Node-Tests, Klicktest Chromium ohne Befund, `redbull_live.cjs` und neu `dmax_joyn.cjs` (Plattform DMAX & Co. mit Abzeichen, Joyn-Serie mit Folgenliste „Kostenlos“/„Joyn+“) in Ordnung. Joyn-Lesung gegen drei echte Serienseiten vom 20.11.2026 (Navy CIS, Dittsche, Geordie Shore) geprüft.
 - Grundlage: Joyn-Seiten von Björns Mac; DMAX/TLC/HGTV nach den öffentlichen Schnittstellen (disco-api, loma-cms), Red-Bull-Kennungen nach dem Befund auf dem Mac.
 - Nicht geprüft (aus der Cloud gesperrt): echter Abruf und echte Wiedergabe bei DMAX/TLC/HGTV (Geosperre, Token, Angebotsfenster), echter Red-Bull-TV-Abruf mit den neuen Kennungen, Joyn-Seiten anderer Serienarten; macOS-Dialog nur unter Linux nachgestellt. Gegenprobe auf Björns Mac steht aus.

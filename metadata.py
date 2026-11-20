@@ -315,7 +315,15 @@ def tvdb_candidates(row,meta,credential,kind,title):
         names=[hit.get('name',''),translated or '']+(hit.get('aliases') or [])
         score=max((1 if norm(title)==norm(n) else core.title_similarity(title,n)) for n in names if isinstance(n,str))
         if score<.85 or not str(hit.get('tvdb_id','')).isdigit():continue
-        sid=str(hit['tvdb_id']);d=get('series/'+sid+'/extended').get('data') or {}
+        sid=str(hit['tvdb_id'])
+        try:d=get('series/'+sid+'/extended').get('data') or {}
+        except tvdb.TVDBError as e:
+            # 0.6.49: the search index still lists removed series ("TVDB HTTP 404" on the record). That is no
+            # outage: skip the stale hit instead of turning the whole check into a provider error, which kept
+            # the work in "Wiederholung" and blocked its classification for good.
+            if getattr(e,'status',0)!=404:raise
+            diagnostics.event('tvdb_stale_search_hit',series_id=sid[:16],title=str(title)[:80])
+            continue
         name=translated or d.get('name') or hit.get('name')
         date=str(d.get('firstAired') or hit.get('year') or '');year=int(date[:4]) if date[:4].isdigit() else None
         c={**meta,'title':name,'kind':'series','year':year,'provider':'TVDB','reference_id':sid,
@@ -371,7 +379,17 @@ def wikidata(title,kind,year):
 GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten'}
 # arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
-RUBRIC=re.compile(r'(?i)^\s*(?:politics and society|culture|history|discovery|sciences?|cinema|series and fiction|news|politik und gesellschaft|kultur|geschichte|entdeckung der welt|wissenschaft|kino|fernsehfilme und serien|aktuelles und gesellschaft|info und gesellschaft)\s+-\s+\S')
+# 0.6.49 (Diagnose 20.11.2026 abends): the French, Italian, Spanish and Polish ARTE sections
+# ("Serie e fiction - Serie", "Séries et fictions - Séries", "Series y ficciones - Webseries", "Scienze - In
+# pillole", "Historia - Civilizaciones") were taken for Sendungen; 0.6.43 filed hundreds of works under them.
+RUBRIC=re.compile(r'(?i)^\s*(?:politics and society|culture|history|discovery|sciences?|cinema|series and fiction|news|politik und gesellschaft|kultur|geschichte|entdeckung der welt|wissenschaft|kino|fernsehfilme und serien|aktuelles und gesellschaft|info und gesellschaft'
+                  r'|travel and discovery|culture and pop|news and society'
+                  r'|politique et société|culture et pop|histoire|cinéma|séries et fictions|voyages et découvertes|info et société|actualités et société'
+                  r'|politica e società|cultura e pop|cultura|storia|scienze|serie e fiction|viaggi e scoperte|attualità e società|informazione e società'
+                  r'|política y sociedad|cultura y pop|historia|ciencias|cine|series y ficciones|viajes y descubrimientos|actualidad y sociedad|información y sociedad'
+                  r'|polityka i społeczeństwo|kultura i pop|kultura|nauka|seriale i fikcja|seriale|podróże i odkrycia|aktualności i społeczeństwo|informacje i społeczeństwo)\s+-\s+\S')
+# Sections that hold episodes of drama series: their works are no Einzelsendungen even without a Sendung name.
+RUBRIC_SERIES=re.compile(r'(?i)^\s*(?:series and fiction|fernsehfilme und serien|séries et fictions|serie e fiction|series y ficciones|seriale i fikcja|seriale)\s+-\s+.*\b(?:serie|series|séries|seriale|webseries|serien)\b')
 def generic_topic(topic):return not topic or norm(topic) in GENERIC or bool(RUBRIC.match(topic))
 # 0.6.39 (Björn, 19.11.2026: still many unrecognised films and series at ARD/ZDF). Diagnosis sample of
 # 1,922 failed lookups: the broadcasters' titles carry episode counters and labels no film database

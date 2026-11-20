@@ -98,8 +98,10 @@ class SweepTests(unittest.TestCase):
                 m = json.loads(meta)
                 self.assertEqual(m['kind'], 'unknown', m['title'])
                 attempts = 0 if m['title'] == 'Neu im Katalog' else 1
-                if m['title'] == 'Mit Vorschlag':m['suggestions'] = [{'provider': 'TMDB'}]
-                if m['title'] == 'Fehler beim Anbieter':m['metadata_warnings'] = ['TMDB: Zeitüberschreitung']
+                if m['title'] == 'Mit Vorschlag':
+                    # 0.6.49: only a suggestion that could be right keeps the work open.
+                    m['suggestions'] = [{'provider': 'TMDB', 'kind': 'movie', 'title': 'Mit Vorschlag', 'similarity': 1.0}]
+                if m['title'] == 'Fehler beim Anbieter':m['metadata_warnings'] = ['TMDB: Zeitüberschreitung']  # attempts 1 < 3
                 if m['title'] == 'Bitte prüfen':m['scan_requested'] = True
                 c.execute("UPDATE works SET state='review', attempts=?, meta=? WHERE id=?",
                           (attempts, json.dumps(m), wid))

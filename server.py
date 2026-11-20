@@ -502,17 +502,39 @@ def refresh_tree():
         with _TREE_LOCK:_TREE_ERROR=core.safe_error(e);_TREE_CACHE=(time.monotonic(),_TREE_CACHE[1],_TREE_CACHE[2])
     finally:
         with _TREE_LOCK:_TREE_BUSY=False
-_RECOGNITION={'at':float('-inf'),'rows':[],'busy':False,'error':''}
+_RECOGNITION={'at':float('-inf'),'rows':[],'busy':False,'error':'','computed':0.0,'restored':False}
+def _unknown_summary():
+    """0.6.49: why works still have no kind, per channel and Sendung (from the last background sweep)."""
+    try:
+        with db() as c:s=catalog.get_state(c,'unknown_sweep',{}) or {}
+    except Exception:return {}
+    keys=('finished','changed','candidates','classified','remaining','remaining_channels','remaining_topics',
+          'set_aside','unknown_by_state','unknown_left','rubric_reopened','total_changed')
+    return {k:s[k] for k in keys if k in s}
 def recognition():
     # Grouping 700k works by channel takes seconds; compute in the background and reuse for 10 minutes.
+    # 0.6.49: the last result is kept in the catalogue, so a diagnosis taken while it is being renewed still
+    # shows the rates per channel (diagnosis 20.11.2026: table empty, "loading").
+    if not _RECOGNITION['restored']:
+        _RECOGNITION['restored']=True
+        try:
+            with db() as c:last=catalog.get_state(c,'recognition_last',{}) or {}
+            if last.get('rows') and not _RECOGNITION['rows']:
+                _RECOGNITION.update(rows=last['rows'],computed=float(last.get('at') or 0))
+        except Exception as e:diagnostics.error('catalog_recognition_restore_failed',e)
     with _TREE_LOCK:
         if not _RECOGNITION['busy'] and time.monotonic()-_RECOGNITION['at']>600:
             _RECOGNITION['busy']=True;threading.Thread(target=refresh_recognition,daemon=True,name='catalog_recognition').start()
-        return {'channels':_RECOGNITION['rows'],'kinds':catalog.recognition_totals(_RECOGNITION['rows']),'loading':_RECOGNITION['busy'],'error':_RECOGNITION['error']}
+        return {'channels':_RECOGNITION['rows'],'kinds':catalog.recognition_totals(_RECOGNITION['rows']),'loading':_RECOGNITION['busy'],
+                'error':_RECOGNITION['error'],'computed_at':_RECOGNITION['computed'] or None,'unknown':_unknown_summary()}
 def refresh_recognition():
     try:
         with db() as c:rows=catalog.recognition(c)
-        with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),rows=rows,error='')
+        now=time.time()
+        with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),rows=rows,error='',computed=now)
+        try:
+            with db() as c:catalog.set_state(c,'recognition_last',{'at':now,'rows':rows})
+        except Exception as e:diagnostics.error('catalog_recognition_store_failed',e)
     except Exception as e:
         diagnostics.error('catalog_recognition_failed',e)
         with _TREE_LOCK:_RECOGNITION.update(at=time.monotonic(),error=core.safe_error(e))

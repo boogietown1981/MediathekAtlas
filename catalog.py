@@ -101,7 +101,14 @@ def seed(row):
     if m['kind']=='unknown':
         intro=topic+' '+re.sub(r'(?i)\b(?:drama|thriller|western)\b','',desc[:220])
         if re.search(r'(?i)\b(?:spielfilm|fernsehfilm|komödie|thriller|drama|western|liebesfilm|dokumentarfilm)\b',intro):m['kind']='movie'
-        elif re.search(r'(?i)\b(?:serie|serien|sitcom|dokumentarserie|fernsehserie|krimiserie)\b',intro):m.update(kind='series',title=topic or title,episode_title=title)
+        elif re.search(r'(?i)\b(?:serie|serien|sitcom|dokumentarserie|fernsehserie|krimiserie)\b',intro):
+            import metadata
+            if topic and metadata.generic_topic(topic):
+                # 0.6.49: "Fernsehfilme und Serien - Serien" (SRF, 830 works), "Serie e fiction - Serie" (ARTE) name
+                # a section, not the series: 4,600 checks in one afternoon for the section name found nothing.
+                part=metadata.part_series(title)
+                if part and not metadata.generic_topic(part):m.update(kind='series',title=part,episode_title=title)
+            else:m.update(kind='series',title=topic or title,episode_title=title)
         elif re.search(r'(?i)\b(?:nachrichten|tagesschau|wetter|sportstudio|trailer|teaser|podcast|pressekonferenz|tagesthemen|gottesdienst|magazin)\b',topic+' '+title):m['kind']='other'
     if re.search(r'(?i)^\s*(?:trailer|teaser|vorschau)\b',title):m.update(kind='other',title=title,year=None,season=None,episode=None)
     if m['kind']=='movie' and not m.get('year'):
@@ -930,7 +937,13 @@ def prioritize(c,ids=None,show=''):
         # An explicit request must never be reclassified by the automatic
         # format scanner while a user is waiting for this particular work.
         m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0])
-        if not m.get('scan_requested'):
+        # 0.6.49: a sweep decision (Sendungsbeitrag, Einzelsendung) is undone; set-aside suggestions return.
+        restored=restore_unknown(m)
+        if restored:
+            title,kind,m=restored
+            c.execute("UPDATE works SET title=?,kind=?,show_key='',state='pending' WHERE id=?",(title,kind,wid))
+            c.execute('DELETE FROM episode_queue WHERE work_id=?',(wid,))
+        if not m.get('scan_requested') or restored:
             m['scan_requested']=True
             c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
         c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE id=?",(wid,))
@@ -1259,12 +1272,55 @@ UNKNOWN_GROUPINGS={'edition':'Ausgabe','segment':'Beitrag','part':'Teil','contri
 
 def unknown_open_reason(row,m):
     """None if a work of unknown kind may be classified locally, else the reason it waits."""
+    hard=unknown_hard_reason(row,m)
+    if hard:return hard
+    if m.get('suggestions'):return 'suggestions'
+    if m.get('metadata_warnings'):return 'warnings'
+    return None
+
+def unknown_hard_reason(row,m):
+    """Reasons no rule may override: user decision, user request, unchecked, provider still to come."""
     if row['state'] in ('manual','matched','format','identified'):return 'state'
     if m.get('scan_requested') or m.get('live'):return 'requested'
     if not int(row['attempts'] or 0):return 'unchecked'
-    if m.get('suggestions'):return 'suggestions'
-    if m.get('metadata_warnings'):return 'warnings'
     if set(m.get('deferred_providers') or [])-UNKNOWN_DEFERRABLE:return 'deferred'
+    return None
+
+# 0.6.49 (Diagnose 20.11.2026 abends, M3 Pro): after the 0.6.43 sweep 21,189 works stayed "Art unbekannt",
+# 19,113 of them only because of film database suggestions (14,270) or an old provider error (4,756).
+# Most suggestions of a magazine contribution are no evidence against its Sendung: a feature film of the
+# same name that is 80 minutes longer, a fuzzy title, or the Sendung itself listed several times at IMDb
+# ("DOK", "Forum", "Talkabout" – three series of that name, so no automatic choice). Such suggestions are
+# set aside, not deleted: they stay in the work (unknown_before) and "Erneut prüfen" brings them back.
+# A suggestion that could be right (same title as a film of matching length, another series of exactly
+# this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
+UNKNOWN_RULES_REV=2              # raise when the rules change: the next sweep then runs at once
+SENDUNG_GROUPINGS=('edition','segment','part','contribution')
+UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
+UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
+
+def suggestion_weak(s,source,sendung):
+    """True if a film database suggestion is no evidence against filing the work under ``sendung``."""
+    if not isinstance(s,dict):return True
+    kind=s.get('kind');similarity=float(s.get('similarity') or 0)
+    if kind=='series':
+        # The Sendung itself (possibly ambiguous between several entries) or a fuzzy series name.
+        if sendung and key(s.get('title'))==key(sendung):return True
+        return similarity<.985
+    if kind=='movie':
+        if s.get('runtime_mismatch') or s.get('year_mismatch'):return True
+        duration=int(source.get('duration') or 0)
+        return similarity<.985 and 0<duration<2400
+    return similarity<.985
+
+def unknown_soft_check(row,m,source,grouping,name,topic_works):
+    """None if suggestions/provider errors do not stand against ``grouping``, else the reason to wait."""
+    suggestions=[x for x in (m.get('suggestions') or []) if x]
+    if suggestions:
+        if grouping not in SENDUNG_GROUPINGS:return 'suggestions_no_sendung'
+        if topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
+        if not all(suggestion_weak(x,source,name) for x in suggestions):return 'suggestions'
+    if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
     return None
 
 def unknown_role(source,topic_works):
@@ -1290,6 +1346,8 @@ def unknown_role(source,topic_works):
     # No usable topic: a numbered part names its series ("Österreich - Die ganze Geschichte (7/10): …").
     part=metadata.part_series(title)
     if part and not metadata.generic_topic(part):return 'part',part
+    # 0.6.49: an episode from ARTE's/SRF's series section ("Serie e fiction - Serie") is no Einzelsendung.
+    if metadata.RUBRIC_SERIES.match(topic):return 'series_rubric',''
     return 'single',''
 
 def unknown_candidates(c):
@@ -1311,13 +1369,35 @@ def best_source(c,wid):
     best=c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY active DESC,rank DESC LIMIT 1',(wid,)).fetchone()
     return json.loads(best[0]) if best else None
 
+def unknown_before(row,m):
+    """What the sweep replaces, so that "Erneut prüfen" can restore the open work (0.6.49)."""
+    before={'title':row['title'],'kind':row['kind'],'rev':UNKNOWN_RULES_REV}
+    if m.get('suggestions'):before['suggestions']=list(m['suggestions'])[:10]
+    if m.get('metadata_warnings'):before['metadata_warnings']=list(m['metadata_warnings'])[:5]
+    return before
+
+def _count(summary,reason,channel,topic=''):
+    left=summary.setdefault('remaining',{});left[reason]=left.get(reason,0)+1
+    per=summary.setdefault('remaining_channels',{}).setdefault(channel,{});per[reason]=per.get(reason,0)+1
+    if topic:
+        topics=summary.setdefault('_topics',{});k=(channel,topic,reason);topics[k]=topics.get(k,0)+1
+
+def finish_summary(summary,top=40):
+    """Turn the per-topic counters into a short list of the Sendungen with most open works."""
+    topics=summary.pop('_topics',{}) or {}
+    summary['remaining_topics']=[{'channel':ch,'topic':t[:80],'reason':r,'works':n}
+                                 for (ch,t,r),n in sorted(topics.items(),key=lambda x:-x[1])[:top]]
+    return summary
+
 def classify_unknown(c,ids,counts,summary=None,singles=False):
     """Give each listed work of unknown kind its kind; returns the number of changed works.
 
-    ``summary`` (dict) collects counts per grouping/channel, remaining reasons and a few samples."""
+    ``summary`` (dict) collects counts per grouping/channel, remaining reasons per channel and Sendung and a
+    few samples (0.6.49: also the works filed despite set-aside suggestions or old provider errors)."""
     summary=summary if summary is not None else {}
-    done=summary.setdefault('classified',{});left=summary.setdefault('remaining',{})
+    done=summary.setdefault('classified',{});summary.setdefault('remaining',{})
     channels=summary.setdefault('channels',{});samples=summary.setdefault('samples',{})
+    aside=summary.setdefault('set_aside',{})
     changed=0
     for wid in ids:
         row=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
@@ -1327,15 +1407,26 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
             if row['kind']!='other' or row['state']!='format' or m.get('format_grouping')!='single':continue
         else:
             if row['kind']!='unknown':continue
-            reason=unknown_open_reason(row,m)
-            if reason:
-                left[reason]=left.get(reason,0)+1;continue
+            hard=unknown_hard_reason(row,m)
+            if hard:
+                _count(summary,hard,'Unbekannt');continue
         source=best_source(c,wid)
         if not source:
-            left['no_offer']=left.get('no_offer',0)+1;continue
+            _count(summary,'no_offer','Unbekannt');continue
+        ch=str(source.get('channel') or 'Unbekannt')
         topic=row['topic'] or source.get('topic') or ''
         grouping,name=unknown_role(source,counts.get(topic,1))
-        if singles and grouping in ('single','movie'):continue
+        if singles and grouping in ('single','movie','series_rubric'):continue
+        if grouping=='series_rubric':
+            _count(summary,'series_rubric',ch,cleaned(topic));continue
+        soft=None if singles else unknown_soft_check(row,m,source,grouping,name,counts.get(topic,1))
+        if soft:
+            _count(summary,soft,ch,cleaned(topic));continue
+        if not singles:
+            if m.get('suggestions') or m.get('metadata_warnings'):
+                why='suggestions' if m.get('suggestions') else 'warnings'
+                aside[why]=aside.get(why,0)+1
+            if grouping!='movie':m['unknown_before']=unknown_before(row,m)
         if grouping=='movie':
             m.update(kind='movie',season=None,episode=None,episode_title='',
                      reason='Film laut Sender (Filmrubrik oder Filmhinweis); in den Filmdatenbanken noch nicht gefunden')
@@ -1353,16 +1444,80 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
         else:
             label={'edition':'Ausgabe','segment':'Beitrag (unter 10 Minuten)','part':'Teil','contribution':'Folge'}[grouping]
             if singles:m.pop('format_grouping',None)
+            note=''
+            before=m.get('unknown_before') or {}
+            if not singles and before.get('suggestions'):
+                note=' '+str(len(before['suggestions']))+' Vorschläge der Filmdatenbanken passten nicht (andere Laufzeit, ungenauer Titel oder die Sendung selbst); „Erneut prüfen“ zeigt sie wieder.'
             file_under_sendung(c,row,m,source,name,grouping,
                                reason=label+' der Sendung „'+name+'“; die Sendung ist in den Filmdatenbanken nicht verzeichnet, '
-                                      'deshalb wird sie nicht einzeln abgeglichen.')
+                                      'deshalb wird sie nicht einzeln abgeglichen.'+note)
         changed+=1;done[grouping]=done.get(grouping,0)+1
-        ch=str(source.get('channel') or 'Unbekannt')
         channels.setdefault(ch,{});channels[ch][grouping]=channels[ch].get(grouping,0)+1
         bucket=samples.setdefault(grouping,[])
         if len(bucket)<5:bucket.append({'title':str(source.get('title') or '')[:120],'topic':str(source.get('topic') or '')[:80],
                                          'channel':ch,'duration':int(source.get('duration') or 0)})
     return changed
+
+def restore_unknown(m):
+    """Undo a sweep decision for "Erneut prüfen": the work is open again with its earlier suggestions.
+
+    Returns (title, kind, meta) or None for works the sweep did not decide."""
+    before=m.get('unknown_before')
+    if not isinstance(before,dict) or before.get('kind')!='unknown':return None
+    out={k:v for k,v in m.items() if k not in ('unknown_before','format_grouping','provider','reference_id','state','reason')}
+    title=before.get('title') or m.get('episode_title') or m.get('title')
+    out.update(kind='unknown',title=title,episode_title='',season=None,episode=None,episode_verified=False)
+    for k in ('suggestions','metadata_warnings'):
+        if before.get(k):out[k]=before[k]
+    return title,'unknown',out
+
+def unknown_rubric_fix(c,limit=5000):
+    """0.6.49, once: works 0.6.43 filed under an ARTE section as if it were a Sendung, or as Einzelsendung
+    from a series section, become open works of unknown kind again; the next sweep decides with the new rules.
+
+    Returns the number of reopened works."""
+    if get_state(c,'unknown_rubric_fix_v0649'):return 0
+    import metadata
+    names=[r[0] for r in c.execute("SELECT DISTINCT title FROM works WHERE kind='series' AND state='format'") if metadata.generic_topic(r[0]) and r[0]]
+    reopened=0
+    for name in names:
+        for row in c.execute("SELECT * FROM works WHERE kind='series' AND title=? AND state='format'",(name,)).fetchall():
+            m=json.loads(row['meta'] or '{}')
+            if m.get('provider')!='Sendung' or m.get('format_grouping') not in SENDUNG_GROUPINGS:continue
+            reopened+=_reopen(c,row,m)
+    for row in c.execute("SELECT * FROM works WHERE kind='other' AND state='format' AND json_extract(meta,'$.format_grouping')='single'").fetchall():
+        if not metadata.RUBRIC_SERIES.match(cleaned(row['topic'] or '')):continue
+        reopened+=_reopen(c,row,json.loads(row['meta'] or '{}'))
+    # Series works named after a section (seed before 0.6.49): checked again under their own title.
+    names=[r[0] for r in c.execute("SELECT DISTINCT title FROM works WHERE kind='series' AND state IN ('pending','retry','review')") if r[0] and metadata.generic_topic(r[0])]
+    for name in names:
+        for row in c.execute("SELECT * FROM works WHERE kind='series' AND title=? AND state IN ('pending','retry','review')",(name,)).fetchall():
+            m=json.loads(row['meta'] or '{}')
+            if m.get('reference_id') or m.get('scan_requested'):continue
+            reopened+=_reopen(c,row,m)
+    set_state(c,'unknown_rubric_fix_v0649',{'reopened':reopened,'at':time.time()})
+    return reopened
+
+def _reopen(c,row,m):
+    title=m.get('episode_title') if row['kind']=='series' else row['title']
+    source=best_source(c,row['id']) or {}
+    title=cleaned(source.get('title')) or title or row['title']
+    m={k:v for k,v in m.items() if k not in ('format_grouping','provider','reference_id','state','reason','unknown_before')}
+    m.update(kind='unknown',title=title,episode_title='',season=None,episode=None,episode_verified=False)
+    m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers')}
+    # Unchecked again: recognition first asks the film databases under the real title (part/prefix series),
+    # only then may the sweep decide.
+    c.execute("UPDATE works SET title=?,kind='unknown',show_key='',meta=?,state='pending',attempts=0,next_try=0 WHERE id=?",(title,json.dumps(m),row['id']))
+    c.execute('DELETE FROM episode_queue WHERE work_id=?',(row['id'],))
+    update_film_hint(c,row['id'],m,source)
+    return 1
+
+def unknown_overview(c):
+    """Works of unknown kind by state (also those the sweep never sees: unchecked, user decisions)."""
+    out={}
+    for state,checked,n in c.execute("SELECT state,attempts>0,COUNT(*) FROM works WHERE kind='unknown' GROUP BY state,attempts>0"):
+        k=str(state)+('' if checked else ' (ungeprüft)');out[k]=out.get(k,0)+n
+    return out
 
 KIND_KEYS=('movie','series','unknown','other')
 def recognition(c):
