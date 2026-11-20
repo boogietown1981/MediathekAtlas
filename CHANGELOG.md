@@ -1,4 +1,5 @@
 ## 0.6.54 – Offline-Kopien für ServusTV und Red Bull TV
+- Basis 0.6.52 (PR #93, auf dem Mac geprüft), ohne den Verbund-Teil von 0.6.53; dieser folgt getrennt.
 - Björn (20.11.2026): „bei redbull und servus tv gibts keine download option, warum?“ → „ja bitte einbauen“. Neu `servustv_downloads.py` (für beide Mandanten der Red-Bull-Plattform) und `redbulltv_downloads.py`; gemeinsame Warteschlange und Lebenszyklus aus `netzkino_downloads` (kein zweiter Download-Weg).
 - 30 Tage private Offline-Kopie für Filme und Folgen, nur bei aktueller Freigabe ohne Schlüssel (hls_guard), nie Live-Sender; Jugendschutz, Geosperre und „noch nicht verfügbar“ werden wie beim Abspielen gemeldet.
 - `servustv.availability_end`: ausdrückliches Verfügbarkeitsende aus der Player-Antwort; `netzkino_downloads.stamp` überschreitet `license.until` nie (`offline_capped`, Anzeige „Verfügbarkeitsende beim Sender“).
