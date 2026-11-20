@@ -1,4 +1,4 @@
-import subprocess,sys,tempfile,types
+import subprocess,sys,tempfile,types,platform
 import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
@@ -2142,6 +2142,20 @@ def post_settings(self,path,d):
     if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     return self.send({'ok':True})
 
+@ROUTES.get('/api/mesh-setup')
+def get_mesh_setup(self,path):
+    s=settings()
+    return self.send({'folders':meshjournal.cloud_folders(),'mesh_dir':s.get('mesh_dir',''),'conflicts':SERVICE.mesh_conflicts()})
+
+@ROUTES.post('/api/mesh-conflict')
+def post_mesh_conflict(self,path,d):
+    dest=SERVICE.mesh_resolve(str(d.get('work') or ''),d.get('action'))
+    if d.get('action')=='adopt':
+        with db() as c:
+            row=c.execute('SELECT meta FROM works WHERE id=?',(dest,)).fetchone()
+            if row:SERVICE.mesh_manual(c,dest,dest,json.loads(row['meta']))
+    return self.send({'ok':True})
+
 @ROUTES.post('/api/mesh-direct')
 def post_mesh_direct(self,path,d):
     s=settings();action=d.get('action')
@@ -2170,6 +2184,15 @@ def post_mesh_direct(self,path,d):
         s['mesh_peers']=[p for p in meshpeer.peer_list(s) if p['url']!=url];s.pop('mesh_peer',None)
     elif action=='unshare':s['mesh_peers']=meshpeer.peer_list(s);s.pop('mesh_peer',None);s.pop('mesh_key',None)
     elif action=='off':s.pop('mesh_peer',None);s.pop('mesh_key',None);s.pop('mesh_peers',None)
+    elif action=='cloud':
+        # 0.6.51: one click per computer – the same subfolder of the same cloud folder on every device.
+        choice=next((f for f in meshjournal.cloud_folders() if f['path']==d.get('path')),None)
+        if not choice:raise ValueError('Dieser Cloud-Ordner wurde auf diesem Rechner nicht gefunden.')
+        try:Path(choice['path']).mkdir(exist_ok=True)
+        except PermissionError:raise ValueError('Kein Zugriff auf '+choice['label']+'. Am Mac unter Systemeinstellungen → Datenschutz & Sicherheit → Dateien und Ordner MediathekAtlas den Zugriff erlauben und erneut versuchen.')
+        s['mesh_dir']=str(meshjournal.check_folder(choice['path'],create=True))
+        if not str(s.get('mesh_name') or '').strip():s['mesh_name']=platform.node().removesuffix('.local')[:80]
+    elif action=='folder-off':s['mesh_dir']=''
     else:raise ValueError('Unbekannte Aktion')
     with db() as c:store_settings(c,s)
     diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])

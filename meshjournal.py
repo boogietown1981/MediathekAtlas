@@ -7,7 +7,7 @@ folder sync) never produces conflict copies. The SQLite catalog stays local.
 Segments are appended as events-NNNNNN.jsonl.partial (skipped by MeshSync) and
 published by an atomic rename. Published segments are immutable.
 """
-import hashlib, json, math, os, re, secrets, threading, time
+import hashlib, json, math, os, platform, re, secrets, shutil, subprocess, sys, threading, time
 from pathlib import Path
 
 FORMAT = 'mediathekatlas-events-v1'
@@ -21,7 +21,10 @@ MAX_LINE = 256 * 1024
 READ_LIMIT = 5000           # events per import round, keeps weak NAS responsive
 HEARTBEAT = 300
 RECEIPT = 'archive.receipt'   # 0.5.95: signed proof of an Archive.org copy (archive_receipts); older versions skip the unknown type
-TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release', RECEIPT)
+EPISODE = 'episode.result'    # 0.6.51: "no episode found until …" from another system; older versions skip the unknown type
+TYPES = ('match.result', 'match.manual', 'download.claim', 'download.done', 'download.release', RECEIPT, EPISODE)
+GAP_WAIT = 6 * 3600           # 0.6.51: a missing earlier segment (still syncing) holds back later ones this long
+ICLOUD_SUFFIX = '.icloud'     # evicted iCloud Drive file on macOS ≤ 13: ".<name>.icloud"
 DOWNLOAD_TYPES = TYPES[2:5]
 CLAIM_SECONDS = 7200          # a claim expires unless renewed, so a crashed node never blocks a title for long
 CLAIM_RENEW = 1800
@@ -29,6 +32,42 @@ _HEX64 = re.compile(r'^[0-9a-f]{64}$')
 RANK = {'manual': 4, 'matched': 3, 'identified': 2, 'review': 1}
 _NODE = re.compile(r'^[0-9a-f]{32}$')
 _SEGMENT = re.compile(r'^events-(\d{6})\.jsonl$')
+_EVICTED = re.compile(r'^\.(events-(\d{6})\.jsonl|node\.json)\.icloud$')
+_fetch_requested = {}
+
+
+def host_id():
+    """Stable, non-identifying fingerprint of this computer (0.6.51).
+
+    Used only to notice a data folder that was copied to a second computer: both copies
+    would otherwise write under the same node ID and overwrite each other's node.json."""
+    return hashlib.sha256(('mediathekatlas-host|' + platform.node().lower().removesuffix('.local')).encode()).hexdigest()[:16]
+
+
+def request_download(path):
+    """Ask iCloud Drive to download an evicted file (no-op elsewhere, at most every 10 min per file)."""
+    key = str(path)
+    if sys.platform != 'darwin' or time.monotonic() - _fetch_requested.get(key, -1e9) < 600: return False
+    _fetch_requested[key] = time.monotonic()
+    tool = shutil.which('brctl')
+    if not tool: return False
+    try: subprocess.Popen([tool, 'download', key], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    except OSError: return False
+    return True
+
+
+def evicted(directory):
+    """Names of evicted iCloud placeholders in a node directory -> {'segments': {n}, 'node': bool}."""
+    out = {'segments': set(), 'node': False}
+    try: names = os.listdir(directory)
+    except OSError: return out
+    for name in names:
+        m = _EVICTED.match(name)
+        if not m: continue
+        request_download(Path(directory) / name)
+        if m.group(2): out['segments'].add(int(m.group(2)))
+        else: out['node'] = True
+    return out
 
 
 class MeshError(ValueError):
@@ -68,6 +107,39 @@ def check_folder(path, create=False):
         raise MeshError('Ordner ist kein MeshSync-Ordner. Ordner zuerst in MeshSync verbinden oder ausdrücklich als Verbundordner einrichten.')
     (p / 'nodes').mkdir(exist_ok=True)
     return p.resolve()
+
+
+CLOUD_SUBFOLDER = 'MediathekAtlas-Verbund'
+
+
+def cloud_folders(home=None):
+    """Synced cloud folders on this computer that can carry the Verbund (0.6.51).
+
+    Every computer of the same person sees the same folder, so the Verbund needs no network
+    share and no open port; computers that are off catch up when they come back."""
+    home = Path(home or Path.home())
+    found = []
+    def add(label, base):
+        try:
+            if base.is_dir() and not base.is_symlink() and os.access(base, os.W_OK | os.X_OK):
+                path = base / CLOUD_SUBFOLDER
+                if all(f['path'] != str(path) for f in found): found.append({'id': 'cloud%d' % len(found), 'label': label, 'path': str(path), 'exists': path.is_dir()})
+        except OSError: pass
+    add('iCloud Drive', home / 'Library' / 'Mobile Documents' / 'com~apple~CloudDocs')
+    add('iCloud Drive', home / 'iCloudDrive')                     # iCloud für Windows
+    storage = home / 'Library' / 'CloudStorage'                   # macOS File Provider (Dropbox, OneDrive, Google Drive, Synology Drive)
+    try: providers = sorted(storage.iterdir()) if storage.is_dir() else []
+    except OSError: providers = []
+    for d in providers:
+        name = d.name
+        if name.startswith('GoogleDrive-'):
+            for sub in ('My Drive', 'Meine Ablage'): add('Google Drive', d / sub)
+        elif name.startswith('OneDrive'): add('OneDrive', d)
+        elif name.startswith('Dropbox'): add('Dropbox', d)
+        elif name.startswith('SynologyDrive'): add('Synology Drive', d)
+    for label, name in (('Dropbox', 'Dropbox'), ('OneDrive', 'OneDrive'), ('Synology Drive', 'SynologyDrive')):
+        add(label, home / name)
+    return found
 
 
 def partition(work_id):
@@ -119,6 +191,11 @@ def clean_meta(meta):
     return dict(meta)
 
 
+def episode_meta(meta):
+    """A confirmed single episode (season/episode or a dated IMDb episode), not just the series."""
+    return bool(meta.get('episode_verified')) and (isinstance(meta.get('episode'), int) or bool(meta.get('episode_match')))
+
+
 def safe_relative(text):
     """Relative POSIX path inside a sync folder, or None."""
     if not isinstance(text, str) or not 0 < len(text) <= 1024 or '\\' in text or text.startswith('/'): return None
@@ -152,6 +229,15 @@ def sync_root(path):
     return None
 
 
+def valid_episode(d):
+    works = d.get('works')
+    if not isinstance(works, list) or not 0 < len(works) <= 8 or not all(isinstance(w, str) and 0 < len(w) <= 64 for w in works): return False
+    if d.get('outcome') != 'unresolved' or not isinstance(d.get('sender', False), bool): return False
+    for key in ('until', 'archive'):
+        if not isinstance(d.get(key), int) or isinstance(d[key], bool) or d[key] < 0: return False
+    return d.get('dest') is None or (isinstance(d['dest'], str) and len(d['dest']) <= 64)
+
+
 def valid_event(event, node):
     if not isinstance(event, dict) or event.get('v') != 1 or event.get('node') != node: return False
     if event.get('type') not in TYPES or not isinstance(event.get('data'), dict): return False
@@ -161,6 +247,7 @@ def valid_event(event, node):
     if event['type'] == RECEIPT:
         import archive_receipts
         return archive_receipts.valid_data(d)
+    if event['type'] == EPISODE: return valid_episode(d)
     if not isinstance(d.get('work'), str) or not 0 < len(d['work']) <= 64: return False
     if d.get('outcome') not in RANK or clean_meta(d.get('meta')) is None: return False
     if d.get('dest') is not None and (not isinstance(d['dest'], str) or len(d['dest']) > 64): return False
@@ -168,18 +255,43 @@ def valid_event(event, node):
 
 
 class Journal:
-    def __init__(self, root, node_id, name=''):
+    def __init__(self, root, node_id, name='', staging=None):
         if not _NODE.match(node_id): raise MeshError('Ungültige Knotenkennung')
         self.root = Path(root); self.node = node_id; self.name = str(name or '')[:80]
         self.dir = self.root / 'nodes' / node_id
         self.dir.mkdir(parents=True, exist_ok=True)
+        # 0.6.51: with a cloud folder (iCloud Drive, Dropbox, …) the open segment is written in the
+        # local data folder and only the finished segment is moved into the shared folder; a growing
+        # file there would be uploaded again after every result.
+        self.staging = Path(staging) if staging else None
+        if self.staging: self.staging.mkdir(parents=True, exist_ok=True)
         self.lock = threading.Lock(); self.seq = 0; self.hlc = 0; self.opened = 0
-        self.segment = 1; self.size = 0
+        self.segment = 1; self.size = 0; self.gaps = {}; self.waiting = {}
         self._recover()
 
+    def _published(self):
+        return sorted(int(m.group(1)) for m in map(_SEGMENT.match, os.listdir(self.dir)) if m)
+
     def _recover(self):
-        published = sorted(int(m.group(1)) for m in map(_SEGMENT.match, os.listdir(self.dir)) if m)
-        partial = sorted(int(p.name[7:13]) for p in self.dir.glob('events-??????.jsonl.partial'))
+        published = self._published()
+        where = self.staging or self.dir
+        partial = sorted(int(p.name[7:13]) for p in where.glob('events-??????.jsonl.partial'))
+        if self.staging:
+            for number in partial[:]:
+                # Crash between publishing and removing the staged copy: it is already in the folder.
+                if number in published: (where / ('events-%06d.jsonl.partial' % number)).unlink(); partial.remove(number)
+            if len(partial) > 1:
+                # Only one segment is ever open; older leftovers are merged into it, nothing is dropped.
+                parts = [where / ('events-%06d.jsonl.partial' % n) for n in partial]
+                data = b''.join(p.read_bytes().rstrip(b'\n') + b'\n' for p in parts if p.stat().st_size)
+                _write_atomic(parts[-1], data)
+                for p in parts[:-1]: p.unlink()
+                partial = partial[-1:]
+            expected = (published[-1] if published else 0) + 1
+            if partial and partial[-1] != expected:
+                # Staged segment from another Verbund folder: continue this folder's numbering without a gap.
+                os.replace(where / ('events-%06d.jsonl.partial' % partial[-1]), where / ('events-%06d.jsonl.partial' % expected))
+                partial[-1] = expected
         last = None
         if partial:
             self.segment = partial[-1]; path = self._partial()
@@ -199,7 +311,7 @@ class Journal:
             except (ValueError, KeyError, TypeError): pass
 
     def _partial(self):
-        return self.dir / ('events-%06d.jsonl.partial' % self.segment)
+        return (self.staging or self.dir) / ('events-%06d.jsonl.partial' % self.segment)
 
     def tick(self, seen=0):
         """Hybrid logical clock in milliseconds."""
@@ -224,7 +336,10 @@ class Journal:
         with self.lock:
             if not self.size: return False
             if not force and self.size < SEGMENT_BYTES and time.time() - self.opened < SEGMENT_AGE: return False
-            os.replace(self._partial(), self.dir / ('events-%06d.jsonl' % self.segment))
+            final = self.dir / ('events-%06d.jsonl' % self.segment)
+            if self.staging:
+                _write_atomic(final, self._partial().read_bytes()); self._partial().unlink()
+            else: os.replace(self._partial(), final)
             self.segment += 1; self.size = 0; self.opened = 0
             return True
 
@@ -236,6 +351,7 @@ class Journal:
         out = {}
         for d in sorted((self.root / 'nodes').iterdir()):
             if not _NODE.match(d.name) or d.is_symlink() or not d.is_dir(): continue
+            if not (d / 'node.json').exists(): evicted(d)
             try:
                 info = json.loads((d / 'node.json').read_text(encoding='utf-8'))
                 if isinstance(info, dict) and info.get('node') == d.name and info.get('format') == FORMAT: out[d.name] = info
@@ -258,16 +374,34 @@ class Journal:
         if not members or self.node not in members: return set() if members else set(range(PARTS))
         return {i for i, owner in enumerate(owners(members)) if owner == self.node}
 
-    def read(self, cursors, limit=READ_LIMIT):
-        """New events of other nodes after cursors {node: [segment, line]}."""
+    def read(self, cursors, limit=READ_LIMIT, now=None):
+        """New events of other nodes after cursors {node: [segment, line]}.
+
+        0.6.51: segments are numbered without gaps. If a later segment arrives before an earlier
+        one (cloud folder, MeshSync, direct connection), reading that node waits for the missing
+        one instead of skipping it for good; after GAP_WAIT it is given up. Evicted iCloud files
+        are requested and waited for the same way."""
+        now = time.time() if now is None else now
         events = []; cursors = {k: list(v) for k, v in (cursors or {}).items()}; invalid = 0; seen = 0
+        self.waiting = {}
         for d in sorted((self.root / 'nodes').iterdir()):
             nid = d.name
             if nid == self.node or not _NODE.match(nid) or d.is_symlink() or not d.is_dir(): continue
-            seg, line = cursors.get(nid, [0, 0])
-            for number in sorted(int(m.group(1)) for m in map(_SEGMENT.match, os.listdir(d)) if m):
+            seg, line = cursors.get(nid, [0, 0])[:2]
+            try: names = os.listdir(d)
+            except OSError: continue
+            numbers = sorted(int(m.group(1)) for m in map(_SEGMENT.match, names) if m)
+            away = evicted(d)['segments'] if any(n.endswith(ICLOUD_SUFFIX) for n in names) else set()
+            for number in numbers:
                 if number < seg: continue
-                if number > seg: seg, line = number, 0
+                if number > seg:
+                    expected = seg + 1 if seg else 1
+                    missing = [n for n in range(expected, number) if n not in numbers]
+                    if missing or (number > expected and set(range(expected, number)) & away):
+                        since = self.gaps.setdefault((nid, expected), now)
+                        if now - since < GAP_WAIT:
+                            self.waiting[nid] = expected; break
+                    seg, line = number, 0
                 try: rows = (d / ('events-%06d.jsonl' % number)).read_bytes().splitlines()
                 except OSError: break
                 for raw in rows[line:]:
@@ -279,6 +413,7 @@ class Journal:
                     if len(events) >= limit: break
                 cursors[nid] = [seg, line]
                 if len(events) >= limit: break
+            if nid not in self.waiting and away and (max(away) >= (cursors.get(nid, [0])[0] or 1)): self.waiting[nid] = min(away)
             if len(events) >= limit: break
         if seen:
             with self.lock: self.tick(seen)
