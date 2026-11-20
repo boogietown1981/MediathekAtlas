@@ -258,6 +258,15 @@ class Service:
         rows=c.execute(query+scope+" ORDER BY q.next_try ASC LIMIT 48",
                        (now,now)+params).fetchall()
         if not rows:return None
+        # 0.6.58: while the hourly sender allowance is used up, a sender page is no evidence that can be used
+        # now; such works no longer jump the queue only to end "ohne Treffer" for a week (Diagnose 20.11.
+        # nachts: 5,737 of 6,225 checks ran into the spent allowance).
+        import broadcaster
+        spent={}
+        def sender_spent(provider):
+            if provider not in spent:spent[provider]=broadcaster.automated_retry_at(provider)>now
+            return spent[provider]
+        direct=self.settings().get('sender_direct_lookup',False)
         def evidence(row):
             try:m=json.loads(row['meta'] or '{}')
             except (TypeError,ValueError):return 0
@@ -265,6 +274,7 @@ class Service:
             if isinstance(season,int) and not isinstance(season,bool) and season>=0 and isinstance(episode,int) and not isinstance(episode,bool) and episode>0:
                 return 3
             if m.get('sender_page_id') or m.get('sender_evidence'):
+                if direct and m.get('sender_provider') and sender_spent(m['sender_provider']):return 0
                 return 2
             if isinstance(episode,int) and not isinstance(episode,bool) and episode>0:
                 return 2
@@ -654,7 +664,11 @@ class Service:
             task=c.execute('SELECT * FROM episode_queue WHERE work_id=?',(selected_id,)).fetchone()
             if not row or not task or row['state']!='identified':return False
             m=json.loads(row['meta']);original=row['meta'];entry=catalog.item(c,row)
-            if entry:
+            refiled=catalog.refile_reset_edition(c,row,m)
+            if refiled:
+                # 0.6.58: filed before, set back by the series propagation bug of 0.6.41–0.6.55
+                preflight=refiled
+            elif entry:
                 import video_causality
                 if catalog.mark_explicit_extra(c,row,entry['source']):
                     diagnostics.event('video_extra_classified',work_id=selected_id,

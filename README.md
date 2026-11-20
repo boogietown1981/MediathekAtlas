@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.55
+# MediathekAtlas · 0.6.58
+
+## Neu in 0.6.58: Erkennung und Episodensuche
+
+- Schon abgelegte Sendungsausgaben und Beiträge bleiben abgelegt. Bisher setzte jede weitere Erkennung in derselben Serie sie zurück, und die Episodensuche ordnete sie immer wieder neu ein („BR retro“ 399-mal in 4,5 Minuten). Die Episodensuche hat dadurch wieder Zeit für echte Folgen; zurückgesetzte Werke werden beim nächsten Durchgang ohne Abfrage wieder abgelegt.
+- Ist das Stundenkontingent für den Senderabruf (ARD/ZDF) aufgebraucht, kommen zuerst Werke dran, die ohne Senderseite entschieden werden können.
+- Wikidata schlägt keine Personen, Tiere, Orte oder Begriffe mehr als Film oder Serie vor.
+- Meldet ein Anbieter „zu viele Anfragen“, pausiert MediathekAtlas ihn so lange, wie er verlangt (1 bis 15 Minuten), statt weiter zu fragen; die Werke warten und werden danach geprüft.
 
 ## Neu in 0.6.55: Besetzung mit Fotos
 

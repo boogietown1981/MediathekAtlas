@@ -901,9 +901,15 @@ def propagate_series(c,old_show,m):
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
         own=json.loads(row['meta'])
         # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
-        if row['state']=='identified' and all(own.get(k)==v for k,v in common.items()):continue
+        unchanged=all(own.get(k)==v for k,v in common.items())
+        # 0.6.58 (Björns Diagnose 20.11. nachts: „BR retro“ 399-mal in 4,5 min neu eingeordnet, 165.000
+        # gezählte Beiträge): an edition, contribution or extra already filed with its Sendung ('format') was
+        # set back to 'identified' by every further recognition in the same series. It returned to the
+        # episode queue and was filed again a few seconds later. Such a work keeps its filing; only the
+        # shared series data follow.
+        if row['state'] in ('identified','format') and unchanged:continue
         own.update(common)
-        save_metadata(c,row['id'],own,'identified')
+        save_metadata(c,row['id'],own,'format' if row['state']=='format' else 'identified')
 
 def focus_series(c,show_key,limit=24,cooldown=1800):
     """Boost a *bounded* number of sibling episodes after verified show recognition.
@@ -1054,6 +1060,21 @@ def mark_recurring_edition(c,row,meta,source,role):
                      else 'Beitrag (unter 10 Minuten) der Sendung „%s“; keine eigene Folge.')%series)
     return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
                      (json.dumps(m),row['id'])).rowcount>0
+
+def refile_reset_edition(c,row,meta):
+    """0.6.58: 'edition'/'segment' for an identified work that still carries its earlier filing, else None.
+
+    Up to 0.6.55 every further recognition in a series set the editions and contributions already filed with
+    their Sendung back to 'identified' (propagate_series). Their metadata kept the filing (state 'format',
+    format_grouping); the episode queue files them again at once instead of checking IMDb and the sender.
+    A user's rescan (scan_requested) or a confirmed episode is never undone.
+    """
+    role=meta.get('format_grouping')
+    if role not in ('edition','segment') or meta.get('state')!='format':return None
+    if meta.get('scan_requested') or meta.get('episode_verified') or meta.get('video_role_needs_review'):return None
+    if row['state']!='identified':return None
+    done=c.execute("UPDATE works SET state='format',next_try=0 WHERE id=? AND state='identified'",(row['id'],)).rowcount
+    return role if done else None
 
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""

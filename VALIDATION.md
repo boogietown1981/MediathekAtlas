@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.58 – Erkennung (20. November 2026)
+- Automatisch: gesamte Python-Suite (1639 Tests, grün), neu `tests/test_v0658.py`: abgelegte Beiträge bleiben nach weiteren Erkennungen in der Serie abgelegt, kein erneutes Einordnen (Zähler bleibt 12 statt zu wachsen), unveränderte Geschwister unberührt, zurückgesetzte Werke werden ohne IMDb-Abfrage wieder abgelegt, Nutzer-Neuprüfung bleibt, Reihenfolge bei verbrauchtem Senderkontingent, Wikidata-Personen/-Taxa/-Begriffe verworfen und gemerkt, Filme behalten Genres, 429 pausiert nach Retry-After (60 s bis 15 min), Prüfung „pausiert“ ohne Fehler. Gegenprobe: mit dem Code von 0.6.55 schlagen 10 der 11 Tests fehl.
+- Nicht geprüft (keine Datenbank in der Cloud): Wirkung auf Björns echten Katalog (Anzahl zurückgesetzter Werke, Trefferquote danach), echte Wikidata-Antworten.
+
 ## 0.6.55 – Besetzung mit Fotos (20. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0655_cast_photos.py` (Dateinamen für Darsteller und Regie, einmaliger Download und danach lokal auch offline, nur ausgegebene Fotos und sichere Namen, kein Speichern von Fehlern/Nicht-Bildern und Sperre 30 min, Budget entfernt die ältesten, Route mit Seitenschlüssel, Verdrahtung Titelseiten). Browsertest Chromium `cast_photos.cjs`: Reihe „Besetzung & Regie“ mit Rollen, Hinweis und Knopf ohne Schlüssel, Fotos über `/api/cast-photo` (der Browser fragt TMDB nie direkt), Initialen ohne Foto, 403 ohne Seitenschlüssel. Klicktest `click_all.cjs`.
 - Nicht geprüft (TMDB aus der Cloud gesperrt): echte Fotos von image.tmdb.org, Regie-Fotos aus den Crew-Angaben echter Titel, Serien mit `aggregate_credits`, Ladezeit einer Titelseite mit 24 Personen beim ersten Öffnen.
