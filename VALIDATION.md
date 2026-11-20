@@ -1,8 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
 ## 0.6.62 – dailyme TV (20. November 2026)
-- Automatisch (Cloud): gesamte Python-Suite 1692 Tests grün (4 übersprungen), neu `tests/test_v0662_dailyme.py` (robots.txt, Listen, Film-/Serienseiten, JSON-LD, JavaScript-Hülle, Sitemaps, Bildhosts, Lauf mit Zählern, zweiter Lauf innerhalb einer Woche, robots sperrt alles, Netzfehler, nie eine Player-Quelle, Verdrahtung); `node tests/*.cjs` grün; `click_all.cjs` und `dmax_joyn.cjs` (dailyme-Reiter, Filme, Serie mit Folgen-Kacheln „Anbieter“, Links zu dailyme.de) ohne Befund.
-- Nicht geprüft (dailyme.de aus der Cloud gesperrt): echtes Seiten-HTML mit dem eigenen User-Agent, Größe und Aufbau der Sitemaps, Dauer eines vollen Laufs, Anteil erkannter Filme/Serien, Öffnen der Links im Browser. Mac-Prüfung steht aus.
+- Automatisch (Cloud): gesamte Python-Suite grün, neu `tests/test_v0662_dailyme.py` (Mitschnitte vom Mac: robots.txt, Inhalte-Sitemap mit über 1.000 Sendungen, Startseite, Film „Plötzlich Vater“ mit FSK 6/2013/Kategorie, Serie mit 100 Folgen 401–500; dazu robots.txt, Listen, Film-/Serienseiten, JSON-LD, JavaScript-Hülle, Sitemaps, Bildhosts, Lauf mit Zählern, zweiter Lauf innerhalb einer Woche, robots sperrt alles, Netzfehler, nie eine Player-Quelle, Verdrahtung); `node tests/*.cjs` grün; `click_all.cjs` und `dmax_joyn.cjs` (dailyme-Reiter, Filme, Serie mit Folgen-Kacheln „Anbieter“, Links zu dailyme.de) ohne Befund.
+- Nicht geprüft (dailyme.de aus der Cloud gesperrt): voller Lauf am echten Netz (Dauer, Fehler), Anteil erkannter Filme/Serien, Öffnen der Links im Browser. Mac-Prüfung steht aus.
 
 ## 0.6.61 – Verbund: Befunde der Mac-Prüfung (20. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0661_verbund_followup.py` (Feld `name` im Protokoll, auto_tick meldet und räumt auf, dataless-Erkennung, langsames Nachladen mit Frist ohne zweiten Ladevorgang, Lesefehler hält die Position, gesperrter Zwischenspeicher).

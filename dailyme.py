@@ -18,8 +18,16 @@ the server sends, playback is not:
     ``/content/show/<id>-<slug>/<episode id>-<slug>`` (7-digit ids) with running time ("23:46"), sometimes
     "STAFFEL 1 • FOLGE 1"; badges "DRAMA · 2018 · FSK 0"; schema.org JSON-LD is read when present.
   - Pictures: ``https://www.dailyme.de/fast/cover/<b|l|c><id>.jpg|png``, ``mini-cms.daygent.de``, ``*.selocon.com``.
-  - Sitemaps named in robots.txt: ``/fast/video-sitemap.xml`` (episodes with title, description, duration,
-    thumbnail) and ``/fast/inhalte-sitemap.xml``; read first, list and programme pages add FSK, genres, kind.
+  - Recorded on Björn's Mac (20.11.2026, app user agent, dailyme_samples.zip): server HTML with links for this
+    user agent. ``/fast/inhalte-sitemap.xml`` is an index -> ``inhalte-sitemap-1.xml`` with 10,330 addresses:
+    1,449 programmes and 5,811 episodes (films have none), plus DDR, news, live and list pages. The video sitemap
+    holds only news clips and is not read. Every programme page has JSON-LD: ``Movie`` (+ ``VideoObject``,
+    ``BreadcrumbList`` with the category), ``TVSeries`` (name, description, thumbnailUrl). Episode links often
+    have no slug (``…/20410-verbotene-liebe-folge-401-bis-500/3809502``) and only "Folge 402" as title.
+  - Order of a run: robots.txt, content sitemap (all programmes), the start lists (FSK, kind hints; further lists
+    only when the sitemap named fewer than SITEMAP_ENOUGH), then programme pages, written every FLUSH_EVERY
+    programmes: an interrupted run keeps what it read, the next run continues with the programmes not read yet
+    (a full first run reads about 1,450 pages, some 25 minutes at one request per second).
   - Film page: <title> "… – ganzer Film kostenlos ansehen | dailyme TV", "Kompletter Film · 2015", "FSK 12",
     "Abspielen 1:44:54"; series page: "26 Folgen", episode links "… kostenlos streamen | dailyme 24:12 Staffel 1,
     Folge N: <Beschreibung>".
@@ -64,7 +72,8 @@ START_LISTS = ('/', '/content/theme/filme', '/content/theme/serien-shows-magazin
                '/content/theme/family-kids', '/content/channel/serien', '/content/channel/anime-serien', '/content/neu')
 MAX_LISTS = 160              # list pages per run
 MAX_SHOWS = 6000
-MAX_DETAILS = 1500           # programme pages per run (new ones first); the rest the next day
+MAX_DETAILS = 2000           # programme pages per run (new ones first); the rest in the next run, one hour later
+FLUSH_EVERY = 25             # programmes per write: an interrupted run keeps what it read and resumes there
 DETAIL_TTL = 7 * 86400       # a programme page is read again after a week
 MAX_ITEMS = 120000
 REQUEST_GAP = 1.0
@@ -76,10 +85,14 @@ NOT_PLAYABLE = ('dailyme TV spielt seine Videos nur im eigenen Player (Sitzung u
                 'bitte „Bei dailyme ansehen“ wählen.')
 VALID_ID = re.compile(r'[mse]\.\d{1,9}')
 SHOW_PATH = re.compile(r'/content/show/(\d{3,9})-([a-z0-9][a-z0-9\-]{0,200})/?$')
-EPISODE_PATH = re.compile(r'/content/show/(\d{3,9})-([a-z0-9][a-z0-9\-]{0,200})/(\d{3,9})-([a-z0-9][a-z0-9\-]{0,200})/?$')
+# 0.6.62 (Mac, 20.11.2026): many episode links carry no slug ("/content/show/20410-…/3809502")
+EPISODE_PATH = re.compile(r'/content/show/(\d{3,9})-([a-z0-9][a-z0-9\-]{0,200})/(\d{3,9})(?:-([a-z0-9][a-z0-9\-]{0,200}))?/?$')
 LIST_PATH = re.compile(r'/content/(?:theme|channel|provider|kategorie)/[a-z0-9][a-z0-9\-]{0,120}/?$'
                        r'|/content/(?:neu|western|film-finder|deutsche-filme|halloween)/?$')
-SITEMAPS = ('/fast/video-sitemap.xml', '/fast/inhalte-sitemap.xml')
+# 0.6.62 (Mac): the content sitemap (index -> inhalte-sitemap-1.xml) names every programme (1,449) and many
+# episodes; the video sitemap holds only news clips and is not read.
+SITEMAPS = ('/fast/inhalte-sitemap.xml',)
+SITEMAP_ENOUGH = 100          # with that many programmes from the sitemap, list pages are not followed further
 MAX_SITEMAP = 48 * 1024 * 1024
 MAX_SITEMAP_FILES = 40
 # Lists whose slug says something about the content: genre added to every programme found there.
@@ -99,6 +112,7 @@ CLOCK = re.compile(r'(?<![\d:])(\d{1,3}):([0-5]\d)(?::([0-5]\d))?(?![\d:])')
 MINUTES = re.compile(r'\b(\d{1,3})\s?Min\b')
 SEASON_EPISODE = re.compile(r'(?i)\bSTAFFEL\s*(\d{1,3})\s*[•·,|/-]?\s*FOLGE\s*(\d{1,4})\b|\bS(\d{1,2})\s?E(\d{1,4})\b')
 FILM_LABEL = re.compile(r'(?i)\bkompletter film\b|\bganzer film\b')
+EPISODE_TITLE = re.compile(r'(?i)^(?:Folge|Episode|Teil)\s*(\d{1,5})$')
 SEASON_SLUG = re.compile(r'(?:^|-)staffel-(\d{1,3})(?:-|$)')
 EPISODE_SLUG = re.compile(r'(?:^|-)folge-(\d{1,4})(?:-|$)')
 YEAR = re.compile(r'(?<!\d)(19[2-9]\d|20[0-4]\d)(?!\d)')
@@ -307,6 +321,7 @@ class _Page(html.parser.HTMLParser):
         self._in = None            # 'title', 'h1', 'ld'
         self._buffer = []
         self.text = []
+        self.h1_at = None
 
     def handle_starttag(self, tag, attrs):
         a = {k: (v or '') for k, v in attrs}
@@ -348,6 +363,7 @@ class _Page(html.parser.HTMLParser):
                 self.title = _text(body, 300)
             elif self._in == 'h1' and not self.h1:
                 self.h1 = _text(body, 300)
+                self.h1_at = len(self.text)
             self._in = None
 
     def handle_data(self, data):
@@ -463,7 +479,7 @@ def show_page(markup, sid, slug):
     """Facts and episodes of a programme page. ``stub`` is True for a bare JavaScript shell."""
     page = parse_page(markup)
     facts = {'title': '', 'summary': '', 'poster': '', 'year': None, 'fsk': None, 'genres': [], 'type': '',
-             'duration': None}
+             'duration': None, 'crumbs': []}
     episodes = {}
     for node in _ld_nodes(page):
         types = _ld_type(node)
@@ -480,11 +496,21 @@ def show_page(markup, sid, slug):
             facts['genres'] = [_text(g, 40) for g in (genre if isinstance(genre, list) else [genre]) if _text(g, 40)][:6]
             facts['type'] = 'movie' if 'Movie' in types else 'series' if types & {'TVSeries', 'CreativeWorkSeries'} else ''
             facts['duration'] = _iso_seconds(node.get('duration'))
+        if 'VideoObject' in types and not facts['duration']:
+            facts['duration'] = _iso_seconds(node.get('duration'))
+        if 'BreadcrumbList' in types:
+            for entry in node.get('itemListElement') or []:
+                target = entry.get('item') if isinstance(entry, dict) else ''
+                target = target.get('@id', '') if isinstance(target, dict) else str(target or '')
+                if '/content/kategorie/' in _path(target):
+                    name = _text(entry.get('name'), 40)
+                    if name and name not in facts['crumbs']:
+                        facts['crumbs'].append(name)
         if 'TVEpisode' in types or 'Episode' in types:
             match = EPISODE_PATH.search(_path(node.get('url') or node.get('@id') or ''))
             if match and match.group(1) == sid:
                 season = node.get('partOfSeason') if isinstance(node.get('partOfSeason'), dict) else {}
-                episodes[match.group(3)] = {'id': match.group(3), 'slug': match.group(4),
+                episodes[match.group(3)] = {'id': match.group(3), 'slug': match.group(4) or '',
                                             'title': _text(node.get('name'), 200),
                                             'summary': _text(node.get('description'), 1600),
                                             'duration': _iso_seconds(node.get('duration')),
@@ -495,7 +521,7 @@ def show_page(markup, sid, slug):
         match = EPISODE_PATH.fullmatch(_path(anchor['href']))
         if not match or match.group(1) != sid:
             continue
-        eid, eslug = match.group(3), match.group(4)
+        eid, eslug = match.group(3), match.group(4) or ''
         text = anchor.get('text') or ''
         entry = episodes.setdefault(eid, {'id': eid, 'slug': eslug, 'title': '', 'summary': '', 'duration': None,
                                           'season': None, 'episode': None, 'poster': ''})
@@ -510,16 +536,20 @@ def show_page(markup, sid, slug):
             season, episode = (numbers.group(1), numbers.group(2)) if numbers.group(1) else (numbers.group(3), numbers.group(4))
             entry['season'], entry['episode'] = int(season), int(episode)
     whole = ' · '.join(page.text)
+    # badges ("Comedy, Drama · Kompletter Film · 2013", "FSK 6") stand right below the heading; further down are
+    # menus and other programmes' tiles, whose words are no facts of this programme
+    start = page.h1_at if page.h1_at is not None else 0
+    near = [t for t in page.text[start:start + 6] if '·' in t or '•' in t or FSK.fullmatch(t)]
     facts['title'] = clean_title(facts['title'] or page.meta.get('og:title') or page.h1 or page.title)
     facts['summary'] = facts['summary'] or _text(page.meta.get('og:description') or page.meta.get('description'), 2000)
     facts['poster'] = facts['poster'] or _image(page.meta.get('og:image'))
-    badges = _badges(whole)
+    badges = _badges(' · '.join(near))
     facts['year'] = facts['year'] or badges['year']
     facts['fsk'] = facts['fsk'] if facts['fsk'] is not None else badges['fsk']
     facts['genres'] = facts['genres'] or badges['genres']
     if not facts['type'] and ('video.movie' in (page.meta.get('og:type') or '')
                               or (FILM_LABEL.search(page.title) and len(episodes) <= 1)
-                              or (not episodes and re.search(r'(?i)\bkompletter film\b', whole))):
+                              or (not episodes and FILM_LABEL.search(' '.join(near)))):
         facts['type'] = 'movie'
     if facts['type'] == 'movie' and not facts['duration']:
         facts['duration'] = _seconds(' '.join(t for t in page.text if 'Abspielen' in t or CLOCK.fullmatch(t))[:400])
@@ -531,7 +561,7 @@ def show_page(markup, sid, slug):
         if entry['season'] is None and slug_season:
             entry['season'] = int(slug_season.group(1))
         if entry['episode'] is None:
-            number = EPISODE_SLUG.search(entry['slug'])
+            number = EPISODE_SLUG.search(entry['slug']) or EPISODE_TITLE.match(entry['title'] or '')
             if number:
                 entry['episode'] = int(number.group(1))
     stub = not episodes and not page.ld and not page.h1 and not page.meta.get('og:title') \
@@ -581,6 +611,11 @@ def sitemap_entries(text):
 
 # ---------------------------------------------------------------- crawl
 
+def _episode_url(sid, slug, entry):
+    tail = '%s-%s' % (entry['id'], entry['slug']) if entry.get('slug') else entry['id']
+    return '%s/content/show/%s-%s/%s' % (SITE, sid, slug, tail)
+
+
 def _list_slug(path):
     return path.rstrip('/').rsplit('/', 1)[-1]
 
@@ -622,8 +657,10 @@ class Crawl:
         self.lists_read = self.details = self.stubs = self.blocked = 0
         self.net_failures, self.stopped = 0, False
         self.rules = []
-        self.videos = {}             # show id -> {episode id: entry} from the video sitemap
+        self.videos = {}             # show id -> {episode id: entry} from the sitemap
         self.sitemap_urls = 0
+        self.sink = None             # rows -> None: writes what was read so far (resume after an interruption)
+        self.flushed = set()
 
     def _failed(self, exc):
         if provider_base.network_failure(exc):
@@ -699,7 +736,7 @@ class Crawl:
                     continue
                 if episode:
                     self.videos.setdefault(tile['id'], {})[episode.group(3)] = {
-                        'id': episode.group(3), 'slug': episode.group(4), 'title': entry['title'],
+                        'id': episode.group(3), 'slug': episode.group(4) or '', 'title': entry['title'],
                         'summary': entry['summary'], 'duration': entry['duration'], 'season': None,
                         'episode': None, 'poster': entry['poster'], 'year': entry['year']}
                 else:
@@ -755,9 +792,17 @@ class Crawl:
                     known['fsk'] = tile['fsk']
                 if path != '/':
                     known['lists'].add(slug)
+            if len(self.tiles) >= SITEMAP_ENOUGH and self.sitemap_urls:
+                continue                  # the sitemap names every programme; the start lists add FSK and kind hints
             for found in lists:
                 if found not in done and found not in queue:
                     queue.append(found)
+
+    def flush(self):
+        fresh = [row for key, row in self.rows.items() if key not in self.flushed]
+        if fresh and self.sink:
+            self.sink(fresh)
+        self.flushed.update(row['id'] for row in fresh)
 
     def read_shows(self, known):
         """Programme pages: new programmes first, then the oldest; at most MAX_DETAILS per run."""
@@ -784,23 +829,28 @@ class Crawl:
                 if exc.code in (404, 410):
                     continue              # programme withdrawn
                 self.errors.append(_error(exc))
-                self._add(tile, {}, self._merged(sid, []), detailed=False)
+                if last:
+                    self.kept.append(sid)     # unreadable now: keep what the last reading found
                 continue
             except Exception as exc:
                 self.errors.append(_error(exc))
-                self._add(tile, {}, self._merged(sid, []), detailed=False)
+                if last:
+                    self.kept.append(sid)
                 if self._failed(exc):
                     break
                 continue
             self.details += 1
             self.stubs += 1 if stub else 0
-            self._add(tile, facts, self._merged(sid, episodes), detailed=not stub)
+            self._add(tile, facts, self._merged(sid, episodes), detailed=not stub, read=True)
+            if self.details % FLUSH_EVERY == 0:
+                self.flush()
+        self.flush()
 
-    def _add(self, tile, facts, episodes, detailed):
+    def _add(self, tile, facts, episodes, detailed, read=False):
         sid = tile['id']
         kind = _kind(tile, facts, episodes)
         genres = []
-        for name in list(facts.get('genres') or []) + list(tile.get('genres') or []) + \
+        for name in list(facts.get('genres') or []) + list(facts.get('crumbs') or []) + list(tile.get('genres') or []) + \
                 [LIST_GENRE[s] for s in sorted(tile.get('lists') or ()) if s in LIST_GENRE]:
             if name and name not in genres and not (kind == 'movie' and name == 'Serie'):
                 genres.append(name)
@@ -812,10 +862,10 @@ class Crawl:
                 'genre': ', '.join(genres[:6]), 'summary': facts.get('summary') or '',
                 'poster': tile.get('poster') or facts.get('poster') or '', 'imdb_id': '', 'imdb_score': None,
                 'imdb_votes': None, 'number': None, 'category': 'dailyme TV', 'playable': 0, 'drm': -1,
-                'detailed': detailed}
+                'detailed': detailed, 'read': read}
         if kind == 'movie':
             video = episodes[0] if len(episodes) == 1 else None
-            web = '%s/content/show/%s-%s/%s-%s' % (SITE, sid, tile['slug'], video['id'], video['slug']) if video else show_url
+            web = _episode_url(sid, tile['slug'], video) if video else show_url
             self.rows['m.' + sid] = {**base, 'id': 'm.' + sid, 'kind': 'movie',
                                      'duration': (video or {}).get('duration') or facts.get('duration') or tile.get('duration'),
                                      'web_url': web}
@@ -830,7 +880,7 @@ class Crawl:
                 'path': entry['id'], 'series_id': 's.' + sid, 'season': entry['season'], 'episode': entry['episode'],
                 'duration': entry['duration'], 'summary': entry['summary'] or '',
                 'poster': entry['poster'] or base['poster'],
-                'web_url': '%s/content/show/%s-%s/%s-%s' % (SITE, sid, tile['slug'], entry['id'], entry['slug'])}
+                'web_url': _episode_url(sid, tile['slug'], entry)}
 
 
 # ---------------------------------------------------------------- storage
@@ -847,7 +897,7 @@ def _store(db, items, now):
         fields = [f for f in FIELDS if item.get('detailed') or f not in DETAIL_FIELDS or item.get(f)
                   or not db.execute('SELECT 1 FROM dailyme_items WHERE id=?', (item['id'],)).fetchone()]
         update = ','.join('%s=excluded.%s' % (f, f) for f in fields)
-        detail_at = now if item.get('detailed') else 0
+        detail_at = now if item.get('detailed') or item.get('read') else 0   # a bare page counts as read too
         db.execute('''INSERT INTO dailyme_items(id,%s,detail_at,seen,updated) VALUES(?,%s,?,?,?)
             ON CONFLICT(id) DO UPDATE SET %s,detail_at=MAX(dailyme_items.detail_at,excluded.detail_at),
             seen=excluded.seen,updated=excluded.updated'''
@@ -891,6 +941,14 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 "SELECT id, detail_at FROM dailyme_items WHERE kind IN ('series','movie')")}
         finally:
             db.close()
+        def sink(rows):
+            db = _connect(root)
+            try:
+                with db:
+                    _store(db, rows, now)
+            finally:
+                db.close()
+        crawl.sink = sink
         crawl.read_shows(known)
         rows = list(crawl.rows.values())
         partial = crawl.truncated or len(crawl.errors) > max(3, 0.03 * crawl.requests)
@@ -899,7 +957,6 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
         db = _connect(root)
         try:
             with db:
-                _store(db, rows, now)
                 _keep(db, crawl.kept, now)
                 counts = {kind + 's' if kind != 'series' else 'series': n for kind, n in db.execute(
                     "SELECT kind, COUNT(*) FROM dailyme_items WHERE seen>=? GROUP BY kind", (now,))}
@@ -912,7 +969,8 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'), ('last_error', message),
                                    ('last_http_status', 0),
-                                   ('next_attempt', now + (provider_base.NET_RETRY if crawl.stopped else 24 * 3600)),
+                                   ('next_attempt', now + (provider_base.NET_RETRY if crawl.stopped else 3600 if waiting
+                                                           else 24 * 3600)),
                                    ('requests', crawl.requests), ('lists', crawl.lists_read),
                                    ('stubs', crawl.stubs), ('robots_blocked', crawl.blocked), ('sitemap_urls', crawl.sitemap_urls),
                                    ('details_waiting', waiting), *counts.items()]:

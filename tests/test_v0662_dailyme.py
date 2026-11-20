@@ -45,7 +45,29 @@ VIDEO_SITEMAP = """<?xml version="1.0" encoding="UTF-8"?>
 
 INHALTE_INDEX = """<?xml version="1.0"?><sitemapindex xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">
 <sitemap><loc>https://www.dailyme.de/fast/inhalte-1.xml</loc></sitemap></sitemapindex>"""
-INHALTE_1 = """<?xml version="1.0"?><urlset><url><loc>https://www.dailyme.de/content/show/24829-heidi/</loc></url></urlset>"""
+INHALTE_1 = """<?xml version="1.0"?><urlset><url><loc>https://www.dailyme.de/content/impressum</loc></url>
+<url><loc>https://www.dailyme.de/content/show/24829-heidi/</loc></url>
+<url><loc>https://www.dailyme.de/content/show/21534-tierwelt-live-weite-welt/</loc></url>
+<url><loc>https://www.dailyme.de/content/show/21534-tierwelt-live-weite-welt/4499039-hawaii</loc></url>
+<url><loc>https://www.dailyme.de/content/show/20410-verbotene-liebe-folge-401-bis-500/</loc></url>
+<url><loc>https://www.dailyme.de/content/ddr/polizeiruf-110</loc></url></urlset>"""
+
+# Shape of the programme page recorded on Björn's Mac (20.11.2026): episode links without slug, title only "Folge N"
+VL_EPISODE = ('<article><a class="jss52" href="/content/show/20410-verbotene-liebe-folge-401-bis-500/%d"><div><img '
+              'src="https://i.selocon.com/clips/feed_57381/rsz/400/30/x_%d.raw.jpg" alt=" kostenlos streamen | dailyme">'
+              '<div><time>24:17</time></div></div><div><h3>Folge %d</h3><p></p></div></a></article>')
+VERBOTENE = ('<html><head><title>Verbotene Liebe (Folge 401 bis 500) – alle Folgen | dailyme</title>'
+             '<script type="application/ld+json" data-react-helmet="true">{"@context":"https://schema.org","@type":"TVSeries",'
+             '"name":"Verbotene Liebe (Folge 401 bis 500)","description":"Liebesgeschichten und Intrigen.",'
+             '"thumbnailUrl":"https://i.selocon.com/resources/slotPreview/previewBig20410_164890048e5.jpg"}</script>'
+             '<script type="application/ld+json">{"@type":"BreadcrumbList","itemListElement":[{"@type":"ListItem","position":1,'
+             '"name":"Serien","item":"https://www.dailyme.de/content/theme/serien-shows-magazine"},{"@type":"ListItem","position":2,'
+             '"name":"Daily Soaps","item":"https://www.dailyme.de/content/kategorie/daily-soaps"}]}</script></head><body>'
+             '<nav><a href="/content/theme/filme">FILME</a><span>NEWS · KIDS</span></nav>'
+             '<h1>Verbotene Liebe (Folge 401 bis 500)</h1><div><span>100 Folgen</span></div>' +
+             ''.join(VL_EPISODE % (3809502 + i, 3809502 + i, 401 + i) for i in range(3)) +
+             '<h2>Ähnliche Filme</h2>' + '<a href="/content/show/24329-der-amerikanische-buergerkrieg/"><span>HORROR • 1980</span></a>'
+             '</body></html>')
 
 
 def card(sid, slug, title, badge='', runtime='', img=True):
@@ -125,6 +147,7 @@ class Site:
                       '/content/show/21534-tierwelt-live-weite-welt/': TIERWELT,
                       '/content/show/24412-die-abenteuer-von-pepper-und-paula/': PEPPER,
                       '/content/show/24829-heidi/': STUB, '/content/show/23047-the-good-girl/': STUB,
+                      '/content/show/20410-verbotene-liebe-folge-401-bis-500/': VERBOTENE,
                       '/content/kategorie/familienfilme': '<html><body>' + card('24829', 'heidi', 'Heidi') + '</body></html>'}
         if pages:
             self.pages.update(pages)
@@ -235,12 +258,13 @@ class SyncTests(Fixture):
     def test_catalogue(self):
         result = self.sync()
         self.assertTrue(result['ok'], result)
-        self.assertEqual((result['movies'], result['series']), (3, 3))   # Ip Man 3, The Good Girl, Heidi; 3 series
+        self.assertEqual((result['movies'], result['series']), (3, 4))   # Ip Man 3, The Good Girl, Heidi; 4 series
         calls = self.site.calls
         self.assertEqual(calls[0], '/robots.txt')
         self.assertFalse([c for c in calls if c.startswith('/content/player/')])
         self.assertNotIn('/content/agb', calls)
-        self.assertIn('/content/kategorie/familienfilme', calls)      # found on a list page
+        self.assertNotIn('/fast/video-sitemap.xml', calls)            # news clips only (Mac, 20.11.2026)
+        self.assertIn('/content/kategorie/familienfilme', calls)      # the sitemap named few programmes: lists are followed
         movies = dailyme.listing(self.root, 'movies')['items']
         ip = next(r for r in movies if r['id'] == 'm.23013')
         self.assertEqual((ip['title'], ip['year'], ip['rating'], ip['duration'], ip['playable']), ('Ip Man 3', 2015, 'FSK 12', 6294, 0))
@@ -253,12 +277,17 @@ class SyncTests(Fixture):
         self.assertEqual(series['s.21745']['episodes'], 3)
         self.assertIn('Anime', series['s.21745']['genre'])
         self.assertEqual(series['s.21534']['episodes'], 2)            # one from the page, one only in the sitemap
+        vl = dailyme.episodes(self.root, 's.20410')['items']
+        self.assertEqual([(e['title'], e['episode'], e['duration']) for e in vl][:2], [('Folge 401', 401, 1457), ('Folge 402', 402, 1457)])
+        self.assertEqual(vl[0]['web_url'], 'https://www.dailyme.de/content/show/20410-verbotene-liebe-folge-401-bis-500/3809502')
+        self.assertIn('Daily Soaps', series['s.20410']['genre'])
+        self.assertNotIn('Horror', series['s.20410']['genre'])
         eps = dailyme.episodes(self.root, 's.21745')['items']
         self.assertEqual([e['episode'] for e in eps], [1, 2, 26])
         self.assertTrue(all(e['playable'] == 0 and e['web_url'].startswith('https://www.dailyme.de/content/show/21745-') for e in eps))
         kongo = {e['id']: e for e in dailyme.episodes(self.root, 's.21534')['items']}
-        self.assertEqual(kongo['e.4499038']['summary'], 'Expedition & Natur am Kongo.')
-        self.assertEqual(kongo['e.4499039']['title'], 'Hawaii')
+        self.assertEqual(kongo['e.4499038']['duration'], 44 * 60 + 19)
+        self.assertEqual(kongo['e.4499039']['web_url'], 'https://www.dailyme.de/content/show/21534-tierwelt-live-weite-welt/4499039-hawaii')
         pepper = dailyme.item(self.root, 's.24412')['item']
         self.assertEqual(pepper['rating'], 'FSK 0')
         state = dailyme.state(self.root)
@@ -276,6 +305,39 @@ class SyncTests(Fixture):
         site = Site()
         self.assertTrue(self.sync(site, now=NOW + 8 * 86400)['ok'])
         self.assertIn('/content/show/21745-to-love-ru-trouble/', site.calls)
+
+    def test_lists_not_followed_when_the_sitemap_names_enough(self):
+        old = dailyme.SITEMAP_ENOUGH
+        dailyme.SITEMAP_ENOUGH = 2
+        try:
+            self.assertTrue(self.sync()['ok'])
+        finally:
+            dailyme.SITEMAP_ENOUGH = old
+        self.assertNotIn('/content/kategorie/familienfilme', self.site.calls)
+        self.assertIn('/content/theme/family-kids', self.site.calls)
+
+    def test_interrupted_run_keeps_what_was_read_and_resumes(self):
+        class Stop(Exception):
+            pass
+        site = Site({'/content/show/23047-the-good-girl/': Stop()})
+        old = dailyme.FLUSH_EVERY
+        dailyme.FLUSH_EVERY = 1
+        try:
+            crawl = dailyme.Crawl(site, 0, now=NOW)
+            written = []
+            crawl.sink = written.extend
+            crawl.robots(); crawl.sitemaps(); crawl.collect()
+            crawl.read_shows({})
+        finally:
+            dailyme.FLUSH_EVERY = old
+        self.assertTrue(written)                                       # rows were handed out while reading
+        self.assertGreaterEqual(len({r['id'] for r in written}), 5)
+        # a second run skips programmes read within the week and reads the rest
+        self.assertTrue(self.sync()['ok'])
+        later = Site()
+        result = self.sync(later, now=NOW + 60)
+        self.assertTrue(result['ok'])
+        self.assertFalse([c for c in later.calls if c.startswith('/content/show/')])
 
     def test_robots_disallowing_everything(self):
         result = self.sync(Site(robots='User-agent: *\nDisallow: /\n'))
@@ -326,3 +388,56 @@ class WiringTests(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+SAMPLES = __import__('pathlib').Path('/mnt/project-files/dailyme_samples.zip')
+
+
+@unittest.skipUnless(SAMPLES.exists(), 'Mitschnitte vom Mac fehlen')
+class RecordedAnswers(unittest.TestCase):
+    """Answers recorded on Björn's Mac on 20.11.2026 with the app's user agent (dailyme_samples.zip)."""
+
+    @classmethod
+    def setUpClass(cls):
+        import zipfile
+        with zipfile.ZipFile(SAMPLES) as archive:
+            cls.files = {name.rsplit('/', 1)[-1]: archive.read(name).decode('utf-8', 'replace')
+                         for name in archive.namelist() if not name.endswith('/')}
+
+    def test_robots_and_sitemaps(self):
+        rules = dailyme.robots_rules(self.files['01_robots.txt'])
+        self.assertFalse(dailyme.robots_allows(rules, '/content/player/19357-x/3567462-y'))
+        self.assertTrue(dailyme.robots_allows(rules, '/content/show/24275-ploetzlich-vater/'))
+        self.assertEqual(dailyme.sitemap_entries(self.files['02_sitemap_inhalte-sitemap.xml']), ('index', ['/fast/inhalte-sitemap-1.xml']))
+        kind, entries = dailyme.sitemap_entries(self.files['05_inhalte-sitemap-1.xml'])
+        shows = {dailyme.SHOW_PATH.fullmatch(e['path']).group(1) for e in entries if dailyme.SHOW_PATH.fullmatch(e['path'])}
+        episodes = [e for e in entries if dailyme.EPISODE_PATH.fullmatch(e['path'])]
+        self.assertGreater(len(shows), 1000)
+        self.assertGreater(len(episodes), 4000)
+        self.assertEqual(dailyme.sitemap_entries(self.files['04_sitemap_video-sitemap.xml'])[1], [])   # news clips only
+
+    def test_start_page(self):
+        shows, lists = dailyme.list_page(self.files['06_start.html'])
+        self.assertGreater(len(shows), 100)
+        self.assertIn('/content/theme/filme', lists + list(dailyme.START_LISTS))
+        titled = [t for t in shows.values() if t['title']]
+        self.assertGreater(len(titled), 0.9 * len(shows))
+
+    def test_film(self):
+        facts, episodes, stub = dailyme.show_page(self.files['07_sendung_ploetzlich-vater.html'], '24275', 'ploetzlich-vater')
+        self.assertFalse(stub)
+        self.assertEqual((facts['type'], facts['title'], facts['year'], facts['fsk']), ('movie', 'Plötzlich Vater', 2013, 6))
+        self.assertEqual(facts['genres'], ['Comedy', 'Drama'])
+        self.assertIn('Fabella', facts['crumbs'])
+        self.assertGreater(facts['duration'], 3600)
+        self.assertEqual(episodes, [])
+
+    def test_series(self):
+        facts, episodes, stub = dailyme.show_page(self.files['08_sendung_verbotene-liebe.html'], '20410',
+                                                  'verbotene-liebe-folge-401-bis-500')
+        self.assertEqual((facts['type'], facts['title']), ('series', 'Verbotene Liebe (Folge 401 bis 500)'))
+        self.assertEqual(len(episodes), 100)
+        numbers = sorted(e['episode'] for e in episodes)
+        self.assertEqual((numbers[0], numbers[-1]), (401, 500))
+        self.assertTrue(all(e['duration'] and 60 < e['duration'] < 3600 for e in episodes))
+        self.assertFalse([g for g in facts['genres'] if g.upper() in ('NEWS', 'KIDS', 'AGB', 'IMPRESSUM')])

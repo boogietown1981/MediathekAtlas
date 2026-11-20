@@ -4,7 +4,7 @@
 
 - Neue Plattform „dailyme TV“: Filme, Serien, Anime und Dokus, die dailyme.de kostenlos mit Werbung und ohne Anmeldung zeigt, mit allen Folgen, FSK, Laufzeit und Beschreibung, im Werkkatalog, als eigener Reiter unter Plattformen und mit Folgen-Kacheln.
 - Abgespielt wird nur bei dailyme: „Bei dailyme ansehen“ öffnet den Titel auf dailyme.de. Der Player von dailyme braucht eine eigene Sitzung und einen Schlüssel je Video; das baut MediathekAtlas nicht nach.
-- Offline-Kopien gibt es dafür nicht; offline ansehen geht mit dem Offline-Modus der dailyme-App. Der Katalog wird schonend gelesen (robots.txt, eine Anfrage pro Sekunde, Sitemaps zuerst).
+- Offline-Kopien gibt es dafür nicht; offline ansehen geht mit dem Offline-Modus der dailyme-App. Der Katalog wird schonend gelesen (robots.txt, eine Anfrage pro Sekunde, Sitemap zuerst; ein unterbrochener Lauf setzt fort).
 
 ## Neu in 0.6.61: Verbund robuster mit iCloud
 
