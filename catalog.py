@@ -386,6 +386,30 @@ def alternatives(c,wid):
 SHOW_FIELDS=('title','year','kind','provider','reference_id','imdb_id','poster','fanart','genres','genre_source','rating','votes','rating_source','ratings','networks','studios','show_credits','artwork_provider','show_description')
 STATE_ORDER={'manual':0,'matched':1,'identified':2,'review':3,'retry':4,'pending':5,'format':6}
 
+def series_credits_from_works(metas,limit=40):
+    """Series credits assembled from the works' own cast/directors/writers (0.6.57)."""
+    from collections import Counter
+    out={}
+    for field,cap in (('cast',limit),('directors',8),('writers',8)):
+        count=Counter();first={}
+        for i,m in enumerate(metas):
+            seen=set()
+            for p in m.get(field) or []:
+                name=' '.join(str((p.get('name') if isinstance(p,dict) else p) or '').split())[:120]
+                if not name or name in seen:continue
+                seen.add(name);count[name]+=1
+                if name not in first:first[name]=(i,{})
+                if isinstance(p,dict):
+                    for k in ('role','imdb_id'):
+                        if isinstance(p.get(k),str) and p[k] and k not in first[name][1]:first[name][1][k]=p[k]
+        names=sorted(count,key=lambda n:(-count[n],first[n][0]))[:cap]
+        if not names:continue
+        if field=='cast':
+            out[field]=[{'name':n,**first[n][1]} for n in names]
+        else:out[field]=names
+    if out:out['source']='works'
+    return out
+
 def show_detail(c,show,archive=False,limit=1000):
     """Series page: show-level metadata assembled from its episodes plus all episodes by season.
 
@@ -403,6 +427,12 @@ def show_detail(c,show,archive=False,limit=1000):
         for _,m in ranked:
             v=m.get(field)
             if v not in (None,'',[],{}):summary[field]=v;break
+    credits=summary.get('show_credits')
+    if not isinstance(credits,dict) or not (credits.get('cast') or credits.get('directors')):
+        # 0.6.57 (Mac check of 0.6.55, "Der Pass", TMDB 85526): without series credits the page fell silent although
+        # the works carry cast and directors. People named in most works come first (regulars before guests).
+        fallback=series_credits_from_works([m for _,m in ranked])
+        if fallback:summary['show_credits']=fallback
     if not summary.get('show_description'):
         # Broadcaster series carry the Sendereihe text on each episode; the most frequent one wins.
         from collections import Counter

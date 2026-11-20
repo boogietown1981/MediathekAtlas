@@ -16,6 +16,8 @@ detail sources into one model:
 """
 from __future__ import annotations
 
+import re
+
 import categories
 
 PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'rtlplus': 'RTL+'}
@@ -134,6 +136,11 @@ def _portal(root, source, item_id):
         facts.append(['Sendernummer', str(it['number'])])
     if it.get('imdb_id'):
         facts.append(['IMDb-ID laut ' + PROVIDERS[source], _text(it['imdb_id'], 20)])
+        # 0.6.57: the provider's own IMDb id (Plex) lets the title page find cast and photos without a reference report.
+        own = str(it['imdb_id']).strip()
+        if re.fullmatch(r'tt\d{5,10}', own) and m['kind'] in ('movie', 'series'):
+            ref = m.get('cast_ref') or {'provider': '', 'reference_id': ''}
+            m['cast_ref'] = {**ref, 'imdb_id': ref.get('imdb_id') or own}
     if it.get('imdb_score') is not None and source == 'justwatch':
         votes = it.get('imdb_votes')
         facts.append(['IMDb-Bewertung laut JustWatch', ('%s / 10' % it['imdb_score']) + (' · %s Stimmen' % votes if votes else '')])

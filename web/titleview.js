@@ -41,18 +41,35 @@ function castPeople(cast,crew){
  return out.slice(0,24);
 }
 function castNote(sec,text,settingsLink){sec.querySelector('.tv-cast-note')?.remove();const note=el('p',text,'muted tv-cast-note');if(settingsLink){const b=el('button','Einstellungen öffnen','tv-more');b.onclick=()=>{closeTitleView();document.querySelector('[data-view="settings"]')?.click();};note.append(' ',b);}sec.append(note);}
+// 0.6.57: one card builder for the given people and for further people from TMDB ("Alle anzeigen", pages without own cast).
+const CAST_VISIBLE=14;
+function castCard(p){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;
+ const img=p.file?el('img',undefined,'tv-avatar tv-photo'):null;
+ if(img){img.alt=p.name;img.loading='lazy';img.decoding='async';img.src=castPhotoUrl(p.file);img.onerror=()=>img.replaceWith(el('span',ini,'tv-avatar'));}
+ c.append(img||el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');return c;}
+function castHeading(sec){const boxes=[...sec.querySelectorAll('.tv-person')],crew=boxes.filter(b=>b.dataset.crew==='1').length;sec.querySelector('h2').textContent=crew?(crew<boxes.length?'Besetzung & Regie':'Regie'):'Besetzung';}
+function castMore(sec,row,more){
+ sec.querySelector('.tv-cast-more')?.remove();if(!more?.length)return;
+ const add=list=>{for(const p of list){const c=castCard(p);if(p.crew)c.dataset.crew='1';row.append(c);}castHeading(sec);};
+ const shown=row.querySelectorAll('.tv-person').length;
+ if(!shown){add(more.slice(0,CAST_VISIBLE));more=more.slice(CAST_VISIBLE);}
+ if(!more.length)return;
+ const b=el('button',(shown?'Weitere ':'Alle ')+more.length+' anzeigen','tv-more tv-cast-more');b.title='Vollständige Besetzung laut TMDB';
+ b.onclick=()=>{b.remove();add(more);};sec.querySelector('h2').after(b);
+}
 async function castPhotos(row,cast,context){
  const sec=row.closest('.tv-section-cast');
- if(!context||!cast?.length)return;
- if(!latestSettings?.tmdb_set){if(sec)castNote(sec,'Fotos der Mitwirkenden erscheinen, sobald in den Einstellungen unter „Metadatenanbieter & Schlüssel“ ein TMDB-Zugang hinterlegt ist.',true);return;}
+ if(!context)return;
+ if(!latestSettings?.tmdb_set){if(sec&&cast?.length)castNote(sec,'Fotos der Mitwirkenden erscheinen, sobald in den Einstellungen unter „Metadatenanbieter & Schlüssel“ ein TMDB-Zugang hinterlegt ist.',true);return;}
  const seq=titleSequence;let d;
- try{d=await api('cast-photos',{people:cast.slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context});}catch{if(sec&&row.isConnected)castNote(sec,'Fotos sind gerade nicht abrufbar. Es werden die Namen angezeigt.');return;}
+ try{d=await api('cast-photos',{people:(cast||[]).slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context,more:true});}catch{if(sec&&row.isConnected&&cast?.length)castNote(sec,'Fotos sind gerade nicht abrufbar. Es werden die Namen angezeigt.');return;}
  if(seq!==titleSequence||!row.isConnected)return;
  for(const box of row.querySelectorAll('.tv-person')){const name=box.dataset.name,file=d.files?.[name],url=d.photos?.[name];
   const src=file?castPhotoUrl(file):(url&&safeArt(url)?url:'');
   if(src){const img=el('img',undefined,'tv-avatar tv-photo');img.alt=name;img.loading='lazy';img.decoding='async';img.src=src;img.onerror=()=>img.replaceWith(el('span',box.dataset.initials,'tv-avatar'));box.querySelector('.tv-avatar')?.replaceWith(img);}
   const role=d.roles?.[name];if(role&&!box.querySelector('small'))box.append(el('small',role));}
- if(sec&&d.error&&!Object.keys(d.photos||{}).length)castNote(sec,'TMDB ist gerade nicht erreichbar. Fotos folgen beim nächsten Öffnen.');
+ if(sec){castMore(sec,row,d.more);if(row.childElementCount)sec.hidden=false;}
+ if(sec&&d.error&&!Object.keys(d.photos||{}).length&&row.childElementCount)castNote(sec,'TMDB ist gerade nicht erreichbar. Fotos folgen beim nächsten Öffnen.');
 }
 function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,crew,image,castRef}){
  const art=image||artImage;
@@ -72,8 +89,9 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,cr
  const dl=el('dl',undefined,'tv-info');for(const [k,v] of info){if(v)dl.append(el('dt',k),el('dd',v));}if(dl.childElementCount)text.append(dl);
  body.append(cover,text);wrap.append(body);
  const out=[wrap];
- const people=castPeople(cast,crew);
- if(people.length){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2',people.some(p=>p.crew)?(people.some(p=>!p.crew)?'Besetzung & Regie':'Regie'):'Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of people){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,people,castRef===undefined?castContext(meta):castRef);}
+ const people=castPeople(cast,crew),ctx=castRef===undefined?castContext(meta):castRef;
+ // 0.6.57: a page without own cast (Plex, series without credits) gets a hidden section that TMDB may fill.
+ if(people.length||(ctx&&latestSettings?.tmdb_set)){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of people){const c=castCard(p);if(p.crew)c.dataset.crew='1';row.append(c);}sec.append(row);castHeading(sec);sec.hidden=!people.length;out.push(sec);castPhotos(row,people,ctx);}
  return out;
 }
 function ratingFact(m){const r=Number(m.rating);if(m.rating==null||m.rating===''||!Number.isFinite(r))return null;const s=el('span','★ '+r.toLocaleString('de-DE',{maximumFractionDigits:1}),'tv-rating');s.title=ratingSource(m)+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':'');return s;}

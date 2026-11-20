@@ -2219,7 +2219,7 @@ def post_cast_photos(self,path,d):
     import cast_photos
     people=d.get('people',[]);context=d.get('context',{})
     if not isinstance(people,list) or not isinstance(context,dict):raise ValueError('Ungültige Besetzung')
-    return self.send(cast_photos.lookup(ROOT,settings().get('tmdb',''),people[:cast_photos.MAX_PEOPLE],context))
+    return self.send(cast_photos.lookup(ROOT,settings().get('tmdb',''),people[:cast_photos.MAX_PEOPLE],context,more=bool(d.get('more'))))   # 0.6.57: more = further people of the title
 
 @ROUTES.get('/api/cast-photo',stage='signed')
 def get_cast_photo(self,path):
