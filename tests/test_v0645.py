@@ -81,7 +81,7 @@ class ServusRefusedPages(ServusBase):
 
 class PlayerOnlyAtProvider(unittest.TestCase):
     def test_provider_player_only_is_never_playable_here(self):
-        self.assertEqual(portal_title.PROVIDER_PLAYER_ONLY, {'joyn', 'rtlplus', 'crunchyroll', 'filmfriend'})   # + 0.6.52
+        self.assertEqual(portal_title.PROVIDER_PLAYER_ONLY, {'joyn', 'rtlplus', 'crunchyroll', 'filmfriend', 'dailyme'})   # + 0.6.52, + 0.6.62
         for source in ('joyn', 'rtlplus', 'crunchyroll'):
             self.assertFalse(portal_title._episode(source, {'id': 'x', 'title': 'Folge'})['playable'])
         self.assertTrue(portal_title._episode('servustv', {'id': 'x', 'title': 'Folge'})['playable'])

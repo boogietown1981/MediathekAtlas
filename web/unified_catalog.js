@@ -8,11 +8,11 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','redbulltv','dmax','filmfriend','rtlplus'];
-  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',rtlplus:'RTL+'};
+  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','redbulltv','dmax','filmfriend','dailyme','rtlplus'];
+  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',dailyme:'dailyme TV',rtlplus:'RTL+'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
-  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,redbulltv:()=>window.playRedBullTV,dmax:()=>window.playDmax,filmfriend:()=>null,rtlplus:()=>null};
-  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen',servustv:'Bei ServusTV ansehen',redbulltv:'Bei Red Bull TV ansehen',dmax:'Beim Sender ansehen',filmfriend:'Bei filmfriend ansehen',rtlplus:'Bei RTL+ ansehen'};
+  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,redbulltv:()=>window.playRedBullTV,dmax:()=>window.playDmax,filmfriend:()=>null,dailyme:()=>null,rtlplus:()=>null};
+  const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen',servustv:'Bei ServusTV ansehen',redbulltv:'Bei Red Bull TV ansehen',dmax:'Beim Sender ansehen',filmfriend:'Bei filmfriend ansehen',dailyme:'Bei dailyme ansehen',rtlplus:'Bei RTL+ ansehen'};
   const TYPES = ['movies','series'];
   let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0,lang='';
   let seriesKey='',seriesTitle='';
@@ -114,7 +114,7 @@
   // recognition board; Netzkino, Pluto TV and JustWatch TV get their own catalogue, scan and
   // work-assignment progress; "Gesamt" shows the ARD/ZDF board plus all portal catalogues.
   let portalTimer=0,portalSeq=0;
-  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync',youtube:'youtube-sync',joyn:'joyn-sync',toggo:'toggo-sync',crunchyroll:'crunchyroll-sync',plex:'plex-sync',servustv:'servustv-sync',redbulltv:'redbulltv-sync',dmax:'dmax-sync',filmfriend:'filmfriend-sync',rtlplus:'rtlplus-sync'};
+  const SYNC={netzkino:'netzkino-sync',pluto:'pluto-sync',justwatch:'justwatch-sync',rakuten:'rakuten-sync',youtube:'youtube-sync',joyn:'joyn-sync',toggo:'toggo-sync',crunchyroll:'crunchyroll-sync',plex:'plex-sync',servustv:'servustv-sync',redbulltv:'redbulltv-sync',dmax:'dmax-sync',filmfriend:'filmfriend-sync',dailyme:'dailyme-sync',rtlplus:'rtlplus-sync'};
   const num=n=>Number(n||0).toLocaleString('de-DE');
   const when=t=>t?new Date(t*1000).toLocaleString('de-DE',{day:'2-digit',month:'2-digit',year:'numeric',hour:'2-digit',minute:'2-digit'}):'noch nie';
   function portalBoard() {
@@ -620,6 +620,7 @@
     const rpNeeded=(source==='all'||source==='rtlplus') && !seriesKey;
     const dxNeeded=(source==='all'||source==='dmax') && !seriesKey && kind!=='movies';   // 0.6.48: programmes only
     const ffNeeded=(source==='all'||source==='filmfriend') && !seriesKey;   // 0.6.52
+    const dmNeeded=(source==='all'||source==='dailyme') && !seriesKey;   // 0.6.62
     const nkView=seriesKey?'episodes':kind;
     const requests=[];
     if (medNeeded)requests.push({source:'mediatheken',req:window.api('catalog?'+new URLSearchParams({
@@ -666,6 +667,9 @@
       view:'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     if (ffNeeded)requests.push({source:'filmfriend',req:window.api('filmfriend?'+new URLSearchParams({
+      view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
+    }))});
+    if (dmNeeded)requests.push({source:'dailyme',req:window.api('dailyme?'+new URLSearchParams({
       view:kind==='movies'?'movies':'series',q:search,genre,sort:sort==='year'?'year':'title',offset:String(offset),limit:'48',collection
     }))});
     const responses=await Promise.allSettled(requests.map(x=>x.req));

@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.62 – dailyme TV (20. November 2026)
+- Automatisch (Cloud): gesamte Python-Suite 1692 Tests grün (4 übersprungen), neu `tests/test_v0662_dailyme.py` (robots.txt, Listen, Film-/Serienseiten, JSON-LD, JavaScript-Hülle, Sitemaps, Bildhosts, Lauf mit Zählern, zweiter Lauf innerhalb einer Woche, robots sperrt alles, Netzfehler, nie eine Player-Quelle, Verdrahtung); `node tests/*.cjs` grün; `click_all.cjs` und `dmax_joyn.cjs` (dailyme-Reiter, Filme, Serie mit Folgen-Kacheln „Anbieter“, Links zu dailyme.de) ohne Befund.
+- Nicht geprüft (dailyme.de aus der Cloud gesperrt): echtes Seiten-HTML mit dem eigenen User-Agent, Größe und Aufbau der Sitemaps, Dauer eines vollen Laufs, Anteil erkannter Filme/Serien, Öffnen der Links im Browser. Mac-Prüfung steht aus.
+
 ## 0.6.61 – Verbund: Befunde der Mac-Prüfung (20. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0661_verbund_followup.py` (Feld `name` im Protokoll, auto_tick meldet und räumt auf, dataless-Erkennung, langsames Nachladen mit Frist ohne zweiten Ladevorgang, Lesefehler hält die Position, gesperrter Zwischenspeicher).
 - Nicht geprüft (nur auf dem Mac): echtes `SF_DATALESS` unter macOS 27, Dauer des Nachladens durch iCloud, Sicherung von 2,9 GB mit Protokolleintrag.
