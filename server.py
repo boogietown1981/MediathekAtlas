@@ -509,7 +509,7 @@ def _unknown_summary():
         with db() as c:s=catalog.get_state(c,'unknown_sweep',{}) or {}
     except Exception:return {}
     keys=('finished','changed','candidates','classified','remaining','remaining_channels','remaining_topics',
-          'set_aside','unknown_by_state','unknown_left','rubric_reopened','total_changed')
+          'set_aside','unknown_by_state','unknown_left','rubric_reopened','set_aside_restored','total_changed')
     return {k:s[k] for k in keys if k in s}
 def recognition():
     # Grouping 700k works by channel takes seconds; compute in the background and reuse for 10 minutes.

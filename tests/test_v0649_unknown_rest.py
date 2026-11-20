@@ -37,16 +37,18 @@ def movie(title, similarity=1.0, **extra):
     return {'provider': 'IMDb Offline', 'kind': 'movie', 'title': title, 'similarity': similarity, **extra}
 
 
-def series(title, similarity=1.0, ref='tt1'):
-    return {'provider': 'IMDb Offline', 'kind': 'series', 'title': title, 'similarity': similarity, 'reference_id': ref}
+def series(title, similarity=1.0, ref='tt1', year=None, **extra):
+    return {'provider': 'IMDb Offline', 'kind': 'series', 'title': title, 'similarity': similarity, 'reference_id': ref,
+            'year': year, 'confidence': 'high', **extra}
 
 
 class WeakSuggestionTests(unittest.TestCase):
     def weak(self, s, duration=1500, sendung='DOK'):
-        return catalog.suggestion_weak(s, {'duration': duration}, sendung)
+        return catalog.suggestion_weak(s, {'duration': duration, 'timestamp': 1795100000}, sendung)
 
     def test_no_evidence_against_the_sendung(self):
-        self.assertTrue(self.weak(series('DOK', ref='tt1')))                      # the Sendung itself (ambiguous)
+        self.assertTrue(self.weak(series('DOK', year=1954)))                      # an old namesake (Top Secret 1954)
+        self.assertTrue(self.weak(series('Arena', year=1975), sendung='Arena'))
         self.assertTrue(self.weak(series('Dok Leipzig', similarity=.8)))          # fuzzy series name
         self.assertTrue(self.weak(movie('Heimweh', runtime_mismatch=True)))       # 90-min film vs. 25-min clip
         self.assertTrue(self.weak(movie('Heimweh', year_mismatch=True)))
@@ -54,6 +56,11 @@ class WeakSuggestionTests(unittest.TestCase):
 
     def test_suggestions_that_could_be_right(self):
         self.assertFalse(self.weak(series('Heimweh')))                            # another series of exactly this title
+        # Gegenprobe 20.11.2026: the Sendung's own series is evidence for the work (NACHTCAFÉ, 1 gegen 100).
+        self.assertFalse(self.weak(series('Nachtcafé', year=1987), sendung='NACHTCAFÉ'))
+        self.assertFalse(self.weak(series('DOK')))                                # year unknown: in doubt open
+        self.assertFalse(self.weak(series('Sag die Wahrheit', year=2016, episode_verified=True), sendung='Sag die Wahrheit'))
+        self.assertFalse(self.weak(series('Sag die Wahrheit', year=1954, season=3, episode=4), sendung='Sag die Wahrheit'))
         self.assertFalse(self.weak(movie('Heimweh')))                             # same title, running time unknown/agrees
         self.assertFalse(self.weak(movie('Die Frau im Mond', similarity=.9), duration=5400))  # fuzzy, but film length
 
@@ -97,7 +104,7 @@ class SweepTests(unittest.TestCase):
                 offer('Zwei', 'Kleine Sendung', channel='ORF', n=8),
                 offer('Drei', 'Kleine Sendung', channel='ORF', n=9)]
         setup = {
-            'Auf und davon': dict(suggestions=[series('DOK', ref='tt1'), series('DOK', ref='tt2')]),
+            'Auf und davon': dict(suggestions=[series('DOK', ref='tt1', year=1954), series('DOK', ref='tt2', year=1963)]),
             'Heimweh': dict(suggestions=[movie('Heimweh', runtime_mismatch=True)]),
             'Die Bergbauern': dict(suggestions=[movie('Die Bergbauern')]),                 # could be right
             'Grenzgänger': dict(suggestions=[movie('Grenzgänger!', similarity=.9)]),       # feature length
@@ -170,6 +177,27 @@ class SweepTests(unittest.TestCase):
             c.execute("UPDATE works SET state='review' WHERE id=?", (wid,))
         self.sweep()
         self.assertEqual(self.works()['Auf und davon']['kind'], 'unknown')       # the user's request wins
+
+    def test_first_049_decisions_against_good_suggestions_are_undone(self):
+        with self.db() as c:
+            row = c.execute("SELECT * FROM works WHERE title='Die Bergbauern'").fetchone()
+            m = json.loads(row['meta'])
+            m['suggestions'] = [series('DOK', year=2005)]                           # the Sendung's own series
+            m['unknown_before'] = {'title': row['title'], 'kind': 'unknown', 'rev': 2, 'suggestions': m['suggestions']}
+            catalog.file_under_sendung(c, row, m, catalog.best_source(c, row['id']), 'DOK', 'contribution')
+            old = c.execute("SELECT * FROM works WHERE title='Grenzgänger'").fetchone()
+            m2 = json.loads(old['meta'])
+            m2['unknown_before'] = {'title': old['title'], 'kind': 'unknown', 'rev': 2, 'suggestions': [series('DOK', year=1954)]}
+            catalog.file_under_sendung(c, old, m2, catalog.best_source(c, old['id']), 'DOK', 'contribution')
+            self.assertEqual(catalog.unknown_recheck_set_aside(c), 1)
+            self.assertEqual(catalog.unknown_recheck_set_aside(c), 0)                 # once
+        w = self.works()
+        self.assertEqual((w['Die Bergbauern']['kind'], w['Die Bergbauern']['state'], w['Die Bergbauern']['title']),
+                         ('unknown', 'review', 'Die Bergbauern'))
+        self.assertEqual(w['Die Bergbauern']['meta']['suggestions'][0]['year'], 2005)
+        self.assertEqual(w['Grenzgänger']['state'], 'format')                       # weak namesake: stays filed
+        info = self.sweep()
+        self.assertEqual(self.works()['Die Bergbauern']['kind'], 'unknown')
 
     def test_new_rules_run_right_after_the_update(self):
         with self.db() as c:
