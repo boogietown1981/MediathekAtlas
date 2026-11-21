@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.72 – Sicherung, Startprotokoll, Samsung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0672_backup_followup.py` (Klick während laufender Sicherung, Anfrage während der Sicherung, Version im Startprotokoll über das echte `launcher.sh`, Samsung Automatik/gleiche Region).
+- Nicht geprüft (nur auf dem Mac): Doppelklick in der echten Oberfläche, Startprotokoll der gebauten App.
+
 ## 0.6.69 – Datenbanksicherung (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0669_backup_tasks.py` (jede startbare Aufgabe startet, „läuft bereits“ ohne Fehler, Sicherung wird bei ständigem Schreiben fertig, ein Schritt mit WAL / kleine Schritte ohne).
 - Nicht geprüft (nur auf dem Mac): Sicherung der echten 2,9-GB-Datenbank bei laufender Erkennung (Dauer, Größe der WAL-Datei währenddessen).

@@ -303,7 +303,14 @@ def state(root):
 def set_auto(root, enabled):
     if type(enabled) is not bool:
         raise ValueError('Automatik muss ausdrücklich ein- oder ausgeschaltet werden')
-    _update(root, auto=enabled)
+    # 0.6.72: switched back on, the next load gets a real time (12 h after the last success, at the
+    # earliest now) instead of 0, which showed no time and meant "at once" (Mac check 21.11.2026).
+    fields = {'auto': enabled}
+    if enabled:
+        data = _load(root); now = time.time(); last = float(data['last_success'] or 0)
+        if not float(data['next_attempt'] or 0):
+            fields['next_attempt'] = max(now, last + REFRESH) if last else now
+    _update(root, **fields)
     return state(root)
 
 
@@ -311,6 +318,9 @@ def set_region(root, region):
     region = str(region or '').lower()
     if region not in REGIONS:
         raise ValueError('Unbekannte Region; erlaubt sind ' + ', '.join(r.upper() for r in REGIONS))
+    # 0.6.72: only a different region makes the next load due at once; the same region keeps its time.
+    if region == _load(root)['region']:
+        return state(root)
     _update(root, region=region, next_attempt=0.0)
     return state(root)
 

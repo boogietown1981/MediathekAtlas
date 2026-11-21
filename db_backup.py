@@ -191,6 +191,8 @@ def loop(root,stop,events=None,errors=None,first_delay=600,interval=3600):
                     if events:events('db_backup_created',name=(made.get('backup') or {}).get('name'),removed=removed,requested=True)
                 last=_STATE.get('last') or {}
                 task_control.note('backup','Letzte Sicherung: '+str(last.get('name') or '–'))
+                # 0.6.72: a start requested while this one ran is answered by it, not by a second full copy.
+                if task_control.take_request('backup') and events:events('db_backup_busy',requested=True,merged=True)
             except BackupRunning:
                 # A manual backup is still running: that one counts, nothing to repeat now.
                 task_control.note('backup','Sicherung läuft bereits')

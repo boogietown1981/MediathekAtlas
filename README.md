@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.69
+# MediathekAtlas · 0.6.72
+
+## Neu in 0.6.72
+
+- Ein Doppelklick auf „Starten“ der Datenbanksicherung legt keine zweite volle Kopie mehr an.
+- Samsung TV Plus zeigt nach dem Wiedereinschalten der Automatik die Zeit des nächsten Abrufs. Österreichische und Schweizer Sender lassen sich aus Deutschland oft nicht abspielen (Sperre des Anbieters).
 
 ## Neu in 0.6.69: Datenbanksicherung zuverlässig
 

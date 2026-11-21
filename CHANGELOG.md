@@ -1,3 +1,10 @@
+## 0.6.72 – Datenbanksicherung: kein Doppelstart, Version im Startprotokoll, Samsung-Abrufzeit
+- Hinweise der Mac-Prüfung von 0.6.69 (21.11.2026, bestanden). Basis 0.6.69 (PR #102). 0.6.70/0.6.71 gehören zur Erkennungskette.
+- Ein zweiter Klick auf „Starten“ der Datenbanksicherung legte nach der ersten eine zweite volle Kopie an (die Sicherungsschleife arbeitete die Anfrage danach ab). Jetzt: läuft eine Sicherung, gibt es keine neue Anfrage („Sicherung läuft bereits“, `db_backup_busy`); eine während der Sicherung eingegangene Anfrage wird von dieser beantwortet.
+- Startprotokoll (macOS): „MediathekAtlas 0.6.62 Startprüfung“ stand fest in `launcher.sh`; die Version kommt jetzt aus `version.py`.
+- Samsung TV Plus: Automatik wieder an setzte keinen nächsten Abruf (0 = sofort, ohne Zeitangabe). Jetzt 12 h nach dem letzten erfolgreichen Abruf, frühestens jetzt. Dieselbe Region erneut wählen lässt die geplante Zeit stehen (vorher 0 und damit ein Abruf, sobald die Automatik an war). Bekannt: österreichische Sender liefern aus Deutschland keinen Stream (Geosperre des Anbieters, wird nicht umgangen).
+- Tests: neu `tests/test_v0672_backup_followup.py` (5, alle schlagen mit dem alten Code fehl).
+
 ## 0.6.69 – Datenbanksicherung: Start über „Aufgaben“, kein Neubeginn bei laufender Erkennung
 - Befunde der Mac-Prüfung von 0.6.61 (21.11.2026). Basis: 0.6.62 (dailyme, PR #101) und 0.6.64 (Samsung TV Plus, PR #100), beide auf 0.6.61, hier zu einem Kettenstand zusammengeführt.
 - „Aufgaben“ → Datenbanksicherung → Starten brach mit `KeyError 'portal'` ab: `server.task_action` behandelte jede startbare Aufgabe ohne eigenen Zweig als Plattform-Katalogabruf. Jetzt stellt „Starten“ eine Anfrage an die Sicherungsschleife (`task_control.request('backup')`), die sie innerhalb von 5 s aufnimmt. Ein Test startet jede startbare Aufgabe einmal.

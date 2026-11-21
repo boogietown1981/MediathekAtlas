@@ -298,7 +298,11 @@ def task_action(task,action,value=None):
         if task=='filmlist':SERVICE.restart.set();SERVICE.wake.set()
         elif task=='imdb':IMDB.request()
         # 0.6.69: the backup loop picks up the request (before: KeyError 'portal', the task has no portal).
-        elif task=='backup':task_control.request('backup')
+        elif task=='backup':
+            # 0.6.72: a second click while a snapshot is written is no second full copy (Mac check: two backups 5 s apart).
+            if db_backup.status().get('phase')=='running':
+                task_control.note('backup','Sicherung läuft bereits');diagnostics.event('db_backup_busy',requested=True)
+            else:task_control.request('backup')
         elif spec.get('portal')=='samsung':samsung_tvplus.start_sync(ROOT)
         else:_PORTAL_MODULES[spec['portal']][0].start_sync(ROOT)
     else:raise ValueError('Unbekannte Aktion')
