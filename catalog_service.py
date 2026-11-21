@@ -1218,7 +1218,7 @@ class Service:
         diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
                           classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
                           set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,set_aside_restored=restored,
-                          set_aside_kept=summary.get('set_aside_kept',0),set_aside_kept_samples=summary.get('set_aside_kept_samples',[]),
+                          set_aside_kept=summary.get('set_aside_kept',0),wikidata_old_set_aside=summary.get('wikidata_old_set_aside',0),set_aside_kept_samples=summary.get('set_aside_kept_samples',[]),
                           blocking_samples=summary.get('blocking_samples',[]),
                           remaining_channels=summary.get('remaining_channels',{}),
                           remaining_topics=summary.get('remaining_topics',[])[:20],
@@ -1247,7 +1247,7 @@ class Service:
         write batches after the web server is up; a busy database only postpones the next batch."""
         with self.db() as c:
             if catalog.get_state(c,'refile_reset_v0673',False):
-                self.refile_clip_shows();self.reset_old_miniseries()
+                self.once_v0678()
                 return self.requeue_covered_series()
         total={'edition':0,'segment':0}
         while not self.stop.is_set():
@@ -1269,8 +1269,101 @@ class Service:
         due=self.requeue_new_editions()
         if due is None:return                              # stopped: run again next start
         with self.db() as c:catalog.set_state(c,'refile_reset_v0673',True)
-        self.refile_clip_shows();self.reset_old_miniseries()
+        self.once_v0678()
         self.requeue_covered_series()
+
+    def once_v0678(self):
+        self.refile_clip_shows();self.reset_old_miniseries();self.reseed_portal();self.heal_dated_segments()
+
+    def heal_when_ready(self):
+        """0.6.78: retry heal_dated_segments from the episode loop once the IMDb archive is open (every 10 min)."""
+        if getattr(self,'_healed_v0678',False) or time.monotonic()-getattr(self,'_heal_try',-1e9)<600:return
+        self._heal_try=time.monotonic()
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        if not (archive and archive.updated):return
+        try:
+            with self.db() as c:
+                if catalog.get_state(c,'dated_segments_v0678',False):self._healed_v0678=True;return
+            self.heal_dated_segments()
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1
+    def heal_dated_segments(self):
+        lock=self.__dict__.setdefault('_heal_lock',threading.Lock())
+        if not lock.acquire(blocking=False):return            # refile_loop and episode loop: one at a time
+        try:self._heal_dated_segments()
+        finally:lock.release()
+    def _heal_dated_segments(self):
+        """0.6.78, once (needs the archive): contributions filed by the longer bound of 0.6.75/0.6.76 are checked
+        against the current bound (edition length = IMDb runtime or median of filed editions, see dated_clip_limit).
+
+        Mac-Prüfung 0.6.77: Björn's catalogue already ran 0.6.76; its 727 whole editions of „Gesichter &
+        Geschichten“ stayed contributions because 0.6.77 only changed the rule for new filings. Still covered →
+        relabelled 'imdb_dated_v0677'; otherwise the filing is taken back and the episode queue checks the work again."""
+        import imdb_archive
+        with self.db() as c:
+            if catalog.get_state(c,'dated_segments_v0678',False):return
+        archive=imdb_archive.ACTIVE
+        # without the archive every bound is unknown: the episode loop calls again (heal_when_ready)
+        if not (archive and archive.updated):return
+        after='';kept=undone=0;shows={};dated={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    rows=catalog.dated_segments(c,after)
+                    if not rows:break
+                    after=rows[-1]['id']
+                    for row in rows:
+                        if not row['payload']:continue
+                        try:m=json.loads(row['meta'] or '{}');source=json.loads(row['payload'])
+                        except (TypeError,ValueError):continue
+                        try:duration=int(source.get('duration') or 0)
+                        except (TypeError,ValueError):duration=0
+                        if duration<600:continue                 # ordinary bound, not the longer one
+                        ref=str(m.get('reference_id') or '')
+                        if m.get('format_rule') not in catalog.DATED_SEGMENT_RULES:
+                            # unlabelled (0.6.75): only offers of a Sendung IMDb lists as dated editions
+                            if ref not in dated:
+                                try:dated[ref]=bool(archive.dated_format(ref)[0])
+                                except Exception:dated[ref]=None
+                            if not dated[ref]:continue
+                        limit=self.dated_clip_limit(m,c,row['show_key'])
+                        title=m.get('title') or ''
+                        if limit and duration<limit:
+                            if catalog.relabel_segment(c,row,'imdb_dated_v0677'):kept+=1
+                        elif catalog.undo_segment(c,row,'Beitrags-Einordnung zurückgenommen (0.6.78): ganze Ausgabe der Sendung „%s“; Folge wird neu gesucht.'%title):
+                            undone+=1;shows[title]=shows.get(title,0)+1
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if undone:catalog.invalidate_listings()
+        top=sorted(shows.items(),key=lambda x:-x[1])[:20]
+        diagnostics.event('episode_dated_segments_healed',undone=undone,kept=kept,shows=dict(top))
+        with self.db() as c:catalog.set_state(c,'dated_segments_v0678',{'undone':undone,'kept':kept,'shows':dict(top),'at':time.time()})
+
+    def reseed_portal(self):
+        """0.6.78, once: Planet Schule works are recognised again with the series from their title."""
+        with self.db() as c:
+            if catalog.get_state(c,'portal_reseed_v0678',False):return
+        after='';done=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,after=catalog.portal_reseed(c,after=after)
+                done+=n
+                if after is None:break
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if done:
+            diagnostics.event('catalog_portal_reseeded',works=done);catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'portal_reseed_v0678',{'works':done,'at':time.time()})
 
     def refile_clip_shows(self):
         """0.6.77, once: works flagged "vielleicht nur Kurzformat" against a series runtime whose Sendung publishes
@@ -1410,7 +1503,7 @@ class Service:
             requested=max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2))))
             if index>=requested or not self.settings().get('auto_metadata',True) or task_control.paused('episodes'):
                 self.stop.wait(2);continue
-            if index==0:self.note_archive_wait()
+            if index==0:self.note_archive_wait();self.heal_when_ready()
             try:busy=self.metadata_once('episode')
             except sqlite3.OperationalError as exc:
                 if not sqlite_busy(exc):raise

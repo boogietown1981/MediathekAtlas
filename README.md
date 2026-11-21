@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.77
+# MediathekAtlas · 0.6.78
+
+## Neu in 0.6.78: Korrektur nach der Mac-Prüfung von 0.6.77
+
+- Schon zuvor falsch als Beitrag eingeordnete ganze Ausgaben (etwa „Gesichter & Geschichten“) werden einmalig nach der aktuellen Regel geprüft und, wenn sie keine Beiträge sind, wieder zur Folgensuche freigegeben.
+- Die Art-Einordnung läuft nach dem Update sofort neu, damit alte Wikidata-Vorschläge nicht erst nach sechs Stunden wirken.
+- „Planet Schule“: Die Reihe steht im Titel nach dem Punkt („Das schnelle Pendel · Achtung! Experiment“) und wird jetzt als Serie erkannt.
 
 ## Neu in 0.6.77: Befunde der Nachtdiagnose
 

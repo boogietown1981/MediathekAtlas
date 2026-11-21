@@ -443,7 +443,8 @@ def wikidata(title,kind,year):
         _WD_CACHE[ck]=(time.monotonic(),d)
     return d
 
-GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten'}
+GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten',
+         'planet schule'}   # 0.6.78: portal topic, the series is in the title (catalog.portal_series)
 # 0.6.49 (third Gegenprobe, 20.11.2026): 3sat/ZDF/ARD file programmes under subject rubrics; Wikidata answered
 # "Reise" and "Musik" with the concepts themselves. They name no Sendung (866 works "Reise", 411 "Musik").
 GENERIC|={'reise','musik','politik','tiere','natur','wintersport','doku und reportage','dokumentationen und reportagen',
