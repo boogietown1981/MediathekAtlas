@@ -109,7 +109,7 @@ class ClipSendung(Worker):
             self.assertFalse(catalog.clip_sendung_offer({'kind': 'series'}, {'title': 'Folge 3: Am Hafen', 'duration': 200}))
             self.assertFalse(catalog.clip_sendung_offer({'kind': 'series'}, {'title': 'Am Hafen', 'duration': 900}))
             self.assertFalse(catalog.clip_sendung_offer({'kind': 'series', 'episode': 4}, {'title': 'Am Hafen', 'duration': 200}))
-            self.assertTrue(catalog.clip_sendung_offer({'kind': 'series'}, {'title': 'Am Hafen', 'duration': 200}))
+            self.assertTrue(catalog.clip_sendung_offer({'kind': 'series'}, {'title': 'Am Hafen', 'topic': 'Hallo Niedersachsen', 'duration': 200}))
         few = self.clips('Kurzreport', 12, ref='f1')
         with self.db() as c:
             show = c.execute('SELECT show_key FROM works WHERE id=?', (few[0],)).fetchone()[0]
@@ -122,6 +122,7 @@ class ParkedRequeue(Worker):
         logo = self.add(offer('logo! vom Donnerstag, 4. Juni 2026', 'logo!', 'logo1', 640, 'KiKA', stamp), 'logo!', 'logo-154')
         drama = self.add(offer('Das Erbe', 'Familie Sonnenfeld', 'fs1', 5400), 'Familie Sonnenfeld', '55')
         clips = self.clips('Hallo Niedersachsen', 22)
+        self.add(offer('Hallo Niedersachsen', 'Hallo Niedersachsen', 'hn-full', 1800), 'Hallo Niedersachsen')  # 0.6.85: whole edition
         future = time.time() + 20 * 86400
         with self.db() as c:
             c.execute("UPDATE episode_queue SET last_outcome='unresolved',next_try=?", (future,))

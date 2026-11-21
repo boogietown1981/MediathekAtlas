@@ -1,6 +1,11 @@
-# MediathekAtlas · 0.6.84
+# MediathekAtlas · 0.6.85
 
-## Neu in 0.6.84: Planet Schule bleibt wirklich bei seiner Reihe
+## Neu in 0.6.85: Kurzserien bleiben Serien, letzte Planet-Schule-Werke
+
+- Kurze Clips gelten nur dann als Beitrag einer Sendung, wenn die Sendung auch ganze Ausgaben (ab 20 Minuten) zeigt; Kurzserien wie „JoNaLu-Minis“ oder ARTE „Kurz und witzig“ bleiben Serien. Schon so abgelegte Werke werden zurückgenommen.
+- Werke, die unter einem anderen oder leeren Thema noch „Planet Schule“ heißen, bekommen ihre Reihe aus dem Titel.
+
+## Neu in 0.6.84 (nicht ausgegeben, in 0.6.85 enthalten): Planet Schule bleibt wirklich bei seiner Reihe
 
 - Die gelernte Serienvorlage für das Thema „planet schule“ gab neu erkannten Werken sofort wieder den Portalnamen; sie wird vergessen, für Portale und Rubriken nicht mehr gelernt, und ein Treffer, der nur das Portal ist („Planet Schule“ bei TVDB), wird nie automatisch übernommen. Betroffene Werke werden einmal neu erkannt.
 

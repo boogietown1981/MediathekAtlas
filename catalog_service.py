@@ -1290,7 +1290,33 @@ class Service:
 
     def once_v0678(self):
         self.refile_clip_shows();self.restore_clip_episodes();self.reset_old_miniseries();self.reseed_portal();self.heal_dated_segments()
-        self.requeue_parked()
+        self.undo_clip_sendung();self.requeue_parked()
+
+    def undo_clip_sendung(self):
+        """0.6.85, once: clip_sendung_v0683 filings of Kurzserien/Kinderprogrammen are series works again."""
+        with self.db() as c:
+            if catalog.get_state(c,'clip_sendung_undo_v0685',False):return
+        after='';done=0;seen=set();shows={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:keys,after=catalog.clip_sendung_filed(c,after)
+                for show in keys:
+                    if show in seen:continue
+                    seen.add(show)
+                    with self.db() as c:
+                        n=catalog.undo_clip_sendung(c,show)
+                        if n:
+                            done+=n;title=c.execute('SELECT title FROM works WHERE show_key=? LIMIT 1',(show,)).fetchone()
+                            shows[title[0] if title else show]=n
+                if after is None:break
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if done:diagnostics.event('episode_clip_sendung_undone',works=done,shows=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]));catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'clip_sendung_undo_v0685',{'works':done,'shows':shows,'at':time.time()})
 
     def requeue_parked(self):
         """0.6.83, once: parked „ohne Treffer“ entries that today's rules file as edition/contribution are due again
@@ -1413,7 +1439,7 @@ class Service:
     def reseed_portal(self):
         """0.6.78, once: Planet Schule works are recognised again with the series from their title."""
         with self.db() as c:
-            if catalog.get_state(c,'portal_reseed_v0684',False):return
+            if catalog.get_state(c,'portal_reseed_v0685',False):return
             # 0.6.84: the portal template re-identified the works of 0.6.82 within seconds; forget it first.
             dropped=catalog.drop_portal_templates(c)
         after='';done=0
@@ -1430,7 +1456,7 @@ class Service:
         if self.stop.is_set():return
         if done:
             diagnostics.event('catalog_portal_reseeded',works=done,templates_dropped=dropped);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'portal_reseed_v0684',{'works':done,'templates_dropped':dropped,'at':time.time()})
+        with self.db() as c:catalog.set_state(c,'portal_reseed_v0685',{'works':done,'templates_dropped':dropped,'at':time.time()})
 
     def refile_clip_shows(self):
         """0.6.77, once: works flagged "vielleicht nur Kurzformat" against a series runtime whose Sendung publishes

@@ -136,8 +136,11 @@ def portal_reseed(c,limit=500,after=''):
     """0.6.78, once (see PORTAL_TOPICS): automatic works of a portal topic whose series is in the title are
     recognised again from the sender data. User decisions, matches and confirmed episodes stay.
     Returns (changed, last id or None)."""
-    rows=c.execute("""SELECT * FROM works WHERE id>? AND lower(topic) IN (%s) ORDER BY id LIMIT ?"""
-                   %','.join('?'*len(PORTAL_TOPICS)),(after,*sorted(PORTAL_TOPICS),limit)).fetchall()
+    # 0.6.85 (Mac-Prüfung 0.6.84): also works whose identity is the portal under another or an empty topic
+    # („Sarah Baatout … · Women of Science“ TVDB 461332 matched, „Rafik Schami · Der Erzähler“ ARD „Planet Schule“).
+    marks=','.join('?'*len(PORTAL_TOPICS))
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND (lower(topic) IN (%s) OR lower(title) IN (%s)) ORDER BY id LIMIT ?"""
+                   %(marks,marks),(after,*sorted(PORTAL_TOPICS),*sorted(PORTAL_TOPICS),limit)).fetchall()
     changed=0
     for row in rows:
         # 0.6.81 (Mac-Prüfung 0.6.78: 15 Werke „Das kleine 1x1 der Artenkunde“ blieben „Planet Schule“): an automatic
@@ -153,7 +156,10 @@ def portal_reseed(c,limit=500,after=''):
         if m.get('episode_verified') and not portal:continue
         if row['state']=='format' and not portal and m.get('format_grouping') not in ('single','contribution','part',None):continue
         source=best_source(c,row['id'])
-        if not source or not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
+        if not source:continue
+        if portal and key(source.get('topic') or row['topic']) not in PORTAL_TOPICS:
+            source=dict(source,topic=next(iter(PORTAL_TOPICS)))      # read the title as the portal names it
+        if not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
         fresh=seed(source)
         if row['kind']=='series' and key(row['title'])==key(fresh['title']):continue
         fresh['reason']='Reihe aus dem Titel (Planet Schule); neu erkennen'
@@ -1322,10 +1328,18 @@ def editions_waiting(c,limit=5000,after='',refs=()):
 # IMDb listed no episode for the series.
 KIDS_CHANNELS={'kika','kika.de','zdf-tivi','zdftivi','toggo','super rtl'}
 KIDS_GENRES=('kinder','kids','children','family','familie','animation','zeichentrick')
+FICTION_TOPIC=re.compile(r'(?i)serie|fiktion|fiction|kurz und witzig|kinder|kids|zeichentrick|animation|comedy|sketch')
 def clip_sendung_show(c,show_key,exclude_work='',limit=128):
     """0.6.83: True if a Sendung publishes almost only short clips: at least 20 active offers, at least 90 % shorter
-    than 10 minutes, median below 5 minutes (bounded, indexed sample; read only)."""
+    than 10 minutes, median below 5 minutes (bounded, indexed sample; read only).
+
+    0.6.85 (Mac-Prüfung 0.6.84): a series of short episodes looks the same by length – JoNaLu-Minis (pre-school
+    cartoon, channel „ZDF“, no genre), ARTE „Alte Schachteln aus Belgien“/„Bilder allein zuhaus“ (rubric „Kurz und
+    witzig“), „Erklär’s mir“ (Planet Schule). A contribution belongs to a Sendung that also broadcasts whole
+    editions (Hallo Niedersachsen): at least one active offer of 20 minutes or more is required."""
     if not show_key:return False
+    if not c.execute("""SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
+        WHERE w.show_key=? AND CAST(json_extract(o.payload,'$.duration') AS INTEGER)>=1200 LIMIT 1""",(show_key,)).fetchone():return False
     rows=c.execute("""SELECT CAST(json_extract(o.payload,'$.duration') AS INTEGER) d
         FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
         WHERE w.show_key=? AND w.id!=? LIMIT ?""",(show_key,exclude_work,min(max(20,int(limit)),256))).fetchall()
@@ -1338,6 +1352,9 @@ def clip_sendung_offer(meta,source):
     """0.6.83: the offer itself may be a contribution of a clip Sendung (short, no number, no kids programme)."""
     if not source or meta.get('kind')!='series' or meta.get('scan_requested') or has_episode(meta):return False
     if str(source.get('channel') or '').strip().lower() in KIDS_CHANNELS:return False
+    # 0.6.85: fiction and kids rubrics, portals and sections name no news/magazine Sendung
+    topic=str(source.get('topic') or '')
+    if not template_topic(topic) or FICTION_TOPIC.search(topic):return False
     genres=' '.join(str(g) for g in (meta.get('genres') or [])).lower()
     if any(w in genres for w in KIDS_GENRES):return False
     title=cleaned(source.get('title'))
@@ -1345,6 +1362,24 @@ def clip_sendung_offer(meta,source):
     try:duration=int(source.get('duration') or 0)
     except (TypeError,ValueError):return False
     return 0<duration<600
+
+def clip_sendung_filed(c,after='',limit=200):
+    """0.6.85: show keys of works filed by clip_sendung_v0683, in id order (read only); (keys, last id or None)."""
+    rows=c.execute("""SELECT id,show_key FROM works WHERE id>? AND state='format'
+        AND json_extract(meta,'$.format_rule')='clip_sendung_v0683' ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    return sorted({r[1] for r in rows if r[1]}),(rows[-1][0] if rows else None)
+
+def undo_clip_sendung(c,show_key):
+    """0.6.85: take back all clip_sendung_v0683 filings of a Sendung the rule no longer covers (one transaction, so
+    no sibling is filed again by the „Sendung with editions“ rule meanwhile). Returns the number taken back."""
+    if clip_sendung_show(c,show_key):
+        rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+            FROM works w WHERE w.show_key=? AND w.state='format' AND json_extract(w.meta,'$.format_rule')='clip_sendung_v0683'""",(show_key,)).fetchall()
+        rows=[r for r in rows if not (r['payload'] and clip_sendung_offer(dict(json.loads(r['meta'] or '{}'),state=None),json.loads(r['payload'])))]
+    else:
+        rows=c.execute("""SELECT * FROM works WHERE show_key=? AND state='format'
+            AND json_extract(meta,'$.format_rule')='clip_sendung_v0683'""",(show_key,)).fetchall()
+    return sum(1 for r in rows if undo_segment(c,r,'Kurzserie oder Kinderprogramm; Beitrags-Einordnung zurückgenommen (0.6.85)','v0685'))
 
 def parked_refilable(c,limit=2000,after=''):
     """0.6.83: queue entries parked as „ohne Treffer“ (up to 30 days) that the current rules file as edition or

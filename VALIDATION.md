@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.85 – Kurzserien, Planet Schule ohne Portal-Thema (21. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0685.py`: Kurzserie ohne ganze Ausgabe bleibt Serie, Rubrik „Kurz und witzig“/Portal nie, Rücknahme abgelegter Kurzserien (Magazin-Clips bleiben, kein erneutes Ablegen), Portal-Identität unter leerem/anderem Thema neu erkannt.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).
+
 ## 0.6.84 – Planet Schule über die Serienvorlage (21. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0684.py`: kompletter Weg mit vorhandener Portal-Vorlage, echter ARD-Seitenauswertung und TVDB-Portaltreffer; alle Werke behalten die Reihe aus dem Titel, keine neue Vorlage, Neuimport ohne Vorlage. Gegenprobe: derselbe Test auf dem Code von 0.6.82 endet mit „planet schule“ / ARD Mediathek wie in der Mac-Prüfung.
 - Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).
