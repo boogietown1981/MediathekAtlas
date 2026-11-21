@@ -141,16 +141,62 @@
   }
 
   // 0.5.97: load the Samsung TV Plus channel list now (otherwise it loads on its own every 12 hours).
-  async function samsungLoad(button) {
-    button.disabled = true;
-    try { await window.api('samsung-sync', {}); }
-    catch (e) { say('Samsung TV Plus: ' + e.message, true); return; }
+  // 0.6.64: also used by the region switch (already started there) and the button in the setup block.
+  async function samsungLoad(button, started) {
+    if (button) button.disabled = true;
+    samsungNote('Senderliste wird geladen …');
+    try { if (!started) await window.api('samsung-sync', {}); }
+    catch (e) { say('Samsung TV Plus: ' + e.message, true); samsungNote('Laden nicht möglich: ' + e.message, true); if (button) button.disabled = false; return; }
     for (let i = 0; i < 40; i++) {
       await new Promise(r => setTimeout(r, 1500));
       let st; try { st = await window.api('samsung'); } catch { break; }
       if (!st.running) break;
     }
+    if (button) button.disabled = false;
     refresh();
+  }
+
+  // 0.6.64 (Code-Review 21.11., Björn: „ja für Samsung TV“): region and automatic refresh of Samsung TV Plus,
+  // until then only reachable through /api/samsung-region and /api/samsung-auto.
+  const REGION_NAME = {de: 'Deutschland', at: 'Österreich', ch: 'Schweiz'};
+  const stamp = t => t ? new Date(t * 1000).toLocaleString('de-DE', {day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit'}) : '';
+  function samsungNote(text, error) {
+    const n = $('samsung-setup-status'); if (!n) return;
+    n.textContent = text || ''; n.classList.toggle('netzkino-error', !!error);
+  }
+  function samsungSetup(sm) {
+    if (!$('samsung-setup') || !sm || !sm.region) return;
+    const region = $('samsung-region'), auto = $('samsung-auto');
+    if (document.activeElement !== region) region.value = sm.region;
+    if (document.activeElement !== auto) auto.checked = !!sm.auto;
+    $('samsung-sync').disabled = !!sm.running;
+    $('samsung-setup-state').textContent = '· ' + (REGION_NAME[sm.region] || sm.region.toUpperCase()) + ' · Automatik ' + (sm.auto ? 'an' : 'aus');
+    const parts = [];
+    if (sm.running) parts.push('Senderliste wird geladen …');
+    else if (sm.last_success) parts.push((sm.channels || 0) + ' Sender · Stand ' + stamp(sm.last_success));
+    else parts.push('Senderliste noch nicht geladen');
+    if (!sm.running && sm.auto && sm.next_attempt > Date.now() / 1000) parts.push('nächste Aktualisierung ' + stamp(sm.next_attempt));
+    if (sm.protected) parts.push(sm.protected + ' Sender nur mit Kopierschutz, nicht aufgeführt');
+    if (sm.last_result === 'error' && sm.last_error) parts.push('letzter Versuch: ' + sm.last_error);
+    samsungNote(parts.join(' · '), sm.last_result === 'error' && !sm.running);
+  }
+  if ($('samsung-setup')) {
+    $('samsung-region').onchange = async e => {
+      const region = e.target.value;
+      e.target.disabled = true;
+      try {
+        const r = await window.api('samsung-region', {region});
+        samsungSetup(r.status);
+        if (r.started) await samsungLoad(null, true);
+      } catch (err) { samsungNote('Region nicht gespeichert: ' + err.message, true); refresh(); }
+      finally { e.target.disabled = false; }
+    };
+    $('samsung-auto').onchange = async e => {
+      const enabled = e.target.checked;
+      try { samsungSetup((await window.api('samsung-auto', {enabled})).status); }
+      catch (err) { e.target.checked = !enabled; samsungNote('Automatik nicht gespeichert: ' + err.message, true); }
+    };
+    $('samsung-sync').onclick = e => samsungLoad(e.currentTarget);
   }
 
   async function refresh() {
@@ -178,6 +224,7 @@
     const narrowed = !d.total && all > 0 && (params.q || provider || group);
     say((d.total ? d.total + ' Sender' : narrowed ? 'Keine Sender für diese Auswahl (' + [params.q && 'Suche „' + params.q + '“', provider && 'Anbieter', group && 'Gruppe „' + group + '“'].filter(Boolean).join(', ') + ').' : 'Keine Sender gefunden.') + (extra.length ? ' · ' + extra.join(' · ') : ''),
       (d.providers || []).some(p => p.error));
+    samsungSetup(d.samsung);
     const sm = d.samsung || {}, smCount = (d.providers || []).find(p => p.key === 'samsung')?.channels || 0;
     if (!sm.running && (!smCount || sm.last_result === 'error')) {
       const load = make('button', smCount ? 'Samsung-TV-Plus-Liste neu laden' : 'Samsung-TV-Plus-Sender laden'); load.type = 'button';

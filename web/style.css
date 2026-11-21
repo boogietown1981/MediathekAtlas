@@ -1293,3 +1293,5 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 
 /* 0.6.51 Verbund-Schnelleinrichtung */
 .mesh-quick{border:1px solid var(--line,#3334);border-radius:10px;padding:10px 12px;margin:10px 0}.mesh-quick h4,#mesh-conflicts h4{margin:0 0 4px}.mesh-expert{margin:10px 0}.mesh-expert>summary{cursor:pointer;font-weight:600}#mesh-conflicts{margin:10px 0}
+/* 0.6.64: Samsung TV Plus – Region und Automatik im Live-TV */
+.samsung-setup{margin:4px 0 14px}.samsung-setup label:not(.check){max-width:320px}

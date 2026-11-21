@@ -1642,7 +1642,9 @@ def post_samsung_auto(self,path,d):
 
 @ROUTES.post('/api/samsung-region')
 def post_samsung_region(self,path,d):
-    return self.send({'status':samsung_tvplus.set_region(ROOT,d.get('region'))})
+    # 0.6.64: a new region loads its channel list right away (samsung_tvplus.change_region).
+    status,started=samsung_tvplus.change_region(ROOT,d.get('region'))
+    return self.send({'status':status,'started':started})
 
 @ROUTES.post('/api/youtube-sources')
 def post_youtube_sources(self,path,d):

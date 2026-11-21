@@ -315,6 +315,16 @@ def set_region(root, region):
     return state(root)
 
 
+def change_region(root, region, start=None):
+    """0.6.64: region chosen in the Live-TV tab. A different region loads its channel list at once; until
+    then the list of the old region would stay for up to 12 hours (or for good with the automatic switch
+    off). Returns (state, whether a load was started)."""
+    before = state(root)['region']
+    after = set_region(root, region)
+    started = after['region'] != before and bool((start or start_sync)(root))
+    return (state(root) if started else after), started
+
+
 def _run(root):
     global _ACTIVE
     try:

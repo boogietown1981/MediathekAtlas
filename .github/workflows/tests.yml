@@ -83,6 +83,9 @@ jobs:
       - name: Folgen als Kacheln mit Abspielknopf (0.6.59)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/episode_tiles.cjs
+      - name: Samsung TV Plus – Region und Automatik (0.6.64)
+        if: matrix.browser == 'chromium'
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/samsung_setup.cjs
       - name: Red Bull TV und WELT/n-tv im Live-TV (0.6.47)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/redbull_live.cjs

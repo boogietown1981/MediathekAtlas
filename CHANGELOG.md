@@ -1,3 +1,10 @@
+## 0.6.64 – Samsung TV Plus: Region und Automatik im Live-TV
+- Aus dem Code-Review vom 21.11.2026 (Befund C2, Björn: „ja für Samsung TV“). Basis 0.6.61 (PR #99). 0.6.62 (dailyme TV) und 0.6.63 (Episoden-Einordnung absichern) sind von anderen Threads belegt.
+- Bis 0.6.61 konnte der Server Region und Automatik von Samsung TV Plus schon ändern (`/api/samsung-region`, `/api/samsung-auto`, seit 0.5.97), die Seite rief beide aber nie auf: Region blieb Deutschland, Automatik immer an.
+- Live-TV: neuer aufklappbarer Block „Samsung TV Plus · Region und Automatik“ (Gestaltung wie die YouTube-Blöcke) mit Regionswahl, Schalter „Senderliste automatisch alle 12 Stunden aktualisieren“, Knopf „↻ Senderliste jetzt laden“ und Statuszeile (Zahl der Sender, Stand, nächste Aktualisierung, Sender nur mit Kopierschutz, letzter Fehler). Kopfzeile nennt Region und Automatik auch zugeklappt. Fehler beim Speichern setzen den Schalter zurück und werden im Block gemeldet.
+- `samsung_tvplus.change_region`: eine andere Region startet sofort einen Abruf der Senderliste; dieselbe Region startet keinen. Vorher wäre die Liste der alten Region bis zu 12 Stunden (bei ausgeschalteter Automatik dauerhaft) stehen geblieben. `/api/samsung-region` antwortet zusätzlich mit `started`.
+- Tests: neu `tests/test_v0664_samsung_settings.py` (6), neu `tests/browser/samsung_setup.cjs` (auch in CI).
+
 ## 0.6.62 – dailyme TV als Katalog mit Link
 - Wunsch Björn (20.11.2026): dailyme TV anbinden. Basis 0.6.61 (PR #99). 0.6.60 ist von einem anderen Thread belegt.
 - Befund (Seiten von außen gelesen, aus der Build-Umgebung gesperrt): dailyme.de ist eine JavaScript-Anwendung, sendet den Katalog aber im Seiten-HTML mit (Sendungen `/content/show/<id>-<slug>/`, Folgen `…/<id>-<slug>`, Cover, FSK, Laufzeit, „Staffel 1, Folge N“) und nennt in robots.txt Sitemaps (`/fast/video-sitemap.xml`, `/fast/inhalte-sitemap.xml`). Der Player holt pro Video eine Sitzung und einen Zugriffsschlüssel (Zugriffskontrolle, Werbung über Google IMA); `/content/player/` ist in robots.txt gesperrt. AGB (Mai 2018): nur private, nicht-kommerzielle Nutzung, keine Rechte an den Inhalten, Offline-Modus nur in den Apps.
