@@ -5,7 +5,7 @@
   (IMDb-Laufzeit oder längstes Angebot ≥ 30 min) gilt die längere Grenze nicht.
 - Eisenbahn-Romantik nur +18: „Wolken, Wolle, Wales“ ↔ IMDb „Wolken, Wolle, Wales - Auf der Cambrian Line nach
   Aberystwyth“; „Dampfwolken über Osteuropa - Teil 1“ ↔ „Dampfwolken über Osteuropa 1“.
-- Kennzeichnung der neuen Regel (K5): meta.format_rule = 'imdb_dated_v0676'.
+- Kennzeichnung der neuen Regel (K5): meta.format_rule = 'imdb_dated_v0677'.
 """
 import gzip
 import json
@@ -58,28 +58,37 @@ class EditionLength(Base):
     def svc(self):
         return catalog_service.Service.__new__(catalog_service.Service)
 
-    def db(self, longest):
+    def db(self, editions, specials=()):
         c = sqlite3.connect(':memory:');c.row_factory = sqlite3.Row
         c.executescript(catalog.SCHEMA)
-        catalog.ingest(c, [{'title': 'Ausgabe %d' % d, 'topic': 'Sendung', 'duration': d, 'channel': 'SRF',
-                            'description': 'x' * 60 + str(d), 'url_video': 'https://example.org/%d.mp4' % d}
-                           for d in (700, 1149, longest)])
+        durations = [700, 1149] + list(editions) + list(specials)
+        catalog.ingest(c, [{'title': 'Angebot %d %d' % (i, d), 'topic': 'Sendung', 'duration': d, 'channel': 'SRF',
+                            'description': 'x' * 60 + '%d%d' % (i, d), 'url_video': 'https://example.org/%d-%d.mp4' % (i, d)}
+                           for i, d in enumerate(durations)])
         c.execute("UPDATE works SET show_key='sendung'")
+        for row in c.execute('SELECT w.id,w.meta,o.payload FROM works w JOIN offers o ON o.work_id=w.id').fetchall():
+            d = json.loads(row['payload'])['duration']
+            if d in editions:
+                m = json.loads(row['meta']);m['format_grouping'] = 'edition'
+                c.execute("UPDATE works SET state='format',meta=? WHERE id=?", (json.dumps(m), row['id']))
         return c, 'sendung'
 
-    def test_without_runtime_the_longest_offer_decides(self):
+    def test_without_runtime_the_regular_editions_decide(self):
         svc = self.svc()
+        ref = {'provider': 'IMDb Offline', 'reference_id': 'tt23626090'}
         with mock.patch.object(imdb_archive, 'ACTIVE', self.archive):
-            c, key = self.db(1537)                              # Gesichter & Geschichten: whole editions ~19–25 min
-            self.assertIsNone(svc.dated_clip_limit({'provider': 'IMDb Offline', 'reference_id': 'tt23626090'}, c, key))
-            self.assertIsNone(svc.dated_clip_limit({'provider': 'IMDb Offline', 'reference_id': 'tt23626090'}))
-            c, key = self.db(2700)                              # a 45-minute Landesschau edition in the catalogue
-            svc2 = self.svc()
-            self.assertEqual(svc2.dated_clip_limit({'provider': 'IMDb Offline', 'reference_id': 'tt0450923'}, c, key), 1200)
-            self.assertEqual(svc2.dated_clip_limit({'provider': 'IMDb Offline', 'reference_id': 'tt0862592'}, c, key), 1200)  # IMDb 120 min
+            # Gesichter & Geschichten (Mac-Prüfung 0.6.76): specials up to 19.873 s, editions ~19 min
+            c, key = self.db([1140, 1150, 1160], specials=(19873, 9667, 6920))
+            self.assertIsNone(svc.dated_clip_limit(ref, c, key))
+            c, key = self.db([], specials=(19873, 9667, 6920))          # specials only, no edition
+            self.assertIsNone(self.svc().dated_clip_limit(ref, c, key))
+            self.assertIsNone(self.svc().dated_clip_limit(ref))
+            c, key = self.db([2690, 2700, 2710])                         # 45-minute Landesschau editions
+            self.assertEqual(self.svc().dated_clip_limit({'provider': 'IMDb Offline', 'reference_id': 'tt0450923'}, c, key), 1200)
+            self.assertEqual(self.svc().dated_clip_limit({'provider': 'IMDb Offline', 'reference_id': 'tt0862592'}, c, key), 1200)  # IMDb 120 min
 
     def test_rule_marker(self):
-        self.assertEqual(catalog.dated_rule('segment', {'duration': 964}, 1200), 'imdb_dated_v0676')
+        self.assertEqual(catalog.dated_rule('segment', {'duration': 964}, 1200), 'imdb_dated_v0677')
         self.assertIsNone(catalog.dated_rule('segment', {'duration': 400}, 1200))      # 0.6.41 bound alone
         self.assertIsNone(catalog.dated_rule('segment', {'duration': 964}, None))
         self.assertIsNone(catalog.dated_rule('edition', {'duration': 964}, 1200))
@@ -89,8 +98,8 @@ class EditionLength(Base):
         row = c.execute('SELECT * FROM works').fetchone()
         m = {**json.loads(row['meta']), 'kind': 'series', 'title': 'Kaffee oder Tee?'}
         c.execute("UPDATE works SET state='identified' WHERE id=?", (row['id'],))
-        self.assertTrue(catalog.mark_recurring_edition(c, row, m, {'title': 'Rezept: Torte', 'duration': 964}, 'segment', 'imdb_dated_v0676'))
-        self.assertEqual(json.loads(c.execute('SELECT meta FROM works').fetchone()[0])['format_rule'], 'imdb_dated_v0676')
+        self.assertTrue(catalog.mark_recurring_edition(c, row, m, {'title': 'Rezept: Torte', 'duration': 964}, 'segment', 'imdb_dated_v0677'))
+        self.assertEqual(json.loads(c.execute('SELECT meta FROM works').fetchone()[0])['format_rule'], 'imdb_dated_v0677')
 
 
 class Eisenbahn(Base):

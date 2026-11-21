@@ -1110,10 +1110,10 @@ def recurring_edition(meta,source,sendung=False,clip_limit=600):
     return None
 
 def dated_rule(role,source,clip_limit):
-    """0.6.76: 'imdb_dated_v0676' if only the longer bound of a dated IMDb Sendung made the offer a contribution."""
+    """0.6.76: 'imdb_dated_v0677' if only the longer bound of a dated IMDb Sendung made the offer a contribution."""
     try:duration=int(source.get('duration') or 0)
     except (TypeError,ValueError):duration=0
-    return 'imdb_dated_v0676' if role=='segment' and clip_limit and duration>=600 else None
+    return 'imdb_dated_v0677' if role=='segment' and clip_limit and duration>=600 else None
 
 def mark_recurring_edition(c,row,meta,source,role,rule=None):
     """File an identified series work as edition/contribution of its Sendung (state 'format').

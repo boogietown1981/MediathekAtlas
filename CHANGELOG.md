@@ -4,7 +4,8 @@
 - Wikidata: neue Vorschläge tragen `wikidata_rev=2` (Filter seit 0.6.58/0.6.65). Ungestempelte „unknown_type“-Vorschläge ohne hohe Sicherheit sind kein Beleg mehr gegen die Art-Einordnung („Malik Harris“, „Midge Ure“, „Großkatzen“; 6.121 blockierte Werke). Antwort auf die Frage aus der Diagnose: 0.6.74 verwarf alte Vorschläge nicht – sie lagen gespeichert in meta.suggestions.
 - IMDb: Miniserie mit ≤ 10 Folgen, mehr als 15 Jahre vor dem Sendetermin beendet, nur mit bestätigter Folge (`identity_contradicted` → `matching.issues`). Einmaliger Lauf (Merker `imdb_miniseries_v0677`) setzt so erkannte Werke auf „neu erkennen“ (KiKA „stark!“ ↔ „Stark“ 1993, 514 Werke).
 - Nicht enthalten: „Planet Schule“ (Reihe nach „·“) – erst Titelbeispiele abfragen; Gesamtbudget für Abos, Ladezeiten (nachrangig).
-- Tests: `tests/test_v0677.py` (5).
+- Korrektur 0.6.76 (Mac-Prüfung 21.11.2026 nicht bestanden: Gesichter & Geschichten weiter 727 Beiträge, weil das längste Angebot eine Sondersendung ist – „Krönung von König Charles III.“ 19.873 s, 38 Angebote ≥ 30 min): Ausgabenlänge ohne IMDb-Laufzeit = Median der als Ausgabe abgelegten Angebote der Sendung (mind. 3, ≥ 30 min; `edition_length`), nie das längste Angebot. Kennzeichen jetzt `imdb_dated_v0677`. Eisenbahn-Romantik +48 bei 0 Fehlern, unverändert.
+- Tests: `tests/test_v0677.py` (5), `tests/test_v0676.py` angepasst.
 
 ## 0.6.76 – Korrektur 0.6.75: Ausgabenlänge statt Pauschalgrenze, Eisenbahn-Romantik ohne Untertitel
 - Grundlage: Mac-Gegenprüfung 0.6.75 (21.11.2026, nicht bestanden): Kaffee oder Tee? 1.837 und Landesschau 1.405 Beiträge (Stichproben echt); Gesichter & Geschichten 0 → 727 Beiträge, aber ganze SRF-Ausgaben (739–1.199 s, nach dem Aufmacher benannt, IMDb ohne Laufzeit); Eisenbahn-Romantik nur +18; DER TAG unverändert (IMDb führt nur 2 Folgen, kein Beleg für eine datierte Sendung – bewusst unverändert). 0.6.75 nie ausgegeben. Basis 0.6.75.

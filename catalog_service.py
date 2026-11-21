@@ -724,7 +724,7 @@ class Service:
         Mac-Abfrage Runde 3 (21.11.2026): Kaffee oder Tee? and Landesschau Baden-Württemberg are listed in IMDb as
         "Episode dated …" without season or number; the Mediathek offers are 8–17-minute contributions. Half the
         length of a whole edition, at most 20 minutes. The edition length is IMDb's series runtime or, without one,
-        the longest offer of the Sendung in the catalogue if that is at least 30 minutes. 0.6.76 (Mac-Prüfung
+        the median of the Sendung's regular editions in the catalogue (edition_length) if that is at least 30 minutes. 0.6.76 (Mac-Prüfung
         0.6.75): Gesichter & Geschichten has no IMDb runtime and only ~19-minute whole editions named after their
         lead story; the 20-minute fallback of 0.6.75 filed 727 of them as contributions. Without a known edition
         length the bound stays None (10 minutes as before). The series identity is kept, no episode is claimed."""
@@ -734,17 +734,25 @@ class Service:
         try:dated,runtime=archive.dated_format(ref)
         except Exception:return None
         if not dated:return None
-        length=runtime or (self.longest_offer(c,show_key) if c is not None and show_key else None)
+        length=runtime or (self.edition_length(c,show_key) if c is not None and show_key else None)
         if not length or length<1800:return None
         return int(min(1200,length/2))
-    def longest_offer(self,c,show_key):
-        """Longest active offer of a Sendung in seconds (cached for an hour per show)."""
-        cache=self.__dict__.setdefault('_longest_offer',{})
+    def edition_length(self,c,show_key):
+        """Median length in seconds of the Sendung's regular editions (works filed as 'edition': dated or named
+        like the Sendung), at least 3 of them; cached for an hour per show.
+
+        0.6.77 (Mac-Prüfung 0.6.76): the longest offer of Gesichter & Geschichten is a special broadcast („Krönung
+        von König Charles III.“ 19.873 s, 38 specials ≥ 30 min), not an edition; with it the ~19-minute editions
+        named after their lead story became contributions. Specials are never filed as editions."""
+        cache=self.__dict__.setdefault('_edition_length',{})
         hit=cache.get(show_key)
         if hit and time.monotonic()-hit[0]<3600:return hit[1]
-        row=c.execute("""SELECT MAX(CAST(json_extract(o.payload,'$.duration') AS INTEGER)) FROM works w
-            JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=?""",(show_key,)).fetchone()
-        value=int(row[0]) if row and row[0] else None
+        rows=c.execute("""SELECT CAST(json_extract(o.payload,'$.duration') AS INTEGER) d FROM works w
+            JOIN offers o ON o.work_id=w.id AND o.active=1
+            WHERE w.show_key=? AND w.state='format' AND json_extract(w.meta,'$.format_grouping')='edition' LIMIT 64""",
+            (show_key,)).fetchall()
+        values=sorted(r[0] for r in rows if r[0] and r[0]>0)
+        value=values[len(values)//2] if len(values)>=3 else None
         if len(cache)>=2048:cache.clear()
         cache[show_key]=(time.monotonic(),value)
         return value
