@@ -167,7 +167,7 @@ class DatedSendung(Base):
             due = {r[0] for r in c.execute("""SELECT json_extract(w.meta,'$.title') FROM episode_queue q JOIN works w ON w.id=q.work_id
                                                WHERE q.next_try=0""")}
             self.assertEqual(due, {'Kaffee oder Tee?', 'Eisenbahn-Romantik'})
-            self.assertTrue(catalog.get_state(c, 'refile_reset_v0675', False))
+            self.assertTrue(catalog.get_state(c, 'refile_reset_v0676', False))
 
     def test_no_marker_without_archive(self):
         path = self.root / 'c2.db'
@@ -178,7 +178,7 @@ class DatedSendung(Base):
         svc = catalog_service.Service(db, lambda: {}, stop, self.root)
         with mock.patch.object(imdb_archive, 'ACTIVE', None):
             svc.refile_loop()
-        with db() as c:self.assertFalse(catalog.get_state(c, 'refile_reset_v0675', False))
+        with db() as c:self.assertFalse(catalog.get_state(c, 'refile_reset_v0676', False))
 
 
 if __name__ == '__main__':

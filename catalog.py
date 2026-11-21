@@ -1109,7 +1109,13 @@ def recurring_edition(meta,source,sendung=False,clip_limit=600):
     if 0<duration<clip_limit:return 'segment'
     return None
 
-def mark_recurring_edition(c,row,meta,source,role):
+def dated_rule(role,source,clip_limit):
+    """0.6.76: 'imdb_dated_v0676' if only the longer bound of a dated IMDb Sendung made the offer a contribution."""
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):duration=0
+    return 'imdb_dated_v0676' if role=='segment' and clip_limit and duration>=600 else None
+
+def mark_recurring_edition(c,row,meta,source,role,rule=None):
     """File an identified series work as edition/contribution of its Sendung (state 'format').
 
     The series identity (title, year, provider, reference) stays; the work leaves the episode queue
@@ -1126,6 +1132,9 @@ def mark_recurring_edition(c,row,meta,source,role):
              episode_reference_id=None,video_role_needs_review=False,
              reason=('Ausgabe der Sendung „%s“; Sendungsausgaben haben keine eigene Episodenkennung.' if role=='edition'
                      else 'Beitrag der Sendung „%s“; keine eigene Folge.')%series)
+    # 0.6.76: which rule filed it, so a diagnosis can tell the new bound from earlier filing (Mac-Prüfung K5)
+    if rule:m['format_rule']=rule
+    else:m.pop('format_rule',None)
     return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
                      (json.dumps(m),row['id'])).rowcount>0
 

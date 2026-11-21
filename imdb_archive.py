@@ -162,6 +162,12 @@ def numbered_title(e,row,meta):
 # Bodensee - …" or "1090 Mit der Nordlandsbahn …"; the Mediathek title carries the name without the running number.
 RUNNING_PREFIX=re.compile(r'^\s*\d{1,4}(?:\.\s*|\s+)(?=[^\W\d_])')
 
+PART_NUMBER=re.compile(r'(?i)\b(?:teil|part|folge|episode)\s*\d+|\b\d{1,3}\s*$|\(\s*\d{1,3}\s*\)')
+
+def title_key(value):
+    """norm() with "Teil 1" → "1" ("Dampfwolken über Osteuropa - Teil 1" = "Dampfwolken über Osteuropa 1")."""
+    return re.sub(r'\bteil (\d+)\b',r'\1',norm(value))
+
 def running_free(title):
     """IMDb episode title without a leading running number ("1092. Name" → "Name"), or ''."""
     title=str(title or '')
@@ -550,25 +556,47 @@ class Archive:
                 out.update(episode_match='date',episode_title=meta.get('episode_title') or row['title'],
                            reason='IMDb-Ausgabe anhand des Sendedatums im Titel eindeutig zugeordnet')
         return out
-    def _running_free_titles(self,series):
+    def _episode_list(self,series):
         self._reader()
         rows=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? LIMIT 6001',
                           (series,),('episode_list',series))
-        if not rows or len(rows)>6000:return []
-        free=[(r,running_free(r['primaryTitle'])) for r in rows]
-        # Only a series that numbers its titles this way (≥ 20 such titles); "1. FC Köln" alone is no convention.
-        return free if sum(1 for _,v in free if v)>=20 else []
+        return rows if rows and len(rows)<=6000 else []
+    def _title_keys(self,series):
+        """Per episode: (row, full key, main key) – running number removed where the series numbers its titles
+        (≥ 20 such titles; "1. FC Köln" alone is no convention), main key = the part before " - " unless the
+        subtitle carries a part number or the main part is too short to name one episode."""
+        rows=self._episode_list(series)
+        free=[running_free(r['primaryTitle']) for r in rows]
+        numbered=sum(1 for v in free if v)>=20
+        out=[]
+        for r,v in zip(rows,free):
+            base=(v if numbered and v else '') or str(r['primaryTitle'] or '')
+            main,sep,sub=base.partition(' - ')
+            mk=title_key(main) if sep and main.strip() and sub.strip() and not PART_NUMBER.search(sub) else ''
+            if len(mk.split())<3 and len(mk)<15:mk=''
+            out.append((r,title_key(base),mk))
+        return out
     def running_numbered_series(self,series):
-        """0.6.75: True if IMDb titles the episodes of this series with a leading running number."""
-        return bool(self._running_free_titles(series))
+        """0.6.75/0.6.76: True if the episode list fallback can apply (titles with running number or subtitle)."""
+        keys=self._title_keys(series)
+        return sum(1 for r,full,mk in keys if mk or full!=title_key(r['primaryTitle']))>=20
     def running_numbered(self,series,terms):
-        """0.6.75: the one episode whose IMDb title, without its leading running number, equals a search term.
+        """0.6.75/0.6.76: the one episode of the series whose IMDb title names the offer exactly.
 
-        Exact comparison only; nothing if two episodes share the name, the series lists more than 6,000
-        episodes or fewer than 20 titles carry a running number (the list is read once per series and
-        thread through the parentTconst index)."""
-        wanted=set(terms)
-        found=[r for r,v in self._running_free_titles(series) if v and norm(v) in wanted]
+        Mac-Prüfung 0.6.75, Eisenbahn-Romantik: IMDb "1092. Mit dem Schienenbus …" (running number), "Wolken, Wolle,
+        Wales - Auf der Cambrian Line nach Aberystwyth" (offer without the subtitle), "Dampfwolken über Osteuropa 1"
+        (offer "… - Teil 1"). Exact keys only: the whole title (running number removed), then the main part before
+        " - " if no other episode of the series shares that main part. Nothing if two episodes fit; a subtitle with a
+        part number ("- Teil 2") never shortens. The list is read once per series and thread (≤ 6,000 episodes)."""
+        keys=self._title_keys(series)
+        if not keys:return []
+        wanted={title_key(t) for t in terms}-{''}
+        full=[r for r,k,_ in keys if k in wanted]
+        if full:return full if len({r['tconst'] for r in full})==1 else []
+        mains={}
+        for r,_,mk in keys:
+            if mk:mains.setdefault(mk,[]).append(r)
+        found=[rs[0] for mk,rs in mains.items() if mk in wanted and len(rs)==1]
         return found if len(found)==1 else []
     def dated_format(self,series):
         """0.6.75: (True, runtime seconds or None) if IMDb lists the series as a dated daily/weekly programme.

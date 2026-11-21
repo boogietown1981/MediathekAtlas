@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.75
+# MediathekAtlas · 0.6.76
+
+## Neu in 0.6.76: Korrektur nach der Mac-Prüfung von 0.6.75
+
+- Ganze Ausgaben, die nach ihrem Aufmacher benannt sind (z. B. „Gesichter & Geschichten“), werden nicht mehr als Beitrag eingeordnet: Die längere Beitragsgrenze gilt nur, wenn die Länge einer ganzen Ausgabe bekannt ist.
+- „Eisenbahn-Romantik“: auch Folgen ohne IMDb-Untertitel („Wolken, Wolle, Wales“) und mit „Teil 1“ statt „1“.
 
 ## Neu in 0.6.75: Beiträge von Tagesmagazinen, Eisenbahn-Romantik
 

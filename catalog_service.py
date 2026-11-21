@@ -691,9 +691,9 @@ class Service:
               AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
             LIMIT ?""",(show_key,selected_id,m['provider'],str(m['reference_id']),time.time(),limit)).fetchall()
         counts={'edition':0,'segment':0};later=[]
-        clip=self.dated_clip_limit(m)
-        sendung=bool(clip) or catalog.sendung_with_editions(c,show_key)
-        clip=clip or 600
+        dated=self.dated_clip_limit(m,c,show_key)
+        sendung=bool(dated) or catalog.sendung_with_editions(c,show_key)
+        clip=dated or 600
         for sibling in rows:
             best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(sibling['id'],)).fetchone()
             if not best:continue
@@ -701,7 +701,7 @@ class Service:
             except (TypeError,ValueError):continue
             role=catalog.recurring_edition(meta,source,sendung,clip)
             if role=='edition' and not allow_editions:continue
-            if role and catalog.mark_recurring_edition(c,sibling,meta,source,role):counts[role]+=1
+            if role and catalog.mark_recurring_edition(c,sibling,meta,source,role,catalog.dated_rule(role,source,dated)):counts[role]+=1
             elif not role and not sendung:later.append((sibling,meta,source))
         # Editions filed just now show that this series is a Sendung; its short clips are contributions.
         if later and catalog.sendung_with_editions(c,show_key):
@@ -718,20 +718,36 @@ class Service:
             self.after_commit(counted)
         return counts['edition']+counts['segment']
 
-    def dated_clip_limit(self,m):
-        """0.6.75: contribution bound in seconds for a Sendung IMDb lists only as dated editions, else None.
+    def dated_clip_limit(self,m,c=None,show_key=None):
+        """0.6.75/0.6.76: contribution bound in seconds for a Sendung IMDb lists only as dated editions, else None.
 
-        Mac-Abfrage Runde 3 (21.11.2026): Kaffee oder Tee? (1.848 offen), Landesschau Baden-Württemberg (1.475),
-        DER TAG in Berlin & Brandenburg (800): IMDb names every episode "Episode dated …" without season or
-        number; the Mediathek offers are 8–17-minute contributions titled with their topic. Half the series
-        runtime, at most 20 minutes; the series identity is kept, no episode is claimed."""
+        Mac-Abfrage Runde 3 (21.11.2026): Kaffee oder Tee? and Landesschau Baden-Württemberg are listed in IMDb as
+        "Episode dated …" without season or number; the Mediathek offers are 8–17-minute contributions. Half the
+        length of a whole edition, at most 20 minutes. The edition length is IMDb's series runtime or, without one,
+        the longest offer of the Sendung in the catalogue if that is at least 30 minutes. 0.6.76 (Mac-Prüfung
+        0.6.75): Gesichter & Geschichten has no IMDb runtime and only ~19-minute whole editions named after their
+        lead story; the 20-minute fallback of 0.6.75 filed 727 of them as contributions. Without a known edition
+        length the bound stays None (10 minutes as before). The series identity is kept, no episode is claimed."""
         import imdb_archive
         archive=imdb_archive.ACTIVE;ref=str(m.get('reference_id') or '')
         if m.get('provider')!='IMDb Offline' or not ref.startswith('tt') or not (archive and archive.updated):return None
         try:dated,runtime=archive.dated_format(ref)
         except Exception:return None
         if not dated:return None
-        return int(min(1200,runtime/2)) if runtime else 1200
+        length=runtime or (self.longest_offer(c,show_key) if c is not None and show_key else None)
+        if not length or length<1800:return None
+        return int(min(1200,length/2))
+    def longest_offer(self,c,show_key):
+        """Longest active offer of a Sendung in seconds (cached for an hour per show)."""
+        cache=self.__dict__.setdefault('_longest_offer',{})
+        hit=cache.get(show_key)
+        if hit and time.monotonic()-hit[0]<3600:return hit[1]
+        row=c.execute("""SELECT MAX(CAST(json_extract(o.payload,'$.duration') AS INTEGER)) FROM works w
+            JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=?""",(show_key,)).fetchone()
+        value=int(row[0]) if row and row[0] else None
+        if len(cache)>=2048:cache.clear()
+        cache[show_key]=(time.monotonic(),value)
+        return value
     def same_date_editions(self,c,show_key,selected_id,source):
         """True if another active offer of the same Sendung names the same broadcast date."""
         import imdb_archive
@@ -784,11 +800,11 @@ class Service:
                                                                title=title,reason='explicit_title'))
                     preflight='extra'
                 elif (edition_role:=catalog.recurring_edition(m,entry['source'],
-                        bool(clip:=self.dated_clip_limit(m)) or catalog.sendung_with_editions(c,row['show_key']),
-                        clip or 600))=='segment':
+                        bool(dated:=self.dated_clip_limit(m,c,row['show_key'])) or catalog.sendung_with_editions(c,row['show_key']),
+                        dated or 600))=='segment':
                     # 0.6.41: a short contribution of a news/magazine Sendung is no episode; file it with
                     # its Sendung instead of the "unsicher" review list.
-                    if catalog.mark_recurring_edition(c,row,m,entry['source'],'segment'):
+                    if catalog.mark_recurring_edition(c,row,m,entry['source'],'segment',catalog.dated_rule('segment',entry['source'],dated)):
                         self.classify_sibling_editions(c,row['show_key'],m,selected_id,allow_editions=False)
                         preflight='segment'
                     else:return True
@@ -1244,13 +1260,13 @@ class Service:
         import imdb_archive
         archive=imdb_archive.ACTIVE
         with self.db() as c:
-            if catalog.get_state(c,'refile_reset_v0675',False):return
+            if catalog.get_state(c,'refile_reset_v0676',False):return
         if not (archive and archive.updated):return        # no archive yet: run again next start
         refs=self.covered_series(archive)
         if self.stop.is_set():return
         due=self.requeue_new_editions(refs) if refs else 0
         if due is None:return
-        with self.db() as c:catalog.set_state(c,'refile_reset_v0675',True)
+        with self.db() as c:catalog.set_state(c,'refile_reset_v0676',True)
 
     def note_archive_wait(self):
         """0.6.68: name a missing IMDb archive in the diagnosis also when no claim runs (once per hour)."""
