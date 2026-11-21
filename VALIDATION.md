@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.82 – Planet Schule gegen ARD-Mediathek-Erkennung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0682.py`: ARD-Seite mit Reihe „planet schule“ liefert keinen Kandidaten, „Servicezeit“ weiter; Werke unter dem Portal (identified ARD, format/segment, matched TVDB mit episode_verified) neu erkannt, manual bleibt.
+- Nicht geprüft: Verhalten nach mehreren Stunden Erkennung auf Björns Bestand (Prüfliste).
+
 ## 0.6.81 – Ladezeiten, Planet Schule (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0681.py`: matched-Werk unter „Planet Schule“ neu erkannt, manual bleibt; veraltete Kinderecke antwortet sofort und wird im Hintergrund erneuert; Vorabaufbau und Zeitmessung im Server. Messung auf synthetischer Kopie (686.000 Werke): Gruppenliste 1,0–1,5 s.
 - Nicht geprüft: Ladezeiten auf Björns Gerät (Prüfliste).

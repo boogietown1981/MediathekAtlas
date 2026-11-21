@@ -1,6 +1,10 @@
-# MediathekAtlas · 0.6.81
+# MediathekAtlas · 0.6.82
 
-## Neu in 0.6.81: schnellere Werkliste und Kinderecke
+## Neu in 0.6.82: Planet Schule bleibt bei seiner Reihe
+
+- Die Reihe aus dem Titel („Wasserinsekten · Natur nah“ → „Natur nah“) wird von der ARD Mediathek nicht mehr durch den Portalnamen „planet schule“ ersetzt; betroffene Werke werden einmal neu erkannt.
+
+## Neu in 0.6.81 (nicht ausgegeben, in 0.6.82 enthalten): schnellere Werkliste und Kinderecke
 
 - Die Startansicht der Werkliste und die Kinderecke werden nach dem Start im Hintergrund vorbereitet; die Kinderecke zeigt danach immer sofort ihre Liste und erneuert sie im Hintergrund.
 - Langsame Seiten nennen in der Diagnose, woran es lag (Filter, Neuaufbau, Teilzeiten).

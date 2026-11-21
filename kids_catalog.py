@@ -174,8 +174,14 @@ def _build_store(root, db, modules, merge, page):
 
 
 def _refresh(root, db, modules, merge, page):
+    started = time.monotonic()
     try:
-        _build_store(root, db, modules, merge, page)
+        value = _build_store(root, db, modules, merge, page)
+        seconds = time.monotonic() - started
+        if seconds >= 2:            # 0.6.82 (Mac-Prüfung 0.6.81): langsame Erneuerung in der Diagnose sichtbar
+            import diagnostics
+            diagnostics.event('kids_shelf_refreshed', seconds=round(seconds, 2), movies=len(value.get('movies') or []),
+                              series=len(value.get('series') or []), pending=bool(value.get('pending')))
     except Exception:
         pass                       # die bisherige Liste bleibt; der nächste Aufruf versucht es erneut
     finally:

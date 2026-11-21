@@ -288,6 +288,10 @@ def candidate(row,meta,info):
     series=info.get('series') or ''
     topic=row.get('topic') or ''
     own_series=bool(series and not CONTAINER.search(series) and core.title_similarity(series,topic or series)>=.985 and core.title_similarity(series,info.get('title') or '')<.985)
+    # 0.6.82 (Mac-Prüfung 0.6.81): the ARD page names the portal („planet schule“) as series of every programme; 256
+    # works lost the series from their title („Wasserinsekten · Natur nah“) again. A portal or section is no series.
+    import metadata
+    if own_series and metadata.generic_topic(series):own_series=False
     hints=genres(series,topic,info.get('description','')[:300])
     base={**meta,'provider':info['provider'],'description':info.get('description') or meta.get('description',''),'genres':hints,'genre_source':'Sender (abgeleitet)' if hints else meta.get('genre_source','Unbekannt'),
           'poster':info.get('series_image') or info.get('image') or meta.get('poster',''),'year_mismatch':False,'evidence_type':'broadcaster_page','confidence':'high',

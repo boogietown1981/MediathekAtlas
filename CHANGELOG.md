@@ -1,3 +1,10 @@
+## 0.6.82 – Korrektur 0.6.81: Planet Schule gegen die ARD-Mediathek-Erkennung
+- Grundlage: Mac-Prüfung 0.6.81 (21.11.2026, nicht bestanden nur wegen Planet Schule; Ladezeiten bestanden: Werkliste nach dem Start 7,62 → 0,11 s, Kinderecke 0,01–0,05 s). 256 Werke standen wieder unter der Serie „planet schule“ (ARD Mediathek); 145 davon als „Beitrag der Sendung „planet schule““. Das TVDB-Werk „Planet Schule“ (15 Angebote „Das kleine 1x1 der Artenkunde“, auto_matched mit episode_verified) wurde übersprungen. Basis 0.6.81.
+- `broadcaster.candidate`: Eine Sendereihe, die nur ein Portal oder eine Rubrik ist (`metadata.generic_topic`, z. B. „planet schule“, „Politik“, „Musik“), ist keine eigene Reihe; die Senderseite liefert dann keinen Serienkandidaten. Die Reihe aus dem Titel bleibt.
+- `catalog.portal_reseed`: Werke mit dem Portal als Identität werden auch neu erkannt, wenn ihre Folge gegen das Portal „bestätigt“ wurde oder sie als Beitrag/Ausgabe des Portals abgelegt sind; `manual` und `scan_requested` bleiben. Merker `portal_reseed_v0682` (läuft nach 0.6.78/0.6.81 erneut).
+- Abo-Warnung ohne Gesamtgrenze: „… oder ein Gesamtbudget für alle Abos festlegen“ statt „… senken“. Ereignis `kids_shelf_refreshed`, wenn die Hintergrund-Erneuerung der Kinderecke ≥ 2 s braucht.
+- Tests: `tests/test_v0682.py` (2).
+
 ## 0.6.81 – Ladezeiten Werkliste und Kinderecke, Planet Schule unter dem Portalnamen
 - Grundlage: Nachtdiagnose M3 21.11.2026 (`/api/catalog` 20,9 s vier Minuten nach dem Start, `/api/kids` 15,2 s) und Hinweis der Mac-Prüfung 0.6.78 (15 Werke „Das kleine 1x1 der Artenkunde“ heißen noch „Planet Schule“). Basis 0.6.80.
 - Vorab gebaut nach dem Start: zusätzlich zur bisherigen Liste („Alle anzeigen“) die Startansicht der Werkliste (Serien bzw. Filme, „Noch nicht geladen“), danach die Kinderecke (Ereignisse `catalog_listing_prewarmed` mit `downloaded`, `kids_shelf_prewarmed`). Auf der synthetischen Kopie mit 686.000 Werken (warmer Cache) 1,0–1,5 s je Aufbau; auf Björns Gerät nicht gemessen.

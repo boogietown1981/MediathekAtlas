@@ -117,12 +117,16 @@ def portal_reseed(c,limit=500,after=''):
     for row in rows:
         # 0.6.81 (Mac-Prüfung 0.6.78: 15 Werke „Das kleine 1x1 der Artenkunde“ blieben „Planet Schule“): an automatic
         # match whose identity is the portal itself is no match of the programme; a user's choice ('manual') stays.
-        if row['state']=='matched' and key(row['title']) in PORTAL_TOPICS:pass
+        portal=key(row['title']) in PORTAL_TOPICS
+        if row['state']=='matched' and portal:pass
         elif row['state'] not in ('pending','retry','review','identified','format'):continue
         try:m=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):continue
-        if m.get('scan_requested') or m.get('episode_verified'):continue
-        if row['state']=='format' and m.get('format_grouping') not in ('single','contribution','part',None):continue
+        if m.get('scan_requested'):continue
+        # 0.6.82 (Mac-Prüfung 0.6.81): an episode "confirmed" against the portal itself (TVDB „Planet Schule“) or a
+        # contribution of the Sendung „planet schule“ (ARD Mediathek) is no evidence for the programme.
+        if m.get('episode_verified') and not portal:continue
+        if row['state']=='format' and not portal and m.get('format_grouping') not in ('single','contribution','part',None):continue
         source=best_source(c,row['id'])
         if not source or not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
         fresh=seed(source)
