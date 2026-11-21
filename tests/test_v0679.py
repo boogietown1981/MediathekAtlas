@@ -19,6 +19,7 @@ import catalog  # noqa: E402
 import catalog_service  # noqa: E402
 import imdb_archive  # noqa: E402
 import youtube_abos as ab  # noqa: E402
+import watch_state  # noqa: E402
 from test_v0607_youtube_abos import Fixture, NOW  # noqa: E402
 
 MB = 1000 ** 2
@@ -150,3 +151,46 @@ class ClipEpisodes(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class DropUnseen(TotalBudget):
+    """0.6.83 (Björn 21.11.2026: „Ja, als Schalter je Abo“): über dem Budget dürfen die ältesten ungesehenen weichen."""
+    def prepared(self, drop):
+        abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 3, 'budget_gb': 0, 'drop_unseen': drop}, now=NOW)
+        ab.check(self.root, abo, now=NOW, request=self.api)
+        jobs = sorted(self.jobs(), key=lambda j: j['source']['_video_id'])
+        for job in jobs:
+            self.finish(job, 100 * MB)
+        conn = self._conn()
+        db = ab._connect(self.root)
+        self.addCleanup(db.close)
+        ab.sync_states(conn, db)
+        for n, job in enumerate(jobs):                       # oldest first
+            db.execute('UPDATE youtube_abo_videos SET done_at=? WHERE job_id=?', (NOW + n, job['id']))
+        db.commit()
+        row = dict(db.execute('SELECT * FROM youtube_abos WHERE id=?', (abo,)).fetchone(), _root=str(self.root))
+        return conn, db, row, jobs
+
+    def test_default_off_keeps_unseen(self):
+        self.assertEqual(ab._clean({})['drop_unseen'], 0)
+        conn, db, row, jobs = self.prepared(False)
+        self.assertFalse(ab._make_room(conn, db, row, NOW))
+        self.assertEqual(sum(1 for v in self.videos(row['id']).values() if v['state'] == 'done'), 3)
+
+    def test_switch_removes_oldest_unseen_but_keeps_marked(self):
+        conn, db, row, jobs = self.prepared(True)
+        self.assertEqual(row['drop_unseen'], 1)
+        watch_state.mark(self.root, 'job:' + jobs[0]['id'], pinned=True)           # oldest is pinned: stays
+        watch_state.progress(self.root, 'job:' + jobs[1]['id'], 120, 600)          # second is started: stays
+        self.assertTrue(ab._make_room(conn, db, row, NOW))
+        db.commit()
+        states = {v['job_id']: v['state'] for v in self.videos(row['id']).values() if v['job_id']}
+        self.assertEqual(states[jobs[0]['id']], 'done')
+        self.assertEqual(states[jobs[1]['id']], 'done')
+        self.assertEqual(states[jobs[2]['id']], 'expired')
+        self.assertFalse(ab._make_room(conn, db, row, NOW))                     # nothing else may go
+
+    def test_ui_names_switch(self):
+        js = (ROOT / 'web' / 'youtube_abos.js').read_text(encoding='utf-8')
+        self.assertIn('drop_unseen: unseen.checked', js)
+        self.assertIn('auch ungesehene Videos löschen', js)

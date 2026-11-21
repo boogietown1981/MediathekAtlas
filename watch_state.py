@@ -220,9 +220,9 @@ def overview(root):
 def states(root):
     """key -> {favorite, pinned, done, watched_at} for the storage overview."""
     with _db(root) as c:
-        rows = c.execute('SELECT key,favorite,pinned,done,watched_at FROM entries').fetchall()
+        rows = c.execute('SELECT key,favorite,pinned,done,watched_at,pos FROM entries').fetchall()
     return {r['key']: {'favorite': bool(r['favorite']), 'pinned': bool(r['pinned']), 'done': bool(r['done']),
-                       'watched_at': r['watched_at']} for r in rows}
+                       'watched_at': r['watched_at'], 'pos': r['pos']} for r in rows}
 
 
 def summary(root):

@@ -41,6 +41,8 @@
     const interval = select([[1, 'jede Stunde'], [3, 'alle 3 Stunden'], [6, 'alle 6 Stunden'], [12, 'alle 12 Stunden'], [24, 'einmal am Tag']], values.interval_hours || 3);
     const label = input(values.label, {placeholder: 'wie auf YouTube', maxLength: 80});
     const shorts = input('', {type: 'checkbox'}); shorts.checked = values.min_seconds === undefined ? true : values.min_seconds > 0;
+    // 0.6.83 (Björn): über dem Budget dürfen auch ungesehene Videos weichen – je Abo, Standard aus
+    const unseen = input('', {type: 'checkbox'}); unseen.checked = !!values.drop_unseen;
 
     const main = make('div', undefined, 'abo-form-grid');
     main.append(field('Für wen?', profile));
@@ -53,9 +55,15 @@
     const more = make('details', undefined, 'abo-more'); more.append(make('summary', 'Weitere Einstellungen'));
     const grid = make('div', undefined, 'abo-form-grid');
     const sl = make('label', undefined, 'check'); sl.append(shorts, document.createTextNode(' Shorts auslassen'));
+    const ul = make('label', undefined, 'check abo-wide'); ul.append(unseen, document.createTextNode(' Wenn voll: auch ungesehene Videos löschen (älteste zuerst)'));
     grid.append(field('Ausschließen (Titelwörter)', exclude), field('Höchstens offline', keep), field('Qualität', quality),
-      field('Prüfen', interval), field('Eigener Name', label), sl);
-    more.append(grid, make('p', 'Ist die Höchstzahl oder der Speicher erreicht, macht das älteste schon gesehene Video Platz; ungesehene, gemerkte und angeheftete bleiben immer. Reicht das nicht, warten neue Videos.', 'muted'));
+      field('Prüfen', interval), field('Eigener Name', label), sl, ul);
+    const rule = make('p', '', 'muted');
+    const ruleText = () => { rule.textContent = unseen.checked
+      ? 'Ist die Höchstzahl oder der Speicher erreicht, macht zuerst das älteste gesehene Video Platz, danach das älteste UNGESEHENE: Es wird gelöscht, auch wenn es noch niemand angeschaut hat. Gemerkte, angeheftete und angefangene Videos bleiben immer.'
+      : 'Ist die Höchstzahl oder der Speicher erreicht, macht das älteste schon gesehene Video Platz; ungesehene, gemerkte und angeheftete bleiben immer. Reicht das nicht, warten neue Videos.'; };
+    unseen.onchange = ruleText; ruleText();
+    more.append(grid, rule);
     const hint = make('p', PROFILES[profile.value].hint, 'muted abo-profile-hint');
     profile.onchange = () => { hint.textContent = PROFILES[profile.value].hint; };
     const sync = () => { startField.hidden = mode.value !== 'new'; }; mode.onchange = sync; sync();
@@ -68,7 +76,7 @@
       ev.preventDefault();
       const out = {profile: profile.value, mode: mode.value, include: include.value, exclude: exclude.value, keep: keep.value,
         quality: quality.value, interval_hours: interval.value, label: label.value, min_seconds: shorts.checked ? 61 : 0,
-        budget_gb: budget.value === '' ? 0 : Number(budget.value)};
+        budget_gb: budget.value === '' ? 0 : Number(budget.value), drop_unseen: unseen.checked};
       if (isNew) Object.assign(out, {url: url.value, start_count: start.value});
       onSubmit(out, save);
     };
@@ -107,7 +115,7 @@
     if (a.kind === 'playlist') head.append(make('span', 'Playlist', 'abo-badge'));
     body.append(head);
     const rules = [a.mode === 'all' ? 'alle Videos' : 'nur neue', a.include ? 'Reihe: ' + a.include : '', a.exclude ? 'ohne: ' + a.exclude : '',
-      a.quality + 'p', 'max. ' + a.keep, a.budget_gb > 0 ? 'max. ' + gb(a.budget_gb) + ' GB' : 'ohne Speichergrenze', ago(a.checked) + (a.via ? ' (' + (a.via === 'api' ? 'API' : 'yt-dlp') + ')' : '')].filter(Boolean);
+      a.quality + 'p', 'max. ' + a.keep, a.budget_gb > 0 ? 'max. ' + gb(a.budget_gb) + ' GB' : 'ohne Speichergrenze', a.drop_unseen ? 'löscht auch ungesehene' : '', ago(a.checked) + (a.via ? ' (' + (a.via === 'api' ? 'API' : 'yt-dlp') + ')' : '')].filter(Boolean);
     body.append(make('p', rules.join(' · '), 'abo-rules'));
     const chips = make('div', undefined, 'abo-chips');
     const c = a.counts || {};
@@ -120,7 +128,9 @@
     body.append(chips);
     if (a.last_error) body.append(make('p', a.last_error, 'abo-error'));
     // 0.6.60: über dem Budget (z. B. Videos aus der Zeit vor dem Budget) deutlich benennen
-    if (a.over_budget) body.append(make('p', 'Über dem Speicherbudget: ' + gb(a.used_gb) + ' von ' + gb(a.budget_gb) + ' GB belegt. Es wird nichts Neues geladen, bis gesehene Videos Platz machen; ungesehene bleiben. Mehr Platz unter ⚙ „Speicher höchstens“.', 'abo-error abo-budget-hint'));
+    if (a.over_budget) body.append(make('p', 'Über dem Speicherbudget: ' + gb(a.used_gb) + ' von ' + gb(a.budget_gb) + ' GB belegt. ' +
+      (a.drop_unseen ? 'Für neue Videos werden gesehene und danach die ältesten ungesehenen gelöscht (Schalter des Abos).'
+                     : 'Es wird nichts Neues geladen, bis gesehene Videos Platz machen; ungesehene bleiben. Mehr Platz unter ⚙ „Speicher höchstens“ oder „auch ungesehene löschen“.'), 'abo-error abo-budget-hint'));
     // 0.6.68: verplant ist nicht belegt (Mac-Prüfung 0.6.67: „erreicht“ bei 1,0 von 10 GB)
     else if (a.budget_planned_full) body.append(make('p', 'Speicherbudget verplant: ' + gb(a.used_gb) + ' GB belegt, ca. ' + gb(a.planned_gb) + ' GB werden gerade geladen. Weitere Videos warten, bis Platz frei ist.' + (a.waiting_for_budget ? ' (' + a.waiting_for_budget + ' warten)' : ''), 'muted abo-budget-hint'));
     else if (a.budget_full) body.append(make('p', 'Speicherbudget erreicht: neue Videos warten, bis gesehene Platz machen.' + (a.waiting_for_budget ? ' (' + a.waiting_for_budget + ' warten)' : '') + ' Mehr Platz unter ⚙ „Speicher höchstens“.', 'muted abo-budget-hint'));
