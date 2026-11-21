@@ -1015,6 +1015,34 @@ def broadcast_day(title,source):
     except (OverflowError,ValueError):return False
     return abs(named-stamp)<=3*86400
 
+# 0.6.68 (Mac-Gegenprüfung 0.6.65, 21.11.2026): regional magazines name the day without the year
+# ("buten un binnen vom 23. Oktober", "… vom 23.10."). Only with the offer's own broadcast day (±3 days).
+DATED_DAY=re.compile(r'(?i)(?<![\w/.])vom\s+'+WEEKDAY+r'(?:([0-3]?\d)\.\s*('+MONTHS+r')|([0-3]?\d)\.([01]?\d)\.)(?!\s*(?:19|20)?\d{2}\b)(?![\w/])')
+# Talk shows named by their guest ("THADEUSZ lang & breit - Gast: Dr. Emily Haber", "… – Zu Gast: …",
+# "THADEUSZ lang & breit: Britische Autorin Jacinta Nandi ist zu Gast"): 39 of 39 unresolved samples.
+GUEST=re.compile(r'(?i)^(.+?)\s*[-–—:|]\s*(?:(?:zu\s+)?gast\s*:\s*\S|.{3,160}\bist\s+zu\s+gast\s*$)')
+
+def broadcast_day_short(title,source):
+    """True if a day named without year ("vom 23. Oktober", "vom 23.10.") is the offer's broadcast day (±3 days)."""
+    m=DATED_DAY.search(str(title or ''))
+    try:stamp=int(source.get('timestamp') or 0)
+    except (TypeError,ValueError):return False
+    if not m or stamp<=0:return False
+    import imdb_archive
+    day=int(m.group(1) or m.group(3));month=imdb_archive.MONTH_NUMBERS.get((m.group(2) or '').lower()) or int(m.group(4) or 0)
+    if not 1<=month<=12 or not 1<=day<=31:return False
+    year=time.localtime(stamp).tm_year
+    for y in (year-1,year,year+1):                     # "vom 31. Dezember" shown on 2 January
+        try:named=time.mktime((y,month,day,12,0,0,0,0,-1))
+        except (OverflowError,ValueError):continue
+        if abs(named-stamp)<=3*86400:return True
+    return False
+
+def guest_edition(title,series,topic):
+    """True for "<Sendung> - (Zu) Gast: …" / "<Sendung>: … ist zu Gast" of exactly this Sendung."""
+    m=GUEST.match(str(title or ''))
+    return bool(m) and key(cleaned(m.group(1))) in {key(cleaned(series)),key(cleaned(topic))}-{''}
+
 def recurring_edition(meta,source,sendung=False):
     """'edition', 'segment' or None for an identified series work without an episode of its own.
 
@@ -1029,10 +1057,15 @@ def recurring_edition(meta,source,sendung=False):
     if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
     title=cleaned(source.get('title'))
     if not title or TRAILER.search(title):return None
-    if DATED.search(title):title=EDITION_PART.sub('',title)
+    if DATED.search(title) or DATED_DAY.search(title):title=EDITION_PART.sub('',title)
     if EDITION_NUMBERING.search(title) or EP.search(title):return None
     series=meta.get('title') or '';topic=source.get('topic') or ''
     recurring=sendung or format_series(series) or format_series(topic)
+    if not DATED.search(title) and DATED_DAY.search(title) and broadcast_day_short(title,source):
+        # 0.6.68: day without year – the Sendung's name must lead the title, or the Sendung is a known format
+        named=any(key(title).startswith(k) for k in {key(cleaned(series)),key(cleaned(topic))}-{''})
+        if recurring or named:return 'edition'
+    if guest_edition(title,series,topic):return 'edition'
     if DATED.search(title):
         # A scripted episode may carry a historic date ("Die Nacht vom 9. November 1989"); outside a known
         # news/magazine Sendung the date must be the offer's own broadcast day (±3 days).
@@ -1073,8 +1106,15 @@ def refile_reset_edition(c,row,meta):
     """
     role=meta.get('format_grouping')
     if role not in ('edition','segment') or meta.get('state')!='format':return None
-    if meta.get('scan_requested') or meta.get('episode_verified') or meta.get('video_role_needs_review'):return None
+    # 0.6.68: a filed contribution later flagged as a short clip (18 BR24 works in the Mac check) is still
+    # the contribution it was filed as; mark_recurring_edition clears the flag.
+    if meta.get('scan_requested') or meta.get('episode_verified'):return None
     if row['state']!='identified':return None
+    if meta.get('video_role_needs_review'):
+        meta=dict(meta,video_role_needs_review=False)
+        done=c.execute("UPDATE works SET state='format',next_try=0,meta=? WHERE id=? AND state='identified'",
+                       (json.dumps(meta),row['id'])).rowcount
+        return role if done else None
     done=c.execute("UPDATE works SET state='format',next_try=0 WHERE id=? AND state='identified'",(row['id'],)).rowcount
     return role if done else None
 
@@ -1084,10 +1124,29 @@ def reset_editions(c,limit=5000):
     Read only. Reset editions are often old news editions whose offers have expired; the episode queue never
     takes a work without an active offer, so they waited there for ever (Mac-Gegenprüfung 0.6.58: 777 stayed).
     """
-    return [r[0] for r in c.execute("""SELECT w.id FROM episode_queue q CROSS JOIN works w ON w.id=q.work_id
-        WHERE w.state='identified' AND json_extract(w.meta,'$.state')='format'
+    return [r[0] for r in c.execute("""SELECT w.id FROM works w
+        WHERE w.kind='series' AND w.state='identified' AND json_extract(w.meta,'$.state')='format'
           AND json_extract(w.meta,'$.format_grouping') IN ('edition','segment')
           AND COALESCE(json_extract(w.meta,'$.scan_requested'),0)=0 LIMIT ?""",(limit,))]
+
+def editions_waiting(c,limit=5000,after=''):
+    """0.6.68: queued works checked before the new edition rules (DATED_DAY, GUEST) that they now cover.
+
+    Read only; returns (ids, last id). They waited 7–31 days as "ohne Treffer" (Mac check: THADEUSZ, buten un
+    binnen); the episode queue files them on its next turn once they are due again."""
+    rows=c.execute("""SELECT q.work_id,w.meta,(SELECT o.payload FROM offers o WHERE o.work_id=q.work_id AND o.active=1
+            ORDER BY o.rank DESC LIMIT 1) payload
+        FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.work_id>? AND q.last_outcome='unresolved' ORDER BY q.work_id LIMIT ?""",(after,limit)).fetchall()
+    out=[]
+    for row in rows:
+        if not row[2]:continue
+        try:meta=json.loads(row[1] or '{}');source=json.loads(row[2])
+        except (TypeError,ValueError):continue
+        title=str(source.get('title') or '')
+        if not (DATED_DAY.search(title) or GUEST.match(title)):continue
+        if recurring_edition(meta,source)=='edition':out.append(row[0])
+    return out,(rows[-1][0] if rows else None)
 
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""

@@ -938,7 +938,7 @@ class Service:
                         if time.time()-self.after_waiting_archive>3600:
                             self.after_waiting_archive=time.time()
                             state='missing' if not archive else 'not_ready'
-                            self.after_commit(lambda:diagnostics.event('episode_waiting_for_imdb_archive','WARNING',archive=state))
+                            self.after_commit(lambda:diagnostics.event('episode_waiting_for_imdb_archive',level='WARNING',archive=state))
                     delay=max(60,min(6*3600,delay))
                 else:
                     outcome='unresolved'
@@ -1189,7 +1189,7 @@ class Service:
         Independent of the episode queue's selection, which takes only works with an active offer. Short
         write batches after the web server is up; a busy database only postpones the next batch."""
         with self.db() as c:
-            if catalog.get_state(c,'refile_reset_v0665',False):return
+            if catalog.get_state(c,'refile_reset_v0668',False):return
         total={'edition':0,'segment':0}
         while not self.stop.is_set():
             try:
@@ -1207,13 +1207,50 @@ class Service:
         with self.worker_lock:
             self.episode_editions+=total['edition'];self.episode_segments+=total['segment']
         if sum(total.values()):diagnostics.event('episode_reset_editions_refiled',**total)
-        with self.db() as c:catalog.set_state(c,'refile_reset_v0665',True)
+        due=self.requeue_new_editions()
+        if due is None:return                              # stopped: run again next start
+        with self.db() as c:catalog.set_state(c,'refile_reset_v0668',True)
+
+    def note_archive_wait(self):
+        """0.6.68: name a missing IMDb archive in the diagnosis also when no claim runs (once per hour)."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        if archive and getattr(archive,'updated',None):return
+        if time.time()-getattr(self,'after_waiting_archive',0)<=3600:return
+        _,total,_=self.episode_last_count
+        if not total:
+            try:
+                with self.db() as c:total=c.execute('SELECT 1 FROM episode_queue LIMIT 1').fetchone()
+            except sqlite3.OperationalError:return
+        if not total:return
+        self.after_waiting_archive=time.time()
+        diagnostics.event('episode_waiting_for_imdb_archive',level='WARNING',archive='missing' if not archive else 'not_ready')
+
+    def requeue_new_editions(self):
+        """0.6.68: make works due that the new edition rules now file (see catalog.editions_waiting)."""
+        after='';due=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:ids,after=catalog.editions_waiting(c,limit=2000,after=after)
+                if ids:
+                    with self.db() as c:
+                        c.executemany('UPDATE episode_queue SET next_try=0 WHERE work_id=?',[(i,) for i in ids])
+                    due+=len(ids)
+                if after is None:break
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+            if self.stop.wait(.05):return None
+        if self.stop.is_set():return None
+        if due:diagnostics.event('episode_new_edition_rules_requeued',works=due)
+        return due
 
     def episode_loop(self,index=0):
         while not self.stop.is_set():
             requested=max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2))))
             if index>=requested or not self.settings().get('auto_metadata',True) or task_control.paused('episodes'):
                 self.stop.wait(2);continue
+            if index==0:self.note_archive_wait()
             try:busy=self.metadata_once('episode')
             except sqlite3.OperationalError as exc:
                 if not sqlite_busy(exc):raise
