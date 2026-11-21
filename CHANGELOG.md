@@ -1,3 +1,10 @@
+## 0.6.69 – Datenbanksicherung: Start über „Aufgaben“, kein Neubeginn bei laufender Erkennung
+- Befunde der Mac-Prüfung von 0.6.61 (21.11.2026). Basis: 0.6.62 (dailyme, PR #101) und 0.6.64 (Samsung TV Plus, PR #100), beide auf 0.6.61, hier zu einem Kettenstand zusammengeführt.
+- „Aufgaben“ → Datenbanksicherung → Starten brach mit `KeyError 'portal'` ab: `server.task_action` behandelte jede startbare Aufgabe ohne eigenen Zweig als Plattform-Katalogabruf. Jetzt stellt „Starten“ eine Anfrage an die Sicherungsschleife (`task_control.request('backup')`), die sie innerhalb von 5 s aufnimmt. Ein Test startet jede startbare Aufgabe einmal.
+- Sicherung bei laufender Erkennung: SQLite beginnt eine schrittweise Sicherung (`backup(pages=2048)`) nach jedem Schreibvorgang einer anderen Verbindung von vorn; bei laufender Erkennung wurde eine 2,9-GB-Sicherung so nie fertig. Mit WAL (Normalfall) wird jetzt in einem Schritt aus einem festen Lesestand kopiert (`db_backup._copy`); die Erkennung schreibt währenddessen weiter (in die WAL-Datei, die bis zum Ende der Sicherung wächst). Der Fortschritt kommt aus der Größe der entstehenden Kopie. Ohne WAL bleiben die kleinen Schritte, weil ein Schritt dort alle Schreiber blockieren würde.
+- „Es läuft bereits eine Sicherung“ ist kein Fehler mehr (`db_backup.BackupRunning`): Protokoll `db_backup_busy` statt `db_backup_failed`, unter Aufgaben „Sicherung läuft bereits“.
+- Tests: neu `tests/test_v0669_backup_tasks.py` (4; der Schreibtest bleibt mit dem alten Code nach 20 s unfertig).
+
 ## 0.6.64 – Samsung TV Plus: Region und Automatik im Live-TV
 - Aus dem Code-Review vom 21.11.2026 (Befund C2, Björn: „ja für Samsung TV“). Basis 0.6.61 (PR #99). 0.6.62 (dailyme TV) und 0.6.63 (Episoden-Einordnung absichern) sind von anderen Threads belegt.
 - Bis 0.6.61 konnte der Server Region und Automatik von Samsung TV Plus schon ändern (`/api/samsung-region`, `/api/samsung-auto`, seit 0.5.97), die Seite rief beide aber nie auf: Region blieb Deutschland, Automatik immer an.

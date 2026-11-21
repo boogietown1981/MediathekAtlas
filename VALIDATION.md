@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.69 – Datenbanksicherung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0669_backup_tasks.py` (jede startbare Aufgabe startet, „läuft bereits“ ohne Fehler, Sicherung wird bei ständigem Schreiben fertig, ein Schritt mit WAL / kleine Schritte ohne).
+- Nicht geprüft (nur auf dem Mac): Sicherung der echten 2,9-GB-Datenbank bei laufender Erkennung (Dauer, Größe der WAL-Datei währenddessen).
+
 ## 0.6.64 – Samsung TV Plus: Region und Automatik (21. November 2026)
 - Automatisch (Cloud, Chromium): gesamte Python-Suite, neu `tests/test_v0664_samsung_settings.py` (neue Region lädt sofort, gleiche Region nicht, unbekannte Region abgelehnt, Liste der neuen Region, Automatik aus verhindert Neuabruf, Verdrahtung), neu `tests/browser/samsung_setup.cjs` (Block zeigt Stand, Automatik aus/an wird gespeichert, Regionswahl gesendet), `click_all.cjs`.
 - Nicht geprüft: echter Abruf der Senderliste für Österreich/Schweiz (Netz in der Cloud gesperrt), Wiedergabe österreichischer/schweizerischer Sender aus Deutschland, Safari/Firefox.

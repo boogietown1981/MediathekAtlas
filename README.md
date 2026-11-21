@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.64
+# MediathekAtlas · 0.6.69
+
+## Neu in 0.6.69: Datenbanksicherung zuverlässig
+
+- „Starten“ der Datenbanksicherung unter Verwaltung → Aufgaben funktioniert.
+- Eine Sicherung wird auch fertig, während die Erkennung läuft (vorher begann sie immer wieder von vorn).
+- Ein zweiter Start während einer laufenden Sicherung wird als „läuft bereits“ angezeigt, nicht als Fehler.
 
 ## Neu in 0.6.64: Samsung TV Plus einstellbar
 

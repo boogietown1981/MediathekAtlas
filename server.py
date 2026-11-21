@@ -297,6 +297,8 @@ def task_action(task,action,value=None):
         task_control.set_paused(task,False)   # an explicit start lifts the pause
         if task=='filmlist':SERVICE.restart.set();SERVICE.wake.set()
         elif task=='imdb':IMDB.request()
+        # 0.6.69: the backup loop picks up the request (before: KeyError 'portal', the task has no portal).
+        elif task=='backup':task_control.request('backup')
         elif spec.get('portal')=='samsung':samsung_tvplus.start_sync(ROOT)
         else:_PORTAL_MODULES[spec['portal']][0].start_sync(ROOT)
     else:raise ValueError('Unbekannte Aktion')
