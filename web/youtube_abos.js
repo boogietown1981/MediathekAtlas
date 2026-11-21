@@ -174,7 +174,8 @@
     // 0.6.45: Reserve an freiem Speicher unterschritten
     // 0.6.79: Platz für das wöchentliche IMDb-Update (liegt es auf demselben Laufwerk wie die Abos)
     if (d.storage?.imdb_low) problems.push('Am Abo-Speicherort sind nur noch ' + gb(d.storage.free_gb) + ' GB frei; das nächste IMDb-Update braucht etwa ' +
-      gb(d.storage.imdb_need_gb) + ' GB. Abo-Downloads warten, bis wieder Platz ist. Gesehene Videos löschen oder das Gesamtbudget senken.');
+      gb(d.storage.imdb_need_gb) + ' GB. Abo-Downloads warten, bis wieder Platz ist. ' +
+      (d.storage.total_gb ? 'Gesehene Videos löschen oder das Gesamtbudget senken.' : 'Gesehene Videos löschen oder ein Gesamtbudget für alle Abos festlegen.'));
     else if (d.storage?.low) problems.push('Am Abo-Speicherort sind nur noch ' + gb(d.storage.free_gb) + ' GB frei (Reserve ' + d.storage.reserve_gb +
       ' GB): Abo-Downloads warten, bis wieder Platz ist. Gesehene Videos löschen oder die Reserve senken.');
     if (d.storage?.total_full) problems.push('Alle Abos zusammen belegen ' + gb(d.storage.used_total_gb) + ' von ' + d.storage.total_gb +
