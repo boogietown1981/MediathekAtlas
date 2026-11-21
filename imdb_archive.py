@@ -503,7 +503,10 @@ class Archive:
             eps=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND e.seasonNumber=? AND e.episodeNumber=? LIMIT 2',
                              (series,meta['season'],meta['episode']),('episode_numbers',series,meta['season'],meta['episode']))
             number_fallback=len(eps)==1
-        if len(eps)!=1 and not isinstance(meta.get('season'),int) and not isinstance(meta.get('episode'),int):
+        # 0.6.73 (Mac-Prüfung 0.6.71): core.EPISODE reads a three-digit "Episode 500"/"Folge 610" as episode
+        # 500 without a season, which skipped this branch for all Sturm-der-Liebe repeats 215–999. Such a
+        # number is the same absolute number, so it is accepted when it agrees with the title's.
+        if len(eps)!=1 and not isinstance(meta.get('season'),int) and meta.get('episode') in (None,absolute_episode(row,meta)):
             # 0.6.70: a daily soap numbered absolutely in one IMDb season (Sturm der Liebe 1–4,678, Dahoam is
             # Dahoam 1–3,833, all in season 1). The broadcaster's absolute number names exactly that episode;
             # an original air date in the title must agree with IMDb's year (±1).

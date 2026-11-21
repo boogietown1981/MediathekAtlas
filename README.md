@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.71
+# MediathekAtlas · 0.6.73
+
+## Neu in 0.6.73: Sturm der Liebe auch mit dreistelligen Folgennummern
+
+- „Episode 500“ oder „Folge 610“ wurden bisher als Folge ohne Staffel gelesen und deshalb nicht über die fortlaufende IMDb-Nummer gesucht. Jetzt werden auch die Folgen 1–999 zugeordnet, mit denselben Sicherheitsregeln wie in 0.6.70. Schon geprüfte Folgen kommen sofort wieder dran.
 
 ## Neu in 0.6.71: Wiederholungen von Sturm der Liebe
 

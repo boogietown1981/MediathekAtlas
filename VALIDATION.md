@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.73 – Sturm der Liebe dreistellig (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0673.py`: „Episode 150“, „Folge 150“, „Episode 150 (Audiodeskription)“ mit Metadaten aus `core.identify` → Folge 150; kein Treffer bei mehreren Staffeln, Kurzclip, Titeldatum, abweichender Nummer, gesetzter Staffel, „3/10“. Ohne die Korrektur schlagen 3 Tests fehl.
+- Nicht geprüft: Wirkung auf den Katalog (Ziel: die 660 offenen „Episode N“ 215–999 überwiegend zugeordnet).
+
 ## 0.6.71 – Sturm der Liebe „Episode N“ (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0671.py`: „Episode 150“ (auch mit Audiodeskription) bei Sendedatum 2026 und IMDb-Jahr 2006 → Folge 150; kein Treffer bei unbekannter Nummer, mehreren Staffeln, Kurzclip, widersprechendem Titeldatum, „2/6“; Abo-Ereignis mit planned_gb.
 - Nicht geprüft: Wirkung auf den Katalog (Ziel: Sturm der Liebe mindestens +800).

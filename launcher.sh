@@ -15,7 +15,7 @@ LOG="$STATE_DIR/startup.log"
 if [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ]; then
   : > "$LOG"
 fi
-printf 'MediathekAtlas 0.6.71 Startprüfung\n' >> "$LOG"
+printf 'MediathekAtlas 0.6.73 Startprüfung\n' >> "$LOG"
 # 0.6.48: dialogs only where someone can answer them (MEDIATHEKATLAS_NO_DIALOG=1 for tests and headless starts;
 # a dialog without a screen kept the script waiting for ever).
 OSASCRIPT=/usr/bin/osascript
