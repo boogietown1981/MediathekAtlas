@@ -1189,7 +1189,7 @@ class Service:
         Independent of the episode queue's selection, which takes only works with an active offer. Short
         write batches after the web server is up; a busy database only postpones the next batch."""
         with self.db() as c:
-            if catalog.get_state(c,'refile_reset_v0668',False):return
+            if catalog.get_state(c,'refile_reset_v0670',False):return
         total={'edition':0,'segment':0}
         while not self.stop.is_set():
             try:
@@ -1209,7 +1209,7 @@ class Service:
         if sum(total.values()):diagnostics.event('episode_reset_editions_refiled',**total)
         due=self.requeue_new_editions()
         if due is None:return                              # stopped: run again next start
-        with self.db() as c:catalog.set_state(c,'refile_reset_v0668',True)
+        with self.db() as c:catalog.set_state(c,'refile_reset_v0670',True)
 
     def note_archive_wait(self):
         """0.6.68: name a missing IMDb archive in the diagnosis also when no claim runs (once per hour)."""

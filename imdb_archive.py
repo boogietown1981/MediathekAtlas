@@ -128,6 +128,9 @@ def episode_search_terms(row,meta,show_title):
                 prefix=re.match(r'^\s*'+re.escape(str(show_title))+r'\s*[:\-–—|]\s*(.+?)\s*$',value,re.I)
                 if prefix:possibilities.append(prefix.group(1))
         possibilities+=[episode_name(x) for x in list(possibilities)]
+        # 0.6.70 (Mac-Testkopie 21.11.2026, Dahoam is Dahoam 2.471 von 2.545 ohne Treffer):
+        # "Menu à la Française · 17.08.15 | Folge 1562" – the original air date follows the episode name.
+        possibilities+=[AIR_DATE_TAIL.sub('',x) for x in list(possibilities) if AIR_DATE_TAIL.search(x)]
         for name in possibilities:
             value=norm(name)
             # A bare number ("12") or the show title itself names no episode.
@@ -139,6 +142,36 @@ def episode_search_terms(row,meta,show_title):
         if dated and dated not in seen:
             seen.add(dated);out.append(dated)
     return out
+
+AIR_DATE_TAIL=re.compile(r'\s*[·|]\s*[0-3]?\d\.[01]?\d\.(?:\d{2}|(?:19|20)\d{2})\b.*$')
+AIR_DATE=re.compile(r'(?<![\d.])([0-3]?\d)\.([01]?\d)\.(\d{2}|(?:19|20)\d{2})(?![\d.])')
+# Daily soaps count their episodes through: "Folge 4556", "Folge (4612)", "Sturm der Liebe (4602)", "… | Folge 1562".
+ABSOLUTE_NUMBER=re.compile(r'(?i)\bFolge\s*\(?\s*(\d{1,5})\s*\)?(?!\s*/)|^[^()]{2,80}\((\d{3,5})\)\s*$')
+
+def numbered_title(e,row,meta):
+    """IMDb's episode title; for a placeholder ("Episode #1.4556") the broadcaster's name or "Folge N"."""
+    title=e['primaryTitle'] or ''
+    if title and not re.match(r'(?i)^episode\s*#?\s*\d',title):return title
+    raw=re.sub(r'(?i)\bFolge\s*\(?\s*\d{1,5}\s*\)?|\(\s*\d{3,5}\s*\)','',str(meta.get('episode_title') or row.get('title') or ''))
+    own=AIR_DATE_TAIL.sub('',episode_name(raw)).strip(' ()-:–—|.,')
+    return own if own and norm(own)!=norm(row.get('topic') or meta.get('title') or '') else 'Folge %s'%e['episodeNumber']
+
+def absolute_episode(row,meta):
+    """Absolute episode number named by the broadcaster, or None (never from "Teil 2/3" or "(2/6)")."""
+    for raw in (row.get('title'),meta.get('episode_title')):
+        m=ABSOLUTE_NUMBER.search(str(raw or ''))
+        if m:
+            n=int(m.group(1) or m.group(2))
+            if n>0:return n
+    return None
+
+def air_year(row,meta):
+    """Year of an original air date in the title ("· 17.08.15 |"), or None."""
+    for raw in (row.get('title'),meta.get('episode_title')):
+        m=AIR_DATE.search(str(raw or ''))
+        if m:
+            y=int(m.group(3));return y+2000 if y<100 else y
+    return None
 
 SERIES_TYPES=('tvSeries','tvMiniSeries')
 IMDB_ID=re.compile(r'tt\d{1,12}')
@@ -468,6 +501,22 @@ class Archive:
             eps=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND e.seasonNumber=? AND e.episodeNumber=? LIMIT 2',
                              (series,meta['season'],meta['episode']),('episode_numbers',series,meta['season'],meta['episode']))
             number_fallback=len(eps)==1
+        if len(eps)!=1 and not isinstance(meta.get('season'),int) and not isinstance(meta.get('episode'),int):
+            # 0.6.70: a daily soap numbered absolutely in one IMDb season (Sturm der Liebe 1–4,678, Dahoam is
+            # Dahoam 1–3,833, all in season 1). The broadcaster's absolute number names exactly that episode;
+            # an original air date in the title must agree with IMDb's year (±1).
+            n=absolute_episode(row,meta)
+            if n and self.single_season(series):
+                found=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes,b.startYear FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND e.seasonNumber=1 AND e.episodeNumber=? LIMIT 2',
+                                   (series,n),('episode_absolute',series,n))
+                year=air_year(row,meta)
+                if len(found)==1 and (year is None or found[0]['startYear'] is None or abs(found[0]['startYear']-year)<=1):
+                    # The broadcaster's own episode name, if any, must be one of IMDb's names for that episode
+                    # (the name probe above would have found it otherwise; a different name is a contradiction).
+                    own=numbered_title({'primaryTitle':'','episodeNumber':n},row,meta)
+                    named=not own.startswith('Folge ')
+                    if not named or self._lookup('SELECT 1 FROM names WHERE name=? AND tconst=? LIMIT 1',(norm(own),found[0]['tconst']),('episode_name',norm(own),found[0]['tconst'])):
+                        eps=found;number_fallback=True
         out={}
         if len(eps)==1:
             e=eps[0];season=e['seasonNumber'];episode=e['episodeNumber']
@@ -477,7 +526,7 @@ class Archive:
                 out['runtime_agrees']=not out['runtime_mismatch']
             if season is not None and episode and (meta.get('season') in (None,season)) and (meta.get('episode') in (None,episode)):
                 out.update(season=season,episode=episode,episode_verified=True,
-                           episode_title=(e['primaryTitle'] if number_fallback else episode_name(meta.get('episode_title') or row['title']) or meta.get('episode_title') or row['title']),
+                           episode_title=(numbered_title(e,row,meta) if number_fallback else episode_name(meta.get('episode_title') or row['title']) or meta.get('episode_title') or row['title']),
                            episode_reference_id=e['tconst'],
                            reason='IMDb-Episode anhand eindeutiger Staffel-/Folgenummer bestätigt' if number_fallback else 'Serien- und Episodentitel im IMDb-Archiv eindeutig zugeordnet')
             if not number_fallback and matched_name.startswith('episode dated '):
@@ -485,6 +534,11 @@ class Archive:
                 out.update(episode_match='date',episode_title=meta.get('episode_title') or row['title'],
                            reason='IMDb-Ausgabe anhand des Sendedatums im Titel eindeutig zugeordnet')
         return out
+    def single_season(self,series):
+        """True if IMDb lists all numbered episodes of the series in season 1 (absolute numbering, ≥ 100)."""
+        rows=self._lookup('SELECT seasonNumber,MAX(episodeNumber) top FROM title_episode WHERE parentTconst=? AND seasonNumber IS NOT NULL GROUP BY seasonNumber LIMIT 2',
+                          (series,),('seasons',series))
+        return len(rows)==1 and rows[0]['seasonNumber']==1 and (rows[0]['top'] or 0)>=100
     def has_episodes(self,series):
         return bool(self._lookup('SELECT 1 FROM title_episode WHERE parentTconst=? LIMIT 1',(series,),('has_episodes',series)))
     def episode_evidence(self,row,meta):

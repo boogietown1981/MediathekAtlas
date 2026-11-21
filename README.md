@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.68
+# MediathekAtlas · 0.6.70
+
+## Neu in 0.6.70: Folgen von Daily Soaps werden erkannt
+
+- „Sturm der Liebe“, „Dahoam is Dahoam“ und andere Serien, die IMDb fortlaufend durchzählt, bekommen ihre Folge über die Nummer im Sendertitel („Folge 4556“, „… · 17.08.15 | Folge 1562“). Bisher blieben dort über 90 % „ohne Treffer“.
+- Sicherheitsregeln: Nur bei Serien, deren Folgen in IMDb in einer einzigen Staffel stehen; Laufzeit, ein Erstsendedatum im Titel und ein eigener Folgentitel müssen zu IMDb passen, sonst bleibt die Folge offen.
+- Schon geprüfte Folgen solcher Serien kommen sofort wieder dran.
+- (0.6.69 ist an einen anderen Versionsstand vergeben.)
 
 ## Neu in 0.6.68: Folgensuche ordnet mehr Sendungsausgaben ein
 

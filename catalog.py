@@ -1144,6 +1144,10 @@ def editions_waiting(c,limit=5000,after=''):
         try:meta=json.loads(row[1] or '{}');source=json.loads(row[2])
         except (TypeError,ValueError):continue
         title=str(source.get('title') or '')
+        # 0.6.70: daily soaps with an absolute number („Folge 4556“) of an IMDb-identified series
+        import imdb_archive
+        if str(meta.get('reference_id') or '').startswith('tt') and imdb_archive.ABSOLUTE_NUMBER.search(title):
+            out.append(row[0]);continue
         if not (DATED_DAY.search(title) or GUEST.match(title)):continue
         if recurring_edition(meta,source)=='edition':out.append(row[0])
     return out,(rows[-1][0] if rows else None)

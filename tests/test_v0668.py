@@ -88,7 +88,7 @@ class Requeue(Fixture):
             due = c.execute('SELECT COUNT(*) FROM episode_queue WHERE next_try<=?', (time.time(),)).fetchone()[0]
             filed = c.execute("SELECT COUNT(*) FROM works WHERE state='format'").fetchone()[0]
             flags = [json.loads(r[0]).get('video_role_needs_review') for r in c.execute("SELECT meta FROM works WHERE state='format'")]
-            self.assertTrue(catalog.get_state(c, 'refile_reset_v0668', False))
+            self.assertTrue(catalog.get_state(c, 'refile_reset_v0670', False))
         self.assertEqual(due, 4)
         self.assertEqual(filed, 2)
         self.assertEqual(flags, [False, False])
