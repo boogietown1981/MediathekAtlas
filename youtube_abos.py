@@ -76,7 +76,7 @@ RESERVE_RECHECK = 30 * 60      # wartet ein Abo-Download auf Platz, prüft er al
 # gemeinsames Budget für alle Abos zusammen, zusätzlich zum Budget je Abo. Und das wöchentliche IMDb-Update
 # (neues Archiv neben dem alten, ~22 GB) bekommt seinen Platz, wenn Abos und Archiv auf demselben Laufwerk liegen.
 TOTAL_CHOICES = (0, 10, 20, 30, 50, 100, 200, 500)
-TOTAL_DEFAULT_GB = 30
+TOTAL_DEFAULT_GB = 0           # 0.6.80 (Björn 21.11.2026: „Ohne Grenze starten“): nichts wird gelöscht, er stellt die Grenze selbst ein
 TOTAL_REASON = 'wartet: Gesamtbudget aller Abos erreicht'
 # Geschätzte Größe eines noch nicht geladenen Videos (Byte je Sekunde, MP4 H.264/AAC bei YouTube üblich)
 RATE = {'480': 110_000, '720': 250_000, '1080': 500_000}

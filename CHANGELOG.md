@@ -1,3 +1,6 @@
+## 0.6.80 – 0.6.79 mit Gesamtgrenze „ohne Grenze“ als Standard
+- Björn (21.11.2026, Entscheidungskarte): „Ohne Grenze starten“. `youtube_abos.TOTAL_DEFAULT_GB = 0`: nach der Installation wird nichts gelöscht; der Platz für das IMDb-Update bleibt frei; die Gesamtgrenze stellt er unter YouTube → Abos selbst ein. 0.6.79 (Standard 30 GB) zurückgezogen, nie ausgegeben.
+
 ## 0.6.79 – Gesamtbudget aller Abos, Platz für das IMDb-Update, Kurzclip-Regel ohne nummerierte Folgen
 - Grundlage: Nachtdiagnose M3 21.11.2026 (freier Speicher 65,4 → 23,9 GB in 9,5 h; 9 Abos × 10 GB Budget; IMDb-Update am 27.11. braucht ~22 GB neben dem Archiv) und Hinweise der Mac-Prüfung 0.6.78. Basis 0.6.78 (PR #104).
 - `youtube_abos`: Gesamtbudget `abo_total_gb` (0, 10, 20, 30, 50, 100, 200, 500 GB; Standard 30). `over_total` prüft beim Einreihen (mit wartenden Aufträgen) und beim Start (`pace`, nur fertige Dateien); gesehene Videos irgendeines Abos machen zuerst Platz (`_make_room_total`), sonst wartet das Video (Grund „wartet: Gesamtbudget aller Abos erreicht“, Ereignis `youtube_abo_total_full`). „Jetzt versuchen“ startet weiter sofort. Dateien mehrerer Abos zählen einmal.

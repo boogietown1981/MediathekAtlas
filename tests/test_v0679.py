@@ -40,6 +40,7 @@ class TotalBudget(Fixture):
 
     def test_setting(self):
         self.assertEqual(ab.total_gb(self.root), ab.TOTAL_DEFAULT_GB)
+        self.assertEqual(ab.TOTAL_DEFAULT_GB, 0)          # 0.6.80: Björn „Ohne Grenze starten“
         self.assertEqual(ab.set_total(self.root, 10), 10)
         self.assertEqual(ab.total_gb(self.root), 10)
         with self.assertRaises(ValueError):

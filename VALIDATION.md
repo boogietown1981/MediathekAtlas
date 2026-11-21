@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.80 – Standard „ohne Grenze“ (21. November 2026)
+- Automatisch: gesamte Python-Suite; `tests/test_v0679.py` prüft den Standard 0 (ohne Grenze). Sonst wie 0.6.79.
+
 ## 0.6.79 – Gesamtbudget Abos, Platz fürs IMDb-Update, Kurzclip-Regel (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0679.py` (7): Einstellung Gesamtbudget, zwei Abos ohne eigenes Budget über 10 GB gesamt → Start wartet mit Hinweis, „ohne Grenze“ lässt starten, Verwaltung/Diagnose zählen; Reserve wächst auf IMDb-Platzbedarf nur bei gleichem Laufwerk; Oberfläche nennt Gesamtbudget und IMDb-Platz; nummerierte Folgen aus der Kurzclip-Einordnung zurück in die Folgensuche.
 - Nicht geprüft: echtes Laufwerk, Björns Abos (Prüfliste releases/0.6.79/PRUEFLISTE.md).
