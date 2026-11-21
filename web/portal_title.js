@@ -29,6 +29,8 @@
       action: 'offline-download-action', enrich: 'dmax-enrich', external: 'Beim Sender ansehen'},
     filmfriend: {play: () => null, jobs: id => 'filmfriend-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'filmfriend-enrich', external: 'Bei filmfriend ansehen'},
+    dailyme: {play: () => null, jobs: id => 'dailyme-downloads?id=' + encodeURIComponent(id), add: '',
+      action: 'offline-download-action', enrich: 'dailyme-enrich', external: 'Bei dailyme ansehen'},
     rtlplus: {play: () => null, jobs: id => 'rtlplus-downloads?id=' + encodeURIComponent(id), add: '',
       action: 'offline-download-action', enrich: 'rtlplus-enrich', external: 'Bei RTL+ ansehen'},
     toggo: {play: () => window.playToggo, jobs: id => 'toggo-downloads?id=' + encodeURIComponent(id), add: '',
@@ -173,8 +175,8 @@
   function episodesSection(m, host) {
     const src = SOURCES[m.source], episodes = m.episodes || [];
     const sec = section('Staffeln & Folgen · ' + episodes.length, 'portal-title-episodes');
-    const tabs = make('div', undefined, 'tv-tabs'), list = make('div', undefined, 'tv-episodes');
-    tabs.setAttribute('role', 'tablist'); sec.append(tabs, list); host.append(sec);
+    const tabs = make('div', undefined, 'tv-tabs'), list = make('div', undefined, 'tv-episodes'), head = make('div', undefined, 'tv-sectionhead');
+    tabs.setAttribute('role', 'tablist'); head.append(sec.querySelector('h2'), tabs, window.episodeViewSwitch(list)); sec.append(head, list); host.append(sec);
     if (!episodes.length) { list.append(make('p', 'Keine Folgen im Katalog.', 'empty')); return; }
     const seasons = [...new Set(episodes.map(e => e.season))].sort((a, b) => (a ?? 1e9) - (b ?? 1e9));
     let current = 'all';
@@ -188,20 +190,26 @@
       tabs.append(tab('all', 'Alle', episodes.length));
       for (const s of seasons) tabs.append(tab(s, s == null ? 'Ohne Staffel' : 'Staffel ' + s, episodes.filter(e => e.season === s).length));
     }
+    // 0.6.59: tiles with the play button on the picture: offline copy (local) → built-in player → provider.
+    const tiles = [];
+    const routeOf = e => {
+      const job = window.AtlasOffline?.job(m.source, e.id), fn = src.play();
+      if (job?.state === 'done' && typeof window.playJob === 'function') return {route: 'local', job};
+      if (e.playable && fn !== null) return {route: 'player'};
+      const url = https(e.web_url) ? e.web_url : https(m.web_url) ? m.web_url : '';
+      return url ? {route: 'provider', url: direct(m.source, url)} : {route: ''};
+    };
+    const playOf = (e, label, r) => r.route === 'local' ? {label, onPlay: () => window.playJob(r.job)} :
+      r.route === 'player' ? {label, onPlay: () => play({...m, id: e.id}, label)} :
+      r.route === 'provider' ? {label, href: r.url, provider: m.provider} : null;
+    function paintRoutes() { for (const t of tiles) { if (!t.node.isConnected) continue; const r = routeOf(t.e); window.tileRoute?.(t.node.querySelector('.tv-thumb'), r.route, playOf(t.e, t.label, r)); } }
+    window.AtlasOffline?.onChange(m.source, () => list.isConnected ? (paintRoutes(), true) : false);
     function paintRows() {
-      list.replaceChildren();
+      list.replaceChildren(); tiles.length = 0;
       for (const e of episodes) {
         if (current !== 'all' && e.season !== current) continue;
-        const code = epCode(e.season, e.episode), row = make('article', undefined, 'tv-episode'), thumb = make('div', undefined, 'tv-thumb');
-        const img = image(e.poster || m.poster, ''); if (img) thumb.append(img);
-        thumb.append(make('span', code || 'Folge', 'tv-code')); row.append(thumb);
-        const body = make('div', undefined, 'tv-epbody');
-        body.append(make('h3', (Number.isInteger(e.episode) ? e.episode + '. ' : '') + (e.title || m.title)));
-        const meta = [mins(e.duration), e.year, e.badge];
-        body.append(make('p', meta.filter(Boolean).join(' · '), 'tv-epmeta'));
-        if (e.summary) body.append(make('p', e.summary, 'tv-epdesc'));
+        const code = epCode(e.season, e.episode), label = m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || '');
         const acts = make('div', undefined, 'tv-epactions');
-        if (e.playable) acts.append(button('▶ Abspielen', 'primary', () => play({...m, id: e.id}, m.title + ' · ' + (code ? code + ' · ' : '') + (e.title || ''))));
         // TOGGO: keep the way to toggo.de beside the player button.
         if (e.playable && m.source === 'toggo' && https(e.web_url)) acts.append(link(src.external, direct(m.source, e.web_url)));
         else if (https(e.web_url || m.web_url)) acts.append(link(src.external || 'Beim Anbieter ansehen', direct(m.source, e.web_url || m.web_url)));
@@ -209,7 +217,10 @@
         if (off) acts.append(off);
         else if (e.protected) { const lock = window.AtlasOffline?.protectedNote(); if (lock) acts.append(lock); }
         acts.append(button('Details', '', () => open(m.source, e.id)));
-        body.append(acts); row.append(body); list.append(row);
+        const r = routeOf(e), meta = [mins(e.duration), e.year, e.badge].filter(Boolean).join(' · ');
+        const node = window.episodeTile({image: image(e.poster || m.poster, ''), code: code || 'Folge', title: (Number.isInteger(e.episode) ? e.episode + '. ' : '') + (e.title || m.title),
+          meta, desc: e.summary || '', actions: acts, route: r.route, play: playOf(e, label, r), watch: window.watchState?.(m.source + ':' + e.id, e.duration)});
+        node.dataset.episode = e.id; tiles.push({node, e, label}); list.append(node);
       }
     }
     paintTabs(); paintRows();
@@ -237,7 +248,7 @@
       const save = window.AtlasOffline?.control(m.source, m.id, m.title, {night: !!m.offline.night});
       if (save) actions.push(save);
     }
-    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo' || source === 'crunchyroll' || source === 'plex' || source === 'servustv' || source === 'redbulltv' || source === 'dmax' || source === 'filmfriend' || source === 'rtlplus')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
+    if (https(m.web_url) && (!m.playable || source === 'netzkino' || source === 'justwatch' || source === 'rakuten' || source === 'youtube' || source === 'joyn' || source === 'toggo' || source === 'crunchyroll' || source === 'plex' || source === 'servustv' || source === 'redbulltv' || source === 'dmax' || source === 'filmfriend' || source === 'dailyme' || source === 'rtlplus')) actions.push(link(src.external || 'Beim Anbieter ansehen', direct(source, m.web_url)));
     if (m.series?.id) actions.push(button('Zur Serie', '', () => open(source, m.series.id)));
     const facts = [m.year ? String(m.year) : '', mins(m.duration), m.age_rating, ratingChip(m.rating), (m.categories || []).slice(0, 3).join(' · '),
       !m.playable && m.kind !== 'series' ? (m.offline?.night ? 'Tagsüber nur beim Anbieter · nachts speicherbar' : m.protected ? '🔒 Kopiergeschützt · nur im JustWatch-Player' : m.source === 'toggo' ? '🔒 Kopiergeschützt · nur bei TOGGO' : m.source === 'crunchyroll' ? '🔒 Kopiergeschützt · nur bei Crunchyroll (Abo)' : m.source === 'rtlplus' ? '🔒 Kopiergeschützt · nur bei RTL+' : 'Nur beim Anbieter abspielbar') : ''];

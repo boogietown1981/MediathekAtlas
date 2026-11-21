@@ -34,8 +34,31 @@ def provider_success(provider):
     """A successful request ends a transient outage without touching other providers."""
     with _OUTAGE_LOCK:_OUTAGES.pop(provider,None)
 
+RATE_LIMIT_DEFAULT=300.0;RATE_LIMIT_MIN=60.0
+def _rate_limited(exc):
+    """0.6.58: seconds to wait after HTTP 429/503 (Retry-After, 60 s to 15 min), else 0."""
+    if not isinstance(exc,urllib.error.HTTPError) or exc.code not in (429,503):return 0.0
+    try:wait=float((exc.headers or {}).get('Retry-After') or RATE_LIMIT_DEFAULT)
+    except (TypeError,ValueError):wait=RATE_LIMIT_DEFAULT
+    return max(RATE_LIMIT_MIN,min(_OUTAGE_MAX_PAUSE,wait))
+
 def provider_failure(provider,exc):
-    """After repeated transport errors, cool down that provider only."""
+    """After repeated transport errors, cool down that provider only.
+
+    0.6.58 (Diagnose 20.11. nachts: 78× „HTTP 429 Too Many Requests“ von Wikidata in einer Stunde): a provider
+    that asks us to slow down pauses at once, for as long as it asks; its works wait instead of failing.
+    """
+    limited=_rate_limited(exc)
+    if limited:
+        now=time.monotonic()
+        with _OUTAGE_LOCK:
+            old=_OUTAGES.get(provider) or {'first':now,'last':now,'count':0,'until':0.0,'opens':0}
+            old['last']=now;old['count']+=1
+            if now+limited>old['until']:
+                old['until']=now+limited
+                diagnostics.event('provider_rate_limited',provider=provider,seconds=round(limited),status=exc.code)
+            _OUTAGES[provider]=old
+        return True
     if not _network_failure(exc):return False
     now=time.monotonic()
     with _OUTAGE_LOCK:
@@ -351,6 +374,41 @@ def tvdb_candidates(row,meta,credential,kind,title):
         if len(out)>=3:break
     return out
 
+# 0.6.58 (Björns Diagnose 20.11. nachts): Wikidata answered "Rainhard Fendrich", "Midge Ure" (people),
+# "Allesfresser" and "Großkatzen" (concepts, taxa) as films with similarity 1.0. These suggestions held 5,584
+# works without a kind. A candidate must be a film or a programme: an item whose classes (P31) name something
+# else is no candidate; neither is any person, taxon, band, album, place or organisation, whatever its
+# description says ("German film director" reads like a film).
+WIKIDATA_NOT_MEDIA={'Q5','Q16521','Q55983715','Q23038290','Q215380','Q5741069','Q2088357','Q482994','Q134556',
+                    'Q7366','Q105543609','Q571','Q7725634','Q4167410','Q13406463','Q43229','Q4830453','Q783794',
+                    'Q515','Q486972','Q532','Q3957','Q6256','Q3624078','Q35657','Q1549591','Q15632617','Q95074',
+                    'Q13442814','Q732577','Q11344','Q4936952','Q8502','Q4022','Q23397','Q39614','Q16970','Q41176'}
+def _wikidata_classes(ent):
+    out=[]
+    for x in (ent or {}).get('claims',{}).get('P31',[]):
+        if x.get('rank')=='deprecated':continue
+        value=((x.get('mainsnak') or {}).get('datavalue') or {}).get('value')
+        if isinstance(value,dict) and value.get('id'):out.append(value['id'])
+    return out
+def wikidata_media(ent,candidate):
+    """False for a Wikidata candidate that is plainly no film or programme (see WIKIDATA_NOT_MEDIA)."""
+    classes=set(_wikidata_classes(ent))
+    if classes & WIKIDATA_NOT_MEDIA:return False
+    # Classes, but none of the film/series classes and no film words in the description: a concept –
+    # unless the item carries what only films and programmes carry (0.6.65, Mac-Gegenprüfung 0.6.58: the
+    # film „Der Baum“ and the series „100% Wolf“ are filed under classes outside the film/series list).
+    if candidate.get('evidence_type')=='unknown_type' and classes and not _wikidata_media_claims(ent):return False
+    return True
+# Director, cast, screenwriter, producer, composer, duration, number of episodes/seasons, TMDB/fernsehserien.de IDs.
+WIKIDATA_MEDIA_PROPS=('P57','P161','P58','P162','P86','P2047','P1113','P2437','P4947','P4983','P5327','P1874','P1258')
+def _wikidata_media_claims(ent):
+    claims=(ent or {}).get('claims',{})
+    if any(claims.get(p) for p in WIKIDATA_MEDIA_PROPS):return True
+    for x in claims.get('P345',[]):           # IMDb: only a title ID (tt…), people have nm…
+        value=((x.get('mainsnak') or {}).get('datavalue') or {}).get('value')
+        if isinstance(value,str) and value.startswith('tt'):return True
+    return False
+
 def wikidata(title,kind,year):
     ck=(title,kind,year)
     with _LOCK:cached=_WD_CACHE.get(ck)
@@ -365,12 +423,18 @@ def wikidata(title,kind,year):
         from external_metadata import fetch_json
         try:
             ent=fetch_json('https://www.wikidata.org/w/api.php',{'action':'wbgetentities','ids':d['candidate_id'],'props':'claims','format':'json'}).get('entities',{}).get(d['candidate_id'],{})
+            if not wikidata_media(ent,d):
+                diagnostics.event('wikidata_not_media',title=title,kind=kind,reference_id=d.get('candidate_id'),
+                                  classes=_wikidata_classes(ent)[:4])
+                ent={};d=None
             ids=[x.get('mainsnak',{}).get('datavalue',{}).get('value',{}).get('id') for x in ent.get('claims',{}).get('P136',[]) if x.get('rank')!='deprecated']
             ids=[x for x in ids if x][:8]
             if ids:
                 entries=fetch_json('https://www.wikidata.org/w/api.php',{'action':'wbgetentities','ids':'|'.join(ids),'props':'labels','languages':'de|en','format':'json'}).get('entities',{})
                 d['genres']=genres((x.get('labels',{}).get('de') or x.get('labels',{}).get('en') or {}).get('value','') for x in entries.values())
-        except Exception as e:diagnostics.error('wikidata_genres_failed',e)
+        except Exception as e:
+            if _rate_limited(e):raise          # 0.6.58: the caller pauses Wikidata; nothing is cached
+            diagnostics.error('wikidata_genres_failed',e)
     with _LOCK:
         if len(_WD_CACHE)>=2048:_WD_CACHE.pop(next(iter(_WD_CACHE)))
         _WD_CACHE[ck]=(time.monotonic(),d)
@@ -540,6 +604,12 @@ def candidates(row,meta,settings):
                 if provider=='OMDb' and isinstance(e,OMDbError) and omdb_status(settings[field])['paused']:
                     if provider not in deferred and not imdb_checked():deferred.append(provider)
                     checked({'provider':provider,'status':'paused','count':0});break
+                if _rate_limited(e):
+                    # 0.6.58: "too many requests" is no failed check: pause, keep the work for later.
+                    provider_failure(provider,e)
+                    if provider not in deferred:deferred.append(provider)
+                    checked({'provider':provider,'status':'paused','count':0})
+                    break
                 provider_failure(provider,e)
                 checked({'provider':provider,'status':'error','count':0})
                 warnings.append(provider+': '+core.safe_error(e));diagnostics.error('provider_failed',e,provider=provider,title=title)
@@ -568,6 +638,11 @@ def candidates(row,meta,settings):
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
                 provider_complete(start,provider='Wikidata',title=title,kind=k,candidates=int(bool(d)))
             except Exception as e:
+                if _rate_limited(e):
+                    provider_failure('Wikidata',e)
+                    if 'Wikidata' not in deferred:deferred.append('Wikidata')
+                    checked({'provider':'Wikidata','status':'paused','count':0})
+                    break
                 provider_failure('Wikidata',e)
                 checked({'provider':'Wikidata','status':'error','count':0})
                 warnings.append('Wikidata: '+core.safe_error(e))

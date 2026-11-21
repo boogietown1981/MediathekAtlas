@@ -19,6 +19,7 @@ from a title page.
 """
 from __future__ import annotations
 
+import json
 import os
 import re
 import sqlite3
@@ -44,6 +45,7 @@ def fold(value):
 def _db(root):
     db = sqlite3.connect(str(root / 'people.sqlite'), timeout=10)
     db.execute('CREATE TABLE IF NOT EXISTS photos(key TEXT PRIMARY KEY, url TEXT, role TEXT, checked REAL)')
+    db.execute('CREATE TABLE IF NOT EXISTS titles(key TEXT PRIMARY KEY, people TEXT, checked REAL)')   # 0.6.57
     return db
 
 
@@ -55,6 +57,24 @@ def _cached(db, key, now):
     if now - (checked or 0) > (HIT_TTL if url else MISS_TTL):
         return None
     return {'url': url or '', 'role': role or ''}
+
+
+def _cached_title(db, key, now):
+    row = db.execute('SELECT people,checked FROM titles WHERE key=?', (key,)).fetchone()
+    if not row:
+        return None
+    people, checked = row
+    try:
+        listing = json.loads(people or '[]')
+    except ValueError:
+        return None
+    if now - (checked or 0) > (HIT_TTL if listing else MISS_TTL):
+        return None
+    return listing
+
+
+def _store_title(db, key, listing, now):
+    db.execute('INSERT OR REPLACE INTO titles VALUES(?,?,?)', (key, json.dumps(listing[:80], ensure_ascii=False), now))
 
 
 def _store(db, key, url, role, now):
@@ -122,38 +142,71 @@ def resolve_title(tmdb, context):
     return (hits[0]['id'], kind) if len(hits) == 1 else (None, kind)
 
 
-def credits(tmdb, tmdb_id, kind):
-    """folded name -> (photo url, role) from the title's own credits."""
-    out = {}
+def credit_list(tmdb, tmdb_id, kind):
+    """Ordered people of the title: [{'name', 'role', 'url', 'crew'}]; film directors first, then the cast in billing order.
+    (0.6.57: the order is kept for "Alle anzeigen" and for pages without own cast, e.g. Plex.)"""
+    out = []
     if kind == 'tv':
         data = tmdb('tv/%d/aggregate_credits' % int(tmdb_id), None)
         for p in data.get('cast') or []:
             roles = [r.get('character') for r in p.get('roles') or [] if r.get('character')]
-            out.setdefault(fold(p.get('name')), (_photo(p.get('profile_path')), ', '.join(roles[:2])))
+            out.append({'name': p.get('name'), 'role': ', '.join(roles[:2]), 'url': _photo(p.get('profile_path')), 'crew': False})
     else:
         data = tmdb('movie/%d/credits' % int(tmdb_id), None)
+        directors = [p for p in data.get('crew') or [] if p.get('job') == 'Director']
+        out += [{'name': p.get('name'), 'role': 'Regie', 'url': _photo(p.get('profile_path')), 'crew': True} for p in directors[:4]]
         for p in data.get('cast') or []:
-            out.setdefault(fold(p.get('name')), (_photo(p.get('profile_path')), p.get('character') or ''))
+            out.append({'name': p.get('name'), 'role': p.get('character') or '', 'url': _photo(p.get('profile_path')), 'crew': False})
     for p in data.get('crew') or []:
-        out.setdefault(fold(p.get('name')), (_photo(p.get('profile_path')), ''))
+        out.append({'name': p.get('name'), 'role': '', 'url': _photo(p.get('profile_path')), 'crew': None})   # photo source only
+    return [p for p in out if isinstance(p.get('name'), str) and p['name'].strip()]
+
+
+def credits(tmdb, tmdb_id, kind):
+    """folded name -> (photo url, role) from the title's own credits."""
+    out = {}
+    for p in credit_list(tmdb, tmdb_id, kind):
+        role = '' if p['crew'] else p['role']
+        out.setdefault(fold(p['name']), (p['url'], role))
     return out
 
 
-def lookup(root, key, people, context=None, tmdb=None):
-    """Photos for the given people: {'photos': {name: url}, 'roles': {name: role}, 'configured': bool}."""
+MAX_MORE = 40
+
+
+def _more(listing, people):
+    """People of the title that the page does not list yet (cast and directors, not other crew)."""
+    seen = {fold(p['name']) for p in people}
+    out = []
+    for p in listing:
+        if p['crew'] is None or fold(p['name']) in seen:
+            continue
+        seen.add(fold(p['name']))
+        out.append({'name': ' '.join(p['name'].split())[:120], 'role': p['role'] or '', 'crew': bool(p['crew']),
+                    'file': file_name(p['url'])})
+        if len(out) >= MAX_MORE:
+            break
+    return out
+
+
+def lookup(root, key, people, context=None, tmdb=None, more=False):
+    """Photos for the given people: {'photos': {name: url}, 'roles': {name: role}, 'files': {name: file}, 'configured': bool}.
+    With ``more`` (0.6.57) also ``more``: further people of the title from its TMDB credits (cast in billing order)."""
     people = _people(people)
     context = context if isinstance(context, dict) else {}
     result = {'photos': {}, 'roles': {}, 'files': {}, 'configured': bool(key), 'source': 'TMDB'}
-    if not people or not key:
+    if more:
+        result['more'] = []
+    if not key or (not people and not more):
         return result
     try:
-        return _lookup(root, key, people, context, tmdb, result)
+        return _lookup(root, key, people, context, tmdb, result, more)
     finally:
         # 0.6.55: the page loads photos through /api/cast-photo (stored locally), the remote URL stays for older pages.
         result['files'] = {n: file_name(u) for n, u in result['photos'].items() if file_name(u)}
 
 
-def _lookup(root, key, people, context, tmdb, result):
+def _lookup(root, key, people, context, tmdb, result, more=False):
     if tmdb is None:
         import core
 
@@ -174,16 +227,26 @@ def _lookup(root, key, people, context, tmdb, result):
                     result['photos'][p['name']] = hit['url']
                     if hit['role']:
                         result['roles'][p['name']] = hit['role']
-            if not missing:
+            listing = _cached_title(db, title_key, now) if more else None
+            if not missing and (not more or listing is not None):
+                if more:
+                    result['more'] = _more(listing, people)
                 return result
             errors = []
             known = {}
             try:
                 tmdb_id, kind = resolve_title(tmdb, context)
-                if tmdb_id:
-                    known = credits(tmdb, tmdb_id, kind)
+                listing = credit_list(tmdb, tmdb_id, kind) if tmdb_id else []
+                for p in listing:
+                    known.setdefault(fold(p['name']), (p['url'], '' if p['crew'] else p['role']))
+                _store_title(db, title_key, listing, now)
+                for p in listing:   # photos of further people become loadable through /api/cast-photo
+                    if p['url'] and p['crew'] is not None:
+                        _store(db, title_key + ':' + fold(p['name']), p['url'], p['role'], now)
             except Exception as exc:   # no network, quota: the page keeps its initials
                 errors.append(exc.__class__.__name__)
+            if more and listing is not None:
+                result['more'] = _more(listing, people)
             exact = 0
             for p in missing:
                 url, role = known.get(fold(p['name']), ('', ''))

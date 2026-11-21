@@ -294,14 +294,21 @@ function catalogProgress(c){
      // 0.6.41: editions and short contributions of news/magazine Sendungen have no episode of their own.
      ['editions','Sendungsausgaben: '+countLabel(c.episode_editions_session||0)+' · Beiträge: '+countLabel(c.episode_segments_session||0)]
    ];
-   if(c.sqlite_busy_retries_session)chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)]);
+   // 0.6.65: without the IMDb offline archive the episode search can only postpone (Mac-Gegenprüfung 0.6.58).
+   if(c.episode_imdb_ready===false&&(c.episode_queue_total||0)>0)chips.push(['imdb-wait','Folgensuche wartet auf das IMDb-Offline-Archiv – Prüfungen werden stündlich wiederholt']);
+   if(c.sqlite_busy_retries_session){
+     // 0.6.67: where the locks happened (episode search, recognition …)
+     const places=Object.entries(c.sqlite_busy_by_label||{}).map(([k,v])=>({episode:'Episodensuche'}[k]||k)+' '+countLabel(v)).join(', ');
+     chips.push(['retry','SQLite-Wiederholungen: '+countLabel(c.sqlite_busy_retries_session)+(places?' ('+places+')':'')]);
+   }
+   if(c.episode_show_skipped_session)chips.push(['show-skip','Sendung gerade bei anderem Worker: '+countLabel(c.episode_show_skipped_session)+'× später']);
    workers.replaceChildren();
    // The grouping is presentation only: keep every existing session counter.
    const groupSpec=[
      ['Worker & Scan', ['identity','episode']],
      ['Erkennungsqualität', ['identified','confirmed']],
-     ['Episoden & Senderbelege', ['queue','due','episode-checks','episode-series','editions','sender','sender-matches','shorts']],
-     ['Fehler & Wiederholungen', ['retry']]
+     ['Episoden & Senderbelege', ['queue','due','imdb-wait','episode-checks','episode-series','editions','sender','sender-matches','shorts']],
+     ['Fehler & Wiederholungen', ['retry','show-skip']]
    ];
    for(const [name,kinds] of groupSpec){
      const group=el('section',undefined,'atlas-worker-group');group.dataset.group=String(groupSpec.findIndex(g=>g[0]===name));
@@ -690,7 +697,7 @@ const QUEUE_GROUPS=[
  {key:'missing',title:'Datei fehlt',open:true,hint:'Die Datei liegt nicht mehr am gespeicherten Pfad. MediathekAtlas sucht beim Öffnen dieser Ansicht automatisch am Download-Ordner, Zwischenspeicher, in den Bibliotheksordnern und an früheren Speicherorten und verknüpft eindeutige Funde neu. Was danach fehlt, lässt sich entfernen (es wird keine Datei gelöscht).',test:j=>j.state==='done'&&j.file_state==='missing'},
  {key:'done',title:'Fertig',open:false,test:j=>j.state==='done'},
  {key:'other',title:'Abgelaufen oder entfernt',open:false,test:()=>true}];
-const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',sender:'Direkt vom Sender',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
+const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',dailyme:'dailyme TV',sender:'Direkt vom Sender',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
 function jobOrigin(j){if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
 function queueOpen(key,fallback){try{const v=localStorage.getItem('atlas-queue-'+key);return v===null?fallback:v==='1';}catch(_){return fallback;}}
 function queueTime(t){return new Date(t*1000).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
@@ -1148,6 +1155,7 @@ function portalView(name){
   if(name==='redbulltv')window.MediathekAtlasRedBullTV?.refresh?.();
   if(name==='dmax')window.MediathekAtlasDmax?.refresh?.();
   if(name==='filmfriend')window.MediathekAtlasFilmfriend?.refresh?.();
+  if(name==='dailyme')window.MediathekAtlasDailyme?.refresh?.();
   if(name==='rtlplus')window.MediathekAtlasRtlPlus?.refresh?.();
 }
 for(const b of document.querySelectorAll('.platform-tab'))

@@ -28,12 +28,13 @@ def setup(root,home=None):
     # Erkennung nur 2,5 h zurück (rund 2,5 MB/h); 32 MB fassen eine Nacht. Im ZIP komprimiert ~3 MB.
     h=logging.handlers.RotatingFileHandler(_root/'diagnostic.jsonl',maxBytes=LOG_BYTES,backupCount=LOG_BACKUPS,encoding='utf-8');logger.addHandler(h)
 _LEVELS=('DEBUG','INFO','WARNING','ERROR','CRITICAL')
-def event(name,level='INFO',**fields):
+def event(name,/,level='INFO',**fields):
+    # 0.6.61: positional-only, so a field called "name" (db_backup_created) is a field, not a TypeError.
     # 0.5.74: a field that happens to be called "level" (e.g. a quality level "1.6 Mbit/s") must never
     # break the request that logs it: keep it as a field and log at INFO.
     if level not in _LEVELS:fields['level_value']=str(level)[:40];level='INFO'
     with _lock:logger.log(getattr(logging,level),json.dumps(clean({'time':time.strftime('%Y-%m-%dT%H:%M:%SZ',time.gmtime()),'level':level,'event':name,**fields}),ensure_ascii=False))
-def error(name,exc,**fields):
+def error(name,exc,/,**fields):
     event(name,'ERROR',error_type=type(exc).__name__,error=str(exc),traceback=''.join(traceback.format_exception(type(exc),exc,exc.__traceback__)),**fields)
 def tail():
     if not _root:return ''

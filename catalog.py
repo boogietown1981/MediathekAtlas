@@ -388,6 +388,30 @@ def alternatives(c,wid):
 SHOW_FIELDS=('title','year','kind','provider','reference_id','imdb_id','poster','fanart','genres','genre_source','rating','votes','rating_source','ratings','networks','studios','show_credits','artwork_provider','show_description')
 STATE_ORDER={'manual':0,'matched':1,'identified':2,'review':3,'retry':4,'pending':5,'format':6}
 
+def series_credits_from_works(metas,limit=40):
+    """Series credits assembled from the works' own cast/directors/writers (0.6.57)."""
+    from collections import Counter
+    out={}
+    for field,cap in (('cast',limit),('directors',8),('writers',8)):
+        count=Counter();first={}
+        for i,m in enumerate(metas):
+            seen=set()
+            for p in m.get(field) or []:
+                name=' '.join(str((p.get('name') if isinstance(p,dict) else p) or '').split())[:120]
+                if not name or name in seen:continue
+                seen.add(name);count[name]+=1
+                if name not in first:first[name]=(i,{})
+                if isinstance(p,dict):
+                    for k in ('role','imdb_id'):
+                        if isinstance(p.get(k),str) and p[k] and k not in first[name][1]:first[name][1][k]=p[k]
+        names=sorted(count,key=lambda n:(-count[n],first[n][0]))[:cap]
+        if not names:continue
+        if field=='cast':
+            out[field]=[{'name':n,**first[n][1]} for n in names]
+        else:out[field]=names
+    if out:out['source']='works'
+    return out
+
 def show_detail(c,show,archive=False,limit=1000):
     """Series page: show-level metadata assembled from its episodes plus all episodes by season.
 
@@ -405,6 +429,12 @@ def show_detail(c,show,archive=False,limit=1000):
         for _,m in ranked:
             v=m.get(field)
             if v not in (None,'',[],{}):summary[field]=v;break
+    credits=summary.get('show_credits')
+    if not isinstance(credits,dict) or not (credits.get('cast') or credits.get('directors')):
+        # 0.6.57 (Mac check of 0.6.55, "Der Pass", TMDB 85526): without series credits the page fell silent although
+        # the works carry cast and directors. People named in most works come first (regulars before guests).
+        fallback=series_credits_from_works([m for _,m in ranked])
+        if fallback:summary['show_credits']=fallback
     if not summary.get('show_description'):
         # Broadcaster series carry the Sendereihe text on each episode; the most frequent one wins.
         from collections import Counter
@@ -903,9 +933,15 @@ def propagate_series(c,old_show,m):
     for row in c.execute("SELECT * FROM works WHERE show_key=? AND state NOT IN ('manual','matched')",(old_show,)).fetchall():
         own=json.loads(row['meta'])
         # Every recognised episode propagates again; rewriting unchanged siblings made this quadratic per series.
-        if row['state']=='identified' and all(own.get(k)==v for k,v in common.items()):continue
+        unchanged=all(own.get(k)==v for k,v in common.items())
+        # 0.6.58 (Björns Diagnose 20.11. nachts: „BR retro“ 399-mal in 4,5 min neu eingeordnet, 165.000
+        # gezählte Beiträge): an edition, contribution or extra already filed with its Sendung ('format') was
+        # set back to 'identified' by every further recognition in the same series. It returned to the
+        # episode queue and was filed again a few seconds later. Such a work keeps its filing; only the
+        # shared series data follow.
+        if row['state'] in ('identified','format') and unchanged:continue
         own.update(common)
-        save_metadata(c,row['id'],own,'identified')
+        save_metadata(c,row['id'],own,'format' if row['state']=='format' else 'identified')
 
 def focus_series(c,show_key,limit=24,cooldown=1800):
     """Boost a *bounded* number of sibling episodes after verified show recognition.
@@ -1009,6 +1045,34 @@ def broadcast_day(title,source):
     except (OverflowError,ValueError):return False
     return abs(named-stamp)<=3*86400
 
+# 0.6.68 (Mac-Gegenprüfung 0.6.65, 21.11.2026): regional magazines name the day without the year
+# ("buten un binnen vom 23. Oktober", "… vom 23.10."). Only with the offer's own broadcast day (±3 days).
+DATED_DAY=re.compile(r'(?i)(?<![\w/.])vom\s+'+WEEKDAY+r'(?:([0-3]?\d)\.\s*('+MONTHS+r')|([0-3]?\d)\.([01]?\d)\.)(?!\s*(?:19|20)?\d{2}\b)(?![\w/])')
+# Talk shows named by their guest ("THADEUSZ lang & breit - Gast: Dr. Emily Haber", "… – Zu Gast: …",
+# "THADEUSZ lang & breit: Britische Autorin Jacinta Nandi ist zu Gast"): 39 of 39 unresolved samples.
+GUEST=re.compile(r'(?i)^(.+?)\s*[-–—:|]\s*(?:(?:zu\s+)?gast\s*:\s*\S|.{3,160}\bist\s+zu\s+gast\s*$)')
+
+def broadcast_day_short(title,source):
+    """True if a day named without year ("vom 23. Oktober", "vom 23.10.") is the offer's broadcast day (±3 days)."""
+    m=DATED_DAY.search(str(title or ''))
+    try:stamp=int(source.get('timestamp') or 0)
+    except (TypeError,ValueError):return False
+    if not m or stamp<=0:return False
+    import imdb_archive
+    day=int(m.group(1) or m.group(3));month=imdb_archive.MONTH_NUMBERS.get((m.group(2) or '').lower()) or int(m.group(4) or 0)
+    if not 1<=month<=12 or not 1<=day<=31:return False
+    year=time.localtime(stamp).tm_year
+    for y in (year-1,year,year+1):                     # "vom 31. Dezember" shown on 2 January
+        try:named=time.mktime((y,month,day,12,0,0,0,0,-1))
+        except (OverflowError,ValueError):continue
+        if abs(named-stamp)<=3*86400:return True
+    return False
+
+def guest_edition(title,series,topic):
+    """True for "<Sendung> - (Zu) Gast: …" / "<Sendung>: … ist zu Gast" of exactly this Sendung."""
+    m=GUEST.match(str(title or ''))
+    return bool(m) and key(cleaned(m.group(1))) in {key(cleaned(series)),key(cleaned(topic))}-{''}
+
 def recurring_edition(meta,source,sendung=False):
     """'edition', 'segment' or None for an identified series work without an episode of its own.
 
@@ -1023,10 +1087,15 @@ def recurring_edition(meta,source,sendung=False):
     if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
     title=cleaned(source.get('title'))
     if not title or TRAILER.search(title):return None
-    if DATED.search(title):title=EDITION_PART.sub('',title)
+    if DATED.search(title) or DATED_DAY.search(title):title=EDITION_PART.sub('',title)
     if EDITION_NUMBERING.search(title) or EP.search(title):return None
     series=meta.get('title') or '';topic=source.get('topic') or ''
     recurring=sendung or format_series(series) or format_series(topic)
+    if not DATED.search(title) and DATED_DAY.search(title) and broadcast_day_short(title,source):
+        # 0.6.68: day without year – the Sendung's name must lead the title, or the Sendung is a known format
+        named=any(key(title).startswith(k) for k in {key(cleaned(series)),key(cleaned(topic))}-{''})
+        if recurring or named:return 'edition'
+    if guest_edition(title,series,topic):return 'edition'
     if DATED.search(title):
         # A scripted episode may carry a historic date ("Die Nacht vom 9. November 1989"); outside a known
         # news/magazine Sendung the date must be the offer's own broadcast day (±3 days).
@@ -1056,6 +1125,74 @@ def mark_recurring_edition(c,row,meta,source,role):
                      else 'Beitrag (unter 10 Minuten) der Sendung „%s“; keine eigene Folge.')%series)
     return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
                      (json.dumps(m),row['id'])).rowcount>0
+
+def refile_reset_edition(c,row,meta):
+    """0.6.58: 'edition'/'segment' for an identified work that still carries its earlier filing, else None.
+
+    Up to 0.6.55 every further recognition in a series set the editions and contributions already filed with
+    their Sendung back to 'identified' (propagate_series). Their metadata kept the filing (state 'format',
+    format_grouping); the episode queue files them again at once instead of checking IMDb and the sender.
+    A user's rescan (scan_requested) or a confirmed episode is never undone.
+    """
+    role=meta.get('format_grouping')
+    if role not in ('edition','segment') or meta.get('state')!='format':return None
+    # 0.6.68: a filed contribution later flagged as a short clip (18 BR24 works in the Mac check) is still
+    # the contribution it was filed as; mark_recurring_edition clears the flag.
+    if meta.get('scan_requested') or meta.get('episode_verified'):return None
+    if row['state']!='identified':return None
+    if meta.get('video_role_needs_review'):
+        meta=dict(meta,video_role_needs_review=False)
+        done=c.execute("UPDATE works SET state='format',next_try=0,meta=? WHERE id=? AND state='identified'",
+                       (json.dumps(meta),row['id'])).rowcount
+        return role if done else None
+    done=c.execute("UPDATE works SET state='format',next_try=0 WHERE id=? AND state='identified'",(row['id'],)).rowcount
+    return role if done else None
+
+def reset_editions(c,limit=5000):
+    """0.6.65: ids of identified works that still carry their earlier filing (see refile_reset_edition).
+
+    Read only. Reset editions are often old news editions whose offers have expired; the episode queue never
+    takes a work without an active offer, so they waited there for ever (Mac-Gegenprüfung 0.6.58: 777 stayed).
+    """
+    return [r[0] for r in c.execute("""SELECT w.id FROM works w
+        WHERE w.kind='series' AND w.state='identified' AND json_extract(w.meta,'$.state')='format'
+          AND json_extract(w.meta,'$.format_grouping') IN ('edition','segment')
+          AND COALESCE(json_extract(w.meta,'$.scan_requested'),0)=0 LIMIT ?""",(limit,))]
+
+def editions_waiting(c,limit=5000,after=''):
+    """0.6.68: queued works checked before the new edition rules (DATED_DAY, GUEST) that they now cover.
+
+    Read only; returns (ids, last id). They waited 7–31 days as "ohne Treffer" (Mac check: THADEUSZ, buten un
+    binnen); the episode queue files them on its next turn once they are due again."""
+    rows=c.execute("""SELECT q.work_id,w.meta,(SELECT o.payload FROM offers o WHERE o.work_id=q.work_id AND o.active=1
+            ORDER BY o.rank DESC LIMIT 1) payload
+        FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.work_id>? AND q.last_outcome='unresolved' ORDER BY q.work_id LIMIT ?""",(after,limit)).fetchall()
+    out=[]
+    for row in rows:
+        if not row[2]:continue
+        try:meta=json.loads(row[1] or '{}');source=json.loads(row[2])
+        except (TypeError,ValueError):continue
+        title=str(source.get('title') or '')
+        # 0.6.70: daily soaps with an absolute number („Folge 4556“) of an IMDb-identified series
+        import imdb_archive
+        if str(meta.get('reference_id') or '').startswith('tt') and imdb_archive.ABSOLUTE_NUMBER.search(title):
+            out.append(row[0]);continue
+        if not (DATED_DAY.search(title) or GUEST.match(title)):continue
+        if recurring_edition(meta,source)=='edition':out.append(row[0])
+    return out,(rows[-1][0] if rows else None)
+
+def refile_reset_editions(c,ids):
+    """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
+    done={'edition':0,'segment':0}
+    for wid in ids:
+        row=c.execute('SELECT id,state,meta FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        try:meta=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        role=refile_reset_edition(c,row,meta)
+        if role:done[role]+=1
+    return done
 
 def format_contribution(m,source,topic_works):
     """True for a single contribution of a recurring format, e.g. one edition of "aktuell (16 Uhr)"."""

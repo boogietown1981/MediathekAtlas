@@ -68,7 +68,7 @@ class BlockBackoffTests(unittest.TestCase):
 
 class WiringTests(unittest.TestCase):
     def test_worker_and_route(self):
-        self.assertIn('youtube_abos.pace(ROOT,j,force=forced)', SERVER)
+        self.assertIn('youtube_abos.pace(ROOT,j,force=forced,c=c)', SERVER)   # 0.6.60: Budget auch beim Start
         self.assertIn("elif action=='pace':youtube_abos.set_per_hour(ROOT,d.get('per_hour'))", SERVER)
 
     def test_ui(self):

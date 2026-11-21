@@ -66,6 +66,41 @@ def segment_lines(path):
     return data.splitlines()
 
 
+SF_DATALESS = 0x40000000      # macOS: content lives only in iCloud ("Download entfernen"), same file name
+FETCH_TIMEOUT = 20            # 0.6.61: longest wait for macOS to fetch an evicted file in one round
+_fetching = {}                # str(path) -> (thread, result box); a fetch keeps running across rounds
+
+
+def dataless(path):
+    """0.6.61: evicted iCloud file of macOS 14+ – no ".icloud" placeholder, the file keeps its name and
+    size but has no local content (SF_DATALESS). Reading it makes macOS download it, which can take long."""
+    try: st = os.stat(path)
+    except OSError: return False
+    return bool(getattr(st, 'st_flags', 0) & SF_DATALESS)
+
+
+def fetch_lines(path, timeout=None):
+    """segment_lines with a time limit. A plain local file is read directly. An evicted (dataless) one is
+    read in a helper thread: macOS downloads it on that read; if this takes longer than the limit,
+    TimeoutError is raised and the next round waits for the same thread instead of starting a second one."""
+    if not dataless(path) and str(path) not in _fetching: return segment_lines(path)
+    key = str(path); entry = _fetching.get(key)
+    if entry is None:
+        request_download(path)
+        box = {}
+        def run():
+            try: box['rows'] = segment_lines(path)
+            except BaseException as e: box['error'] = e
+        t = threading.Thread(target=run, daemon=True, name='mesh-fetch'); t.start()
+        entry = _fetching[key] = (t, box)
+    t, box = entry
+    t.join(FETCH_TIMEOUT if timeout is None else timeout)
+    if t.is_alive(): raise TimeoutError('iCloud lädt die Datei noch')
+    _fetching.pop(key, None)
+    if 'error' in box: raise box['error']
+    return box['rows']
+
+
 def request_download(path):
     """Ask iCloud Drive to download an evicted file (no-op elsewhere, at most every 10 min per file)."""
     key = str(path)
@@ -432,7 +467,7 @@ class Journal:
             if not _NODE.match(d.name) or d.is_symlink() or not d.is_dir(): continue
             if not (d / 'node.json').exists(): evicted(d)
             try:
-                info = json.loads((d / 'node.json').read_text(encoding='utf-8'))
+                info = json.loads(b'\n'.join(fetch_lines(d / 'node.json', timeout=5)).decode('utf-8'))
                 if isinstance(info, dict) and info.get('node') == d.name and info.get('format') == FORMAT: out[d.name] = info
             except (OSError, ValueError): continue
         return out
@@ -481,8 +516,11 @@ class Journal:
                         if now - since < GAP_WAIT:
                             self.waiting[nid] = expected; break
                     seg, line = number, 0
-                try: rows = segment_lines(segment_path(d, number))
-                except (OSError, EOFError, TypeError, AttributeError, gzip.BadGzipFile): break
+                # 0.6.61: evicted files (macOS 14+: dataless under the same name) are fetched with a time
+                # limit; a slow or failed download is waited for (status "wartet") and tried again next round.
+                try: rows = fetch_lines(segment_path(d, number))
+                except (OSError, EOFError, TypeError, AttributeError, gzip.BadGzipFile):
+                    self.waiting[nid] = number; break
                 for raw in rows[line:]:
                     line += 1
                     try: event = json.loads(raw) if len(raw) <= MAX_LINE else None

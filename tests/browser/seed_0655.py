@@ -17,6 +17,14 @@ now = time.time()
 cast_photos._store(db, 'nm0000209', cast_photos.IMAGE + '/robbins.png', '', now)
 cast_photos._store(db, title_key + ':' + cast_photos.fold('Frank Darabont'), cast_photos.IMAGE + '/darabont.png', '', now)
 cast_photos._store(db, title_key + ':' + cast_photos.fold('Bob Gunton'), '', '', now)       # known: no photo
+# 0.6.57: further people of the title ("Weitere anzeigen") and a film without own cast (like Plex)
+extra = [{'name': 'Morgan Freeman', 'role': 'Red', 'url': cast_photos.IMAGE + '/robbins.png', 'crew': False}] + \
+        [{'name': 'Nebenrolle %d' % i, 'role': 'Häftling %d' % i, 'url': '', 'crew': False} for i in range(5)]
+cast_photos._store_title(db, title_key, extra, now)
+cast_photos._store(db, title_key + ':' + cast_photos.fold('Morgan Freeman'), cast_photos.IMAGE + '/robbins.png', 'Red', now)
+plex_key = 'title:%s:%s:%s' % (cast_photos.fold('Plexfilm')[:80], 2001, 'tt0000002')
+cast_photos._store_title(db, plex_key, [{'name': 'Regisseurin', 'role': 'Regie', 'url': cast_photos.IMAGE + '/darabont.png', 'crew': True}]
+                         + [{'name': 'Person %d' % i, 'role': 'Rolle %d' % i, 'url': '', 'crew': False} for i in range(15)], now)
 db.commit(); db.close()
 
 

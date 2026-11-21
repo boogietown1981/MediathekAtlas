@@ -41,18 +41,35 @@ function castPeople(cast,crew){
  return out.slice(0,24);
 }
 function castNote(sec,text,settingsLink){sec.querySelector('.tv-cast-note')?.remove();const note=el('p',text,'muted tv-cast-note');if(settingsLink){const b=el('button','Einstellungen öffnen','tv-more');b.onclick=()=>{closeTitleView();document.querySelector('[data-view="settings"]')?.click();};note.append(' ',b);}sec.append(note);}
+// 0.6.57: one card builder for the given people and for further people from TMDB ("Alle anzeigen", pages without own cast).
+const CAST_VISIBLE=14;
+function castCard(p){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;
+ const img=p.file?el('img',undefined,'tv-avatar tv-photo'):null;
+ if(img){img.alt=p.name;img.loading='lazy';img.decoding='async';img.src=castPhotoUrl(p.file);img.onerror=()=>img.replaceWith(el('span',ini,'tv-avatar'));}
+ c.append(img||el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');return c;}
+function castHeading(sec){const boxes=[...sec.querySelectorAll('.tv-person')],crew=boxes.filter(b=>b.dataset.crew==='1').length;sec.querySelector('h2').textContent=crew?(crew<boxes.length?'Besetzung & Regie':'Regie'):'Besetzung';}
+function castMore(sec,row,more){
+ sec.querySelector('.tv-cast-more')?.remove();if(!more?.length)return;
+ const add=list=>{for(const p of list){const c=castCard(p);if(p.crew)c.dataset.crew='1';row.append(c);}castHeading(sec);};
+ const shown=row.querySelectorAll('.tv-person').length;
+ if(!shown){add(more.slice(0,CAST_VISIBLE));more=more.slice(CAST_VISIBLE);}
+ if(!more.length)return;
+ const b=el('button',(shown?'Weitere ':'Alle ')+more.length+' anzeigen','tv-more tv-cast-more');b.title='Vollständige Besetzung laut TMDB';
+ b.onclick=()=>{b.remove();add(more);};sec.querySelector('h2').after(b);
+}
 async function castPhotos(row,cast,context){
  const sec=row.closest('.tv-section-cast');
- if(!context||!cast?.length)return;
- if(!latestSettings?.tmdb_set){if(sec)castNote(sec,'Fotos der Mitwirkenden erscheinen, sobald in den Einstellungen unter „Metadatenanbieter & Schlüssel“ ein TMDB-Zugang hinterlegt ist.',true);return;}
+ if(!context)return;
+ if(!latestSettings?.tmdb_set){if(sec&&cast?.length)castNote(sec,'Fotos der Mitwirkenden erscheinen, sobald in den Einstellungen unter „Metadatenanbieter & Schlüssel“ ein TMDB-Zugang hinterlegt ist.',true);return;}
  const seq=titleSequence;let d;
- try{d=await api('cast-photos',{people:cast.slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context});}catch{if(sec&&row.isConnected)castNote(sec,'Fotos sind gerade nicht abrufbar. Es werden die Namen angezeigt.');return;}
+ try{d=await api('cast-photos',{people:(cast||[]).slice(0,24).map(p=>({name:p.name,imdb_id:p.imdb_id||''})),context,more:true});}catch{if(sec&&row.isConnected&&cast?.length)castNote(sec,'Fotos sind gerade nicht abrufbar. Es werden die Namen angezeigt.');return;}
  if(seq!==titleSequence||!row.isConnected)return;
  for(const box of row.querySelectorAll('.tv-person')){const name=box.dataset.name,file=d.files?.[name],url=d.photos?.[name];
   const src=file?castPhotoUrl(file):(url&&safeArt(url)?url:'');
   if(src){const img=el('img',undefined,'tv-avatar tv-photo');img.alt=name;img.loading='lazy';img.decoding='async';img.src=src;img.onerror=()=>img.replaceWith(el('span',box.dataset.initials,'tv-avatar'));box.querySelector('.tv-avatar')?.replaceWith(img);}
   const role=d.roles?.[name];if(role&&!box.querySelector('small'))box.append(el('small',role));}
- if(sec&&d.error&&!Object.keys(d.photos||{}).length)castNote(sec,'TMDB ist gerade nicht erreichbar. Fotos folgen beim nächsten Öffnen.');
+ if(sec){castMore(sec,row,d.more);if(row.childElementCount)sec.hidden=false;}
+ if(sec&&d.error&&!Object.keys(d.photos||{}).length&&row.childElementCount)castNote(sec,'TMDB ist gerade nicht erreichbar. Fotos folgen beim nächsten Öffnen.');
 }
 function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,crew,image,castRef}){
  const art=image||artImage;
@@ -72,8 +89,9 @@ function hero({meta,type,facts,overview,overviewHint,poster,actions,info,cast,cr
  const dl=el('dl',undefined,'tv-info');for(const [k,v] of info){if(v)dl.append(el('dt',k),el('dd',v));}if(dl.childElementCount)text.append(dl);
  body.append(cover,text);wrap.append(body);
  const out=[wrap];
- const people=castPeople(cast,crew);
- if(people.length){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2',people.some(p=>p.crew)?(people.some(p=>!p.crew)?'Besetzung & Regie':'Regie'):'Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of people){const c=el('div',undefined,'tv-person'),ini=(p.name||'?').split(/\s+/).map(x=>x[0]).slice(0,2).join('');c.dataset.name=p.name||'';c.dataset.initials=ini;c.append(el('span',ini,'tv-avatar'),el('strong',p.name),p.role?el('small',p.role):'');row.append(c);}sec.append(row);out.push(sec);castPhotos(row,people,castRef===undefined?castContext(meta):castRef);}
+ const people=castPeople(cast,crew),ctx=castRef===undefined?castContext(meta):castRef;
+ // 0.6.57: a page without own cast (Plex, series without credits) gets a hidden section that TMDB may fill.
+ if(people.length||(ctx&&latestSettings?.tmdb_set)){const sec=el('section',undefined,'tv-section tv-section-cast');sec.append(el('h2','Besetzung'));const row=el('div',undefined,'tv-cast');for(const p of people){const c=castCard(p);if(p.crew)c.dataset.crew='1';row.append(c);}sec.append(row);castHeading(sec);sec.hidden=!people.length;out.push(sec);castPhotos(row,people,ctx);}
  return out;
 }
 function ratingFact(m){const r=Number(m.rating);if(m.rating==null||m.rating===''||!Number.isFinite(r))return null;const s=el('span','★ '+r.toLocaleString('de-DE',{maximumFractionDigits:1}),'tv-rating');s.title=ratingSource(m)+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':'');return s;}
@@ -106,27 +124,73 @@ function renderShow(){
  const tabs=el('div',undefined,'tv-tabs');tabs.setAttribute('role','tablist');
  const options=s.seasons.length>1?[{season:SEASON_ALL,episodes:eps.length},...s.seasons]:s.seasons;
  for(const x of options){const t=el('button',(x.season===SEASON_ALL?'Alle':seasonLabel(x.season))+' · '+x.episodes,'tv-tab'+(x.season===titleState.season?' active':''));t.setAttribute('role','tab');t.setAttribute('aria-selected',String(x.season===titleState.season));t.onclick=()=>{titleState.season=x.season;titleState.focus=null;renderShow();};tabs.append(t);}
- head.append(tabs);sec.append(head);
+ const list=el('div',undefined,'tv-episodes');head.append(tabs,episodeViewSwitch(list));sec.append(head);
  if(s.truncated)sec.append(el('p','Sehr viele Folgen: angezeigt werden die ersten 1.000.','muted'));
- const list=el('div',undefined,'tv-episodes');let shown=0;
+ let shown=0;
  for(const e of eps){const season=e.metadata.season??null;if(titleState.season!==SEASON_ALL&&season!==titleState.season)continue;list.append(episodeRow(e,s));shown++;}
  if(!shown)list.append(el('p','Keine Folgen in dieser Auswahl.','empty'));sec.append(list);host.append(sec);
  if(titleState.focus){const row=host.querySelector('[data-work="'+CSS.escape(titleState.focus)+'"]');if(row){row.classList.add('focused');row.scrollIntoView({block:'center'});}}
 }
 function episodeRow(e,s){
- const m=e.metadata,r=e.source,row=el('article',undefined,'tv-episode');row.dataset.work=e.work_id;
- const thumb=el('div',undefined,'tv-thumb'),img=artImage(m.still||s.fanart||m.poster||s.poster,'');if(img)thumb.append(img);thumb.append(el('span',epCode(m)||'Folge','tv-code'));
- if(canPlay()&&e.available)thumb.append(playButton(e,'',false,titleState.data.episodes.filter(x=>x.available)));row.append(thumb);
- const body=el('div',undefined,'tv-epbody'),title=m.episode_title||r.title;
- body.append(el('h3',(Number.isInteger(m.episode)?m.episode+'. ':'')+title));
+ const m=e.metadata,r=e.source,eps=titleState.data.episodes;
  const meta=[minutes(r.duration),r.channel,e.best?.quality?e.best.quality+(e.best.height_hint?' '+e.best.height_hint+'p':''):'',e.special||'',r.timestamp?new Date(r.timestamp*1000).toLocaleDateString('de-DE'):''].filter(Boolean).join(' · ');
- body.append(el('p',meta,'tv-epmeta'));
- const status=el('p',meshDownloadLabel(e.mesh_download)+(e.downloaded&&!e.mesh_download?(e.file_state==='missing'?'⚠ Lokale Datei verschoben · ':'✓ Heruntergeladen · '):'')+stateLabel(e.state)+(e.available?'':' · nicht mehr gelistet'),'badge');body.append(status);
- const desc=m.description||r.description||'';if(desc&&desc!==s.show_description)body.append(el('p',desc,'tv-epdesc'));
+ const status=el('p',meshDownloadLabel(e.mesh_download)+(e.downloaded&&!e.mesh_download?(e.file_state==='missing'?'⚠ Lokale Datei verschoben · ':'✓ Heruntergeladen · '):'')+stateLabel(e.state)+(e.available?'':' · nicht mehr gelistet'),'badge');
+ const desc=m.description||r.description||'';
  const actions=el('div',undefined,'tv-epactions'),load=el('button',e.available?'↓ Prüfen & laden':'Metadaten ansehen');load.onclick=()=>edit(e);actions.append(load);
  if((e.offer_count||1)>1)actions.append(versionsDetails(e));
  const files=el('details',undefined,'file-details');files.append(el('summary','Dateien & Qualität'),sourceLinks(e.links));actions.append(files);
- body.append(actions);row.append(body);return row;
+ const route=episodeRoute(e),label=(s.title||m.title||'')+(epCode(m)?' · '+epCode(m):'');
+ const play=route==='provider'?{href:e.source.url_website,provider:r.channel||'dem Sender',label}:route?{label,onPlay:()=>playMedia(e,eps.filter(x=>['local','player'].includes(episodeRoute(x))))}:null;
+ return episodeTile({image:artImage(m.still||s.fanart||m.poster||s.poster,''),code:epCode(m)||'Folge',title:(Number.isInteger(m.episode)?m.episode+'. ':'')+(m.episode_title||r.title),
+  meta,status,desc:desc&&desc!==s.show_description?desc:'',actions,route,play,watch:watchState(e.work_id||e.id,r.duration),work:e.work_id});
+}
+// 0.6.59 (Björn, 20.11.2026): episodes as tiles side by side, with a play button right on the picture that takes
+// the best way: a local file (download / offline copy) first, then the built-in player, otherwise the provider's
+// page (direct link with the autostart mark of the Chrome extension, see direct_start.js). Catalogue series
+// (titleview.js) and platform series (portal_title.js) share these helpers; "Liste" keeps the former rows.
+const EP_ROUTES={local:{chip:'Lokal',icon:'▶',title:'Lokale Datei abspielen'},player:{chip:'Player',icon:'▶',title:'Im eingebauten Player abspielen'},provider:{chip:'Anbieter',icon:'↗',title:'Beim Anbieter abspielen (neuer Tab)'}};
+function episodeRoute(e){
+ const player=canPlay();
+ if(player&&e.downloaded&&e.file_state!=='missing')return 'local';
+ if(player&&e.available&&(typeof playable!=='function'||playable(e)))return 'player';
+ if(/^https:\/\/[^\s<>'"]+$/i.test(e.source?.url_website||''))return 'provider';
+ return '';
+}
+// Resume state of the player (player.js stores {pos} or {done} under atlas-play:<key>).
+function watchState(key,duration){if(!key)return null;let v=null;try{v=JSON.parse(localStorage.getItem('atlas-play:'+key)||'null');}catch{}if(!v)return null;
+ if(v.done)return {done:true};const d=Number(duration)||0;return v.pos>0&&d?{frac:Math.min(1,v.pos/d)}:null;}
+function tilePlay(route,play){
+ const r=EP_ROUTES[route];if(!r||!play)return null;
+ const text=route==='provider'?'Bei '+(play.provider||'dem Anbieter')+' abspielen (neuer Tab)':r.title;
+ let b;
+ if(route==='provider'){b=el('a',r.icon,'tv-tileplay route-provider');b.href=play.href;b.target='_blank';b.rel='noopener noreferrer';}
+ else{b=el('button',r.icon,'tv-tileplay route-'+route);b.type='button';b.onclick=ev=>{ev.stopPropagation();play.onPlay();};}
+ b.title=text;b.setAttribute('aria-label',text+(play.label?': '+play.label:''));b.dataset.route=route;return b;
+}
+function tileRoute(thumb,route,play){
+ thumb.querySelector('.tv-tileplay')?.remove();thumb.querySelector('.tv-route')?.remove();
+ const b=tilePlay(route,play);thumb.classList.toggle('playable',!!b);if(!b)return;
+ const chip=el('span',EP_ROUTES[route].chip,'tv-route route-'+route);chip.title=b.title;thumb.append(chip,b);
+}
+function episodeTile({image,code,title,meta,status,desc,actions,route,play,watch,work}){
+ const row=el('article',undefined,'tv-episode');if(work)row.dataset.work=work;
+ const thumb=el('div',undefined,'tv-thumb');if(image)thumb.append(image);thumb.append(el('span',code,'tv-code'));
+ if(watch?.done){const seen=el('span','✓ Gesehen','tv-seen');thumb.append(seen);}
+ else if(watch?.frac){const bar=el('span',undefined,'tv-progress'),fill=el('i');fill.style.width=Math.round(watch.frac*100)+'%';bar.append(fill);bar.title='Angesehen bis '+Math.round(watch.frac*100)+' %';thumb.append(bar);}
+ tileRoute(thumb,route,play);
+ // The whole picture plays (or opens the provider), like the button on it.
+ thumb.addEventListener('click',ev=>{const b=thumb.querySelector('.tv-tileplay');if(b&&ev.target!==b)b.click();});
+ row.append(thumb);
+ const body=el('div',undefined,'tv-epbody');body.append(el('h3',title));if(meta)body.append(el('p',meta,'tv-epmeta'));if(status)body.append(status);
+ if(desc)body.append(el('p',desc,'tv-epdesc'));if(actions)body.append(actions);row.append(body);return row;
+}
+// Tiles (default) or the former list, remembered on this device.
+function episodeView(){try{return localStorage.getItem('atlas-episode-view')==='list'?'list':'grid';}catch{return 'grid';}}
+function episodeViewSwitch(list){
+ const box=el('div',undefined,'tv-viewswitch');box.setAttribute('role','group');box.setAttribute('aria-label','Darstellung der Folgen');
+ const apply=v=>{list.classList.toggle('tv-grid',v==='grid');list.classList.toggle('tv-list',v==='list');for(const b of box.children)b.setAttribute('aria-pressed',String(b.dataset.view===v));};
+ for(const [v,t,h] of [['grid','▦ Kacheln','Folgen als Kacheln nebeneinander'],['list','☰ Liste','Folgen untereinander mit Beschreibung']]){const b=el('button',t,'tv-tab');b.type='button';b.dataset.view=v;b.title=h;b.onclick=()=>{try{localStorage.setItem('atlas-episode-view',v);}catch{}apply(v);};box.append(b);}
+ apply(episodeView());return box;
 }
 // Further versions (other channels, Audiodeskription, Gebärdensprache) load on demand.
 function versionsDetails(item,onPick){

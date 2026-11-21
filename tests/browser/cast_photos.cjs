@@ -102,6 +102,26 @@ const FILM = {
     if (JSON.stringify(shown.initials) !== JSON.stringify(['BG'])) problems.push('Initialen: ' + JSON.stringify(shown.initials));
     if (shown.note) problems.push('Hinweis trotz Schlüssel: ' + shown.note);
     if (remote.length) problems.push('Browser fragt TMDB direkt: ' + remote[0]);
+    // 0.6.57: further people of the title behind "Weitere … anzeigen".
+    const moreButton = page.locator('#title-view .tv-cast-more');
+    if (await moreButton.textContent().catch(() => '') !== 'Weitere 6 anzeigen') problems.push('Knopf weitere: ' + await moreButton.textContent().catch(() => 'fehlt'));
+    else {
+      await moreButton.click();
+      const after = await page.evaluate(() => [...document.querySelectorAll('#title-view .tv-person strong')].map(s => s.textContent));
+      if (after.length !== 9 || after[3] !== 'Morgan Freeman') problems.push('Nach „Weitere“: ' + JSON.stringify(after));
+    }
+    // 0.6.57: a film without own cast (Plex) gets the cast of its TMDB credits, 14 visible, the rest behind "Alle … anzeigen".
+    await page.evaluate(f => openMovie(f), { ...FILM, id: 'offer-2', work_id: 'work-2',
+      metadata: { kind: 'movie', title: 'Plexfilm', year: 2001, provider: 'IMDb Offline', reference_id: 'tt0000002', cast: [], directors: [] } });
+    await page.waitForFunction(() => document.querySelectorAll('#title-view .tv-person').length === 14, null, { timeout: 10000 })
+      .catch(() => problems.push('Besetzung ohne eigene Angaben fehlt'));
+    const plex = await page.evaluate(() => ({
+      hidden: document.querySelector('#title-view .tv-section-cast')?.hidden,
+      head: document.querySelector('#title-view .tv-section-cast h2')?.textContent,
+      first: document.querySelector('#title-view .tv-person small')?.textContent,
+      button: document.querySelector('#title-view .tv-cast-more')?.textContent,
+    }));
+    if (plex.hidden !== false || plex.head !== 'Besetzung & Regie' || plex.first !== 'Regie' || plex.button !== 'Alle 2 anzeigen') problems.push('Plex-Fall: ' + JSON.stringify(plex));
     // A photo without a session token is refused.
     const status = await page.evaluate(() => fetch('/api/cast-photo?p=robbins.png&token=falsch').then(r => r.status));
     if (status !== 403) problems.push('Foto ohne Seitenschlüssel: ' + status);

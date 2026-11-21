@@ -531,12 +531,99 @@ def held(c, db, abo):
                       (abo['id'],)).fetchall()
     states = _job_states(c, [r['job_id'] for r in rows if r['state'] == 'done']) if c is not None else {}
     done = queued = 0
+    sizes = []
     for r in rows:
         if r['state'] == 'done':
-            done += _file_size(states.get(r['job_id'], (None, None))[1])
-        else:
-            queued += estimate({'duration': r['duration']}, abo.get('quality'))
+            size = _file_size(states.get(r['job_id'], (None, None))[1])
+            done += size
+            sizes.append((size, r['duration']))
+    rate = _learned_rate(sizes)
+    for r in rows:
+        if r['state'] != 'done':
+            queued += sized({'duration': r['duration']}, abo.get('quality'), rate)
     return done, queued
+
+
+def _learned_rate(sizes):
+    """0.6.58: Byte je Sekunde, die die fertigen Videos dieses Abos wirklich belegen (None ohne Vergleich).
+
+    Björns Diagnose vom 20.11. nachts: ein Abo belegte 18,7 GB bei 10 GB Budget. Die Schätzung mit der festen
+    Rate (720p: 250 kB/s) lag für Kinderkanäle zu niedrig; mit der gemessenen Rate rechnet das Budget ehrlich.
+    """
+    total = seconds = 0
+    for size, duration in sizes:
+        try:
+            duration = float(duration or 0)
+        except (TypeError, ValueError):
+            duration = 0
+        if size > 0 and duration > 0:
+            total += size
+            seconds += duration
+    return total / seconds if seconds >= 60 else None
+
+
+def sized(video, quality='720', rate=None):
+    """Geschätzte Größe; mit gemessener Rate des Abos nie kleiner als diese (höchstens das Vierfache der festen)."""
+    base = estimate(video, quality)
+    if not rate:
+        return base
+    try:
+        seconds = float(video.get('duration') or 0)
+    except (TypeError, ValueError):
+        seconds = 0
+    fixed = RATE.get(str(quality), RATE['720'])
+    learned = int((seconds if seconds > 0 else 600) * min(float(rate), fixed * 4))
+    return max(base, learned)
+
+
+def abo_rate(c, db, abo):
+    """Gemessene Rate der fertigen Videos eines Abos (für neue Aufträge)."""
+    if c is None:
+        return None
+    rows = db.execute("SELECT job_id,duration FROM youtube_abo_videos WHERE abo_id=? AND state='done'", (abo['id'],)).fetchall()
+    states = _job_states(c, [r['job_id'] for r in rows])
+    return _learned_rate([(_file_size(states.get(r['job_id'], (None, None))[1]), r['duration']) for r in rows])
+
+
+def trim_queued(c, db, abo, budget):
+    """0.6.58: Liegt ein Abo über seinem Budget, gehen noch nicht gestartete Aufträge zurück auf „gewünscht“.
+
+    Aufträge aus der Zeit vor dem Budget (0.6.43 und älter) oder mit zu kleiner Schätzung liefen sonst einfach
+    weiter. Die neuesten Videos behalten ihren Platz, die ältesten Wünsche warten. Gibt die Zahl zurück.
+    """
+    if not budget or c is None:
+        return 0
+    done, queued_before = held(c, db, abo)
+    rows = [dict(r) for r in db.execute("SELECT * FROM youtube_abo_videos WHERE abo_id=? AND state='queued'", (abo['id'],))]
+    if not rows:
+        return 0
+    states = _job_states(c, [r['job_id'] for r in rows])
+    rows.sort(key=lambda v: _order_key(v, abo['kind']), reverse=True)
+    rate = abo_rate(c, db, abo)
+    used = done
+    released = 0
+    for r in rows:
+        job_state = states.get(r['job_id'], (None, None))[0]
+        size = sized(r, abo.get('quality'), rate)
+        if job_state != 'queued':                      # läuft schon oder ist fertig: zählt, bleibt
+            used += size if job_state != 'done' else 0
+            continue
+        if used + size <= budget or not used:
+            used += size
+            continue
+        if c.execute("DELETE FROM jobs WHERE id=? AND state='queued'", (r['job_id'],)).rowcount:
+            db.execute("UPDATE youtube_abo_videos SET state='wanted',job_id='',reason=? WHERE abo_id=? AND video=?",
+                       (BUDGET_REASON, abo['id'], r['video']))
+            released += 1
+    if released:
+        db.commit()
+        # 0.6.71 (Mac-Prüfung 0.6.68): used_gb 0.0 las sich wie ein Fehler – die Planung lag über dem Budget
+        _notify('youtube_abo_budget_trimmed', released=released, used_gb=round(done / GB, 1),
+                planned_gb=round(queued_before / GB, 1), budget_gb=abo.get('budget_gb'))
+    return released
+
+
+BUDGET_REASON = 'wartet: Speicherbudget des Abos erreicht'
 
 
 def budget_bytes(abo):
@@ -774,13 +861,18 @@ def _enqueue(root, db, abo, now, c=None, download_dir=None):
         wanted.sort(key=lambda v: _order_key(v, abo['kind']), reverse=True)
         queued = waiting = 0
         budget = budget_bytes(abo)
+        if budget:
+            trim_queued(c, db, abo, budget)
+            wanted = [dict(r) for r in db.execute("SELECT * FROM youtube_abo_videos WHERE abo_id=? AND state='wanted'", (abo['id'],))]
+            wanted.sort(key=lambda v: _order_key(v, abo['kind']), reverse=True)
+        rate = abo_rate(c, db, abo) if budget else None
         for v in wanted[:MAX_QUEUE]:
             count = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE abo_id=? AND state IN ('queued','done')",
                                (abo['id'],)).fetchone()[0]
             if count >= abo['keep'] and not _make_room(c, db, abo, now):
                 waiting += 1
                 break
-            size = estimate(v, abo.get('quality'))
+            size = sized(v, abo.get('quality'), rate)
             if budget:
                 # 0.6.45: Speicherbudget je Abo. Gesehene Videos machen Platz (wie bei ``keep``), gemerkte,
                 # angeheftete und ungesehene bleiben; reicht das nicht, wartet das Video. Ein einzelnes Video,
@@ -948,12 +1040,19 @@ def next_slot(root, now=None):
     return slot if slot > now else 0.0
 
 
-def pace(root, job, now=None, force=False):
+def pace(root, job, now=None, force=False, c=None):
     """Vor dem Start eines Abo-Auftrags: ist der nächste Platz noch nicht frei, wartet der Auftrag bis
     dahin (``not_before``, Hinweis) und die Funktion gibt True zurück. Sonst wird der Start vermerkt."""
     if not job.get('youtube_abo'):
         return False
     now = time.time() if now is None else float(now)
+    # 0.6.60: das Budget des Abos gilt auch für Aufträge, die schon in der Warteschlange stehen (aus der Zeit
+    # vor dem Budget oder mit zu kleiner Schätzung). „Jetzt versuchen“ startet trotzdem.
+    if c is not None and not force:
+        over = over_budget(root, c, job, now)
+        if over:
+            job.update(not_before=now + RESERVE_RECHECK, note=over)
+            return True
     # 0.6.45: auch schon eingereihte Abo-Aufträge starten nicht, solange die Reserve unterschritten wäre.
     room = no_room(root, job.get('root') or str(Path(str(job.get('target') or '')).parent),
                    estimate({'duration': (job.get('source') or {}).get('duration')}, job.get('quality')))
@@ -973,6 +1072,39 @@ def pace(root, job, now=None, force=False):
     finally:
         db.close()
     return False
+
+
+def over_budget(root, c, job, now=None):
+    """Hinweis, wenn der Start dieses Abo-Auftrags das Speicherbudget seines Abos überschritte, sonst ''."""
+    db = _connect(root)
+    try:
+        row = db.execute('SELECT * FROM youtube_abos WHERE id=?', (int(job.get('youtube_abo') or 0),)).fetchone()
+        if not row:
+            return ''
+        abo = dict(row, _root=str(root))
+        budget = budget_bytes(abo)
+        if not budget:
+            return ''
+        sync_states(c, db, abo['id'])                # fertige Aufträge zählen mit ihrer echten Größe
+        done, _queued = held(c, db, abo)
+        size = sized({'duration': (job.get('source') or {}).get('duration')}, job.get('quality'), abo_rate(c, db, abo))
+        while done and done + size > budget and _make_room(c, db, abo, time.time() if now is None else now):
+            db.commit()
+            done, _queued = held(c, db, abo)
+        if done and done + size > budget:
+            return ('Speicherbudget des Abos erreicht (%.1f von %s GB): wartet, bis gesehene Videos Platz machen'
+                    % (done / GB, gb_text(abo.get('budget_gb'))))
+        return ''
+    finally:
+        db.close()
+
+
+def gb_text(value):
+    try:
+        value = float(value or 0)
+    except (TypeError, ValueError):
+        return str(value)
+    return ('%.1f' % value).rstrip('0').rstrip('.').replace('.', ',')
 
 
 TEMPORARY_ERRORS = ('kein Bot', 'zu viele Anfragen', 'keine Daten', 'antwortet nicht rechtzeitig', 'Zeitüberschreitung')
@@ -1051,12 +1183,25 @@ def tick(root):
     """Jede Minute ohne fällige Prüfung: fertige Downloads übernehmen (für „Neu“ in der Kinderansicht)."""
     if _DB is None:
         return
+    global _TRIMMED_AT
     db = _connect(root)
     try:
         with _DB() as c:
             sync_states(c, db)
+            # 0.6.68: Aufträge über dem Budget nicht erst bei der nächsten Kanalprüfung (bis 24 h) zurücknehmen
+            # (Mac-Prüfung 0.6.67: 1,0 GB belegt, 76,9 GB „in Arbeit“ bei 10 GB Budget)
+            if time.time() - _TRIMMED_AT >= TRIM_INTERVAL:
+                _TRIMMED_AT = time.time()
+                for abo in [dict(r) for r in db.execute('SELECT * FROM youtube_abos WHERE enabled=1')]:
+                    budget = budget_bytes(abo)
+                    if budget:
+                        trim_queued(c, db, abo, budget)
     finally:
         db.close()
+
+
+TRIM_INTERVAL = 600
+_TRIMMED_AT = 0.0
 
 
 # ---------------------------------------------------------------- Bilder (offline verfügbar)
@@ -1131,6 +1276,9 @@ def overview(root, c=None):
         for r in db.execute("SELECT abo_id,reason,COUNT(*) FROM youtube_abo_videos WHERE state IN ('skipped','failed','queued') AND reason!='' "
                             "GROUP BY abo_id,reason ORDER BY 3 DESC"):
             reasons.setdefault(r[0], []).append({'reason': r[1], 'count': r[2]})
+        # 0.6.68 (Mac-Prüfung 0.6.67): Videos, die nur wegen des Budgets warten, auch in der Verwaltung zählen
+        budget_wait = dict(db.execute("SELECT abo_id,COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason=? GROUP BY abo_id",
+                                      (BUDGET_REASON,)).fetchall())
     finally:
         db.close()
     usage = {}
@@ -1149,6 +1297,12 @@ def overview(root, c=None):
         # Budget (fast) erreicht und noch Videos, die warten
         a['budget_full'] = bool(budget and done_bytes + queued_bytes >= budget * 0.95
                                 and (counts.get(a['id'], {}).get('wanted') or 0))
+        # 0.6.60: schon geladene Videos liegen über dem Budget (z. B. aus der Zeit vor dem Budget)
+        a['over_budget'] = bool(budget and done_bytes > budget)
+        # 0.6.68: „voll“ heißt bei used 1,0 GB von 10 GB nur „mit den laufenden Downloads verplant“ – getrennt benennen
+        a['budget_planned_full'] = bool(a['budget_full'] and not a['over_budget'] and done_bytes < budget * 0.95)
+        a['budget_full'] = a['budget_full'] or a['over_budget']
+        a['waiting_for_budget'] = budget_wait.get(a['id'], 0)
         a['counts'] = counts.get(a['id'], {})
         a['reasons'] = reasons.get(a['id'], [])[:5]
         a['name'] = a['label'] or a['title'] or a['ref']
@@ -1161,7 +1315,7 @@ def overview(root, c=None):
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
             'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause(),
             'per_hour': per_hour(root), 'per_hour_choices': list(PER_HOUR_CHOICES), 'next_slot': next_slot(root),
-            'storage': _storage(root)}
+            'storage': _storage(root), 'waiting_for_budget': sum(a['waiting_for_budget'] for a in abos)}
 
 
 def _storage(root):
@@ -1263,7 +1417,9 @@ def summary(root):
         abos = db.execute("SELECT COUNT(*),SUM(enabled),SUM(profile='kinder') FROM youtube_abos").fetchone()
         states = dict(db.execute('SELECT state,COUNT(*) FROM youtube_abo_videos GROUP BY state').fetchall())
         errors = db.execute("SELECT COUNT(*) FROM youtube_abos WHERE last_error!=''").fetchone()[0]
+        waiting_budget = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason=?",
+                                    (BUDGET_REASON,)).fetchone()[0]
     finally:
         db.close()
     return {'abos': abos[0] or 0, 'enabled': abos[1] or 0, 'kids': abos[2] or 0, 'videos': states,
-            'with_note': errors, 'running': _ACTIVE}
+            'with_note': errors, 'running': _ACTIVE, 'waiting_for_budget': waiting_budget}

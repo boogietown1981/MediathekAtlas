@@ -95,6 +95,24 @@ async function waitFor(url, seconds) {
     await page.waitForFunction(() => document.querySelector('#filmfriend').innerText.includes('Allein gegen die Zeit'), null, { timeout: 15000 })
       .catch(() => problems.push('filmfriend: Serie fehlt'));
     if (shots) await page.screenshot({ path: path.join(shots, 'filmfriend.png') });
+    // 0.6.62: dailyme TV tab, films and series with episodes, every title only on dailyme.de
+    await page.locator('#portals button.platform-tab', { hasText: /^dailyme TV$/ }).click();
+    await page.waitForSelector('#dailyme-items .atlas-uc-card', { timeout: 30000 }).catch(() => problems.push('dailyme: keine Kacheln'));
+    const dmText = await page.locator('#dailyme').innerText();
+    for (const t of ['Ip Man 3', 'Heidi', 'Kostenlos mit Werbung', 'nur in der dailyme-App']) if (!dmText.includes(t)) problems.push('dailyme ohne: ' + t);
+    if (/▶ Abspielen/.test(dmText)) problems.push('dailyme: Abspielen angeboten');
+    if (shots) await page.screenshot({ path: path.join(shots, 'dailyme.png') });
+    await page.locator('#dailyme-view-series').click();
+    await page.waitForFunction(() => document.querySelector('#dailyme').innerText.includes('To Love-Ru Trouble'), null, { timeout: 15000 })
+      .catch(() => problems.push('dailyme: Serie fehlt'));
+    await page.evaluate(() => window.AtlasPortalTitle.open('dailyme', 's.21745'));
+    await page.waitForFunction(() => document.body.innerText.includes('Vom Umtausch ausgeschlossen'), null, { timeout: 15000 })
+      .catch(() => problems.push('dailyme: Folgen fehlen auf der Serienseite'));
+    const dmLinks = await page.evaluate(() => [...document.querySelectorAll('a[href*="dailyme.de/content/show/21745-"]')].length);
+    if (!dmLinks) problems.push('dailyme: keine Links zu dailyme.de auf der Serienseite');
+    const dmPage = await page.evaluate(() => document.body.innerText);
+    if (!dmPage.includes('Bei dailyme ansehen') && !dmPage.includes('Anbieter')) problems.push('dailyme: kein Weg zum Anbieter');
+    if (shots) await page.screenshot({ path: path.join(shots, 'dailyme-folgen.png') });
   } catch (e) {
     problems.push('Abbruch: ' + (e && e.stack || e));
   } finally {

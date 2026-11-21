@@ -23,6 +23,8 @@
 ./mediathekatlas/dmax_enrichment.py
 ./mediathekatlas/filmfriend.py
 ./mediathekatlas/filmfriend_enrichment.py
+./mediathekatlas/dailyme.py
+./mediathekatlas/dailyme_enrichment.py
 ./mediathekatlas/sender_live.py
 ./mediathekatlas/artwork.py
 ./mediathekatlas/diagnostic_extensions.py
@@ -63,6 +65,7 @@
 ./mediathekatlas/web/redbulltv.js
 ./mediathekatlas/web/dmax.js
 ./mediathekatlas/web/filmfriend.js
+./mediathekatlas/web/dailyme.js
 ./mediathekatlas/web/plex.js
 ./mediathekatlas/web/netzkino.js
 ./mediathekatlas/web/style.css

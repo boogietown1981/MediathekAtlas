@@ -1,5 +1,68 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.74 – Sammelstand (21. November 2026)
+- Automatisch: gesamte Python-Suite beider Ketten, Node-Tests, Klicktest Chromium.
+- Nicht geprüft: Mac-Lauf des zusammengeführten Stands (Prüfliste releases/0.6.74/PRUEFLISTE.md).
+
+## 0.6.73 – Sturm der Liebe dreistellig (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0673.py`: „Episode 150“, „Folge 150“, „Episode 150 (Audiodeskription)“ mit Metadaten aus `core.identify` → Folge 150; kein Treffer bei mehreren Staffeln, Kurzclip, Titeldatum, abweichender Nummer, gesetzter Staffel, „3/10“. Ohne die Korrektur schlagen 3 Tests fehl.
+- Nicht geprüft: Wirkung auf den Katalog (Ziel: die 660 offenen „Episode N“ 215–999 überwiegend zugeordnet).
+
+## 0.6.71 – Sturm der Liebe „Episode N“ (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0671.py`: „Episode 150“ (auch mit Audiodeskription) bei Sendedatum 2026 und IMDb-Jahr 2006 → Folge 150; kein Treffer bei unbekannter Nummer, mehreren Staffeln, Kurzclip, widersprechendem Titeldatum, „2/6“; Abo-Ereignis mit planned_gb.
+- Nicht geprüft: Wirkung auf den Katalog (Ziel: Sturm der Liebe mindestens +800).
+
+## 0.6.70 – Daily Soaps in der Folgensuche (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0670.py` mit einem kleinen IMDb-Archiv nach den echten Mustern: Dahoam-Titel mit Datum und Nummer (auch Audiodeskription) → Staffel 1/Folge N; Sturm-der-Liebe „Folge 4556“, „Folge (4612)“, „Sturm der Liebe (4612)“ → Folge, Titel „Folge N“ statt „Episode #1.N“; kein Treffer bei unbekannter Nummer, widersprechendem Datum, widersprechendem Folgennamen, Serie mit mehreren Staffeln, „2/3“, Kurzclip, abweichender gespeicherter Nummer; geprüfte Folgen sofort fällig.
+- Nicht geprüft: Wirkung auf Björns Katalog und das echte IMDb-Archiv (Zielzahlen in der Prüfliste).
+
+## 0.6.68 – Folgensuche: Ausgaben nach Tag und Gast (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0668.py`: Tag ohne Jahr am Sendetag (auch „vom 23.10.“ und Jahreswechsel) → Ausgabe, an anderem Tag/als Drama/nummeriert nicht; Gast-Titel der eigenen Sendung → Ausgabe, fremde Sendung/„Der ungebetene Gast“ nicht; geprüfte Gast-Ausgaben sofort fällig, gewöhnliche Folgen warten weiter, BR24-Fall abgelegt und Hinweis gelöscht; Archiv-Hinweis ohne Prüfung einmal je Stunde; Abo-Aufträge über dem Budget per tick zurückgenommen, wartende gezählt, „verplant“ getrennt angezeigt.
+- Regeln an echten Titeln aus der Testkopie abgeleitet (30 Beispiele, 39 Protokollstichproben); Wirkung auf den Katalog nicht gemessen.
+
+## 0.6.67 – Episoden-Einordnung absichern (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0667.py`: zurückgerollte Runde ohne Zähler/Ereignis, Wiederholung zählt einmal und meldet den Ort, Wirkungen erst nach der Einheit, fehlgeschlagene Einheit verwirft sie, Sendungssperre exklusiv und nach der Einheit frei, vier Worker legen 12 Beiträge genau einmal ab.
+- Nicht geprüft: Verhalten unter echter Last auf Björns Katalog (Anzahl Sperren je Stelle).
+
+## 0.6.66 – Abo-Speicherbudget (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0660.py`: Aufträge aus der Zeit ohne Budget gehen über dem Budget zurück auf „gewünscht“, kein weiterer Start; Download-Start wartet mit Hinweis, „Jetzt versuchen“ startet; erstes Video eines leeren Abos startet; gelernte Rate (Untergrenze fest, Obergrenze 4×); Anzeige und Verdrahtung.
+- Nicht geprüft: Björns echtes Abo mit 18,7 GB (welches Abo, welche Videos), echte Dateigrößen von YouTube.
+
+## 0.6.65 – Episodensuche nach Mac-Gegenprüfung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0665.py`: große Warteschlange bei aufgebrauchtem Senderkontingent mit vier Workern läuft mit und ohne IMDb-Archiv vollständig durch, „bereit“ ohne abgelaufene Werke, zurückgesetzte Ausgaben ohne Angebot einmalig wieder abgelegt (Nutzer-Neuprüfung bleibt), Wikidata-Film/-Serie mit unbekannter Klasse bleibt, Person bleibt draußen.
+- Nicht geprüft: Björns echter Katalog bzw. die Mac-Testkopie (Zahlen zu Einträgen ohne Angebot und Archivstatus sind angefragt), echte Wikidata-Antworten für „Der Baum“ und „100% Wolf“.
+
+## 0.6.58 – Erkennung (20. November 2026, Mac-Gegenprüfung nicht bestanden, nicht ausgegeben)
+- Automatisch: gesamte Python-Suite (1639 Tests, grün), neu `tests/test_v0658.py`: abgelegte Beiträge bleiben nach weiteren Erkennungen in der Serie abgelegt, kein erneutes Einordnen (Zähler bleibt 12 statt zu wachsen), unveränderte Geschwister unberührt, zurückgesetzte Werke werden ohne IMDb-Abfrage wieder abgelegt, Nutzer-Neuprüfung bleibt, Reihenfolge bei verbrauchtem Senderkontingent, Wikidata-Personen/-Taxa/-Begriffe verworfen und gemerkt, Filme behalten Genres, 429 pausiert nach Retry-After (60 s bis 15 min), Prüfung „pausiert“ ohne Fehler. Gegenprobe: mit dem Code von 0.6.55 schlagen 10 der 11 Tests fehl.
+- Nicht geprüft (keine Datenbank in der Cloud): Wirkung auf Björns echten Katalog (Anzahl zurückgesetzter Werke, Trefferquote danach), echte Wikidata-Antworten.
+## 0.6.72 – Sicherung, Startprotokoll, Samsung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0672_backup_followup.py` (Klick während laufender Sicherung, Anfrage während der Sicherung, Version im Startprotokoll über das echte `launcher.sh`, Samsung Automatik/gleiche Region).
+- Nicht geprüft (nur auf dem Mac): Doppelklick in der echten Oberfläche, Startprotokoll der gebauten App.
+
+## 0.6.69 – Datenbanksicherung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0669_backup_tasks.py` (jede startbare Aufgabe startet, „läuft bereits“ ohne Fehler, Sicherung wird bei ständigem Schreiben fertig, ein Schritt mit WAL / kleine Schritte ohne).
+- Nicht geprüft (nur auf dem Mac): Sicherung der echten 2,9-GB-Datenbank bei laufender Erkennung (Dauer, Größe der WAL-Datei währenddessen).
+
+## 0.6.64 – Samsung TV Plus: Region und Automatik (21. November 2026)
+- Automatisch (Cloud, Chromium): gesamte Python-Suite, neu `tests/test_v0664_samsung_settings.py` (neue Region lädt sofort, gleiche Region nicht, unbekannte Region abgelehnt, Liste der neuen Region, Automatik aus verhindert Neuabruf, Verdrahtung), neu `tests/browser/samsung_setup.cjs` (Block zeigt Stand, Automatik aus/an wird gespeichert, Regionswahl gesendet), `click_all.cjs`.
+- Nicht geprüft: echter Abruf der Senderliste für Österreich/Schweiz (Netz in der Cloud gesperrt), Wiedergabe österreichischer/schweizerischer Sender aus Deutschland, Safari/Firefox.
+
+## 0.6.62 – dailyme TV (20. November 2026)
+- Automatisch (Cloud): gesamte Python-Suite grün, neu `tests/test_v0662_dailyme.py` (Mitschnitte vom Mac: robots.txt, Inhalte-Sitemap mit über 1.000 Sendungen, Startseite, Film „Plötzlich Vater“ mit FSK 6/2013/Kategorie, Serie mit 100 Folgen 401–500; dazu robots.txt, Listen, Film-/Serienseiten, JSON-LD, JavaScript-Hülle, Sitemaps, Bildhosts, Lauf mit Zählern, zweiter Lauf innerhalb einer Woche, robots sperrt alles, Netzfehler, nie eine Player-Quelle, Verdrahtung); `node tests/*.cjs` grün; `click_all.cjs` und `dmax_joyn.cjs` (dailyme-Reiter, Filme, Serie mit Folgen-Kacheln „Anbieter“, Links zu dailyme.de) ohne Befund.
+- Nicht geprüft (dailyme.de aus der Cloud gesperrt): voller Lauf am echten Netz (Dauer, Fehler), Anteil erkannter Filme/Serien, Öffnen der Links im Browser. Mac-Prüfung steht aus.
+
+## 0.6.61 – Verbund: Befunde der Mac-Prüfung (20. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0661_verbund_followup.py` (Feld `name` im Protokoll, auto_tick meldet und räumt auf, dataless-Erkennung, langsames Nachladen mit Frist ohne zweiten Ladevorgang, Lesefehler hält die Position, gesperrter Zwischenspeicher).
+- Nicht geprüft (nur auf dem Mac): echtes `SF_DATALESS` unter macOS 27, Dauer des Nachladens durch iCloud, Sicherung von 2,9 GB mit Protokolleintrag.
+
+## 0.6.59 – Folgen als Kacheln mit Abspielknopf (20. November 2026)
+- Automatisch (Cloud, Chromium): gesamte Python-Suite 1668 Tests grün, `node tests/*.cjs` grün, `click_all.cjs`, `player_tracks.cjs`, `cast_photos.cjs`, `kids_corner.cjs` ohne Befund, neu `tests/browser/episode_tiles.cjs` (Raster 4 Spalten bei 1400 px, 1 Spalte bei 420 px ohne Querscrollen, Wege lokal/Player/Anbieter, Aufrufe `playMedia`/`playJob`/`playPluto`, Anbieterlink im neuen Tab, Gesehen/Fortschritt, Staffelwahl, Listenansicht, Offline-Kopie wechselt auf „Lokal“).
+- Nicht geprüft: echte Serien mit vielen Folgen auf Björns Datenbank, echte lokale Dateien, Autostart beim Anbieter mit der Erweiterung, Safari/Firefox. Mac-Prüfung steht aus.
+
+## 0.6.57 – Vollständige Besetzung (20. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0657_cast_more.py` (weitere Personen in Abspannreihenfolge ohne gezeigte und ohne sonstige Crew, Begrenzung 40, zweites Öffnen ohne TMDB, Fotos weiterer Personen ladbar, Seite ohne eigene Besetzung, Fehler nicht gespeichert, unbekannter Titel als Fehlanzeige gemerkt, Serie aus den Werken, vorhandene Seriendaten haben Vorrang, Verdrahtung). Browsertest `cast_photos.cjs` erweitert: „Weitere 6 anzeigen“, Film ohne Besetzung mit 14 Personen und „Alle 2 anzeigen“. Klicktest `click_all.cjs`.
+- Nicht geprüft (TMDB und Plex aus der Cloud gesperrt): „Der Pass“ auf echten Daten, Plex-Titel mit eigener IMDb-ID, echte TMDB-Credits großer Serien.
+
 ## 0.6.56 – Erkennung zwischen Geräten teilen (20. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0653_mesh_share.py` (Staging, Absturz/Ordnerwechsel, Lücken und ausgelagerte iCloud-Dateien, Ereignisprüfung, Cloud-Ordner-Suche, Episode übernommen ohne Suche, „keine Episode“ nicht erneut gesucht außer mit neuerem Archiv/Senderabfrage, ältere Knoten, manuelle Abweichung behalten/übernehmen, kopierter Datenordner). Zwei-Instanzen-Test `tests/browser/mesh_two_nodes.cjs`: zwei Server mit allen Hintergrunddiensten (offline), gemeinsamer iCloud-Ordner, Klick „Über iCloud Drive verbinden“ auf beiden, je 128 Bereiche, 30 Ergebnisse von A auf B übernommen (B ohne Anbieterabfrage), kein offenes Segment im Cloud-Ordner, Abweichung auf beiden Seiten gemeldet, Übernahme auf B, A unverändert.
 - Mac-Gegenprüfung 20.11.2026 (erste Fassung): Beitritt, Aufteilung 128/128, Übernahme, keine .partial-Dateien, „ausschalten“ in Ordnung; nicht bestanden wegen Datenmenge (6,4 KB je Ergebnis). Danach schlankes Journal: Test misst unter 700 Byte je Ereignis mit großen Metadaten (Hochrechnung rund 500 Byte unkomprimiert, 65 Byte komprimiert), Segmentgrenze, gzip nur bei allen Systemen, Größengrenze.

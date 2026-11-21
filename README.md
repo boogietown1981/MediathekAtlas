@@ -1,5 +1,98 @@
-# MediathekAtlas · 0.6.56
+# MediathekAtlas · 0.6.74
 
+## Neu in 0.6.74: ein gemeinsamer Stand
+
+- Fasst die Erkennungs-Kette bis 0.6.73 (Folgensuche, Daily Soaps, Abo-Speicherbudget) und die zweite Kette bis 0.6.72 (Besetzung, Folgen-Kacheln, Verbund und Datenbanksicherung, Samsung TV Plus, dailyme TV) in einer Version zusammen. Keine neuen Funktionen.
+
+## Neu in 0.6.72
+
+- Ein Doppelklick auf „Starten“ der Datenbanksicherung legt keine zweite volle Kopie mehr an.
+- Samsung TV Plus zeigt nach dem Wiedereinschalten der Automatik die Zeit des nächsten Abrufs. Österreichische und Schweizer Sender lassen sich aus Deutschland oft nicht abspielen (Sperre des Anbieters).
+
+## Neu in 0.6.69: Datenbanksicherung zuverlässig
+
+- „Starten“ der Datenbanksicherung unter Verwaltung → Aufgaben funktioniert.
+- Eine Sicherung wird auch fertig, während die Erkennung läuft (vorher begann sie immer wieder von vorn).
+- Ein zweiter Start während einer laufenden Sicherung wird als „läuft bereits“ angezeigt, nicht als Fehler.
+
+## Neu in 0.6.64: Samsung TV Plus einstellbar
+
+- Live-TV → „Samsung TV Plus · Region und Automatik“: Land der Senderliste (Deutschland, Österreich, Schweiz), automatische Aktualisierung alle 12 Stunden an oder aus und „Senderliste jetzt laden“, dazu Stand und nächste Aktualisierung.
+- Nach einem Wechsel der Region lädt MediathekAtlas die Senderliste sofort neu.
+
+## Neu in 0.6.62: dailyme TV
+
+- Neue Plattform „dailyme TV“: Filme, Serien, Anime und Dokus, die dailyme.de kostenlos mit Werbung und ohne Anmeldung zeigt, mit allen Folgen, FSK, Laufzeit und Beschreibung, im Werkkatalog, als eigener Reiter unter Plattformen und mit Folgen-Kacheln.
+- Abgespielt wird nur bei dailyme: „Bei dailyme ansehen“ öffnet den Titel auf dailyme.de. Der Player von dailyme braucht eine eigene Sitzung und einen Schlüssel je Video; das baut MediathekAtlas nicht nach.
+- Offline-Kopien gibt es dafür nicht; offline ansehen geht mit dem Offline-Modus der dailyme-App. Der Katalog wird schonend gelesen (robots.txt, eine Anfrage pro Sekunde, Sitemap zuerst; ein unterbrochener Lauf setzt fort).
+
+## Neu in 0.6.61: Verbund robuster mit iCloud
+
+- Ausgelagerte iCloud-Dateien (Finder → „Download entfernen“, macOS 14 und neuer) werden erkannt und mit Frist nachgeladen; solange zeigt der Verbund „wartet auf …“, statt hängen zu bleiben.
+- Die Meldung der automatischen Datenbanksicherung im Protokoll und unter Aufgaben funktioniert wieder (die Sicherungen selbst waren nicht betroffen).
+- Eine kurz gesperrte Datenbank verwirft kein Erkennungsergebnis mehr.
+
+## Neu in 0.6.59: Folgen als Kacheln
+
+- Beim Öffnen einer Serie stehen die Folgen als Kacheln neben- und untereinander, mit einem Abspielknopf direkt auf dem Bild.
+- Der Knopf nimmt den besten Weg: liegt die Folge lokal (Download oder Offline-Kopie), wird sie lokal abgespielt; sonst im eingebauten Player; geht sie nur beim Anbieter, öffnet er die Folge dort (mit Autostart über die Chrome-Erweiterung). Ein Schild auf dem Bild zeigt den Weg: Lokal, Player oder Anbieter.
+- Gesehene Folgen tragen „✓ Gesehen“, angefangene einen Fortschrittsbalken. Über „☰ Liste“ gibt es die bisherige Liste weiterhin.
+
+## Neu in 0.6.57: vollständige Besetzung
+
+- Serien, für die keine Besetzung der ganzen Serie vorliegt (z. B. „Der Pass“), zeigen jetzt die Darsteller und die Regie aus ihren Folgen; wer in den meisten Folgen mitspielt, steht vorn.
+- „Weitere … anzeigen“ blendet die übrige Besetzung laut TMDB ein (bis zu 40 Personen mit Rolle und Foto), sonst bleibt die Seite kurz.
+- Titel ohne eigene Besetzungsangaben, etwa bei Plex, bekommen die Besetzung über ihre IMDb-Kennung von TMDB: die ersten 14 sofort, der Rest mit „Alle … anzeigen“.
+
+## Neu in 0.6.73: Sturm der Liebe auch mit dreistelligen Folgennummern
+
+- „Episode 500“ oder „Folge 610“ wurden bisher als Folge ohne Staffel gelesen und deshalb nicht über die fortlaufende IMDb-Nummer gesucht. Jetzt werden auch die Folgen 1–999 zugeordnet, mit denselben Sicherheitsregeln wie in 0.6.70. Schon geprüfte Folgen kommen sofort wieder dran.
+
+## Neu in 0.6.71: Wiederholungen von Sturm der Liebe
+
+- Folgen, die in der Mediathek „Episode 1140“ statt „Folge 1140“ heißen (Wiederholungen auf ONE), werden jetzt ebenfalls ihrer IMDb-Folge zugeordnet – mit denselben Sicherheitsregeln wie in 0.6.70.
+- YouTube-Abos: Das Protokoll nennt beim Zurücknehmen von Aufträgen auch die geplante Größe.
+
+## Neu in 0.6.70: Folgen von Daily Soaps werden erkannt
+
+- „Sturm der Liebe“, „Dahoam is Dahoam“ und andere Serien, die IMDb fortlaufend durchzählt, bekommen ihre Folge über die Nummer im Sendertitel („Folge 4556“, „… · 17.08.15 | Folge 1562“). Bisher blieben dort über 90 % „ohne Treffer“.
+- Sicherheitsregeln: Nur bei Serien, deren Folgen in IMDb in einer einzigen Staffel stehen; Laufzeit, ein Erstsendedatum im Titel und ein eigener Folgentitel müssen zu IMDb passen, sonst bleibt die Folge offen.
+- Schon geprüfte Folgen solcher Serien kommen sofort wieder dran.
+- (0.6.69 ist an einen anderen Versionsstand vergeben.)
+
+## Neu in 0.6.68: Folgensuche ordnet mehr Sendungsausgaben ein
+
+- Regionalmagazine, die nur Tag und Monat nennen („buten un binnen vom 23. Oktober“), werden als Ausgabe der Sendung abgelegt, wenn der Tag der Sendetag ist.
+- Gesprächssendungen, deren Folgen nach dem Gast heißen („THADEUSZ lang & breit – Gast: …“), werden als Ausgabe abgelegt statt wochenlang „ohne Treffer“ zu warten. Schon geprüfte solche Werke kommen sofort wieder dran.
+- Die letzten zurückgesetzten Beiträge (BR24) werden wieder abgelegt.
+- Fehlt das IMDb-Offline-Archiv, steht das auch dann im Protokoll, wenn gerade keine Folge geprüft wird.
+- YouTube-Abos: „Speicherbudget verplant“ (laufende Downloads) und „erreicht“ (wirklich belegt) werden getrennt angezeigt, mit der Zahl wartender Videos; Aufträge über dem Budget werden alle 10 Minuten zurückgenommen, nicht erst bei der nächsten Kanalprüfung.
+
+## Neu in 0.6.67: Episoden-Einordnung abgesichert
+
+- Zähler und Protokoll der Episodensuche zählen nur noch, was wirklich gespeichert wurde. Eine kurz gesperrte Datenbank wird wiederholt, ohne doppelt zu zählen.
+- Eine Sendung wird gleichzeitig nur von einem Worker eingeordnet.
+- Die Übersicht zeigt, wo Datenbank-Sperren auftraten und wie oft eine Sendung später drankam.
+
+## Neu in 0.6.66: Speicherbudget für YouTube-Abos gilt hart
+
+- Das Budget je Abo („Speicher höchstens“) gilt jetzt auch für Videos, die schon in der Warteschlange stehen, und wird beim Start jedes Downloads geprüft. Liegt ein Abo darüber, gehen noch nicht gestartete Videos zurück auf „gewünscht“ und warten, bis gesehene Videos Platz machen; ungesehene werden nie gelöscht.
+- Die Größe wartender Videos schätzt MediathekAtlas aus den schon geladenen Dateien des Abos statt mit einem festen Wert.
+- Die Abo-Verwaltung zeigt deutlich „Über dem Speicherbudget: … von … GB belegt“.
+## Neu in 0.6.65: Episodensuche läuft sichtbar weiter
+
+- „Davon bereit“ zählt nur noch Folgen, die die Episodensuche auch prüfen kann; Werke ohne aktuelles Angebot standen bisher als „bereit“ in der Liste, wurden aber nie geprüft.
+- Früher zurückgesetzte Sendungsausgaben und Beiträge werden einmalig im Hintergrund wieder abgelegt, auch wenn ihr Angebot schon abgelaufen ist.
+- Fehlt das IMDb-Offline-Archiv, zeigt die Übersicht „Folgensuche wartet auf das IMDb-Offline-Archiv“ statt scheinbar stillzustehen.
+- Wikidata: Filme und Serien mit Regie, Besetzung, Folgenzahl oder IMDb-Titelkennung bleiben Vorschläge, auch wenn ihre Klasse unbekannt ist („Der Baum“, „100% Wolf“).
+- 0.6.58 wurde nicht ausgegeben; 0.6.65 enthält dessen Korrekturen.
+
+## Neu in 0.6.58: Erkennung und Episodensuche
+
+- Schon abgelegte Sendungsausgaben und Beiträge bleiben abgelegt. Bisher setzte jede weitere Erkennung in derselben Serie sie zurück, und die Episodensuche ordnete sie immer wieder neu ein („BR retro“ 399-mal in 4,5 Minuten). Die Episodensuche hat dadurch wieder Zeit für echte Folgen; zurückgesetzte Werke werden beim nächsten Durchgang ohne Abfrage wieder abgelegt.
+- Ist das Stundenkontingent für den Senderabruf (ARD/ZDF) aufgebraucht, kommen zuerst Werke dran, die ohne Senderseite entschieden werden können.
+- Wikidata schlägt keine Personen, Tiere, Orte oder Begriffe mehr als Film oder Serie vor.
+- Meldet ein Anbieter „zu viele Anfragen“, pausiert MediathekAtlas ihn so lange, wie er verlangt (1 bis 15 Minuten), statt weiter zu fragen; die Werke warten und werden danach geprüft.
 ## Neu in 0.6.56: Erkennung zwischen Geräten teilen
 
 - Mehrere Macs (oder ein Mac und ein PC) teilen sich die Erkennung jetzt mit einem Klick: Einstellungen → Verbund & andere Systeme → „Über iCloud Drive verbinden“ (auch Dropbox, OneDrive, Google Drive, Synology Drive), auf jedem Gerät einmal. Ein NAS oder offener Port ist nicht nötig, die Geräte müssen nicht gleichzeitig laufen.
