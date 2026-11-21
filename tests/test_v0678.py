@@ -152,7 +152,7 @@ class PlanetSchule(unittest.TestCase):
         self.assertEqual(rows['Achtung! Experiment']['kind'], 'series')
         self.assertEqual(rows['Achtung! Experiment']['state'], 'pending')
         self.assertEqual(rows['The Wheat We Eat']['kind'], 'unknown')
-        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0682', False))
+        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0684', False))
 
 
 if __name__ == '__main__':

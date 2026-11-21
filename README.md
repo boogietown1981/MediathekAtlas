@@ -1,6 +1,10 @@
-# MediathekAtlas · 0.6.83
+# MediathekAtlas · 0.6.84
 
-## Neu in 0.6.83: mehr Sendungsbeiträge erkannt, Abo-Schalter für ungesehene Videos
+## Neu in 0.6.84: Planet Schule bleibt wirklich bei seiner Reihe
+
+- Die gelernte Serienvorlage für das Thema „planet schule“ gab neu erkannten Werken sofort wieder den Portalnamen; sie wird vergessen, für Portale und Rubriken nicht mehr gelernt, und ein Treffer, der nur das Portal ist („Planet Schule“ bei TVDB), wird nie automatisch übernommen. Betroffene Werke werden einmal neu erkannt.
+
+## Neu in 0.6.83 (nicht ausgegeben, in 0.6.84 enthalten): mehr Sendungsbeiträge erkannt, Abo-Schalter für ungesehene Videos
 
 - Beiträge von Sendungen, die fast nur Kurzclips veröffentlichen und keine Folgenliste haben (z. B. „Hallo Niedersachsen“), werden als Beitrag der Sendung abgelegt statt „ohne Treffer“. Kinderprogramme sind ausgenommen.
 - Einträge der Folgensuche, die eine ältere Version bis zu 30 Tage als „ohne Treffer“ geparkt hat, werden einmal mit den heutigen Regeln neu geprüft, wenn sie danach Ausgabe oder Beitrag wären.

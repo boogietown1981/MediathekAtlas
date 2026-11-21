@@ -107,6 +107,31 @@ def portal_series(topic,title):
     if not (2<=len(series)<=80) or not episode or key(series)==key(topic):return None
     return episode,series
 
+def portal_identity(m):
+    """0.6.84: a series identity that is only the portal („planet schule“ ARD Mediathek, TVDB „Planet Schule“)."""
+    return bool(m) and m.get('kind')=='series' and key(m.get('title')) in PORTAL_TOPICS
+
+def template_topic(topic,title=''):
+    """0.6.84: True if a series template may be learned or used for this topic.
+
+    Mac-Prüfung 0.6.82: the template learned for the topic „planet schule“ (ARD Mediathek, the portal) gave every
+    re-recognised work under that topic the portal identity again within seconds (series_template_candidate), and
+    propagate_series carried it to all works of the Reihe („Natur nah“: 99 works). A portal or section topic
+    names no series; an offer titled „<Folge> · <Reihe>“ names its own."""
+    import metadata
+    if not topic or key(topic) in PORTAL_TOPICS or metadata.generic_topic(topic):return False
+    return not portal_series(topic,title)
+
+def drop_portal_templates(c):
+    """0.6.84: forget templates learned for a portal/section topic or with a portal identity (returns count)."""
+    gone=0
+    for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
+        try:m=json.loads(meta or '{}')
+        except (TypeError,ValueError):m={}
+        if not template_topic(topic) or portal_identity(m):
+            gone+=c.execute('DELETE FROM series_templates WHERE topic=? AND provider=? AND reference=?',(topic,provider,ref)).rowcount
+    return gone
+
 def portal_reseed(c,limit=500,after=''):
     """0.6.78, once (see PORTAL_TOPICS): automatic works of a portal topic whose series is in the title are
     recognised again from the sender data. User decisions, matches and confirmed episodes stay.
@@ -202,7 +227,7 @@ def mark_explicit_extra(c,w,source):
 def origin_meta(c,row):
     """Seed metadata of an offer as on import (including a unique series template) and the template used."""
     m=seed(row);template=None
-    if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
+    if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900 and template_topic(row.get('topic'),cleaned(row.get('title'))):
         options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
         if len(options)==1:template=json.loads(options[0][0])
     if template and not m.get('video_role'):
@@ -222,6 +247,7 @@ def series_template_candidate(c,row,source):
     if video_causality.explicit_format(source):return None
     if not 300<=int(source.get('duration') or 0)<=3900:return None
     if key(topic)==key(source.get('title')):return None
+    if not template_topic(topic,cleaned(source.get('title'))):return None
     templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
     if len(templates)!=1:return None
     known=json.loads(templates[0][0])

@@ -556,7 +556,8 @@ class Service:
             recognized.update(state='auto_matched' if chosen else 'work_identified',reason='Werk und Episode abgeglichen' if chosen else 'Werk erkannt; Dateizuordnung noch zu prüfen')
             dest=catalog.save_metadata(c,wid,recognized,outcome) or wid
             if recognized['kind']=='series' and not recognized.get('video_role_needs_review'):
-                if metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']):
+                if (metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])
+                        and catalog.template_topic(entry['source'].get('topic'))):
                     c.execute('INSERT OR REPLACE INTO series_templates VALUES(?,?,?,?)',(catalog.key(entry['source']['topic']),recognized['provider'],recognized['reference_id'],json.dumps(recognized)))
                 if row['show_key']:catalog.propagate_series(c,row['show_key'],recognized)
                 elif metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']):
@@ -1103,7 +1104,9 @@ class Service:
                 with self.provider_slots:
                     result=core.candidates(entry['source'],m,{**config,'_force_provider_refresh':bool(priority)})
                 if not result['warnings'] and not result.get('deferred_providers'):self.cache_result(ck,result)
-            chosen=catalog.auto_choice(m,result['candidates']);recognized=chosen or catalog.work_choice(m,result['candidates'])
+            # 0.6.84: a portal („Planet Schule“ at TVDB/ARD) is never the automatic identity of a programme; it stays a suggestion.
+            usable=[x for x in result['candidates'] if not catalog.portal_identity(x)]
+            chosen=catalog.auto_choice(m,usable);recognized=chosen or catalog.work_choice(m,usable)
             outcome='retry' if result['warnings'] or result.get('deferred_providers') else 'review'
             for write_attempt in range(4):
                 try:
@@ -1410,7 +1413,9 @@ class Service:
     def reseed_portal(self):
         """0.6.78, once: Planet Schule works are recognised again with the series from their title."""
         with self.db() as c:
-            if catalog.get_state(c,'portal_reseed_v0682',False):return
+            if catalog.get_state(c,'portal_reseed_v0684',False):return
+            # 0.6.84: the portal template re-identified the works of 0.6.82 within seconds; forget it first.
+            dropped=catalog.drop_portal_templates(c)
         after='';done=0
         while not self.stop.is_set():
             try:
@@ -1424,8 +1429,8 @@ class Service:
                 if self.stop.wait(2):return
         if self.stop.is_set():return
         if done:
-            diagnostics.event('catalog_portal_reseeded',works=done);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'portal_reseed_v0682',{'works':done,'at':time.time()})
+            diagnostics.event('catalog_portal_reseeded',works=done,templates_dropped=dropped);catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'portal_reseed_v0684',{'works':done,'templates_dropped':dropped,'at':time.time()})
 
     def refile_clip_shows(self):
         """0.6.77, once: works flagged "vielleicht nur Kurzformat" against a series runtime whose Sendung publishes
