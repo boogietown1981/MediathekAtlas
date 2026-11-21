@@ -1,3 +1,15 @@
+## 0.6.68 – Folgensuche: Ausgaben mit Tag ohne Jahr, Gesprächssendungen nach Gast; BR24-Reste; Abo-Budget-Anzeige
+- Grundlage: Mac-Gegenprüfungen 0.6.65 und 0.6.67 (21.11.2026) und lesende Abfragen auf deren Testkopie (`berichte/abfragen/`, Ergebnisse in `ergebnisse-0668.zip`). Basis 0.6.67.
+- Befund Trefferquote: Von 137.038 Einträgen der Warteschlange waren 108.465 geprüft und warteten 7–31 Tage (76.813 wegen des ARD/ZDF-Stundenkontingents 7 Tage), 22.114 als Serie ohne IMDb-Folgenliste; „fällig“ 0 ist also kein Stillstand. 28 der 40 größten Serien hängen an Sender-/TMDB-/TVDB-Kennungen ohne Folgendatenbank. Alle 39 Stichproben „ohne Treffer“ im Lauf: THADEUSZ („Gast: …“); 30 Beispiele aus der Warteschlange: buten un binnen „vom 23. Oktober“ (ohne Jahr) und THADEUSZ.
+- `catalog.DATED_DAY`/`broadcast_day_short`: „vom <Tag>. <Monat>“ bzw. „vom TT.MM.“ ohne Jahr zählt als Ausgabe, wenn der Tag ±3 Tage zum Sendedatum passt (Jahreswechsel berücksichtigt) und der Titel mit dem Sendungsnamen beginnt oder die Sendung ein bekanntes Format ist. Nummerierte Titel nie.
+- `catalog.GUEST`/`guest_edition`: „<Sendung> - (Zu) Gast: …“ und „<Sendung>: … ist zu Gast“ dieser Sendung → Ausgabe. Andere Sendungsnamen und bloßes „Gast“ im Titel („Der ungebetene Gast“) nicht.
+- Einmaliger Hintergrundlauf (Merker `refile_reset_v0668`): legt zurückgesetzte Ausgaben auch außerhalb der Warteschlange ab (die 18 BR24-Beiträge trugen `video_role_needs_review` und standen deshalb nicht mehr darin; der Hinweis wird beim Ablegen gelöscht), und macht geprüfte Werke, die die neuen Regeln abdecken, sofort fällig (`catalog.editions_waiting`, Ereignis `episode_new_edition_rules_requeued`).
+- `episode_waiting_for_imdb_archive` meldet der erste Episodenworker höchstens stündlich auch ohne laufende Prüfung (`Service.note_archive_wait`).
+- Wikidata „100% Wolf“ (Q140129284) ist eine Achterbahn im Plopsaland; die Ablehnung war richtig, keine Änderung.
+- YouTube-Abos (Mac-Prüfung 0.6.67): `budget_planned_full` trennt „verplant“ (laufende Downloads, z. B. 1,0 GB belegt + 76,9 GB in Arbeit) von „erreicht/über dem Budget“; `waiting_for_budget` je Abo und gesamt in `/api/youtube-abos`; `tick` nimmt Aufträge über dem Budget alle 10 min zurück.
+- Noch nicht enthalten: Regeln für Daily Soaps (Sturm der Liebe 1.710 von 1.824 ohne Treffer bei 4.452 deutschen IMDb-Folgentiteln) – warten auf die Titelmuster aus der zweiten Abfragerunde.
+- Tests: `tests/test_v0668.py` (9).
+
 ## 0.6.67 – Episoden-Einordnung absichern (Code-Review 0.6.59, Schritt 1)
 - Björn: „ok erst schritt 1“. Katalog `berichte/codereview-0659.md`, Befunde A1/A2/B1 am Code bestätigt; A6 (Anzeige „Ohne IMDb-Folgenliste verschoben“) war schon vorhanden. Einordnungsregeln, Schema und Oberfläche sonst unverändert. Basis 0.6.66 (zuerst als 0.6.63 reserviert, nie gebaut).
 - `Service.write(fn,label)`: eine Schreibeinheit der Episodensuche; „database is locked“ rollt sie zurück und wiederholt sie bis zu 4-mal (0,1/0,2/0,3 s), gezählt in `sqlite_busy_count` und `sqlite_busy_by_label`.

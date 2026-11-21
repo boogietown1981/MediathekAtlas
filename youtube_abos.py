@@ -1181,12 +1181,25 @@ def tick(root):
     """Jede Minute ohne fällige Prüfung: fertige Downloads übernehmen (für „Neu“ in der Kinderansicht)."""
     if _DB is None:
         return
+    global _TRIMMED_AT
     db = _connect(root)
     try:
         with _DB() as c:
             sync_states(c, db)
+            # 0.6.68: Aufträge über dem Budget nicht erst bei der nächsten Kanalprüfung (bis 24 h) zurücknehmen
+            # (Mac-Prüfung 0.6.67: 1,0 GB belegt, 76,9 GB „in Arbeit“ bei 10 GB Budget)
+            if time.time() - _TRIMMED_AT >= TRIM_INTERVAL:
+                _TRIMMED_AT = time.time()
+                for abo in [dict(r) for r in db.execute('SELECT * FROM youtube_abos WHERE enabled=1')]:
+                    budget = budget_bytes(abo)
+                    if budget:
+                        trim_queued(c, db, abo, budget)
     finally:
         db.close()
+
+
+TRIM_INTERVAL = 600
+_TRIMMED_AT = 0.0
 
 
 # ---------------------------------------------------------------- Bilder (offline verfügbar)
@@ -1261,6 +1274,9 @@ def overview(root, c=None):
         for r in db.execute("SELECT abo_id,reason,COUNT(*) FROM youtube_abo_videos WHERE state IN ('skipped','failed','queued') AND reason!='' "
                             "GROUP BY abo_id,reason ORDER BY 3 DESC"):
             reasons.setdefault(r[0], []).append({'reason': r[1], 'count': r[2]})
+        # 0.6.68 (Mac-Prüfung 0.6.67): Videos, die nur wegen des Budgets warten, auch in der Verwaltung zählen
+        budget_wait = dict(db.execute("SELECT abo_id,COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason=? GROUP BY abo_id",
+                                      (BUDGET_REASON,)).fetchall())
     finally:
         db.close()
     usage = {}
@@ -1281,7 +1297,10 @@ def overview(root, c=None):
                                 and (counts.get(a['id'], {}).get('wanted') or 0))
         # 0.6.60: schon geladene Videos liegen über dem Budget (z. B. aus der Zeit vor dem Budget)
         a['over_budget'] = bool(budget and done_bytes > budget)
+        # 0.6.68: „voll“ heißt bei used 1,0 GB von 10 GB nur „mit den laufenden Downloads verplant“ – getrennt benennen
+        a['budget_planned_full'] = bool(a['budget_full'] and not a['over_budget'] and done_bytes < budget * 0.95)
         a['budget_full'] = a['budget_full'] or a['over_budget']
+        a['waiting_for_budget'] = budget_wait.get(a['id'], 0)
         a['counts'] = counts.get(a['id'], {})
         a['reasons'] = reasons.get(a['id'], [])[:5]
         a['name'] = a['label'] or a['title'] or a['ref']
@@ -1294,7 +1313,7 @@ def overview(root, c=None):
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
             'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause(),
             'per_hour': per_hour(root), 'per_hour_choices': list(PER_HOUR_CHOICES), 'next_slot': next_slot(root),
-            'storage': _storage(root)}
+            'storage': _storage(root), 'waiting_for_budget': sum(a['waiting_for_budget'] for a in abos)}
 
 
 def _storage(root):

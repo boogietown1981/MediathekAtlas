@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.68 – Folgensuche: Ausgaben nach Tag und Gast (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0668.py`: Tag ohne Jahr am Sendetag (auch „vom 23.10.“ und Jahreswechsel) → Ausgabe, an anderem Tag/als Drama/nummeriert nicht; Gast-Titel der eigenen Sendung → Ausgabe, fremde Sendung/„Der ungebetene Gast“ nicht; geprüfte Gast-Ausgaben sofort fällig, gewöhnliche Folgen warten weiter, BR24-Fall abgelegt und Hinweis gelöscht; Archiv-Hinweis ohne Prüfung einmal je Stunde; Abo-Aufträge über dem Budget per tick zurückgenommen, wartende gezählt, „verplant“ getrennt angezeigt.
+- Regeln an echten Titeln aus der Testkopie abgeleitet (30 Beispiele, 39 Protokollstichproben); Wirkung auf den Katalog nicht gemessen.
+
 ## 0.6.67 – Episoden-Einordnung absichern (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0667.py`: zurückgerollte Runde ohne Zähler/Ereignis, Wiederholung zählt einmal und meldet den Ort, Wirkungen erst nach der Einheit, fehlgeschlagene Einheit verwirft sie, Sendungssperre exklusiv und nach der Einheit frei, vier Worker legen 12 Beiträge genau einmal ab.
 - Nicht geprüft: Verhalten unter echter Last auf Björns Katalog (Anzahl Sperren je Stelle).

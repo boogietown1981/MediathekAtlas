@@ -106,3 +106,30 @@ class ArchiveWaitEvent(Fixture):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+from test_v0660 import HardBudget, MB  # noqa: E402
+import youtube_abos as ab  # noqa: E402
+from test_v0607_youtube_abos import NOW  # noqa: E402
+
+
+class AboBudgetDisplay(HardBudget):
+    def test_tick_trims_without_waiting_for_the_next_channel_check(self):
+        abo = self.queued_without_budget(6)
+        jobs = sorted(self.jobs(), key=lambda j: j['source']['_video_id'])
+        for job in jobs[:2]:
+            self.finish(job, 600 * MB)
+        ab.change(self.root, abo, {'budget_gb': 1})
+        with patch.object(ab, '_TRIMMED_AT', 0.0):
+            ab.tick(self.root)
+        self.assertEqual(len([j for j in self.jobs() if j['_state'] == 'queued']), 0)
+        over = ab.overview(self.root, self._conn())
+        self.assertGreater(over['abos'][0]['waiting_for_budget'], 0)
+        self.assertEqual(over['waiting_for_budget'], over['abos'][0]['waiting_for_budget'])
+        self.assertTrue(over['abos'][0]['over_budget'])
+        self.assertFalse(over['abos'][0]['budget_planned_full'])     # really over, not only planned
+
+    def test_planned_is_named_apart_from_used(self):
+        js = (ROOT / 'web' / 'youtube_abos.js').read_text(encoding='utf-8')
+        self.assertIn('a.budget_planned_full', js)
+        self.assertIn('Speicherbudget verplant', js)

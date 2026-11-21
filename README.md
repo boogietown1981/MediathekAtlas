@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.67
+# MediathekAtlas · 0.6.68
+
+## Neu in 0.6.68: Folgensuche ordnet mehr Sendungsausgaben ein
+
+- Regionalmagazine, die nur Tag und Monat nennen („buten un binnen vom 23. Oktober“), werden als Ausgabe der Sendung abgelegt, wenn der Tag der Sendetag ist.
+- Gesprächssendungen, deren Folgen nach dem Gast heißen („THADEUSZ lang & breit – Gast: …“), werden als Ausgabe abgelegt statt wochenlang „ohne Treffer“ zu warten. Schon geprüfte solche Werke kommen sofort wieder dran.
+- Die letzten zurückgesetzten Beiträge (BR24) werden wieder abgelegt.
+- Fehlt das IMDb-Offline-Archiv, steht das auch dann im Protokoll, wenn gerade keine Folge geprüft wird.
+- YouTube-Abos: „Speicherbudget verplant“ (laufende Downloads) und „erreicht“ (wirklich belegt) werden getrennt angezeigt, mit der Zahl wartender Videos; Aufträge über dem Budget werden alle 10 Minuten zurückgenommen, nicht erst bei der nächsten Kanalprüfung.
 
 ## Neu in 0.6.67: Episoden-Einordnung abgesichert
 
