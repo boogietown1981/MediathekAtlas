@@ -1021,7 +1021,8 @@ def foreign_version(source):
 # Sendungen. Neither has an episode of its own in any database. They are filed as edition or contribution
 # of their (already identified) Sendung once the IMDb probe found nothing, never as a matched episode.
 FORMAT_SERIES=re.compile(r'(?i)magazin|nachrichten|\b(?:vor ort|der tag|infos?|spezial|extra|report|reportage)\b')
-EDITION_NUMBERING=re.compile(r'(?i)\b(?:folge|episode|teil|part)\s*\d+|\(\s*\d{1,3}\s*(?:/\s*\d{1,3}\s*)?\)|\bS\d{1,3}\s*[/._-]?\s*E\d{1,4}\b')
+# 0.6.75: also the ZDF year count "(S2026/E38)" (Forum am Freitag); a numbered offer is never a contribution.
+EDITION_NUMBERING=re.compile(r'(?i)\b(?:folge|episode|teil|part)\s*\d+|\(\s*\d{1,3}\s*(?:/\s*\d{1,3}\s*)?\)|\bS\d{1,4}\s*[/._-]?\s*E\d{1,4}\b')
 
 def format_series(name):
     """True for the title of a recurring news, regional or service programme (not a scripted series)."""
@@ -1073,7 +1074,7 @@ def guest_edition(title,series,topic):
     m=GUEST.match(str(title or ''))
     return bool(m) and key(cleaned(m.group(1))) in {key(cleaned(series)),key(cleaned(topic))}-{''}
 
-def recurring_edition(meta,source,sendung=False):
+def recurring_edition(meta,source,sendung=False,clip_limit=600):
     """'edition', 'segment' or None for an identified series work without an episode of its own.
 
     edition: the offer names a calendar date ("Sachsenspiegel vom 19.11.2026"; a drama episode is not
@@ -1082,6 +1083,8 @@ def recurring_edition(meta,source,sendung=False):
     contributions next to the 28-minute edition). Numbered offers (S01E02, Folge 3, (2/6)) never qualify;
     neither does a work the user asked to check, a verified episode or a trailer. sendung=True: the
     series is known to publish dated editions ("MDR Sachsenspiegel" has no format word in its name).
+    clip_limit (0.6.75): longer bound for a contribution when IMDb lists the Sendung only as dated editions
+    (Kaffee oder Tee?: 8–17-minute recipe clips next to the two-hour edition).
     """
     if not source or meta.get('kind')!='series' or meta.get('scan_requested') or meta.get('episode_verified'):return None
     if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
@@ -1103,7 +1106,7 @@ def recurring_edition(meta,source,sendung=False):
     if not recurring:return None
     if key(title) in {key(cleaned(series)),key(cleaned(topic))}:return 'edition'
     duration=int(source.get('duration') or 0)
-    if 0<duration<600:return 'segment'
+    if 0<duration<clip_limit:return 'segment'
     return None
 
 def mark_recurring_edition(c,row,meta,source,role):
@@ -1122,7 +1125,7 @@ def mark_recurring_edition(c,row,meta,source,role):
              episode_title=edition or m.get('episode_title'),episode_verified=False,
              episode_reference_id=None,video_role_needs_review=False,
              reason=('Ausgabe der Sendung „%s“; Sendungsausgaben haben keine eigene Episodenkennung.' if role=='edition'
-                     else 'Beitrag (unter 10 Minuten) der Sendung „%s“; keine eigene Folge.')%series)
+                     else 'Beitrag der Sendung „%s“; keine eigene Folge.')%series)
     return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
                      (json.dumps(m),row['id'])).rowcount>0
 
@@ -1159,7 +1162,7 @@ def reset_editions(c,limit=5000):
           AND json_extract(w.meta,'$.format_grouping') IN ('edition','segment')
           AND COALESCE(json_extract(w.meta,'$.scan_requested'),0)=0 LIMIT ?""",(limit,))]
 
-def editions_waiting(c,limit=5000,after=''):
+def editions_waiting(c,limit=5000,after='',refs=()):
     """0.6.68: queued works checked before the new edition rules (DATED_DAY, GUEST) that they now cover.
 
     Read only; returns (ids, last id). They waited 7–31 days as "ohne Treffer" (Mac check: THADEUSZ, buten un
@@ -1178,9 +1181,18 @@ def editions_waiting(c,limit=5000,after=''):
         import imdb_archive
         if str(meta.get('reference_id') or '').startswith('tt') and imdb_archive.ABSOLUTE_NUMBER.search(title):
             out.append(row[0]);continue
+        # 0.6.75: series whose IMDb listing the new rules cover (dated Sendung, running-numbered titles)
+        if refs and str(meta.get('reference_id') or '') in refs:
+            out.append(row[0]);continue
         if not (DATED_DAY.search(title) or GUEST.match(title)):continue
         if recurring_edition(meta,source)=='edition':out.append(row[0])
     return out,(rows[-1][0] if rows else None)
+
+def unresolved_imdb_series(c):
+    """0.6.75: IMDb series IDs of queue entries without a result (read only, one pass over the queue)."""
+    return [r[0] for r in c.execute("""SELECT DISTINCT json_extract(w.meta,'$.reference_id') FROM episode_queue q
+        JOIN works w ON w.id=q.work_id WHERE q.last_outcome='unresolved'
+        AND json_extract(w.meta,'$.provider')='IMDb Offline' AND json_extract(w.meta,'$.reference_id') LIKE 'tt%'""")]
 
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
@@ -1667,7 +1679,7 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
             c.execute("UPDATE works SET title=?,kind='other',show_key='',meta=?,state='format',next_try=0 WHERE id=?",(m['title'],json.dumps(m),wid))
             c.execute('DELETE FROM film_hints WHERE work_id=?',(wid,))
         else:
-            label={'edition':'Ausgabe','segment':'Beitrag (unter 10 Minuten)','part':'Teil','contribution':'Folge'}[grouping]
+            label={'edition':'Ausgabe','segment':'Beitrag','part':'Teil','contribution':'Folge'}[grouping]
             if singles:m.pop('format_grouping',None)
             note=''
             before=m.get('unknown_before') or {}

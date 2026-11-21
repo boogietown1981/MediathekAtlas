@@ -1,3 +1,12 @@
+## 0.6.75 – Erkennung: Beiträge datierter Sendungen, IMDb-Titel mit laufender Nummer
+- Grundlage: lesende Abfragerunde 3 auf der Mac-Kopie nach 0.6.74 (21.11.2026, `ergebnisse-0675-runde3.zip`). Größte offene IMDb-Serien: Kaffee oder Tee? 1.848, Landesschau Baden-Württemberg 1.475, Gesichter & Geschichten 1.027, DER TAG in Berlin & Brandenburg 800, Eisenbahn-Romantik 428. IMDb führt die ersten vier nur als „Episode dated …“ ohne Staffel/Nummer; die Mediathek-Angebote sind 8–17-minütige Beiträge mit Thementitel („Rezept: Kürbis-Motivtorte“, 964 s). Eisenbahn-Romantik: IMDb „1092. Mit dem Schienenbus an den Bodensee - …“ / „1090 Mit der Nordlandsbahn …“, Mediathek ohne Nummer. Basis 0.6.74.
+- `imdb_archive.Archive.dated_format`: Serie mit ≥ 50 IMDb-Folgen, davon ≥ 80 % „Episode dated …“ (eine Spielserie wird so nie geführt). `catalog_service.dated_clip_limit`: für solche Sendungen gilt als Beitrag, was kürzer als die halbe Serienlaufzeit ist (höchstens 20 min, sonst 10 min wie bisher); Ausgaben mit Sendungsname/Datum im Titel wie bisher. Nummerierte Angebote, bestätigte Folgen und vom Nutzer angestoßene Prüfungen nie; die Serienidentität bleibt, keine IMDb-Folge wird behauptet.
+- `catalog.EDITION_NUMBERING` erkennt auch die ZDF-Jahreszählung „(S2026/E38)“.
+- `imdb_archive.Archive.running_numbered`: ohne Staffel/Folge und ohne Namenstreffer der exakte Titel ohne IMDb-Laufnummer – nur wenn die Serie mindestens 20 so nummerierte Titel hat, höchstens 6.000 Folgen und genau eine passt; Laufzeitprüfung bleibt.
+- Merker `refile_reset_v0675` (auch nach 0.6.73/0.6.74): wartende Einträge der betroffenen IMDb-Serien werden einmal sofort fällig; ohne IMDb-Archiv beim nächsten Start.
+- Nicht enthalten: falsche Serienidentität „stark!“ (KiKA, 514 Werke) ↔ IMDb tt0108215 „Stark“ (Miniserie 1993, 3 Folgen) – eigene Version; Datums-Abgleich ganzer Ausgaben ohne Datum im Titel (Wiederholungen würden falsch datiert).
+- Tests: `tests/test_v0675.py` (7).
+
 ## 0.6.74 – Sammelstand: Erkennung 0.6.73 + zweite Kette 0.6.72
 - Zusammenführung (lokal, ohne Merge der PRs) von 0.6.73 (7e21ed7: 0.6.65–0.6.73, PR #98 + lokale Zweige) und 0.6.72 (d898d81, Zweig i7ygzg-0672, PR #103 auf #102: 0.6.57, 0.6.59, 0.6.61, 0.6.62, 0.6.64, 0.6.69, 0.6.72). Beide Stände in der Mac-Prüfung bestanden. Konflikte nur in Versionsnummer, Startprotokoll (Version jetzt aus version.py, 0.6.72), Bundle-Version und Dokumentation; Code ohne Konflikt.
 - Keine neuen Funktionen.

@@ -691,13 +691,15 @@ class Service:
               AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
             LIMIT ?""",(show_key,selected_id,m['provider'],str(m['reference_id']),time.time(),limit)).fetchall()
         counts={'edition':0,'segment':0};later=[]
-        sendung=catalog.sendung_with_editions(c,show_key)
+        clip=self.dated_clip_limit(m)
+        sendung=bool(clip) or catalog.sendung_with_editions(c,show_key)
+        clip=clip or 600
         for sibling in rows:
             best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(sibling['id'],)).fetchone()
             if not best:continue
             try:meta=json.loads(sibling['meta'] or '{}');source=json.loads(best[0])
             except (TypeError,ValueError):continue
-            role=catalog.recurring_edition(meta,source,sendung)
+            role=catalog.recurring_edition(meta,source,sendung,clip)
             if role=='edition' and not allow_editions:continue
             if role and catalog.mark_recurring_edition(c,sibling,meta,source,role):counts[role]+=1
             elif not role and not sendung:later.append((sibling,meta,source))
@@ -716,6 +718,20 @@ class Service:
             self.after_commit(counted)
         return counts['edition']+counts['segment']
 
+    def dated_clip_limit(self,m):
+        """0.6.75: contribution bound in seconds for a Sendung IMDb lists only as dated editions, else None.
+
+        Mac-Abfrage Runde 3 (21.11.2026): Kaffee oder Tee? (1.848 offen), Landesschau Baden-Württemberg (1.475),
+        DER TAG in Berlin & Brandenburg (800): IMDb names every episode "Episode dated …" without season or
+        number; the Mediathek offers are 8–17-minute contributions titled with their topic. Half the series
+        runtime, at most 20 minutes; the series identity is kept, no episode is claimed."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE;ref=str(m.get('reference_id') or '')
+        if m.get('provider')!='IMDb Offline' or not ref.startswith('tt') or not (archive and archive.updated):return None
+        try:dated,runtime=archive.dated_format(ref)
+        except Exception:return None
+        if not dated:return None
+        return int(min(1200,runtime/2)) if runtime else 1200
     def same_date_editions(self,c,show_key,selected_id,source):
         """True if another active offer of the same Sendung names the same broadcast date."""
         import imdb_archive
@@ -768,7 +784,8 @@ class Service:
                                                                title=title,reason='explicit_title'))
                     preflight='extra'
                 elif (edition_role:=catalog.recurring_edition(m,entry['source'],
-                        catalog.sendung_with_editions(c,row['show_key'])))=='segment':
+                        bool(clip:=self.dated_clip_limit(m)) or catalog.sendung_with_editions(c,row['show_key']),
+                        clip or 600))=='segment':
                     # 0.6.41: a short contribution of a news/magazine Sendung is no episode; file it with
                     # its Sendung instead of the "unsicher" review list.
                     if catalog.mark_recurring_edition(c,row,m,entry['source'],'segment'):
@@ -1199,7 +1216,7 @@ class Service:
         Independent of the episode queue's selection, which takes only works with an active offer. Short
         write batches after the web server is up; a busy database only postpones the next batch."""
         with self.db() as c:
-            if catalog.get_state(c,'refile_reset_v0673',False):return
+            if catalog.get_state(c,'refile_reset_v0673',False):return self.requeue_covered_series()
         total={'edition':0,'segment':0}
         while not self.stop.is_set():
             try:
@@ -1220,6 +1237,20 @@ class Service:
         due=self.requeue_new_editions()
         if due is None:return                              # stopped: run again next start
         with self.db() as c:catalog.set_state(c,'refile_reset_v0673',True)
+        self.requeue_covered_series()
+
+    def requeue_covered_series(self):
+        """0.6.75, once: waiting entries of IMDb series the new rules cover are due again (needs the archive)."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        with self.db() as c:
+            if catalog.get_state(c,'refile_reset_v0675',False):return
+        if not (archive and archive.updated):return        # no archive yet: run again next start
+        refs=self.covered_series(archive)
+        if self.stop.is_set():return
+        due=self.requeue_new_editions(refs) if refs else 0
+        if due is None:return
+        with self.db() as c:catalog.set_state(c,'refile_reset_v0675',True)
 
     def note_archive_wait(self):
         """0.6.68: name a missing IMDb archive in the diagnosis also when no claim runs (once per hour)."""
@@ -1236,12 +1267,24 @@ class Service:
         self.after_waiting_archive=time.time()
         diagnostics.event('episode_waiting_for_imdb_archive',level='WARNING',archive='missing' if not archive else 'not_ready')
 
-    def requeue_new_editions(self):
+    def covered_series(self,archive):
+        """0.6.75: IMDb series of waiting entries that the new rules cover (dated Sendung, running numbers)."""
+        try:
+            with self.db() as c:refs=catalog.unresolved_imdb_series(c)
+        except sqlite3.OperationalError:return set()
+        covered=set()
+        for ref in refs:
+            if self.stop.is_set():break
+            try:
+                if archive.dated_format(ref)[0] or archive.running_numbered_series(ref):covered.add(ref)
+            except Exception:continue
+        return covered
+    def requeue_new_editions(self,refs=()):
         """0.6.68: make works due that the new edition rules now file (see catalog.editions_waiting)."""
         after='';due=0
         while not self.stop.is_set():
             try:
-                with self.db() as c:ids,after=catalog.editions_waiting(c,limit=2000,after=after)
+                with self.db() as c:ids,after=catalog.editions_waiting(c,limit=2000,after=after,refs=refs)
                 if ids:
                     with self.db() as c:
                         c.executemany('UPDATE episode_queue SET next_try=0 WHERE work_id=?',[(i,) for i in ids])

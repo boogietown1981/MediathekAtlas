@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.74
+# MediathekAtlas · 0.6.75
+
+## Neu in 0.6.75: Beiträge von Tagesmagazinen, Eisenbahn-Romantik
+
+- Kurze Beiträge von Sendungen, die IMDb nur als tägliche Ausgaben führt („Kaffee oder Tee?“, „Landesschau Baden-Württemberg“, „DER TAG in Berlin & Brandenburg“), werden als Beitrag der Sendung eingeordnet statt wochenlang als offene Folge zu warten. Die Sendung bleibt erkannt, eine Folge wird nicht behauptet.
+- „Eisenbahn-Romantik“: Folgen werden auch erkannt, wenn IMDb eine laufende Nummer vor den Titel setzt („1092. Mit dem Schienenbus an den Bodensee“).
 
 ## Neu in 0.6.74: ein gemeinsamer Stand
 

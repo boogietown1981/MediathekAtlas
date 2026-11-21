@@ -158,6 +158,15 @@ def numbered_title(e,row,meta):
     if own and norm(own) in ('audiodeskription','hörfassung','gebärdensprache'):own=''
     return own if own and norm(own)!=norm(row.get('topic') or meta.get('title') or '') else 'Folge %s'%e['episodeNumber']
 
+# 0.6.75 (Mac-Abfrage Runde 3): Eisenbahn-Romantik lists its episodes as "1092. Mit dem Schienenbus an den
+# Bodensee - …" or "1090 Mit der Nordlandsbahn …"; the Mediathek title carries the name without the running number.
+RUNNING_PREFIX=re.compile(r'^\s*\d{1,4}(?:\.\s*|\s+)(?=[^\W\d_])')
+
+def running_free(title):
+    """IMDb episode title without a leading running number ("1092. Name" → "Name"), or ''."""
+    title=str(title or '')
+    return title[RUNNING_PREFIX.match(title).end():].strip() if RUNNING_PREFIX.match(title) else ''
+
 def absolute_episode(row,meta):
     """Absolute episode number named by the broadcaster, or None (never from "Teil 2/3" or "(2/6)")."""
     for raw in (row.get('title'),meta.get('episode_title')):
@@ -497,6 +506,8 @@ class Archive:
             eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (series,epname),('episode',series,epname))
             if eps:break
         number_fallback=False
+        if len(eps)!=1 and not isinstance(meta.get('season'),int) and not isinstance(meta.get('episode'),int):
+            eps=self.running_numbered(series,episode_search_terms(row,meta,show_title)) or eps
         # SxxExx from the offer can identify the canonical episode even if
         # the broadcaster does not provide its official episode title.
         if len(eps)!=1 and isinstance(meta.get('season'),int) and isinstance(meta.get('episode'),int) and meta['season']>=0 and meta['episode']>0:
@@ -539,6 +550,37 @@ class Archive:
                 out.update(episode_match='date',episode_title=meta.get('episode_title') or row['title'],
                            reason='IMDb-Ausgabe anhand des Sendedatums im Titel eindeutig zugeordnet')
         return out
+    def _running_free_titles(self,series):
+        self._reader()
+        rows=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? LIMIT 6001',
+                          (series,),('episode_list',series))
+        if not rows or len(rows)>6000:return []
+        free=[(r,running_free(r['primaryTitle'])) for r in rows]
+        # Only a series that numbers its titles this way (≥ 20 such titles); "1. FC Köln" alone is no convention.
+        return free if sum(1 for _,v in free if v)>=20 else []
+    def running_numbered_series(self,series):
+        """0.6.75: True if IMDb titles the episodes of this series with a leading running number."""
+        return bool(self._running_free_titles(series))
+    def running_numbered(self,series,terms):
+        """0.6.75: the one episode whose IMDb title, without its leading running number, equals a search term.
+
+        Exact comparison only; nothing if two episodes share the name, the series lists more than 6,000
+        episodes or fewer than 20 titles carry a running number (the list is read once per series and
+        thread through the parentTconst index)."""
+        wanted=set(terms)
+        found=[r for r,v in self._running_free_titles(series) if v and norm(v) in wanted]
+        return found if len(found)==1 else []
+    def dated_format(self,series):
+        """0.6.75: (True, runtime seconds or None) if IMDb lists the series as a dated daily/weekly programme.
+
+        At least 50 episodes, at least 80 % of them named "Episode dated …" (Kaffee oder Tee?, Landesschau
+        Baden-Württemberg, Gesichter & Geschichten); a scripted series is never listed that way."""
+        self._reader()
+        rows=self._lookup("SELECT COUNT(*) n,SUM(b.primaryTitle LIKE 'Episode dated %') dated,(SELECT runtimeMinutes FROM title_basics WHERE tconst=?) runtime FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=?",
+                          (series,series),('dated_format',series))
+        if not rows:return (False,None)
+        n=rows[0]['n'] or 0;dated=rows[0]['dated'] or 0;runtime=rows[0]['runtime']
+        return (n>=50 and dated*5>=n*4,runtime*60 if runtime else None)
     def single_season(self,series):
         """True if IMDb lists all numbered episodes of the series in season 1 (absolute numbering, ≥ 100)."""
         rows=self._lookup('SELECT seasonNumber,MAX(episodeNumber) top FROM title_episode WHERE parentTconst=? AND seasonNumber IS NOT NULL GROUP BY seasonNumber LIMIT 2',

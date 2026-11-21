@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.75 – Beiträge datierter Sendungen, laufende Nummern (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0675.py`: Rezept-Beitrag 964 s einer „Episode dated“-Sendung → Beitrag; Sendungsname → Ausgabe; 60-min-Angebot, „(S2026/E12)“, bestätigte Folge, Nutzerprüfung → nichts; ohne IMDb-Beleg weiter 10 min; Spielserie mit 60 benannten Folgen nicht datiert; Eisenbahn-Titel ohne Laufnummer → Folge 1061/1062, doppelter Name/Serienname/ungenau/Kurzclip/„1. FC Köln“ → nichts; Neu-Einreihung nur der betroffenen Serien, auch nach 0.6.73, ohne Archiv kein Merker.
+- Nicht geprüft: Wirkung auf Björns Katalog (Prüfliste releases/0.6.75/PRUEFLISTE.md).
+
 ## 0.6.74 – Sammelstand (21. November 2026)
 - Automatisch: gesamte Python-Suite beider Ketten, Node-Tests, Klicktest Chromium.
 - Nicht geprüft: Mac-Lauf des zusammengeführten Stands (Prüfliste releases/0.6.74/PRUEFLISTE.md).
