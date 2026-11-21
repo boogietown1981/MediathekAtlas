@@ -825,7 +825,7 @@ class Service:
                             runtime_meta['reference_runtime_source']='Serien-Katalogmedian (mind. 5 Vergleichsangebote)'
                     causality=video_causality.evaluate(entry['source'],runtime_meta)
                     if (causality and causality.get('video_role')=='short_excerpt_suspected'
-                            and not runtime_meta.get('episode_runtime_seconds')
+                            and not runtime_meta.get('episode_runtime_seconds') and not catalog.has_episode(m)
                             and video_causality.clip_show(c,row['show_key'],causality.get('expected_runtime_seconds'),selected_id)):
                         # 0.6.77: a Sendung of short clips (BR Retro): the series runtime is no yardstick.
                         if not catalog.mark_recurring_edition(c,row,m,entry['source'],'segment','clip_show_v0677'):return True
@@ -1273,7 +1273,31 @@ class Service:
         self.requeue_covered_series()
 
     def once_v0678(self):
-        self.refile_clip_shows();self.reset_old_miniseries();self.reseed_portal();self.heal_dated_segments()
+        self.refile_clip_shows();self.restore_clip_episodes();self.reset_old_miniseries();self.reseed_portal();self.heal_dated_segments()
+
+    def restore_clip_episodes(self):
+        """0.6.79, once: episodes with a number that the clip rule of 0.6.77 filed as contributions are series works
+        again; the episode queue checks them with the current rule (which leaves numbered episodes alone)."""
+        with self.db() as c:
+            if catalog.get_state(c,'clip_episodes_v0679',False):return
+        after='';done=0;shows={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    rows=catalog.clip_episodes(c,after)
+                    if not rows:break
+                    after=rows[-1]['id']
+                    for row in rows:
+                        if catalog.undo_segment(c,row,'Folge mit Nummer; Kurzclip-Einordnung zurückgenommen (0.6.79)','v0679'):
+                            done+=1;shows[row['title']]=shows.get(row['title'],0)+1
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if done:diagnostics.event('episode_clip_episodes_restored',works=done,shows=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]));catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'clip_episodes_v0679',{'works':done,'shows':shows,'at':time.time()})
 
     def heal_when_ready(self):
         """0.6.78: retry heal_dated_segments from the episode loop once the IMDb archive is open (every 10 min)."""
@@ -1384,6 +1408,7 @@ class Service:
                         try:m=json.loads(row['meta'] or '{}')
                         except (TypeError,ValueError):continue
                         if 'Episodenlaufzeit' in str(m.get('expected_runtime_source') or ''):continue
+                        if catalog.has_episode(m):continue          # 0.6.79: a numbered/confirmed episode stays one
                         key=(row['show_key'],m.get('expected_runtime_seconds'))
                         if key not in verdict:verdict[key]=video_causality.clip_show(c,row['show_key'],m.get('expected_runtime_seconds'))
                         if not verdict[key]:continue

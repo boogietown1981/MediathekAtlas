@@ -172,8 +172,13 @@
     if (d.pause?.until) problems.push('YouTube bremst gerade (' + d.pause.reason + '). Abo-Downloads pausieren bis ' +
       new Date(d.pause.until * 1000).toLocaleString('de-DE', {weekday: 'short', hour: '2-digit', minute: '2-digit'}) + ' Uhr und laufen danach von selbst weiter.');
     // 0.6.45: Reserve an freiem Speicher unterschritten
-    if (d.storage?.low) problems.push('Am Abo-Speicherort sind nur noch ' + gb(d.storage.free_gb) + ' GB frei (Reserve ' + d.storage.reserve_gb +
+    // 0.6.79: Platz für das wöchentliche IMDb-Update (liegt es auf demselben Laufwerk wie die Abos)
+    if (d.storage?.imdb_low) problems.push('Am Abo-Speicherort sind nur noch ' + gb(d.storage.free_gb) + ' GB frei; das nächste IMDb-Update braucht etwa ' +
+      gb(d.storage.imdb_need_gb) + ' GB. Abo-Downloads warten, bis wieder Platz ist. Gesehene Videos löschen oder das Gesamtbudget senken.');
+    else if (d.storage?.low) problems.push('Am Abo-Speicherort sind nur noch ' + gb(d.storage.free_gb) + ' GB frei (Reserve ' + d.storage.reserve_gb +
       ' GB): Abo-Downloads warten, bis wieder Platz ist. Gesehene Videos löschen oder die Reserve senken.');
+    if (d.storage?.total_full) problems.push('Alle Abos zusammen belegen ' + gb(d.storage.used_total_gb) + ' von ' + d.storage.total_gb +
+      ' GB (Gesamtbudget): neue Videos warten, bis gesehene Platz machen.');
     warn.hidden = !problems.length; warn.textContent = problems.join(' ');
     const total = (d.abos || []).length, done = (d.profiles || []).reduce((n, p) => n + p.done, 0);
     $('youtube-abos-state').textContent = total ? '· ' + total + (total === 1 ? ' Abo' : ' Abos') + ' · ' + done + ' Videos offline' + (d.running ? ' · prüft gerade' : '') : '';
@@ -184,7 +189,7 @@
   }
   // 0.6.14 (Björn: lieber nur wenige Videos pro Stunde, damit YouTube nicht sperrt)
   function pace(d) {
-    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve'].includes(document.activeElement?.id)) return;
+    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve', 'youtube-abos-total'].includes(document.activeElement?.id)) return;
     const pick = make('select'); pick.id = 'youtube-abos-per-hour'; pick.setAttribute('aria-label', 'Abo-Videos pro Stunde');
     for (const n of d.per_hour_choices || [d.per_hour || 4]) {
       const o = make('option', String(n)); o.value = n; o.selected = n === d.per_hour; pick.append(o);
@@ -201,8 +206,16 @@
     for (const n of st.reserve_choices || [st.reserve_gb]) { const o = make('option', n + ' GB'); o.value = n; o.selected = n === st.reserve_gb; res.append(o); }
     res.onchange = () => act({action: 'reserve', reserve_gb: Number(res.value)}, 'Gespeichert: Abos lassen mindestens ' + res.value + ' GB frei', res);
     const line = make('span', undefined, 'abo-reserve'); line.append(' Abo-Downloads pausieren, wenn weniger als ', res,
-      ' frei sind' + (st.free_gb !== null && st.free_gb !== undefined ? ' (jetzt ' + gb(st.free_gb) + ' GB frei).' : '.'));
+      ' frei sind' + (st.free_gb !== null && st.free_gb !== undefined ? ' (jetzt ' + gb(st.free_gb) + ' GB frei).' : '.') +
+      (st.imdb_need_gb ? ' Platz für das IMDb-Update (' + gb(st.imdb_need_gb) + ' GB) bleibt immer frei.' : ''));
     host.append(line);
+    // 0.6.79: Gesamtbudget aller Abos (zusätzlich zum Budget je Abo)
+    const tot = make('select'); tot.id = 'youtube-abos-total'; tot.setAttribute('aria-label', 'Gesamtbudget aller Abos (GB)');
+    for (const n of st.total_choices || [st.total_gb]) { const o = make('option', n ? n + ' GB' : 'ohne Grenze'); o.value = n; o.selected = n === st.total_gb; tot.append(o); }
+    tot.onchange = () => act({action: 'total', total_gb: Number(tot.value)}, Number(tot.value) ? 'Gespeichert: alle Abos zusammen höchstens ' + tot.value + ' GB' : 'Gespeichert: ohne Gesamtgrenze', tot);
+    const all = make('span', undefined, 'abo-reserve'); all.append(' Alle Abos zusammen belegen höchstens ', tot,
+      ' (jetzt ' + gb(st.used_total_gb || 0) + ' GB); gesehene Videos machen zuerst Platz.');
+    host.append(all);
   }
   async function act(payload, message, button) {
     if (button) button.disabled = true;

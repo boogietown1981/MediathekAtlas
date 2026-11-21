@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.78
+# MediathekAtlas · 0.6.80
+
+## Neu in 0.6.80 (= 0.6.79 mit Gesamtgrenze „ohne Grenze“ als Standard): Speicher für Abos und das IMDb-Update
+
+- Gesamtbudget für alle YouTube-Abos zusammen (Standard: ohne Grenze, damit nach dem Update nichts gelöscht wird; einstellbar unter YouTube → Abos), zusätzlich zum Budget je Abo. Gesehene Videos machen zuerst Platz.
+- Liegen Abos und IMDb-Archiv auf demselben Laufwerk, bleibt immer Platz für das wöchentliche IMDb-Update frei; Abos und IMDb-Einstellungen warnen, wenn es knapp wird.
+- Folgen mit Nummer werden nicht mehr als Kurzclip-Beitrag eingeordnet; schon so eingeordnete kommen zurück.
 
 ## Neu in 0.6.78: Korrektur nach der Mac-Prüfung von 0.6.77
 

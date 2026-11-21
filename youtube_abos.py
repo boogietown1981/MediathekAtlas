@@ -72,6 +72,12 @@ MAX_BUDGET_GB = 2000
 RESERVE_CHOICES = (1, 2, 5, 10, 20, 50)
 RESERVE_DEFAULT_GB = 5
 RESERVE_RECHECK = 30 * 60      # wartet ein Abo-Download auf Platz, prüft er alle 30 Minuten erneut
+# 0.6.79 (Nachtdiagnose 21.11.2026: 65 → 24 GB frei in 9,5 h; 9 Abos × 10 GB = 90 GB Budget bei 24 GB frei):
+# gemeinsames Budget für alle Abos zusammen, zusätzlich zum Budget je Abo. Und das wöchentliche IMDb-Update
+# (neues Archiv neben dem alten, ~22 GB) bekommt seinen Platz, wenn Abos und Archiv auf demselben Laufwerk liegen.
+TOTAL_CHOICES = (0, 10, 20, 30, 50, 100, 200, 500)
+TOTAL_DEFAULT_GB = 0           # 0.6.80 (Björn 21.11.2026: „Ohne Grenze starten“): nichts wird gelöscht, er stellt die Grenze selbst ein
+TOTAL_REASON = 'wartet: Gesamtbudget aller Abos erreicht'
 # Geschätzte Größe eines noch nicht geladenen Videos (Byte je Sekunde, MP4 H.264/AAC bei YouTube üblich)
 RATE = {'480': 110_000, '720': 250_000, '1080': 500_000}
 GB = 1000 ** 3                 # Anzeige wie im Finder (Dezimal-GB)
@@ -663,6 +669,109 @@ def set_reserve(root, value):
     return value
 
 
+def total_gb(root):
+    db = youtube._connect(root)
+    try:
+        value = youtube._get(db, 'abo_total_gb', str(TOTAL_DEFAULT_GB))
+    finally:
+        db.close()
+    try:
+        value = int(float(value))
+    except ValueError:
+        return TOTAL_DEFAULT_GB
+    return value if value in TOTAL_CHOICES else TOTAL_DEFAULT_GB
+
+
+def set_total(root, value):
+    try:
+        value = int(value)
+    except (TypeError, ValueError):
+        raise ValueError('Bitte ein Gesamtbudget in GB wählen') from None
+    if value not in TOTAL_CHOICES:
+        raise ValueError('Erlaubt sind %s GB (0 = ohne Gesamtgrenze)' % ', '.join(map(str, TOTAL_CHOICES)))
+    db = youtube._connect(root)
+    try:
+        with db:
+            youtube._set(db, 'abo_total_gb', value)
+    finally:
+        db.close()
+    return value
+
+
+def total_held(c, db, root):
+    """0.6.79: (Byte fertiger Videos, geschätzte Byte wartender Aufträge) aller Abos zusammen; eine Datei, die
+    mehrere Abos halten (gleicher Kanal in zwei Profilen), zählt einmal."""
+    if c is None:
+        return 0, 0
+    rows = db.execute("SELECT abo_id,video,state,job_id,duration FROM youtube_abo_videos WHERE state IN ('queued','done')").fetchall()
+    abos = {r['id']: dict(r) for r in db.execute('SELECT id,quality FROM youtube_abos')}
+    states = _job_states(c, [r['job_id'] for r in rows if r['state'] == 'done'])
+    done = queued = 0
+    seen = set()
+    for r in rows:
+        if r['job_id'] and r['job_id'] in seen:
+            continue
+        seen.add(r['job_id'])
+        if r['state'] == 'done':
+            done += _file_size(states.get(r['job_id'], (None, None))[1])
+        else:
+            queued += estimate({'duration': r['duration']}, (abos.get(r['abo_id']) or {}).get('quality'))
+    return done, queued
+
+
+def _make_room_total(c, db, root, now):
+    """0.6.79: Platz im Gesamtbudget: das älteste gesehene Video irgendeines Abos entfernen."""
+    for row in db.execute('''SELECT a.* FROM youtube_abos a JOIN youtube_abo_videos v ON v.abo_id=a.id AND v.state='done'
+                             GROUP BY a.id ORDER BY MIN(v.done_at)''').fetchall():
+        if _make_room(c, db, dict(row, _root=str(root)), now):
+            return True
+    return False
+
+
+def over_total(c, db, root, size, now, planned=False):
+    """Hinweis, wenn ``size`` Byte das Gesamtbudget aller Abos überschritten, sonst ''. ``planned``: wartende
+    Aufträge zählen mit (beim Einreihen). Gesehene Videos machen vorher Platz."""
+    limit = total_gb(root) * GB
+    if not limit or c is None:
+        return ''
+    sync_states(c, db)                                   # fertige Aufträge zählen mit ihrer echten Größe
+    used = (lambda d, q: d + (q if planned else 0))(*total_held(c, db, root))
+    while used and used + size > limit and _make_room_total(c, db, root, now):
+        db.commit()
+        used = (lambda d, q: d + (q if planned else 0))(*total_held(c, db, root))
+    if used and used + size > limit:
+        return ('Gesamtbudget aller Abos erreicht (%.1f von %d GB): wartet, bis gesehene Videos Platz machen'
+                % (used / GB, limit // GB))
+    return ''
+
+
+def _existing(path):
+    p = Path(path)
+    for candidate in (p, *p.parents):
+        try:
+            if candidate.exists():
+                return candidate
+        except OSError:
+            return None
+    return None
+
+
+def imdb_space(target_dir):
+    """0.6.79: Byte, die das nächste IMDb-Update am Abo-Speicherort braucht (0, wenn das Archiv woanders liegt)."""
+    try:
+        import imdb_archive
+        archive = imdb_archive.ACTIVE
+        if not (archive and archive.updated):
+            return 0
+        size = archive.path.stat().st_size
+        here = _existing(target_dir)
+        if here is None or here.stat().st_dev != Path(archive.root).stat().st_dev:
+            return 0
+        return imdb_archive.update_space(size)
+    except Exception:
+        return 0
+
+
 def free_bytes(path):
     """Freier Speicher am Ziel; ein noch nicht angelegter Ordner zählt über seinen nächsten vorhandenen Elternordner."""
     if not path:
@@ -682,8 +791,12 @@ def no_room(root, target_dir, extra=0):
     """Hinweis, wenn nach ``extra`` Byte weniger als die Reserve frei bliebe, sonst ''."""
     free = free_bytes(target_dir)
     reserve = reserve_gb(root) * GB
-    if free is None or free - extra >= reserve:
+    imdb = imdb_space(target_dir)
+    if free is None or free - extra >= max(reserve, imdb):
         return ''
+    if imdb > reserve:
+        return ('Platz für das IMDb-Update bleibt frei (%.0f GB nötig, %.1f GB frei): Abo-Downloads warten, bis wieder Platz ist'
+                % (imdb / GB, free / GB))
     return ('Weniger als %d GB frei am Abo-Speicherort (%.1f GB frei): Abo-Downloads warten, bis wieder Platz ist'
             % (reserve // GB, free / GB))
 
@@ -884,9 +997,15 @@ def _enqueue(root, db, abo, now, c=None, download_dir=None):
                     waiting += 1
                     _notify('youtube_abo_budget_full', used_gb=round(used / GB, 1), budget_gb=abo.get('budget_gb'))
                     break
+            if over_total(c, db, root, size, now, planned=True):
+                waiting += 1
+                db.execute("UPDATE youtube_abo_videos SET reason=? WHERE abo_id=? AND video=? AND state='wanted'",
+                           (TOTAL_REASON, abo['id'], v['video']))
+                _notify('youtube_abo_total_full', total_gb=total_gb(root))
+                break
             if no_room(root, target_dir, size):
                 waiting += 1
-                _notify('youtube_abo_reserve_reached', reserve_gb=reserve_gb(root))
+                _notify('youtube_abo_reserve_reached', reserve_gb=reserve_gb(root), imdb_gb=round(imdb_space(target_dir) / GB, 1))
                 break
             try:
                 job = build_job(root, target_dir, abo, v, now)
@@ -900,8 +1019,10 @@ def _enqueue(root, db, abo, now, c=None, download_dir=None):
                            (str(exc)[:200], abo['id'], v['video']))
                 continue
             state = 'done' if result.get('state') == 'done' else 'queued'
-            db.execute('UPDATE youtube_abo_videos SET state=?,job_id=?,done_at=? WHERE abo_id=? AND video=?',
-                       (state, result['id'], now if state == 'done' else 0, abo['id'], v['video']))
+            # 0.6.79: ein Wartegrund (Budget) gilt nach dem Einreihen nicht mehr; sonst zählte die Verwaltung den
+            # Auftrag als „wartet auf neuen Versuch“
+            db.execute("UPDATE youtube_abo_videos SET state=?,job_id=?,done_at=?,reason=CASE WHEN reason IN (?,?) THEN '' ELSE reason END WHERE abo_id=? AND video=?",
+                       (state, result['id'], now if state == 'done' else 0, BUDGET_REASON, TOTAL_REASON, abo['id'], v['video']))
             queued += int(bool(result.get('created')))
         db.commit()
         return queued, waiting
@@ -1050,6 +1171,12 @@ def pace(root, job, now=None, force=False, c=None):
     # vor dem Budget oder mit zu kleiner Schätzung). „Jetzt versuchen“ startet trotzdem.
     if c is not None and not force:
         over = over_budget(root, c, job, now)
+        if not over:
+            db = _connect(root)
+            try:
+                over = over_total(c, db, root, estimate({'duration': (job.get('source') or {}).get('duration')}, job.get('quality')), now)
+            finally:
+                db.close()
         if over:
             job.update(not_before=now + RESERVE_RECHECK, note=over)
             return True
@@ -1277,8 +1404,8 @@ def overview(root, c=None):
                             "GROUP BY abo_id,reason ORDER BY 3 DESC"):
             reasons.setdefault(r[0], []).append({'reason': r[1], 'count': r[2]})
         # 0.6.68 (Mac-Prüfung 0.6.67): Videos, die nur wegen des Budgets warten, auch in der Verwaltung zählen
-        budget_wait = dict(db.execute("SELECT abo_id,COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason=? GROUP BY abo_id",
-                                      (BUDGET_REASON,)).fetchall())
+        budget_wait = dict(db.execute("SELECT abo_id,COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason IN (?,?) GROUP BY abo_id",
+                                      (BUDGET_REASON, TOTAL_REASON)).fetchall())
     finally:
         db.close()
     usage = {}
@@ -1315,17 +1442,29 @@ def overview(root, c=None):
             'key_set': bool(str((_SETTINGS() or {}).get('youtube') or '').strip()), 'running': _ACTIVE,
             'progress': _PROGRESS, 'days': youtube_downloads.OFFLINE_DAYS, 'pause': _pause(),
             'per_hour': per_hour(root), 'per_hour_choices': list(PER_HOUR_CHOICES), 'next_slot': next_slot(root),
-            'storage': _storage(root), 'waiting_for_budget': sum(a['waiting_for_budget'] for a in abos)}
+            'storage': _storage(root, c), 'waiting_for_budget': sum(a['waiting_for_budget'] for a in abos)}
 
 
-def _storage(root):
-    """0.6.45: Reserve und freier Speicher am Abo-Ziel für die Verwaltung."""
+def _storage(root, c=None):
+    """0.6.45: Reserve und freier Speicher am Abo-Ziel für die Verwaltung; 0.6.79: Gesamtbudget, IMDb-Platz."""
     target = storage_locations.abo_base(_SETTINGS() or {})
     free = free_bytes(target)
     reserve = reserve_gb(root)
+    imdb = imdb_space(target) if target else 0
+    total = total_gb(root)
+    used = 0
+    if c is not None:
+        db = _connect(root)
+        try:
+            used = total_held(c, db, root)[0]
+        finally:
+            db.close()
     return {'reserve_gb': reserve, 'reserve_choices': list(RESERVE_CHOICES),
             'free_gb': round(free / GB, 1) if free is not None else None,
-            'low': bool(free is not None and free < reserve * GB), 'budget_default_gb': BUDGET_DEFAULT_GB}
+            'low': bool(free is not None and free < max(reserve * GB, imdb)), 'budget_default_gb': BUDGET_DEFAULT_GB,
+            'total_gb': total, 'total_choices': list(TOTAL_CHOICES), 'used_total_gb': round(used / GB, 1),
+            'total_full': bool(total and used >= total * GB * 0.95),
+            'imdb_need_gb': round(imdb / GB, 1), 'imdb_low': bool(imdb and free is not None and free < imdb)}
 
 
 def _pause(now=None):
@@ -1419,7 +1558,15 @@ def summary(root):
         errors = db.execute("SELECT COUNT(*) FROM youtube_abos WHERE last_error!=''").fetchone()[0]
         waiting_budget = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason=?",
                                     (BUDGET_REASON,)).fetchone()[0]
+        waiting_total = db.execute("SELECT COUNT(*) FROM youtube_abo_videos WHERE state='wanted' AND reason=?",
+                                   (TOTAL_REASON,)).fetchone()[0]
     finally:
         db.close()
+    target = storage_locations.abo_base(_SETTINGS() or {}) if _SETTINGS else ''
+    free = free_bytes(target) if target else None
     return {'abos': abos[0] or 0, 'enabled': abos[1] or 0, 'kids': abos[2] or 0, 'videos': states,
-            'with_note': errors, 'running': _ACTIVE, 'waiting_for_budget': waiting_budget}
+            'with_note': errors, 'running': _ACTIVE, 'waiting_for_budget': waiting_budget,
+            # 0.6.79: Gesamtbudget und Platz fürs IMDb-Update in der Diagnose
+            'waiting_for_total': waiting_total, 'total_gb': total_gb(root), 'reserve_gb': reserve_gb(root),
+            'free_gb': round(free / GB, 1) if free is not None else None,
+            'imdb_need_gb': round(imdb_space(target) / GB, 1) if target else 0}
