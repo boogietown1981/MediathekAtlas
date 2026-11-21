@@ -9,6 +9,7 @@ def issues(meta,c,work_only=False):
     # identity, but never a verified full-episode identity.
     suspicious=bool(c.get('video_role_needs_review'))
     if suspicious and not work_only:errors.append('Video ist vermutlich Trailer/Ausschnitt, nicht vollständige Folge')
+    if c.get('identity_contradicted'):errors.append('Gleichnamige alte Miniserie, keine bestätigte Folge')
     if c.get('runtime_mismatch') and not (work_only and suspicious and c.get('kind')=='series'):
         errors.append('Laufzeit widersprüchlich')
     if c.get('kind')=='series':

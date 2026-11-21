@@ -1203,6 +1203,17 @@ def unresolved_imdb_series(c):
         JOIN works w ON w.id=q.work_id WHERE q.last_outcome='unresolved'
         AND json_extract(w.meta,'$.provider')='IMDb Offline' AND json_extract(w.meta,'$.reference_id') LIKE 'tt%'""")]
 
+def reset_identity(c,row,source,reason):
+    """0.6.77: forget a provisional automatic series identity; the work is recognised again from the sender data.
+
+    Only 'identified' works without a confirmed episode change; user decisions and matches stay."""
+    if row['state']!='identified':return False
+    m=json.loads(row['meta'] or '{}')
+    if m.get('episode_verified') or m.get('scan_requested'):return False
+    fresh=seed(source);fresh['reason']=reason
+    return c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0 WHERE id=? AND state='identified'",
+                     (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
+
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
     done={'edition':0,'segment':0}
@@ -1485,6 +1496,11 @@ def suggestion_brief(s):
 def suggestion_weak(s,source,sendung,work_title=''):
     """True if a film database suggestion is no evidence against filing the work under ``sendung``."""
     if not isinstance(s,dict):return True
+    # 0.6.77 (Nachtdiagnose 21.11.2026): Wikidata suggestions stored before the film/programme filter of 0.6.58
+    # ("Malik Harris", "Midge Ure", "Sophie & The Giants", "Großkatzen" as kind movie) held 6.121 works without a
+    # kind. Without the filter's stamp an "unknown_type" item with only possible confidence is no evidence.
+    if (s.get('provider')=='Wikidata' and s.get('evidence_type')=='unknown_type' and s.get('confidence')!='high'
+            and not s.get('wikidata_rev')):return True
     kind=s.get('kind')
     try:similarity=float(s.get('similarity') or 0)
     except (TypeError,ValueError):similarity=0.0

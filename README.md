@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.76
+# MediathekAtlas · 0.6.77
+
+## Neu in 0.6.77: Befunde der Nachtdiagnose
+
+- Kurze, vollständige Archivclips (z. B. „BR Retro“, „Wir in Bayern“) stehen nicht mehr als „vielleicht nur Kurzformat“ unter „zu prüfen“, sondern werden als Beitrag der Sendung eingeordnet – auch die schon markierten.
+- Alte Wikidata-Vorschläge (Personen, Bands, Begriffe aus der Zeit vor 0.6.58) halten die Art-Einordnung nicht mehr auf.
+- Eine gleichnamige, längst beendete IMDb-Miniserie (etwa „Stark“ von 1993 für KiKA „stark!“) wird nicht mehr allein über den Titel übernommen; betroffene Werke werden neu erkannt.
 
 ## Neu in 0.6.76: Korrektur nach der Mac-Prüfung von 0.6.75
 

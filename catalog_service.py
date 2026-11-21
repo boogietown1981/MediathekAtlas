@@ -816,7 +816,13 @@ class Service:
                             runtime_meta['reference_runtime_seconds']=typical
                             runtime_meta['reference_runtime_source']='Serien-Katalogmedian (mind. 5 Vergleichsangebote)'
                     causality=video_causality.evaluate(entry['source'],runtime_meta)
-                    if causality and edition_role=='edition' and causality.get('video_role')=='short_excerpt_suspected':
+                    if (causality and causality.get('video_role')=='short_excerpt_suspected'
+                            and not runtime_meta.get('episode_runtime_seconds')
+                            and video_causality.clip_show(c,row['show_key'],causality.get('expected_runtime_seconds'),selected_id)):
+                        # 0.6.77: a Sendung of short clips (BR Retro): the series runtime is no yardstick.
+                        if not catalog.mark_recurring_edition(c,row,m,entry['source'],'segment','clip_show_v0677'):return True
+                        preflight='segment'
+                    elif causality and edition_role=='edition' and causality.get('video_role')=='short_excerpt_suspected':
                         # A short clip titled with a broadcast date is a piece of that edition, not a
                         # questionable episode: no IMDb episode can be confirmed for it either.
                         if not catalog.mark_recurring_edition(c,row,m,entry['source'],'edition'):return True
@@ -1232,7 +1238,9 @@ class Service:
         Independent of the episode queue's selection, which takes only works with an active offer. Short
         write batches after the web server is up; a busy database only postpones the next batch."""
         with self.db() as c:
-            if catalog.get_state(c,'refile_reset_v0673',False):return self.requeue_covered_series()
+            if catalog.get_state(c,'refile_reset_v0673',False):
+                self.refile_clip_shows();self.reset_old_miniseries()
+                return self.requeue_covered_series()
         total={'edition':0,'segment':0}
         while not self.stop.is_set():
             try:
@@ -1253,7 +1261,82 @@ class Service:
         due=self.requeue_new_editions()
         if due is None:return                              # stopped: run again next start
         with self.db() as c:catalog.set_state(c,'refile_reset_v0673',True)
+        self.refile_clip_shows();self.reset_old_miniseries()
         self.requeue_covered_series()
+
+    def refile_clip_shows(self):
+        """0.6.77, once: works flagged "vielleicht nur Kurzformat" against a series runtime whose Sendung publishes
+        almost only short clips are filed as contributions (BR Retro, Wir in Bayern: 1.438 on the M3)."""
+        import video_causality
+        with self.db() as c:
+            if catalog.get_state(c,'clip_shows_v0677',False):return
+        after='';done=0;verdict={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    rows=c.execute("""SELECT * FROM works WHERE id>? AND state='identified' AND kind='series'
+                        AND json_extract(meta,'$.video_role')='short_excerpt_suspected'
+                        AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)!=0 ORDER BY id LIMIT 200""",(after,)).fetchall()
+                    if not rows:break
+                    after=rows[-1]['id']
+                    for row in rows:
+                        try:m=json.loads(row['meta'] or '{}')
+                        except (TypeError,ValueError):continue
+                        if 'Episodenlaufzeit' in str(m.get('expected_runtime_source') or ''):continue
+                        key=(row['show_key'],m.get('expected_runtime_seconds'))
+                        if key not in verdict:verdict[key]=video_causality.clip_show(c,row['show_key'],m.get('expected_runtime_seconds'))
+                        if not verdict[key]:continue
+                        best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+                        if not best:continue
+                        clean={k:v for k,v in m.items() if not k.startswith('video_role') and k not in ('source_duration_seconds','source_runtime_source','expected_runtime_seconds','expected_runtime_source','runtime_mismatch')}
+                        if catalog.mark_recurring_edition(c,row,clean,json.loads(best[0]),'segment','clip_show_v0677'):done+=1
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        with self.worker_lock:self.episode_segments+=done
+        if done:diagnostics.event('episode_clip_shows_refiled',works=done)
+        with self.db() as c:catalog.set_state(c,'clip_shows_v0677',True)
+
+    def reset_old_miniseries(self):
+        """0.6.77, once: works that took a same-named IMDb miniseries ended long before their broadcast from the title
+        alone (KiKA „stark!“ ↔ „Stark“ 1993, 514 works) are recognised again (needs the archive)."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        with self.db() as c:
+            if catalog.get_state(c,'imdb_miniseries_v0677',False):return
+        if not (archive and archive.updated):return
+        try:
+            with self.db() as c:
+                refs=[r[0] for r in c.execute("""SELECT DISTINCT json_extract(meta,'$.reference_id') FROM works
+                    WHERE state='identified' AND kind='series' AND json_extract(meta,'$.provider')='IMDb Offline'
+                    AND json_extract(meta,'$.reference_id') LIKE 'tt%'""")]
+        except sqlite3.OperationalError:return
+        suspects=set()
+        for ref in refs:
+            if self.stop.is_set():return
+            try:
+                if archive.old_miniseries(ref,year=time.gmtime().tm_year):suspects.add(ref)
+            except Exception:continue
+        done=0
+        for ref in sorted(suspects):
+            if self.stop.is_set():return
+            try:
+                with self.db() as c:
+                    for row in c.execute("""SELECT * FROM works WHERE state='identified' AND kind='series'
+                            AND json_extract(meta,'$.provider')='IMDb Offline' AND json_extract(meta,'$.reference_id')=?""",(ref,)).fetchall():
+                        best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+                        if not best:continue
+                        source=json.loads(best[0])
+                        if not archive.old_miniseries(ref,source):continue
+                        if catalog.reset_identity(c,row,source,'Gleichnamige IMDb-Miniserie lange vor dem Sendetermin verworfen; neu erkennen'):done+=1
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1;return
+        if done:diagnostics.event('imdb_old_miniseries_reset',works=done,series=len(suspects))
+        with self.db() as c:catalog.set_state(c,'imdb_miniseries_v0677',True)
 
     def requeue_covered_series(self):
         """0.6.75, once: waiting entries of IMDb series the new rules cover are due again (needs the archive)."""

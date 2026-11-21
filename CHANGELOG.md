@@ -1,3 +1,11 @@
+## 0.6.77 – Nachtdiagnose: Kurzclip-Sendungen, alte Wikidata-Vorschläge, alte Miniserien
+- Grundlage: Nachtdiagnose M3 mit 0.6.56 (21.11.2026, `berichte/diagnose-2026-11-21-morgen-0656-m3.md`) und Mac-Abfrage Runde 3. Basis 0.6.76.
+- `video_causality.clip_show`: Sendung mit ≥ 10 aktiven Angeboten, ≥ 80 % unter 10 min, Median unter 40 % der Senderlaufzeit → die Senderlaufzeit ist kein Maßstab; ein kurzer Clip wird Beitrag (`format_rule='clip_show_v0677'`) statt „vielleicht nur Kurzformat“. Nicht bei episodengenauer Laufzeit. Einmaliger Lauf (Merker `clip_shows_v0677`) legt die schon markierten Werke so ab (BR Retro 1.386, Wir in Bayern 50 auf dem M3).
+- Wikidata: neue Vorschläge tragen `wikidata_rev=2` (Filter seit 0.6.58/0.6.65). Ungestempelte „unknown_type“-Vorschläge ohne hohe Sicherheit sind kein Beleg mehr gegen die Art-Einordnung („Malik Harris“, „Midge Ure“, „Großkatzen“; 6.121 blockierte Werke). Antwort auf die Frage aus der Diagnose: 0.6.74 verwarf alte Vorschläge nicht – sie lagen gespeichert in meta.suggestions.
+- IMDb: Miniserie mit ≤ 10 Folgen, mehr als 15 Jahre vor dem Sendetermin beendet, nur mit bestätigter Folge (`identity_contradicted` → `matching.issues`). Einmaliger Lauf (Merker `imdb_miniseries_v0677`) setzt so erkannte Werke auf „neu erkennen“ (KiKA „stark!“ ↔ „Stark“ 1993, 514 Werke).
+- Nicht enthalten: „Planet Schule“ (Reihe nach „·“) – erst Titelbeispiele abfragen; Gesamtbudget für Abos, Ladezeiten (nachrangig).
+- Tests: `tests/test_v0677.py` (5).
+
 ## 0.6.76 – Korrektur 0.6.75: Ausgabenlänge statt Pauschalgrenze, Eisenbahn-Romantik ohne Untertitel
 - Grundlage: Mac-Gegenprüfung 0.6.75 (21.11.2026, nicht bestanden): Kaffee oder Tee? 1.837 und Landesschau 1.405 Beiträge (Stichproben echt); Gesichter & Geschichten 0 → 727 Beiträge, aber ganze SRF-Ausgaben (739–1.199 s, nach dem Aufmacher benannt, IMDb ohne Laufzeit); Eisenbahn-Romantik nur +18; DER TAG unverändert (IMDb führt nur 2 Folgen, kein Beleg für eine datierte Sendung – bewusst unverändert). 0.6.75 nie ausgegeben. Basis 0.6.75.
 - `catalog_service.dated_clip_limit`: halbe Länge einer ganzen Ausgabe, höchstens 20 min – Ausgabenlänge = IMDb-Serienlaufzeit oder längstes Angebot der Sendung im Katalog, wenn ≥ 30 min. Ohne bekannte Länge keine längere Grenze (10 min wie seit 0.6.41).

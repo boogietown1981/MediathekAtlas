@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.77 – Kurzclip-Sendungen, alte Wikidata-Vorschläge, alte Miniserien (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0677.py`: Sendung aus 1–9-min-Clips erkannt, 28-min-Serie mit wenigen Extras und Sendung mit 3 Angeboten nicht; markierte Clips einmalig als Beitrag abgelegt, Serie unverändert; ungestempelter Wikidata-Vorschlag schwach, gestempelter/typgerechter nicht; „stark!“ übernimmt „Stark“ 1993 nicht, bestehende Werke neu erkennen. Ohne die Änderungen schlagen die Tests fehl.
+- Nicht geprüft: Wirkung auf Björns Katalog (Prüfliste releases/0.6.77/PRUEFLISTE.md).
+
 ## 0.6.76 – Korrektur 0.6.75 (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0676.py`: datierte Sendung ohne IMDb-Laufzeit und längstes Angebot 1.537 s → keine längere Grenze; mit 45-min-Ausgabe im Katalog → 20 min; Kennzeichen nur für Beiträge ≥ 10 min; „Wolken, Wolle, Wales“ und „Dampfwolken über Osteuropa - Teil 1“ → Folge; geteilter Hauptteil, „- Teil 2“, zu kurz, Kurzclip → nichts.
 - Nicht geprüft: Wirkung auf den Katalog (Prüfliste releases/0.6.76/PRUEFLISTE.md).

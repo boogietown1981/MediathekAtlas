@@ -609,6 +609,18 @@ class Archive:
         if not rows:return (False,None)
         n=rows[0]['n'] or 0;dated=rows[0]['dated'] or 0;runtime=rows[0]['runtime']
         return (n>=50 and dated*5>=n*4,runtime*60 if runtime else None)
+    def old_miniseries(self,series,row=None,year=None):
+        """0.6.77: True for an IMDb miniseries with at most 10 episodes that ended more than 15 years before the
+        offer's broadcast (or ``year``)."""
+        if year is None:
+            try:year=time.gmtime(int((row or {}).get('timestamp'))).tm_year
+            except (TypeError,ValueError,OverflowError,OSError):return False
+        self._reader()
+        info=self._lookup('SELECT titleType,startYear,endYear,(SELECT COUNT(*) FROM (SELECT 1 FROM title_episode WHERE parentTconst=? LIMIT 11)) n FROM title_basics WHERE tconst=?',
+                          (series,series),('miniseries',series))
+        if not info or info[0]['titleType']!='tvMiniSeries':return False
+        ended=info[0]['endYear'] or info[0]['startYear']
+        return bool(ended and year-ended>15 and (info[0]['n'] or 0)<=10)
     def single_season(self,series):
         """True if IMDb lists all numbered episodes of the series in season 1 (absolute numbering, ≥ 100)."""
         rows=self._lookup('SELECT seasonNumber,MAX(episodeNumber) top FROM title_episode WHERE parentTconst=? AND seasonNumber IS NOT NULL GROUP BY seasonNumber LIMIT 2',
@@ -675,6 +687,11 @@ class Archive:
             if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
                 delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
             if kind=='series':m.update(self._episode(row,meta,h['tconst'],title))
+            if kind=='series' and not m.get('episode_verified') and self.old_miniseries(h['tconst'],row):
+                # 0.6.77 (Mac-Abfrage Runde 3): KiKA „stark!“ (2026, „S13/E05“) took IMDb „Stark“, a 3-part
+                # miniseries of 1993, from the title alone. Such a series needs an episode of its own as proof.
+                m.update(identity_contradicted=True,confidence='possible',
+                         reason='Gleichnamige IMDb-Miniserie lange vor dem Sendetermin; nur mit bestätigter Folge')
             if self.version>=2:
                 m['show_credits']=self._credits(c,h['tconst']) if kind=='series' else {}
                 m.update(self._credits(c,m.get('episode_reference_id') or h['tconst']) if kind=='movie' or m.get('episode_verified') else {})
