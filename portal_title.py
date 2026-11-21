@@ -16,9 +16,11 @@ detail sources into one model:
 """
 from __future__ import annotations
 
+import re
+
 import categories
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'rtlplus': 'RTL+'}
+PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'dailyme': 'dailyme TV', 'rtlplus': 'RTL+'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -62,7 +64,7 @@ def _cast_ref(report):
 
 # 0.6.45: providers whose titles play only in their own (DRM) player. A missing ``playable`` field in a row
 # used to count as playable, and the click then ended in "Der Player ist nicht geladen".
-PROVIDER_PLAYER_ONLY = frozenset({'joyn', 'rtlplus', 'crunchyroll', 'filmfriend'})
+PROVIDER_PLAYER_ONLY = frozenset({'joyn', 'rtlplus', 'crunchyroll', 'filmfriend', 'dailyme'})
 
 
 def _base(source, item_id, report):
@@ -134,6 +136,11 @@ def _portal(root, source, item_id):
         facts.append(['Sendernummer', str(it['number'])])
     if it.get('imdb_id'):
         facts.append(['IMDb-ID laut ' + PROVIDERS[source], _text(it['imdb_id'], 20)])
+        # 0.6.57: the provider's own IMDb id (Plex) lets the title page find cast and photos without a reference report.
+        own = str(it['imdb_id']).strip()
+        if re.fullmatch(r'tt\d{5,10}', own) and m['kind'] in ('movie', 'series'):
+            ref = m.get('cast_ref') or {'provider': '', 'reference_id': ''}
+            m['cast_ref'] = {**ref, 'imdb_id': ref.get('imdb_id') or own}
     if it.get('imdb_score') is not None and source == 'justwatch':
         votes = it.get('imdb_votes')
         facts.append(['IMDb-Bewertung laut JustWatch', ('%s / 10' % it['imdb_score']) + (' · %s Stimmen' % votes if votes else '')])
@@ -244,6 +251,13 @@ def _portal(root, source, item_id):
     if source == 'filmfriend' and m['kind'] in ('movie', 'series'):
         # 0.6.54: the search names no FSK; the detail requests (up to 1200 per run) fill it in over time.
         facts.append(['Altersfreigabe', _text(it['rating'], 20) if it.get('rating') else 'FSK noch unbekannt (wird im Hintergrund nachgeladen)'])
+    if source == 'dailyme':
+        # 0.6.62: links only; dailyme's player needs its own session and a key per video
+        m['offline'] = {'allowed': False, 'days': 0, 'night': False}
+        if m['kind'] != 'series':
+            facts.append(['Stream', 'nur im dailyme-Player (kostenlos mit Werbung, ohne Anmeldung) – bei dailyme ansehen'])
+        m['notes'].append('dailyme TV spielt seine Videos nur im eigenen Player; MediathekAtlas öffnet die Seite bei dailyme.de. '
+                          'Offline ansehen geht nur mit dem Offline-Modus der dailyme-App.')
     if source == 'youtube':
         facts.append(['YouTube-Kanal', _text(it.get('category'), 120) or 'unbekannt'])
         facts.append(['Angebot', 'kostenlos auf YouTube, vom Kanal selbst hochgeladen, mit Werbung'])
@@ -322,7 +336,7 @@ def _episode(source, e, series_poster=''):
             'episode': num(e.get('episode'), 9999), 'duration': e.get('duration') or None,
             'year': _year(e.get('year')), 'summary': _text(e.get('summary') or e.get('description'), 1200),
             'poster': _https(e.get('poster')) or series_poster, 'playable': playable,
-            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'dmax', 'filmfriend', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
+            'offline': bool(e.get('offline')) if source == 'youtube' else False if source in ('toggo', 'crunchyroll', 'dmax', 'filmfriend', 'dailyme', 'rtlplus') else (playable or night), 'night': night, 'protected': source == 'justwatch' and not playable and not night,
             'web_url': _https(e.get('web_url')), 'badge': _text(e.get('badge'), 40)}
 
 

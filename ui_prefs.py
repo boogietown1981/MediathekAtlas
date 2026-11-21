@@ -11,7 +11,7 @@ import json
 from pathlib import Path
 
 SIZES = ('compact', 'normal', 'large')
-START_SOURCES = ('all', 'abos', 'mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'rtlplus')
+START_SOURCES = ('all', 'abos', 'mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'dailyme', 'rtlplus')
 START_KINDS = ('movies', 'series')
 THEMES = ('dark', 'light', 'auto')   # 0.5.99: 'auto' follows the system setting of the browser
 

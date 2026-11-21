@@ -2,7 +2,7 @@
   "manifest_version": 3,
   "name": "MediathekAtlas Videostart",
   "short_name": "Videostart",
-  "version": "0.6.73",
+  "version": "0.6.74",
   "description": "Startet Videos von Rakuten TV, Joyn, TOGGO, JustWatch TV, Crunchyroll und RTL+, die aus MediathekAtlas geöffnet werden, ohne weitere Klicks und im Vollbild. Meldet MediathekAtlas den Installationsstand und aktualisiert sich selbst. Kein Umgehen von Kopierschutz.",
   "permissions": [
     "storage",

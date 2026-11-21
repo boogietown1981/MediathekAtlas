@@ -28,6 +28,11 @@ AUTO_INTERVAL=7*86400
 AUTO_KEEP=4
 RESERVE_BYTES=256*1024*1024
 _LOCK=threading.Lock()
+
+
+class BackupRunning(ValueError):
+    """0.6.69: a second start while a snapshot is being written – a state, not an error."""
+
 _STATE={'phase':'idle','error':'','last':None,'progress':0.0}
 
 
@@ -52,6 +57,28 @@ def listing(root):
     return data
 
 
+def _copy(src,out,part,size):
+    """0.6.69 (Mac check 21.11.2026: with the recognition running a 2.9 GB backup started over and over):
+    SQLite's backup restarts from the first page whenever another connection writes between two steps.
+    With WAL the whole copy runs as one step in one read snapshot instead: writers keep going (into the
+    WAL), nothing restarts. Progress comes from the size of the growing copy. Without WAL (rare, some
+    USB/network volumes) one step would block every writer for minutes, so the old small steps stay."""
+    wal=str(src.execute('PRAGMA journal_mode').fetchone()[0]).lower()=='wal'
+    if not wal:
+        def progress(_status,remaining,total):
+            _STATE['progress']=round(1-remaining/total,3) if total else 1.0
+        src.backup(out,pages=2048,progress=progress,sleep=0.01);return 'steps'
+    done=threading.Event()
+    def watch():
+        while not done.wait(1):
+            try:_STATE['progress']=min(0.99,round(part.stat().st_size/max(1,size),3))
+            except OSError:pass
+    threading.Thread(target=watch,daemon=True,name='db_backup_progress').start()
+    try:src.backup(out,pages=-1)
+    finally:done.set()
+    return 'snapshot'
+
+
 def create(root,automatic=False,now=None):
     """Write <Backups>/catalog-<stamp>[-auto].db; return its listing entry."""
     root=Path(root);source=root/DB_NAME
@@ -66,17 +93,14 @@ def create(root,automatic=False,now=None):
     name=f"catalog-{'auto-' if automatic else ''}{_stamp(now)}.db"
     if backup_manager.was_deleted(root,name):raise ValueError('Diese Sicherung wurde bereits gelöscht und wird nicht erneut angelegt')
     dest=target_dir/name;part=dest.with_name(name+'.part')
-    if not _LOCK.acquire(blocking=False):raise ValueError('Es läuft bereits eine Sicherung')
+    if not _LOCK.acquire(blocking=False):raise BackupRunning('Es läuft bereits eine Sicherung')
     _STATE.update(phase='running',error='',progress=0.0)
     try:
         if dest.exists():raise ValueError('Sicherung existiert bereits: '+name)
         part.unlink(missing_ok=True)
         src=sqlite3.connect(source,timeout=30);out=sqlite3.connect(part)
         try:
-            def progress(_status,remaining,total):
-                _STATE['progress']=round(1-remaining/total,3) if total else 1.0
-            # Small steps let the app keep writing while the copy runs.
-            src.backup(out,pages=2048,progress=progress,sleep=0.01)
+            _copy(src,out,part,size)
             check=out.execute('PRAGMA quick_check').fetchone()[0]
             if check!='ok':raise ValueError('Sicherung fehlerhaft: '+str(check)[:200])
             out.commit()
@@ -103,11 +127,13 @@ def create(root,automatic=False,now=None):
 
 def start(root,events=None,errors=None):
     """Manual snapshot in the background; the UI polls listing()['state']."""
-    if _STATE['phase']=='running':raise ValueError('Es läuft bereits eine Sicherung')
+    if _STATE['phase']=='running':raise BackupRunning('Es läuft bereits eine Sicherung')
     def run():
         try:
             made=create(root)
             if events:events('db_backup_created',name=(made.get('backup') or {}).get('name'),manual=True)
+        except BackupRunning:
+            if events:events('db_backup_busy',manual=True)
         except Exception as e:
             if errors:errors('db_backup_failed',e)
     threading.Thread(target=run,daemon=True,name='db_backup').start()
@@ -165,6 +191,12 @@ def loop(root,stop,events=None,errors=None,first_delay=600,interval=3600):
                     if events:events('db_backup_created',name=(made.get('backup') or {}).get('name'),removed=removed,requested=True)
                 last=_STATE.get('last') or {}
                 task_control.note('backup','Letzte Sicherung: '+str(last.get('name') or '–'))
+                # 0.6.72: a start requested while this one ran is answered by it, not by a second full copy.
+                if task_control.take_request('backup') and events:events('db_backup_busy',requested=True,merged=True)
+            except BackupRunning:
+                # A manual backup is still running: that one counts, nothing to repeat now.
+                task_control.note('backup','Sicherung läuft bereits')
+                if events:events('db_backup_busy',requested=bool(forced))
             except Exception as e:
                 task_control.note('backup','Fehler: '+str(e)[:160])
                 if errors:errors('db_backup_failed',e)

@@ -1,4 +1,48 @@
-# MediathekAtlas · 0.6.73
+# MediathekAtlas · 0.6.74
+
+## Neu in 0.6.74: ein gemeinsamer Stand
+
+- Fasst die Erkennungs-Kette bis 0.6.73 (Folgensuche, Daily Soaps, Abo-Speicherbudget) und die zweite Kette bis 0.6.72 (Besetzung, Folgen-Kacheln, Verbund und Datenbanksicherung, Samsung TV Plus, dailyme TV) in einer Version zusammen. Keine neuen Funktionen.
+
+## Neu in 0.6.72
+
+- Ein Doppelklick auf „Starten“ der Datenbanksicherung legt keine zweite volle Kopie mehr an.
+- Samsung TV Plus zeigt nach dem Wiedereinschalten der Automatik die Zeit des nächsten Abrufs. Österreichische und Schweizer Sender lassen sich aus Deutschland oft nicht abspielen (Sperre des Anbieters).
+
+## Neu in 0.6.69: Datenbanksicherung zuverlässig
+
+- „Starten“ der Datenbanksicherung unter Verwaltung → Aufgaben funktioniert.
+- Eine Sicherung wird auch fertig, während die Erkennung läuft (vorher begann sie immer wieder von vorn).
+- Ein zweiter Start während einer laufenden Sicherung wird als „läuft bereits“ angezeigt, nicht als Fehler.
+
+## Neu in 0.6.64: Samsung TV Plus einstellbar
+
+- Live-TV → „Samsung TV Plus · Region und Automatik“: Land der Senderliste (Deutschland, Österreich, Schweiz), automatische Aktualisierung alle 12 Stunden an oder aus und „Senderliste jetzt laden“, dazu Stand und nächste Aktualisierung.
+- Nach einem Wechsel der Region lädt MediathekAtlas die Senderliste sofort neu.
+
+## Neu in 0.6.62: dailyme TV
+
+- Neue Plattform „dailyme TV“: Filme, Serien, Anime und Dokus, die dailyme.de kostenlos mit Werbung und ohne Anmeldung zeigt, mit allen Folgen, FSK, Laufzeit und Beschreibung, im Werkkatalog, als eigener Reiter unter Plattformen und mit Folgen-Kacheln.
+- Abgespielt wird nur bei dailyme: „Bei dailyme ansehen“ öffnet den Titel auf dailyme.de. Der Player von dailyme braucht eine eigene Sitzung und einen Schlüssel je Video; das baut MediathekAtlas nicht nach.
+- Offline-Kopien gibt es dafür nicht; offline ansehen geht mit dem Offline-Modus der dailyme-App. Der Katalog wird schonend gelesen (robots.txt, eine Anfrage pro Sekunde, Sitemap zuerst; ein unterbrochener Lauf setzt fort).
+
+## Neu in 0.6.61: Verbund robuster mit iCloud
+
+- Ausgelagerte iCloud-Dateien (Finder → „Download entfernen“, macOS 14 und neuer) werden erkannt und mit Frist nachgeladen; solange zeigt der Verbund „wartet auf …“, statt hängen zu bleiben.
+- Die Meldung der automatischen Datenbanksicherung im Protokoll und unter Aufgaben funktioniert wieder (die Sicherungen selbst waren nicht betroffen).
+- Eine kurz gesperrte Datenbank verwirft kein Erkennungsergebnis mehr.
+
+## Neu in 0.6.59: Folgen als Kacheln
+
+- Beim Öffnen einer Serie stehen die Folgen als Kacheln neben- und untereinander, mit einem Abspielknopf direkt auf dem Bild.
+- Der Knopf nimmt den besten Weg: liegt die Folge lokal (Download oder Offline-Kopie), wird sie lokal abgespielt; sonst im eingebauten Player; geht sie nur beim Anbieter, öffnet er die Folge dort (mit Autostart über die Chrome-Erweiterung). Ein Schild auf dem Bild zeigt den Weg: Lokal, Player oder Anbieter.
+- Gesehene Folgen tragen „✓ Gesehen“, angefangene einen Fortschrittsbalken. Über „☰ Liste“ gibt es die bisherige Liste weiterhin.
+
+## Neu in 0.6.57: vollständige Besetzung
+
+- Serien, für die keine Besetzung der ganzen Serie vorliegt (z. B. „Der Pass“), zeigen jetzt die Darsteller und die Regie aus ihren Folgen; wer in den meisten Folgen mitspielt, steht vorn.
+- „Weitere … anzeigen“ blendet die übrige Besetzung laut TMDB ein (bis zu 40 Personen mit Rolle und Foto), sonst bleibt die Seite kurz.
+- Titel ohne eigene Besetzungsangaben, etwa bei Plex, bekommen die Besetzung über ihre IMDb-Kennung von TMDB: die ersten 14 sofort, der Rest mit „Alle … anzeigen“.
 
 ## Neu in 0.6.73: Sturm der Liebe auch mit dreistelligen Folgennummern
 

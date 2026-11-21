@@ -15,7 +15,9 @@ LOG="$STATE_DIR/startup.log"
 if [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ]; then
   : > "$LOG"
 fi
-printf 'MediathekAtlas 0.6.73 Startprüfung\n' >> "$LOG"
+# 0.6.72: the version comes from version.py (it said 0.6.62 for every later version).
+APP_VERSION="$(sed -n "s/^VERSION='\(.*\)'.*/\1/p" "$APP_DIR/version.py" 2>/dev/null | head -n 1)"
+printf 'MediathekAtlas %s Startprüfung\n' "${APP_VERSION:-?}" >> "$LOG"
 # 0.6.48: dialogs only where someone can answer them (MEDIATHEKATLAS_NO_DIALOG=1 for tests and headless starts;
 # a dialog without a screen kept the script waiting for ever).
 OSASCRIPT=/usr/bin/osascript
