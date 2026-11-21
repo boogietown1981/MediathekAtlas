@@ -691,15 +691,17 @@ class Service:
               AND NOT EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?)
             LIMIT ?""",(show_key,selected_id,m['provider'],str(m['reference_id']),time.time(),limit)).fetchall()
         counts={'edition':0,'segment':0};later=[]
-        sendung=catalog.sendung_with_editions(c,show_key)
+        dated=self.dated_clip_limit(m,c,show_key)
+        sendung=bool(dated) or catalog.sendung_with_editions(c,show_key)
+        clip=dated or 600
         for sibling in rows:
             best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(sibling['id'],)).fetchone()
             if not best:continue
             try:meta=json.loads(sibling['meta'] or '{}');source=json.loads(best[0])
             except (TypeError,ValueError):continue
-            role=catalog.recurring_edition(meta,source,sendung)
+            role=catalog.recurring_edition(meta,source,sendung,clip)
             if role=='edition' and not allow_editions:continue
-            if role and catalog.mark_recurring_edition(c,sibling,meta,source,role):counts[role]+=1
+            if role and catalog.mark_recurring_edition(c,sibling,meta,source,role,catalog.dated_rule(role,source,dated)):counts[role]+=1
             elif not role and not sendung:later.append((sibling,meta,source))
         # Editions filed just now show that this series is a Sendung; its short clips are contributions.
         if later and catalog.sendung_with_editions(c,show_key):
@@ -716,6 +718,44 @@ class Service:
             self.after_commit(counted)
         return counts['edition']+counts['segment']
 
+    def dated_clip_limit(self,m,c=None,show_key=None):
+        """0.6.75/0.6.76: contribution bound in seconds for a Sendung IMDb lists only as dated editions, else None.
+
+        Mac-Abfrage Runde 3 (21.11.2026): Kaffee oder Tee? and Landesschau Baden-Württemberg are listed in IMDb as
+        "Episode dated …" without season or number; the Mediathek offers are 8–17-minute contributions. Half the
+        length of a whole edition, at most 20 minutes. The edition length is IMDb's series runtime or, without one,
+        the median of the Sendung's regular editions in the catalogue (edition_length) if that is at least 30 minutes. 0.6.76 (Mac-Prüfung
+        0.6.75): Gesichter & Geschichten has no IMDb runtime and only ~19-minute whole editions named after their
+        lead story; the 20-minute fallback of 0.6.75 filed 727 of them as contributions. Without a known edition
+        length the bound stays None (10 minutes as before). The series identity is kept, no episode is claimed."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE;ref=str(m.get('reference_id') or '')
+        if m.get('provider')!='IMDb Offline' or not ref.startswith('tt') or not (archive and archive.updated):return None
+        try:dated,runtime=archive.dated_format(ref)
+        except Exception:return None
+        if not dated:return None
+        length=runtime or (self.edition_length(c,show_key) if c is not None and show_key else None)
+        if not length or length<1800:return None
+        return int(min(1200,length/2))
+    def edition_length(self,c,show_key):
+        """Median length in seconds of the Sendung's regular editions (works filed as 'edition': dated or named
+        like the Sendung), at least 3 of them; cached for an hour per show.
+
+        0.6.77 (Mac-Prüfung 0.6.76): the longest offer of Gesichter & Geschichten is a special broadcast („Krönung
+        von König Charles III.“ 19.873 s, 38 specials ≥ 30 min), not an edition; with it the ~19-minute editions
+        named after their lead story became contributions. Specials are never filed as editions."""
+        cache=self.__dict__.setdefault('_edition_length',{})
+        hit=cache.get(show_key)
+        if hit and time.monotonic()-hit[0]<3600:return hit[1]
+        rows=c.execute("""SELECT CAST(json_extract(o.payload,'$.duration') AS INTEGER) d FROM works w
+            JOIN offers o ON o.work_id=w.id AND o.active=1
+            WHERE w.show_key=? AND w.state='format' AND json_extract(w.meta,'$.format_grouping')='edition' LIMIT 64""",
+            (show_key,)).fetchall()
+        values=sorted(r[0] for r in rows if r[0] and r[0]>0)
+        value=values[len(values)//2] if len(values)>=3 else None
+        if len(cache)>=2048:cache.clear()
+        cache[show_key]=(time.monotonic(),value)
+        return value
     def same_date_editions(self,c,show_key,selected_id,source):
         """True if another active offer of the same Sendung names the same broadcast date."""
         import imdb_archive
@@ -768,10 +808,11 @@ class Service:
                                                                title=title,reason='explicit_title'))
                     preflight='extra'
                 elif (edition_role:=catalog.recurring_edition(m,entry['source'],
-                        catalog.sendung_with_editions(c,row['show_key'])))=='segment':
+                        bool(dated:=self.dated_clip_limit(m,c,row['show_key'])) or catalog.sendung_with_editions(c,row['show_key']),
+                        dated or 600))=='segment':
                     # 0.6.41: a short contribution of a news/magazine Sendung is no episode; file it with
                     # its Sendung instead of the "unsicher" review list.
-                    if catalog.mark_recurring_edition(c,row,m,entry['source'],'segment'):
+                    if catalog.mark_recurring_edition(c,row,m,entry['source'],'segment',catalog.dated_rule('segment',entry['source'],dated)):
                         self.classify_sibling_editions(c,row['show_key'],m,selected_id,allow_editions=False)
                         preflight='segment'
                     else:return True
@@ -783,7 +824,13 @@ class Service:
                             runtime_meta['reference_runtime_seconds']=typical
                             runtime_meta['reference_runtime_source']='Serien-Katalogmedian (mind. 5 Vergleichsangebote)'
                     causality=video_causality.evaluate(entry['source'],runtime_meta)
-                    if causality and edition_role=='edition' and causality.get('video_role')=='short_excerpt_suspected':
+                    if (causality and causality.get('video_role')=='short_excerpt_suspected'
+                            and not runtime_meta.get('episode_runtime_seconds')
+                            and video_causality.clip_show(c,row['show_key'],causality.get('expected_runtime_seconds'),selected_id)):
+                        # 0.6.77: a Sendung of short clips (BR Retro): the series runtime is no yardstick.
+                        if not catalog.mark_recurring_edition(c,row,m,entry['source'],'segment','clip_show_v0677'):return True
+                        preflight='segment'
+                    elif causality and edition_role=='edition' and causality.get('video_role')=='short_excerpt_suspected':
                         # A short clip titled with a broadcast date is a piece of that edition, not a
                         # questionable episode: no IMDb episode can be confirmed for it either.
                         if not catalog.mark_recurring_edition(c,row,m,entry['source'],'edition'):return True
@@ -1171,7 +1218,7 @@ class Service:
         diagnostics.event('unknown_classified',changed=changed,candidates=len(ids),unknown_left=remaining,
                           classified=summary.get('classified',{}),remaining=summary.get('remaining',{}),
                           set_aside=summary.get('set_aside',{}),rubric_reopened=reopened,set_aside_restored=restored,
-                          set_aside_kept=summary.get('set_aside_kept',0),set_aside_kept_samples=summary.get('set_aside_kept_samples',[]),
+                          set_aside_kept=summary.get('set_aside_kept',0),wikidata_old_set_aside=summary.get('wikidata_old_set_aside',0),set_aside_kept_samples=summary.get('set_aside_kept_samples',[]),
                           blocking_samples=summary.get('blocking_samples',[]),
                           remaining_channels=summary.get('remaining_channels',{}),
                           remaining_topics=summary.get('remaining_topics',[])[:20],
@@ -1199,7 +1246,9 @@ class Service:
         Independent of the episode queue's selection, which takes only works with an active offer. Short
         write batches after the web server is up; a busy database only postpones the next batch."""
         with self.db() as c:
-            if catalog.get_state(c,'refile_reset_v0673',False):return
+            if catalog.get_state(c,'refile_reset_v0673',False):
+                self.once_v0678()
+                return self.requeue_covered_series()
         total={'edition':0,'segment':0}
         while not self.stop.is_set():
             try:
@@ -1220,6 +1269,188 @@ class Service:
         due=self.requeue_new_editions()
         if due is None:return                              # stopped: run again next start
         with self.db() as c:catalog.set_state(c,'refile_reset_v0673',True)
+        self.once_v0678()
+        self.requeue_covered_series()
+
+    def once_v0678(self):
+        self.refile_clip_shows();self.reset_old_miniseries();self.reseed_portal();self.heal_dated_segments()
+
+    def heal_when_ready(self):
+        """0.6.78: retry heal_dated_segments from the episode loop once the IMDb archive is open (every 10 min)."""
+        if getattr(self,'_healed_v0678',False) or time.monotonic()-getattr(self,'_heal_try',-1e9)<600:return
+        self._heal_try=time.monotonic()
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        if not (archive and archive.updated):return
+        try:
+            with self.db() as c:
+                if catalog.get_state(c,'dated_segments_v0678',False):self._healed_v0678=True;return
+            self.heal_dated_segments()
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1
+    def heal_dated_segments(self):
+        lock=self.__dict__.setdefault('_heal_lock',threading.Lock())
+        if not lock.acquire(blocking=False):return            # refile_loop and episode loop: one at a time
+        try:self._heal_dated_segments()
+        finally:lock.release()
+    def _heal_dated_segments(self):
+        """0.6.78, once (needs the archive): contributions filed by the longer bound of 0.6.75/0.6.76 are checked
+        against the current bound (edition length = IMDb runtime or median of filed editions, see dated_clip_limit).
+
+        Mac-Prüfung 0.6.77: Björn's catalogue already ran 0.6.76; its 727 whole editions of „Gesichter &
+        Geschichten“ stayed contributions because 0.6.77 only changed the rule for new filings. Still covered →
+        relabelled 'imdb_dated_v0677'; otherwise the filing is taken back and the episode queue checks the work again."""
+        import imdb_archive
+        with self.db() as c:
+            if catalog.get_state(c,'dated_segments_v0678',False):return
+        archive=imdb_archive.ACTIVE
+        # without the archive every bound is unknown: the episode loop calls again (heal_when_ready)
+        if not (archive and archive.updated):return
+        after='';kept=undone=0;shows={};dated={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    rows=catalog.dated_segments(c,after)
+                    if not rows:break
+                    after=rows[-1]['id']
+                    for row in rows:
+                        if not row['payload']:continue
+                        try:m=json.loads(row['meta'] or '{}');source=json.loads(row['payload'])
+                        except (TypeError,ValueError):continue
+                        try:duration=int(source.get('duration') or 0)
+                        except (TypeError,ValueError):duration=0
+                        if duration<600:continue                 # ordinary bound, not the longer one
+                        ref=str(m.get('reference_id') or '')
+                        if m.get('format_rule') not in catalog.DATED_SEGMENT_RULES:
+                            # unlabelled (0.6.75): only offers of a Sendung IMDb lists as dated editions
+                            if ref not in dated:
+                                try:dated[ref]=bool(archive.dated_format(ref)[0])
+                                except Exception:dated[ref]=None
+                            if not dated[ref]:continue
+                        limit=self.dated_clip_limit(m,c,row['show_key'])
+                        title=m.get('title') or ''
+                        if limit and duration<limit:
+                            if catalog.relabel_segment(c,row,'imdb_dated_v0677'):kept+=1
+                        elif catalog.undo_segment(c,row,'Beitrags-Einordnung zurückgenommen (0.6.78): ganze Ausgabe der Sendung „%s“; Folge wird neu gesucht.'%title):
+                            undone+=1;shows[title]=shows.get(title,0)+1
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if undone:catalog.invalidate_listings()
+        top=sorted(shows.items(),key=lambda x:-x[1])[:20]
+        diagnostics.event('episode_dated_segments_healed',undone=undone,kept=kept,shows=dict(top))
+        with self.db() as c:catalog.set_state(c,'dated_segments_v0678',{'undone':undone,'kept':kept,'shows':dict(top),'at':time.time()})
+
+    def reseed_portal(self):
+        """0.6.78, once: Planet Schule works are recognised again with the series from their title."""
+        with self.db() as c:
+            if catalog.get_state(c,'portal_reseed_v0678',False):return
+        after='';done=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,after=catalog.portal_reseed(c,after=after)
+                done+=n
+                if after is None:break
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if done:
+            diagnostics.event('catalog_portal_reseeded',works=done);catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'portal_reseed_v0678',{'works':done,'at':time.time()})
+
+    def refile_clip_shows(self):
+        """0.6.77, once: works flagged "vielleicht nur Kurzformat" against a series runtime whose Sendung publishes
+        almost only short clips are filed as contributions (BR Retro, Wir in Bayern: 1.438 on the M3)."""
+        import video_causality
+        with self.db() as c:
+            if catalog.get_state(c,'clip_shows_v0677',False):return
+        after='';done=0;verdict={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    rows=c.execute("""SELECT * FROM works WHERE id>? AND state='identified' AND kind='series'
+                        AND json_extract(meta,'$.video_role')='short_excerpt_suspected'
+                        AND COALESCE(json_extract(meta,'$.video_role_needs_review'),0)!=0 ORDER BY id LIMIT 200""",(after,)).fetchall()
+                    if not rows:break
+                    after=rows[-1]['id']
+                    for row in rows:
+                        try:m=json.loads(row['meta'] or '{}')
+                        except (TypeError,ValueError):continue
+                        if 'Episodenlaufzeit' in str(m.get('expected_runtime_source') or ''):continue
+                        key=(row['show_key'],m.get('expected_runtime_seconds'))
+                        if key not in verdict:verdict[key]=video_causality.clip_show(c,row['show_key'],m.get('expected_runtime_seconds'))
+                        if not verdict[key]:continue
+                        best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+                        if not best:continue
+                        clean={k:v for k,v in m.items() if not k.startswith('video_role') and k not in ('source_duration_seconds','source_runtime_source','expected_runtime_seconds','expected_runtime_source','runtime_mismatch')}
+                        if catalog.mark_recurring_edition(c,row,clean,json.loads(best[0]),'segment','clip_show_v0677'):done+=1
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        with self.worker_lock:self.episode_segments+=done
+        if done:diagnostics.event('episode_clip_shows_refiled',works=done)
+        with self.db() as c:catalog.set_state(c,'clip_shows_v0677',True)
+
+    def reset_old_miniseries(self):
+        """0.6.77, once: works that took a same-named IMDb miniseries ended long before their broadcast from the title
+        alone (KiKA „stark!“ ↔ „Stark“ 1993, 514 works) are recognised again (needs the archive)."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        with self.db() as c:
+            if catalog.get_state(c,'imdb_miniseries_v0677',False):return
+        if not (archive and archive.updated):return
+        try:
+            with self.db() as c:
+                refs=[r[0] for r in c.execute("""SELECT DISTINCT json_extract(meta,'$.reference_id') FROM works
+                    WHERE state='identified' AND kind='series' AND json_extract(meta,'$.provider')='IMDb Offline'
+                    AND json_extract(meta,'$.reference_id') LIKE 'tt%'""")]
+        except sqlite3.OperationalError:return
+        suspects=set()
+        for ref in refs:
+            if self.stop.is_set():return
+            try:
+                if archive.old_miniseries(ref,year=time.gmtime().tm_year):suspects.add(ref)
+            except Exception:continue
+        done=0
+        for ref in sorted(suspects):
+            if self.stop.is_set():return
+            try:
+                with self.db() as c:
+                    for row in c.execute("""SELECT * FROM works WHERE state='identified' AND kind='series'
+                            AND json_extract(meta,'$.provider')='IMDb Offline' AND json_extract(meta,'$.reference_id')=?""",(ref,)).fetchall():
+                        best=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+                        if not best:continue
+                        source=json.loads(best[0])
+                        if not archive.old_miniseries(ref,source):continue
+                        if catalog.reset_identity(c,row,source,'Gleichnamige IMDb-Miniserie lange vor dem Sendetermin verworfen; neu erkennen'):done+=1
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1;return
+        if done:diagnostics.event('imdb_old_miniseries_reset',works=done,series=len(suspects))
+        with self.db() as c:catalog.set_state(c,'imdb_miniseries_v0677',True)
+
+    def requeue_covered_series(self):
+        """0.6.75, once: waiting entries of IMDb series the new rules cover are due again (needs the archive)."""
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        with self.db() as c:
+            if catalog.get_state(c,'refile_reset_v0676',False):return
+        if not (archive and archive.updated):return        # no archive yet: run again next start
+        refs=self.covered_series(archive)
+        if self.stop.is_set():return
+        due=self.requeue_new_editions(refs) if refs else 0
+        if due is None:return
+        with self.db() as c:catalog.set_state(c,'refile_reset_v0676',True)
 
     def note_archive_wait(self):
         """0.6.68: name a missing IMDb archive in the diagnosis also when no claim runs (once per hour)."""
@@ -1236,12 +1467,24 @@ class Service:
         self.after_waiting_archive=time.time()
         diagnostics.event('episode_waiting_for_imdb_archive',level='WARNING',archive='missing' if not archive else 'not_ready')
 
-    def requeue_new_editions(self):
+    def covered_series(self,archive):
+        """0.6.75: IMDb series of waiting entries that the new rules cover (dated Sendung, running numbers)."""
+        try:
+            with self.db() as c:refs=catalog.unresolved_imdb_series(c)
+        except sqlite3.OperationalError:return set()
+        covered=set()
+        for ref in refs:
+            if self.stop.is_set():break
+            try:
+                if archive.dated_format(ref)[0] or archive.running_numbered_series(ref):covered.add(ref)
+            except Exception:continue
+        return covered
+    def requeue_new_editions(self,refs=()):
         """0.6.68: make works due that the new edition rules now file (see catalog.editions_waiting)."""
         after='';due=0
         while not self.stop.is_set():
             try:
-                with self.db() as c:ids,after=catalog.editions_waiting(c,limit=2000,after=after)
+                with self.db() as c:ids,after=catalog.editions_waiting(c,limit=2000,after=after,refs=refs)
                 if ids:
                     with self.db() as c:
                         c.executemany('UPDATE episode_queue SET next_try=0 WHERE work_id=?',[(i,) for i in ids])
@@ -1260,7 +1503,7 @@ class Service:
             requested=max(1,min(MAX_EPISODE_WORKERS,int(self.settings().get('episode_workers',2))))
             if index>=requested or not self.settings().get('auto_metadata',True) or task_control.paused('episodes'):
                 self.stop.wait(2);continue
-            if index==0:self.note_archive_wait()
+            if index==0:self.note_archive_wait();self.heal_when_ready()
             try:busy=self.metadata_once('episode')
             except sqlite3.OperationalError as exc:
                 if not sqlite_busy(exc):raise

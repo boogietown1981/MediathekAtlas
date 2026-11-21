@@ -121,3 +121,22 @@ def sample_series_runtime(c,show_key,exclude_work='',limit=48):
     if len(values)<5:return None
     typical=median(values)
     return typical if sum(abs(v-typical)<=typical*.4 for v in values)>=5 else None
+
+
+def clip_show(c,show_key,expected,exclude_work='',limit=64):
+    """0.6.77: catalogue median if a Sendung publishes almost only short clips, else None.
+
+    Nachtdiagnose 21.11.2026 (0.6.56): „BR Retro“ (1.386) and „Wir in Bayern“ (50) archive clips of 1–9 minutes
+    were flagged "vielleicht nur Kurzformat" against the sender's series runtime of 28 minutes. When at least 10
+    active offers of the Sendung are known, at least 80 % of them are shorter than 10 minutes and their median is
+    below 40 % of that runtime, the series runtime is no yardstick: a clip is a complete contribution.
+    """
+    if not show_key or not expected:return None
+    rows=c.execute("""SELECT CAST(json_extract(o.payload,'$.duration') AS INTEGER) d
+        FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
+        WHERE w.show_key=? AND w.id!=? LIMIT ?""",(show_key,exclude_work,min(max(10,int(limit)),128))).fetchall()
+    values=[float(r[0]) for r in rows if r[0] and r[0]>0]
+    if len(values)<10:return None
+    short=sum(1 for v in values if v<600)
+    typical=median(values)
+    return typical if short*5>=len(values)*4 and typical<float(expected)*.4 else None

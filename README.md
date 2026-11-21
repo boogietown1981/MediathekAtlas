@@ -1,4 +1,27 @@
-# MediathekAtlas · 0.6.74
+# MediathekAtlas · 0.6.78
+
+## Neu in 0.6.78: Korrektur nach der Mac-Prüfung von 0.6.77
+
+- Schon zuvor falsch als Beitrag eingeordnete ganze Ausgaben (etwa „Gesichter & Geschichten“) werden einmalig nach der aktuellen Regel geprüft und, wenn sie keine Beiträge sind, wieder zur Folgensuche freigegeben.
+- Die Art-Einordnung läuft nach dem Update sofort neu, damit alte Wikidata-Vorschläge nicht erst nach sechs Stunden wirken.
+- „Planet Schule“: Die Reihe steht im Titel nach dem Punkt („Das schnelle Pendel · Achtung! Experiment“) und wird jetzt als Serie erkannt.
+
+## Neu in 0.6.77: Befunde der Nachtdiagnose
+
+- Ganze Ausgaben wie bei „Gesichter & Geschichten“ bleiben unangetastet, auch wenn die Sendung einzelne lange Sondersendungen hat.
+- Kurze, vollständige Archivclips (z. B. „BR Retro“, „Wir in Bayern“) stehen nicht mehr als „vielleicht nur Kurzformat“ unter „zu prüfen“, sondern werden als Beitrag der Sendung eingeordnet – auch die schon markierten.
+- Alte Wikidata-Vorschläge (Personen, Bands, Begriffe aus der Zeit vor 0.6.58) halten die Art-Einordnung nicht mehr auf.
+- Eine gleichnamige, längst beendete IMDb-Miniserie (etwa „Stark“ von 1993 für KiKA „stark!“) wird nicht mehr allein über den Titel übernommen; betroffene Werke werden neu erkannt.
+
+## Neu in 0.6.76: Korrektur nach der Mac-Prüfung von 0.6.75
+
+- Ganze Ausgaben, die nach ihrem Aufmacher benannt sind (z. B. „Gesichter & Geschichten“), werden nicht mehr als Beitrag eingeordnet: Die längere Beitragsgrenze gilt nur, wenn die Länge einer ganzen Ausgabe bekannt ist.
+- „Eisenbahn-Romantik“: auch Folgen ohne IMDb-Untertitel („Wolken, Wolle, Wales“) und mit „Teil 1“ statt „1“.
+
+## Neu in 0.6.75: Beiträge von Tagesmagazinen, Eisenbahn-Romantik
+
+- Kurze Beiträge von Sendungen, die IMDb nur als tägliche Ausgaben führt („Kaffee oder Tee?“, „Landesschau Baden-Württemberg“, „DER TAG in Berlin & Brandenburg“), werden als Beitrag der Sendung eingeordnet statt wochenlang als offene Folge zu warten. Die Sendung bleibt erkannt, eine Folge wird nicht behauptet.
+- „Eisenbahn-Romantik“: Folgen werden auch erkannt, wenn IMDb eine laufende Nummer vor den Titel setzt („1092. Mit dem Schienenbus an den Bodensee“).
 
 ## Neu in 0.6.74: ein gemeinsamer Stand
 

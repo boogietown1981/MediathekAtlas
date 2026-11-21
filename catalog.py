@@ -93,10 +93,52 @@ def ranking(row):
     l=links(row)
     return (0 if special(row) else 1000000)+(100000 if l and l[0]['supported'] else 0)+(l[0]['score'] if l else 0)
 
+# 0.6.78 (Mac-Abfrage K12, 21.11.2026): SWR/WDR „Planet Schule“ files every programme under the portal topic
+# "planet schule"; the title is "<Folgentitel> · <Reihe>" (also "⋅"). 182 of 200 sampled offers carry the series
+# that way ("Achtung! Experiment", "Big Cities", "total phänomenal", "Knietzsche, der kleinste Philosoph der Welt").
+PORTAL_TOPICS={'planet schule'}
+PORTAL_SEPARATOR=re.compile(r'\s+[·⋅•]\s+')
+def portal_series(topic,title):
+    """(episode title, series) for an offer of a school/education portal titled "<Folge> · <Reihe>", else None."""
+    if key(topic) not in PORTAL_TOPICS:return None
+    parts=PORTAL_SEPARATOR.split(str(title or ''))
+    if len(parts)<2:return None
+    series=parts[-1].strip(' -');episode=' · '.join(parts[:-1]).strip(' -')
+    if not (2<=len(series)<=80) or not episode or key(series)==key(topic):return None
+    return episode,series
+
+def portal_reseed(c,limit=500,after=''):
+    """0.6.78, once (see PORTAL_TOPICS): automatic works of a portal topic whose series is in the title are
+    recognised again from the sender data. User decisions, matches and confirmed episodes stay.
+    Returns (changed, last id or None)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND lower(topic) IN (%s) ORDER BY id LIMIT ?"""
+                   %','.join('?'*len(PORTAL_TOPICS)),(after,*sorted(PORTAL_TOPICS),limit)).fetchall()
+    changed=0
+    for row in rows:
+        if row['state'] not in ('pending','retry','review','identified','format'):continue
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested') or m.get('episode_verified'):continue
+        if row['state']=='format' and m.get('format_grouping') not in ('single','contribution','part',None):continue
+        source=best_source(c,row['id'])
+        if not source or not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
+        fresh=seed(source)
+        if row['kind']=='series' and key(row['title'])==key(fresh['title']):continue
+        fresh['reason']='Reihe aus dem Titel (Planet Schule); neu erkennen'
+        changed+=c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0,attempts=0 WHERE id=?",
+                           (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount
+    return changed,(rows[-1]['id'] if rows else None)
+
 def seed(row):
     title=cleaned(row.get('title'));topic=cleaned(row.get('topic'));desc=core.clean(row.get('description',''));m=core.identify({**row,'title':title})
-    ep=EP.search(title)
-    if ep:
+    ep=EP.search(title);reihe=portal_series(topic,title)
+    if reihe:
+        # 0.6.78: Planet Schule names the series after the dot ("Das schnelle Pendel · Achtung! Experiment").
+        m.update(kind='series',year=None,title=reihe[1],episode_title=reihe[0])
+        if ep:
+            nums=[int(x) for x in ep.groups() if x is not None]
+            m.update(season=nums[0],episode=nums[1])
+    elif ep:
         nums=[int(x) for x in ep.groups() if x is not None]
         m.update(kind='series',year=None,season=nums[0],episode=nums[1],title=topic or EP.sub('',title).strip(' ()-'),episode_title=title)
     elif key(topic) in ('tatort','polizeiruf 110'):m.update(kind='series',title=topic,episode_title=title,year=None)
@@ -1021,7 +1063,8 @@ def foreign_version(source):
 # Sendungen. Neither has an episode of its own in any database. They are filed as edition or contribution
 # of their (already identified) Sendung once the IMDb probe found nothing, never as a matched episode.
 FORMAT_SERIES=re.compile(r'(?i)magazin|nachrichten|\b(?:vor ort|der tag|infos?|spezial|extra|report|reportage)\b')
-EDITION_NUMBERING=re.compile(r'(?i)\b(?:folge|episode|teil|part)\s*\d+|\(\s*\d{1,3}\s*(?:/\s*\d{1,3}\s*)?\)|\bS\d{1,3}\s*[/._-]?\s*E\d{1,4}\b')
+# 0.6.75: also the ZDF year count "(S2026/E38)" (Forum am Freitag); a numbered offer is never a contribution.
+EDITION_NUMBERING=re.compile(r'(?i)\b(?:folge|episode|teil|part)\s*\d+|\(\s*\d{1,3}\s*(?:/\s*\d{1,3}\s*)?\)|\bS\d{1,4}\s*[/._-]?\s*E\d{1,4}\b')
 
 def format_series(name):
     """True for the title of a recurring news, regional or service programme (not a scripted series)."""
@@ -1073,7 +1116,7 @@ def guest_edition(title,series,topic):
     m=GUEST.match(str(title or ''))
     return bool(m) and key(cleaned(m.group(1))) in {key(cleaned(series)),key(cleaned(topic))}-{''}
 
-def recurring_edition(meta,source,sendung=False):
+def recurring_edition(meta,source,sendung=False,clip_limit=600):
     """'edition', 'segment' or None for an identified series work without an episode of its own.
 
     edition: the offer names a calendar date ("Sachsenspiegel vom 19.11.2026"; a drama episode is not
@@ -1082,6 +1125,8 @@ def recurring_edition(meta,source,sendung=False):
     contributions next to the 28-minute edition). Numbered offers (S01E02, Folge 3, (2/6)) never qualify;
     neither does a work the user asked to check, a verified episode or a trailer. sendung=True: the
     series is known to publish dated editions ("MDR Sachsenspiegel" has no format word in its name).
+    clip_limit (0.6.75): longer bound for a contribution when IMDb lists the Sendung only as dated editions
+    (Kaffee oder Tee?: 8–17-minute recipe clips next to the two-hour edition).
     """
     if not source or meta.get('kind')!='series' or meta.get('scan_requested') or meta.get('episode_verified'):return None
     if isinstance(meta.get('episode'),int) and not isinstance(meta.get('episode'),bool) and meta['episode']>0:return None
@@ -1103,10 +1148,48 @@ def recurring_edition(meta,source,sendung=False):
     if not recurring:return None
     if key(title) in {key(cleaned(series)),key(cleaned(topic))}:return 'edition'
     duration=int(source.get('duration') or 0)
-    if 0<duration<600:return 'segment'
+    if 0<duration<clip_limit:return 'segment'
     return None
 
-def mark_recurring_edition(c,row,meta,source,role):
+def dated_rule(role,source,clip_limit):
+    """0.6.76: 'imdb_dated_v0677' if only the longer bound of a dated IMDb Sendung made the offer a contribution."""
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):duration=0
+    return 'imdb_dated_v0677' if role=='segment' and clip_limit and duration>=600 else None
+
+DATED_SEGMENT_RULES=('imdb_dated_v0676','imdb_dated_v0677')
+def dated_segments(c,after='',limit=500):
+    """0.6.78: contributions filed by the longer bound of 0.6.75/0.6.76/0.6.77 for a re-check: rows
+    (work, best active offer payload). 0.6.75 set no format_rule; its contributions are the IMDb-identified ones
+    of at least 10 minutes (the ordinary bound is 600 s). Read only."""
+    return c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1
+            ORDER BY o.rank DESC LIMIT 1) payload FROM works w
+        WHERE w.id>? AND w.state='format' AND w.kind='series' AND json_extract(w.meta,'$.format_grouping')='segment'
+          AND (json_extract(w.meta,'$.format_rule') IN (?,?)
+               OR (json_extract(w.meta,'$.format_rule') IS NULL AND json_extract(w.meta,'$.provider')='IMDb Offline'
+                   AND json_extract(w.meta,'$.reference_id') LIKE 'tt%'))
+        ORDER BY w.id LIMIT ?""",(after,*DATED_SEGMENT_RULES,limit)).fetchall()
+
+def undo_segment(c,row,reason):
+    """0.6.78: take back an automatic contribution filing; the work is an identified series work again and
+    the episode queue (trigger) checks it with the current rules. User decisions are never touched."""
+    if row['state']!='format':return False
+    try:m=json.loads(row['meta'] or '{}')
+    except (TypeError,ValueError):return False
+    if m.get('scan_requested') or m.get('episode_verified') or m.get('format_grouping')!='segment':return False
+    for k in ('format_grouping','format_rule'):m.pop(k,None)
+    m.update(state='identified',reason=reason,format_undone='v0678')
+    return c.execute("UPDATE works SET meta=?,state='identified',next_try=0 WHERE id=? AND state='format'",
+                     (json.dumps(m),row['id'])).rowcount>0
+
+def relabel_segment(c,row,rule):
+    try:m=json.loads(row['meta'] or '{}')
+    except (TypeError,ValueError):return False
+    if m.get('format_rule')==rule:return False
+    m['format_rule']=rule
+    return c.execute("UPDATE works SET meta=? WHERE id=? AND state='format'",(json.dumps(m),row['id'])).rowcount>0
+
+def mark_recurring_edition(c,row,meta,source,role,rule=None):
     """File an identified series work as edition/contribution of its Sendung (state 'format').
 
     The series identity (title, year, provider, reference) stays; the work leaves the episode queue
@@ -1122,7 +1205,10 @@ def mark_recurring_edition(c,row,meta,source,role):
              episode_title=edition or m.get('episode_title'),episode_verified=False,
              episode_reference_id=None,video_role_needs_review=False,
              reason=('Ausgabe der Sendung „%s“; Sendungsausgaben haben keine eigene Episodenkennung.' if role=='edition'
-                     else 'Beitrag (unter 10 Minuten) der Sendung „%s“; keine eigene Folge.')%series)
+                     else 'Beitrag der Sendung „%s“; keine eigene Folge.')%series)
+    # 0.6.76: which rule filed it, so a diagnosis can tell the new bound from earlier filing (Mac-Prüfung K5)
+    if rule:m['format_rule']=rule
+    else:m.pop('format_rule',None)
     return c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=? AND state='identified'",
                      (json.dumps(m),row['id'])).rowcount>0
 
@@ -1159,7 +1245,7 @@ def reset_editions(c,limit=5000):
           AND json_extract(w.meta,'$.format_grouping') IN ('edition','segment')
           AND COALESCE(json_extract(w.meta,'$.scan_requested'),0)=0 LIMIT ?""",(limit,))]
 
-def editions_waiting(c,limit=5000,after=''):
+def editions_waiting(c,limit=5000,after='',refs=()):
     """0.6.68: queued works checked before the new edition rules (DATED_DAY, GUEST) that they now cover.
 
     Read only; returns (ids, last id). They waited 7–31 days as "ohne Treffer" (Mac check: THADEUSZ, buten un
@@ -1178,9 +1264,29 @@ def editions_waiting(c,limit=5000,after=''):
         import imdb_archive
         if str(meta.get('reference_id') or '').startswith('tt') and imdb_archive.ABSOLUTE_NUMBER.search(title):
             out.append(row[0]);continue
+        # 0.6.75: series whose IMDb listing the new rules cover (dated Sendung, running-numbered titles)
+        if refs and str(meta.get('reference_id') or '') in refs:
+            out.append(row[0]);continue
         if not (DATED_DAY.search(title) or GUEST.match(title)):continue
         if recurring_edition(meta,source)=='edition':out.append(row[0])
     return out,(rows[-1][0] if rows else None)
+
+def unresolved_imdb_series(c):
+    """0.6.75: IMDb series IDs of queue entries without a result (read only, one pass over the queue)."""
+    return [r[0] for r in c.execute("""SELECT DISTINCT json_extract(w.meta,'$.reference_id') FROM episode_queue q
+        JOIN works w ON w.id=q.work_id WHERE q.last_outcome='unresolved'
+        AND json_extract(w.meta,'$.provider')='IMDb Offline' AND json_extract(w.meta,'$.reference_id') LIKE 'tt%'""")]
+
+def reset_identity(c,row,source,reason):
+    """0.6.77: forget a provisional automatic series identity; the work is recognised again from the sender data.
+
+    Only 'identified' works without a confirmed episode change; user decisions and matches stay."""
+    if row['state']!='identified':return False
+    m=json.loads(row['meta'] or '{}')
+    if m.get('episode_verified') or m.get('scan_requested'):return False
+    fresh=seed(source);fresh['reason']=reason
+    return c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0 WHERE id=? AND state='identified'",
+                     (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
 
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
@@ -1433,7 +1539,9 @@ def unknown_hard_reason(row,m):
 # set aside, not deleted: they stay in the work (unknown_before) and "Erneut prüfen" brings them back.
 # A suggestion that could be right (same title as a film of matching length, another series of exactly
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
-UNKNOWN_RULES_REV=5              # raise when the rules change: the next sweep then runs at once
+# 0.6.78 (Mac-Prüfung 0.6.77): rev 6 for the Wikidata rule of 0.6.77; without the raise the sweep waited up to
+# UNKNOWN_SWEEP_INTERVAL (6 h) after the update, so the check saw no effect within 30 minutes.
+UNKNOWN_RULES_REV=6              # raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1461,9 +1569,17 @@ def suggestion_brief(s):
     if 'title' in out:out['title']=str(out['title'])[:80]
     return out
 
+def old_wikidata_suggestion(s):
+    """0.6.77 (Nachtdiagnose 21.11.2026): Wikidata suggestions stored before the film/programme filter of 0.6.58
+    ("Malik Harris", "Midge Ure", "Sophie & The Giants", "Großkatzen" as kind movie) held 6.121 works without a
+    kind. Without the filter's stamp an "unknown_type" item with only possible confidence is no evidence."""
+    return (isinstance(s,dict) and s.get('provider')=='Wikidata' and s.get('evidence_type')=='unknown_type'
+            and s.get('confidence')!='high' and not s.get('wikidata_rev'))
+
 def suggestion_weak(s,source,sendung,work_title=''):
     """True if a film database suggestion is no evidence against filing the work under ``sendung``."""
     if not isinstance(s,dict):return True
+    if old_wikidata_suggestion(s):return True
     kind=s.get('kind')
     try:similarity=float(s.get('similarity') or 0)
     except (TypeError,ValueError):similarity=0.0
@@ -1651,6 +1767,9 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
             if m.get('suggestions') or m.get('metadata_warnings'):
                 why='suggestions' if m.get('suggestions') else 'warnings'
                 aside[why]=aside.get(why,0)+1
+                # 0.6.78: measurable effect of the 0.6.77 Wikidata rule (Mac-Prüfung: works no longer held by it)
+                if any(old_wikidata_suggestion(x) for x in m.get('suggestions') or []):
+                    summary['wikidata_old_set_aside']=summary.get('wikidata_old_set_aside',0)+1
             if grouping!='movie':m['unknown_before']=unknown_before(row,m)
         if grouping=='movie':
             m.update(kind='movie',season=None,episode=None,episode_title='',
@@ -1667,7 +1786,7 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
             c.execute("UPDATE works SET title=?,kind='other',show_key='',meta=?,state='format',next_try=0 WHERE id=?",(m['title'],json.dumps(m),wid))
             c.execute('DELETE FROM film_hints WHERE work_id=?',(wid,))
         else:
-            label={'edition':'Ausgabe','segment':'Beitrag (unter 10 Minuten)','part':'Teil','contribution':'Folge'}[grouping]
+            label={'edition':'Ausgabe','segment':'Beitrag','part':'Teil','contribution':'Folge'}[grouping]
             if singles:m.pop('format_grouping',None)
             note=''
             before=m.get('unknown_before') or {}

@@ -158,6 +158,21 @@ def numbered_title(e,row,meta):
     if own and norm(own) in ('audiodeskription','hörfassung','gebärdensprache'):own=''
     return own if own and norm(own)!=norm(row.get('topic') or meta.get('title') or '') else 'Folge %s'%e['episodeNumber']
 
+# 0.6.75 (Mac-Abfrage Runde 3): Eisenbahn-Romantik lists its episodes as "1092. Mit dem Schienenbus an den
+# Bodensee - …" or "1090 Mit der Nordlandsbahn …"; the Mediathek title carries the name without the running number.
+RUNNING_PREFIX=re.compile(r'^\s*\d{1,4}(?:\.\s*|\s+)(?=[^\W\d_])')
+
+PART_NUMBER=re.compile(r'(?i)\b(?:teil|part|folge|episode)\s*\d+|\b\d{1,3}\s*$|\(\s*\d{1,3}\s*\)')
+
+def title_key(value):
+    """norm() with "Teil 1" → "1" ("Dampfwolken über Osteuropa - Teil 1" = "Dampfwolken über Osteuropa 1")."""
+    return re.sub(r'\bteil (\d+)\b',r'\1',norm(value))
+
+def running_free(title):
+    """IMDb episode title without a leading running number ("1092. Name" → "Name"), or ''."""
+    title=str(title or '')
+    return title[RUNNING_PREFIX.match(title).end():].strip() if RUNNING_PREFIX.match(title) else ''
+
 def absolute_episode(row,meta):
     """Absolute episode number named by the broadcaster, or None (never from "Teil 2/3" or "(2/6)")."""
     for raw in (row.get('title'),meta.get('episode_title')):
@@ -497,6 +512,8 @@ class Archive:
             eps=self._lookup('SELECT DISTINCT e.*,b.primaryTitle,b.runtimeMinutes FROM names n JOIN title_episode e ON e.tconst=n.tconst JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? AND n.name=? LIMIT 2', (series,epname),('episode',series,epname))
             if eps:break
         number_fallback=False
+        if len(eps)!=1 and not isinstance(meta.get('season'),int) and not isinstance(meta.get('episode'),int):
+            eps=self.running_numbered(series,episode_search_terms(row,meta,show_title)) or eps
         # SxxExx from the offer can identify the canonical episode even if
         # the broadcaster does not provide its official episode title.
         if len(eps)!=1 and isinstance(meta.get('season'),int) and isinstance(meta.get('episode'),int) and meta['season']>=0 and meta['episode']>0:
@@ -539,6 +556,71 @@ class Archive:
                 out.update(episode_match='date',episode_title=meta.get('episode_title') or row['title'],
                            reason='IMDb-Ausgabe anhand des Sendedatums im Titel eindeutig zugeordnet')
         return out
+    def _episode_list(self,series):
+        self._reader()
+        rows=self._lookup('SELECT e.*,b.primaryTitle,b.runtimeMinutes FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=? LIMIT 6001',
+                          (series,),('episode_list',series))
+        return rows if rows and len(rows)<=6000 else []
+    def _title_keys(self,series):
+        """Per episode: (row, full key, main key) – running number removed where the series numbers its titles
+        (≥ 20 such titles; "1. FC Köln" alone is no convention), main key = the part before " - " unless the
+        subtitle carries a part number or the main part is too short to name one episode."""
+        rows=self._episode_list(series)
+        free=[running_free(r['primaryTitle']) for r in rows]
+        numbered=sum(1 for v in free if v)>=20
+        out=[]
+        for r,v in zip(rows,free):
+            base=(v if numbered and v else '') or str(r['primaryTitle'] or '')
+            main,sep,sub=base.partition(' - ')
+            mk=title_key(main) if sep and main.strip() and sub.strip() and not PART_NUMBER.search(sub) else ''
+            if len(mk.split())<3 and len(mk)<15:mk=''
+            out.append((r,title_key(base),mk))
+        return out
+    def running_numbered_series(self,series):
+        """0.6.75/0.6.76: True if the episode list fallback can apply (titles with running number or subtitle)."""
+        keys=self._title_keys(series)
+        return sum(1 for r,full,mk in keys if mk or full!=title_key(r['primaryTitle']))>=20
+    def running_numbered(self,series,terms):
+        """0.6.75/0.6.76: the one episode of the series whose IMDb title names the offer exactly.
+
+        Mac-Prüfung 0.6.75, Eisenbahn-Romantik: IMDb "1092. Mit dem Schienenbus …" (running number), "Wolken, Wolle,
+        Wales - Auf der Cambrian Line nach Aberystwyth" (offer without the subtitle), "Dampfwolken über Osteuropa 1"
+        (offer "… - Teil 1"). Exact keys only: the whole title (running number removed), then the main part before
+        " - " if no other episode of the series shares that main part. Nothing if two episodes fit; a subtitle with a
+        part number ("- Teil 2") never shortens. The list is read once per series and thread (≤ 6,000 episodes)."""
+        keys=self._title_keys(series)
+        if not keys:return []
+        wanted={title_key(t) for t in terms}-{''}
+        full=[r for r,k,_ in keys if k in wanted]
+        if full:return full if len({r['tconst'] for r in full})==1 else []
+        mains={}
+        for r,_,mk in keys:
+            if mk:mains.setdefault(mk,[]).append(r)
+        found=[rs[0] for mk,rs in mains.items() if mk in wanted and len(rs)==1]
+        return found if len(found)==1 else []
+    def dated_format(self,series):
+        """0.6.75: (True, runtime seconds or None) if IMDb lists the series as a dated daily/weekly programme.
+
+        At least 50 episodes, at least 80 % of them named "Episode dated …" (Kaffee oder Tee?, Landesschau
+        Baden-Württemberg, Gesichter & Geschichten); a scripted series is never listed that way."""
+        self._reader()
+        rows=self._lookup("SELECT COUNT(*) n,SUM(b.primaryTitle LIKE 'Episode dated %') dated,(SELECT runtimeMinutes FROM title_basics WHERE tconst=?) runtime FROM title_episode e JOIN title_basics b ON b.tconst=e.tconst WHERE e.parentTconst=?",
+                          (series,series),('dated_format',series))
+        if not rows:return (False,None)
+        n=rows[0]['n'] or 0;dated=rows[0]['dated'] or 0;runtime=rows[0]['runtime']
+        return (n>=50 and dated*5>=n*4,runtime*60 if runtime else None)
+    def old_miniseries(self,series,row=None,year=None):
+        """0.6.77: True for an IMDb miniseries with at most 10 episodes that ended more than 15 years before the
+        offer's broadcast (or ``year``)."""
+        if year is None:
+            try:year=time.gmtime(int((row or {}).get('timestamp'))).tm_year
+            except (TypeError,ValueError,OverflowError,OSError):return False
+        self._reader()
+        info=self._lookup('SELECT titleType,startYear,endYear,(SELECT COUNT(*) FROM (SELECT 1 FROM title_episode WHERE parentTconst=? LIMIT 11)) n FROM title_basics WHERE tconst=?',
+                          (series,series),('miniseries',series))
+        if not info or info[0]['titleType']!='tvMiniSeries':return False
+        ended=info[0]['endYear'] or info[0]['startYear']
+        return bool(ended and year-ended>15 and (info[0]['n'] or 0)<=10)
     def single_season(self,series):
         """True if IMDb lists all numbered episodes of the series in season 1 (absolute numbering, ≥ 100)."""
         rows=self._lookup('SELECT seasonNumber,MAX(episodeNumber) top FROM title_episode WHERE parentTconst=? AND seasonNumber IS NOT NULL GROUP BY seasonNumber LIMIT 2',
@@ -605,6 +687,11 @@ class Archive:
             if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
                 delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
             if kind=='series':m.update(self._episode(row,meta,h['tconst'],title))
+            if kind=='series' and not m.get('episode_verified') and self.old_miniseries(h['tconst'],row):
+                # 0.6.77 (Mac-Abfrage Runde 3): KiKA „stark!“ (2026, „S13/E05“) took IMDb „Stark“, a 3-part
+                # miniseries of 1993, from the title alone. Such a series needs an episode of its own as proof.
+                m.update(identity_contradicted=True,confidence='possible',
+                         reason='Gleichnamige IMDb-Miniserie lange vor dem Sendetermin; nur mit bestätigter Folge')
             if self.version>=2:
                 m['show_credits']=self._credits(c,h['tconst']) if kind=='series' else {}
                 m.update(self._credits(c,m.get('episode_reference_id') or h['tconst']) if kind=='movie' or m.get('episode_verified') else {})

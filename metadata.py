@@ -400,6 +400,9 @@ def wikidata_media(ent,candidate):
     if candidate.get('evidence_type')=='unknown_type' and classes and not _wikidata_media_claims(ent):return False
     return True
 # Director, cast, screenwriter, producer, composer, duration, number of episodes/seasons, TMDB/fernsehserien.de IDs.
+# 0.6.77: stamp of suggestions that passed wikidata_media (0.6.58/0.6.65). Unstamped "unknown_type" suggestions
+# were stored before the filter and may be people, bands or concepts (Nachtdiagnose 21.11.: „Malik Harris“).
+WIKIDATA_REV=2
 WIKIDATA_MEDIA_PROPS=('P57','P161','P58','P162','P86','P2047','P1113','P2437','P4947','P4983','P5327','P1874','P1258')
 def _wikidata_media_claims(ent):
     claims=(ent or {}).get('claims',{})
@@ -440,7 +443,8 @@ def wikidata(title,kind,year):
         _WD_CACHE[ck]=(time.monotonic(),d)
     return d
 
-GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten'}
+GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','zdf','ard','3sat','arte','kika','kino','filme im ersten',
+         'planet schule'}   # 0.6.78: portal topic, the series is in the title (catalog.portal_series)
 # 0.6.49 (third Gegenprobe, 20.11.2026): 3sat/ZDF/ARD file programmes under subject rubrics; Wikidata answered
 # "Reise" and "Musik" with the concepts themselves. They name no Sendung (866 works "Reise", 411 "Musik").
 GENERIC|={'reise','musik','politik','tiere','natur','wintersport','doku und reportage','dokumentationen und reportagen',
@@ -634,7 +638,7 @@ def candidates(row,meta,settings):
                 d=wikidata(title,k,year)
                 provider_success('Wikidata')
                 if not d:negative_cache.remember('Wikidata',k,title,year)
-                if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
+                if d:out.append({**meta,'title':d['candidate_title'],'kind':k,'year':d['candidate_year'],'provider':'Wikidata','reference_id':d['candidate_id'],'reason':d['reason'],'similarity':d['similarity'],'evidence_type':d.get('evidence_type'),'wikidata_rev':WIKIDATA_REV,'confidence':d.get('confidence'),'genres':d.get('genres') or meta.get('genres',[]),'genre_source':'Wikidata' if d.get('genres') else meta.get('genre_source','Unbekannt'),'episode_title':row['title'] if k=='series' else ''})
                 checked({'provider':'Wikidata','status':'checked','count':int(bool(d))})
                 provider_complete(start,provider='Wikidata',title=title,kind=k,candidates=int(bool(d)))
             except Exception as e:
