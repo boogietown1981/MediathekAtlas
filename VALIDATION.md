@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.81 – Ladezeiten, Planet Schule (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0681.py`: matched-Werk unter „Planet Schule“ neu erkannt, manual bleibt; veraltete Kinderecke antwortet sofort und wird im Hintergrund erneuert; Vorabaufbau und Zeitmessung im Server. Messung auf synthetischer Kopie (686.000 Werke): Gruppenliste 1,0–1,5 s.
+- Nicht geprüft: Ladezeiten auf Björns Gerät (Prüfliste).
+
 ## 0.6.80 – Standard „ohne Grenze“ (21. November 2026)
 - Automatisch: gesamte Python-Suite; `tests/test_v0679.py` prüft den Standard 0 (ohne Grenze). Sonst wie 0.6.79.
 

@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.80
+# MediathekAtlas · 0.6.81
+
+## Neu in 0.6.81: schnellere Werkliste und Kinderecke
+
+- Die Startansicht der Werkliste und die Kinderecke werden nach dem Start im Hintergrund vorbereitet; die Kinderecke zeigt danach immer sofort ihre Liste und erneuert sie im Hintergrund.
+- Langsame Seiten nennen in der Diagnose, woran es lag (Filter, Neuaufbau, Teilzeiten).
+- Planet Schule: Auch Werke, die automatisch nur dem Portal „Planet Schule“ zugeordnet waren, bekommen ihre Reihe.
 
 ## Neu in 0.6.80 (= 0.6.79 mit Gesamtgrenze „ohne Grenze“ als Standard): Speicher für Abos und das IMDb-Update
 

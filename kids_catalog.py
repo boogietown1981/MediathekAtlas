@@ -33,6 +33,7 @@ _SAFE_ID = re.compile(r'^[A-Za-z0-9_.:\-]{1,200}$')
 
 _LOCK = threading.Lock()
 _CACHE = {}               # root -> (monotonic, shelf)
+_BUILDING = set()         # 0.6.81: Wurzeln, deren Liste gerade im Hintergrund erneuert wird
 
 
 def _https(value):
@@ -142,20 +143,48 @@ def build(root, db, modules=None, merge=True, page=None):
 
 
 def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
-    """Zwischengespeichert (TTL), damit die Kinderecke beim Neuladen jede Minute nichts neu aufbaut."""
+    """Zwischengespeichert (TTL), damit die Kinderecke beim Neuladen jede Minute nichts neu aufbaut.
+
+    0.6.81 (Nachtdiagnose 21.11.2026: /api/kids 15,2 s): Ist die Liste älter als TTL, antwortet die Kinderecke
+    sofort mit der bisherigen und baut die neue im Hintergrund (höchstens ein Aufbau gleichzeitig). Nur ohne
+    jede Liste (erster Aufruf nach dem Start, vom Server vorab gebaut) oder mit ``fresh`` wird gewartet.
+    """
     key = str(root)
     now = time.monotonic()
     with _LOCK:
         hit = _CACHE.get(key)
-        if hit and not fresh and now - hit[0] <= (5.0 if hit[1].get('pending') else TTL):
-            return hit[1]
+        if hit and not fresh:
+            age = now - hit[0]
+            if age <= (5.0 if hit[1].get('pending') else TTL):
+                return hit[1]
+            if not hit[1].get('pending'):
+                if key not in _BUILDING:
+                    _BUILDING.add(key)
+                    threading.Thread(target=_refresh, args=(root, db, modules, merge, page), daemon=True,
+                                     name='kids_shelf_refresh').start()
+                return hit[1]
+    return _build_store(root, db, modules, merge, page)
+
+
+def _build_store(root, db, modules, merge, page):
     value = build(root, db, modules, merge, page)
     with _LOCK:
-        _CACHE[key] = (time.monotonic(), value)
+        _CACHE[str(root)] = (time.monotonic(), value)
     return value
 
 
+def _refresh(root, db, modules, merge, page):
+    try:
+        _build_store(root, db, modules, merge, page)
+    except Exception:
+        pass                       # die bisherige Liste bleibt; der nächste Aufruf versucht es erneut
+    finally:
+        with _LOCK:
+            _BUILDING.discard(str(root))
+
+
 def invalidate():
+    """Liste verwerfen (der nächste Aufruf baut neu und wartet darauf)."""
     with _LOCK:
         _CACHE.clear()
 

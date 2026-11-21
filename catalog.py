@@ -115,7 +115,10 @@ def portal_reseed(c,limit=500,after=''):
                    %','.join('?'*len(PORTAL_TOPICS)),(after,*sorted(PORTAL_TOPICS),limit)).fetchall()
     changed=0
     for row in rows:
-        if row['state'] not in ('pending','retry','review','identified','format'):continue
+        # 0.6.81 (Mac-Prüfung 0.6.78: 15 Werke „Das kleine 1x1 der Artenkunde“ blieben „Planet Schule“): an automatic
+        # match whose identity is the portal itself is no match of the programme; a user's choice ('manual') stays.
+        if row['state']=='matched' and key(row['title']) in PORTAL_TOPICS:pass
+        elif row['state'] not in ('pending','retry','review','identified','format'):continue
         try:m=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):continue
         if m.get('scan_requested') or m.get('episode_verified'):continue

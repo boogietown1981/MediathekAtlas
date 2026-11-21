@@ -1,3 +1,11 @@
+## 0.6.81 – Ladezeiten Werkliste und Kinderecke, Planet Schule unter dem Portalnamen
+- Grundlage: Nachtdiagnose M3 21.11.2026 (`/api/catalog` 20,9 s vier Minuten nach dem Start, `/api/kids` 15,2 s) und Hinweis der Mac-Prüfung 0.6.78 (15 Werke „Das kleine 1x1 der Artenkunde“ heißen noch „Planet Schule“). Basis 0.6.80.
+- Vorab gebaut nach dem Start: zusätzlich zur bisherigen Liste („Alle anzeigen“) die Startansicht der Werkliste (Serien bzw. Filme, „Noch nicht geladen“), danach die Kinderecke (Ereignisse `catalog_listing_prewarmed` mit `downloaded`, `kids_shelf_prewarmed`). Auf der synthetischen Kopie mit 686.000 Werken (warmer Cache) 1,0–1,5 s je Aufbau; auf Björns Gerät nicht gemessen.
+- `kids_catalog.shelf`: ist die Liste älter als 120 s, antwortet die Kinderecke sofort mit der bisherigen und erneuert sie im Hintergrund (ein Aufbau gleichzeitig). `invalidate` verwirft weiter sofort.
+- Diagnose: `catalog_slow_parts` (Filter ohne Suchtext, ob die Gruppenliste neu gebaut wurde, Aufbauzeit, Laufzeit seit Start) und `kids_slow_parts` (watch, abos, shelf) ab 2 s.
+- Planet Schule: Werke mit automatischer Zuordnung (`matched`) auf den Portalnamen werden einmal neu erkannt; vom Nutzer gewählte (`manual`) bleiben. Merker `portal_reseed_v0681` (läuft auch nach 0.6.78 erneut).
+- Tests: `tests/test_v0681.py` (3), `tests/test_v0678.py` angepasst.
+
 ## 0.6.80 – 0.6.79 mit Gesamtgrenze „ohne Grenze“ als Standard
 - Björn (21.11.2026, Entscheidungskarte): „Ohne Grenze starten“. `youtube_abos.TOTAL_DEFAULT_GB = 0`: nach der Installation wird nichts gelöscht; der Platz für das IMDb-Update bleibt frei; die Gesamtgrenze stellt er unter YouTube → Abos selbst ein. 0.6.79 (Standard 30 GB) zurückgezogen, nie ausgegeben.
 

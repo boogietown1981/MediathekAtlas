@@ -1372,7 +1372,7 @@ class Service:
     def reseed_portal(self):
         """0.6.78, once: Planet Schule works are recognised again with the series from their title."""
         with self.db() as c:
-            if catalog.get_state(c,'portal_reseed_v0678',False):return
+            if catalog.get_state(c,'portal_reseed_v0681',False):return
         after='';done=0
         while not self.stop.is_set():
             try:
@@ -1387,7 +1387,7 @@ class Service:
         if self.stop.is_set():return
         if done:
             diagnostics.event('catalog_portal_reseeded',works=done);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'portal_reseed_v0678',{'works':done,'at':time.time()})
+        with self.db() as c:catalog.set_state(c,'portal_reseed_v0681',{'works':done,'at':time.time()})
 
     def refile_clip_shows(self):
         """0.6.77, once: works flagged "vielleicht nur Kurzformat" against a series runtime whose Sendung publishes
