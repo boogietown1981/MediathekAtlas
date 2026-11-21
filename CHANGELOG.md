@@ -1,6 +1,7 @@
 ## 0.6.71 – Sturm der Liebe: „Episode N“; Abo-Ereignis mit planned_gb
 - Grundlage: Mac-Gegenprüfung 0.6.70 (21.11.2026, bestanden): Dahoam is Dahoam 2.391 bestätigt, Sturm der Liebe nur +770 (Ziel ≥ 1.200), 0 Fehlzuordnungen in 20 Stichproben. 934 offene Sturm-der-Liebe-Folgen mit Nummer ≤ 4.678 heißen „Episode N“ (Wiederholungen auf ONE, gesendet 2025/26, IMDb-Jahr 2007–2010). Basis 0.6.70.
 - Ursache am Code belegt: `imdb_archive.ABSOLUTE_NUMBER` las nur „Folge N“. Die vermutete Jahresprüfung war es nicht – sie gilt schon in 0.6.70 nur für ein Erstsendedatum, das ausdrücklich im Titel steht („· 17.08.15 |“), nie für das Sendedatum des Angebots. Jetzt auch „Episode N“; alle Absicherungen bleiben (eine IMDb-Staffel mit ≥ 100 Folgen, Laufzeit, Titeldatum ±1 Jahr, eigener Name = IMDb-Name). Ein bloßer Zusatz „(Audiodeskription)“ gilt nicht als eigener Folgenname.
+- Merker `refile_reset_v0671`: die geprüften „Episode N“-Folgen werden beim Start einmal sofort fällig.
 - `youtube_abo_budget_trimmed` enthält `planned_gb` (Mac-Prüfung 0.6.68: used_gb 0.0 bei Abos mit nur Planung über dem Budget).
 - Tests: `tests/test_v0671.py` (3 + die 0.6.70-Fälle erneut).
 
