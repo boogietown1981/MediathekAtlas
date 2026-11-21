@@ -527,7 +527,7 @@ function renderImdb(s={}){
   (s.phase==='importing'?' · '+countLabel(s.rows||0)+' Zeilen':'')+
   (s.updated?' · Letzter erfolgreicher Archivaufbau: '+last:' · Noch kein fertiges Archiv')+
   (s.next_update?' · Nächster Versuch: '+next:'')+
-  (s.error?' · '+s.error:'')+cachedInfo;
+  (s.error?' · '+s.error:'')+(s.space_short?' · Zu wenig Platz für das nächste Update ('+(s.free_bytes/1e9).toLocaleString('de-DE',{maximumFractionDigits:1})+' GB frei, nötig etwa '+(s.update_space_bytes/1e9).toLocaleString('de-DE',{maximumFractionDigits:0})+' GB)':'')+cachedInfo;
  $('imdb-status').textContent=status;
  $('imdb-update').disabled=busy;
  const quick=$('imdb-dashboard-summary');
@@ -539,6 +539,8 @@ function renderImdb(s={}){
      s.updated?'Zuletzt erfolgreich erstellt: '+last:'Noch kein erfolgreicher Import',
      s.next_update?'Nächste Prüfung: '+next:'',
      s.archive_bytes?'Archivdatei: '+size:'',
+     // 0.6.79: das Update baut das neue Archiv neben dem alten auf
+     s.space_short?'Zu wenig Platz für das nächste Update: '+(s.free_bytes/1e9).toLocaleString('de-DE',{maximumFractionDigits:1})+' GB frei, nötig etwa '+(s.update_space_bytes/1e9).toLocaleString('de-DE',{maximumFractionDigits:0})+' GB. Das bisherige Archiv bleibt nutzbar.':'',
      cachedInfo?'Gespeicherte Download-Zwischenstände: '+cachedInfo.replace(/^ · /,''):'',
      s.error?'Letzter Fehler: '+s.error:''
    ].filter(Boolean);

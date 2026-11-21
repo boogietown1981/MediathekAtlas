@@ -1170,7 +1170,19 @@ def dated_segments(c,after='',limit=500):
                    AND json_extract(w.meta,'$.reference_id') LIKE 'tt%'))
         ORDER BY w.id LIMIT ?""",(after,*DATED_SEGMENT_RULES,limit)).fetchall()
 
-def undo_segment(c,row,reason):
+def has_episode(m):
+    """0.6.79: a work with a concrete or confirmed episode (season/episode number, provider episode id)."""
+    e=m.get('episode')
+    return bool(m.get('episode_verified') or m.get('episode_reference_id')
+                or (isinstance(e,int) and not isinstance(e,bool) and e>0))
+
+def clip_episodes(c,after='',limit=500):
+    """0.6.79: works filed by the clip rule of 0.6.77 that carry an episode number (Mac-Prüfung 0.6.78: Moin Piet 11,
+    Doc Fischer 6, automatically confirmed via TMDB). Read only."""
+    return c.execute("""SELECT * FROM works WHERE id>? AND state='format' AND json_extract(meta,'$.format_rule')='clip_show_v0677'
+        AND CAST(COALESCE(json_extract(meta,'$.episode'),0) AS INTEGER)>0 ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+
+def undo_segment(c,row,reason,mark='v0678'):
     """0.6.78: take back an automatic contribution filing; the work is an identified series work again and
     the episode queue (trigger) checks it with the current rules. User decisions are never touched."""
     if row['state']!='format':return False
@@ -1178,7 +1190,7 @@ def undo_segment(c,row,reason):
     except (TypeError,ValueError):return False
     if m.get('scan_requested') or m.get('episode_verified') or m.get('format_grouping')!='segment':return False
     for k in ('format_grouping','format_rule'):m.pop(k,None)
-    m.update(state='identified',reason=reason,format_undone='v0678')
+    m.update(state='identified',reason=reason,format_undone=mark)
     return c.execute("UPDATE works SET meta=?,state='identified',next_try=0 WHERE id=? AND state='format'",
                      (json.dumps(m),row['id'])).rowcount>0
 

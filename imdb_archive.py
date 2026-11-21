@@ -222,6 +222,11 @@ def seed_file(path):
     with open(path,'wb') as f:
         f.write(data);f.flush();os.fsync(f.fileno())
 
+UPDATE_MARGIN=2*1000**3
+def update_space(archive_bytes):
+    """0.6.79: free bytes the weekly update needs next to an archive of ``archive_bytes`` (new archive + 2 GB)."""
+    return int(archive_bytes)+UPDATE_MARGIN if archive_bytes else 0
+
 def _free_bytes(folder):
     try:return shutil.disk_usage(folder).free
     except OSError:return None
@@ -346,7 +351,12 @@ class Archive:
                 partial=part.stat().st_size if part.exists() else 0
             except OSError:complete=partial=0
             staged.append({'key':kind,'downloaded_bytes':complete,'partial_bytes':partial})
+        # 0.6.79 (Nachtdiagnose 21.11.2026: 23,9 GB frei bei 21,9 GB Archiv): the weekly update builds building.db
+        # next to the archive; with less free space than its size + 2 GB it fails (the old archive stays usable).
+        need=update_space(size) if updated else 0
+        free=_free_bytes(self.root) if need else None
         return {**state,'staged_downloads':staged,'updated':updated,
+                'update_space_bytes':need,'free_bytes':free,'space_short':bool(need and free is not None and free<need),
                 'next_update':max(updated+WEEK if version==VERSION else 0,retry_at) if updated or retry_at else None,
                 'ready':bool(updated),'path':str(self.path),'performance':performance,'timing':self.timing(),'available':self.available,
                 'datasets':datasets,'archive_bytes':size,'archive_version':version}
