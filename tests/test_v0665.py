@@ -147,7 +147,7 @@ class LargeQueue(unittest.TestCase):
         self.svc.refile_loop()
         with self.db() as c:
             states = dict(c.execute("SELECT state,COUNT(*) FROM works GROUP BY state").fetchall())
-            self.assertTrue(catalog.get_state(c, 'refile_reset_v0670', False))
+            self.assertTrue(catalog.get_state(c, 'refile_reset_v0671', False))
             self.assertEqual(c.execute('SELECT COUNT(*) FROM episode_queue').fetchone()[0], self.N - 49)
         self.assertEqual(states.get('format'), 49)
         self.assertEqual(self.svc.episode_editions + self.svc.episode_segments, 49)

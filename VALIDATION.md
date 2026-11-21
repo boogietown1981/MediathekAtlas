@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.71 – Sturm der Liebe „Episode N“ (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0671.py`: „Episode 150“ (auch mit Audiodeskription) bei Sendedatum 2026 und IMDb-Jahr 2006 → Folge 150; kein Treffer bei unbekannter Nummer, mehreren Staffeln, Kurzclip, widersprechendem Titeldatum, „2/6“; Abo-Ereignis mit planned_gb.
+- Nicht geprüft: Wirkung auf den Katalog (Ziel: Sturm der Liebe mindestens +800).
+
 ## 0.6.70 – Daily Soaps in der Folgensuche (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0670.py` mit einem kleinen IMDb-Archiv nach den echten Mustern: Dahoam-Titel mit Datum und Nummer (auch Audiodeskription) → Staffel 1/Folge N; Sturm-der-Liebe „Folge 4556“, „Folge (4612)“, „Sturm der Liebe (4612)“ → Folge, Titel „Folge N“ statt „Episode #1.N“; kein Treffer bei unbekannter Nummer, widersprechendem Datum, widersprechendem Folgennamen, Serie mit mehreren Staffeln, „2/3“, Kurzclip, abweichender gespeicherter Nummer; geprüfte Folgen sofort fällig.
 - Nicht geprüft: Wirkung auf Björns Katalog und das echte IMDb-Archiv (Zielzahlen in der Prüfliste).

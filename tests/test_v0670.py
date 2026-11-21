@@ -61,8 +61,10 @@ class Soaps(unittest.TestCase):
         if opened:
             opened[1].close()
 
-    def match(self, title, topic, ref, duration=None, **kw):
+    def match(self, title, topic, ref, duration=None, timestamp=None, **kw):
         src = {'title': title, 'topic': topic, 'duration': duration or (2900 if topic == 'Sturm der Liebe' else 1700)}
+        if timestamp:
+            src['timestamp'] = timestamp
         m = {**catalog.seed(src), 'kind': 'series', 'title': topic, 'provider': 'IMDb Offline', 'reference_id': ref,
              'episode_verified': False, 'season': None, 'episode': None, **kw}
         ev = self.archive.episode_evidence(src, m)

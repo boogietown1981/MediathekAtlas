@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.70
+# MediathekAtlas · 0.6.71
+
+## Neu in 0.6.71: Wiederholungen von Sturm der Liebe
+
+- Folgen, die in der Mediathek „Episode 1140“ statt „Folge 1140“ heißen (Wiederholungen auf ONE), werden jetzt ebenfalls ihrer IMDb-Folge zugeordnet – mit denselben Sicherheitsregeln wie in 0.6.70.
+- YouTube-Abos: Das Protokoll nennt beim Zurücknehmen von Aufträgen auch die geplante Größe.
 
 ## Neu in 0.6.70: Folgen von Daily Soaps werden erkannt
 

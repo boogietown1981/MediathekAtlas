@@ -593,7 +593,7 @@ def trim_queued(c, db, abo, budget):
     """
     if not budget or c is None:
         return 0
-    done, _queued = held(c, db, abo)
+    done, queued_before = held(c, db, abo)
     rows = [dict(r) for r in db.execute("SELECT * FROM youtube_abo_videos WHERE abo_id=? AND state='queued'", (abo['id'],))]
     if not rows:
         return 0
@@ -617,7 +617,9 @@ def trim_queued(c, db, abo, budget):
             released += 1
     if released:
         db.commit()
-        _notify('youtube_abo_budget_trimmed', released=released, used_gb=round(done / GB, 1), budget_gb=abo.get('budget_gb'))
+        # 0.6.71 (Mac-Prüfung 0.6.68): used_gb 0.0 las sich wie ein Fehler – die Planung lag über dem Budget
+        _notify('youtube_abo_budget_trimmed', released=released, used_gb=round(done / GB, 1),
+                planned_gb=round(queued_before / GB, 1), budget_gb=abo.get('budget_gb'))
     return released
 
 

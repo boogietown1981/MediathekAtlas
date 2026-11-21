@@ -146,14 +146,16 @@ def episode_search_terms(row,meta,show_title):
 AIR_DATE_TAIL=re.compile(r'\s*[·|]\s*[0-3]?\d\.[01]?\d\.(?:\d{2}|(?:19|20)\d{2})\b.*$')
 AIR_DATE=re.compile(r'(?<![\d.])([0-3]?\d)\.([01]?\d)\.(\d{2}|(?:19|20)\d{2})(?![\d.])')
 # Daily soaps count their episodes through: "Folge 4556", "Folge (4612)", "Sturm der Liebe (4602)", "… | Folge 1562".
-ABSOLUTE_NUMBER=re.compile(r'(?i)\bFolge\s*\(?\s*(\d{1,5})\s*\)?(?!\s*/)|^[^()]{2,80}\((\d{3,5})\)\s*$')
+# 0.6.71 (Mac-Prüfung 0.6.70): repeats on ONE are titled „Episode 1140“ (934 open Sturm-der-Liebe episodes).
+ABSOLUTE_NUMBER=re.compile(r'(?i)\b(?:Folge|Episode)\s*\(?\s*(\d{1,5})\s*\)?(?!\s*/)|^[^()]{2,80}\((\d{3,5})\)\s*$')
 
 def numbered_title(e,row,meta):
     """IMDb's episode title; for a placeholder ("Episode #1.4556") the broadcaster's name or "Folge N"."""
     title=e['primaryTitle'] or ''
     if title and not re.match(r'(?i)^episode\s*#?\s*\d',title):return title
-    raw=re.sub(r'(?i)\bFolge\s*\(?\s*\d{1,5}\s*\)?|\(\s*\d{3,5}\s*\)','',str(meta.get('episode_title') or row.get('title') or ''))
+    raw=re.sub(r'(?i)\b(?:Folge|Episode)\s*\(?\s*\d{1,5}\s*\)?|\(\s*\d{3,5}\s*\)','',str(meta.get('episode_title') or row.get('title') or ''))
     own=AIR_DATE_TAIL.sub('',episode_name(raw)).strip(' ()-:–—|.,')
+    if own and norm(own) in ('audiodeskription','hörfassung','gebärdensprache'):own=''
     return own if own and norm(own)!=norm(row.get('topic') or meta.get('title') or '') else 'Folge %s'%e['episodeNumber']
 
 def absolute_episode(row,meta):
