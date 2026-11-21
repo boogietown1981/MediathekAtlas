@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.83 – Erkennung Runde 4, Abo-Schalter (21. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0683.py`: Clip-Sendung ohne IMDb-Folgen wird mit allen Clips Beitrag, ganze Ausgabe bleibt; KiKA, Genre Animation und gemischte Sendung bleiben; geparkte logo!-Ausgabe und Clips wieder fällig, Drama-Folge nicht, nur einmal. `tests/test_v0679.py`: Schalter aus behält ungesehene Videos, Schalter an löscht das älteste ungesehene, angeheftete/Favoriten/angefangene bleiben.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste), Abo-Schalter nur im Testordner.
+
 ## 0.6.82 – Planet Schule gegen ARD-Mediathek-Erkennung (21. November 2026)
 - Automatisch: gesamte Python-Suite, neu `tests/test_v0682.py`: ARD-Seite mit Reihe „planet schule“ liefert keinen Kandidaten, „Servicezeit“ weiter; Werke unter dem Portal (identified ARD, format/segment, matched TVDB mit episode_verified) neu erkannt, manual bleibt.
 - Nicht geprüft: Verhalten nach mehreren Stunden Erkennung auf Björns Bestand (Prüfliste).

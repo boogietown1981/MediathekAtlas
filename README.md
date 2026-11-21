@@ -1,6 +1,12 @@
-# MediathekAtlas · 0.6.82
+# MediathekAtlas · 0.6.83
 
-## Neu in 0.6.82: Planet Schule bleibt bei seiner Reihe
+## Neu in 0.6.83: mehr Sendungsbeiträge erkannt, Abo-Schalter für ungesehene Videos
+
+- Beiträge von Sendungen, die fast nur Kurzclips veröffentlichen und keine Folgenliste haben (z. B. „Hallo Niedersachsen“), werden als Beitrag der Sendung abgelegt statt „ohne Treffer“. Kinderprogramme sind ausgenommen.
+- Einträge der Folgensuche, die eine ältere Version bis zu 30 Tage als „ohne Treffer“ geparkt hat, werden einmal mit den heutigen Regeln neu geprüft, wenn sie danach Ausgabe oder Beitrag wären.
+- Abo-Verwaltung: neuer Schalter je Abo „Wenn voll: auch ungesehene Videos löschen (älteste zuerst)“. Standard aus. Angeheftete, als Favorit markierte und angefangene Videos bleiben immer; gelöscht wird nur, wenn das Abo sein Speicherlimit erreicht, nie beim Update selbst.
+
+## Neu in 0.6.82 (nicht ausgegeben, in 0.6.83 enthalten): Planet Schule bleibt bei seiner Reihe
 
 - Die Reihe aus dem Titel („Wasserinsekten · Natur nah“ → „Natur nah“) wird von der ARD Mediathek nicht mehr durch den Portalnamen „planet schule“ ersetzt; betroffene Werke werden einmal neu erkannt.
 

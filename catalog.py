@@ -1290,6 +1290,59 @@ def editions_waiting(c,limit=5000,after='',refs=()):
         if recurring_edition(meta,source)=='edition':out.append(row[0])
     return out,(rows[-1][0] if rows else None)
 
+# 0.6.83 (Mac-Abfrage Runde 4, 21.11.2026): „Hallo Niedersachsen“ 4.442 Beiträge von 1–4 Minuten waren „ohne
+# Treffer“: no format word in the name, no IMDb episode list, no runtime to compare. Kids' short series (5–7-minute
+# cartoons) look the same by length, so kids channels and genres never qualify, and the rule applies only after
+# IMDb listed no episode for the series.
+KIDS_CHANNELS={'kika','kika.de','zdf-tivi','zdftivi','toggo','super rtl'}
+KIDS_GENRES=('kinder','kids','children','family','familie','animation','zeichentrick')
+def clip_sendung_show(c,show_key,exclude_work='',limit=128):
+    """0.6.83: True if a Sendung publishes almost only short clips: at least 20 active offers, at least 90 % shorter
+    than 10 minutes, median below 5 minutes (bounded, indexed sample; read only)."""
+    if not show_key:return False
+    rows=c.execute("""SELECT CAST(json_extract(o.payload,'$.duration') AS INTEGER) d
+        FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
+        WHERE w.show_key=? AND w.id!=? LIMIT ?""",(show_key,exclude_work,min(max(20,int(limit)),256))).fetchall()
+    values=sorted(float(r[0]) for r in rows if r[0] and r[0]>0)
+    if len(values)<20:return False
+    short=sum(1 for v in values if v<600)
+    return short*10>=len(values)*9 and values[len(values)//2]<300
+
+def clip_sendung_offer(meta,source):
+    """0.6.83: the offer itself may be a contribution of a clip Sendung (short, no number, no kids programme)."""
+    if not source or meta.get('kind')!='series' or meta.get('scan_requested') or has_episode(meta):return False
+    if str(source.get('channel') or '').strip().lower() in KIDS_CHANNELS:return False
+    genres=' '.join(str(g) for g in (meta.get('genres') or [])).lower()
+    if any(w in genres for w in KIDS_GENRES):return False
+    title=cleaned(source.get('title'))
+    if not title or TRAILER.search(title) or EDITION_NUMBERING.search(title) or EP.search(title):return False
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):return False
+    return 0<duration<600
+
+def parked_refilable(c,limit=2000,after=''):
+    """0.6.83: queue entries parked as „ohne Treffer“ (up to 30 days) that the current rules file as edition or
+    contribution. Read only; returns (ids, last id or None).
+
+    Mac-Abfrage Runde 4: 99.533 entries "unresolved", only 72 of them due – most were checked by an older version
+    (logo! „vom Donnerstag, 4. Juni 2026“ is an edition today). The episode queue decides again with today's rules."""
+    rows=c.execute("""SELECT q.work_id,w.meta,w.show_key,(SELECT o.payload FROM offers o WHERE o.work_id=q.work_id
+            AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+        FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.work_id>? AND q.last_outcome IN ('unresolved','no_imdb_episodes') AND q.next_try>?
+          AND w.state='identified' ORDER BY q.work_id LIMIT ?""",(after,time.time(),limit)).fetchall()
+    out=[];sendung={};clips={}
+    for wid,raw,show,payload in rows:
+        if not payload:continue
+        try:meta=json.loads(raw or '{}');source=json.loads(payload)
+        except (TypeError,ValueError):continue
+        if show not in sendung:sendung[show]=sendung_with_editions(c,show)
+        if recurring_edition(meta,source,sendung[show]):out.append(wid);continue
+        if clip_sendung_offer(meta,source):
+            if show not in clips:clips[show]=clip_sendung_show(c,show)
+            if clips[show]:out.append(wid)
+    return out,(rows[-1][0] if rows else None)
+
 def unresolved_imdb_series(c):
     """0.6.75: IMDb series IDs of queue entries without a result (read only, one pass over the queue)."""
     return [r[0] for r in c.execute("""SELECT DISTINCT json_extract(w.meta,'$.reference_id') FROM episode_queue q
