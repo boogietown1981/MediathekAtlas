@@ -12,8 +12,10 @@ im Profil „Kinder“. Dieses Modul ergänzt Filme und Serien aus dem gemeinsam
   JustWatch TV, Rakuten TV, TOGGO, Plex, ServusTV. Joyn, RTL+ und Crunchyroll öffnen nur beim Anbieter,
   YouTube-Katalogtitel nur im YouTube-Player mit fremden Vorschlägen: Beides führt aus der Kinderecke
   hinaus und bleibt draußen. Eine fertige Offline-Kopie spielt automatisch lokal (streaming.resolve).
-* Serienfolgen von ARD/ZDF werden je Folge noch einmal gegen dieselbe Regel geprüft: eine Folge ohne
-  Kinder-Einordnung (oder mit Ausschluss-Genre) erscheint nicht, auch wenn die Serie als Ganzes passt.
+* Serienfolgen von ARD/ZDF werden je Folge noch einmal geprüft: eine Folge mit Ausschluss-Genre erscheint
+  nicht, auch wenn die Serie als Ganzes passt (0.6.91: Folgen ohne eigene Kinder-Einordnung bleiben drin).
+* 0.6.91: Als eindeutiges Kinder-Signal zählt auch der Sender (KiKA) oder eine Kinder-/Märchenreihe des Angebots
+  (catalog.kids_signal_clause), weil erkannte Filme nur die Referenz-Genres tragen.
 * Folgen und Abspielen gibt es nur für Titel, die gerade in dieser Liste stehen (``allowed``): Die
   Kinderecke kann so keine beliebigen Katalogeinträge öffnen.
 """
@@ -26,7 +28,9 @@ import time
 REF_KEYS = ('offer', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'toggo', 'plex', 'servustv', 'job')
 SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'toggo', 'plex', 'servustv')
 CATEGORY = 'Kinder'
-MAX_TITLES = 240          # je Art (Filme, Serien)
+# 0.6.91: 240 je Art schnitt die Liste nach dem Titel ab: Mit großen Kinderkatalogen von Pluto TV, Rakuten und
+# JustWatch endete sie bei „D…“, Märchenfilme wie „Die Gänsemagd“ oder „Schneewittchen“ kamen nie an.
+MAX_TITLES = 1500         # je Art (Filme, Serien)
 MAX_EPISODES = 400
 TTL = 120.0
 _SAFE_ID = re.compile(r'^[A-Za-z0-9_.:\-]{1,200}$')
@@ -231,11 +235,10 @@ def episodes(root, c, data, source, series_id, marks=None):
     out = []
     if source == 'mediatheken':
         import catalog
-        clause, args = catalog.category_clause(c, CATEGORY)
-        ok = {r[0] for r in c.execute('SELECT w.id FROM works w WHERE w.show_key=? AND ' + clause, [series_id] + list(args))}
+        blocked = excluded_works(c, series_id)
         show = catalog.show_detail(c, series_id, limit=MAX_EPISODES)
         for e in show.get('episodes') or []:
-            if e.get('work_id') not in ok or not (e.get('available') or e.get('downloaded')):
+            if e.get('work_id') in blocked or not (e.get('available') or e.get('downloaded')):
                 continue
             meta, src = e.get('metadata') or {}, e.get('source') or {}
             title = meta.get('episode_title') or src.get('title') or meta.get('title')
@@ -257,6 +260,24 @@ def episodes(root, c, data, source, series_id, marks=None):
         e['progress'] = round(min(1, e['pos'] / e['duration']), 3) if e['duration'] and e['pos'] else 0
     _remember(source, out)
     return {'source': source, 'series': series_id, 'episodes': out}
+
+
+def excluded_works(c, show_key):
+    """0.6.91: Folgen einer Kinderserie, die nicht in die Kinderecke gehören (Ausschluss-Genre an der Folge).
+
+    Bis 0.6.88 musste jede Folge selbst unter „Kinder“ stehen. Folgen ohne eigenen Abgleich („Unklassifiziert“)
+    oder mit nur den Genres der Serienreferenz (IMDb „Animation“ ohne „Family“) fielen so heraus: Björn
+    (22.11.2026) sah die Serien „alle leer“, obwohl ARD/ZDF-Folgen gefunden waren. Die Serie als Ganzes hat die
+    Kinder-Regel bestanden; einzeln fällt nur noch heraus, was ein Ausschluss-Genre trägt (Horror, Thriller,
+    Krimi, Erotik, Krieg)."""
+    import catalog
+    import categories
+    labels = catalog.category_labels(c)
+    raw = [r for name in categories.NOT_FOR_KIDS for r in labels.get(name) or []]
+    if not raw:
+        return set()
+    return {r[0] for r in c.execute('SELECT DISTINCT w.id FROM works w JOIN work_genres g ON g.work_id=w.id WHERE w.show_key=? '
+                                    'AND g.genre IN (%s)' % ','.join('?' * len(raw)), [show_key] + raw)}
 
 
 def _episode(source, ref, title, season, episode, poster, duration):

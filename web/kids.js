@@ -4,7 +4,8 @@
    Der Abspielstand geht wie im großen Player an /api/watch-progress (Schlüssel job:<id>).
    0.6.46: dazu Kinderfilme und Kinderserien aus dem Katalog (kids_catalog.py, nur Kategorie „Kinder“,
    nur ohne Kopierschutz im eigenen Player). Serien öffnen ihre Folgen in der Kinderecke; abgespielt
-   wird über /api/kids-play, das nur Einträge dieser Liste annimmt. */
+   wird über /api/kids-play, das nur Einträge dieser Liste annimmt.
+   0.6.91: Pfeilknöpfe zum Blättern der Reihen, „Alle …“-Kachel am Ende gekürzter Reihen. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
@@ -44,8 +45,11 @@
     b.onclick = () => { state.filter = id; state.show = null; render(); window.scrollTo({top: 0, behavior: 'smooth'}); };
     return b;
   }
+  let chipsWrapped = false;
   function renderChannels() {
-    const host = $('kids-channels'); host.replaceChildren();
+    const host = $('kids-channels');
+    if (!chipsWrapped) { chipsWrapped = true; const parent = host.parentNode, after = host.nextSibling; parent.insertBefore(scroller(host, 'kids-chips-scroller'), after); }
+    host.replaceChildren();
     if (!state.videos.length && !state.movies.length && !state.series.length) return;
     const fresh = state.videos.filter(v => v.new).length;
     host.append(chip('all', 'Alle', {color: '#6c5ce7', letter: '★'}));
@@ -54,6 +58,7 @@
     if (state.series.length) host.append(chip('series', 'Serien', {color: '#3fc4ff', letter: '📺'}));
     for (const c of state.channels.filter(c => c.videos))
       host.append(chip(c.id, c.name, {color: color(c.id), letter: (c.name || '?').trim().charAt(0).toUpperCase(), avatar: c.avatar ? image('abo', c.id) : '', badge: c.new}));
+    if (host.kidsUpdate) requestAnimationFrame(host.kidsUpdate);
   }
 
   // ------------------------------------------------------------ Kacheln
@@ -84,14 +89,45 @@
     b.onclick = () => (v.type === 'series' ? openSeries(v) : play(v, list));
     return b;
   }
-  function row(title, note, list, grid, all) {
+  // 0.6.91 (Björn, 22.11.2026: „kann nicht weiter nach rechts scrollen“): Reihen lassen sich mit großen
+  // Pfeilknöpfen blättern (Maus ohne Seitwärtsrad, Tastatur); am Ende einer gekürzten Reihe führt eine
+  // „Alle …“-Kachel zur ganzen Liste.
+  function scroller(box, cls) {
+    const wrap = make('div', 'kids-scroller' + (cls ? ' ' + cls : ''));
+    const arrow = (dir, label) => {
+      const b = make('button', 'kids-arrow kids-arrow-' + (dir < 0 ? 'prev' : 'next'), dir < 0 ? '‹' : '›');
+      b.type = 'button'; b.setAttribute('aria-label', label); b.tabIndex = -1;
+      b.onclick = () => box.scrollBy({left: dir * Math.max(200, box.clientWidth * 0.85), behavior: 'smooth'});
+      return b;
+    };
+    const prev = arrow(-1, 'Zurück blättern'), next = arrow(1, 'Weiter blättern');
+    const update = () => {
+      const max = box.scrollWidth - box.clientWidth;
+      prev.hidden = box.scrollLeft <= 4; next.hidden = box.scrollLeft >= max - 4;
+    };
+    box.addEventListener('scroll', update, {passive: true});
+    if (window.ResizeObserver) new ResizeObserver(update).observe(box); else window.addEventListener('resize', update);
+    requestAnimationFrame(update); box.kidsUpdate = update;
+    wrap.append(prev, box, next); return wrap;
+  }
+  function moreTile(n, filter, name) {
+    const b = make('button', 'kids-tile kids-more is-poster'); b.type = 'button';
+    b.setAttribute('aria-label', 'Alle ' + n + ' ' + name + ' anzeigen');
+    const th = make('span', 'kids-thumb no-picture'); th.append(make('span', 'kids-letter', '→'));
+    b.append(th, make('span', 'kids-title', 'Alle ' + n + ' ' + name));
+    b.onclick = () => { state.filter = filter; state.show = null; render(); window.scrollTo({top: 0, behavior: 'smooth'}); };
+    return b;
+  }
+  function row(title, note, list, grid, all, more) {
     const sec = make('section', 'kids-row'); const h = make('h2', '', title);
     if (note) h.append(make('small', '', note));
     const box = make('div', grid ? 'kids-grid' : 'kids-strip');
     if (list.some(v => v.type === 'movie' || v.type === 'series')) box.classList.add('is-posters');
     for (const v of list) box.append(tile(v, all || list));
-    sec.append(h, box); return sec;
+    if (more) box.append(moreTile(more.n, more.filter, more.name));
+    sec.append(h, grid ? box : scroller(box)); return sec;
   }
+  const STRIP = 40;          // Kacheln je Reihe in „Alle“; der Rest über „Alle …“ bzw. die Auswahl oben
   const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
   function render() {
     renderChannels();
@@ -113,11 +149,12 @@
     if (fresh.length) main.append(row('Neu für dich', count(fresh.length, 'Video', 'Videos'), fresh.slice(0, 30)));
     const started = [...state.videos, ...state.movies].filter(v => v.progress > 0);
     if (started.length) main.append(row('Weiterschauen', '', started.slice(0, 20)));
-    if (state.movies.length) main.append(row('Filme', count(state.movies.length, 'Film', 'Filme'), state.movies.slice(0, 40), false, state.movies));
-    if (state.series.length) main.append(row('Serien', count(state.series.length, 'Serie', 'Serien'), state.series.slice(0, 40)));
+    const cut = (n, filter, name) => (n > STRIP ? {n, filter, name} : null);
+    if (state.movies.length) main.append(row('Filme', count(state.movies.length, 'Film', 'Filme'), state.movies.slice(0, STRIP), false, state.movies, cut(state.movies.length, 'movies', 'Filme')));
+    if (state.series.length) main.append(row('Serien', count(state.series.length, 'Serie', 'Serien'), state.series.slice(0, STRIP), false, null, cut(state.series.length, 'series', 'Serien')));
     for (const c of state.channels) {
       const own = state.videos.filter(v => v.abo === c.id);
-      if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, 40), false, own));
+      if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, STRIP), false, own, cut(own.length, c.id, 'Videos')));
     }
   }
 

@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.90
+# MediathekAtlas · 0.6.91
+
+## Neu in 0.6.91: Kinderecke zeigt Märchen, Serienfolgen und lässt sich blättern
+- Erkannte Märchenfilme (z. B. „Sechs auf einen Streich“, „Märchenperlen“) und Filme von KiKA stehen jetzt bei den Filmen der Kinderecke. Ausschluss bleibt: nie neben Horror, Thriller, Krimi, Erotik, Krieg.
+- Kinderserien von ARD, ZDF & Co. zeigen ihre Folgen, auch wenn eine Folge selbst noch nicht abgeglichen ist.
+- Reihen haben große Pfeilknöpfe zum Blättern (auch ohne Seitwärtsrad); am Ende einer Reihe führt „Alle … Filme“ zur ganzen Liste. Die Liste endet nicht mehr nach 240 Titeln.
 
 ## Neu in 0.6.90: Neue YouTube-Kanäle entdecken, prüfen, freigeben
 - YouTube → Kanal-Abos → „Neue Kanäle entdecken“: Vorschläge aus den Kanälen, die eure Abos selbst empfehlen, und aus Links in den Beschreibungen geladener Videos; was zu Ende geschaut wurde, zählt mehr. Ohne Konto, ohne KI.

@@ -49,7 +49,7 @@ _RULES = (
     ('Horror', r'horror|slasher|zombie|monster|splatter|grusel|vampir|werwolf'),
     # 0.5.103 (Björn): „Kinder“ nur bei eindeutigen Kinder-Signalen, „Familie“ (TMDB „Family“, Weihnachten …)
     # getrennt. Jugend/Teen ist kein Kinder-Signal (Teen-Horror, Jugenddrama).
-    ('Kinder', r'kinder(?!garten cop)|\bkids?\b|children|vorschul|preschool|toggolino|\bkika\b|sendung mit der maus'),
+    ('Kinder', r'kinder(?!garten cop)|\bkids?\b|children|vorschul|preschool|toggolino|\bkika\b|sendung mit der maus|m(?:ä|a|ae)rchenfilm'),
     ('Familie', r'famil|weihnacht|christmas|elternschaft|feiertag'),
     ('Komödie', r'kom(?:ö|o|oe)die|comedy|dramedy|sitcom|kabarett|satire|parodie|parody|spoof|stand ?up|humor|mockbuster|slapstick'),
     ('Krieg', r'krieg|\bwar\b|milit'),

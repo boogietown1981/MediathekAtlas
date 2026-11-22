@@ -9,6 +9,9 @@
    - autostart.js meldet „fullscreen“, lässt den Player das Fenster füllen, schaltet mit dem ersten
      echten Klick das Vollbild des Players ein und räumt mit Esc wieder auf (chrome.* nachgestellt).
 
+   0.6.91: erkannter Märchenfilm/KiKA-Film erscheinen, Folgen ohne Abgleich, Reihe mit Pfeilen blättern,
+   „Alle …“-Kachel und ganze Liste (264 Filme, früher nach 240 abgeschnitten).
+
    Aufruf: node tests/browser/kids_corner.cjs [Ordner für Bildschirmfotos] */
 'use strict';
 const { spawn, execFileSync } = require('child_process');
@@ -28,13 +31,13 @@ sys.path.insert(0, '.')
 import catalog
 c = sqlite3.connect(sys.argv[1]); c.row_factory = sqlite3.Row
 catalog.initialize(c)
-def add(wid, title, genres, kind='movie', show=None, season=None, episode=None, state='matched', attempts=1):
+def add(wid, title, genres, kind='movie', show=None, season=None, episode=None, state='matched', attempts=1, channel='Das Erste', topic=''):
     meta = {'title': title if kind == 'movie' else show, 'kind': kind, 'genres': genres}
     if kind == 'series': meta.update(season=season, episode=episode, episode_title=title)
     c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts) VALUES(?,?,?,?,?,?,?,?)',
               (wid, meta['title'], kind, 2015, show or wid, json.dumps(meta), state, attempts))
     c.execute('INSERT INTO offers(id,work_id,payload,active) VALUES(?,?,?,1)',
-              ('o-' + wid, wid, json.dumps({'title': title, 'channel': 'KiKA', 'duration': 3, 'url_video': 'https://media.example.org/%s.mp4' % wid})))
+              ('o-' + wid, wid, json.dumps({'title': title, 'channel': channel, 'topic': topic, 'duration': 3, 'url_video': 'https://media.example.org/%s.mp4' % wid})))
     for g in genres: c.execute('INSERT INTO work_genres VALUES(?,?)', (wid, g))
 add('rabe', 'Der kleine Rabe Socke', ['Kinder'])
 add('trick', 'Trickfilm für alle', ['Familie', 'Animation'])
@@ -45,6 +48,12 @@ add('m1', 'Die Maus im Zoo', ['Kinder'], 'series', 'Die Maus', 1, 1)
 add('m2', 'Die Maus am Meer', ['Kinder'], 'series', 'Die Maus', 1, 2)
 add('m3', 'Sonderfolge Krimi', ['Kinder', 'Krimi'], 'series', 'Die Maus', 1, 3)
 add('t1', 'Tatort Folge', ['Krimi'], 'series', 'Tatort', 1, 1)
+# 0.6.91: erkannter Märchenfilm (IMDb „Family, Fantasy“) aus „Sechs auf einen Streich“, KiKA-Film, Folge ohne Abgleich,
+# viele Kinderfilme (Reihe muss sich blättern lassen, Liste nicht nach 240 abgeschnitten)
+add('gaensemagd', 'Zz Die Gänsemagd', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
+add('kikafilm', 'Ein KiKA-Film', ['Abenteuer'], channel='KiKA')
+add('m4', 'Die Maus im Wald', [], 'series', 'Die Maus', 1, 4, state='pending', attempts=0)
+for i in range(260): add('kf%03d' % i, 'Kinderfilm %03d' % i, ['Kinder'])
 c.commit()
 `;
 
@@ -75,13 +84,14 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.waitForSelector('.kids-tile', { timeout: 30000 });
   await page.waitForFunction(() => document.querySelectorAll('.kids-tile[data-kind=movie]').length >= 2, null, { timeout: 30000 });
   const titles = await page.locator('.kids-tile .kids-title').allTextContents();
-  check('Kinderfilme stehen in der Kinderecke: ' + titles.join(' | '), titles.includes('Der kleine Rabe Socke') && titles.includes('Trickfilm für alle'));
+  check('Kinderfilme stehen in der Kinderecke: ' + titles.join(' | '), titles.includes('Der kleine Rabe Socke') && titles.includes('Ein KiKA-Film'));
   check('Serie steht in der Kinderecke', titles.includes('Die Maus'));
   for (const bad of ['Kinderkrimi', 'Familiendrama', 'Noch nicht abgeglichen', 'Tatort'])
     check('„' + bad + '“ bleibt draußen', !titles.includes(bad));
   const chips = await page.locator('.kids-chip-name').allTextContents();
   check('Auswahl Filme/Serien oben: ' + chips.join(','), chips.includes('Filme') && chips.includes('Serien'));
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.46-kinderecke.png') });
+  await scrolling(page, check);
 
   // Film abspielen
   await page.locator('.kids-tile', { hasText: 'Der kleine Rabe Socke' }).first().click();
@@ -106,7 +116,8 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.locator('.kids-tile[data-kind=series]', { hasText: 'Die Maus' }).click();
   await page.waitForSelector('.kids-tile[data-kind=episode]', { timeout: 20000 });
   const eps = await page.locator('.kids-tile[data-kind=episode] .kids-title').allTextContents();
-  check('zwei geprüfte Folgen, Krimi-Folge fehlt: ' + eps.join(' | '), eps.length === 2 && eps[0].includes('Die Maus im Zoo') && eps[1].includes('Die Maus am Meer'));
+  // 0.6.91: Folgen ohne eigenen Abgleich gehören dazu, nur die Krimi-Folge fällt heraus
+  check('drei Folgen, Krimi-Folge fehlt: ' + eps.join(' | '), eps.length === 3 && eps[0].includes('Die Maus im Zoo') && eps[1].includes('Die Maus am Meer') && eps[2].includes('Die Maus im Wald'));
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.46-kinderecke-serie.png') });
   await page.locator('.kids-tile[data-kind=episode]').first().click();
   await page.waitForFunction(() => !document.getElementById('kids-next').hidden, null, { timeout: 30000 })
@@ -121,6 +132,36 @@ async function kidsCorner(browser, url, clip, problems) {
   });
   check('Liste ohne Fehler', !marks.error);
   await page.close();
+}
+
+// 0.6.91 (Björn: „kann nicht weiter nach rechts scrollen“): Pfeilknöpfe, „Alle …“-Kachel, ganze Liste
+async function scrolling(page, check) {
+  const strip = page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Filme' }) }).first();
+  const box = strip.locator('.kids-strip');
+  const before = await box.evaluate(b => ({ left: b.scrollLeft, wide: b.scrollWidth > b.clientWidth + 50 }));
+  check('Filmreihe ist breiter als das Fenster', before.wide);
+  check('Pfeil „zurück“ am Anfang verborgen', await strip.locator('.kids-arrow-prev').isHidden());
+  await strip.locator('.kids-arrow-next').click();
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.kids-row')].find(r => r.querySelector('h2').textContent.startsWith('Filme')).querySelector('.kids-strip'); return b.scrollLeft > 300; }, null, { timeout: 5000 })
+    .catch(() => check('Pfeil „weiter“ blättert die Reihe', false));
+  check('Pfeil „zurück“ erscheint nach dem Blättern', await strip.locator('.kids-arrow-prev').isVisible());
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.91-kinderecke-blaettern.png') });
+  // bis ans Ende: zuletzt kommt die „Alle …“-Kachel
+  for (let i = 0; i < 30 && await strip.locator('.kids-arrow-next').isVisible(); i++) { await strip.locator('.kids-arrow-next').click(); await page.waitForTimeout(350); }
+  const more = strip.locator('.kids-more');
+  check('„Alle … Filme“-Kachel am Ende sichtbar', await more.isVisible());
+  const total = await page.evaluate(async () => { const token = document.querySelector('meta[name=atlas-token]').content;
+    return (await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json()).catalog.movies.length; });
+  check('Liste nicht nach 240 abgeschnitten: ' + total, total === 264);
+  await more.click();
+  await page.waitForFunction(n => document.querySelectorAll('.kids-grid .kids-tile[data-kind=movie]').length === n, total, { timeout: 10000 })
+    .catch(() => check('„Alle Filme“ zeigt die ganze Liste', false));
+  const all = await page.locator('.kids-grid .kids-title').allTextContents();
+  check('erkannter Märchenfilm, KiKA-Film und Trickfilm dabei', all.includes('Zz Die Gänsemagd') && all.includes('Ein KiKA-Film') && all.includes('Trickfilm für alle'));
+  // Kanal-/Auswahlleiste oben lässt sich ebenfalls ohne Seitwärtsrad bedienen (Pfeile vorhanden)
+  check('Auswahlleiste hat Pfeilknöpfe', await page.locator('.kids-chips-scroller .kids-arrow-next').count() === 1);
+  await page.locator('.kids-chip', { hasText: 'Alle' }).first().click();
+  await page.waitForSelector('.kids-strip');
 }
 
 async function providerFullscreen(browser, clip, problems) {

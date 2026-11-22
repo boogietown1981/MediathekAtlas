@@ -138,7 +138,10 @@ class MediathekTests(unittest.TestCase):
         finally:
             c.close()
 
-    def add(self, wid, title, genres, kind='movie', show=None, state='matched', attempts=1, season=None, episode=None, active=1):
+    def add(self, wid, title, genres, kind='movie', show=None, state='matched', attempts=1, season=None, episode=None, active=1,
+            channel='Das Erste', topic=''):
+        # 0.6.91: Sender KiKA und Kinder-/Märchenreihen zählen selbst als Kinder-Signal; die Genre-Regeln hier
+        # prüfen deshalb mit einem allgemeinen Sender.
         meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'poster': 'https://img.example.org/%s.jpg' % wid}
         if kind == 'series':
             meta.update(season=season, episode=episode, episode_title=title)
@@ -146,7 +149,7 @@ class MediathekTests(unittest.TestCase):
             c.execute("INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts) VALUES(?,?,?,?,?,?,?,?)",
                       (wid, meta['title'], kind, 2015, show or wid, json.dumps(meta), state, attempts))
             c.execute("INSERT INTO offers(id,work_id,payload,active) VALUES(?,?,?,?)",
-                      ('o-' + wid, wid, json.dumps({'title': title, 'channel': 'KiKA', 'duration': 1500, 'url_video': 'https://example.org/%s.mp4' % wid}), active))
+                      ('o-' + wid, wid, json.dumps({'title': title, 'channel': channel, 'topic': topic, 'duration': 1500, 'url_video': 'https://example.org/%s.mp4' % wid}), active))
             for g in genres:
                 c.execute('INSERT INTO work_genres VALUES(?,?)', (wid, g))
 

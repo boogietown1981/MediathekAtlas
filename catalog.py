@@ -757,6 +757,42 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
 # Before that it is listed under categories.UNCLASSIFIED, regardless of the broadcaster's labels.
 CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','review','format'))"
 
+# 0.6.91 (Björn, 22.11.2026: „ich sehe keine Märchen etc. die schon erkannt wurden“): a recognized film carries
+# only the reference genres. IMDb has no „Kinder“ genre – a Märchenfilm of „Sechs auf einen Streich“ is
+# „Family, Fantasy“ there – so it never reached the Kinder category although the broadcaster files it as
+# children's programme. The kids channel or a kids/Märchen topic of an active offer now counts as a clear signal.
+# Merged works lose works.topic (a new id), so the signal is read from the offers, which move with the work.
+KIDS_TOPIC=re.compile(r'(?i)kinder(?:film|filme|serie|serien|kino|programm|sendung)|\bfür kinder\b|\bkika\b|märchen(?!haft)|maerchen(?!haft)|'
+                      r'sechs auf einen streich|sandmännchen|sendung mit der maus|sendung mit dem elefanten|\bzdftivi\b|\btivi\b|toggolino')
+KIDS_SIGNAL_TTL=3600.0
+_KIDS_SIGNAL={}            # database file -> (monotonic, topics)
+_KIDS_SIGNAL_LOCK=threading.Lock()
+
+def kids_topics(c):
+    """Topics (Sendereihen) of active offers that name children's programme (cached one hour)."""
+    try:path=c.execute('PRAGMA database_list').fetchone()[2] or ':memory:'
+    except Exception:path=':memory:'
+    now=time.monotonic()
+    with _KIDS_SIGNAL_LOCK:
+        hit=_KIDS_SIGNAL.get(path)
+        if hit and now-hit[0]<=KIDS_SIGNAL_TTL and path!=':memory:':return hit[1]
+    # The offers, not works.topic: a recognized work moved to its canonical id keeps no topic, and a Reihe whose films
+    # are all recognized (Sechs auf einen Streich) would vanish. One read of the offers per hour (~1 s per 600,000).
+    topics=sorted({t for (t,) in c.execute("SELECT DISTINCT json_extract(payload,'$.topic') FROM offers WHERE active=1")
+                   if isinstance(t,str) and t and len(t)<=200 and KIDS_TOPIC.search(t)})[:5000]
+    with _KIDS_SIGNAL_LOCK:_KIDS_SIGNAL[path]=(now,topics)
+    return topics
+
+def kids_signal_invalidate():
+    with _KIDS_SIGNAL_LOCK:_KIDS_SIGNAL.clear()
+
+def kids_signal_clause(c):
+    """0.6.91: SQL (on works w) – an active offer comes from a kids channel or a kids/Märchen topic."""
+    topics=kids_topics(c);channels=sorted(KIDS_CHANNELS)
+    cond="lower(json_extract(k.payload,'$.channel')) IN (%s)"%','.join('?'*len(channels))
+    if topics:cond='(%s OR json_extract(k.payload,\'$.topic\') IN (%s))'%(cond,','.join('?'*len(topics)))
+    return 'EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND %s)'%cond,channels+topics
+
 def category_labels(c):
     """Fixed category -> raw genres stored in work_genres that name it (genre index, small)."""
     import categories
@@ -790,7 +826,10 @@ def category_clause(c,genre):
         own,own_args=has([text])
         if text=='Kinder':
             fam,fam_args=has(['Familie']);ani,ani_args=has(['Animation'])
-            own='(%s OR (%s AND %s))'%(own,fam,ani);own_args=own_args+fam_args+ani_args
+            # 0.6.91: the broadcaster's own kids signal (KiKA, Märchen-Reihen, Kinderfilme) also counts, read from
+            # the offers because a recognized work keeps only the reference genres (IMDb knows no „Kinder“).
+            sig,sig_args=kids_signal_clause(c)
+            own='(%s OR (%s AND %s) OR %s)'%(own,fam,ani,sig);own_args=own_args+fam_args+ani_args+sig_args
         bad,bad_args=has(categories.NOT_FOR_KIDS if text=='Kinder' else categories.NOT_FOR_FAMILY)
         return CLASSIFIED_SQL+' AND '+own+' AND NOT '+bad,own_args+bad_args
     if text in categories.CATEGORIES:
