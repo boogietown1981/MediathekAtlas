@@ -353,6 +353,29 @@ def search_channels_api(request, term):
     return [tuple(v) for v in found.values()]
 
 
+# 0.6.98 (Vorabprüfung am Mac: Tags von CHECKER WELT u. a.): zu allgemeine Wörter taugen nicht als Suchthema, wohl aber
+# als Kindersignal; Personennamen (Moderation) und Plattformwörter werden nie gesucht.
+GENERIC_TAGS = frozenset({'kinder', 'kids', 'video für kinder', 'videos für kinder', 'kinderfrage', 'lernen', 'schule', 'schulwissen',
+                          'wissen', 'education', 'bildung', 'video', 'videos', 'deutsch', 'german', 'lustig', 'spaß', 'neu', 'folge',
+                          'ganze folge', 'serie', 'kinderserie', 'kinderfernsehen', 'für kinder', 'familie', 'unterhaltung'})
+_PLATFORM = re.compile(r'instagram|tiktok|youtube|shorts?\b|abonnier|kanal\b|channel|twitter|facebook|snapchat|twitch|podcast', re.I)
+_PERSON = re.compile(r'[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)? [A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?')
+# Kindersignale im Kanalnamen: öffentlich-rechtlich, Bildung, Museen, Verlage (Rang hoch) und typische Spielzeug-/Klick-
+# Kanäle (Rang tief, Hinweis). Keine Bewertung von Inhalten, nur eine Reihenfolge; die Freigabe bleibt Björns Entscheidung.
+_KIDS_GOOD = re.compile(r'\b(?:ard|zdf|kika|wdr|swr|br|ndr|mdr|hr|rbb|orf|srf|3sat|arte|checker|maus|planet schule|terra x|logo!?|'
+                        r'museum|bibliothek|verlag|schule|wissen|forscher|experiment|lern|universität|stiftung|zoo)\b', re.I)
+_KIDS_BAD = re.compile(r'toys?\b|spielzeug|unboxing|prank|challenge|gaming|minecraft|roblox|fortnite|diana|nastya|vania|'
+                       r'geniale tricks|5-minute|magic|asmr|slime|surprise|überraschung', re.I)
+
+
+def kids_signal(title):
+    """+1 (öffentlich-rechtlich/Bildung), -1 (Spielzeug-/Klick-Kanal) oder 0 nach dem Kanalnamen."""
+    title = str(title or '')
+    if _KIDS_BAD.search(title):
+        return -1
+    return 1 if _KIDS_GOOD.search(title) else 0
+
+
 def search_terms(db, watched, names, limit=SEARCH_TAGS):
     """Häufigste Schlagwörter der zu Ende gesehenen Videos (ohne Kanalnamen, Zahlen, Ein-Wort-Füller)."""
     if not watched:
@@ -368,7 +391,8 @@ def search_terms(db, watched, names, limit=SEARCH_TAGS):
                 continue
             for t in {str(x).strip() for x in tags}:
                 key = t.lower()
-                if len(key) < 3 or key.isdigit() or key in names or key.startswith('#') or any(n and n in key for n in names):
+                if len(key) < 3 or key.isdigit() or key in names or key.startswith('#') or any(n and n in key for n in names) \
+                        or key in GENERIC_TAGS or _PLATFORM.search(key) or _PERSON.fullmatch(t):
                     continue
                 counts[key] = counts.get(key, 0) + 1
                 shown.setdefault(key, t)
@@ -521,8 +545,9 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
         for profile in sorted({a['profile'] for a in abos}):
             watched = [v for abo_id, items in by_abo.items() if profile_of.get(abo_id) == profile for v, d in items if d]
             for term in search_terms(db, watched, names):
-                fetch = (lambda t=term: search_channels_api(request, t)) if request is not None else \
-                    (lambda t=term: search_channels_ytdlp(root, t, runner))
+                query = term + (' für Kinder' if profile == 'kinder' and 'kind' not in term.lower() else '')
+                fetch = (lambda t=query: search_channels_api(request, t)) if request is not None else \
+                    (lambda t=query: search_channels_ytdlp(root, t, runner))
                 for ref, title, hits in _cached(db, 'search:%s:%s' % (profile, term.lower()), now, budget if not paused else [0], fetch):
                     add(ref, 1.0 + 0.3 * min(hits - 1, 3), 'YouTube-Suche nach „%s“ (Thema gesehener Videos)' % term, profile, title)
         with db:
@@ -530,6 +555,16 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
             for ref, old in known.items():
                 if old['state'] == 'new' and (ref not in scores or ref in subscribed):
                     db.execute('DELETE FROM youtube_suggestions WHERE ref=?', (ref,))
+            for ref in scores:                   # 0.6.98: Kinder-Vorschläge nach Kindersignalen ordnen
+                if max(profile_score[ref], key=profile_score[ref].get) != 'kinder':
+                    continue
+                signal = kids_signal(titles.get(ref) or (known.get(ref) or {}).get('title') or ref)
+                if signal > 0:
+                    scores[ref] *= 1.5
+                    why[ref].insert(0, 'öffentlich-rechtlicher oder Bildungs-Kanal (nach dem Namen)')
+                elif signal < 0:
+                    scores[ref] *= 0.3
+                    why[ref].insert(0, 'Achtung: Name deutet auf Spielzeug-/Klick-Kanal')
             ranked = sorted(scores, key=lambda r: -scores[r])[:MAX_SUGGESTIONS]
             for ref in ranked:
                 profile = max(profile_score[ref], key=profile_score[ref].get)

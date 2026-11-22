@@ -193,6 +193,13 @@ class SourcesWithoutChannelsTab(Discover):
                             (vid(3), ['Wasser', '2026', 'Experimente'])):
                 db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (v, json.dumps(tags)))
         self.assertEqual(disc.search_terms(db, [vid(1), vid(2), vid(3)], ['Kinderkanal']), ['Experimente', 'Wasser'])
+        with db:
+            for v, tags in ((vid(4), ['Tobi Krell', 'Video für Kinder', 'Instagram', 'Heißluftballon']),
+                            (vid(5), ['Tobi Krell', 'Video für Kinder', 'Instagram', 'Heißluftballon'])):
+                db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (v, json.dumps(tags)))
+        self.assertEqual(disc.search_terms(db, [vid(4), vid(5)], []), ['Heißluftballon'])
+        self.assertEqual([disc.kids_signal(t) for t in ('ARD Kinder und Familie', 'CHECKER WELT', 'Like Nastya DE', 'Mamaleen')],
+                         [1, 1, -1, 0])
         db.close()
 
     def test_search_source_from_watched_tags(self):
@@ -212,10 +219,11 @@ class SourcesWithoutChannelsTab(Discover):
         def runner(args, **kw):
             url = args[-1]
             if url.startswith('ytsearch'):
-                self.assertEqual(url, 'ytsearch20:Experimente')
+                self.assertEqual(url, 'ytsearch20:Experimente für Kinder')
                 return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': [
                     {'id': vid(70), 'channel_id': FEATURED, 'channel': 'Forscherkanal'},
                     {'id': vid(71), 'channel_id': FEATURED, 'channel': 'Forscherkanal'},
+                    {'id': vid(73), 'channel_id': 'UC' + 't' * 22, 'channel': 'Diana and Roma DE'},
                     {'id': vid(72), 'channel_id': OWN, 'channel': 'Kinderkanal'}]}))
             return types.SimpleNamespace(returncode=0, stderr='', stdout='{}')
         with mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')), \
@@ -223,8 +231,9 @@ class SourcesWithoutChannelsTab(Discover):
                 mock.patch.object(ab, '_request_for_key', return_value=None):
             disc.discover(self.root, now=NOW + 10, runner=runner, seen=watch_state.states(self.root))
         d = disc.overview(self.root)
-        self.assertEqual([s['ref'] for s in d['suggestions']], [FEATURED])
-        self.assertIn('Suche nach „Experimente“', d['suggestions'][0]['why'][0])
+        self.assertEqual([s['ref'] for s in d['suggestions']], [FEATURED, 'UC' + 't' * 22])
+        self.assertTrue(any('Suche nach „Experimente“' in w for w in d['suggestions'][0]['why']))
+        self.assertIn('Spielzeug', d['suggestions'][1]['why'][0])
         self.assertEqual(d['suggestions'][0]['title'], 'Forscherkanal')
 
     def test_companions_only_real_sidecars(self):
