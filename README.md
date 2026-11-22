@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.98
+# MediathekAtlas · 0.6.100
+
+## Neu in 0.6.100: Kanal-Vorschläge mit echten Treffern
+- Unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ kommen Vorschläge jetzt aus den Playlists deiner Abos, aus @Kanal-Erwähnungen in Beschreibungen und Titeln und aus einer YouTube-Suche nach den Schlagwörtern gesehener Videos. Für die Kinderecke werden kindgerechte Kanäle bevorzugt und Prank-, Horror- oder Gaming-Kanäle nach hinten gestellt.
+- Freigeben geht weiterhin erst nach dem Probeschauen; eine Freigabe lädt zum Start die 3 neuesten Videos.
 
 ## Neu in 0.6.98: Kinderecke ohne Nachrichten- und Talkreihen
 - Eine Serie von ARD, ZDF & Co. steht nur noch in der Kinderecke, wenn sie selbst eindeutig Kinderprogramm ist (mindestens 80 % der eingeordneten Folgen, KiKA/TOGGO oder Kinderreihe). Nachrichten-, Talk-, Politik- und Magazinreihen („heute“, „Politik“, „NACHTCAFÉ“, „Abendschau“ …) erscheinen nie, auch wenn einzelne Beiträge „Kinder“ heißen.
