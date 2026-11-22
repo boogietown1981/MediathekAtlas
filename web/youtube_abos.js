@@ -19,7 +19,7 @@
   const PROFILES = {kinder: {icon: '★', label: 'Kinderecke', hint: 'erscheint nur in der Kinderecke'},
     erwachsene: {icon: '▶', label: 'Für mich', hint: 'erscheint nur im Ansehen-Modus'}};
   const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['retry', 'neuer Versuch geplant', 'wait'], ['wanted', 'warten', 'wait'],
-    ['failed', 'Fehler', 'bad'], ['skipped', 'ausgelassen', 'muted'], ['expired', 'abgelaufen', 'muted']];
+    ['failed', 'Fehler', 'bad'], ['skipped', 'ausgelassen', 'muted'], ['expired', 'abgelaufen', 'muted'], ['archived', 'im Archiv', 'ok']];
   let data = {abos: [], profiles: []}, current = 'kinder', timer = 0;
 
   // ------------------------------------------------------------ ein Formular für Neu und Ändern

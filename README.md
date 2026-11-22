@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.89
+# MediathekAtlas · 0.6.90
+
+## Neu in 0.6.90: Neue YouTube-Kanäle entdecken, prüfen, freigeben
+- YouTube → Kanal-Abos → „Neue Kanäle entdecken“: Vorschläge aus den Kanälen, die eure Abos selbst empfehlen, und aus Links in den Beschreibungen geladener Videos; was zu Ende geschaut wurde, zählt mehr. Ohne Konto, ohne KI.
+- „Videos ansehen“ zeigt die neuesten Videos (abspielbar im offiziellen YouTube-Player). Erst danach lässt sich der Kanal „Für die Kinderecke freigeben“ (neues Kinder-Abo) oder „Für mich abonnieren“. „Nicht vorschlagen“ blendet ihn dauerhaft aus. Die Kinderecke zeigt nie Vorschläge.
 
 ## Neu in 0.6.89: Gesehene YouTube-Abo-Videos ins Archiv
 - Läuft ein Abo-Video im MediathekAtlas-Player bis zum Ende, wandert es nach 5 Minuten in `YouTube-Abos/_Archiv/<Kanal>/`. Dort gilt keine 30-Tage-Frist, und es zählt nicht mehr zu Anzahl und Speicherbudget der Abos.

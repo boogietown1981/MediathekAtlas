@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover
 import api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
@@ -1168,6 +1168,20 @@ def post_youtube_abos(self,path,d):
     started=action in ('add','check','update') and youtube_abos.start_sync(ROOT)
     with db() as c:return self.send({**youtube_abos.overview(ROOT,c),'started':bool(started)})
 
+# 0.6.90: Kanal-Vorschläge aus dem eigenen Sehverhalten, prüfen und freigeben (web/youtube_discover.js)
+@ROUTES.get('/api/youtube-discover')
+def get_youtube_discover(self,path):
+    return self.send(youtube_discover.overview(ROOT))
+
+@ROUTES.post('/api/youtube-discover')
+def post_youtube_discover(self,path,d):
+    action=str(d.get('action',''))[:10];ref=str(d.get('ref',''))[:60]
+    if action=='search':return self.send({**youtube_discover.overview(ROOT),'started':youtube_discover.start(ROOT,force=True)})
+    if action=='preview':return self.send(youtube_discover.preview(ROOT,ref,refresh=d.get('refresh') is True))
+    result=youtube_discover.decide(ROOT,ref,action)
+    if result.get('abo'):youtube_abos.start_sync(ROOT)          # neues Abo gleich prüfen
+    return self.send({**youtube_discover.overview(ROOT),**result})
+
 @ROUTES.get('/kinder',stage='signed')
 def get_kinder(self,path):
     page=page_scripts.inline_scripts((Path(__file__).parent/'web'/'kids.html').read_text(encoding='utf-8'),Path(__file__).parent/'web',('/kids.js',))
@@ -1319,7 +1333,7 @@ def get_play(self,path,v1=False):
         if done:ref['job']=done[0]['id']
         elif direct_youtube:ref['youtube']=yt_id   # 0.5.78: own player, stream resolved by yt-dlp (opt-in switch)
         else:
-            try:info=youtube.play_info(ROOT,yt_id)
+            try:info=youtube.play_info(ROOT,yt_id,preview=q.get('preview',[''])[0]=='1')   # 0.6.90: Vorschau eines Vorschlags
             except ValueError as e:return self.send({'error':str(e)},404)
             diagnostics.event('playback_start',mode='embed',origin='online',hls=False,provider='youtube')
             return self.send(info)
@@ -1376,7 +1390,7 @@ def get_diagnostics(self,path):
            'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),
            'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
            'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'dmax':lambda:dmax.state(ROOT),'filmfriend':lambda:filmfriend.state(ROOT),'dailyme':lambda:dailyme.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
-           'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),
+           'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),'youtube_discover':lambda:youtube_discover.summary(ROOT),
            'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'archive_works':lambda:archive_recognition.summary(ROOT),
            'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT),'cast_photos':lambda:__import__('cast_photos').store_stats(ROOT)}
     found=_bounded_parts(parts)
@@ -2505,7 +2519,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

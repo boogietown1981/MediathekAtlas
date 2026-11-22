@@ -1250,9 +1250,12 @@ def loop(root, stop):
 
 # ---------------------------------------------------------------- playback
 
-def play_info(root, item_id):
+def play_info(root, item_id, preview=False):
     """What the player window needs for the official embedded YouTube player (no stream address,
-    no download: YouTube plays the video itself, with its adverts)."""
+    no download: YouTube plays the video itself, with its adverts).
+
+    0.6.90 ``preview``: a video of a suggested channel (youtube_discover) that is not in the catalogue
+    plays in the embedded player as well, so a parent can look at it before approving the channel."""
     if not VALID_ID.fullmatch(str(item_id or '')):
         raise ValueError('Ungültiger YouTube-Titel')
     db = _connect(root)
@@ -1260,6 +1263,11 @@ def play_info(root, item_id):
         row = _row(db, item_id)
     finally:
         db.close()
+    if not row and preview and str(item_id).startswith('v.') and VALID_VIDEO.fullmatch(str(item_id)[2:]):
+        vid = str(item_id)[2:]
+        return {'mode': 'embed', 'provider': 'youtube', 'video_id': vid, 'embed': EMBED + vid, 'title': '',
+                'duration': 0, 'web_url': video_url(vid), 'quality': 'offizieller YouTube-Player, mit Werbung (Vorschau)',
+                'channel': '', 'offline': False, 'offline_hint': ''}
     if not row:
         raise ValueError('YouTube-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':

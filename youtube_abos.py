@@ -1370,6 +1370,14 @@ def tick(root):
                 archive_watched(root, c, db)
             except Exception as exc:          # nie den Planer anhalten
                 _notify('youtube_abo_archive_failed', reason=type(exc).__name__)
+            # 0.6.90: Kanal-Vorschläge höchstens einmal am Tag im Hintergrund neu berechnen
+            if time.time() - _DISCOVER_AT >= 3600 and db.execute('SELECT 1 FROM youtube_abos LIMIT 1').fetchone():
+                globals()['_DISCOVER_AT'] = time.time()
+                try:
+                    import youtube_discover
+                    youtube_discover.start(root)
+                except Exception as exc:
+                    _notify('youtube_discover_failed', reason=type(exc).__name__)
             # 0.6.68: Aufträge über dem Budget nicht erst bei der nächsten Kanalprüfung (bis 24 h) zurücknehmen
             # (Mac-Prüfung 0.6.67: 1,0 GB belegt, 76,9 GB „in Arbeit“ bei 10 GB Budget)
             if time.time() - _TRIMMED_AT >= TRIM_INTERVAL:
@@ -1384,6 +1392,7 @@ def tick(root):
 
 TRIM_INTERVAL = 600
 _TRIMMED_AT = 0.0
+_DISCOVER_AT = 0.0
 
 
 # ---------------------------------------------------------------- Bilder (offline verfügbar)

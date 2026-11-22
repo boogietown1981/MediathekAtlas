@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.90 – Kanal-Vorschläge (22. November 2026)
+- Automatisch: tests/test_v0690_kanal_vorschlaege.py (6), tests/browser/youtube_discover.cjs (Chromium). Echte YouTube-Antworten (Reiter „Kanäle“ über yt-dlp, channelSections, --write-description): Mac-Prüfung.
+
 ## 0.6.89 – Archiv gesehener YouTube-Abo-Videos (22. November 2026)
 - Automatisch: tests/test_v0689_abo_archiv.py (6). Echte Verschiebung auf APFS/exFAT und Wiedergabe aus dem Archiv: Mac-Prüfung (PRUEFLISTE in releases/0.6.89).
 
