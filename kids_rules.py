@@ -43,6 +43,10 @@ DEFAULT_MAX_AGE = 12      # Björn 22.11.2026 23:08: „mein Standard wäre auch
 ALWAYS_CHANNELS = ('kika', 'kika.de', 'toggo', 'zdf-tivi', 'zdftivi')
 STATE_KEY = 'kids_max_age_v0696'
 IDENTIFIED = "w.state IN ('matched','manual','identified')"
+# 0.6.106 (Mac-Abfrage Kinderreihen 22.11.): „Checker Can, Checker Tobi und Checker Julian“ (38 Werke) und „Paula, Anna
+# und die wilden Tiere“ (25) sind als Beiträge ihrer Sendung abgelegt (state 'format') – eingeordnet unter einer benannten
+# Reihe, nicht unerkannt. Für das Reihen-/Themensignal zählen sie wie erkannte Werke; der Altersweg bleibt bei IDENTIFIED.
+SIGNAL_STATES = "w.state IN ('matched','manual','identified','format')"
 # 0.6.105: die IMDb-Kennung steht bei TMDB-/TVDB-Treffern in meta.imdb_id, reference_id ist dann die TMDB-ID
 # (Mac-Prüfung 0.6.103: reference_ages blieb leer)
 REF = "COALESCE(NULLIF(json_extract(w.meta,'$.imdb_id'),''),json_extract(w.meta,'$.reference_id'))"
@@ -159,8 +163,8 @@ def kids_clause(c, signal, signal_args, has):
     age_high = 'EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age>?)' % REF
     channel = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND lower(json_extract(k.payload,'$.channel')) IN (%s))"
                % ','.join('?' * len(ALWAYS_CHANNELS)))
-    sql = ('NOT %s AND (%s OR (%s AND NOT %s) OR (%s AND NOT %s AND NOT %s AND (%s OR (%s AND %s AND NOT %s))))'
-           % (_chosen('block'), _chosen('allow'), channel, age_high, IDENTIFIED, bad, age_high, signal, age_ok, hint, soft))
+    sql = ('NOT %s AND (%s OR (%s AND NOT %s) OR (%s AND NOT %s AND NOT %s AND (%s OR (%s AND %s AND %s AND NOT %s))))'
+           % (_chosen('block'), _chosen('allow'), channel, age_high, SIGNAL_STATES, bad, age_high, signal, IDENTIFIED, age_ok, hint, soft))
     return sql, (list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(signal_args) + [limit]
                  + list(hint_args) + list(soft_args))
 

@@ -117,5 +117,38 @@ class HealTests(unittest.TestCase):
             self.assertEqual(c.execute('SELECT title FROM works WHERE id=?', (wid,)).fetchone()[0], 'KiKA LIVE')
 
 
+
+from test_v0691_kinderecke import Base  # noqa: E402
+import kids_catalog  # noqa: E402
+
+
+class KidsCornerTests(Base):
+    """Koordinator 22.11.: das Namenssignal muss über kids_catalog (show_is_kids, Liste) ankommen, nicht nur über die Regex."""
+    def reihe(self, show, title, n, state, channel='BR', genres=()):
+        for i in range(n):
+            self.add('%s-%d' % (show, i), 'Folge %d' % i, list(genres), kind='series', show=show, season=1, episode=i + 1,
+                     channel=channel, topic=title, state=state)
+        with self.db() as c:
+            c.execute("UPDATE works SET title=?, meta=json_set(meta,'$.title',?) WHERE show_key=?", (title, title, show))
+
+    def test_anna_and_checker_reach_the_kids_corner(self):
+        self.reihe('show:anna', 'Anna, Nina, Pia und die wilden Tiere', 20, 'identified')
+        self.reihe('show:paula', 'Paula, Anna und die wilden Tiere', 10, 'format', channel='ARD')
+        self.reihe('show:checker', 'Checker Can, Checker Tobi und Checker Julian', 12, 'format', channel='ARD')
+        self.reihe('show:doktor', 'Der Doktor und die wilden Tiere', 6, 'identified', channel='HR', genres=('Dokumentation',))
+        with self.db() as c:
+            for show in ('show:anna', 'show:paula', 'show:checker'):
+                self.assertTrue(kids_catalog.show_is_kids(c, show, ''), show)
+            self.assertFalse(kids_catalog.show_is_kids(c, 'show:doktor', 'Der Doktor und die wilden Tiere'))
+        titles = sorted(t['title'] for t in self.shelf()['series'])
+        self.assertEqual(titles, ['Anna, Nina, Pia und die wilden Tiere', 'Checker Can, Checker Tobi und Checker Julian',
+                                  'Paula, Anna und die wilden Tiere'])
+
+    def test_unrecognised_works_still_wait(self):
+        # Koordinator: das Themensignal zählt nur für eingeordnete Werke; unerkannte warten auf die Freigabe der Eltern
+        self.reihe('show:anna', 'Anna, Nina, Pia und die wilden Tiere', 5, 'review')
+        self.assertEqual(self.shelf()['series'], [])
+
+
 if __name__ == '__main__':
     unittest.main()
