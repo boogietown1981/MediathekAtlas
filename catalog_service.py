@@ -528,6 +528,10 @@ class Service:
                 # offer is never selected (Mac-Gegenprüfung 0.6.58: 5,748 "bereit", none of them taken).
                 due_ep=c.execute('''SELECT COUNT(*) FROM episode_queue q WHERE q.next_try<=?
                     AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=q.work_id AND o.active=1)''',(time.time(),)).fetchone()[0]
+                # 0.6.88: why nothing is due (outcome of the resting entries, next due time, last archive recheck)
+                overview=catalog.episode_queue_overview(c) if total_ep and not due_ep else {'waiting':{},'next_due':None}
+                overview['archive_recheck']=catalog.get_state(c,'episode_archive_recheck',None)
+                self.episode_queue_info=overview
             self.episode_last_count=(time.monotonic(),total_ep,due_ep)
         except sqlite3.OperationalError as e:
             self.episode_last_count=(time.monotonic(),)+tuple(self.episode_last_count[1:])
@@ -553,7 +557,10 @@ class Service:
         _,ep_total,ep_due=self.episode_last_count
         import imdb_archive
         archive=imdb_archive.ACTIVE
+        info=getattr(self,'episode_queue_info',None) or {}
         return {'episode_queue_total':ep_total,'episode_queue_due':ep_due,
+                'episode_queue_waiting':info.get('waiting') or {},'episode_queue_next_due':info.get('next_due'),
+                'episode_archive_recheck':info.get('archive_recheck'),
                 # 0.6.65: without the IMDb offline archive every episode claim can only be postponed (1 h)
                 'episode_imdb_ready':bool(archive and getattr(archive,'updated',None)),
                 'episode_workers_active':self.episode_active,
@@ -683,7 +690,7 @@ class Service:
                               sender_items=items,sender_matched=sender_matches,
                               sender_status=sender_status)
 
-    def defer_series_without_episodes(self,c,show_key,m,selected_id,config):
+    def defer_series_without_episodes(self,c,show_key,m,selected_id,config,archive_updated=0):
         """Postpone all queued editions of a series that IMDb lists without episodes.
 
         Diagnosis 0.6.18: 218,000 queued works, mostly editions of magazines and
@@ -693,6 +700,8 @@ class Service:
         share title, year and identity, therefore the same IMDb answer. Offers
         with an ARD/ZDF page stay due when the sender lookup is enabled, because
         the broadcaster can still name their episode. User priorities stay due.
+        0.6.88: siblings that rest after a check against an older IMDb archive (``archive_updated``) take
+        this answer too, so that the recheck after an archive update asks once per series.
         """
         if not show_key or not m.get('provider') or not m.get('reference_id'):return 0
         now=time.time()
@@ -706,12 +715,12 @@ class Service:
         # One statement; the spread over a week keeps them from falling due together.
         deferred=c.execute("""UPDATE episode_queue SET last_outcome='no_imdb_episodes',updated=?,
                 next_try=?+abs(random())%(7*86400)
-            WHERE next_try<=? AND work_id IN (SELECT w.id FROM works w WHERE w.show_key=? AND w.id!=?
+            WHERE (next_try<=? OR (updated>0 AND updated<?)) AND work_id IN (SELECT w.id FROM works w WHERE w.show_key=? AND w.id!=?
               AND w.state='identified'
               AND json_extract(w.meta,'$.provider')=?
               AND CAST(json_extract(w.meta,'$.reference_id') AS TEXT)=?
               AND NOT EXISTS(SELECT 1 FROM metadata_priority p WHERE p.work_id=w.id) """+sender+""")""",
-            (now,now+30*86400,now,show_key,selected_id,m['provider'],str(m['reference_id']))).rowcount
+            (now,now+30*86400,now,archive_updated,show_key,selected_id,m['provider'],str(m['reference_id']))).rowcount
         if deferred>0:
             def counted():
                 with self.worker_lock:self.episode_series_deferred+=deferred
@@ -1061,7 +1070,11 @@ class Service:
                     self.mesh_episode_publish(c,selected_id,time.time()+delay,archive.updated,config.get('sender_direct_lookup',False))
                 if outcome=='unresolved' and imdb_without_episodes:
                     # counted as episode_series_deferred ("Ohne IMDb-Folgenliste verschoben") after the commit
-                    self.defer_series_without_episodes(c,row['show_key'],m,selected_id,config)
+                    self.defer_series_without_episodes(c,row['show_key'],m,selected_id,config,archive.updated)
+                if evidence and evidence.get('series_with_episodes') and not imdb_error:
+                    # 0.6.88: IMDb lists episodes for this series now; siblings resting without an episode list come back.
+                    released=catalog.release_no_episode_siblings(c,row['show_key'],m.get('provider'),m.get('reference_id'))
+                    if released:self.after_commit(lambda:diagnostics.event('episode_siblings_released',title=m.get('title',''),works=released))
         self.record_episode_result(outcome,imported=bool(imported),
                                    sender_verified=bool(sender_verified),
                                    sender_item=bool(sender_candidate and sender_candidate.get('sender_item_verified')),
@@ -1366,6 +1379,33 @@ class Service:
         if done:diagnostics.event('episode_clip_sendung_undone',works=done,shows=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]));catalog.invalidate_listings()
         with self.db() as c:catalog.set_state(c,'clip_sendung_undo_v0685',{'works':done,'shows':shows,'at':time.time()})
 
+    def requeue_after_archive(self,force=False):
+        """0.6.88: after a new IMDb archive, episode searches checked against the older one are due again
+        (catalog.archive_recheck_ids, spread over catalog.ARCHIVE_RECHECK_SPREAD). Asked every 10 min."""
+        if not force and time.monotonic()-getattr(self,'_archive_recheck_try',-1e9)<600:return None
+        self._archive_recheck_try=time.monotonic()
+        import imdb_archive
+        archive=imdb_archive.ACTIVE;updated=float(getattr(archive,'updated',0) or 0) if archive else 0
+        if not updated:return None
+        try:
+            with self.db() as c:
+                done=catalog.get_state(c,'episode_archive_recheck',{}) or {}
+                if float(done.get('archive') or 0)>=updated:return 0
+                ids=catalog.archive_recheck_ids(c,updated)
+            now=time.time();spread=catalog.ARCHIVE_RECHECK_SPREAD;n=len(ids)
+            for start in range(0,n,2000):
+                if self.stop.is_set():return None
+                batch=[(now+i*spread/max(1,n),w) for i,w in enumerate(ids[start:start+2000],start)]
+                with self.db() as c:c.executemany('UPDATE episode_queue SET next_try=MIN(next_try,?) WHERE work_id=?',batch)
+                if self.stop.wait(.05):return None
+            with self.db() as c:
+                catalog.set_state(c,'episode_archive_recheck',{'archive':updated,'works':n,'at':now,'until':now+spread if n else now})
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1;return None
+        diagnostics.event('episode_archive_recheck',works=n,archive=int(updated),spread_hours=round(catalog.ARCHIVE_RECHECK_SPREAD/3600))
+        return n
+
     def requeue_parked(self):
         """0.6.83, once: parked „ohne Treffer“ entries that today's rules file as edition/contribution are due again
         (catalog.parked_refilable). The episode queue decides with the full rules, IMDb check included."""
@@ -1646,7 +1686,7 @@ class Service:
             if index>=requested or not self.settings().get('auto_metadata',True) or task_control.paused('episodes'):
                 self.stop.wait(2);continue
             if self.wait_for_heals():continue
-            if index==0:self.note_archive_wait();self.heal_when_ready()
+            if index==0:self.note_archive_wait();self.heal_when_ready();self.requeue_after_archive()
             try:busy=self.metadata_once('episode')
             except sqlite3.OperationalError as exc:
                 if not sqlite_busy(exc):raise

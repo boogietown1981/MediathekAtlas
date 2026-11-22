@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.88 – Folgensuche, Sendungsvorschläge, täglicher Abgleich (22. November 2026)
+- Siehe PRUEFLISTE in releases/0.6.88. Automatisch: tests/test_v0688.py; Ergebnisse der vollen Suite im Bericht an den Koordinator.
+
 ## 0.6.87 – Themenwörter bei Suche und Auswahl (22. November 2026)
 - Automatisch: gesamte Python-Suite (1.848, alle grün nach Korrektur des neuen Tests), Node-Tests, Klicktest; neu `tests/test_v0687.py`: „Doku“/„Sport“/„Masterclass“/„Kultur“ werden nicht als Serie gesucht und nicht Serie aus dem Senderhinweis, „Terra X“ weiter; Serie „Doku“ nie für Thema „Doku“. Gegenprobe auf 0.6.86: beide Tests rot.
 - Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).

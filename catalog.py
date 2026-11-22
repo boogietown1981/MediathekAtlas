@@ -1704,7 +1704,7 @@ def unknown_hard_reason(row,m):
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
 # 0.6.78 (Mac-Prüfung 0.6.77): rev 6 for the Wikidata rule of 0.6.77; without the raise the sweep waited up to
 # UNKNOWN_SWEEP_INTERVAL (6 h) after the update, so the check saw no effect within 30 minutes.
-UNKNOWN_RULES_REV=6              # raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=7              # 0.6.88: Sendungsvorschlag → Folge; raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1818,6 +1818,46 @@ def unknown_soft_check(row,m,source,grouping,name,topic_works):
     if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
     return None
 
+# 0.6.88 (Diagnose Pro 22.11.2026: 4.692 Werke ohne Art „mit Sendungsvorschlag“, SRF 2.215, ARTE.DE 1.451):
+# the suggestion that holds the work open is the Sendung itself (exact name, broadcast period). Then the work is a
+# Folge of that series: identified with the series' identity, the episode queue looks for the episode.
+SENDUNG_SUGGESTION_ORDER=('IMDb Offline','TVDB','TMDB','OMDb','Wikidata')
+
+def sendung_suggestion(m,source,sendung):
+    """The series suggestion to identify a work of unknown kind with, or None.
+
+    Only when every suggestion that is no weak evidence (suggestion_weak) is a series with exactly the Sendung's
+    name and with a reference, and no database names two different series of that name (namesakes stay open)."""
+    if not sendung or not template_topic(sendung):return None
+    work_title=cleaned(source.get('title'))
+    strong=[x for x in (m.get('suggestions') or []) if isinstance(x,dict) and not suggestion_weak(x,source,sendung,work_title)]
+    if not strong:return None
+    refs={}
+    for x in strong:
+        if x.get('kind')!='series' or key(x.get('title'))!=key(sendung) or not x.get('reference_id') or not x.get('provider'):return None
+        refs.setdefault(x['provider'],set()).add(str(x['reference_id']))
+    if any(len(v)>1 for v in refs.values()):return None
+    rank={p:i for i,p in enumerate(SENDUNG_SUGGESTION_ORDER)}
+    return sorted(strong,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
+
+def identify_by_sendung(c,row,m,source,suggestion,sendung,grouping):
+    """Identify ``row`` as Folge of the suggested series (state 'identified', episode not yet verified)."""
+    own={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers','format_grouping')}
+    own['unknown_before']=unknown_before(row,m)
+    for field in ('title','year','provider','reference_id','poster','genres','genre_source','reference_runtime_seconds',
+                  'imdb_id','networks','show_description'):
+        if suggestion.get(field) not in (None,'',[]):own[field]=suggestion[field]
+    label=UNKNOWN_GROUPINGS.get(grouping,'Folge')
+    own.update(kind='series',episode_title=cleaned(source.get('title')) or str(row['title'] or ''),season=None,episode=None,
+               episode_verified=False,state='work_identified',sendung_suggestion_v0688=True,
+               reason=label+' der Sendung „'+str(own.get('title') or sendung)+'“ laut '+str(suggestion.get('provider'))+
+                      ' (gleicher Name, passender Zeitraum); die Folge selbst wird noch gesucht.')
+    dest=save_metadata(c,row['id'],own,'identified') or row['id']
+    # the series identity is settled; the episode queue (not the recognition) works on the Folge
+    c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+30*86400,dest))
+    c.execute('DELETE FROM film_hints WHERE work_id=?',(dest,))
+    return dest
+
 def unknown_role(source,topic_works):
     """(grouping, Sendung name) for a checked work of unknown kind; grouping is one of UNKNOWN_GROUPINGS.
 
@@ -1915,6 +1955,16 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
         if grouping=='series_rubric':
             _count(summary,'series_rubric',ch,cleaned(topic));continue
         soft=None if singles else unknown_soft_check(row,m,source,grouping,name,counts.get(topic,1))
+        if soft=='suggestions':
+            chosen=sendung_suggestion(m,source,name)
+            if chosen:
+                identify_by_sendung(c,row,m,source,chosen,name,grouping)
+                changed+=1;done['sendung_suggestion']=done.get('sendung_suggestion',0)+1
+                channels.setdefault(ch,{});channels[ch]['sendung_suggestion']=channels[ch].get('sendung_suggestion',0)+1
+                bucket=samples.setdefault('sendung_suggestion',[])
+                if len(bucket)<5:bucket.append({'title':str(source.get('title') or '')[:120],'topic':str(source.get('topic') or '')[:80],
+                                                 'channel':ch,'suggestion':suggestion_brief(chosen)})
+                continue
         if soft:
             _count(summary,soft,ch,cleaned(topic))
             if soft=='suggestions':
@@ -2157,6 +2207,53 @@ def recheck_episode_queue_v0641(c,event=None):
     set_state(c,'episode_queue_recheck_v0641',True)
     if event and n:event('episode_queue_recheck',version='0.6.41',works=n)
     return n
+
+# 0.6.88 (Diagnosen 22.11.2026: Pro 121.780 / Air 116.533 Einträge, 0 fällig): an episode search without a hit
+# rests 30 days (7 with spent sender allowance), its siblings without IMDb episode list 30–37 days. Asking again
+# before new data only repeats the answer. New data is the weekly IMDb archive: what was checked against an
+# older archive becomes due again, spread over ARCHIVE_RECHECK_SPREAD so that new works keep their place.
+ARCHIVE_RECHECK_SPREAD=3*86400
+ARCHIVE_RECHECK_OUTCOMES=('unresolved','unresolved_remote')
+
+def archive_recheck_ids(c,archive_updated,now=None):
+    """Queue entries checked against an IMDb archive older than ``archive_updated`` that rest beyond now.
+
+    Every entry „ohne Treffer“ comes back; of a series whose siblings rest as 'no_imdb_episodes' only one entry
+    per series (the first) when none of its entries comes back anyway: its answer decides for the siblings
+    (CatalogService.release_siblings / defer_series_without_episodes). Ordered oldest check first."""
+    now=time.time() if now is None else now
+    if not archive_updated:return []
+    rows=c.execute("""SELECT q.work_id,q.last_outcome,w.show_key FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.updated>0 AND q.updated<? AND q.next_try>?
+          AND q.last_outcome IN ('unresolved','unresolved_remote','no_imdb_episodes')
+        ORDER BY q.updated,q.work_id""",(float(archive_updated),now)).fetchall()
+    shows={r['show_key'] for r in rows if r['last_outcome'] in ARCHIVE_RECHECK_OUTCOMES and r['show_key']}
+    out=[]
+    for r in rows:
+        if r['last_outcome'] in ARCHIVE_RECHECK_OUTCOMES:out.append(r['work_id'])
+        elif r['show_key'] and r['show_key'] not in shows:
+            shows.add(r['show_key']);out.append(r['work_id'])
+    return out
+
+def release_no_episode_siblings(c,show_key,provider,reference,now=None,spread=6*3600):
+    """IMDb now lists episodes for this series: its siblings that rest as 'no_imdb_episodes' are due again
+    (spread over ``spread`` seconds). Returns the number released."""
+    if not show_key or not provider or not reference:return 0
+    now=time.time() if now is None else now
+    ids=[r[0] for r in c.execute("""SELECT q.work_id FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.last_outcome='no_imdb_episodes' AND q.next_try>? AND w.show_key=?
+          AND json_extract(w.meta,'$.provider')=? AND CAST(json_extract(w.meta,'$.reference_id') AS TEXT)=?""",
+        (now,show_key,provider,str(reference)))]
+    c.executemany('UPDATE episode_queue SET next_try=? WHERE work_id=?',
+                  [(now+(i*spread/max(1,len(ids)) if len(ids)>1 else 0),w) for i,w in enumerate(ids)])
+    return len(ids)
+
+def episode_queue_overview(c,now=None):
+    """Why the episode queue rests (0.6.88): entries per last outcome and the next due time."""
+    now=time.time() if now is None else now
+    waiting={str(o or 'pending'):n for o,n in c.execute('SELECT last_outcome,COUNT(*) FROM episode_queue WHERE next_try>? GROUP BY last_outcome',(now,))}
+    nxt=c.execute('SELECT MIN(next_try) FROM episode_queue WHERE next_try>?',(now,)).fetchone()[0]
+    return {'waiting':waiting,'next_due':float(nxt) if nxt else None}
 
 def build_deferred_indexes(connect,event=None,error=None):
     """Create indexes that need a full table pass, after the server is reachable.

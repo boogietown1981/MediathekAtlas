@@ -295,6 +295,8 @@ function catalogProgress(c){
      ['editions','Sendungsausgaben: '+countLabel(c.episode_editions_session||0)+' · Beiträge: '+countLabel(c.episode_segments_session||0)]
    ];
    // 0.6.65: without the IMDb offline archive the episode search can only postpone (Mac-Gegenprüfung 0.6.58).
+   // 0.6.88: a resting queue says why and until when (searches without a hit rest 30 days; a new IMDb archive brings them back)
+   if((c.episode_queue_total||0)>0&&!(c.episode_queue_due||0)&&c.episode_queue_next_due)chips.push(['rest','Folgensuche ruht: alles geprüft, nächste Prüfung '+new Date(c.episode_queue_next_due*1000).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'})+' oder nach dem nächsten IMDb-Update']);
    if(c.episode_imdb_ready===false&&(c.episode_queue_total||0)>0)chips.push(['imdb-wait','Folgensuche wartet auf das IMDb-Offline-Archiv – Prüfungen werden stündlich wiederholt']);
    if(c.sqlite_busy_retries_session){
      // 0.6.67: where the locks happened (episode search, recognition …)

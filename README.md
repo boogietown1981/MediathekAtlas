@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.87
+# MediathekAtlas · 0.6.88
+
+## Neu in 0.6.88: Folgensuche nach IMDb-Update, Sendungsvorschläge als Folge, tägliche Kataloge
+- Ruht die Folgensuche (alles geprüft), zeigt die Übersicht bis wann. Nach jedem neuen IMDb-Archiv wird alles „ohne Treffer“ verteilt über drei Tage erneut gesucht.
+- Werke ohne Art, deren Sendung genau so in IMDb/TVDB/TMDB steht, werden Folgen dieser Serie und kommen in die Folgensuche.
+- Pluto TV, Joyn, Rakuten TV, RTL+, TOGGO und JustWatch aktualisieren ihren Katalog wieder täglich (einmalig eingeschaltet, abschaltbar).
 
 ## Neu in 0.6.87: Themenwörter werden keine Serie
 
