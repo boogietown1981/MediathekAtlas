@@ -1,3 +1,56 @@
+## 0.6.87 – Themenwörter auch bei Suche und Auswahl sperren; enthält 0.6.86
+- Grundlage: Bewertung der Erkennung (Air, 0.6.85, 22.11.2026, `berichte/bewertung-erkennung-2026-11-22-0685-air.md`): ZDF-Thema „Doku“ direkt über IMDb als Serie erkannt (93 Werke, 42 Laufzeit-Verdachte); 0.6.86 sperrte nur die Vorlage. Basis 0.6.86 (nicht ausgegeben).
+- `metadata.GENERIC` um Themenwörter erweitert (doku, sport, masterclass, kultur, wissen, geschichte, reportage, konzert, theater, kunst, gesundheit, wirtschaft, reisen …): kein Suchbegriff „Serie = Thema“ mehr.
+- `catalog.seed`: nennt `core.identify` das Thema als Serie, weil der Text „Serie“ sagt, und ist das Thema allgemein, wird daraus keine Serie (nummerierter Teil des Titels bleibt möglich).
+- `catalog.portal_identity(m, topic)`: eine Serie, deren Name ein Themenwort und gleich dem Thema des Angebots ist, wird nie automatisch gewählt.
+- Heilung `reset_generic_identities` mit Merker `generic_templates_v0687` (deckt „Doku“ mit ab).
+- Tests: `tests/test_v0687.py` (2; auf 0.6.86 rot).
+
+## 0.6.86 – Umzug von exFAT (AppleDouble), Heilungen vor den Arbeitern, Themen-Vorlagen
+- Grundlage: Diagnose MacBook Air 22.11.2026 (0.6.85 seit 21.11. 21:50, erster echter Lauf; `berichte/diagnose-2026-11-22-morgen-0685-air.md`). Basis 0.6.85.
+- `storage_locations._skip_name`: `._*` (AppleDouble von exFAT/FAT/SMB) wird beim Kopieren, Prüfen und Aufräumen übersprungen; `remove_verified` löscht die Hilfsdatei zusammen mit ihrer Datei; ein Ziel mit nur Hilfsdateien gilt als leer. Betraf jeden Umzug von exFAT weg (Code seit 0.6.40).
+- Rückweg-Knopf: `revert_label` – „Standardordner verwenden“, wenn der bisherige Datenstand im Standardordner liegt (Startdialog, Fehlertext, Web: „Standardordner wieder verwenden“). `--revert-info` endet dann mit Status 4, `launcher.sh` benennt den Knopf danach.
+- `CatalogService.start`: Erkennungs- und Folgen-Arbeiter warten auf `early_heals` (Planet-Schule-Heilung, Kurzserien-Rücknahme, Themen-Vorlagen), höchstens `HEAL_WAIT` = 600 s; Ereignisse `catalog_heals_ready` bzw. `catalog_heals_wait_timeout`. Planet-Schule-Heilung läuft einmal erneut (Merker `portal_reseed_v0686`), weil auf dem Air 10 Werke nach der Heilung noch als „Planet Schule“ geprüft wurden.
+- `catalog.TEMPLATE_GENERIC`: Themenwörter („Sport“, „Masterclass“, „Kultur“, „Doku“ …) werden nie Serienvorlage. Einmalig `reset_generic_identities` (Merker `generic_templates_v0686`, Ereignis `catalog_generic_templates_reset`): solche Vorlagen gelöscht, Werke mit dieser Identität aus ihrem Thema neu erkannt; matched/manual/bestätigte Folgen bleiben.
+- Tests: `tests/test_v0686.py` (6), `tests/test_v0625_storage_safety.py` angepasst (Status 4, Knopftext).
+
+## 0.6.85 – Korrektur 0.6.84: Kurzserien, Planet Schule ohne Portal-Thema
+- Grundlage: Mac-Prüfung 0.6.84 (21.11.2026, knapp nicht bestanden; Rest bestanden: templates_dropped 4, Reihen halten, episode_parked_requeued 3.675, unresolved 99.562 → 93.905, identified → format 6.288, matched +34, Abo-Schalter im Testordner bestanden). Basis 0.6.84.
+- Clip-Sendung (`catalog.clip_sendung_show`): zusätzlich mindestens ein aktives Angebot ≥ 20 min (ganze Ausgabe). `clip_sendung_offer`: nie unter Portal-/Rubrik-Themen (`template_topic`) oder Themen mit Serie/Fiktion/Kinder/Kurz und witzig/Animation/Comedy/Sketch. Grund: JoNaLu-Minis (Sender „ZDF“, ohne Genre), ARTE „Alte Schachteln aus Belgien“ 26 und „Bilder allein zuhaus“ 8, „Erklär’s mir“ 31.
+- Einmalig `undo_clip_sendung` (Merker `clip_sendung_undo_v0685`, Ereignis `episode_clip_sendung_undone`): `clip_sendung_v0683`-Ablagen, die die Regel nicht mehr deckt, werden je Sendung in einer Transaktion zurückgenommen (`format_undone` v0685). Auf Björns Gerät lief 0.6.83/0.6.84 nie; betrifft nur Prüfkopien.
+- `catalog.portal_reseed`: auch Werke, deren Identität das Portal ist, unter anderem oder leerem Thema („Sarah Baatout … · Women of Science“ TVDB 461332 matched, „Rafik Schami · Der Erzähler“); Merker `portal_reseed_v0685`.
+- Tests: `tests/test_v0685.py` (4), `tests/test_v0683.py` angepasst (ganze Ausgabe im Beispiel).
+
+## 0.6.84 – Korrektur 0.6.82: Planet Schule über die Serienvorlage; enthält 0.6.83
+- Grundlage: Mac-Prüfung 0.6.82 (21.11.2026, nicht bestanden): `catalog_portal_reseeded` 257 Werke, aber 3 s später standen sie wieder unter „planet schule“ (ARD Mediathek, crid swr.de/2582750); 99 mit der Begründung der Heilung, 145 als Beitrag der Sendung „planet schule“; TVDB 461332 wieder matched. Ursache (im Code belegt, Test reproduziert den Befund auf 0.6.82): die in `series_templates` gelernte Vorlage für das Thema „planet schule“ (`series_template_candidate` bei der Erkennung, `origin_meta` beim Import) und `propagate_series`, das die Portal-Identität auf alle Werke der Reihe übertrug. Die Senderseite (0.6.82) war nicht mehr beteiligt.
+- `catalog.template_topic`: keine Serienvorlage lernen oder anwenden für Portal-/Rubrik-Themen (`PORTAL_TOPICS`, `metadata.generic_topic`) oder Angebote „<Folge> · <Reihe>“. `catalog.drop_portal_templates` löscht vorhandene (einmalig mit der Heilung).
+- `catalog.portal_identity`: ein Serientreffer, der nur das Portal ist (TVDB/ARD „Planet Schule“), wird nie automatisch gewählt; bleibt Vorschlag.
+- Heilung erneut: Merker `portal_reseed_v0684`, Ereignis `catalog_portal_reseeded` mit `templates_dropped`.
+- Enthält 0.6.83 (nicht ausgegeben): geparkte Folgensuche-Einträge neu prüfen, Clip-Sendungen ohne Folgenliste, Abo-Schalter „ungesehene Videos dürfen weichen“.
+- Tests: `tests/test_v0684.py` (2, davon ein Durchlauf Heilung → Erkennung mit Vorlage/ARD-Seite/TVDB-Portal → Weitergabe → Folgensuche → Neuimport; schlägt auf 0.6.82 mit „planet schule / ARD Mediathek“ fehl).
+
+## 0.6.83 – Erkennung Runde 4: geparkte Einträge, Clip-Sendungen; Abo-Schalter „ungesehene Videos dürfen weichen“
+- Grundlage: Mac-Abfrage Runde 4 (21.11.2026, Prüfkopie mit 0.6.80/0.6.81). Folgensuche: 99.533 Einträge „unresolved“, davon nur 72 fällig; 22.129 „no_imdb_episodes“. „Hallo Niedersachsen“ 4.442 Beiträge von 1–4 Minuten ohne Treffer. Die 421 Werke aus dem Miniserien-Reset (0.6.77) tragen keine IMDb-Miniserie mehr (KiKA „stark!“ unter ZDF Mediathek). Basis 0.6.82.
+- `catalog.parked_refilable` + `CatalogService.requeue_parked` (einmalig, Merker `parked_requeue_v0683`): geparkte Einträge „unresolved“/„no_imdb_episodes“, die die heutigen Regeln als Ausgabe oder Beitrag ablegen, werden über eine Stunde verteilt wieder fällig; die Folgensuche entscheidet mit allen Regeln (IMDb-Prüfung eingeschlossen). Ereignis `episode_parked_requeued`.
+- `catalog.clip_sendung_show`/`clip_sendung_offer`: Eine Sendung mit mindestens 20 Angeboten, davon ≥ 90 % kürzer als 10 Minuten und Median unter 5 Minuten, deren Serie IMDb ohne Folgenliste führt: ein kurzer, unnummerierter Clip ist Beitrag der Sendung (`format_rule` `clip_sendung_v0683`), die Geschwister im selben Durchgang. Nie bei KiKA/ZDF-tivi/Toggo/Super RTL oder Genre Kinder/Familie/Animation, nie mit Folgennummer, nie bei Sender-Kandidat oder Fehler.
+- Abos: Schalter je Abo `drop_unseen` („Wenn voll: auch ungesehene Videos löschen (älteste zuerst)“), Standard aus. Erst nach den gesehenen Videos, älteste fertige zuerst; angeheftete, Favoriten und angefangene (Position > 0) bleiben; eine Datei, die ein anderes Abo noch nutzt, wird nur aus diesem Abo entfernt. Ereignis `youtube_abo_unseen_removed`. Spalte per Migration, kein Löschen beim Update.
+- Tests: `tests/test_v0683.py` (4), `tests/test_v0679.py` +3.
+
+## 0.6.82 – Korrektur 0.6.81: Planet Schule gegen die ARD-Mediathek-Erkennung
+- Grundlage: Mac-Prüfung 0.6.81 (21.11.2026, nicht bestanden nur wegen Planet Schule; Ladezeiten bestanden: Werkliste nach dem Start 7,62 → 0,11 s, Kinderecke 0,01–0,05 s). 256 Werke standen wieder unter der Serie „planet schule“ (ARD Mediathek); 145 davon als „Beitrag der Sendung „planet schule““. Das TVDB-Werk „Planet Schule“ (15 Angebote „Das kleine 1x1 der Artenkunde“, auto_matched mit episode_verified) wurde übersprungen. Basis 0.6.81.
+- `broadcaster.candidate`: Eine Sendereihe, die nur ein Portal oder eine Rubrik ist (`metadata.generic_topic`, z. B. „planet schule“, „Politik“, „Musik“), ist keine eigene Reihe; die Senderseite liefert dann keinen Serienkandidaten. Die Reihe aus dem Titel bleibt.
+- `catalog.portal_reseed`: Werke mit dem Portal als Identität werden auch neu erkannt, wenn ihre Folge gegen das Portal „bestätigt“ wurde oder sie als Beitrag/Ausgabe des Portals abgelegt sind; `manual` und `scan_requested` bleiben. Merker `portal_reseed_v0682` (läuft nach 0.6.78/0.6.81 erneut).
+- Abo-Warnung ohne Gesamtgrenze: „… oder ein Gesamtbudget für alle Abos festlegen“ statt „… senken“. Ereignis `kids_shelf_refreshed`, wenn die Hintergrund-Erneuerung der Kinderecke ≥ 2 s braucht.
+- Tests: `tests/test_v0682.py` (2).
+
+## 0.6.81 – Ladezeiten Werkliste und Kinderecke, Planet Schule unter dem Portalnamen
+- Grundlage: Nachtdiagnose M3 21.11.2026 (`/api/catalog` 20,9 s vier Minuten nach dem Start, `/api/kids` 15,2 s) und Hinweis der Mac-Prüfung 0.6.78 (15 Werke „Das kleine 1x1 der Artenkunde“ heißen noch „Planet Schule“). Basis 0.6.80.
+- Vorab gebaut nach dem Start: zusätzlich zur bisherigen Liste („Alle anzeigen“) die Startansicht der Werkliste (Serien bzw. Filme, „Noch nicht geladen“), danach die Kinderecke (Ereignisse `catalog_listing_prewarmed` mit `downloaded`, `kids_shelf_prewarmed`). Auf der synthetischen Kopie mit 686.000 Werken (warmer Cache) 1,0–1,5 s je Aufbau; auf Björns Gerät nicht gemessen.
+- `kids_catalog.shelf`: ist die Liste älter als 120 s, antwortet die Kinderecke sofort mit der bisherigen und erneuert sie im Hintergrund (ein Aufbau gleichzeitig). `invalidate` verwirft weiter sofort.
+- Diagnose: `catalog_slow_parts` (Filter ohne Suchtext, ob die Gruppenliste neu gebaut wurde, Aufbauzeit, Laufzeit seit Start) und `kids_slow_parts` (watch, abos, shelf) ab 2 s.
+- Planet Schule: Werke mit automatischer Zuordnung (`matched`) auf den Portalnamen werden einmal neu erkannt; vom Nutzer gewählte (`manual`) bleiben. Merker `portal_reseed_v0681` (läuft auch nach 0.6.78 erneut).
+- Tests: `tests/test_v0681.py` (3), `tests/test_v0678.py` angepasst.
+
 ## 0.6.80 – 0.6.79 mit Gesamtgrenze „ohne Grenze“ als Standard
 - Björn (21.11.2026, Entscheidungskarte): „Ohne Grenze starten“. `youtube_abos.TOTAL_DEFAULT_GB = 0`: nach der Installation wird nichts gelöscht; der Platz für das IMDb-Update bleibt frei; die Gesamtgrenze stellt er unter YouTube → Abos selbst ein. 0.6.79 (Standard 30 GB) zurückgezogen, nie ausgegeben.
 

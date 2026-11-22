@@ -158,8 +158,8 @@ def data_root(home=None, wait=0.0, log=None) -> Path:
                     'Es wurde nichts verändert und kein neuer, leerer Katalog angelegt.' % root)
             info = revert_info(home)
             if info:
-                text += ('\n\nAlternativ „Bisherigen Ort verwenden“: startet mit dem Datenstand in\n%s\n(Stand %s). '
-                         'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (info['path'], info['stand'] or 'unbekannt'))
+                text += ('\n\nAlternativ „%s“: startet mit dem Datenstand in\n%s\n(Stand %s). '
+                         'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (revert_label(info), info['path'], info['stand'] or 'unbekannt'))
             try:
                 (home / PROBLEM_FILE).write_text(text + '\n', encoding='utf-8')
             except OSError:
@@ -241,8 +241,8 @@ def lost_text(root, home):
             'die Netzwerkfreigabe wieder verbinden und erneut starten.' % root)
     info = revert_info(home)
     if info:
-        text += ('\n\nAlternativ „Bisherigen Ort verwenden“: startet mit dem Datenstand in\n%s\n(Stand %s). '
-                 'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (info['path'], info['stand'] or 'unbekannt'))
+        text += ('\n\nAlternativ „%s“: startet mit dem Datenstand in\n%s\n(Stand %s). '
+                 'Die Daten auf dem Laufwerk bleiben dabei unverändert.' % (revert_label(info), info['path'], info['stand'] or 'unbekannt'))
     return text
 
 
@@ -316,7 +316,15 @@ def is_sqlite(path) -> bool:
 
 
 def _skip_name(name) -> bool:
-    return name in SKIP_NAMES or name in MARKERS or name.endswith(SKIP_SUFFIXES)
+    # 0.6.86 (Diagnose MacBook Air 22.11.2026): macOS legt auf exFAT/FAT/SMB zu jeder Datei eine Hilfsdatei
+    # „._Name“ (AppleDouble) an; auf APFS werden daraus Dateiattribute, die Datei gibt es am Ziel nicht. Die
+    # Abschlussprüfung meldete „._dailyme.sqlite3 fehlt“ und brach jeden Umzug von einem exFAT-Laufwerk weg ab.
+    return name in SKIP_NAMES or name in MARKERS or name.endswith(SKIP_SUFFIXES) or name.startswith('._')
+
+
+def revert_label(info) -> str:
+    """0.6.86: Knopftext für den Rückweg – der „bisherige Ort“ kann der Standardordner sein."""
+    return 'Standardordner verwenden' if info and info.get('is_default') else 'Bisherigen Ort verwenden'
 
 
 def walk(source, top_exclude=(), exclude=()):
@@ -762,7 +770,7 @@ def inspect(kind, source, target, *, home=None, others=(), exclude=(), mode='cop
         if kind == 'system':
             if (p / 'catalog.db').is_file() and (is_home or (p / DATA_MARKER).is_file()):
                 result['existing_data'] = True
-            entries = [x for x in p.iterdir() if x.name not in SKIP_NAMES]
+            entries = [x for x in p.iterdir() if x.name not in SKIP_NAMES and not x.name.startswith('._')]
             if entries and not is_home and not staging.is_file() and not result['existing_data']:
                 problems.append('Der Zielordner ist nicht leer. Bitte einen leeren oder neuen Ordner wählen.')
         if kind == 'imdb' and is_sqlite(p / IMDB_DB):
@@ -1031,6 +1039,8 @@ def remove_verified(source, target, *, top_exclude=(), exclude=(), progress=None
             continue
         try:
             full.unlink()
+            # 0.6.86: die AppleDouble-Hilfsdatei gehört zur gelöschten Datei (sonst bleibt der Ordner stehen)
+            Path(full.parent, '._' + full.name).unlink(missing_ok=True)
             for extra in (Path(str(full) + '-wal'), Path(str(full) + '-shm')):
                 if is_sqlite(dst):
                     extra.unlink(missing_ok=True)
@@ -1665,6 +1675,8 @@ def main(argv=None):
         if not info:
             return 1
         print('%s (Stand %s)' % (info['path'], info['stand'] or 'unbekannt'))
+        if info.get('is_default'):
+            return 4        # 0.6.86: Rückweg ist der Standardordner (Knopf „Standardordner verwenden“)
         return 0
     try:
         info = revert_system(home)

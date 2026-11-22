@@ -107,21 +107,81 @@ def portal_series(topic,title):
     if not (2<=len(series)<=80) or not episode or key(series)==key(topic):return None
     return episode,series
 
+def portal_identity(m,topic=''):
+    """0.6.84: a series identity that is only the portal („planet schule“ ARD Mediathek, TVDB „Planet Schule“).
+    0.6.87: or a subject word that is the offer's topic (IMDb series „Doku“ for the ZDF topic „Doku“)."""
+    if not m or m.get('kind')!='series':return False
+    name=key(m.get('title'))
+    return name in PORTAL_TOPICS or bool(topic) and name==key(topic) and name in TEMPLATE_GENERIC
+
+def template_topic(topic,title=''):
+    """0.6.84: True if a series template may be learned or used for this topic.
+
+    Mac-Prüfung 0.6.82: the template learned for the topic „planet schule“ (ARD Mediathek, the portal) gave every
+    re-recognised work under that topic the portal identity again within seconds (series_template_candidate), and
+    propagate_series carried it to all works of the Reihe („Natur nah“: 99 works). A portal or section topic
+    names no series; an offer titled „<Folge> · <Reihe>“ names its own."""
+    import metadata
+    if not topic or key(topic) in PORTAL_TOPICS or key(topic) in TEMPLATE_GENERIC or metadata.generic_topic(topic):return False
+    return not portal_series(topic,title)
+
+# 0.6.86 (Diagnose MacBook Air 22.11.2026, 0.6.85): templates „Sport“ and „Masterclass“ – subjects, not series
+# („Lisy Christl – Masterclass Kostümbild …“ belongs to the film). Single words naming a subject or a kind of
+# programme are never learned as a series template; real one-word Sendungen („Puls“, „Bounce“) stay possible.
+TEMPLATE_GENERIC={'sport','sports','masterclass','kultur','wissen','geschichte','gesellschaft','unterhaltung','comedy',
+    'kabarett','satire','konzert','konzerte','interview','interviews','talk','doku','dokus','dokumentation','dokumentationen',
+    'reportage','reportagen','nachrichten','news','magazin','magazine','kinder','familie','ratgeber','verbraucher',
+    'gesundheit','wirtschaft','religion','sendungen','videos','clips','highlights','extras','bonus','trailer','shorts',
+    'wissenschaft','technik','digital','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur','essen',
+    'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme'}
+
+def generic_identity_works(c,after='',limit=500):
+    """0.6.86: identified works whose series identity is a subject word taken from their topic (template „Sport“).
+    Read only; (rows with best offer payload, last id or None)."""
+    marks=','.join('?'*len(TEMPLATE_GENERIC))
+    rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+        FROM works w WHERE w.id>? AND w.state='identified' AND w.kind='series' AND lower(w.title) IN (%s)
+          AND lower(w.topic)=lower(w.title) ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
+    return rows,(rows[-1]['id'] if rows else None)
+
+def drop_portal_templates(c):
+    """0.6.84: forget templates learned for a portal/section topic or with a portal identity (returns count)."""
+    gone=0
+    for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
+        try:m=json.loads(meta or '{}')
+        except (TypeError,ValueError):m={}
+        if not template_topic(topic) or portal_identity(m,topic):
+            gone+=c.execute('DELETE FROM series_templates WHERE topic=? AND provider=? AND reference=?',(topic,provider,ref)).rowcount
+    return gone
+
 def portal_reseed(c,limit=500,after=''):
     """0.6.78, once (see PORTAL_TOPICS): automatic works of a portal topic whose series is in the title are
     recognised again from the sender data. User decisions, matches and confirmed episodes stay.
     Returns (changed, last id or None)."""
-    rows=c.execute("""SELECT * FROM works WHERE id>? AND lower(topic) IN (%s) ORDER BY id LIMIT ?"""
-                   %','.join('?'*len(PORTAL_TOPICS)),(after,*sorted(PORTAL_TOPICS),limit)).fetchall()
+    # 0.6.85 (Mac-Prüfung 0.6.84): also works whose identity is the portal under another or an empty topic
+    # („Sarah Baatout … · Women of Science“ TVDB 461332 matched, „Rafik Schami · Der Erzähler“ ARD „Planet Schule“).
+    marks=','.join('?'*len(PORTAL_TOPICS))
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND (lower(topic) IN (%s) OR lower(title) IN (%s)) ORDER BY id LIMIT ?"""
+                   %(marks,marks),(after,*sorted(PORTAL_TOPICS),*sorted(PORTAL_TOPICS),limit)).fetchall()
     changed=0
     for row in rows:
-        if row['state'] not in ('pending','retry','review','identified','format'):continue
+        # 0.6.81 (Mac-Prüfung 0.6.78: 15 Werke „Das kleine 1x1 der Artenkunde“ blieben „Planet Schule“): an automatic
+        # match whose identity is the portal itself is no match of the programme; a user's choice ('manual') stays.
+        portal=key(row['title']) in PORTAL_TOPICS
+        if row['state']=='matched' and portal:pass
+        elif row['state'] not in ('pending','retry','review','identified','format'):continue
         try:m=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):continue
-        if m.get('scan_requested') or m.get('episode_verified'):continue
-        if row['state']=='format' and m.get('format_grouping') not in ('single','contribution','part',None):continue
+        if m.get('scan_requested'):continue
+        # 0.6.82 (Mac-Prüfung 0.6.81): an episode "confirmed" against the portal itself (TVDB „Planet Schule“) or a
+        # contribution of the Sendung „planet schule“ (ARD Mediathek) is no evidence for the programme.
+        if m.get('episode_verified') and not portal:continue
+        if row['state']=='format' and not portal and m.get('format_grouping') not in ('single','contribution','part',None):continue
         source=best_source(c,row['id'])
-        if not source or not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
+        if not source:continue
+        if portal and key(source.get('topic') or row['topic']) not in PORTAL_TOPICS:
+            source=dict(source,topic=next(iter(PORTAL_TOPICS)))      # read the title as the portal names it
+        if not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
         fresh=seed(source)
         if row['kind']=='series' and key(row['title'])==key(fresh['title']):continue
         fresh['reason']='Reihe aus dem Titel (Planet Schule); neu erkennen'
@@ -132,6 +192,14 @@ def portal_reseed(c,limit=500,after=''):
 def seed(row):
     title=cleaned(row.get('title'));topic=cleaned(row.get('topic'));desc=core.clean(row.get('description',''));m=core.identify({**row,'title':title})
     ep=EP.search(title);reihe=portal_series(topic,title)
+    if m['kind']=='series' and topic and not ep and key(m['title'])==key(topic):
+        # 0.6.87: core.identify names the topic as series when the text says „Serie“; a subject or section topic
+        # („Doku“, „Sport“, „Serien“) is no series – the numbered part of the title may be one.
+        import metadata
+        if metadata.generic_topic(topic):
+            part=metadata.part_series(title)
+            if part and not metadata.generic_topic(part):m.update(title=part)
+            else:m.update(kind='unknown',title=title,episode_title='')
     if reihe:
         # 0.6.78: Planet Schule names the series after the dot ("Das schnelle Pendel · Achtung! Experiment").
         m.update(kind='series',year=None,title=reihe[1],episode_title=reihe[0])
@@ -195,7 +263,7 @@ def mark_explicit_extra(c,w,source):
 def origin_meta(c,row):
     """Seed metadata of an offer as on import (including a unique series template) and the template used."""
     m=seed(row);template=None
-    if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900:
+    if m['kind'] in ('unknown','series') and 300<=int(row.get('duration') or 0)<=3900 and template_topic(row.get('topic'),cleaned(row.get('title'))):
         options=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(row.get('topic')),)).fetchall()
         if len(options)==1:template=json.loads(options[0][0])
     if template and not m.get('video_role'):
@@ -215,6 +283,7 @@ def series_template_candidate(c,row,source):
     if video_causality.explicit_format(source):return None
     if not 300<=int(source.get('duration') or 0)<=3900:return None
     if key(topic)==key(source.get('title')):return None
+    if not template_topic(topic,cleaned(source.get('title'))):return None
     templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
     if len(templates)!=1:return None
     known=json.loads(templates[0][0])
@@ -1281,6 +1350,88 @@ def editions_waiting(c,limit=5000,after='',refs=()):
             out.append(row[0]);continue
         if not (DATED_DAY.search(title) or GUEST.match(title)):continue
         if recurring_edition(meta,source)=='edition':out.append(row[0])
+    return out,(rows[-1][0] if rows else None)
+
+# 0.6.83 (Mac-Abfrage Runde 4, 21.11.2026): „Hallo Niedersachsen“ 4.442 Beiträge von 1–4 Minuten waren „ohne
+# Treffer“: no format word in the name, no IMDb episode list, no runtime to compare. Kids' short series (5–7-minute
+# cartoons) look the same by length, so kids channels and genres never qualify, and the rule applies only after
+# IMDb listed no episode for the series.
+KIDS_CHANNELS={'kika','kika.de','zdf-tivi','zdftivi','toggo','super rtl'}
+KIDS_GENRES=('kinder','kids','children','family','familie','animation','zeichentrick')
+FICTION_TOPIC=re.compile(r'(?i)serie|fiktion|fiction|kurz und witzig|kinder|kids|zeichentrick|animation|comedy|sketch')
+def clip_sendung_show(c,show_key,exclude_work='',limit=128):
+    """0.6.83: True if a Sendung publishes almost only short clips: at least 20 active offers, at least 90 % shorter
+    than 10 minutes, median below 5 minutes (bounded, indexed sample; read only).
+
+    0.6.85 (Mac-Prüfung 0.6.84): a series of short episodes looks the same by length – JoNaLu-Minis (pre-school
+    cartoon, channel „ZDF“, no genre), ARTE „Alte Schachteln aus Belgien“/„Bilder allein zuhaus“ (rubric „Kurz und
+    witzig“), „Erklär’s mir“ (Planet Schule). A contribution belongs to a Sendung that also broadcasts whole
+    editions (Hallo Niedersachsen): at least one active offer of 20 minutes or more is required."""
+    if not show_key:return False
+    if not c.execute("""SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
+        WHERE w.show_key=? AND CAST(json_extract(o.payload,'$.duration') AS INTEGER)>=1200 LIMIT 1""",(show_key,)).fetchone():return False
+    rows=c.execute("""SELECT CAST(json_extract(o.payload,'$.duration') AS INTEGER) d
+        FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1
+        WHERE w.show_key=? AND w.id!=? LIMIT ?""",(show_key,exclude_work,min(max(20,int(limit)),256))).fetchall()
+    values=sorted(float(r[0]) for r in rows if r[0] and r[0]>0)
+    if len(values)<20:return False
+    short=sum(1 for v in values if v<600)
+    return short*10>=len(values)*9 and values[len(values)//2]<300
+
+def clip_sendung_offer(meta,source):
+    """0.6.83: the offer itself may be a contribution of a clip Sendung (short, no number, no kids programme)."""
+    if not source or meta.get('kind')!='series' or meta.get('scan_requested') or has_episode(meta):return False
+    if str(source.get('channel') or '').strip().lower() in KIDS_CHANNELS:return False
+    # 0.6.85: fiction and kids rubrics, portals and sections name no news/magazine Sendung
+    topic=str(source.get('topic') or '')
+    if not template_topic(topic) or FICTION_TOPIC.search(topic):return False
+    genres=' '.join(str(g) for g in (meta.get('genres') or [])).lower()
+    if any(w in genres for w in KIDS_GENRES):return False
+    title=cleaned(source.get('title'))
+    if not title or TRAILER.search(title) or EDITION_NUMBERING.search(title) or EP.search(title):return False
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):return False
+    return 0<duration<600
+
+def clip_sendung_filed(c,after='',limit=200):
+    """0.6.85: show keys of works filed by clip_sendung_v0683, in id order (read only); (keys, last id or None)."""
+    rows=c.execute("""SELECT id,show_key FROM works WHERE id>? AND state='format'
+        AND json_extract(meta,'$.format_rule')='clip_sendung_v0683' ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    return sorted({r[1] for r in rows if r[1]}),(rows[-1][0] if rows else None)
+
+def undo_clip_sendung(c,show_key):
+    """0.6.85: take back all clip_sendung_v0683 filings of a Sendung the rule no longer covers (one transaction, so
+    no sibling is filed again by the „Sendung with editions“ rule meanwhile). Returns the number taken back."""
+    if clip_sendung_show(c,show_key):
+        rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+            FROM works w WHERE w.show_key=? AND w.state='format' AND json_extract(w.meta,'$.format_rule')='clip_sendung_v0683'""",(show_key,)).fetchall()
+        rows=[r for r in rows if not (r['payload'] and clip_sendung_offer(dict(json.loads(r['meta'] or '{}'),state=None),json.loads(r['payload'])))]
+    else:
+        rows=c.execute("""SELECT * FROM works WHERE show_key=? AND state='format'
+            AND json_extract(meta,'$.format_rule')='clip_sendung_v0683'""",(show_key,)).fetchall()
+    return sum(1 for r in rows if undo_segment(c,r,'Kurzserie oder Kinderprogramm; Beitrags-Einordnung zurückgenommen (0.6.85)','v0685'))
+
+def parked_refilable(c,limit=2000,after=''):
+    """0.6.83: queue entries parked as „ohne Treffer“ (up to 30 days) that the current rules file as edition or
+    contribution. Read only; returns (ids, last id or None).
+
+    Mac-Abfrage Runde 4: 99.533 entries "unresolved", only 72 of them due – most were checked by an older version
+    (logo! „vom Donnerstag, 4. Juni 2026“ is an edition today). The episode queue decides again with today's rules."""
+    rows=c.execute("""SELECT q.work_id,w.meta,w.show_key,(SELECT o.payload FROM offers o WHERE o.work_id=q.work_id
+            AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+        FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.work_id>? AND q.last_outcome IN ('unresolved','no_imdb_episodes') AND q.next_try>?
+          AND w.state='identified' ORDER BY q.work_id LIMIT ?""",(after,time.time(),limit)).fetchall()
+    out=[];sendung={};clips={}
+    for wid,raw,show,payload in rows:
+        if not payload:continue
+        try:meta=json.loads(raw or '{}');source=json.loads(payload)
+        except (TypeError,ValueError):continue
+        if show not in sendung:sendung[show]=sendung_with_editions(c,show)
+        if recurring_edition(meta,source,sendung[show]):out.append(wid);continue
+        if clip_sendung_offer(meta,source):
+            if show not in clips:clips[show]=clip_sendung_show(c,show)
+            if clips[show]:out.append(wid)
     return out,(rows[-1][0] if rows else None)
 
 def unresolved_imdb_series(c):

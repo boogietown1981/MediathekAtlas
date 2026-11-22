@@ -1,4 +1,40 @@
-# MediathekAtlas · 0.6.80
+# MediathekAtlas · 0.6.87
+
+## Neu in 0.6.87: Themenwörter werden keine Serie
+
+- Themen wie „Doku“, „Sport“ oder „Masterclass“ werden weder als Serie gesucht noch als Serie übernommen (vorher fand IMDb eine Serie „Doku“ für 93 ZDF-Werke).
+
+## Neu in 0.6.86 (nicht ausgegeben, in 0.6.87 enthalten): Umzug vom USB-Laufwerk, Heilungen vor der Erkennung
+
+- Ein Umzug des Speicherorts von einem exFAT-/USB-Laufwerk scheitert nicht mehr an den macOS-Hilfsdateien „._Name“. Sie werden weder kopiert noch geprüft und beim Aufräumen mit ihrer Datei entfernt.
+- Der Rückweg-Knopf heißt „Standardordner verwenden“, wenn der bisherige Datenstand im Standardordner liegt.
+- Einmalige Korrekturen der Erkennung (Planet Schule, Kurzserien, Themen-Vorlagen) laufen jetzt fertig, bevor Erkennung und Folgensuche starten (höchstens 10 Minuten Wartezeit).
+- Themen wie „Sport“ oder „Masterclass“ werden nicht mehr als Serienvorlage gelernt; Werke, die so eine Identität bekommen haben, werden neu erkannt.
+
+## Neu in 0.6.85: Kurzserien bleiben Serien, letzte Planet-Schule-Werke
+
+- Kurze Clips gelten nur dann als Beitrag einer Sendung, wenn die Sendung auch ganze Ausgaben (ab 20 Minuten) zeigt; Kurzserien wie „JoNaLu-Minis“ oder ARTE „Kurz und witzig“ bleiben Serien. Schon so abgelegte Werke werden zurückgenommen.
+- Werke, die unter einem anderen oder leeren Thema noch „Planet Schule“ heißen, bekommen ihre Reihe aus dem Titel.
+
+## Neu in 0.6.84 (nicht ausgegeben, in 0.6.85 enthalten): Planet Schule bleibt wirklich bei seiner Reihe
+
+- Die gelernte Serienvorlage für das Thema „planet schule“ gab neu erkannten Werken sofort wieder den Portalnamen; sie wird vergessen, für Portale und Rubriken nicht mehr gelernt, und ein Treffer, der nur das Portal ist („Planet Schule“ bei TVDB), wird nie automatisch übernommen. Betroffene Werke werden einmal neu erkannt.
+
+## Neu in 0.6.83 (nicht ausgegeben, in 0.6.84 enthalten): mehr Sendungsbeiträge erkannt, Abo-Schalter für ungesehene Videos
+
+- Beiträge von Sendungen, die fast nur Kurzclips veröffentlichen und keine Folgenliste haben (z. B. „Hallo Niedersachsen“), werden als Beitrag der Sendung abgelegt statt „ohne Treffer“. Kinderprogramme sind ausgenommen.
+- Einträge der Folgensuche, die eine ältere Version bis zu 30 Tage als „ohne Treffer“ geparkt hat, werden einmal mit den heutigen Regeln neu geprüft, wenn sie danach Ausgabe oder Beitrag wären.
+- Abo-Verwaltung: neuer Schalter je Abo „Wenn voll: auch ungesehene Videos löschen (älteste zuerst)“. Standard aus. Angeheftete, als Favorit markierte und angefangene Videos bleiben immer; gelöscht wird nur, wenn das Abo sein Speicherlimit erreicht, nie beim Update selbst.
+
+## Neu in 0.6.82 (nicht ausgegeben, in 0.6.83 enthalten): Planet Schule bleibt bei seiner Reihe
+
+- Die Reihe aus dem Titel („Wasserinsekten · Natur nah“ → „Natur nah“) wird von der ARD Mediathek nicht mehr durch den Portalnamen „planet schule“ ersetzt; betroffene Werke werden einmal neu erkannt.
+
+## Neu in 0.6.81 (nicht ausgegeben, in 0.6.82 enthalten): schnellere Werkliste und Kinderecke
+
+- Die Startansicht der Werkliste und die Kinderecke werden nach dem Start im Hintergrund vorbereitet; die Kinderecke zeigt danach immer sofort ihre Liste und erneuert sie im Hintergrund.
+- Langsame Seiten nennen in der Diagnose, woran es lag (Filter, Neuaufbau, Teilzeiten).
+- Planet Schule: Auch Werke, die automatisch nur dem Portal „Planet Schule“ zugeordnet waren, bekommen ihre Reihe.
 
 ## Neu in 0.6.80 (= 0.6.79 mit Gesamtgrenze „ohne Grenze“ als Standard): Speicher für Abos und das IMDb-Update
 

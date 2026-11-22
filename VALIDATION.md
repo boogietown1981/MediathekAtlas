@@ -1,5 +1,33 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.87 – Themenwörter bei Suche und Auswahl (22. November 2026)
+- Automatisch: gesamte Python-Suite (1.848, alle grün nach Korrektur des neuen Tests), Node-Tests, Klicktest; neu `tests/test_v0687.py`: „Doku“/„Sport“/„Masterclass“/„Kultur“ werden nicht als Serie gesucht und nicht Serie aus dem Senderhinweis, „Terra X“ weiter; Serie „Doku“ nie für Thema „Doku“. Gegenprobe auf 0.6.86: beide Tests rot.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).
+
+## 0.6.86 – Umzug exFAT, Heilungen zuerst, Themen-Vorlagen (22. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0686.py`: `._`-Dateien weder kopiert noch geprüft, beim Aufräumen entfernt, Ziel nur mit Hilfsdateien leer; Knopftext je Ziel; Folgen-Arbeiter wartet auf die Heilungen und läuft danach, Frist öffnet; „Sport“-Vorlage gelöscht und Werk neu erkannt, „Puls“ bleibt.
+- Nicht geprüft: echter Umzug exFAT → APFS auf dem Mac (Prüfliste), Wirkung auf Björns Bestand.
+
+## 0.6.85 – Kurzserien, Planet Schule ohne Portal-Thema (21. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0685.py`: Kurzserie ohne ganze Ausgabe bleibt Serie, Rubrik „Kurz und witzig“/Portal nie, Rücknahme abgelegter Kurzserien (Magazin-Clips bleiben, kein erneutes Ablegen), Portal-Identität unter leerem/anderem Thema neu erkannt.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).
+
+## 0.6.84 – Planet Schule über die Serienvorlage (21. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0684.py`: kompletter Weg mit vorhandener Portal-Vorlage, echter ARD-Seitenauswertung und TVDB-Portaltreffer; alle Werke behalten die Reihe aus dem Titel, keine neue Vorlage, Neuimport ohne Vorlage. Gegenprobe: derselbe Test auf dem Code von 0.6.82 endet mit „planet schule“ / ARD Mediathek wie in der Mac-Prüfung.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).
+
+## 0.6.83 – Erkennung Runde 4, Abo-Schalter (21. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0683.py`: Clip-Sendung ohne IMDb-Folgen wird mit allen Clips Beitrag, ganze Ausgabe bleibt; KiKA, Genre Animation und gemischte Sendung bleiben; geparkte logo!-Ausgabe und Clips wieder fällig, Drama-Folge nicht, nur einmal. `tests/test_v0679.py`: Schalter aus behält ungesehene Videos, Schalter an löscht das älteste ungesehene, angeheftete/Favoriten/angefangene bleiben.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste), Abo-Schalter nur im Testordner.
+
+## 0.6.82 – Planet Schule gegen ARD-Mediathek-Erkennung (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0682.py`: ARD-Seite mit Reihe „planet schule“ liefert keinen Kandidaten, „Servicezeit“ weiter; Werke unter dem Portal (identified ARD, format/segment, matched TVDB mit episode_verified) neu erkannt, manual bleibt.
+- Nicht geprüft: Verhalten nach mehreren Stunden Erkennung auf Björns Bestand (Prüfliste).
+
+## 0.6.81 – Ladezeiten, Planet Schule (21. November 2026)
+- Automatisch: gesamte Python-Suite, neu `tests/test_v0681.py`: matched-Werk unter „Planet Schule“ neu erkannt, manual bleibt; veraltete Kinderecke antwortet sofort und wird im Hintergrund erneuert; Vorabaufbau und Zeitmessung im Server. Messung auf synthetischer Kopie (686.000 Werke): Gruppenliste 1,0–1,5 s.
+- Nicht geprüft: Ladezeiten auf Björns Gerät (Prüfliste).
+
 ## 0.6.80 – Standard „ohne Grenze“ (21. November 2026)
 - Automatisch: gesamte Python-Suite; `tests/test_v0679.py` prüft den Standard 0 (ohne Grenze). Sonst wie 0.6.79.
 

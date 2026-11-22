@@ -83,6 +83,9 @@ class Requeue(Fixture):
                 else:         # an ordinary episode that waits stays waiting
                     c.execute("UPDATE episode_queue SET last_outcome='unresolved',next_try=? WHERE work_id=?", (now + 7 * 86400, row['id']))
             self.assertEqual(c.execute('SELECT COUNT(*) FROM episode_queue').fetchone()[0], 10)
+            # 0.6.83: the fixture's waiting works are 5-minute clips of a Magazin, which requeue_parked makes due;
+            # this test looks at its own once-job only.
+            catalog.set_state(c, 'parked_requeue_v0683', True)
         self.svc.refile_loop()
         with self.db() as c:
             due = c.execute('SELECT COUNT(*) FROM episode_queue WHERE next_try<=?', (time.time(),)).fetchone()[0]

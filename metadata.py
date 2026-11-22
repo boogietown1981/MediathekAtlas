@@ -449,6 +449,13 @@ GENERIC={'film','filme','spielfilm','serien','serie','fernsehfilm','mediathek','
 # "Reise" and "Musik" with the concepts themselves. They name no Sendung (866 works "Reise", 411 "Musik").
 GENERIC|={'reise','musik','politik','tiere','natur','wintersport','doku und reportage','dokumentationen und reportagen',
           'filme dokus kabarett','dokumentation und reportage'}
+# 0.6.87 (Bewertung Erkennung Air 22.11.2026): the ZDF topic „Doku“ was searched as a series and IMDb's series „Doku“
+# taken for 93 works; „Sport“ and „Masterclass“ alike. Subject words name no Sendung (see catalog.TEMPLATE_GENERIC).
+GENERIC|={'sport','sports','masterclass','doku','dokus','dokumentation','dokumentationen','reportage','reportagen',
+          'kultur','wissen','geschichte','gesellschaft','unterhaltung','comedy','kabarett','satire','konzert','konzerte',
+          'wissenschaft','technik','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur',
+          'kurzfilm','kurzfilme','spielfilme','fernsehfilme','dokumentarfilm','dokumentarfilme','gesundheit',
+          'wirtschaft','religion','essen','kochen','garten','reisen','digital'}
 # arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
 # 0.6.49 (Diagnose 20.11.2026 abends): the French, Italian, Spanish and Polish ARTE sections

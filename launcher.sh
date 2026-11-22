@@ -95,12 +95,14 @@ while :; do
   if [ "$STATUS" -eq 3 ] && [ -x "$OSASCRIPT" ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then
     # 0.6.25: dritter Knopf „Bisherigen Ort verwenden“ stellt nur den Zeiger zurück (nichts wird kopiert oder gelöscht).
     REVERT="no"
-    if "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert-info >> "$LOG" 2>&1; then REVERT="yes"; fi
+    # 0.6.86: Status 4 = der bisherige Datenstand liegt im Standardordner; der Knopf heißt dann so.
+    "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert-info >> "$LOG" 2>&1
+    case $? in 0) REVERT="Bisherigen Ort verwenden";; 4) REVERT="Standardordner verwenden";; esac
     ANSWER="$("$OSASCRIPT" - "$STATE_DIR/storage-problem.txt" "$REVERT" <<'APPLESCRIPT'
 on run argv
  set message to read POSIX file (item 1 of argv) as «class utf8»
- if item 2 of argv is "yes" then
-  set answer to display dialog message buttons {"Beenden", "Bisherigen Ort verwenden", "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
+ if item 2 of argv is not "no" then
+  set answer to display dialog message buttons {"Beenden", (item 2 of argv), "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
  else
   set answer to display dialog message buttons {"Beenden", "Erneut versuchen"} default button "Erneut versuchen" with title "MediathekAtlas – Speicherort fehlt" with icon caution
  end if
@@ -109,7 +111,7 @@ end run
 APPLESCRIPT
 )"
     if [ "$ANSWER" = "Erneut versuchen" ]; then continue; fi
-    if [ "$ANSWER" = "Bisherigen Ort verwenden" ]; then
+    if [ "$ANSWER" = "Bisherigen Ort verwenden" ] || [ "$ANSWER" = "Standardordner verwenden" ]; then
       if "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert >> "$LOG" 2>&1; then continue; fi
     fi
     exit 3

@@ -92,7 +92,7 @@ CREATE TABLE IF NOT EXISTS youtube_abos(
   quality TEXT NOT NULL DEFAULT '720', kids INTEGER NOT NULL DEFAULT 1, interval_hours INTEGER NOT NULL DEFAULT 3,
   enabled INTEGER NOT NULL DEFAULT 1, added REAL NOT NULL, checked REAL NOT NULL DEFAULT 0,
   next_check REAL NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', last_new INTEGER NOT NULL DEFAULT 0,
-  via TEXT NOT NULL DEFAULT '', budget_gb REAL NOT NULL DEFAULT 10, UNIQUE(ref, profile));
+  via TEXT NOT NULL DEFAULT '', budget_gb REAL NOT NULL DEFAULT 10, drop_unseen INTEGER NOT NULL DEFAULT 0, UNIQUE(ref, profile));
 CREATE TABLE IF NOT EXISTS youtube_abo_videos(
   abo_id INTEGER NOT NULL, video TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', published TEXT NOT NULL DEFAULT '',
   duration INTEGER, poster TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0,
@@ -160,6 +160,10 @@ def _connect(root):
     db = youtube._connect(root)            # dieselbe Datei youtube.sqlite3 (WAL)
     if db.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='youtube_abos'").fetchone():
         _migrate(db)
+        if 'drop_unseen' not in {r[1] for r in db.execute('PRAGMA table_info(youtube_abos)')}:
+            # 0.6.83: Schalter je Abo, Standard aus (nur Schema, kein Tabellendurchlauf)
+            with db:
+                db.execute('ALTER TABLE youtube_abos ADD COLUMN drop_unseen INTEGER NOT NULL DEFAULT 0')
     db.executescript(SCHEMA)
     return db
 
@@ -231,6 +235,10 @@ def _clean(data, current=None):
         out['label'] = ' '.join(str(data.get('label') or '').split())[:80]
     if 'enabled' in data or not current:
         out['enabled'] = int(data.get('enabled', True) not in (False, 0, '0', 'false', ''))
+    if 'drop_unseen' in data or not current:
+        # 0.6.83 (Björn 21.11.2026: „Ja, als Schalter je Abo“): über dem Budget dürfen auch die ältesten
+        # ungesehenen Videos weichen. Standard aus; nur ein ausdrückliches Ja schaltet ein.
+        out['drop_unseen'] = int(data.get('drop_unseen', False) in (True, 1, '1', 'true', 'on'))
     if 'profile' in data or 'kids' in data or not current:
         out['profile'] = profile_of(data, cur)
         out['kids'] = int(out['profile'] == 'kinder')       # Spalte bleibt für ältere Auswertungen
@@ -802,7 +810,10 @@ def no_room(root, target_dir, extra=0):
 
 
 def _make_room(c, db, abo, now):
-    """Platz für ein neues Video: das älteste schon gesehene Video dieses Abos entfernen."""
+    """Platz für ein neues Video: das älteste schon gesehene Video dieses Abos entfernen.
+
+    0.6.83: Ist ``drop_unseen`` an und gibt es kein gesehenes mehr, weicht das älteste ungesehene, nicht
+    begonnene Video. Gemerkte und angeheftete Videos bleiben immer."""
     import netzkino_downloads, watch_state
     try:
         seen = watch_state.states(Path(abo['_root']))
@@ -827,6 +838,22 @@ def _make_room(c, db, abo, now):
                 pass
             db.execute("UPDATE youtube_abo_videos SET state='expired',reason='gesehen, Platz für Neues' WHERE abo_id=? AND video=?",
                        (abo['id'], row['video']))
+            return True
+    if abo.get('drop_unseen'):
+        for row in rows:
+            mark = seen.get('job:' + row['job_id']) or {}
+            if mark.get('pinned') or mark.get('favorite') or mark.get('done') or float(mark.get('pos') or 0) > 0:
+                continue                 # gemerkt/angeheftet, oder begonnen: bleibt
+            shared = db.execute("SELECT 1 FROM youtube_abo_videos WHERE job_id=? AND abo_id!=? AND state='done'",
+                                (row['job_id'], abo['id'])).fetchone()
+            if not shared:
+                try:
+                    netzkino_downloads.delete_now(c, row['job_id'], now)
+                except ValueError:
+                    pass
+            db.execute("UPDATE youtube_abo_videos SET state='expired',reason='ungesehen, Platz für Neues (Schalter des Abos)' WHERE abo_id=? AND video=?",
+                       (abo['id'], row['video']))
+            _notify('youtube_abo_unseen_removed', abo=abo['id'])
             return True
     return False
 

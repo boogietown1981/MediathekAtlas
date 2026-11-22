@@ -99,7 +99,7 @@ function render(){
    // 0.6.25: sicherer Rückweg – nur umstellen, nichts kopieren oder löschen (Björn, 19.11.2026).
    const rv=data.revert,box2=el('div',undefined,'loc-check');
    box2.append(line('Bisheriger Ort mit vollständigem Datenstand: '+rv.path+(rv.stand?' (Stand '+rv.stand+')':'')+'. Zurückstellen kopiert und löscht nichts; '+rv.current+' bleibt unverändert liegen. Änderungen seit dem Umzug sind dann nicht enthalten.'));
-   const rr=el('div',undefined,'loc-actions'),b=el('button','Bisherigen Ort wieder verwenden');b.type='button';b.disabled=busyMove;
+   const rr=el('div',undefined,'loc-actions'),b=el('button',rv.is_default?'Standardordner wieder verwenden':'Bisherigen Ort wieder verwenden');b.type='button';b.disabled=busyMove;
    b.onclick=()=>{if(!confirm('MediathekAtlas arbeitet nach dem Neustart wieder mit '+rv.path+(rv.stand?' (Stand '+rv.stand+')':'')+'. Die Daten in '+rv.current+' bleiben unverändert liegen. Fortfahren?'))return;busy(b,async()=>{await api('storage-locations',{action:'revert'});await load();if(data.restart_supported&&!data.managed)await restart(b,true);else notice('Umgestellt. Bitte MediathekAtlas neu starten.');});};
    rr.append(b);box2.append(rr);card.append(box2);
   }

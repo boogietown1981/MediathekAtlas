@@ -438,6 +438,7 @@ def encoder_replaced(job_id,old,new):
     local_library.invalidate(old,new);catalog.invalidate_listings(drop=True);unified_index.invalidate()
 ENCODER=encoder.Worker(ROOT,encoder_tools,encoder_replaced,diagnostics.event,diagnostics.error)
 catalog.LISTING_DB=db
+STARTED_MONO=time.monotonic()   # 0.6.81: uptime in slow-page events
 languages.DEFAULT_ROOT=ROOT   # 0.6.5: catalog.item() reads observed stream languages
 catalog.load_listings(ROOT/'listing-cache.json')   # 0.5.57: grouped lists of the last run, shown at once after a start
 def _unified_built(key,index,seconds):
@@ -1182,11 +1183,16 @@ def get_kids_js(self,path):
 @ROUTES.get('/api/kids')
 def get_kids(self,path):
     import watch_state
-    marks=watch_state.overview(ROOT).get('progress',{})
-    with db() as c:data=youtube_abos.kids(ROOT,c,watch=marks)
+    parts={};started=time.monotonic()
+    marks=_timed(parts,'watch',lambda:watch_state.overview(ROOT).get('progress',{}))
+    def abos():
+        with db() as c:return youtube_abos.kids(ROOT,c,watch=marks)
+    data=_timed(parts,'abos',abos)
     # 0.6.46: Kinderfilme und -serien aus dem Katalog (nur Kategorie „Kinder“, kids_catalog.py)
-    try:data['catalog']=kids_catalog.with_progress(_kids_shelf(),marks)
+    try:data['catalog']=kids_catalog.with_progress(_timed(parts,'shelf',_kids_shelf),marks)
     except Exception as e:data['catalog']={'movies':[],'series':[],'error':core.safe_error(e)}
+    total=time.monotonic()-started
+    if total>=2:diagnostics.event('kids_slow_parts',seconds=round(total,2),parts=parts)   # 0.6.81
     return self.send(data)
 
 def _kids_shelf():
@@ -1565,7 +1571,17 @@ def get_portal_archive_detail(self,path):
 @ROUTES.get('/api/catalog')
 def get_catalog(self,path):
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    started=time.monotonic();before=dict(catalog.listing_cache_stats())
     with db() as c:result=catalog.listing(c,query=q.get('query',[''])[0],kind=q.get('kind',[''])[0],genre=q.get('genre',[''])[0],show=q.get('show',[''])[0],offset=q.get('offset',[0])[0],archive=q.get('archive',['0'])[0]=='1',state=q.get('state',[''])[0],sort=q.get('sort',['title'])[0],downloaded=q.get('downloaded',['hide'])[0],collection=q.get('collection',[''])[0])
+    seconds=time.monotonic()-started
+    if seconds>=2:
+        # 0.6.81: a slow page names its filter (no search text) and whether the grouped list had to be built
+        after=catalog.listing_cache_stats()
+        diagnostics.event('catalog_slow_parts',seconds=round(seconds,2),kind=q.get('kind',[''])[0][:12],
+                          downloaded=q.get('downloaded',['hide'])[0][:6],state=q.get('state',[''])[0][:12],
+                          genre=bool(q.get('genre',[''])[0]),search=bool(q.get('query',[''])[0]),show=bool(q.get('show',[''])[0]),
+                          built=after.get('builds',0)-before.get('builds',0),build_seconds=after.get('last_seconds'),
+                          uptime_seconds=round(time.monotonic()-STARTED_MONO))
     return self.send(result)
 
 @ROUTES.get('/api/catalog-tree')
@@ -2546,12 +2562,19 @@ if __name__=='__main__':
         threading.Thread(target=start_service,daemon=True,name='catalog_index_build').start()
         def prewarm_listing():
             # 0.5.55: the first dashboard page must not wait for the grouping of the whole catalogue.
-            for kind in ('movie','series'):
+            # 0.6.81 (Nachtdiagnose 21.11.2026: /api/catalog 20,9 s kurz nach dem Start): auch die Startansicht der
+            # Werkliste (Serien, „Noch nicht geladen“) und danach die Kinderecke werden vorab gebaut.
+            for kind,downloaded in (('movie','all'),('series','all'),('series','hide'),('movie','hide')):
+                if STOP.is_set():return
                 try:
                     started=time.monotonic()
-                    with db() as c:catalog.listing(c,kind=kind,downloaded='all')
-                    diagnostics.event('catalog_listing_prewarmed',kind=kind,seconds=round(time.monotonic()-started,2))
+                    with db() as c:catalog.listing(c,kind=kind,downloaded=downloaded)
+                    diagnostics.event('catalog_listing_prewarmed',kind=kind,downloaded=downloaded,seconds=round(time.monotonic()-started,2))
                 except Exception as e:diagnostics.error('catalog_listing_prewarm_failed',e)
+            try:
+                started=time.monotonic();_kids_shelf()
+                diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2))
+            except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
