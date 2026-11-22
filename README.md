@@ -15,6 +15,11 @@
 ## Neu in 0.6.100: Kanal-Vorschläge mit echten Treffern
 - Unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ kommen Vorschläge jetzt aus den Playlists deiner Abos, aus @Kanal-Erwähnungen in Beschreibungen und Titeln und aus einer YouTube-Suche nach den Schlagwörtern gesehener Videos. Für die Kinderecke werden kindgerechte Kanäle bevorzugt und Prank-, Horror- oder Gaming-Kanäle nach hinten gestellt.
 - Freigeben geht weiterhin erst nach dem Probeschauen; eine Freigabe lädt zum Start die 3 neuesten Videos.
+# MediathekAtlas · 0.6.101
+
+## Neu in 0.6.101: Serien-Nachladen lädt die deutsche Fassung
+- Angefangene Serien und gesehene Filme werden in der deutschen Fassung geladen, nicht als Originalversion mit Untertitel, Hörfassung oder Gebärdensprache, wenn es die deutsche gibt.
+- Fehlen Folgen zwischen der gesehenen und der nächsten ladbaren, nennt der Kasten unter Downloads die Lücke. Das Fenster (Standard 20 Folgen) füllt sich sofort, nicht in Zehnerschritten.
 
 ## Neu in 0.6.98: Kinderecke ohne Nachrichten- und Talkreihen
 - Eine Serie von ARD, ZDF & Co. steht nur noch in der Kinderecke, wenn sie selbst eindeutig Kinderprogramm ist (mindestens 80 % der eingeordneten Folgen, KiKA/TOGGO oder Kinderreihe). Nachrichten-, Talk-, Politik- und Magazinreihen („heute“, „Politik“, „NACHTCAFÉ“, „Abendschau“ …) erscheinen nie, auch wenn einzelne Beiträge „Kinder“ heißen.

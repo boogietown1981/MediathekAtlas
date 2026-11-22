@@ -78,6 +78,30 @@ class SerienNachladen(unittest.TestCase):
         # zweiter Lauf: nichts doppelt
         self.assertEqual(self.run_once(offset=series_autoload.CHECK_EVERY + 1)['queued'], 0)
 
+    def test_0_6_101_deutsche_fassung_vor_omu_und_hoerfassung(self):
+        ids = [self.episode(n) for n in range(1, 3)]
+        german = self.c.execute('SELECT id FROM offers WHERE work_id=?', (ids[1],)).fetchone()[0]
+        for oid, title, rank in (('omu1', 'Abenteuer 2 (Originalversion mit Untertitel)', 10 ** 9),
+                                 ('ad1', 'Abenteuer 2 (Audiodeskription)', 10 ** 9 - 1)):
+            row = {'title': title, 'topic': 'Bibi und Tina', 'channel': 'ARTE.DE', 'duration': 1500,
+                   'url_video_hd': 'https://example.org/%s_1080p.mp4' % oid}
+            self.c.execute('INSERT INTO offers VALUES(?,?,?,?,?,?,1)', (oid, ids[1], json.dumps(row), '', rank, self.now))
+        self.c.commit()
+        self.watch(ids[0])
+        self.run_once()
+        jobs = self.jobs()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]['source']['_id'], german)
+        self.assertNotIn('omu1', jobs[0]['source']['_download_url'])
+
+    def test_0_6_101_luecke_wird_benannt_und_fenster_fuellt_sich_sofort(self):
+        ids = [self.episode(n) for n in (1, 2, 9)] + [self.episode(n) for n in range(20, 60)]
+        self.watch(ids[1])
+        self.run_once()
+        self.assertEqual(len(self.jobs()), 20)                       # Standardgrenze im ersten Lauf
+        self.assertEqual(self.jobs()[0]['metadata']['episode'], 9)
+        self.assertIn('Nach S01E02 geht es mit S01E09 weiter', self.c.execute('SELECT note FROM series_autoload').fetchone()[0])
+
     def test_grenze_je_serie_gleitet_mit_gesehenen_folgen(self):
         ids = [self.episode(n) for n in range(1, 9)]
         self.watch(ids[0])

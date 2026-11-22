@@ -39,7 +39,7 @@ GB_CHOICES = (5, 10, 20, 40, 80)
 GB_DEFAULT = 20
 FIRST_LOOKBACK = 7 * 86400
 CHECK_EVERY = 30 * 60            # Nachschau je aktiver Serie (neue Folgen, gesehene Folgen machen Platz)
-PER_RUN = 10                     # höchstens so viele Aufträge je Serie und Durchlauf
+PER_RUN = max(MAX_CHOICES)        # 0.6.101: das Fenster füllt sich im ersten Lauf (vorher 10 je 30 min)
 GB_PER_HOUR = 1.6                # Schätzung für die HD-Datei der Sender (720p ≈ 3,5 Mbit/s)
 FALLBACK_BYTES = int(0.8 * GB)
 ACTIVE_STATES = ('queued', 'downloading', 'tagging')
@@ -345,7 +345,7 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
             note = room
             break
         job_id = secrets.token_hex(8)
-        source = {**item['source'], '_id': item['id']}
+        source = _with_offer(c, work_id, item, now)
         j = {**item, 'source': source, 'id': job_id, 'state': 'queued', 'received': 0, 'total': 0,
              'autoload_show': show, 'autoload_title': show_row['title'] or item['metadata'].get('title') or '',
              'autoload_at': now}
@@ -354,6 +354,13 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
         size += size_guess
         pending += size_guess
     counts['eligible'] = max(0, counts['eligible'] - len(jobs))     # noch nicht eingereiht
+    # 0.6.101 (Mac-Prüfung: nach S01E09 kam S01E20): Lücke sichtbar machen statt sie stumm zu überspringen
+    if after and last[0] is not None:
+        nxt = (after[0][1]['metadata'].get('season'), after[0][1]['metadata'].get('episode'))
+        if nxt[0] == last[0] and nxt[1] != (last[1] or 0) + 1:
+            gap = ('Nach S%02dE%02d geht es mit S%02dE%02d weiter: die Folgen dazwischen sind beim Sender nicht als Datei '
+                   'verfügbar oder ihre Folgennummer ist noch unbestätigt' % (last[0], last[1] or 0, nxt[0], nxt[1]))
+            note = gap + (' · ' + note if note else '')
     if not note and not jobs and not (after or before):
         note = ('Keine weiteren Folgen mit bestätigter Folgennummer verfügbar' if not unconfirmed else
                 '%d Folgen warten noch auf die Folgenerkennung (Staffel/Folge unbestätigt)' % unconfirmed)
@@ -416,6 +423,56 @@ def run(root, c, settings, now=None):
     return {'enabled': True, 'started': started, 'queued': total}
 
 
+def _version_penalty(row):
+    """0.6.101 (Mac-Prüfung 22.11.: bei „Loulou“ kam die Originalversion mit Untertitel, obwohl es die deutsche Fassung
+    gibt): kleiner ist besser. Deutsche Regelfassung vor OmU/OV/Fremdsprache, vor Hörfassung, Gebärdensprache,
+    Klarer/Leichter Sprache. Gelesen aus Titel und Sendereihe des Angebots (languages.from_title) und dem Sender."""
+    import languages
+    info = languages.from_title(row.get('title'), row.get('topic'))
+    penalty = 0
+    if info.get('original') or [a for a in info.get('audio') or [] if a != 'de']:
+        penalty += 4
+    if info.get('accessibility'):
+        penalty += 2
+    channel = str(row.get('channel') or '').upper()
+    if channel.startswith('ARTE.') and channel != 'ARTE.DE':
+        penalty += 4
+    return penalty
+
+
+def preferred_offer(c, work_id, now=None):
+    """Beste ladbare Fassung eines Werks für das automatische Laden: (Angebots-ID, Quelle, Adresse) oder None."""
+    import catalog
+    import subscriptions
+    now = time.time() if now is None else now
+    best = None
+    for o in c.execute('SELECT id,payload,rank FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC,seen DESC LIMIT 40',
+                       (work_id,)).fetchall():
+        try:
+            row = json.loads(o['payload'])
+        except ValueError:
+            continue
+        row.update(catalog.offer_expiry(c, o['id']))
+        if subscriptions.expired(row, now):
+            continue
+        links = [x for x in catalog.links(row) if x.get('supported') and x.get('url')]
+        if not links:
+            continue
+        key = (_version_penalty(row), -(links[0].get('score') or 0), -(o['rank'] or 0))
+        if best is None or key < best[0]:
+            best = (key, o['id'], row, links[0]['url'])
+    return best[1:] if best else None
+
+
+def _with_offer(c, work_id, item, now):
+    """Quelle des Auftrags auf die bevorzugte Fassung umstellen (sonst die vom Katalog gewählte)."""
+    found = preferred_offer(c, work_id, now)
+    if not found:
+        return {**item['source'], '_id': item['id'], '_download_url': (item.get('best') or {}).get('url') or item['source'].get('_download_url')}
+    offer_id, row, url = found
+    return {**row, '_id': offer_id, '_download_url': url}
+
+
 def film_plan(c, root, download_dir, row, done):
     """0.6.94 (Björn: „auch Filme, die einmal zu Ende geschaut wurden … herunterladen, da die Chance groß ist, dass
     meine Tochter sie noch mal sehen möchte“): eine dauerhafte Offline-Kopie des Films. Wie beim Einzeldownload: erkannt
@@ -452,7 +509,7 @@ def film_plan(c, root, download_dir, row, done):
     room = _space_note(c, root, download_dir, pending_bytes(c) + size_guess)
     if room:
         return [], room.replace('Serien-Downloads', 'Film-Downloads')
-    j = {'id': secrets.token_hex(8), 'source': {**item['source'], '_id': item['id'], '_download_url': item['best']['url']},
+    j = {'id': secrets.token_hex(8), 'source': _with_offer(c, w['id'], item, time.time()),
          'metadata': meta, 'root': str(download_dir), 'quality': 'best', 'target': target, 'state': 'queued',
          'received': 0, 'total': 0, 'autoload_show': row['show_key'], 'autoload_title': row['title'] or meta.get('title') or '',
          'autoload_kind': 'movie', 'autoload_at': time.time()}
