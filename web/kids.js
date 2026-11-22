@@ -169,7 +169,9 @@
     renderChannels();
     const main = $('kids-main'); main.replaceChildren();
     if (state.show) { renderSeries(main); return; }
+    if (state.pending && state.filter !== 'live') main.append(make('p', 'kids-loading', 'Filme und Serien werden noch zusammengestellt …'));
     if (!state.videos.length && !state.movies.length && !state.series.length) {
+      if (state.pending) return;
       const p = make('div', 'kids-empty'); p.append(make('span', 'big', '📺'), document.createTextNode('Hier ist noch nichts zum Anschauen.'));
       p.append(make('small', '', 'Für Eltern: In MediathekAtlas unter Plattformen → YouTube → „Kanal-Abos“ einen Kanal abonnieren. Fertig geladene Videos erscheinen dann hier, auch ohne Internet. Kinderfilme und Kinderserien aus dem Katalog erscheinen, sobald sie nach dem Abgleich eindeutig als „Kinder“ eingeordnet sind.'));
       main.append(p); return;
@@ -233,6 +235,7 @@
       state.movies = (cat.movies || []).map(t => fromCatalog(t, 'movie'));
       state.series = (cat.series || []).map(t => fromCatalog(t, 'series'));
       state.groups = Array.isArray(cat.groups) ? cat.groups : [];
+      state.pending = !!cat.pending;     // 0.6.103: unvollständige Liste nach dem Start sichtbar als „wird geladen“
       if (cat.pending) setTimeout(load, 8000);   // der Katalog wird nach dem Start noch zusammengestellt
     }
     catch (e) { if (!state.videos.length && !state.movies.length) { $('kids-main').replaceChildren(make('p', 'kids-empty', 'Gerade nicht erreichbar. Gleich nochmal versuchen.')); } return; }

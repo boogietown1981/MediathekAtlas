@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.99
+# MediathekAtlas · 0.6.103
+
+## Neu in 0.6.103: Kinderecke wieder gefüllt, Live-Sender spielen
+- 0.6.98 und 0.6.99 zeigten in der Kinderecke keine Filme und Serien, und jeder Live-Sender meldete „'str' object has no attribute 'get'“. Ursache: Ein einziger Titel eines anderen Portals mit anderer Datenform brach den ganzen Listenaufbau ab. Jetzt wird jedes Feld nur in der erwarteten Form gelesen, und ein unlesbarer Titel wird übersprungen und protokolliert statt die Liste zu leeren.
+- Reihen vom Kinderkanal KiKA (z. B. „Wissen macht Ah!“, „Der Krieg und ich“, „KiKA LIVE“) stehen immer in der Kinderecke. Solange die Liste nach dem Start noch entsteht, steht dort „wird noch zusammengestellt“.
 
 ## Neu in 0.6.99: Kinderecke nach Altersfreigabe, Elternbereich, Kindersender live
 - Automatisch in die Kinderecke kommt: alles von KiKA und TOGGO; sonst nur Erkanntes, das eindeutig Kinderprogramm ist oder als Familien-, Animations-, Fantasy- oder Abenteuerfilm eine belegte Altersfreigabe bis zur eingestellten Grenze hat (z. B. Bibi & Tina, Märchen unter „Fantasy“); nie neben Horror, Thriller, Krimi, Erotik, Krieg oder Romantik. Ein Drama ab 12 kommt nicht allein über die Altersfreigabe hinein.

@@ -87,12 +87,13 @@ def _tile(source, kind, title, year, poster, ref=None, series=None, duration=0):
 
 def _from_offer(offer, view):
     """Kachel aus einem Angebot des gemeinsamen Katalogs; None, wenn es hier nicht abspielbar ist."""
-    source, item = offer.get('source'), offer.get('item') or {}
+    offer = _dict(offer)
+    source, item = offer.get('source'), _dict(offer.get('item'))
     if source not in SOURCES:
         return None
     if source == 'mediatheken':
-        meta = item.get('metadata') or {}
-        title = meta.get('title') or (item.get('source') or {}).get('title')
+        meta, src = _dict(item.get('metadata')), _dict(item.get('source'))
+        title = meta.get('title') or src.get('title')
         if item.get('series_parent') or view == 'series':
             show = str(item.get('show_key') or '')
             if not show or len(show) > 200:
@@ -101,7 +102,7 @@ def _from_offer(offer, view):
         if not item.get('available') and not item.get('downloaded'):
             return None
         return _tile(source, 'movie', title, meta.get('year'), meta.get('poster'), ref={'offer': str(item.get('id') or '')},
-                     duration=(item.get('source') or {}).get('duration'))
+                     duration=src.get('duration'))
     item_id = str(item.get('id') or '')
     if source == 'netzkino':
         if item.get('kind') == 'series' or view == 'series':
@@ -137,10 +138,18 @@ def build(root, db, modules=None, merge=True, page=None):
             pending = pending or bool(data.get('pending'))
             for entry in items:
                 # die erste abspielbare Quelle eines zusammengeführten Titels (Reihenfolge des Katalogs)
-                tile = next((t for t in (_from_offer(o, view) for o in entry.get('offers') or []) if t), None)
+                try:
+                    tile = next((t for t in (_from_offer(o, view) for o in _dict(entry).get('offers') or []) if t), None)
+                except Exception as exc:   # 0.6.103: ein Titel mit unerwarteter Form wird übersprungen, nie die ganze Liste
+                    _skipped(entry, exc)
+                    tile = None
                 if tile and tile['id'] not in seen:
                     seen.add(tile['id'])
-                    tile['group'] = group_of(entry)
+                    try:
+                        tile['group'] = group_of(entry)
+                    except Exception as exc:   # 0.6.103: eine unerwartete Angebotsform kostet nie die ganze Liste
+                        _skipped(entry, exc)
+                        tile['group'] = 'mehr'
                     tiles.append(tile)
             offset += len(items)
             if not items or offset >= int(data.get('total') or 0):
@@ -173,15 +182,39 @@ GROUP_CATEGORIES = {'trick': {'Animation'}, 'tiere': {'Natur & Tiere'}, 'wissen'
 MIN_GROUP = 3
 
 
+def _dict(value):
+    return value if isinstance(value, dict) else {}
+
+
+_SKIP_LOGGED = set()
+
+
+def _skipped(entry, exc):
+    """Einen übersprungenen Titel protokollieren (je Fehlerart einmal je Programmlauf)."""
+    kind = '%s: %s' % (type(exc).__name__, str(exc)[:120])
+    if kind in _SKIP_LOGGED:
+        return
+    _SKIP_LOGGED.add(kind)
+    try:
+        import diagnostics
+        diagnostics.event('kids_title_skipped', error=kind, title=str(_dict(entry).get('title') or '')[:80])
+    except Exception:
+        pass
+
+
 def _signals(entry):
-    """(Kategorien, Text) aller Angebote eines zusammengeführten Titels."""
+    """(Kategorien, Text) aller Angebote eines zusammengeführten Titels.
+
+    0.6.103 (Björn 22.11.2026 mit 0.6.99: Kinderecke leer, Live-Sender „'str' object has no attribute 'get'“): bei
+    Plattform-Angeboten ist ``item['source']`` ein Text (Anbietername), kein Angebot wie bei den Mediatheken. Jedes Feld
+    wird deshalb nur gelesen, wenn es die erwartete Form hat."""
     cats, text = set(), [str(entry.get('title') or '')]
     for offer in entry.get('offers') or []:
-        item = offer.get('item') or {}
+        item = _dict(_dict(offer).get('item'))
         for c in item.get('categories') or []:
             if isinstance(c, str):
                 cats.add(c)
-        meta, src = item.get('metadata') or {}, item.get('source') or {}
+        meta, src = _dict(item.get('metadata')), _dict(item.get('source'))
         for value in (item.get('title'), item.get('genre'), meta.get('title'), src.get('topic'), src.get('title')):
             if isinstance(value, str):
                 text.append(value)
@@ -321,10 +354,10 @@ def episodes(root, c, data, source, series_id, marks=None):
         for e in show.get('episodes') or []:
             if e.get('work_id') in blocked or not (e.get('available') or e.get('downloaded')):
                 continue
-            meta, src = e.get('metadata') or {}, e.get('source') or {}
+            meta, src = _dict(e.get('metadata')), _dict(e.get('source'))
             title = meta.get('episode_title') or src.get('title') or meta.get('title')
             out.append(_episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
-                                meta.get('poster') or (show.get('show') or {}).get('poster'), src.get('duration')))
+                                meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration')))
     else:
         import portal_title
         model = portal_title.model(root, source, series_id)
@@ -359,7 +392,7 @@ KIDS_FRIENDLY = ('Kinder', 'Familie', 'Animation', 'Abenteuer', 'Fantasy', 'Kom�
                  'Wissen & Technik', 'Musik', 'Musical')
 NOT_KIDS_SHOW = re.compile(
     r'(?i)\b(?:heute|tagesschau|tagesthemen|nachrichten|news|journal|politik\w*|abendschau|landesschau|aktuelle kamera|'
-    r'brisant|frontal|zib|nachtcaf[eé]|3nach9|extra 3|talk\w*|magazin\w*|review|schlager\w*|crisis|krieg\w*|maischberger|'
+    r'brisant|frontal|zib|nachtcaf[eé]|3nach9|extra 3|talk\w*|magazin\w*|review|schlager\w*|crisis|maischberger|'
     r'lanz|illner|hart aber fair|presseclub|kontraste|panorama|monitor|plusminus|report|mex|markt|reportage\w*|'
     r'kriminal\w*|aktenzeichen|tatort|polizeiruf|wetter|sportschau|sportstudio)\b')
 KIDS_NAME = re.compile(r'(?i)kinder|\bkids?\b|\bkika\b|logo!|\btivi\b|sendung mit der maus|sandmännchen|checker|toggo')
@@ -409,6 +442,12 @@ def show_is_kids(c, show_key, title='', query=None):
     """Ist die ARD/ZDF-Reihe selbst eindeutig Kinderprogramm? (Regel oben; 0.6.99: Elternfreigabe/-sperre gehen vor)"""
     import kids_rules
     if kids_rules.show_allowed(c, show_key):
+        return True
+    # 0.6.103 (Björn: „alles was definitiv von KiKA oder TOGGO kommt“): eine Reihe mit Angeboten vom Kindersender
+    # gilt vor Anteil und Namenssperre („Wissen macht Ah!“ 48 %, „Der Krieg und ich“, „KiKA LIVE“)
+    if c.execute("SELECT 1 FROM works w JOIN offers k ON k.work_id=w.id AND k.active=1 WHERE w.show_key=? "
+                 "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s) LIMIT 1" % ','.join('?' * len(kids_rules.ALWAYS_CHANNELS)),
+                 [show_key] + list(kids_rules.ALWAYS_CHANNELS)).fetchone():
         return True
     if show_name_blocked(title):
         return False

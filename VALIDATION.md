@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.103 – Kinderecke leer / Live-Sender-Fehler (22. November 2026)
+- Automatisch: tests/test_v0703_kinderecke_datenformen.py (2, auf 0.6.99 rot), gesamte Suite, Klicktests. Echte Daten (Liste gefüllt, Live-Sender spielen, kein kids_shelf_prewarm_failed): Mac-Prüfung (PRUEFLISTE in releases/0.6.103).
+
 ## 0.6.99 – Kinderecke: Altersgrenze, Elternfreigabe, Kindersender live (22. November 2026)
 - Automatisch: tests/test_v0699_kinder_freigabe.py (8), gesamte Suite, Klicktests kids_corner.cjs (Live-Sender, Elternbereich, Freigeben) und click_all.cjs. Wikidata-FSK am echten Netz und Zahlen an echten Daten: Mac-Prüfung (PRUEFLISTE in releases/0.6.99).
 
