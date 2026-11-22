@@ -26,7 +26,13 @@ class Discover(Fixture):
                               {'snippet': {'type': 'singlePlaylist'}, 'contentDetails': {'playlists': ['PLx']}}]}
         if endpoint == 'channels' and query.get('id') == FEATURED:
             return {'items': [{'id': FEATURED, 'snippet': {'title': 'Tierkanal'}}]}
+        if endpoint == 'playlists':
+            return {'items': []}
         return self.api(endpoint, query)
+
+    def setUp(self):
+        super().setUp()
+        mock.patch.object(yd, 'find_tool', return_value=None).start()
 
     def prepare(self):
         abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 2}, now=NOW)
@@ -83,6 +89,7 @@ class Discover(Fixture):
         result = disc.decide(self.root, '@malkanal', 'kids', now=NOW + 30)
         abos = {a['id']: a for a in ab.overview(self.root)['abos']}
         self.assertEqual(abos[result['abo']]['profile'], 'kinder')
+        self.assertEqual(abos[result['abo']]['start_count'], disc.START_COUNT)
         self.assertEqual(abos[result['abo']]['ref'], 'UC' + 'm' * 22)
         disc.decide(self.root, '@andere', 'reject', now=NOW + 40)
         self.run_discover()
@@ -122,6 +129,122 @@ class Discover(Fixture):
         self.assertIn("'--write-description'", (ROOT / 'youtube_downloads.py').read_text(encoding='utf-8'))
         kids = (ROOT / 'web' / 'kids.js').read_text(encoding='utf-8')
         self.assertNotIn('discover', kids)                               # Kinderecke zeigt nie Vorschläge
+
+
+class SourcesWithoutChannelsTab(Discover):
+    """0.6.98 (Mac-Prüfung 0.6.90): YouTube liefert keinen Reiter „Kanäle“ mehr; Vorschläge kommen aus Playlists
+    und aus nachgeholten Beschreibungen."""
+
+    def test_playlists_and_backfilled_descriptions_without_key(self):
+        abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 2}, now=NOW)
+        ab.check(self.root, abo, now=NOW, request=self.api)
+        for j in self.jobs():
+            self.set_job(j['id'], 'done', path=j['target'])
+            if j['source']['_video_id'] == vid(38):
+                watch_state.progress(self.root, 'job:' + j['id'], pos=400, duration=428, done=True, now=NOW)
+        with self.db() as c:
+            db = ab._connect(self.root); ab.sync_states(c, db); db.close()
+        db = ab._connect(self.root)
+        with db:
+            db.execute("UPDATE youtube_abos SET channel_id=?", (OWN,))
+        db.close()
+        calls = []
+
+        def runner(args, **kw):
+            calls.append(args)
+            url = args[-1]
+            if '--skip-download' in args:
+                self.assertEqual(args[-2:], ['https://www.youtube.com/watch?v=' + vid(38), 'https://www.youtube.com/watch?v=' + vid(37)])
+                out = '%s\t%s\n%s\t%s\n' % (vid(38), json.dumps('Mit https://www.youtube.com/@Gastkanal gedreht'),
+                                              vid(37), json.dumps('ohne Link'))
+                return types.SimpleNamespace(returncode=0, stdout=out, stderr='')
+            if url.endswith('/playlists'):
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps(
+                    {'channel_id': OWN, 'entries': [{'id': 'PL' + 'a' * 30, 'title': 'Lieblingslieder'}]}))
+            if 'list=PL' in url:
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': [
+                    {'id': vid(60), 'channel_id': FEATURED, 'channel': 'Tierkanal'},
+                    {'id': vid(61), 'channel_id': FEATURED, 'channel': 'Tierkanal'},
+                    {'id': vid(62), 'channel_id': OWN, 'channel': 'Kinderkanal'}]}))
+            if url.endswith('/channels'):
+                raise AssertionError('Reiter „Kanäle“ gibt es nicht mehr')
+            raise AssertionError(url)
+        with mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')), \
+                mock.patch.object(yd, 'js_args', return_value=[]), \
+                mock.patch.object(ab, '_request_for_key', return_value=None):
+            count = disc.discover(self.root, now=NOW + 10, runner=runner, seen=watch_state.states(self.root))
+            self.assertEqual(count, 2)
+            d = disc.overview(self.root)
+            refs = {s['ref']: s for s in d['suggestions']}
+            self.assertEqual(set(refs), {FEATURED, '@gastkanal'})
+            self.assertIn('Playlist „Lieblingslieder“', refs[FEATURED]['why'][0])
+            self.assertIn('einem gesehenen Video', refs['@gastkanal']['why'][0])
+            # zweiter Lauf: Beschreibungen und Playlists kommen aus dem Speicher
+            before = len(calls)
+            disc.discover(self.root, now=NOW + 3600, runner=runner, seen=watch_state.states(self.root))
+            self.assertEqual(len(calls), before)
+
+    def test_loose_handles_and_search_terms(self):
+        self.assertEqual(disc.mentions('Kamera: @TechTim\nInstagram: @nurinsta\nmail@example.org\nMit @Gast_Kanal.'),
+                         ['@techtim', '@gast_kanal'])
+        db = disc._connect(self.root)
+        with db:
+            for v, tags in ((vid(1), ['Experimente', 'Kinderkanal', 'Wasser']), (vid(2), ['experimente', 'Vulkan']),
+                            (vid(3), ['Wasser', '2026', 'Experimente'])):
+                db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (v, json.dumps(tags)))
+        self.assertEqual(disc.search_terms(db, [vid(1), vid(2), vid(3)], ['Kinderkanal']), ['Experimente', 'Wasser'])
+        with db:
+            for v, tags in ((vid(4), ['Tobi Krell', 'Video für Kinder', 'Instagram', 'Heißluftballon']),
+                            (vid(5), ['Tobi Krell', 'Video für Kinder', 'Instagram', 'Heißluftballon'])):
+                db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (v, json.dumps(tags)))
+        self.assertEqual(disc.search_terms(db, [vid(4), vid(5)], []), ['Heißluftballon'])
+        self.assertEqual([disc.kids_signal(t) for t in ('ARD Kinder und Familie', 'CHECKER WELT', 'Like Nastya DE', 'Mamaleen')],
+                         [1, 1, -1, 0])
+        db.close()
+
+    def test_search_source_from_watched_tags(self):
+        abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 1}, now=NOW)
+        ab.check(self.root, abo, now=NOW, request=self.api)
+        j = self.jobs()[0]
+        self.set_job(j['id'], 'done', path=j['target'])
+        watch_state.progress(self.root, 'job:' + j['id'], pos=400, duration=428, done=True, now=NOW)
+        with self.db() as c:
+            db = ab._connect(self.root); ab.sync_states(c, db); db.close()
+        db = disc._connect(self.root)
+        with db:
+            db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (j['source']['_video_id'], json.dumps(['Experimente'])))
+            db.execute('INSERT INTO youtube_described(video,at) VALUES(?,0)', (j['source']['_video_id'],))
+        db.close()
+
+        def runner(args, **kw):
+            url = args[-1]
+            if url.startswith('ytsearch'):
+                self.assertEqual(url, 'ytsearch20:Experimente für Kinder')
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': [
+                    {'id': vid(70), 'channel_id': FEATURED, 'channel': 'Forscherkanal'},
+                    {'id': vid(71), 'channel_id': FEATURED, 'channel': 'Forscherkanal'},
+                    {'id': vid(73), 'channel_id': 'UC' + 't' * 22, 'channel': 'Diana and Roma DE'},
+                    {'id': vid(72), 'channel_id': OWN, 'channel': 'Kinderkanal'}]}))
+            return types.SimpleNamespace(returncode=0, stderr='', stdout='{}')
+        with mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')), \
+                mock.patch.object(yd, 'js_args', return_value=[]), \
+                mock.patch.object(ab, '_request_for_key', return_value=None):
+            disc.discover(self.root, now=NOW + 10, runner=runner, seen=watch_state.states(self.root))
+        d = disc.overview(self.root)
+        self.assertEqual([s['ref'] for s in d['suggestions']], [FEATURED, 'UC' + 't' * 22])
+        self.assertTrue(any('Suche nach „Experimente“' in w for w in d['suggestions'][0]['why']))
+        self.assertIn('Spielzeug', d['suggestions'][1]['why'][0])
+        self.assertEqual(d['suggestions'][0]['title'], 'Forscherkanal')
+
+    def test_companions_only_real_sidecars(self):
+        folder = self.root / 'k'; folder.mkdir()
+        video = folder / '2026 - Titel [abc].mp4'
+        names = ['2026 - Titel [abc]-poster.jpg', '2026 - Titel [abc].nfo', '2026 - Titel [abc].metadata.json',
+                 '2026 - Titel [abc].de.vtt', '2026 - Titel [abc] Zugabe.mp4', '2026 - Titel [abc].mp4.partial']
+        for n in [video.name, *names]:
+            (folder / n).write_text('x')
+        got = sorted(p.name for p in ab._companions(video))
+        self.assertEqual(got, sorted([video.name, *names[:4]]))
 
 
 if __name__ == '__main__':

@@ -1669,10 +1669,13 @@ def _move(src, dst):
 def _companions(video):
     """Die Datei und ihre Begleiter (Vorschaubild, NFO, metadata.json, Untertitel) im selben Ordner."""
     out = [video]
+    # 0.6.98 (Mac-Prüfung 0.6.90): nur echte Begleiter; eine fremde Datei „<Name> Zugabe.mp4“ bleibt liegen
+    rest = re.compile(r'(?:-(?:poster|backdrop|fanart|thumb)\.(?:jpe?g|png|webp)|\.nfo|\.metadata\.json|\.description'
+                      r'|(?:\.[A-Za-z]{2,3}(?:-[A-Za-z0-9]+)?)?\.(?:vtt|srt|ass))', re.I)
     try:
         for p in video.parent.iterdir():
             if p != video and p.is_file() and not p.is_symlink() and p.name.startswith(video.stem) \
-                    and not p.name.endswith('.partial'):
+                    and rest.fullmatch(p.name[len(video.stem):]):
                 out.append(p)
     except OSError:
         pass
@@ -1774,6 +1777,7 @@ def archive_summary(root, c=None):
                 out['videos'] += 1
                 size += _file_size(payload)
         out['gb'] = round(size / GB, 1)
+        out['bytes'] = size
     else:
         out['videos'] = len(jobs)
     return out

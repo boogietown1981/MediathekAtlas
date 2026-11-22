@@ -39,15 +39,18 @@ import youtube
 
 WEEK = 7 * 86400
 AUTO_EVERY = 86400             # automatische Suche höchstens einmal am Tag (aus youtube_abos.tick)
-FEATURED_PER_RUN = 10          # so viele Abos lesen ihren Reiter „Kanäle“ je Lauf neu (Rest aus dem Speicher)
+FEATURED_PER_RUN = 16          # so viele Netzabrufe (Empfehlungen, Playlists, Suchen) je Lauf; der Rest aus dem Speicher
 MAX_SUGGESTIONS = 40
 PREVIEW_VIDEOS = 8
 PREVIEW_TTL = 86400
 LIST_TIMEOUT = 120
 STATES = ('new', 'approved', 'rejected')
+START_COUNT = 3                # 0.6.98 (Mac-Prüfung 0.6.90: 5 × 26 Min. ≈ 2 GB): freigegebener Kanal lädt zum Start 3 Videos
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS youtube_mentions(video TEXT NOT NULL, ref TEXT NOT NULL, PRIMARY KEY(video, ref));
+CREATE TABLE IF NOT EXISTS youtube_described(video TEXT PRIMARY KEY, at REAL NOT NULL);
+CREATE TABLE IF NOT EXISTS youtube_tagged(video TEXT PRIMARY KEY, tags TEXT NOT NULL DEFAULT '[]', at REAL NOT NULL);
 CREATE TABLE IF NOT EXISTS youtube_suggestions(
   ref TEXT PRIMARY KEY, title TEXT NOT NULL DEFAULT '', avatar TEXT NOT NULL DEFAULT '', score REAL NOT NULL DEFAULT 0,
   why TEXT NOT NULL DEFAULT '[]', profile TEXT NOT NULL DEFAULT 'kinder', state TEXT NOT NULL DEFAULT 'new',
@@ -81,13 +84,29 @@ def norm(ref):
 
 # ---------------------------------------------------------------- Erwähnungen in Beschreibungen
 
-def mentions(text):
-    """Kanäle, auf die eine Videobeschreibung verlinkt (geordnet, ohne Dubletten)."""
+_HANDLE = re.compile(r'(?<![A-Za-z0-9._%+\-/])(@[A-Za-z0-9][A-Za-z0-9._\-]{2,29})(?![A-Za-z0-9._\-]*@)')
+_OTHER_NETWORK = re.compile(r'instagram|insta\b|tiktok|twitter|facebook|threads|snapchat|twitch|x\.com|e-?mail|mail:', re.I)
+
+
+def mentions(text, loose=True):
+    """Kanäle, auf die eine Videobeschreibung verlinkt (geordnet, ohne Dubletten).
+
+    0.6.98 ``loose``: auch blanke @Handles (YouTube verlinkt sie in Beschreibungen und Titeln selbst), außer in
+    Zeilen, die ein anderes Netzwerk oder eine Mail-Adresse nennen."""
+    text = str(text or '')[:20000]
     out = []
-    for m in _LINK.finditer(str(text or '')[:20000]):
+    for m in _LINK.finditer(text):
         ref = norm(m.group(1) or m.group(2) or ('user:' + m.group(3) if m.group(3) else ''))
         if ref and ref not in out:
             out.append(ref)
+    if loose:
+        for line in text.splitlines():
+            if _OTHER_NETWORK.search(line):
+                continue
+            for m in _HANDLE.finditer(line):
+                ref = norm(m.group(1).rstrip('.-_'))
+                if ref and ref not in out:
+                    out.append(ref)
     return out[:30]
 
 
@@ -101,6 +120,7 @@ def record_mentions(root, video, text):
         with db:
             db.execute('DELETE FROM youtube_mentions WHERE video=?', (video,))
             db.executemany('INSERT OR IGNORE INTO youtube_mentions(video,ref) VALUES(?,?)', [(video, r) for r in refs])
+            db.execute('INSERT OR REPLACE INTO youtube_described(video,at) VALUES(?,?)', (video, time.time()))
     finally:
         db.close()
     return len(refs)
@@ -108,7 +128,7 @@ def record_mentions(root, video, text):
 
 def _api_mentions(db, videos):
     """Beschreibungen aus dem Data-API-Speicher (youtube_videos) für noch nicht erfasste Videos übernehmen."""
-    known = {r[0] for r in db.execute('SELECT DISTINCT video FROM youtube_mentions')}
+    known = {r[0] for r in db.execute('SELECT video FROM youtube_described')}
     missing = [v for v in videos if v not in known]
     for start in range(0, len(missing), 400):
         chunk = missing[start:start + 400]
@@ -118,6 +138,7 @@ def _api_mentions(db, videos):
             except (TypeError, ValueError, AttributeError):
                 continue
             db.executemany('INSERT OR IGNORE INTO youtube_mentions(video,ref) VALUES(?,?)', [(vid, r) for r in mentions(text)])
+            db.execute('INSERT OR REPLACE INTO youtube_described(video,at) VALUES(?,?)', (vid, time.time()))
 
 
 # ---------------------------------------------------------------- Empfohlene Kanäle eines Abos
@@ -189,9 +210,15 @@ def featured_with_api(request, channel_id):
     return [(cid, titles.get(cid, '')) for cid in ids]
 
 
-def _featured(root, db, abo, now, request, runner, budget):
-    """Gespeicherte oder (höchstens wöchentlich) neu gelesene Empfehlungen eines Abos. budget: [noch erlaubte Abrufe]."""
-    key = 'featured:%d' % abo['id']
+PLAYLISTS_PER_ABO = 4          # so viele Playlists eines Abos werden je Woche gelesen
+PLAYLIST_VIDEOS = 50
+BACKFILL_PER_RUN = 25          # Beschreibungen/Schlagwörter bereits geladener Videos, die ein Lauf nachholt
+SEARCH_TAGS = 3                # 0.6.98: so viele Schlagwörter gesehener Videos je Profil werden bei YouTube gesucht
+SEARCH_RESULTS = 20
+
+
+def _cached(db, key, now, budget, fetch):
+    """Höchstens wöchentlich neu lesen; ``budget`` = [noch erlaubte Netzabrufe in diesem Lauf]."""
     try:
         cached = json.loads(youtube._get(db, key, '{}'))
     except ValueError:
@@ -200,18 +227,226 @@ def _featured(root, db, abo, now, request, runner, budget):
         return [tuple(x) for x in cached.get('refs') or []]
     budget[0] -= 1
     try:
-        if request is not None and abo.get('channel_id'):
-            refs = featured_with_api(request, abo['channel_id'])
-        elif abo['kind'] == 'channel':
-            refs = featured_with_ytdlp(root, abo['ref'], runner=runner)
-        else:
-            refs = []
-    except (ValueError, OSError, subprocess.SubprocessError) as exc:
-        _RUNNING['last_error'] = str(exc)[:200]
+        refs = fetch()
+    except Exception as exc:                  # eine unlesbare Quelle hält die übrigen nicht auf
+        _RUNNING['last_error'] = (str(exc) or type(exc).__name__)[:200]
         return [tuple(x) for x in cached.get('refs') or []]
     with db:
         youtube._set(db, key, json.dumps({'at': now, 'refs': refs}))
     return refs
+
+
+def _featured(root, db, abo, now, request, runner, budget):
+    """Empfohlene Kanäle eines Abos. 0.6.98: nur noch mit API-Schlüssel (``channelSections``); den Reiter „Kanäle“
+    liefert YouTube nicht mehr aus (Mac-Prüfung 0.6.90: yt-dlp „does not have a channels tab“ bei allen Kanälen)."""
+    if request is None or not abo.get('channel_id'):
+        return []
+    return _cached(db, 'featured:%d' % abo['id'], now, budget, lambda: featured_with_api(request, abo['channel_id']))
+
+
+def _ytdlp_json(root, url, end, runner=None):
+    import youtube_downloads
+    tool = youtube_downloads.find_tool(root)
+    if not tool:
+        raise ValueError('yt-dlp fehlt; im YouTube-Bereich „yt-dlp einrichten“ wählen')
+    args = [*tool[0], '--ignore-config', '--flat-playlist', '-J', '--no-warnings', '--no-cookies-from-browser',
+            '--playlist-end', str(end), url]
+    result = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=LIST_TIMEOUT, stdin=subprocess.DEVNULL,
+                                        env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+    if result.returncode != 0:
+        message, _retry, block = youtube_downloads._failure(result.stderr[-3000:])
+        if block:
+            import download_retry
+            download_retry.block('youtube', time.time() + download_retry.BACKOFF[0], message)
+        if 'does not have a' in (result.stderr or '').lower() and 'tab' in (result.stderr or '').lower():
+            return {}
+        raise ValueError(message)
+    try:
+        return json.loads(result.stdout or '{}')
+    except ValueError:
+        raise ValueError('yt-dlp lieferte keine lesbare Liste') from None
+
+
+def _entry_channel(entry):
+    for value in (entry.get('channel_id'), entry.get('uploader_id'), entry.get('channel_url'), entry.get('uploader_url')):
+        found = norm(value) or (mentions(value)[0] if isinstance(value, str) and mentions(value) else '')
+        if found:
+            return found
+    return ''
+
+
+def playlist_channels_ytdlp(root, abo, runner=None):
+    """0.6.98: [(ref, Kanalname, Anzahl Videos, Playlist)] fremder Kanäle in den Playlists eines Abos (Sammlungen,
+    Zusammenarbeiten). Ohne Schlüssel über yt-dlp: ``<Kanal>/playlists``, dann je Playlist die Einträge."""
+    data = _ytdlp_json(root, _channel_base(abo['ref']) + '/playlists', PLAYLISTS_PER_ABO * 2, runner)
+    own = {norm(abo['ref']), norm(abo.get('channel_id')), norm(data.get('channel_id')), norm(data.get('uploader_id'))}
+    lists = []
+    for entry in data.get('entries') or []:
+        pid = str((entry or {}).get('id') or '')
+        if re.fullmatch(youtube.PLAYLIST_ID, pid) and pid not in [l for l, _ in lists]:
+            lists.append((pid, ' '.join(str(entry.get('title') or '').split())[:80]))
+    return _count_foreign(own, [(title, _ytdlp_json(root, youtube.playlist_url(pid), PLAYLIST_VIDEOS, runner).get('entries') or [])
+                                for pid, title in lists[:PLAYLISTS_PER_ABO]])
+
+
+def playlist_channels_api(request, abo):
+    """Dasselbe mit API-Schlüssel: playlists.list (1 Einheit) und playlistItems.list je Playlist (1 Einheit)."""
+    if not abo.get('channel_id'):
+        return []
+    items = (request('playlists', {'part': 'snippet', 'channelId': abo['channel_id'], 'maxResults': PLAYLISTS_PER_ABO * 2}) or {}).get('items') or []
+    groups = []
+    for item in items[:PLAYLISTS_PER_ABO]:
+        pid = str((item or {}).get('id') or '')
+        if not re.fullmatch(youtube.PLAYLIST_ID, pid):
+            continue
+        rows = (request('playlistItems', {'part': 'snippet', 'playlistId': pid, 'maxResults': PLAYLIST_VIDEOS}) or {}).get('items') or []
+        groups.append((youtube._text((item.get('snippet') or {}).get('title'), 80),
+                       [{'channel_id': (r.get('snippet') or {}).get('videoOwnerChannelId'),
+                         'channel': (r.get('snippet') or {}).get('videoOwnerChannelTitle')} for r in rows if isinstance(r, dict)]))
+    return _count_foreign({norm(abo['ref']), norm(abo['channel_id'])}, groups)
+
+
+def _count_foreign(own, groups):
+    found = {}
+    for title, entries in groups:
+        for entry in entries:
+            if not isinstance(entry, dict):
+                continue
+            ref = _entry_channel(entry)
+            if not ref or ref in own:
+                continue
+            item = found.setdefault(ref, [ref, ' '.join(str(entry.get('channel') or entry.get('uploader') or '').split())[:120], 0, title])
+            item[2] += 1
+    return [tuple(v) for v in sorted(found.values(), key=lambda v: -v[2])][:30]
+
+
+def _playlists(root, db, abo, now, request, runner, budget):
+    if abo['kind'] != 'channel':
+        return []
+    fetch = (lambda: playlist_channels_api(request, abo)) if request is not None else (lambda: playlist_channels_ytdlp(root, abo, runner))
+    return _cached(db, 'playlists:%d' % abo['id'], now, budget, fetch)
+
+
+def search_channels_ytdlp(root, term, runner=None):
+    """0.6.98: [(ref, Kanalname, Treffer)] der Kanäle in einer YouTube-Suche (yt-dlp ``ytsearchN:``, nur Liste)."""
+    data = _ytdlp_json(root, 'ytsearch%d:%s' % (SEARCH_RESULTS, term), SEARCH_RESULTS, runner)
+    found = {}
+    for entry in data.get('entries') or []:
+        if isinstance(entry, dict):
+            ref = _entry_channel(entry)
+            if ref:
+                item = found.setdefault(ref, [ref, ' '.join(str(entry.get('channel') or entry.get('uploader') or '').split())[:120], 0])
+                item[2] += 1
+    return [tuple(v) for v in found.values()]
+
+
+def search_channels_api(request, term):
+    rows = (request('search', {'part': 'snippet', 'q': term, 'type': 'video', 'maxResults': SEARCH_RESULTS,
+                               'relevanceLanguage': 'de', 'safeSearch': 'strict'}) or {}).get('items') or []
+    found = {}
+    for r in rows:
+        sn = (r or {}).get('snippet') or {}
+        ref = norm(sn.get('channelId'))
+        if ref:
+            item = found.setdefault(ref, [ref, youtube._text(sn.get('channelTitle'), 120), 0])
+            item[2] += 1
+    return [tuple(v) for v in found.values()]
+
+
+# 0.6.98 (Vorabprüfung am Mac: Tags von CHECKER WELT u. a.): zu allgemeine Wörter taugen nicht als Suchthema, wohl aber
+# als Kindersignal; Personennamen (Moderation) und Plattformwörter werden nie gesucht.
+GENERIC_TAGS = frozenset({'kinder', 'kids', 'video für kinder', 'videos für kinder', 'kinderfrage', 'lernen', 'schule', 'schulwissen',
+                          'wissen', 'education', 'bildung', 'video', 'videos', 'deutsch', 'german', 'lustig', 'spaß', 'neu', 'folge',
+                          'ganze folge', 'serie', 'kinderserie', 'kinderfernsehen', 'für kinder', 'familie', 'unterhaltung'})
+_PLATFORM = re.compile(r'instagram|tiktok|youtube|shorts?\b|abonnier|kanal\b|channel|twitter|facebook|snapchat|twitch|podcast', re.I)
+_PERSON = re.compile(r'[A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)? [A-ZÄÖÜ][a-zäöüß]+(?:-[A-ZÄÖÜ][a-zäöüß]+)?')
+# Kindersignale im Kanalnamen: öffentlich-rechtlich, Bildung, Museen, Verlage (Rang hoch) und typische Spielzeug-/Klick-
+# Kanäle (Rang tief, Hinweis). Keine Bewertung von Inhalten, nur eine Reihenfolge; die Freigabe bleibt Björns Entscheidung.
+_KIDS_GOOD = re.compile(r'\b(?:ard|zdf|kika|wdr|swr|br|ndr|mdr|hr|rbb|orf|srf|3sat|arte|checker|maus|planet schule|terra x|logo!?|'
+                        r'museum|bibliothek|verlag|schule|wissen|forscher|experiment|lern|universität|stiftung|zoo)\b', re.I)
+_KIDS_BAD = re.compile(r'toys?\b|spielzeug|unboxing|prank|challenge|gaming|minecraft|roblox|fortnite|diana|nastya|vania|'
+                       r'geniale tricks|5-minute|magic|asmr|slime|surprise|überraschung', re.I)
+
+
+def kids_signal(title):
+    """+1 (öffentlich-rechtlich/Bildung), -1 (Spielzeug-/Klick-Kanal) oder 0 nach dem Kanalnamen."""
+    title = str(title or '')
+    if _KIDS_BAD.search(title):
+        return -1
+    return 1 if _KIDS_GOOD.search(title) else 0
+
+
+def search_terms(db, watched, names, limit=SEARCH_TAGS):
+    """Häufigste Schlagwörter der zu Ende gesehenen Videos (ohne Kanalnamen, Zahlen, Ein-Wort-Füller)."""
+    if not watched:
+        return []
+    counts, shown = {}, {}
+    names = {n.lower() for n in names if n}
+    for start in range(0, len(watched), 400):
+        chunk = watched[start:start + 400]
+        for (tags,) in db.execute('SELECT tags FROM youtube_tagged WHERE video IN (%s)' % ','.join('?' * len(chunk)), chunk):
+            try:
+                tags = json.loads(tags)
+            except ValueError:
+                continue
+            for t in {str(x).strip() for x in tags}:
+                key = t.lower()
+                if len(key) < 3 or key.isdigit() or key in names or key.startswith('#') or any(n and n in key for n in names) \
+                        or key in GENERIC_TAGS or _PLATFORM.search(key) or _PERSON.fullmatch(t):
+                    continue
+                counts[key] = counts.get(key, 0) + 1
+                shown.setdefault(key, t)
+    need = 2 if len(watched) >= 3 else 1
+    best = sorted((k for k in counts if counts[k] >= need), key=lambda k: (-counts[k], k))
+    return [shown[k] for k in best[:limit]]
+
+
+def backfill_descriptions(root, db, videos, runner=None, limit=BACKFILL_PER_RUN):
+    """0.6.98: Beschreibungen bereits geladener Videos nachholen (vor 0.6.90 nicht gespeichert). Ein yt-dlp-Aufruf für
+    bis zu ``limit`` Videos, ohne Download (``--skip-download``), mit Pause zwischen den Anfragen. Gesehene zuerst."""
+    import youtube_downloads
+    tried = {r[0] for r in db.execute('SELECT video FROM youtube_tagged')}
+    todo = [v for v in videos if v not in tried and youtube.VALID_VIDEO.fullmatch(v)][:limit]
+    if not todo:
+        return 0
+    tool = youtube_downloads.find_tool(root)
+    if not tool:
+        return 0
+    args = [*tool[0], '--ignore-config', '--skip-download', '--no-playlist', '--no-warnings', '--no-cookies-from-browser',
+            '--ignore-errors', '--ignore-no-formats-error', '--sleep-requests', '1', '--sleep-interval', '2',
+            *youtube_downloads.js_args(root, tool), '--print', '%(id)s\t%(description)j\t%(tags)j', *[youtube.video_url(v) for v in todo]]
+    result = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=LIST_TIMEOUT + 30 * len(todo),
+                                        stdin=subprocess.DEVNULL, env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+    got = 0
+    now = time.time()
+    with db:
+        for line in (result.stdout or '').splitlines():
+            vid, _, rest = line.partition('\t')
+            if vid not in todo:
+                continue
+            text, _, tags = rest.partition('\t')
+            try:
+                text = json.loads(text) if text else ''
+            except ValueError:
+                text = ''
+            try:
+                tags = json.loads(tags) if tags else []
+            except ValueError:
+                tags = []
+            tags = [' '.join(str(t).split())[:40] for t in (tags if isinstance(tags, list) else []) if isinstance(t, str) and t.strip()][:30]
+            db.execute('INSERT OR REPLACE INTO youtube_tagged(video,tags,at) VALUES(?,?,?)', (vid, json.dumps(tags, ensure_ascii=False), now))
+            refs = mentions(text if isinstance(text, str) else '')
+            db.execute('DELETE FROM youtube_mentions WHERE video=?', (vid,))
+            db.executemany('INSERT OR IGNORE INTO youtube_mentions(video,ref) VALUES(?,?)', [(vid, r) for r in refs])
+            db.execute('INSERT OR REPLACE INTO youtube_described(video,at) VALUES(?,?)', (vid, now))
+            got += 1
+    if not got and result.returncode != 0:
+        message, _retry, block = youtube_downloads._failure((result.stderr or '')[-3000:])
+        if block:
+            import download_retry
+            download_retry.block('youtube', time.time() + download_retry.BACKOFF[0], message)
+        _RUNNING['last_error'] = ('Beschreibungen nicht lesbar: ' + message)[:200]
+    return got
 
 
 # ---------------------------------------------------------------- Vorschläge berechnen
@@ -232,7 +467,7 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
     adb = youtube_abos._connect(root)
     try:
         abos = [dict(r) for r in adb.execute('SELECT * FROM youtube_abos')]
-        rows = [dict(r) for r in adb.execute("SELECT abo_id,video,job_id,state FROM youtube_abo_videos WHERE state IN ('done','archived')")]
+        rows = [dict(r) for r in adb.execute("SELECT abo_id,video,job_id,state,title FROM youtube_abo_videos WHERE state IN ('done','archived')")]
     finally:
         adb.close()
     subscribed = set()
@@ -244,12 +479,26 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
         by_abo.setdefault(r['abo_id'], []).append((r['video'], bool(mark.get('done'))))
     db = _connect(root)
     try:
+        import download_retry
+        paused = bool(download_retry.blocked_until('youtube', now)[0]) and request is None
+        order = sorted(rows, key=lambda r: not (seen.get('job:' + (r['job_id'] or '')) or {}).get('done'))
         if request is not None:
             _api_mentions(db, [r['video'] for r in rows])
             db.commit()
+        if not paused:
+            # 0.6.98: Beschreibungen schon geladener Videos nachholen (gesehene zuerst); mit Schlüssel nur, was die API nicht hatte
+            _RUNNING['progress'] = 'Videobeschreibungen werden gelesen …'
+            try:
+                backfill_descriptions(root, db, [r['video'] for r in order], runner=runner)
+            except (OSError, subprocess.SubprocessError, ValueError) as exc:
+                _RUNNING['last_error'] = str(exc)[:200]
         mention_rows = {}
         for vid, ref in db.execute('SELECT video,ref FROM youtube_mentions'):
             mention_rows.setdefault(vid, []).append(ref)
+        for r in rows:                       # 0.6.98: Zusammenarbeiten im Titel („mit @Kanal“)
+            for ref in mentions(r.get('title') or ''):
+                if ref not in mention_rows.setdefault(r['video'], []):
+                    mention_rows[r['video']].append(ref)
         scores, why, profile_score, titles = {}, {}, {}, {}
 
         def add(ref, points, reason, profile, title=''):
@@ -265,8 +514,7 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
                 titles[ref] = title
 
         budget = [FEATURED_PER_RUN]
-        import download_retry
-        paused = bool(download_retry.blocked_until('youtube', now)[0]) and request is None
+        _RUNNING['progress'] = 'Playlists der Abos werden gelesen …'
         for a in sorted(abos, key=lambda a: -sum(1 for _, d in by_abo.get(a['id'], []) if d)):
             name = a['label'] or a['title'] or a['ref']
             videos = by_abo.get(a['id'], [])
@@ -275,6 +523,10 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
             if a['enabled']:
                 for ref, title in (_featured(root, db, a, now, request, runner, budget if not paused else [0]) or []):
                     add(ref, 3 * w, 'von „%s“ empfohlen' % name, a['profile'], title)
+                for ref, title, count, playlist in (_playlists(root, db, a, now, request, runner, budget if not paused else [0]) or []):
+                    add(ref, 2 * w + 0.5 * min(count - 1, 4),
+                        'in der Playlist „%s“ von „%s“ (%s)' % (playlist, name, 'ein Video' if count == 1 else '%d Videos' % count),
+                        a['profile'], title)
             counted = {}
             for vid, done in videos:
                 for ref in mention_rows.get(vid, []):
@@ -286,11 +538,33 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
                 text = ('in %s von „%s“ erwähnt' % ((('einem gesehenen Video' if n == 1 else '%d gesehenen Videos' % n) if watched else
                                                      ('einem Video' if n == 1 else '%d Videos' % n)), name))
                 add(ref, points, text, a['profile'])
+        # 0.6.98: YouTube-Suche nach den häufigsten Schlagwörtern der zu Ende gesehenen Videos je Profil
+        _RUNNING['progress'] = 'Themen gesehener Videos werden gesucht …'
+        profile_of = {a['id']: a['profile'] for a in abos}
+        names = [a['label'] or a['title'] or '' for a in abos]
+        for profile in sorted({a['profile'] for a in abos}):
+            watched = [v for abo_id, items in by_abo.items() if profile_of.get(abo_id) == profile for v, d in items if d]
+            for term in search_terms(db, watched, names):
+                query = term + (' für Kinder' if profile == 'kinder' and 'kind' not in term.lower() else '')
+                fetch = (lambda t=query: search_channels_api(request, t)) if request is not None else \
+                    (lambda t=query: search_channels_ytdlp(root, t, runner))
+                for ref, title, hits in _cached(db, 'search:%s:%s' % (profile, term.lower()), now, budget if not paused else [0], fetch):
+                    add(ref, 1.0 + 0.3 * min(hits - 1, 3), 'YouTube-Suche nach „%s“ (Thema gesehener Videos)' % term, profile, title)
         with db:
             known = {r['ref']: dict(r) for r in db.execute('SELECT * FROM youtube_suggestions')}
             for ref, old in known.items():
                 if old['state'] == 'new' and (ref not in scores or ref in subscribed):
                     db.execute('DELETE FROM youtube_suggestions WHERE ref=?', (ref,))
+            for ref in scores:                   # 0.6.98: Kinder-Vorschläge nach Kindersignalen ordnen
+                if max(profile_score[ref], key=profile_score[ref].get) != 'kinder':
+                    continue
+                signal = kids_signal(titles.get(ref) or (known.get(ref) or {}).get('title') or ref)
+                if signal > 0:
+                    scores[ref] *= 1.5
+                    why[ref].insert(0, 'öffentlich-rechtlicher oder Bildungs-Kanal (nach dem Namen)')
+                elif signal < 0:
+                    scores[ref] *= 0.3
+                    why[ref].insert(0, 'Achtung: Name deutet auf Spielzeug-/Klick-Kanal')
             ranked = sorted(scores, key=lambda r: -scores[r])[:MAX_SUGGESTIONS]
             for ref in ranked:
                 profile = max(profile_score[ref], key=profile_score[ref].get)
@@ -307,7 +581,8 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None):
             count = db.execute("SELECT COUNT(*) FROM youtube_suggestions WHERE state='new'").fetchone()[0]
     finally:
         db.close()
-    _notify('youtube_discover_done', open=count, featured_reads=FEATURED_PER_RUN - budget[0], paused=paused)
+    _notify('youtube_discover_done', open=count, network_reads=FEATURED_PER_RUN - budget[0], paused=paused,
+            described=len(mention_rows))
     return count
 
 
@@ -414,7 +689,7 @@ def decide(root, ref, action, now=None):
         profile = 'kinder' if action == 'kids' else 'erwachsene'
         sample = json.loads(row['sample'] or '{}') if row['sample'] else {}
         url = sample.get('channel_id') or ref
-        abo_id = youtube_abos.add(root, {'url': url, 'profile': profile, 'mode': 'new', 'start_count': 5,
+        abo_id = youtube_abos.add(root, {'url': url, 'profile': profile, 'mode': 'new', 'start_count': START_COUNT,
                                          'label': row['title'][:80]}, now=now)
         state, decided = 'approved', profile
     elif action == 'reject':
