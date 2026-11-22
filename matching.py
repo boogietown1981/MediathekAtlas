@@ -4,7 +4,8 @@ def issues(meta,c,work_only=False):
     errors=[]
     if meta.get('kind') in ('movie','series') and c.get('kind')!=meta['kind']:errors.append('Medienart widerspricht der Quelle')
     if c.get('similarity',0)<.985:errors.append('Titel nicht eindeutig genug')
-    if c.get('year_mismatch') or (meta.get('year') and c.get('year') and meta['year']!=c['year']):errors.append('Erscheinungsjahr widersprüchlich')
+    if (c.get('year_mismatch') or (meta.get('year') and c.get('year') and meta['year']!=c['year'])) and not year_close(meta,c):
+        errors.append('Erscheinungsjahr widersprüchlich')
     # Short clips may share a valid *show* title. They can receive the series
     # identity, but never a verified full-episode identity.
     suspicious=bool(c.get('video_role_needs_review'))
@@ -17,6 +18,15 @@ def issues(meta,c,work_only=False):
             if meta.get(field) is not None and c.get(field) is not None and meta[field]!=c[field]:errors.append('Staffel/Folge widersprüchlich')
         if c.get('episode_scan_complete') is False and c.get('episode_verified'):errors.append('Episodenprüfung unvollständig')
     return errors
+
+def year_close(meta,c):
+    """0.6.97 (Mac-Abfrage Runde 6: 113+20 IMDb- und 145 TMDB-Filme „prüfen“ nur wegen des Jahres): the broadcaster
+    names the production year („Spielfilm Deutschland 2015“), IMDb the release year (2016, „Im Zweifel“). One year
+    apart with an exact title and an agreeing running time is the same film."""
+    try:a=int(meta.get('year'));b=int(c.get('year'))
+    except (TypeError,ValueError):return False
+    return (c.get('kind')=='movie' and abs(a-b)==1 and float(c.get('similarity') or 0)>=.985
+            and bool(c.get('runtime_agrees')) and not c.get('runtime_mismatch'))
 
 def verified(meta,c):
     if issues(meta,c):return False
@@ -53,6 +63,8 @@ def sufficient(meta,rows):
     """
     c=choose(meta,rows)
     if not c or not c.get('year'):return False
+    # 0.6.97: a year-close film (±1) may be chosen, but still gets online corroboration.
+    if meta.get('year') and str(meta['year'])!=str(c['year']):return False
     if c.get('genres'):return True
     return bool(c.get('provider')=='IMDb Offline' and (
         c.get('kind')=='movie' and c.get('runtime_agrees') or

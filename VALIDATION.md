@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.97 – Korrektur Sendungsvorschläge, Filme 3sat/ARD, Lernreihen (22. November 2026)
+- Siehe releases/0.6.97/PRUEFLISTE.md. Automatisch: tests/test_v0697.py, test_erkennung_*.py.
+
 ## 0.6.93 – Gruppen in der Kinderecke (22. November 2026)
 - Automatisch: tests/test_v0693_kinderecke_gruppen.py (4), Klicktest tests/browser/kids_corner.cjs (Gruppenreihen, Chips, „Alle …“). Verteilung auf echte Daten: Mac-Prüfung (PRUEFLISTE in releases/0.6.93).
 ## 0.6.94 – Angefangene Serien automatisch offline (22. November 2026)

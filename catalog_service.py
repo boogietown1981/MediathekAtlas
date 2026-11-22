@@ -109,11 +109,51 @@ class Service:
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities()
+            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():
                 gate.set();diagnostics.event('catalog_heals_ready',seconds=round(time.monotonic()-getattr(self,'heals_started',time.monotonic()),1))
+    def heal_sendung_suggestions(self):
+        """0.6.97, once (before the workers): undo 0.6.88 filings the Mac check found wrong (catalog.heal_sendung_suggestions)."""
+        with self.db() as c:
+            if catalog.get_state(c,'sendung_suggestion_fix_v0697',False):return
+        after='';done=0;shows={}
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,s,after=catalog.heal_sendung_suggestions(c,after)
+                done+=n
+                for k,v in s.items():shows[k]=shows.get(k,0)+v
+                if after is None:break
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        if done:diagnostics.event('catalog_sendung_suggestions_undone',works=done,shows=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]));catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'sendung_suggestion_fix_v0697',{'works':done,'shows':shows,'at':time.time()})
+    def film_heals(self):
+        """0.6.97, once: films with 3sat's title suffix are searched again (spread over 2 h), films „prüfen“ whose
+        suggestions the year rule now accepts are matched."""
+        with self.db() as c:
+            if catalog.get_state(c,'film_rules_v0697',False):return
+            ids=catalog.film_suffix_works(c);now=time.time()
+            c.executemany('UPDATE works SET next_try=? WHERE id=?',[(now+i*7200/max(1,len(ids)),w) for i,w in enumerate(ids)])
+        after='';matched=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,after=catalog.rematch_movie_suggestions(c,after)
+                matched+=n
+                if after is None:break
+                if self.stop.wait(.05):return
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        if self.stop.is_set():return
+        diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched)
+        if matched:catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'film_rules_v0697',{'suffix_requeued':len(ids),'year_matched':matched,'at':time.time()})
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1381,6 +1421,10 @@ class Service:
         Independent of the episode queue's selection, which takes only works with an active offer. Short
         write batches after the web server is up; a busy database only postpones the next batch."""
         self.early_heals()
+        try:self.film_heals()
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1
         with self.db() as c:
             if catalog.get_state(c,'refile_reset_v0673',False):
                 self.once_v0678()

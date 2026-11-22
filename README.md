@@ -1,18 +1,21 @@
-# MediathekAtlas · 0.6.93
+# MediathekAtlas · 0.6.97
+
+## Neu in 0.6.97: Erkennung – falsche Sendungs-Zuordnungen zurück, Filme bei 3sat/ARD, Lernreihen
+- Werke, die 0.6.88–0.6.96 über einen unsicheren Vorschlag (Wikidata, Namensvetter ohne Jahr, nur Sendername als Thema) einer fremden Serie zugeordnet hatten, sind wieder offen. Solche Vorschläge entscheiden nicht mehr allein.
+- Kennt IMDb eine Sendung, aber keine Einzelfolgen (Sportpanorama, Euromaxx …), werden ihre Werke Beiträge der Sendung statt „Folge ungeklärt“.
+- 3sat-Filme mit „- Spielfilm, USA 1993“ im Titel werden ohne diesen Zusatz gesucht; ein Jahr Abstand (Produktion/Erscheinen) gilt bei passender Laufzeit als derselbe Film. Beides wird einmal auf vorhandene Filme angewendet.
+- Lernreihen warten gemeinsam auf das Stundenkontingent der ARD Mediathek; die gelernte Reihe gilt für alle Folgen. Reine Wikidata-Fehler halten Werke ohne Art nicht mehr fest. Das Thema eines Werks bleibt beim Zusammenführen erhalten. „Europa“ ist ein Themenwort.
+- Enthält 0.6.89–0.6.95 (0.6.92 nicht vergeben).
 
 ## Neu in 0.6.93: Gruppen in der Kinderecke
 - Filme und Serien stehen in wenigen Gruppen mit Bild-Symbol: 🏰 Märchen, 🎨 Zeichentrick, 🐾 Tiere & Natur, 🔬 Wissen, 🗺️ Abenteuer, 😂 Lustiges, ⭐ Noch mehr. Oben gibt es für jede Gruppe einen runden Knopf, so findet auch ein Kind etwas, das noch nicht liest.
 - Leere Gruppen erscheinen nicht, sehr kleine (unter 3 Titeln) stehen unter „Noch mehr“. Die Einordnung folgt den Kategorien und Reihen des Katalogs, ohne KI.
-# MediathekAtlas · 0.6.94
-
 ## Neu in 0.6.94: Angefangene Serien automatisch offline, gesehene Filme behalten
 - Ist eine Folge einer Serie zu Ende gesehen (Player oder Kinderecke), lädt MediathekAtlas die übrigen Folgen dieser Serie von selbst herunter: erst die folgenden, dann frühere, die noch nicht gesehen sind.
 - Kurze Serien werden komplett geladen. Lange oder tägliche Sendungen nur bis zur Grenze (Standard: 20 ungesehene Folgen und 20 GB je Serie); jede gesehene Folge macht Platz für die nächste. Bei wenig freiem Platz (Reserve aus YouTube → Abos, Platz fürs IMDb-Update) wird nichts nachgeladen.
 - Ein zu Ende gesehener Film wird dauerhaft offline gespeichert (Downloadordner, ohne 30-Tage-Frist), damit er sich jederzeit nochmal ansehen lässt; seine Sendereihe wird nicht mitgeladen.
 - Nur ARD, ZDF & Co. mit direkter Videodatei, bei Serien mit bestätigter Staffel/Folge. Anbieter mit Kopierschutz oder nur Link werden nie geladen.
 - Downloads → „Angefangene Serien automatisch laden“: Schalter, Grenzen, je Serie „Automatik beenden“; die Folgen stehen darunter unter „Angefangene Serie · …“ mit Fortschritt und Abbrechen. Schalter auch unter Einstellungen.
-# MediathekAtlas · 0.6.95
-
 ## Neu in 0.6.95: Hochformat-Videos ganz im Bild
 - Kinderecke: Videos im Hochformat (YouTube-Shorts, Handy-Clips wie „Checker Tobi“) werden vollständig eingepasst statt nur das obere Drittel zu zeigen; ihre Vorschaubilder werden nicht mehr beschnitten.
 

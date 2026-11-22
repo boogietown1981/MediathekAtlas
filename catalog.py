@@ -1905,12 +1905,30 @@ def wikidata_only_warnings(m):
 # Folge of that series: identified with the series' identity, the episode queue looks for the episode.
 SENDUNG_SUGGESTION_ORDER=('IMDb Offline','TVDB','TMDB','OMDb','Wikidata')
 
+# 0.6.97 (Mac-Prüfung 0.6.88, nicht bestanden: 74 von 1.223 Werken falsch): Wikidata nannte einzelne Folgen fremder
+# Serien („Wahrheit oder Pflicht“ Q50386201, „Zurück zur Natur“ Q62122968, „Verkehrte Welt“, „Die Bruderschaft“,
+# „Das Tribunal“ – 61 Werke), IMDb Namensvettern ohne Jahr („Headhunter“ tt24510162, „Lipstick“ tt14445290) und unter
+# dem Thema „3sat“ (nur der Sender) einen Namensvetter („Entführt“ tt3625998). Keine dieser Quellen genügt allein.
+SENDER_TOPICS={'3sat','ard','zdf','arte','kika','srf','orf','phoenix','dw','br','hr','mdr','ndr','rbb','sr','swr','wdr','one',
+               'zdfneo','zdfinfo','tagesschau24','ard-alpha','mediathek','ard mediathek','zdf mediathek','filme im ersten'}
+
+def sender_topic(source):
+    """True if the offer's topic only names the broadcaster or its Mediathek (no Sendung)."""
+    topic=key(cleaned(source.get('topic')))
+    return bool(topic) and (topic in SENDER_TOPICS or topic in PORTAL_TOPICS or topic==key(source.get('channel')))
+
+def sendung_suggestion_ok(x,source):
+    """The rules 0.6.97 adds for the chosen suggestion: no Wikidata, a year, a topic that is more than the sender."""
+    return (x.get('provider')!='Wikidata' and _year(x.get('year')) is not None and not sender_topic(source))
+
 def sendung_suggestion(m,source,sendung):
     """The series suggestion to identify a work of unknown kind with, or None.
 
     Only when every suggestion that is no weak evidence (suggestion_weak) is a series with exactly the Sendung's
-    name and with a reference, and no database names two different series of that name (namesakes stay open)."""
-    if not sendung or not template_topic(sendung):return None
+    name and with a reference, and no database names two different series of that name (namesakes stay open).
+    0.6.97: Wikidata suggestions never decide (they stay evidence), the chosen one needs a year, and an offer filed
+    only under its sender („3sat“) is never identified this way."""
+    if not sendung or not template_topic(sendung) or sender_topic(source):return None
     work_title=cleaned(source.get('title'))
     strong=[x for x in (m.get('suggestions') or []) if isinstance(x,dict) and not suggestion_weak(x,source,sendung,work_title)]
     if not strong:return None
@@ -1919,8 +1937,58 @@ def sendung_suggestion(m,source,sendung):
         if x.get('kind')!='series' or key(x.get('title'))!=key(sendung) or not x.get('reference_id') or not x.get('provider'):return None
         refs.setdefault(x['provider'],set()).add(str(x['reference_id']))
     if any(len(v)>1 for v in refs.values()):return None
+    usable=[x for x in strong if sendung_suggestion_ok(x,source)]
+    if not usable:return None
     rank={p:i for i,p in enumerate(SENDUNG_SUGGESTION_ORDER)}
-    return sorted(strong,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
+    return sorted(usable,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
+
+def rematch_movie_suggestions(c,after='',limit=500):
+    """0.6.97, once: films „prüfen“ whose stored suggestions the year rule (matching.year_close) now accepts are
+    matched. Returns (matched, last id or None)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND kind='movie' AND state='review'
+        AND json_array_length(meta,'$.suggestions')>0 ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    done=0
+    for row in rows:
+        m=json.loads(row['meta'] or '{}')
+        if m.get('scan_requested'):continue
+        usable=[x for x in m.get('suggestions') or [] if isinstance(x,dict) and x.get('kind')=='movie']
+        chosen=auto_choice(m,usable)
+        if not chosen or chosen.get('kind')!='movie':continue
+        chosen.update(state='auto_matched',reason='Film: Titel und Laufzeit stimmen, Jahr ein Jahr versetzt (Produktions-/Erscheinungsjahr)')
+        save_metadata(c,row['id'],chosen,'matched');done+=1
+    return done,(rows[-1]['id'] if rows else None)
+
+def film_suffix_works(c):
+    """0.6.97: ids of open films/unknown works whose title carries 3sat's „- Spielfilm, Land Jahr“ (searched again)."""
+    import metadata
+    rows=c.execute("""SELECT id,title FROM works WHERE kind IN ('movie','unknown') AND state IN ('review','retry','pending')
+        AND (title LIKE '% - Spielfilm,%' OR title LIKE '% - Fernsehfilm,%' OR title LIKE '% - Dokumentarfilm%' OR title LIKE '% - Kurzfilm,%'
+             OR title LIKE '% - Animationsfilm,%' OR title LIKE '% - Fernsehspiel,%' OR title LIKE '% - Stummfilm,%' OR title LIKE '% - Musikfilm,%')""").fetchall()
+    return [r[0] for r in rows if metadata.film_suffix_year(r[1])]
+
+def heal_sendung_suggestions(c,after='',limit=500):
+    """0.6.97, once: works 0.6.88–0.6.96 identified or filed from a suggestion the 0.6.97 rules no longer accept are
+    open works of unknown kind again (with their suggestions; the next sweep decides with the new rules).
+    Returns (reopened, shows {title: n}, last id or None)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND (json_extract(meta,'$.sendung_suggestion_v0688')=1
+        OR json_type(meta,'$.sendung_identity')='object') ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    reopened=0;shows={}
+    for row in rows:
+        if row['state'] in ('manual','matched'):continue
+        m=json.loads(row['meta'] or '{}')
+        if m.get('episode_verified'):continue
+        identity=m.get('sendung_identity') if isinstance(m.get('sendung_identity'),dict) else {k:m.get(k) for k in ('provider','reference_id','year')}
+        source=best_source(c,row['id']) or {}
+        if sendung_suggestion_ok(identity,source):continue
+        restored=restore_unknown(m)
+        if not restored:continue
+        title,kind,meta=restored
+        for k in ('sendung_suggestion_v0688','sendung_identity','sendung_grouping'):meta.pop(k,None)
+        meta['sendung_suggestion_undone_v0697']=True
+        c.execute("UPDATE works SET title=?,kind=?,show_key='',meta=?,state='review',next_try=0 WHERE id=?",(title,kind,json.dumps(meta),row['id']))
+        c.execute('DELETE FROM episode_queue WHERE work_id=?',(row['id'],))
+        reopened+=1;name=str(m.get('title') or row['title'])[:80];shows[name]=shows.get(name,0)+1
+    return reopened,shows,(rows[-1]['id'] if rows else None)
 
 def sendung_has_episodes(suggestion):
     """Whether IMDb lists single episodes for the suggested series (None while the archive is not ready: then the

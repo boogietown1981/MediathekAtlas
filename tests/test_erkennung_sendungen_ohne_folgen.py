@@ -53,7 +53,9 @@ class SweepTests(unittest.TestCase):
         archive = SimpleNamespace(updated=1, series_has_episodes=lambda m: False)
         with patch.object(imdb_archive, 'ACTIVE', archive):
             self.service.unknown_sweep(force=True)
-        for title, ident in (('Sportler des Jahres', 'tt77'), ('Die Bruderschaft', 'Q1')):
+        # 0.6.97 (Mac-Prüfung 0.6.88): a Wikidata suggestion alone never decides – „Die Bruderschaft“ stays open
+        self.assertEqual(self.work('Die Bruderschaft')['kind'], 'unknown')
+        for title, ident in (('Sportler des Jahres', 'tt77'),):
             r = self.work(title)
             self.assertEqual((r['kind'], r['state'], r['title']), ('series', 'format', r['meta']['title']), title)
             self.assertEqual(r['meta']['sendung_identity']['reference_id'], ident)

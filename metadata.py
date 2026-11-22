@@ -482,6 +482,17 @@ QUERY_NOISE=(
     re.compile(r'(?i)\s*[-–,]?\s*\b(?:season|saison|staffel|temporada|sezon|stagione)\s*\d{1,2}\b'),
     re.compile(r'\s*\(\d{1,3}(?:\s*/\s*\d{1,3})?\)'),
 )
+# 0.6.97 (Mac-Abfrage Runde 6, 22.11.2026: 1.012 3sat-Filme „prüfen“, fast alle ohne jeden Vorschlag): 3sat schreibt
+# Gattung, Länder und Jahr in den Titel – „Der Schut - Spielfilm, BRD/Frankreich/Italien 1964“, „Danowski - Blutapfel -
+# Fernsehfilm, Deutschland 2019“, „Helge Schneider - The Klimperclown - Dokumentarfilm von Helge Schneider, Deutschland
+# 2025“. Gesucht wird ohne diesen Zusatz, das Jahr gilt als Erscheinungsjahr.
+FILM_SUFFIX=re.compile(r'(?i)\s+[-–]\s+(?:spielfilm|fernsehfilm|dokumentarfilm|kurzfilm|animationsfilm|trickfilm|fernsehspiel|stummfilm|musikfilm|kinofilm)'
+                       r'(?:\s+von\s+[^,]{2,80})?,\s*[^,]{2,80}?\s+((?:18|19|20)\d{2})\s*$')
+QUERY_NOISE=(FILM_SUFFIX,)+QUERY_NOISE
+def film_suffix_year(title):
+    """Year of a 3sat film title „… - Spielfilm, USA 1993“, else None."""
+    m=FILM_SUFFIX.search(str(title or ''))
+    return int(m.group(1)) if m else None
 PART=re.compile(r'\s*\(\d{1,3}\s*/\s*\d{1,3}\)')
 def query_title(title):
     """Title without language-version or accessibility suffixes such as "(Originalversion mit Untertitel)",
@@ -509,7 +520,9 @@ def provider_complete(start,**fields):
 
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
+    suffix_year=film_suffix_year(meta['title']) or film_suffix_year(row.get('title'))
     meta['title']=query_title(meta['title'])
+    if suffix_year and kind in ('movie','unknown') and not meta.get('year'):meta['year']=suffix_year
     if kind=='series':queries=[('series',meta['title'])]
     elif kind=='movie':queries=[('movie',meta['title'])]
     else:
