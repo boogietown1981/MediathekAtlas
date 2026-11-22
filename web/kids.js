@@ -240,11 +240,37 @@
     }
     catch (e) { if (!state.videos.length && !state.movies.length) { $('kids-main').replaceChildren(make('p', 'kids-empty', 'Gerade nicht erreichbar. Gleich nochmal versuchen.')); } return; }
     if (!$('kids-stage').hidden) return;      // nicht während des Abspielens umbauen
+    // 0.6.103 (Björn: „kann nicht weiter nach rechts scrollen“): das Neuladen alle 60 s baute alles neu, gescrollte
+    // Reihen sprangen an den Anfang. Unveränderte Daten bauen nichts um; sonst bleiben Scrollstellen erhalten.
+    const sig = JSON.stringify([state.channels, state.videos, state.movies, state.series, state.groups, state.pending, state.liveEnabled]);
+    if (sig === state.sig && $('kids-main').childElementCount && !window.__kidsForce) return;
+    window.__kidsForce = false;
+    state.sig = sig;
+    const keep = keepScroll();
     if (state.show && !state.series.some(s => s.id === state.show.id)) state.show = null;
     if (state.filter === 'live' && !state.liveEnabled) state.filter = 'all';
     if (!['all', 'new', 'movies', 'series', 'live'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)
         && !state.groups.some(g => 'g:' + g.id === state.filter)) state.filter = 'all';
     render();
+    keep();
+  }
+  function keepScroll() {
+    const rows = new Map();
+    for (const strip of document.querySelectorAll('#kids-main .kids-strip')) {
+      const h = strip.closest('.kids-row')?.querySelector('h2');
+      if (h && strip.scrollLeft) rows.set(h.textContent, strip.scrollLeft);
+    }
+    const chips = document.querySelector('.kids-chips-scroller .kids-strip, .kids-chips-scroller > div');
+    const chipLeft = chips ? chips.scrollLeft : 0, y = window.scrollY;
+    return () => {
+      for (const strip of document.querySelectorAll('#kids-main .kids-strip')) {
+        const h = strip.closest('.kids-row')?.querySelector('h2');
+        if (h && rows.has(h.textContent)) strip.scrollLeft = rows.get(h.textContent);
+      }
+      const c = document.querySelector('.kids-chips-scroller .kids-strip, .kids-chips-scroller > div');
+      if (c && chipLeft) c.scrollLeft = chipLeft;
+      if (y) window.scrollTo(0, y);
+    };
   }
 
   // ------------------------------------------------------------ Abspielen im Vollbild
@@ -356,5 +382,6 @@
 
   load();
   setInterval(load, 60000);
+  window.__kidsReload = load;   // Klicktest: Aktualisierung auslösen
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 })();

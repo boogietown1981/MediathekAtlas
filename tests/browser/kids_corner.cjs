@@ -203,9 +203,20 @@ async function scrolling(page, check) {
   await page.waitForFunction(() => { const b = [...document.querySelectorAll('.kids-row')].find(r => r.querySelector('h2').textContent.includes('Noch mehr')).querySelector('.kids-strip'); return b.scrollLeft > 300; }, null, { timeout: 5000 })
     .catch(() => check('Pfeil „weiter“ blättert die Reihe', false));
   check('Pfeil „zurück“ erscheint nach dem Blättern', await strip.locator('.kids-arrow-prev').isVisible());
+  // 0.6.103: die Aktualisierung (alle 60 s) setzt die gescrollte Reihe nicht an den Anfang zurück –
+  // weder bei unveränderten Daten noch wenn neu aufgebaut werden muss
+  const leftOf = () => page.evaluate(() => [...document.querySelectorAll('.kids-row')].find(r => r.querySelector('h2').textContent.includes('Noch mehr')).querySelector('.kids-strip').scrollLeft);
+  await page.waitForTimeout(600);
+  const scrolled = await leftOf();
+  await page.evaluate(() => window.__kidsReload());
+  await page.waitForTimeout(800);
+  check('Aktualisierung ohne Änderung behält die Scrollstelle (' + scrolled + ')', Math.abs(await leftOf() - scrolled) < 5);
+  await page.evaluate(async () => { window.__kidsForce = true; await window.__kidsReload(); });
+  await page.waitForTimeout(800);
+  check('Neuaufbau behält die Scrollstelle', Math.abs(await leftOf() - scrolled) < 5);
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.91-kinderecke-blaettern.png') });
   // bis ans Ende: zuletzt kommt die „Alle …“-Kachel
-  for (let i = 0; i < 30 && await strip.locator('.kids-arrow-next').isVisible(); i++) { await strip.locator('.kids-arrow-next').click(); await page.waitForTimeout(350); }
+  for (let i = 0; i < 30 && await strip.locator('.kids-arrow-next').isVisible(); i++) { if (!await strip.locator('.kids-arrow-next').click({ timeout: 3000 }).then(() => true, () => false)) break; await page.waitForTimeout(350); }
   const more = strip.locator('.kids-more');
   check('„Alle …“-Kachel am Ende sichtbar', await more.isVisible());
   const total = await page.evaluate(async () => { const token = document.querySelector('meta[name=atlas-token]').content;
