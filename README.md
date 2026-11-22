@@ -11,6 +11,10 @@
 - Ein zu Ende gesehener Film wird dauerhaft offline gespeichert (Downloadordner, ohne 30-Tage-Frist), damit er sich jederzeit nochmal ansehen lässt; seine Sendereihe wird nicht mitgeladen.
 - Nur ARD, ZDF & Co. mit direkter Videodatei, bei Serien mit bestätigter Staffel/Folge. Anbieter mit Kopierschutz oder nur Link werden nie geladen.
 - Downloads → „Angefangene Serien automatisch laden“: Schalter, Grenzen, je Serie „Automatik beenden“; die Folgen stehen darunter unter „Angefangene Serie · …“ mit Fortschritt und Abbrechen. Schalter auch unter Einstellungen.
+# MediathekAtlas · 0.6.95
+
+## Neu in 0.6.95: Hochformat-Videos ganz im Bild
+- Kinderecke: Videos im Hochformat (YouTube-Shorts, Handy-Clips wie „Checker Tobi“) werden vollständig eingepasst statt nur das obere Drittel zu zeigen; ihre Vorschaubilder werden nicht mehr beschnitten.
 
 ## Neu in 0.6.91: Kinderecke zeigt Märchen, Serienfolgen und lässt sich blättern
 - Erkannte Märchenfilme (z. B. „Sechs auf einen Streich“, „Märchenperlen“) und Filme von KiKA stehen jetzt bei den Filmen der Kinderecke. Ausschluss bleibt: nie neben Horror, Thriller, Krimi, Erotik, Krieg.

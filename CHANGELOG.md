@@ -12,6 +12,12 @@
 - Oberfläche `web/series_autoload.js`: Downloads → „Angefangene Serien automatisch laden“ (Schalter, Grenzen, Liste mit Stand, Hinweis, „Automatik beenden“ bricht wartende Aufträge ab, „Wieder automatisch laden“, „Aus der Liste nehmen“), Einstellungen → „Angefangene Serien offline“. Downloadliste gruppiert „Angefangene Serie · <Titel>“. Routen `GET/POST /api/series-autoload`. Diagnose `series_autoload` (Zahlen ohne Titel, zu Ende Gesehenes der letzten 7 Tage nach Schlüsselart).
 - Abo-Planer lässt den Durchlauf aus, solange die Datenbank beim Start gesperrt ist (keine zusätzliche Meldung).
 - Tests: `tests/test_v0694_serien_nachladen.py` (11), Klicktest `tests/browser/series_autoload.cjs`.
+## 0.6.95 – Hochformat-Videos in der Kinderecke ganz zeigen
+- Grundlage: Björn 22.11.2026: „Checker Tobi“-Shorts (Hochformat) zeigten nur das obere Drittel. Basis 0.6.91 (331ac2e); 0.6.92–0.6.94 sind anderen Threads reserviert.
+- Ursache (im Browser belegt): `.kids-stage` ist ein Raster mit `place-items:center`; das Video mit `height:100%` lag in einer automatisch hohen Rasterzeile, die mit der natürlichen Höhe des Videos wuchs (9:16 bei voller Breite ≈ 2,8-fache Fensterhöhe). `object-fit:contain` passte das Bild in diese zu hohe Fläche ein, sichtbar war nur der obere Teil. Querformat war nie betroffen, der große Player und der Ansehen-Modus ebenfalls nicht (geprüft).
+- `web/kids.css`: Video absolut über die ganze Bühne (`position:absolute;inset:0`), auch im Vollbild.
+- Vorschaubilder im Hochformat (Kinderecke-Kacheln, Probeschauen in „Neue Kanäle entdecken“) werden eingepasst statt beschnitten.
+- Tests: `tests/browser/portrait_video.cjs`.
 
 ## 0.6.91 – Kinderecke: erkannte Märchen, Serienfolgen, Reihen blättern
 - Grundlage: Björn 22.11.2026: „ich sehe keine Märchen etc. die schon erkannt wurden, auch kann ich nicht weiter nach rechts scrollen, die Serien scheinen alle leer zu sein, obwohl hier zumindest bei ARD/ZDF einige gefunden wurden“. Basis 0.6.90.

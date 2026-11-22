@@ -1330,3 +1330,4 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .sal-item.sal-stopped{opacity:.7}
 .sal-note{display:block;margin-top:2px;color:var(--muted,#888)}
 .sal-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
+.discover-video img.is-portrait{object-fit:contain;background:#000}
