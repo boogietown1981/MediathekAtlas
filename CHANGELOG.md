@@ -1,3 +1,23 @@
+## 0.6.104 – Sammelstand 0.6.103 + 0.6.100 + 0.6.101
+- Zusammenführung ohne neue Logik: Kinderecke-Korrektur 0.6.103 (auf 0.6.99/0.6.98), Kanal-Vorschläge 0.6.100 mit Abo-Einstellungs-Korrektur, Serien-Nachladen 0.6.101. 0.6.102 nicht ausgegeben.
+- CI: Klicktest `abo_settings.cjs` aufgenommen.
+
+## 0.6.101 – Serien-Nachladen: deutsche Fassung, Lücken benennen, Fenster sofort füllen
+- Grundlage: Mac-Prüfung von 0.6.94 am 22.11.2026 (echte Downloads, funktioniert): bei zwei Angeboten eines Werks kam die „Originalversion mit Untertitel“ (ARTE „Loulou“); nach S01E09 von „Achtung! Experiment“ wurde S01E20 eingereiht; im ersten Lauf nur 10 Aufträge (Prüfliste nannte 20). Basis 0.6.98 (97e34b0e).
+- `series_autoload.preferred_offer`: unter allen aktiven, nicht abgelaufenen Angeboten mit direkter Datei gewinnt die deutsche Regelfassung; Abzug für OmU/OV/Fremdsprache und ARTE außer ARTE.DE (4), Hörfassung/Gebärdensprache/Klare oder Leichte Sprache (2), gelesen mit `languages.from_title` aus Titel und Sendereihe. Gilt für Serienfolgen und Filme.
+- Reihenfolge war richtig (Folgen nach der gesehenen in Staffel/Folge-Reihenfolge); E10–E19 waren nicht ladbar. Jetzt Hinweis „Nach SxxEyy geht es mit SxxEzz weiter: die Folgen dazwischen sind beim Sender nicht als Datei verfügbar oder ihre Folgennummer ist noch unbestätigt“.
+- `PER_RUN` = größte Grenze (80): das Fenster füllt sich im ersten Lauf.
+- Tests: `tests/test_v0694_serien_nachladen.py` +2 (13; die Fassungsprüfung schlägt mit dem alten Verhalten fehl).
+
+## 0.6.100 – Kanal-Vorschläge ohne Reiter „Kanäle“, Archiv-Feinschliff; auf 0.6.98
+- Grundlage: Mac-Prüfung 0.6.90 (22.11.2026): Archivregel bestanden, Vorschläge leer, weil YouTube den Reiter „Kanäle“ nicht mehr hat. Basis 0.6.98 (97e34b0e, enthält 0.6.89–0.6.95 und die Kinderecke-Korrektur). 0.6.99 ist vom Kinderecke-Thread reserviert.
+- Neue Quellen in `youtube_discover.discover`: fremde Kanäle in den Playlists der Abos (yt-dlp `/playlists`, je Abo 4 Listen à 50 Videos; mit API-Schlüssel `playlists`/`playlistItems`), @Kanal-Erwähnungen in Beschreibung und Titel, YouTube-Suche nach den häufigsten Schlagwörtern gesehener Videos (`ytsearch20:`, im Kinderprofil mit „für Kinder“; mit API-Schlüssel `search` mit safeSearch strict). Personen-, Plattform- und Füllwörter werden nicht gesucht.
+- Beschreibungen und Schlagwörter: Abo-Downloads speichern die Beschreibung (`--write-description`); für ältere Videos holt jeder Lauf bis zu 25 nach (gesehene zuerst, mit Deno-Laufzeit für Schlagwörter, Tabelle `youtube_tagged`).
+- Kinderprofil: Kindersignale im Kanal- bzw. Videotitel heben den Rang (×1,5), Erwachsenensignale (Prank, Horror, Gaming …) senken ihn (×0,3); der Grund steht auf der Karte. Freigabe bleibt erst nach „Videos ansehen“ möglich.
+- Abo-Archiv: Begleitdateien nur mit exakt passendem Namen (Poster, NFO, Untertitel, Beschreibung), Größe unter 1 GB in MB, eine Freigabe lädt zum Start die 3 neuesten Videos.
+- Tests: `tests/test_v0690_kanal_vorschlaege.py` erweitert (Playlists, Nachholen, Suche, Kindersignale, Begleiter), Klicktests `youtube_discover.cjs`, `portrait_video.cjs`.
+- Abo-Einstellungen und Kanal-Vorschau bleiben bei Aktualisierung offen (cc76f0cd); Klicktest `tests/browser/abo_settings.cjs`.
+
 ## 0.6.103 – Korrektur: Kinderecke leer, Live-Sender „'str' object has no attribute 'get'“
 - Grundlage: Björn 22.11.2026 23:49 Uhr mit 0.6.99 (ungeprüft installiert): „die TV-Sender bringen alle 'str' object has no attribute 'get' … Filme und Serien sehe ich jetzt gar nicht mehr“. Mac-Thread: Traceback im echten Log; auch 0.6.98 betroffen (`kids_shelf_prewarm_failed`, /api/kids 0 Filme/0 Serien mit error-Feld). Basis 0.6.99 (ebc6eb31).
 - Ursache: `kids_catalog._signals` (Gruppen, seit 0.6.93) las `item['source'].get('topic')`; bei Titeln anderer Portale ist `item['source']` ein Text (Quellenname). Die Ausnahme brach `build()` ab, /api/kids lieferte eine leere Liste, /api/kids-play (Live-Sender) scheiterte am selben Aufbau. Die Testattrappen hatten nur Mediathek-Angebote mit Objekt-Quelle.
@@ -13,20 +33,6 @@
 - Verwaltung: Karte „Kinderecke · Eltern“ (`web/kids_parents.js`) mit Altersgrenze, Schalter Kindersender live, Stand der Altersfreigaben, Liste „Wartet auf Freigabe“ (mit Grund und Suche) und „Deine Entscheidungen“ (Zurücknehmen). API `GET/POST /api/kids-rules`, `GET /api/kids-live`.
 - Kinderecke: Knopf „Fernsehen“ mit Live-Sendern für Kinder und Familie (`live_tv.kids_stations`: KiKA und Sender mit Kinder-/Familien-Namen, keine Erwachsenensender).
 - Tests: `tests/test_v0699_kinder_freigabe.py` (8), angepasst `test_v0691_kinderecke.py`, `test_v0646_kids_catalog.py`, `test_v05103_kinder_familie.py`; Klicktest `tests/browser/kids_corner.cjs` (Live-Sender, Elternbereich, Freigeben).
-## 0.6.100 – Kanal-Vorschläge ohne Reiter „Kanäle“, Archiv-Feinschliff; auf 0.6.98
-- Grundlage: Mac-Prüfung 0.6.90 (22.11.2026): Archivregel bestanden, Vorschläge leer, weil YouTube den Reiter „Kanäle“ nicht mehr hat. Basis 0.6.98 (97e34b0e, enthält 0.6.89–0.6.95 und die Kinderecke-Korrektur). 0.6.99 ist vom Kinderecke-Thread reserviert.
-- Neue Quellen in `youtube_discover.discover`: fremde Kanäle in den Playlists der Abos (yt-dlp `/playlists`, je Abo 4 Listen à 50 Videos; mit API-Schlüssel `playlists`/`playlistItems`), @Kanal-Erwähnungen in Beschreibung und Titel, YouTube-Suche nach den häufigsten Schlagwörtern gesehener Videos (`ytsearch20:`, im Kinderprofil mit „für Kinder“; mit API-Schlüssel `search` mit safeSearch strict). Personen-, Plattform- und Füllwörter werden nicht gesucht.
-- Beschreibungen und Schlagwörter: Abo-Downloads speichern die Beschreibung (`--write-description`); für ältere Videos holt jeder Lauf bis zu 25 nach (gesehene zuerst, mit Deno-Laufzeit für Schlagwörter, Tabelle `youtube_tagged`).
-- Kinderprofil: Kindersignale im Kanal- bzw. Videotitel heben den Rang (×1,5), Erwachsenensignale (Prank, Horror, Gaming …) senken ihn (×0,3); der Grund steht auf der Karte. Freigabe bleibt erst nach „Videos ansehen“ möglich.
-- Abo-Archiv: Begleitdateien nur mit exakt passendem Namen (Poster, NFO, Untertitel, Beschreibung), Größe unter 1 GB in MB, eine Freigabe lädt zum Start die 3 neuesten Videos.
-- Tests: `tests/test_v0690_kanal_vorschlaege.py` erweitert (Playlists, Nachholen, Suche, Kindersignale, Begleiter), Klicktests `youtube_discover.cjs`, `portrait_video.cjs`.
-## 0.6.101 – Serien-Nachladen: deutsche Fassung, Lücken benennen, Fenster sofort füllen
-- Grundlage: Mac-Prüfung von 0.6.94 am 22.11.2026 (echte Downloads, funktioniert): bei zwei Angeboten eines Werks kam die „Originalversion mit Untertitel“ (ARTE „Loulou“); nach S01E09 von „Achtung! Experiment“ wurde S01E20 eingereiht; im ersten Lauf nur 10 Aufträge (Prüfliste nannte 20). Basis 0.6.98 (97e34b0e).
-- `series_autoload.preferred_offer`: unter allen aktiven, nicht abgelaufenen Angeboten mit direkter Datei gewinnt die deutsche Regelfassung; Abzug für OmU/OV/Fremdsprache und ARTE außer ARTE.DE (4), Hörfassung/Gebärdensprache/Klare oder Leichte Sprache (2), gelesen mit `languages.from_title` aus Titel und Sendereihe. Gilt für Serienfolgen und Filme.
-- Reihenfolge war richtig (Folgen nach der gesehenen in Staffel/Folge-Reihenfolge); E10–E19 waren nicht ladbar. Jetzt Hinweis „Nach SxxEyy geht es mit SxxEzz weiter: die Folgen dazwischen sind beim Sender nicht als Datei verfügbar oder ihre Folgennummer ist noch unbestätigt“.
-- `PER_RUN` = größte Grenze (80): das Fenster füllt sich im ersten Lauf.
-- Tests: `tests/test_v0694_serien_nachladen.py` +2 (13; die Fassungsprüfung schlägt mit dem alten Verhalten fehl).
-
 ## 0.6.98 – Korrektur Kinderecke: keine Nachrichten-, Talk- und Magazinreihen
 - Grundlage: Mac-Prüfung 0.6.91 am 22.11.2026 nicht bestanden. Auf einer Kopie von Björns Daten zeigte die Kinderecke 1.243 Serien (0.6.90: 240), darunter „Politik“ (400 Folgen), „NACHTCAFÉ“ (301), „heute“, „Aktuelle Kamera“, „Abendschau“ (399), BRISANT, frontal, extra 3 u. a., mit Nachrichten und Beiträgen über Krankheit und Krieg. Basis 0.6.97 (f84e6b8, enthält 0.6.93–0.6.95). Zuerst als 0.6.96 auf 0.6.95 gebaut, nie ausgegeben.
 - Ursache 1 (Genre): `broadcaster.genres` nahm „Kinder“ aus Beschreibung oder Beitragstitel (Wörter wie „Kinderarmut“, „Wenn Kinder pflegen“). Belegt: NACHTCAFÉ trug in 302 von 302 Werken „Kinder“, Politik in 11 von 2.047, heute in 16 von 12.005, Abendschau in 2 von 432. Jetzt nur noch aus dem Namen der Sendereihe/Sendung bzw. dem Thema (`names=`), auch bei `catalog.file_under_sendung`. Einmalige Bereinigung nach dem Start (`catalog.heal_derived_kids_v0696`, Merker `kids_genre_heal_v0696`): „Kinder“ mit Quelle „Sender (abgeleitet)“ wird entfernt, wenn weder Name/Thema noch ein KiKA/TOGGO-Angebot es tragen. Referenz-Genres und eigene Auswahl bleiben.

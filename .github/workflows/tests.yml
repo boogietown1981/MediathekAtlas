@@ -98,6 +98,9 @@ jobs:
       - name: Verbund zweier Instanzen über Cloud-Ordner (0.6.56)
         if: matrix.browser == 'chromium'
         run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/mesh_two_nodes.cjs
+      - name: Abo-Einstellungen bleiben offen (0.6.104)
+        if: matrix.browser == 'chromium'
+        run: NODE_PATH="$RUNNER_TEMP/pw/node_modules" node tests/browser/abo_settings.cjs
 
   # Separate job: macOS runners are sometimes not assigned for a long time; that must not
   # hold back the NAS packages, which only need the Linux results.

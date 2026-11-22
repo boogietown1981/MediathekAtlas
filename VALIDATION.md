@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.104 – Sammelstand 0.6.103 + 0.6.100 + 0.6.101 (22. November 2026)
+Volle Suite, Node-Tests und alle Klicktests (Chromium) auf dem zusammengeführten Stand; Mac-Prüfung nach PRUEFLISTE 0.6.104.
+
 ## 0.6.103 – Kinderecke leer / Live-Sender-Fehler (22. November 2026)
 - Automatisch: tests/test_v0703_kinderecke_datenformen.py (2, auf 0.6.99 rot), gesamte Suite, Klicktests. Echte Daten (Liste gefüllt, Live-Sender spielen, kein kids_shelf_prewarm_failed): Mac-Prüfung (PRUEFLISTE in releases/0.6.103).
 

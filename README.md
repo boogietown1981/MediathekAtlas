@@ -1,25 +1,27 @@
-# MediathekAtlas · 0.6.103
+# MediathekAtlas · 0.6.104
+
+## Neu in 0.6.104: Sammelstand
+- Enthält 0.6.103 (Kinderecke wieder gefüllt, Live-Sender spielen; mit 0.6.99 Altersfreigabe und Elternbereich), 0.6.100 (Kanal-Vorschläge, Abo-Einstellungen bleiben offen) und 0.6.101 (Serien-Nachladen mit deutscher Fassung).
 
 ## Neu in 0.6.103: Kinderecke wieder gefüllt, Live-Sender spielen
 - 0.6.98 und 0.6.99 zeigten in der Kinderecke keine Filme und Serien, und jeder Live-Sender meldete „'str' object has no attribute 'get'“. Ursache: Ein einziger Titel eines anderen Portals mit anderer Datenform brach den ganzen Listenaufbau ab. Jetzt wird jedes Feld nur in der erwarteten Form gelesen, und ein unlesbarer Titel wird übersprungen und protokolliert statt die Liste zu leeren.
 - Reihen vom Kinderkanal KiKA (z. B. „Wissen macht Ah!“, „Der Krieg und ich“, „KiKA LIVE“) stehen immer in der Kinderecke. Solange die Liste nach dem Start noch entsteht, steht dort „wird noch zusammengestellt“.
 - Eine weitergeblätterte Reihe springt beim automatischen Aktualisieren nicht mehr an den Anfang zurück.
 
+## Neu in 0.6.101: Serien-Nachladen lädt die deutsche Fassung
+- Angefangene Serien und gesehene Filme werden in der deutschen Fassung geladen, nicht als Originalversion mit Untertitel, Hörfassung oder Gebärdensprache, wenn es die deutsche gibt.
+- Fehlen Folgen zwischen der gesehenen und der nächsten ladbaren, nennt der Kasten unter Downloads die Lücke. Das Fenster (Standard 20 Folgen) füllt sich sofort, nicht in Zehnerschritten.
+
+## Neu in 0.6.100: Kanal-Vorschläge mit echten Treffern
+- Unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ kommen Vorschläge jetzt aus den Playlists deiner Abos, aus @Kanal-Erwähnungen in Beschreibungen und Titeln und aus einer YouTube-Suche nach den Schlagwörtern gesehener Videos. Für die Kinderecke werden kindgerechte Kanäle bevorzugt und Prank-, Horror- oder Gaming-Kanäle nach hinten gestellt.
+- Freigeben geht weiterhin erst nach dem Probeschauen; eine Freigabe lädt zum Start die 3 neuesten Videos.
+- Abo-Einstellungen und die Vorschau in „Neue Kanäle entdecken“ bleiben bei der Aktualisierung offen (Korrektur aus der Prüfung).
+
 ## Neu in 0.6.99: Kinderecke nach Altersfreigabe, Elternbereich, Kindersender live
 - Automatisch in die Kinderecke kommt: alles von KiKA und TOGGO; sonst nur Erkanntes, das eindeutig Kinderprogramm ist oder als Familien-, Animations-, Fantasy- oder Abenteuerfilm eine belegte Altersfreigabe bis zur eingestellten Grenze hat (z. B. Bibi & Tina, Märchen unter „Fantasy“); nie neben Horror, Thriller, Krimi, Erotik, Krieg oder Romantik. Ein Drama ab 12 kommt nicht allein über die Altersfreigabe hinein.
 - Altersgrenze FSK 0, 6 oder 12 (Standard 12) unter Verwaltung → „Kinderecke · Eltern“. Dort stehen auch die Titel, die auf deine Freigabe warten (nicht erkannt, ohne oder mit zu hoher Altersfreigabe), mit „Freigeben“/„Sperren“; jede Entscheidung lässt sich zurücknehmen.
 - Altersfreigaben (FSK) holt die App im Hintergrund aus Wikidata über die IMDb-Kennung; Anbieter mit eigener FSK-Angabe zählen ebenfalls. Das IMDb-Archiv enthält keine Altersfreigaben.
 - Neuer Knopf „Fernsehen“ in der Kinderecke: nur Kinder- und Familiensender live (z. B. KiKA), im Elternbereich abschaltbar.
-# MediathekAtlas · 0.6.100
-
-## Neu in 0.6.100: Kanal-Vorschläge mit echten Treffern
-- Unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ kommen Vorschläge jetzt aus den Playlists deiner Abos, aus @Kanal-Erwähnungen in Beschreibungen und Titeln und aus einer YouTube-Suche nach den Schlagwörtern gesehener Videos. Für die Kinderecke werden kindgerechte Kanäle bevorzugt und Prank-, Horror- oder Gaming-Kanäle nach hinten gestellt.
-- Freigeben geht weiterhin erst nach dem Probeschauen; eine Freigabe lädt zum Start die 3 neuesten Videos.
-# MediathekAtlas · 0.6.101
-
-## Neu in 0.6.101: Serien-Nachladen lädt die deutsche Fassung
-- Angefangene Serien und gesehene Filme werden in der deutschen Fassung geladen, nicht als Originalversion mit Untertitel, Hörfassung oder Gebärdensprache, wenn es die deutsche gibt.
-- Fehlen Folgen zwischen der gesehenen und der nächsten ladbaren, nennt der Kasten unter Downloads die Lücke. Das Fenster (Standard 20 Folgen) füllt sich sofort, nicht in Zehnerschritten.
 
 ## Neu in 0.6.98: Kinderecke ohne Nachrichten- und Talkreihen
 - Eine Serie von ARD, ZDF & Co. steht nur noch in der Kinderecke, wenn sie selbst eindeutig Kinderprogramm ist (mindestens 80 % der eingeordneten Folgen, KiKA/TOGGO oder Kinderreihe). Nachrichten-, Talk-, Politik- und Magazinreihen („heute“, „Politik“, „NACHTCAFÉ“, „Abendschau“ …) erscheinen nie, auch wenn einzelne Beiträge „Kinder“ heißen.
