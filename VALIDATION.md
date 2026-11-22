@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.86 – Umzug exFAT, Heilungen zuerst, Themen-Vorlagen (22. November 2026)
+- Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0686.py`: `._`-Dateien weder kopiert noch geprüft, beim Aufräumen entfernt, Ziel nur mit Hilfsdateien leer; Knopftext je Ziel; Folgen-Arbeiter wartet auf die Heilungen und läuft danach, Frist öffnet; „Sport“-Vorlage gelöscht und Werk neu erkannt, „Puls“ bleibt.
+- Nicht geprüft: echter Umzug exFAT → APFS auf dem Mac (Prüfliste), Wirkung auf Björns Bestand.
+
 ## 0.6.85 – Kurzserien, Planet Schule ohne Portal-Thema (21. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0685.py`: Kurzserie ohne ganze Ausgabe bleibt Serie, Rubrik „Kurz und witzig“/Portal nie, Rücknahme abgelegter Kurzserien (Magazin-Clips bleiben, kein erneutes Ablegen), Portal-Identität unter leerem/anderem Thema neu erkannt.
 - Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).

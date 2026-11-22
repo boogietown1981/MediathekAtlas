@@ -119,8 +119,27 @@ def template_topic(topic,title=''):
     propagate_series carried it to all works of the Reihe („Natur nah“: 99 works). A portal or section topic
     names no series; an offer titled „<Folge> · <Reihe>“ names its own."""
     import metadata
-    if not topic or key(topic) in PORTAL_TOPICS or metadata.generic_topic(topic):return False
+    if not topic or key(topic) in PORTAL_TOPICS or key(topic) in TEMPLATE_GENERIC or metadata.generic_topic(topic):return False
     return not portal_series(topic,title)
+
+# 0.6.86 (Diagnose MacBook Air 22.11.2026, 0.6.85): templates „Sport“ and „Masterclass“ – subjects, not series
+# („Lisy Christl – Masterclass Kostümbild …“ belongs to the film). Single words naming a subject or a kind of
+# programme are never learned as a series template; real one-word Sendungen („Puls“, „Bounce“) stay possible.
+TEMPLATE_GENERIC={'sport','sports','masterclass','kultur','wissen','geschichte','gesellschaft','unterhaltung','comedy',
+    'kabarett','satire','konzert','konzerte','interview','interviews','talk','doku','dokus','dokumentation','dokumentationen',
+    'reportage','reportagen','nachrichten','news','magazin','magazine','kinder','familie','ratgeber','verbraucher',
+    'gesundheit','wirtschaft','religion','sendungen','videos','clips','highlights','extras','bonus','trailer','shorts',
+    'wissenschaft','technik','digital','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur','essen',
+    'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme'}
+
+def generic_identity_works(c,after='',limit=500):
+    """0.6.86: identified works whose series identity is a subject word taken from their topic (template „Sport“).
+    Read only; (rows with best offer payload, last id or None)."""
+    marks=','.join('?'*len(TEMPLATE_GENERIC))
+    rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+        FROM works w WHERE w.id>? AND w.state='identified' AND w.kind='series' AND lower(w.title) IN (%s)
+          AND lower(w.topic)=lower(w.title) ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
+    return rows,(rows[-1]['id'] if rows else None)
 
 def drop_portal_templates(c):
     """0.6.84: forget templates learned for a portal/section topic or with a portal identity (returns count)."""

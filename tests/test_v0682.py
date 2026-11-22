@@ -59,7 +59,7 @@ class Heal(unittest.TestCase):
         self.assertEqual(out['Schwingen bis der Strom fließt · Achtung! Experiment'], ('Achtung! Experiment', 'pending'))
         self.assertEqual(out['Der Fuchs · Das kleine 1x1 der Artenkunde'], ('Das kleine 1x1 der Artenkunde', 'pending'))
         self.assertEqual(out['Die Eule · Eugens Welt'], ('planet schule', 'manual'))
-        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0685', False))
+        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0686', False))
 
 
 if __name__ == '__main__':

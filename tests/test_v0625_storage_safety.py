@@ -44,7 +44,7 @@ class RevertTests(SafetyBase):
         target.parent.rename(e.ext / 'weg')          # Laufwerk weg
         with self.assertRaises(sl.Unavailable) as err:
             sl.data_root(e.home, wait=0)
-        self.assertIn('Bisherigen Ort verwenden', str(err.exception))
+        self.assertIn('Standardordner verwenden', str(err.exception))
         self.assertIn(str(e.home), (e.home / sl.PROBLEM_FILE).read_text())
         info = sl.revert_info(e.home)
         self.assertEqual(info['path'], str(e.home))
@@ -93,7 +93,7 @@ class RevertTests(SafetyBase):
         script = str(ROOT / 'storage_locations.py')
         info = subprocess.run([sys.executable, script, '--home', str(e.home), '--revert-info'],
                               capture_output=True, text=True)
-        self.assertEqual(info.returncode, 0, info.stderr)
+        self.assertEqual(info.returncode, 4, info.stderr)   # 0.6.86: Rückweg ist der Standardordner
         self.assertIn(str(e.home), info.stdout)
         done = subprocess.run([sys.executable, script, '--home', str(e.home), '--revert'], capture_output=True, text=True)
         self.assertEqual(done.returncode, 0, done.stderr)
@@ -125,7 +125,7 @@ class WatchTests(SafetyBase):
         self.assertFalse(t.is_alive())
         self.assertEqual(len(lost), 1)
         self.assertIn('nicht mehr erreichbar', lost[0])
-        self.assertIn('Bisherigen Ort verwenden', (e.home / sl.PROBLEM_FILE).read_text())
+        self.assertIn('Standardordner verwenden', (e.home / sl.PROBLEM_FILE).read_text())
 
     def test_watchdog_idle_for_default_place_and_short_glitch(self):
         e = self.env

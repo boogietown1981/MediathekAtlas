@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.85
+# MediathekAtlas · 0.6.86
+
+## Neu in 0.6.86: Umzug vom USB-Laufwerk, Heilungen vor der Erkennung
+
+- Ein Umzug des Speicherorts von einem exFAT-/USB-Laufwerk scheitert nicht mehr an den macOS-Hilfsdateien „._Name“. Sie werden weder kopiert noch geprüft und beim Aufräumen mit ihrer Datei entfernt.
+- Der Rückweg-Knopf heißt „Standardordner verwenden“, wenn der bisherige Datenstand im Standardordner liegt.
+- Einmalige Korrekturen der Erkennung (Planet Schule, Kurzserien, Themen-Vorlagen) laufen jetzt fertig, bevor Erkennung und Folgensuche starten (höchstens 10 Minuten Wartezeit).
+- Themen wie „Sport“ oder „Masterclass“ werden nicht mehr als Serienvorlage gelernt; Werke, die so eine Identität bekommen haben, werden neu erkannt.
 
 ## Neu in 0.6.85: Kurzserien bleiben Serien, letzte Planet-Schule-Werke
 
