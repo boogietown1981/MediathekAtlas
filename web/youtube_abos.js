@@ -16,6 +16,8 @@
     return 'geprüft ' + (m < 1 ? 'gerade eben' : m < 60 ? 'vor ' + m + ' Min.' : m < 1440 ? 'vor ' + Math.round(m / 60) + ' Std.' : 'am ' + new Date(t * 1000).toLocaleDateString('de-DE'));
   };
   const gb = v => (Number(v) || 0).toLocaleString('de-DE', {maximumFractionDigits: 1});
+  // 0.6.98: kleine Archive in MB statt „0,0 GB“
+  const size = a => (a.bytes || 0) < 1e9 && a.bytes !== undefined ? Math.round((a.bytes || 0) / 1e6).toLocaleString('de-DE') + ' MB' : gb(a.gb || 0) + ' GB';
   const PROFILES = {kinder: {icon: '★', label: 'Kinderecke', hint: 'erscheint nur in der Kinderecke'},
     erwachsene: {icon: '▶', label: 'Für mich', hint: 'erscheint nur im Ansehen-Modus'}};
   const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['retry', 'neuer Versuch geplant', 'wait'], ['wanted', 'warten', 'wait'],
@@ -234,9 +236,9 @@
       'Gespeichert: gesehene Videos machen wieder Platz für neue (bereits archivierte bleiben)', box);
     const label = make('label', undefined, 'abo-reserve'); label.htmlFor = box.id;
     label.append(box, ' Zu Ende gesehene Videos ins Archiv verschieben: dort ohne ' + (d.days || 30) +
-      '-Tage-Frist, sie zählen nicht mehr zu Anzahl und Budget der Abos. Archiv: ' + (ar.videos || 0) + ' Videos, ' + gb(ar.gb || 0) + ' GB' +
+      '-Tage-Frist, sie zählen nicht mehr zu Anzahl und Budget der Abos. Archiv: ' + (ar.videos || 0) + ' Videos, ' + size(ar) +
       (ar.folder ? ' (' + ar.folder + '; zieht mit dem Zwischenspeicher um).' : '.') +
-      (ar.enabled && ar.gb ? ' Das Archiv wächst ohne Grenze; nicht mehr gebrauchte Videos unter Speicher löschen.' : ''));
+      (ar.enabled && ar.videos ? ' Das Archiv wächst ohne Grenze; nicht mehr gebrauchte Videos unter Speicher löschen.' : ''));
     label.title = 'Ein Video gilt als gesehen, wenn es im MediathekAtlas-Player bis kurz vor das Ende lief. Außerhalb der App (z. B. im Finder) Geschautes erkennt die App nicht.';
     host.append(label);
   }

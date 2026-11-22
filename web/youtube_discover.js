@@ -63,7 +63,7 @@
       const d = await call({action: 'preview', ref: s.ref}, b);
       if (!d) return;
       say(''); Object.assign(s, d); videos(box, s, d.videos || []); kids.disabled = me.disabled = false;
-      kids.title = 'Als Abo in die Kinderecke aufnehmen (nur neue Videos, die 5 neuesten zum Start)';
+      kids.title = 'Als Abo in die Kinderecke aufnehmen (nur neue Videos, die 3 neuesten zum Start)';
     });
     const kids = button('★ Für die Kinderecke freigeben', 'Erst „Videos ansehen“, dann freigeben', async b => {
       const d = await call({action: 'kids', ref: s.ref}, b); if (d) { render(d); say('„' + s.title + '“ ist jetzt ein Abo der Kinderecke; die ersten Videos werden geladen.'); window.MediathekAtlasYouTubeAbos?.refresh(); }
