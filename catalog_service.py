@@ -109,11 +109,30 @@ class Service:
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions()
+            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():
                 gate.set();diagnostics.event('catalog_heals_ready',seconds=round(time.monotonic()-getattr(self,'heals_started',time.monotonic()),1))
+    def heal_series_names(self):
+        """0.6.106, once (before the workers): broadcaster spelling of series names, kids spin-offs under the main Reihe."""
+        for attempt in range(30):
+            try:
+                with self.db() as c:
+                    if catalog.get_state(c,'series_names_v06106',False):return
+                    spelled,names=catalog.heal_series_spelling(c)
+                    moved,spin=catalog.heal_kids_spinoffs(c)
+                    catalog.set_state(c,'series_names_v06106',{'spelled':spelled,'moved':moved,'at':time.time()})
+                break
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+        else:return
+        if spelled or moved:
+            diagnostics.event('catalog_series_names_healed',spelled=spelled,moved=moved,
+                              names=dict(sorted(names.items(),key=lambda x:-x[1])[:20]),spin_offs=dict(list(spin.items())[:30]))
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
     def heal_sendung_suggestions(self):
         """0.6.97, once (before the workers): undo 0.6.88 filings the Mac check found wrong (catalog.heal_sendung_suggestions)."""
         with self.db() as c:

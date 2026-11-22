@@ -1,3 +1,11 @@
+## 0.6.106 – Reihennamen: Schreibweise des Senders, KiKA-Ableger unter der Hauptreihe, BR-Kinderreihen
+- Grundlage: Mac-Abfrage `berichte/abfragen/kinderreihen-namen-0705.sql` (Kopie von Björns Bestand mit 0.6.105, 22.11.2026): „KIKA LIVE“ (TMDB 90485, 347 identified + 294 format) neben 11 Ablegern mit 2–9 Werken als eigene Sendung; „Anna, Nina, Pia und die wilden Tiere“ (57), „Paula, Anna …“ (25), „Anna, Paula, Pia …“ (12+5) und „Checker Can, Checker Tobi und Checker Julian“ (38) von BR/ARD ohne Kindersender und ohne Genre „Kinder“ – fehlten in der Kinderecke.
+- `catalog.broadcaster_spelling`: Serie gleich Thema bis auf Groß-/Kleinschreibung → Schreibweise des Senders (save_metadata, einmalige Heilung `heal_series_spelling`).
+- `catalog.parent_sendung`: auf Kindersendern läuft eine Sendung „<Reihe> <Zusatz>“ unter der Hauptreihe, wenn es sie mit ≥ 20 Werken gibt (file_under_sendung, einmalige Heilung `heal_kids_spinoffs`); Folgentitel „<Ableger>: <Ausgabe>“, `sendung_name` bleibt.
+- `KIDS_TOPIC`: „Checker Can/Tobi/Julian“, „Anna/Paula/Pia/Nina … und die wilden Tiere“ („Der Doktor und die wilden Tiere“ nicht).
+- Heilungen vor den Arbeitern, Merker `series_names_v06106`, Ereignis `catalog_series_names_healed`.
+- Tests: `tests/test_v06106.py` (5).
+
 ## 0.6.105 – Altersregel der Kinderecke nur mit Familiensignal, FSK-Suche für TMDB-Treffer
 - Grundlage: Mac-Prüfung 0.6.103 (Kopie von Björns Bestand, 22.11.2026): 832 Filme statt 209, davon 533 neu aus Netzkino und 77 aus Plex, allein über FSK ≤ 12 und „Abenteuer“/„Fantasy“, u. a. „5-Headed Shark Attack“, „Alien Predator War“, „55 Tage in Peking“, „An Egypt Affair“, „A Man called Hero“, „Anuk III“, „Prosperos Bücher“, „Jurassic Galaxy“, „Vom Suchen und Finden der Liebe“. Björns Vorgaben zusammen gelesen (Standard FSK 12, aber „im Zweifel nicht, ich gebe manuell frei“). Basis Sammelstand 0.6.104 (aaa9e6cb).
 - `categories.KIDS_AGE_HINTS` = nur „Familie“; neu `categories.AGE_PATH_EXCLUDED` (Romantik, Science-Fiction, Action, Mystery) zusätzlich zum Sicherheitsnetz, gilt für Mediatheken (`kids_rules.kids_clause`) und Plattformen (`categories.classify`, Netzkino/Plex/Pluto …). Kinder-Signal-Weg (Genre Kinder, Familie + Animation, KiKA/TOGGO, Kinderreihe) unverändert. „Wartet auf Freigabe“ nennt neu den Grund „FSK n, aber kein Familien- oder Kinderhinweis“.

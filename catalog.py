@@ -796,7 +796,11 @@ CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','re
 # children's programme. The kids channel or a kids/Märchen topic of an active offer now counts as a clear signal.
 # Merged works lose works.topic (a new id), so the signal is read from the offers, which move with the work.
 KIDS_TOPIC=re.compile(r'(?i)kinder(?:film|filme|serie|serien|kino|programm|sendung)|\bfür kinder\b|\bkika\b|märchen(?!haft)|maerchen(?!haft)|'
-                      r'sechs auf einen streich|sandmännchen|sendung mit der maus|sendung mit dem elefanten|\bzdftivi\b|\btivi\b|toggolino')
+                      r'sechs auf einen streich|sandmännchen|sendung mit der maus|sendung mit dem elefanten|\bzdftivi\b|\btivi\b|toggolino'
+                      # 0.6.106 (Mac-Abfrage Kinderreihen 22.11.: BR/ARD-Reihen ohne Kindersender und ohne Genre „Kinder“
+                      # fehlten in der Kinderecke): die belegt fehlenden BR/ARD-Kinderreihen beim Namen. Reihen mit eigenem
+                      # Genre „Kinder“ (Löwenzahn, logo!) bleiben bei der Folgenregel aus 0.6.98.
+                      r'|\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b')
 KIDS_SIGNAL_TTL=3600.0
 _KIDS_SIGNAL={}            # database file -> (monotonic, topics)
 _KIDS_SIGNAL_LOCK=threading.Lock()
@@ -942,6 +946,13 @@ def canonical(m):
         base+='|s%s-e%s'%(m['season'],m['episode'])
     return digest(base)
 
+def broadcaster_spelling(title,topic):
+    """0.6.106: TMDB „KIKA LIVE“, KiKA „KiKA LIVE“ – a series named like the broadcaster's Reihe except for upper/lower
+    case is shown in the broadcaster's spelling (children search and read the name they know). None if nothing to change."""
+    title=str(title or '');topic=str(topic or '').strip()
+    if not title or not topic or title==topic or title.casefold()!=topic.casefold():return None
+    return topic
+
 def save_metadata(c,wid,m,state='manual'):
     m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
     row=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
@@ -952,6 +963,8 @@ def save_metadata(c,wid,m,state='manual'):
         m.pop('fanart',None);m.pop('artwork_provider',None)
         for field in ('networks','studios','ratings','imdb_id','discovery_enriched','show_description'):
             if m.get(field)==previous.get(field):m.pop(field,None)
+    spelled=broadcaster_spelling(m.get('title'),row['topic'] if 'topic' in row.keys() else '') if m.get('kind')=='series' else None
+    if spelled:m['title']=spelled
     original_dest=canonical(m) or wid
     alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(original_dest,)).fetchone()
     dest=alias[0] if alias else original_dest
@@ -1666,6 +1679,24 @@ def backfill_film_hints(c,limit=400):
     set_state(c,'film_hint_cursor_v0524',cursor if rows else 'complete')
     return len(rows)
 
+# 0.6.106 (Mac-Abfrage Kinderreihen 22.11.2026): KiKA führt Ableger einer Reihe unter eigenem Thema – „KiKA LIVE fordert
+# heraus“, „KiKA LIVE präsentiert“, „KiKA LIVE #ZuHauseUmDieWelt“, „KiKA LIVE - Fragen an die Astronautinnen“ (11 Reihen
+# mit 2–9 Werken neben der Hauptreihe mit 641). Auf Kindersendern laufen sie unter der Hauptreihe, wenn es sie mit
+# mindestens SPIN_OFF_MIN Werken gibt; der Ableger bleibt im Folgentitel sichtbar.
+SPIN_OFF_MIN=20
+def parent_sendung(c,fmt,source):
+    """(show_key, title) of the main Reihe a kids-channel spin-off „<Reihe> <Zusatz>“ belongs to, else None."""
+    if str((source or {}).get('channel') or '').strip().lower() not in KIDS_CHANNELS:return None
+    import metadata
+    words=str(fmt or '').split()
+    for n in range(len(words)-1,1,-1):
+        prefix=' '.join(words[:n]).rstrip(' -–:#·|').strip()
+        if len(prefix.split())<2 or len(prefix)<5 or key(prefix)==key(fmt) or metadata.generic_topic(prefix):continue
+        r=c.execute("SELECT show_key,title,COUNT(*) FROM works WHERE topic=? AND kind='series' AND COALESCE(show_key,'')!='' "
+                    "GROUP BY show_key ORDER BY 3 DESC LIMIT 1",(prefix,)).fetchone()
+        if r and r[2]>=SPIN_OFF_MIN:return r[0],r[1]
+    return None
+
 def file_under_sendung(c,row,m,source,fmt,grouping=None,reason=None):
     """File one offer's work as contribution of the Sendung ``fmt`` (state 'format', provider 'Sendung')."""
     import broadcaster
@@ -1676,11 +1707,16 @@ def file_under_sendung(c,row,m,source,fmt,grouping=None,reason=None):
         # Editions named like the Sendung are told apart by their broadcast date.
         try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
         except (TypeError,ValueError,OverflowError,OSError):pass
+    parent=parent_sendung(c,fmt,source)
+    if parent:
+        m['sendung_name']=fmt
+        if not key(edition).startswith(key(fmt)):edition=fmt+': '+edition
+        fmt=parent[1]
     m.update(kind='series',title=fmt,episode_title=edition,year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
              state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
              reason=reason or 'Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
     if grouping:m['format_grouping']=grouping
-    c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
+    c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,parent[0] if parent else showkey(m),json.dumps(m),row['id']))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
     for g in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
     c.execute('DELETE FROM film_hints WHERE work_id=?',(row['id'],))
@@ -1969,6 +2005,39 @@ def film_suffix_works(c):
         AND (title LIKE '% - Spielfilm,%' OR title LIKE '% - Fernsehfilm,%' OR title LIKE '% - Dokumentarfilm%' OR title LIKE '% - Kurzfilm,%'
              OR title LIKE '% - Animationsfilm,%' OR title LIKE '% - Fernsehspiel,%' OR title LIKE '% - Stummfilm,%' OR title LIKE '% - Musikfilm,%')""").fetchall()
     return [r[0] for r in rows if metadata.film_suffix_year(r[1])]
+
+def heal_series_spelling(c):
+    """Once (0.6.106): series named like their Reihe except for case take the broadcaster's spelling (most offers)."""
+    best={}
+    for show,title,topic,n in c.execute("SELECT show_key,title,topic,COUNT(*) FROM works WHERE kind='series' AND COALESCE(show_key,'')!='' "
+                                        "AND COALESCE(topic,'')!='' AND title!=topic AND lower(title)=lower(topic) GROUP BY 1,2,3"):
+        if broadcaster_spelling(title,topic) and n>best.get((show,title),(0,''))[0]:best[(show,title)]=(n,topic)
+    done=0;shows={}
+    for (show,title),(n,topic) in best.items():
+        done+=c.execute("UPDATE works SET title=?,meta=json_set(meta,'$.title',?) WHERE show_key=? AND title=?",(topic,topic,show,title)).rowcount
+        shows[topic]=n
+    return done,shows
+
+def heal_kids_spinoffs(c):
+    """Once (0.6.106): Sendung filings of kids-channel spin-offs („KiKA LIVE fordert heraus“) move under the main Reihe."""
+    moved=0;shows={}
+    rows=c.execute("SELECT show_key,title,MIN(id) FROM works WHERE kind='series' AND state='format' AND COALESCE(show_key,'')!='' "
+                   "AND json_extract(meta,'$.provider')='Sendung' GROUP BY show_key,title").fetchall()
+    for show,title,wid in rows:
+        if len(str(title or '').split())<3:continue
+        ch=c.execute("SELECT json_extract(o.payload,'$.channel') FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 "
+                     "WHERE w.show_key=? LIMIT 1",(show,)).fetchone()
+        parent=parent_sendung(c,title,{'channel':ch[0] if ch else ''})
+        if not parent or parent[0]==show:continue
+        for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=?",(show,title)).fetchall():
+            m=json.loads(w['meta'])
+            if m.get('provider')!='Sendung':continue
+            ep=str(m.get('episode_title') or '')
+            if not key(ep).startswith(key(title)):ep=title+': '+ep if ep else title
+            m.update(title=parent[1],episode_title=ep,sendung_name=title,spin_off_v06106=True)
+            c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(parent[1],parent[0],json.dumps(m),w['id']));moved+=1
+        shows[title]=parent[1]
+    return moved,shows
 
 def heal_sendung_suggestions(c,after='',limit=500):
     """0.6.97, once: works 0.6.88–0.6.98 identified or filed from a suggestion the 0.6.97 rules no longer accept are

@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.106 – Reihennamen (22. November 2026)
+- Automatisch: tests/test_v06106.py (5), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Zahlen am echten Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.106).
+
 ## 0.6.105 – Altersregel Kinderecke (22. November 2026)
 - Automatisch: tests/test_v0705_kinder_altersweg.py (3, auf 0.6.104 rot), gesamte Suite 1.938 grün, Klicktests kids_corner/click_all. Zahlen an echten Daten und Wikidata-FSK: Mac-Prüfung (PRUEFLISTE in releases/0.6.105).
 
