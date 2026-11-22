@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.91
+# MediathekAtlas · 0.6.93
+
+## Neu in 0.6.93: Gruppen in der Kinderecke
+- Filme und Serien stehen in wenigen Gruppen mit Bild-Symbol: 🏰 Märchen, 🎨 Zeichentrick, 🐾 Tiere & Natur, 🔬 Wissen, 🗺️ Abenteuer, 😂 Lustiges, ⭐ Noch mehr. Oben gibt es für jede Gruppe einen runden Knopf, so findet auch ein Kind etwas, das noch nicht liest.
+- Leere Gruppen erscheinen nicht, sehr kleine (unter 3 Titeln) stehen unter „Noch mehr“. Die Einordnung folgt den Kategorien und Reihen des Katalogs, ohne KI.
 
 ## Neu in 0.6.91: Kinderecke zeigt Märchen, Serienfolgen und lässt sich blättern
 - Erkannte Märchenfilme (z. B. „Sechs auf einen Streich“, „Märchenperlen“) und Filme von KiKA stehen jetzt bei den Filmen der Kinderecke. Ausschluss bleibt: nie neben Horror, Thriller, Krimi, Erotik, Krieg.

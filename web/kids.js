@@ -5,6 +5,8 @@
    0.6.46: dazu Kinderfilme und Kinderserien aus dem Katalog (kids_catalog.py, nur Kategorie „Kinder“,
    nur ohne Kopierschutz im eigenen Player). Serien öffnen ihre Folgen in der Kinderecke; abgespielt
    wird über /api/kids-play, das nur Einträge dieser Liste annimmt.
+   0.6.93: Gruppen (Märchen, Zeichentrick, Tiere & Natur, Wissen, Abenteuer, Lustiges, Noch mehr) als Reihen
+   und als Bild-Chips oben.
    0.6.91: Pfeilknöpfe zum Blättern der Reihen, „Alle …“-Kachel am Ende gekürzter Reihen. */
 (() => {
   'use strict';
@@ -12,7 +14,7 @@
   const token = document.querySelector('meta[name=atlas-token]').content;
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const COLORS = ['#ff5d8f', '#ff9a3f', '#ffd23f', '#45d483', '#3fc4ff', '#6c5ce7', '#c56cf0', '#20bf6b', '#fd7272', '#4b7bec'];
-  const state = {channels: [], videos: [], movies: [], series: [], filter: 'all', show: null, episodes: [], current: null, list: [],
+  const state = {channels: [], videos: [], movies: [], series: [], groups: [], filter: 'all', show: null, episodes: [], current: null, list: [],
     nextTimer: 0, lastSent: 0, offset: 0, hls: null};
 
   async function api(path, data) {
@@ -31,7 +33,8 @@
   const channelOf = v => state.channels.find(c => c.id === v.abo) || {};
   // Ein Abo-Video wird zu einem abspielbaren Eintrag wie Filme und Folgen (ref, key, Bild).
   const fromAbo = v => Object.assign(v, {type: 'abo', ref: {job: v.job}, key: 'job:' + v.job, picture: v.poster ? image('job', v.job) : '', group: v.abo});
-  const fromCatalog = (t, type) => Object.assign(t, {type, picture: t.poster || '', group: type});
+  // 0.6.93: die Gruppe des Servers (Märchen …) heißt hier theme; group bleibt die Abspielreihe (nextOf)
+  const fromCatalog = (t, type) => Object.assign(t, {type, picture: t.poster || '', theme: t.group || 'mehr', group: type});
 
   // ------------------------------------------------------------ Auswahl oben
   function chip(id, name, opts) {
@@ -56,6 +59,8 @@
     if (fresh) host.append(chip('new', 'Neu', {color: '#ffd23f', letter: '✨', badge: fresh}));
     if (state.movies.length) host.append(chip('movies', 'Filme', {color: '#ff9a3f', letter: '🎬'}));
     if (state.series.length) host.append(chip('series', 'Serien', {color: '#3fc4ff', letter: '📺'}));
+    // 0.6.93: Gruppen mit Bild-Symbol (Märchen, Zeichentrick, Tiere …), auch für Kinder, die noch nicht lesen
+    for (const g of state.groups) host.append(chip('g:' + g.id, g.name, {color: color(g.id), letter: g.icon}));
     for (const c of state.channels.filter(c => c.videos))
       host.append(chip(c.id, c.name, {color: color(c.id), letter: (c.name || '?').trim().charAt(0).toUpperCase(), avatar: c.avatar ? image('abo', c.id) : '', badge: c.new}));
     if (host.kidsUpdate) requestAnimationFrame(host.kidsUpdate);
@@ -129,6 +134,21 @@
   }
   const STRIP = 40;          // Kacheln je Reihe in „Alle“; der Rest über „Alle …“ bzw. die Auswahl oben
   const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+  // 0.6.93: Filme und Serien in wenigen Gruppen statt einer langen Reihe (kids_catalog.GROUPS). Ohne Gruppen
+  // (ältere Server) bleibt es bei einer Reihe „Filme“ bzw. „Serien“.
+  const byTitle = list => list.sort((a, b) => String(a.title).localeCompare(String(b.title), 'de', {sensitivity: 'base'}));
+  const inGroup = (list, id) => list.filter(v => (v.theme || 'mehr') === id);
+  function grouped(main, list, what) {
+    const cut = (n, filter) => (n > STRIP ? {n, filter, name: 'Titel'} : null);
+    const groups = state.groups.length ? state.groups : [{id: 'mehr', name: what || 'Filme und Serien', icon: ''}];
+    for (const g of groups) {
+      const own = state.groups.length ? inGroup(list, g.id) : list;
+      if (!own.length) continue;
+      const title = (g.icon ? g.icon + ' ' : '') + g.name + (what && state.groups.length ? ' · ' + what : '');
+      main.append(row(title, count(own.length, 'Titel', 'Titel'), own.slice(0, STRIP), false, own,
+        state.groups.length ? cut(own.length, 'g:' + g.id) : cut(own.length, what === 'Serien' ? 'series' : 'movies')));
+    }
+  }
   function render() {
     renderChannels();
     const main = $('kids-main'); main.replaceChildren();
@@ -139,8 +159,13 @@
       main.append(p); return;
     }
     if (state.filter === 'new') { main.append(row('Neu für dich', '', state.videos.filter(v => v.new), true)); return; }
-    if (state.filter === 'movies') { main.append(row('Filme', count(state.movies.length, 'Film', 'Filme'), state.movies, true)); return; }
-    if (state.filter === 'series') { main.append(row('Serien', count(state.series.length, 'Serie', 'Serien'), state.series, true)); return; }
+    if (state.filter === 'movies') { grouped(main, state.movies, 'Filme'); return; }
+    if (state.filter === 'series') { grouped(main, state.series, 'Serien'); return; }
+    if (state.filter.startsWith('g:')) {
+      const g = state.groups.find(x => 'g:' + x.id === state.filter) || {name: '', icon: ''};
+      const list = inGroup(byTitle([...state.movies, ...state.series]), g.id);
+      main.append(row(g.icon + ' ' + g.name, count(list.length, 'Titel', 'Titel'), list, true)); return;
+    }
     if (state.filter !== 'all') {
       const c = state.channels.find(x => x.id === state.filter);
       main.append(row(c ? c.name : 'Kanal', '', state.videos.filter(v => v.abo === state.filter), true)); return;
@@ -150,8 +175,7 @@
     const started = [...state.videos, ...state.movies].filter(v => v.progress > 0);
     if (started.length) main.append(row('Weiterschauen', '', started.slice(0, 20)));
     const cut = (n, filter, name) => (n > STRIP ? {n, filter, name} : null);
-    if (state.movies.length) main.append(row('Filme', count(state.movies.length, 'Film', 'Filme'), state.movies.slice(0, STRIP), false, state.movies, cut(state.movies.length, 'movies', 'Filme')));
-    if (state.series.length) main.append(row('Serien', count(state.series.length, 'Serie', 'Serien'), state.series.slice(0, STRIP), false, null, cut(state.series.length, 'series', 'Serien')));
+    grouped(main, byTitle([...state.movies, ...state.series]), '');
     for (const c of state.channels) {
       const own = state.videos.filter(v => v.abo === c.id);
       if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, STRIP), false, own, cut(own.length, c.id, 'Videos')));
@@ -190,12 +214,14 @@
       const cat = d.catalog || {};
       state.movies = (cat.movies || []).map(t => fromCatalog(t, 'movie'));
       state.series = (cat.series || []).map(t => fromCatalog(t, 'series'));
+      state.groups = Array.isArray(cat.groups) ? cat.groups : [];
       if (cat.pending) setTimeout(load, 8000);   // der Katalog wird nach dem Start noch zusammengestellt
     }
     catch (e) { if (!state.videos.length && !state.movies.length) { $('kids-main').replaceChildren(make('p', 'kids-empty', 'Gerade nicht erreichbar. Gleich nochmal versuchen.')); } return; }
     if (!$('kids-stage').hidden) return;      // nicht während des Abspielens umbauen
     if (state.show && !state.series.some(s => s.id === state.show.id)) state.show = null;
-    if (!['all', 'new', 'movies', 'series'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)) state.filter = 'all';
+    if (!['all', 'new', 'movies', 'series'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)
+        && !state.groups.some(g => 'g:' + g.id === state.filter)) state.filter = 'all';
     render();
   }
 

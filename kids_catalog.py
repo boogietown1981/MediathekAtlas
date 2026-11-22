@@ -137,13 +137,76 @@ def build(root, db, modules=None, merge=True, page=None):
                 tile = next((t for t in (_from_offer(o, view) for o in entry.get('offers') or []) if t), None)
                 if tile and tile['id'] not in seen:
                     seen.add(tile['id'])
+                    tile['group'] = group_of(entry)
                     tiles.append(tile)
             offset += len(items)
             if not items or offset >= int(data.get('total') or 0):
                 break
         out[view] = tiles[:MAX_TITLES]
+    _fold_small_groups(out)
+    out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
+                     if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
     out['pending'] = pending
     return out
+
+
+# 0.6.93 (Björn, 22.11.2026: „für Filme und Serien noch eine Gruppierung, die es meiner Tochter leichter macht, etwas
+# zu finden, also nicht zu granular, aber auch nicht alles in einem Ordner“): wenige feste Gruppen mit Bild-Symbol,
+# abgeleitet aus den Kategorien (categories.py) und Texten des Katalogs (Titel, Reihe, Rohgenres), ohne KI.
+# Jeder Titel steht in genau einer Gruppe (die erste passende); Gruppen mit weniger als MIN_GROUP Titeln gehen in
+# „Noch mehr“, damit es nicht zu fein wird.
+GROUPS = (
+    ('maerchen', 'Märchen', '🏰', re.compile(r'(?i)m(?:ä|a|ae)rchen|fairy ?tale|sechs auf einen streich|grimm|andersen|prinzessin|princess')),
+    ('trick', 'Zeichentrick', '🎨', re.compile(r'(?i)\banim|zeichentrick|trickfilm|cartoon|\banime\b')),
+    ('tiere', 'Tiere & Natur', '🐾', re.compile(r'(?i)\btiere?\b|animal|natur|wildlife|\bzoo\b|bauernhof|\bpferd|\bhund|\bkatze')),
+    ('wissen', 'Wissen', '🔬', re.compile(r'(?i)wissen|doku|documentar|science(?! ?fiction)|\bchecker|sendung mit der maus|löwenzahn|planet schule|experiment|erklär')),
+    ('abenteuer', 'Abenteuer', '🗺️', re.compile(r'(?i)abenteuer|adventure|fantasy|action|science.?fiction|piraten|ritter|drache|weltraum')),
+    ('lustig', 'Lustiges', '😂', re.compile(r'(?i)kom(?:ö|o|oe)die|comedy|lustig|witzig|sitcom|slapstick')),
+    ('mehr', 'Noch mehr', '⭐', None),
+)
+GROUP_CATEGORIES = {'trick': {'Animation'}, 'tiere': {'Natur & Tiere'}, 'wissen': {'Wissen & Technik', 'Dokumentation'},
+                    'abenteuer': {'Abenteuer', 'Fantasy', 'Action', 'Science-Fiction'}, 'lustig': {'Komödie'}}
+MIN_GROUP = 3
+
+
+def _signals(entry):
+    """(Kategorien, Text) aller Angebote eines zusammengeführten Titels."""
+    cats, text = set(), [str(entry.get('title') or '')]
+    for offer in entry.get('offers') or []:
+        item = offer.get('item') or {}
+        for c in item.get('categories') or []:
+            if isinstance(c, str):
+                cats.add(c)
+        meta, src = item.get('metadata') or {}, item.get('source') or {}
+        for value in (item.get('title'), item.get('genre'), meta.get('title'), src.get('topic'), src.get('title')):
+            if isinstance(value, str):
+                text.append(value)
+        for many in (item.get('source_genres'), meta.get('genres'), item.get('genres')):
+            if isinstance(many, (list, tuple)):
+                text.extend(str(x) for x in many[:20])
+    return cats, ' | '.join(text)[:2000]
+
+
+def group_of(entry):
+    """Gruppe eines Katalogtitels: Märchen vor Zeichentrick (Märchen gibt es auch gezeichnet), sonst Kategorie oder Text."""
+    cats, text = _signals(entry)
+    for gid, _name, _icon, rx in GROUPS:
+        if rx is None:
+            return gid
+        if (GROUP_CATEGORIES.get(gid, set()) & cats) or rx.search(text):
+            return gid
+    return 'mehr'
+
+
+def _fold_small_groups(out):
+    counts = {}
+    for view in ('movies', 'series'):
+        for t in out.get(view) or []:
+            counts[t.get('group')] = counts.get(t.get('group'), 0) + 1
+    for view in ('movies', 'series'):
+        for t in out.get(view) or []:
+            if counts.get(t.get('group'), 0) < MIN_GROUP:
+                t['group'] = 'mehr'
 
 
 def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
@@ -291,7 +354,7 @@ def _episode(source, ref, title, season, episode, poster, duration):
 
 def with_progress(data, marks):
     """Kopie der Liste mit Abspielstand (Weiterschauen) je Film."""
-    out = {'pending': data.get('pending', False)}
+    out = {'pending': data.get('pending', False), 'groups': data.get('groups') or []}
     for view in ('movies', 'series'):
         rows = []
         for t in data.get(view) or []:

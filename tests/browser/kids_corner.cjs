@@ -54,6 +54,11 @@ add('gaensemagd', 'Zz Die Gänsemagd', ['Familie', 'Fantasy'], topic='Sechs auf 
 add('kikafilm', 'Ein KiKA-Film', ['Abenteuer'], channel='KiKA')
 add('m4', 'Die Maus im Wald', [], 'series', 'Die Maus', 1, 4, state='pending', attempts=0)
 for i in range(260): add('kf%03d' % i, 'Kinderfilm %03d' % i, ['Kinder'])
+# 0.6.93: Gruppen – drei Märchen, drei Zeichentrickfilme (kleinere Gruppen gehen in „Noch mehr“)
+add('schnee', 'Schneewittchen', ['Fantasy'], channel='ZDF', topic='Märchenperlen')
+add('holle', 'Frau Holle', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
+add('trick2', 'Bunte Trickwelt', ['Kinder', 'Animation'])
+add('trick3', 'Comic-Abenteuer', ['Kinder', 'Animation'])
 c.commit()
 `;
 
@@ -136,28 +141,41 @@ async function kidsCorner(browser, url, clip, problems) {
 
 // 0.6.91 (Björn: „kann nicht weiter nach rechts scrollen“): Pfeilknöpfe, „Alle …“-Kachel, ganze Liste
 async function scrolling(page, check) {
-  const strip = page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Filme' }) }).first();
+  // 0.6.93: in „Alle“ stehen Filme und Serien in Gruppen; die große Gruppe „Noch mehr“ muss sich blättern lassen
+  const rows = await page.locator('.kids-row h2').allTextContents();
+  check('Gruppenreihen Märchen, Zeichentrick, Noch mehr: ' + rows.join(' | '), rows.some(r => r.startsWith('🏰 Märchen')) && rows.some(r => r.startsWith('🎨 Zeichentrick')) && rows.some(r => r.startsWith('⭐ Noch mehr')));
+  const fairy = await page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Märchen' }) }).locator('.kids-title').allTextContents();
+  check('Märchen-Reihe: ' + fairy.join(' | '), fairy.length === 3 && fairy.includes('Frau Holle') && fairy.includes('Schneewittchen') && fairy.includes('Zz Die Gänsemagd'));
+  const strip = page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Noch mehr' }) }).first();
   const box = strip.locator('.kids-strip');
   const before = await box.evaluate(b => ({ left: b.scrollLeft, wide: b.scrollWidth > b.clientWidth + 50 }));
   check('Filmreihe ist breiter als das Fenster', before.wide);
   check('Pfeil „zurück“ am Anfang verborgen', await strip.locator('.kids-arrow-prev').isHidden());
   await strip.locator('.kids-arrow-next').click();
-  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.kids-row')].find(r => r.querySelector('h2').textContent.startsWith('Filme')).querySelector('.kids-strip'); return b.scrollLeft > 300; }, null, { timeout: 5000 })
+  await page.waitForFunction(() => { const b = [...document.querySelectorAll('.kids-row')].find(r => r.querySelector('h2').textContent.includes('Noch mehr')).querySelector('.kids-strip'); return b.scrollLeft > 300; }, null, { timeout: 5000 })
     .catch(() => check('Pfeil „weiter“ blättert die Reihe', false));
   check('Pfeil „zurück“ erscheint nach dem Blättern', await strip.locator('.kids-arrow-prev').isVisible());
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.91-kinderecke-blaettern.png') });
   // bis ans Ende: zuletzt kommt die „Alle …“-Kachel
   for (let i = 0; i < 30 && await strip.locator('.kids-arrow-next').isVisible(); i++) { await strip.locator('.kids-arrow-next').click(); await page.waitForTimeout(350); }
   const more = strip.locator('.kids-more');
-  check('„Alle … Filme“-Kachel am Ende sichtbar', await more.isVisible());
+  check('„Alle …“-Kachel am Ende sichtbar', await more.isVisible());
   const total = await page.evaluate(async () => { const token = document.querySelector('meta[name=atlas-token]').content;
     return (await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json()).catalog.movies.length; });
-  check('Liste nicht nach 240 abgeschnitten: ' + total, total === 264);
+  check('Liste nicht nach 240 abgeschnitten: ' + total, total === 268);
   await more.click();
-  await page.waitForFunction(n => document.querySelectorAll('.kids-grid .kids-tile[data-kind=movie]').length === n, total, { timeout: 10000 })
-    .catch(() => check('„Alle Filme“ zeigt die ganze Liste', false));
+  await page.waitForFunction(() => document.querySelectorAll('.kids-grid .kids-tile').length >= 262, null, { timeout: 10000 })
+    .catch(() => check('„Alle …“ zeigt die ganze Gruppe', false));
   const all = await page.locator('.kids-grid .kids-title').allTextContents();
-  check('erkannter Märchenfilm, KiKA-Film und Trickfilm dabei', all.includes('Zz Die Gänsemagd') && all.includes('Ein KiKA-Film') && all.includes('Trickfilm für alle'));
+  check('ganze Gruppe „Noch mehr“ mit KiKA-Film und Serie: ' + all.length, all.includes('Ein KiKA-Film') && all.includes('Die Maus') && !all.includes('Frau Holle'));
+  // Gruppen-Chip oben (Bild-Symbol) zeigt nur die Gruppe; Filme-Chip zeigt Gruppenreihen
+  await page.locator('.kids-chip', { hasText: 'Zeichentrick' }).click();
+  const trick = await page.locator('.kids-grid .kids-title').allTextContents();
+  check('Chip Zeichentrick: ' + trick.join(' | '), trick.length === 3 && trick.includes('Trickfilm für alle'));
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.93-kinderecke-gruppe.png') });
+  await page.locator('.kids-chip', { hasText: 'Filme' }).click();
+  const filmRows = await page.locator('.kids-row h2').allTextContents();
+  check('Filme in Gruppen: ' + filmRows.join(' | '), filmRows.some(r => r.includes('Märchen · Filme')) && !filmRows.some(r => r.includes('Serien')));
   // Kanal-/Auswahlleiste oben lässt sich ebenfalls ohne Seitwärtsrad bedienen (Pfeile vorhanden)
   check('Auswahlleiste hat Pfeilknöpfe', await page.locator('.kids-chips-scroller .kids-arrow-next').count() === 1);
   await page.locator('.kids-chip', { hasText: 'Alle' }).first().click();
