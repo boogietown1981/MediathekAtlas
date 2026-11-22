@@ -10,9 +10,10 @@ Björn, 22.11.2026:
 
 Regel (Kategorie „Kinder“, gilt in Kinderecke und Werkkatalog gleich):
 * Automatisch nur erkannte Werke (state matched/manual/identified), und zwar entweder
-  a) mit belegter Altersfreigabe bis zur eingestellten Grenze und einer Familien-/Fantasy-/Abenteuer-/Animations-
-     Kategorie (categories.KIDS_AGE_HINTS; Bibi & Tina, Märchen unter „Fantasy“). Ein FSK-12-Drama oder
-     Science-Fiction-Film (Arrival) kommt nicht allein über die Freigabe hinein („im Zweifel nicht“), oder
+  a) mit belegter Altersfreigabe bis zur eingestellten Grenze und der Kategorie Familie (categories.KIDS_AGE_HINTS;
+     Bibi & Tina, Märchen = Family/Fantasy), nie neben categories.AGE_PATH_EXCLUDED (Romantik, Science-Fiction,
+     Action, Mystery). Fantasy/Abenteuer allein (Netzkino „Alien Predator War“, FSK 12) und ein FSK-12-Drama (Arrival)
+     warten auf Freigabe („im Zweifel nicht“, 0.6.105), oder
   b) mit eindeutigem Kinder-Signal (Genre „Kinder“, Familie + Animation, KiKA, Kinder-/Märchenreihe), solange
      keine höhere Freigabe bekannt ist.
 * Sicherheitsnetz: nie neben Horror, Thriller, Krimi, Erotik, Krieg; Weg a) zusätzlich nie neben Romantik
@@ -42,8 +43,10 @@ DEFAULT_MAX_AGE = 12      # Björn 22.11.2026 23:08: „mein Standard wäre auch
 ALWAYS_CHANNELS = ('kika', 'kika.de', 'toggo', 'zdf-tivi', 'zdftivi')
 STATE_KEY = 'kids_max_age_v0696'
 IDENTIFIED = "w.state IN ('matched','manual','identified')"
-REF = "json_extract(w.meta,'$.reference_id')"
-AGE_PATH_EXCLUDED = ('Romantik',)          # zusätzlich zu categories.NOT_FOR_KIDS
+# 0.6.105: die IMDb-Kennung steht bei TMDB-/TVDB-Treffern in meta.imdb_id, reference_id ist dann die TMDB-ID
+# (Mac-Prüfung 0.6.103: reference_ages blieb leer)
+REF = "COALESCE(NULLIF(json_extract(w.meta,'$.imdb_id'),''),json_extract(w.meta,'$.reference_id'))"
+
 HINT_GENRES = ('Kinder', 'Familie', 'Animation', 'Fantasy', 'Abenteuer')   # Kandidaten für „Wartet auf Freigabe“
 
 SCHEMA = """
@@ -150,7 +153,7 @@ def kids_clause(c, signal, signal_args, has):
     ensure(c)
     limit = max_age(c)
     bad, bad_args = has(categories.NOT_FOR_KIDS)
-    soft, soft_args = has(AGE_PATH_EXCLUDED)
+    soft, soft_args = has(categories.AGE_PATH_EXCLUDED)
     hint, hint_args = has(categories.KIDS_AGE_HINTS)
     age_ok = 'EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age IS NOT NULL AND a.age<=?)' % REF
     age_high = 'EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age>?)' % REF
@@ -208,6 +211,8 @@ def waiting(c, limit=300):
             reason = 'Nicht erkannt'
         elif r['age'] is not None and r['age'] > lim:
             reason = 'FSK %d (über der Grenze)' % r['age']
+        elif r['age'] is not None:
+            reason = 'FSK %d, aber kein Familien- oder Kinderhinweis' % r['age']   # 0.6.105: Fantasy/Abenteuer allein
         elif r['age_checked']:
             reason = 'Keine Altersfreigabe bekannt'
         else:

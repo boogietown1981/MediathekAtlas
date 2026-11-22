@@ -69,10 +69,10 @@ class Base(unittest.TestCase):
 
 class RuleTests(Base):
     def test_rule(self):
-        self.add('bibi', 'Bibi & Tina', ['Fantasy', 'Komödie'], ref='tt1000001')          # FSK 0 → hinein
-        self.add('zwoelf', 'Das Märchen von den zwölf Monaten', ['Fantasy'], ref='tt1000002')  # FSK 6 → hinein
-        self.add('ohne', 'Fantasyfilm ohne FSK', ['Fantasy'], ref='tt1000003')              # keine FSK → wartet
-        self.add('zwoelfer', 'Abenteuer ab 12', ['Abenteuer'], ref='tt1000004')             # FSK 12 → nein (Grenze 6)
+        self.add('bibi', 'Bibi & Tina', ['Familie', 'Komödie'], ref='tt1000001')          # FSK 0 → hinein (IMDb Family)
+        self.add('zwoelf', 'Das Märchen von den zwölf Monaten', ['Familie', 'Fantasy'], ref='tt1000002')  # FSK 6 → hinein
+        self.add('ohne', 'Fantasyfilm ohne FSK', ['Familie', 'Fantasy'], ref='tt1000003')              # keine FSK → wartet
+        self.add('zwoelfer', 'Abenteuer ab 12', ['Familie', 'Abenteuer'], ref='tt1000004')   # FSK 12 → nein (Grenze 6)
         self.add('pilcher', 'Liebe in Cornwall', ['Romantik', 'Drama'], ref='tt1000005')     # FSK 0, Romantik → nein
         self.add('krimi', 'Krimi FSK 6', ['Krimi'], ref='tt1000006')                          # Sicherheitsnetz
         self.add('kika', 'KiKA-Film', ['Abenteuer'], channel='KiKA', ref='tt1000007')        # KiKA → immer
@@ -96,7 +96,7 @@ class RuleTests(Base):
 
     def test_parents_allow_and_block(self):
         self.add('unerkannt', 'Unerkannter Kinderfilm', [], topic='Kinderfilme', state='retry')
-        self.add('bibi', 'Bibi & Tina', ['Fantasy'], ref='tt1000001')
+        self.add('bibi', 'Bibi & Tina', ['Familie', 'Fantasy'], ref='tt1000001')
         self.add('e1', 'Folge 1', [], kind='series', show='show:x', state='retry', topic='Kinderserien', episode=1)
         self.add('e2', 'Folge 2', [], kind='series', show='show:x', state='retry', topic='Kinderserien', episode=2)
         self.ages(tt1000001=0)
@@ -127,12 +127,14 @@ class RuleTests(Base):
         self.add('hoch', 'Abenteuer ab 12', ['Abenteuer'], ref='tt1000004')
         self.add('neu', 'Familienfilm noch nicht gesucht', ['Familie'], ref='tt1000009')
         self.add('krimi', 'Familienkrimi', ['Familie', 'Krimi'], ref='tt1000010')   # Sicherheitsnetz: gar nicht anbieten
-        self.ages(tt1000003=None, tt1000004=12)
+        self.add('fanta', 'Fantasy ab 6', ['Fantasy', 'Abenteuer'], ref='tt1000011')  # 0.6.105: FSK passt, kein Familiensignal
+        self.ages(tt1000003=None, tt1000004=12, tt1000011=6)
         with self.db() as c:
             kids_rules.set_max_age(c, 6)
             reasons = {w['title']: w['reason'] for w in kids_rules.waiting(c)}
         self.assertEqual(reasons, {'Fantasy ohne FSK': 'Keine Altersfreigabe bekannt', 'Abenteuer ab 12': 'FSK 12 (über der Grenze)',
-                                   'Familienfilm noch nicht gesucht': 'Altersfreigabe wird noch gesucht'})
+                                   'Familienfilm noch nicht gesucht': 'Altersfreigabe wird noch gesucht',
+                                   'Fantasy ab 6': 'FSK 6, aber kein Familien- oder Kinderhinweis'})
 
 
 class FetchTests(Base):
@@ -175,16 +177,17 @@ class PortalTests(unittest.TestCase):
         old = categories.KIDS_MAX_AGE
         self.addCleanup(setattr, categories, 'KIDS_MAX_AGE', old)
         categories.KIDS_MAX_AGE = 6
-        self.assertIn('Kinder', categories.classify(['Fantasy'], [], True, age='FSK 6'))
+        self.assertIn('Kinder', categories.classify(['Familie', 'Fantasy'], [], True, age='FSK 6'))
+        self.assertNotIn('Kinder', categories.classify(['Fantasy'], [], True, age='FSK 6'))   # 0.6.105: Familie nötig
         # FSK allein reicht nicht: Drama/Science-Fiction/Komödie ab 0 oder 12 (Arrival) bleibt draußen
         self.assertNotIn('Kinder', categories.classify(['Komödie'], [], True, age=0))
         self.assertNotIn('Kinder', categories.classify(['Drama', 'Science-Fiction'], [], True, age=0))
-        self.assertNotIn('Kinder', categories.classify(['Fantasy'], [], True, age='FSK 12'))
+        self.assertNotIn('Kinder', categories.classify(['Familie', 'Fantasy'], [], True, age='FSK 12'))
         self.assertNotIn('Kinder', categories.classify(['Romantik'], [], True, age=0))
         self.assertNotIn('Kinder', categories.classify(['Krimi'], [], True, age=0))
         self.assertEqual(categories.classify(['Fantasy'], [], False, age=0), [categories.UNCLASSIFIED])
         categories.KIDS_MAX_AGE = 12
-        self.assertIn('Kinder', categories.classify(['Fantasy'], [], True, age='FSK 12'))
+        self.assertIn('Kinder', categories.classify(['Familie', 'Fantasy'], [], True, age='FSK 12'))
 
 
 class LiveTests(unittest.TestCase):

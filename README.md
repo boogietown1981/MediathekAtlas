@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.104
+# MediathekAtlas · 0.6.105
+
+## Neu in 0.6.105: Altersregel der Kinderecke strenger
+- Über die Altersfreigabe kommt ein Film nur noch in die Kinderecke, wenn er zusätzlich als Familienfilm eingeordnet ist; nie neben Science-Fiction, Action, Mystery oder Romantik. „Fantasy“ oder „Abenteuer“ allein reichen nicht mehr (Monster-, Hai- und Actionfilme ab 12 aus Netzkino und Plex), solche Titel stehen unter „Wartet auf Freigabe“.
+- Die Altersfreigaben aus Wikidata werden jetzt auch für Filme gesucht, die über TMDB erkannt wurden.
+
 
 ## Neu in 0.6.104: Sammelstand
 - Enthält 0.6.103 (Kinderecke wieder gefüllt, Live-Sender spielen; mit 0.6.99 Altersfreigabe und Elternbereich), 0.6.100 (Kanal-Vorschläge, Abo-Einstellungen bleiben offen) und 0.6.101 (Serien-Nachladen mit deutscher Fassung).

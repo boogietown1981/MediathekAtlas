@@ -1,3 +1,9 @@
+## 0.6.105 – Altersregel der Kinderecke nur mit Familiensignal, FSK-Suche für TMDB-Treffer
+- Grundlage: Mac-Prüfung 0.6.103 (Kopie von Björns Bestand, 22.11.2026): 832 Filme statt 209, davon 533 neu aus Netzkino und 77 aus Plex, allein über FSK ≤ 12 und „Abenteuer“/„Fantasy“, u. a. „5-Headed Shark Attack“, „Alien Predator War“, „55 Tage in Peking“, „An Egypt Affair“, „A Man called Hero“, „Anuk III“, „Prosperos Bücher“, „Jurassic Galaxy“, „Vom Suchen und Finden der Liebe“. Björns Vorgaben zusammen gelesen (Standard FSK 12, aber „im Zweifel nicht, ich gebe manuell frei“). Basis Sammelstand 0.6.104 (aaa9e6cb).
+- `categories.KIDS_AGE_HINTS` = nur „Familie“; neu `categories.AGE_PATH_EXCLUDED` (Romantik, Science-Fiction, Action, Mystery) zusätzlich zum Sicherheitsnetz, gilt für Mediatheken (`kids_rules.kids_clause`) und Plattformen (`categories.classify`, Netzkino/Plex/Pluto …). Kinder-Signal-Weg (Genre Kinder, Familie + Animation, KiKA/TOGGO, Kinderreihe) unverändert. „Wartet auf Freigabe“ nennt neu den Grund „FSK n, aber kein Familien- oder Kinderhinweis“.
+- `kids_rules.REF`: IMDb-Kennung aus `meta.imdb_id` vor `reference_id` (bei TMDB-/TVDB-Treffern ist `reference_id` die TMDB-ID). Auf der Prüfkopie blieb `reference_ages` deshalb leer.
+- Tests: `tests/test_v0705_kinder_altersweg.py` (3, alle Prüftitel; auf 0.6.104 rot), angepasst `test_v0699_kinder_freigabe.py`.
+
 ## 0.6.104 – Sammelstand 0.6.103 + 0.6.100 + 0.6.101
 - Zusammenführung ohne neue Logik: Kinderecke-Korrektur 0.6.103 (auf 0.6.99/0.6.98), Kanal-Vorschläge 0.6.100 mit Abo-Einstellungs-Korrektur, Serien-Nachladen 0.6.101. 0.6.102 nicht ausgegeben.
 - CI: Klicktest `abo_settings.cjs` aufgenommen.

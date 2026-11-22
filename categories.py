@@ -151,7 +151,12 @@ def of_labels(labels):
 # 0.5.103: Inhalte, die nie unter „Kinder“ (bzw. „Familie“) stehen, auch wenn ein Anbieter es so etikettiert.
 NOT_FOR_KIDS = ('Horror', 'Thriller', 'Krimi', 'Erotik', 'Krieg')
 NOT_FOR_FAMILY = ('Horror', 'Erotik')
-KIDS_AGE_HINTS = ('Familie', 'Animation', 'Fantasy', 'Abenteuer')   # 0.6.99: Altersweg nur mit diesen
+# 0.6.105 (Mac-Prüfung 0.6.103: 533 Netzkino-Filme über die Altersregel, u. a. „5-Headed Shark Attack“, „Alien Predator
+# War“, „55 Tage in Peking“ mit FSK 12 und „Abenteuer“/„Fantasy“): der Altersweg braucht ein klares Familiensignal;
+# „Fantasy“ oder „Abenteuer“ allein reicht nicht (→ „Wartet auf Freigabe“). Science-Fiction, Action, Mystery und
+# Romantik schließen den Altersweg zusätzlich zum Sicherheitsnetz aus.
+KIDS_AGE_HINTS = ('Familie',)
+AGE_PATH_EXCLUDED = ('Romantik', 'Science-Fiction', 'Action', 'Mystery')
 KIDS_MAX_AGE = 12       # 0.6.99: Standard FSK 12 (Björn), einstellbar im Elternbereich (kids_rules)
 FAMILY_MAX_AGE = 12     # FSK 0/6/12
 
@@ -199,12 +204,12 @@ def classify(reference_labels=(), provider_labels=(), checked=True, age=None):
         return [UNCLASSIFIED]
     names = refine(of_labels(reference_labels) or of_labels(provider_labels), age)
     # 0.6.99 (Björn: „das soll für alle Kategorien gelten“): a proven age rating up to the parents' limit
-    # (kids_rules, KIDS_MAX_AGE) makes a checked family/fantasy/adventure/animation title a kids title
-    # (Bibi & Tina, Märchen unter „Fantasy“), never next to the safety-net genres. A plain FSK-12 drama
-    # or science-fiction film (Arrival) stays out: „im Zweifel nicht“.
+    # (kids_rules, KIDS_MAX_AGE) makes a checked family title a kids title (Bibi & Tina = Family/Comedy, Märchen =
+    # Family/Fantasy), never next to the safety-net genres or AGE_PATH_EXCLUDED. 0.6.105: Fantasy/Abenteuer alone
+    # no longer count (Netzkino „Alien Predator War“, FSK 12): „im Zweifel nicht“.
     a = age_of(age)
     if (a is not None and a <= KIDS_MAX_AGE and 'Kinder' not in names and set(names) & set(KIDS_AGE_HINTS)
-            and not set(names) & set(NOT_FOR_KIDS + ('Romantik',))):
+            and not set(names) & set(NOT_FOR_KIDS + AGE_PATH_EXCLUDED)):
         names = sorted(set(names) | {'Kinder'}, key=ORDER.get)
     return names or [OTHER]
 
