@@ -14,7 +14,7 @@
   const token = document.querySelector('meta[name=atlas-token]').content;
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const COLORS = ['#ff5d8f', '#ff9a3f', '#ffd23f', '#45d483', '#3fc4ff', '#6c5ce7', '#c56cf0', '#20bf6b', '#fd7272', '#4b7bec'];
-  const state = {channels: [], videos: [], movies: [], series: [], groups: [], filter: 'all', show: null, episodes: [], current: null, list: [],
+  const state = {channels: [], videos: [], movies: [], series: [], groups: [], liveEnabled: false, live: null, filter: 'all', show: null, episodes: [], current: null, list: [],
     nextTimer: 0, lastSent: 0, offset: 0, hls: null};
 
   async function api(path, data) {
@@ -61,6 +61,8 @@
     if (state.series.length) host.append(chip('series', 'Serien', {color: '#3fc4ff', letter: '📺'}));
     // 0.6.93: Gruppen mit Bild-Symbol (Märchen, Zeichentrick, Tiere …), auch für Kinder, die noch nicht lesen
     for (const g of state.groups) host.append(chip('g:' + g.id, g.name, {color: color(g.id), letter: g.icon}));
+    // 0.6.99: Kinder- und Familiensender live (nur wenn die Eltern es eingeschaltet haben)
+    if (state.liveEnabled) host.append(chip('live', 'Fernsehen', {color: '#20bf6b', letter: '📡'}));
     for (const c of state.channels.filter(c => c.videos))
       host.append(chip(c.id, c.name, {color: color(c.id), letter: (c.name || '?').trim().charAt(0).toUpperCase(), avatar: c.avatar ? image('abo', c.id) : '', badge: c.new}));
     if (host.kidsUpdate) requestAnimationFrame(host.kidsUpdate);
@@ -86,6 +88,7 @@
     b.dataset.kind = v.type;
     const th = thumb(v, tall);
     th.append(make('span', 'kids-play', v.type === 'series' ? '☰' : '▶'));
+    if (v.type === 'live') th.append(make('span', 'kids-new kids-live', 'LIVE'));
     if (v.new) th.append(make('span', 'kids-new', 'NEU'));
     else if (v.done) th.append(make('span', 'kids-seen', '✓'));
     if (v.duration && v.type !== 'series') th.append(make('span', 'kids-time', clock(v.duration)));
@@ -151,6 +154,17 @@
         state.groups.length ? cut(own.length, 'g:' + g.id) : cut(own.length, what === 'Serien' ? 'series' : 'movies')));
     }
   }
+  // 0.6.99: Live-Sender für Kinder (/api/kids-live); kein Weiterschauen, kein „nächstes Video“
+  async function loadLive() {
+    try { const d = await api('kids-live'); state.live = (d.stations || []).map(t => Object.assign(t, {type: 'live', picture: t.poster || '', key: '', group: 'live', theme: 'live'})); }
+    catch (e) { state.live = []; }
+    if (state.filter === 'live' && $('kids-stage').hidden) render();
+  }
+  function renderLive(main) {
+    if (state.live === null) { main.append(make('p', 'kids-empty', 'Sender werden geladen …')); loadLive(); return; }
+    if (!state.live.length) { main.append(make('p', 'kids-empty', 'Gerade gibt es keine Kindersender.')); return; }
+    main.append(row('📡 Fernsehen', count(state.live.length, 'Sender', 'Sender'), state.live, true));
+  }
   function render() {
     renderChannels();
     const main = $('kids-main'); main.replaceChildren();
@@ -161,6 +175,7 @@
       main.append(p); return;
     }
     if (state.filter === 'new') { main.append(row('Neu für dich', '', state.videos.filter(v => v.new), true)); return; }
+    if (state.filter === 'live') { renderLive(main); return; }
     if (state.filter === 'movies') { grouped(main, state.movies, 'Filme'); return; }
     if (state.filter === 'series') { grouped(main, state.series, 'Serien'); return; }
     if (state.filter.startsWith('g:')) {
@@ -213,6 +228,7 @@
     try {
       const d = await api('kids');
       state.channels = d.channels || []; state.videos = (d.videos || []).map(fromAbo);
+      state.liveEnabled = !!d.live_enabled;
       const cat = d.catalog || {};
       state.movies = (cat.movies || []).map(t => fromCatalog(t, 'movie'));
       state.series = (cat.series || []).map(t => fromCatalog(t, 'series'));
@@ -222,7 +238,8 @@
     catch (e) { if (!state.videos.length && !state.movies.length) { $('kids-main').replaceChildren(make('p', 'kids-empty', 'Gerade nicht erreichbar. Gleich nochmal versuchen.')); } return; }
     if (!$('kids-stage').hidden) return;      // nicht während des Abspielens umbauen
     if (state.show && !state.series.some(s => s.id === state.show.id)) state.show = null;
-    if (!['all', 'new', 'movies', 'series'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)
+    if (state.filter === 'live' && !state.liveEnabled) state.filter = 'all';
+    if (!['all', 'new', 'movies', 'series', 'live'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)
         && !state.groups.some(g => 'g:' + g.id === state.filter)) state.filter = 'all';
     render();
   }
@@ -291,7 +308,7 @@
     render(); load();
   }
   function nextOf(v) {
-    if (v.type === 'movie') return null;        // nach einem Film geht es zurück zur Übersicht
+    if (v.type === 'movie' || v.type === 'live') return null;        // nach einem Film geht es zurück zur Übersicht
     const list = (state.list || []).filter(x => x.type === v.type && x.group === v.group);
     const i = list.findIndex(x => x === v || (x.key && x.key === v.key));
     if (v.type === 'episode') return list[i + 1] || null;

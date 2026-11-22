@@ -27,7 +27,8 @@ import re
 import threading
 import time
 
-REF_KEYS = ('offer', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'toggo', 'plex', 'servustv', 'job')
+REF_KEYS = ('offer', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'toggo', 'plex', 'servustv', 'job',
+            'samsung', 'redbulltv')   # 0.6.99: Live-Sender (Samsung TV Plus, Red Bull TV) der Kinderecke
 SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'toggo', 'plex', 'servustv')
 CATEGORY = 'Kinder'
 # 0.6.91: 240 je Art schnitt die Liste nach dem Titel ab: Mit großen Kinderkatalogen von Pluto TV, Rakuten und
@@ -278,10 +279,24 @@ def allowed_ref(data, ref):
     source = 'mediatheken' if name == 'offer' else name
     if _listed(data, source, 'ref', name, value):
         return True
+    if (name, str(value)) in _LIVE_SEEN:          # 0.6.99: zuletzt ausgelieferte Kinder-Live-Sender
+        return True
     return (source, str(value)) in _EPISODES_SEEN
 
 
 _EPISODES_SEEN = set()    # (quelle, id) der zuletzt ausgelieferten, geprüften Folgen
+_LIVE_SEEN = set()        # 0.6.99: (ref-Name, id) der zuletzt ausgelieferten Kinder-Live-Sender
+
+
+def live(c, root):
+    """0.6.99: Kinder- und Familiensender (live_tv.kids_stations); merkt sie für /api/kids-play."""
+    import live_tv
+    stations = live_tv.kids_stations(c, root)
+    _LIVE_SEEN.clear()
+    for st in stations:
+        (name, value), = st['ref'].items()
+        _LIVE_SEEN.add((name, str(value)))
+    return stations
 
 
 def _remember(source, episodes):
@@ -383,13 +398,18 @@ def _work_rows(c, show_key, limit=None, query=None):
                 if raw not in names_of:
                     names_of[raw] = set(categories.of_label(raw))
                 names |= names_of[raw]
-        against = bool(is_bad) or (not is_kids and bool(names - friendly))
-        out.append((wid, bool(is_kids) and not is_bad, against))
+        # „kids“ folgt der Kinder-Regel (catalog.category_clause): 0.6.99 lässt KiKA/TOGGO und Elternfreigaben
+        # auch neben einem Ausschluss-Genre zu, sonst schließt die Regel es selbst aus
+        against = not is_kids and (bool(is_bad) or bool(names - friendly))
+        out.append((wid, bool(is_kids), against))
     return out
 
 
 def show_is_kids(c, show_key, title='', query=None):
-    """Ist die ARD/ZDF-Reihe selbst eindeutig Kinderprogramm? (Regel oben)"""
+    """Ist die ARD/ZDF-Reihe selbst eindeutig Kinderprogramm? (Regel oben; 0.6.99: Elternfreigabe/-sperre gehen vor)"""
+    import kids_rules
+    if kids_rules.show_allowed(c, show_key):
+        return True
     if show_name_blocked(title):
         return False
     rows = _work_rows(c, show_key, SHOW_SAMPLE, query)
@@ -416,10 +436,15 @@ def excluded_works(c, show_key):
     Folge mit Ausschluss-Genre und jede, die eine Kategorie außerhalb von KIDS_FRIENDLY trägt (Nachrichten, Talk,
     Drama, Dokumentation …), ohne selbst Kinderprogramm zu sein. Ist die Reihe selbst kein Kinderprogramm
     (show_is_kids), fallen alle Folgen heraus."""
+    import kids_rules
     rows = _work_rows(c, show_key)
-    if not show_is_kids(c, show_key, _show_title(c, show_key)):
+    # 0.6.99: von den Eltern gesperrte Serie/Folgen fallen heraus, einzeln freigegebene Folgen bleiben drin
+    blocked = kids_rules.blocked_works(c, show_key)
+    if blocked is None or not show_is_kids(c, show_key, _show_title(c, show_key)):
         return {wid for wid, _, _ in rows}
-    return {wid for wid, kids, against in rows if against and not kids}
+    out = {wid for wid, kids, against in rows if against and not kids}
+    allowed = {r[0] for r in c.execute("SELECT substr(key,6) FROM kids_choices WHERE choice='allow' AND key LIKE 'work:%'")} if out else set()
+    return (out - allowed) | blocked
 
 
 def _show_title(c, show_key):

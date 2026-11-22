@@ -863,6 +863,10 @@ def category_clause(c,genre):
             # the offers because a recognized work keeps only the reference genres (IMDb knows no „Kinder“).
             sig,sig_args=kids_signal_clause(c)
             own='(%s OR (%s AND %s) OR %s)'%(own,fam,ani,sig);own_args=own_args+fam_args+ani_args+sig_args
+            # 0.6.99 (Björn: „im Zweifel nicht, ich gebe dann manuell frei“): only recognized works, by kids signal or by
+            # a proven age rating up to the parents' limit (any category); parents' release/block on top (kids_rules).
+            import kids_rules
+            return kids_rules.kids_clause(c,own,own_args,has)
         bad,bad_args=has(categories.NOT_FOR_KIDS if text=='Kinder' else categories.NOT_FOR_FAMILY)
         return CLASSIFIED_SQL+' AND '+own+' AND NOT '+bad,own_args+bad_args
     if text in categories.CATEGORIES:

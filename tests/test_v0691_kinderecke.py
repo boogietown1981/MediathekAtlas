@@ -82,12 +82,12 @@ class MaerchenTests(Base):
         self.add('kika', 'Ein KiKA-Film', ['Abenteuer'], channel='KiKA', topic='Filme')
         self.add('label', 'Wikidata-Märchen', ['Märchenfilm'])
         self.add('harry', 'Zauberschüler', ['Familie', 'Fantasy', 'Abenteuer'])        # kein Kinder-Signal
-        self.add('kikakrimi', 'Krimi auf KiKA', ['Krimi'], channel='KiKA')             # Ausschluss-Genre
+        self.add('kikakrimi', 'Krimi auf KiKA', ['Krimi'], channel='KiKA')             # 0.6.99: KiKA immer (Björn)
         self.add('doku', 'Märchenhafte Landschaften', ['Dokumentation'], topic='Märchenhafte Landschaften')
         self.add('offen', 'Ungeprüfter Märchenfilm', [], state='pending', attempts=0, topic='Sechs auf einen Streich')
         data = self.shelf()
         self.assertEqual(sorted(t['title'] for t in data['movies']),
-                         ['Anderer Film der Reihe', 'Die Gänsemagd', 'Ein KiKA-Film', 'Schneewittchen', 'Wikidata-Märchen'])
+                         ['Anderer Film der Reihe', 'Die Gänsemagd', 'Ein KiKA-Film', 'Krimi auf KiKA', 'Schneewittchen', 'Wikidata-Märchen'])
 
     def test_category_label_and_topic_rule(self):
         self.assertIn('Kinder', categories.of_label('Märchenfilm'))
@@ -107,9 +107,13 @@ class SeriesTests(Base):
         # 0.6.98: die Reihe muss selbst Kinderprogramm sein (≥ 80 % der eingeordneten Folgen)
         for n in (5, 6, 7):
             self.add('e%d' % n, 'Weitere Folge %d' % n, ['Kinder'], kind='series', show='show:hase', season=1, episode=n)
-        self.add('k1', 'KiKA-Folge', [], kind='series', show='show:kika', channel='KiKA', state='retry', attempts=2)
+        self.add('k1', 'KiKA-Folge', [], kind='series', show='show:kika', channel='KiKA', state='identified')
+        # 0.6.99 (Björn: „nicht identifiziert → im Zweifel nicht“, aber „alles von KiKA oder TOGGO freigeben“):
+        # nicht erkannte KiKA-Serie kommt hinein, nicht erkannte Serie aus einer Kinderreihe wartet auf Freigabe
+        self.add('k2', 'Unerkannte KiKA-Folge', [], kind='series', show='show:kika2', channel='KiKA', state='retry', attempts=2)
+        self.add('r1', 'Unerkannte Reihenfolge', [], kind='series', show='show:reihe', topic='Kinderserien', state='retry', attempts=2)
         data = self.shelf()
-        self.assertEqual(sorted(t['series']['show'] for t in data['series']), ['show:hase', 'show:kika'])
+        self.assertEqual(sorted(t['series']['show'] for t in data['series']), ['show:hase', 'show:kika', 'show:kika2'])
         with self.db() as c:
             eps = kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:hase')
             self.assertEqual([e['episode'] for e in eps['episodes']], [1, 2, 3, 5, 6, 7])

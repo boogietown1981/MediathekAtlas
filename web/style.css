@@ -1331,3 +1331,8 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .sal-note{display:block;margin-top:2px;color:var(--muted,#888)}
 .sal-actions{display:flex;flex-wrap:wrap;gap:6px;margin-top:6px}
 .discover-video img.is-portrait{object-fit:contain;background:#000}
+/* 0.6.99: Elternbereich der Kinderecke */
+.kids-parents-list{display:flex;flex-direction:column;gap:6px;max-height:420px;overflow:auto;margin:6px 0 14px}
+.kids-parents-row{display:grid;grid-template-columns:minmax(160px,2fr) minmax(90px,1fr) minmax(140px,1.4fr) auto auto;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;background:rgba(127,127,127,.08)}
+.kids-parents-reason{color:#e0a040}.kids-parents-ok{color:#45b36b}
+@media (max-width:700px){.kids-parents-row{grid-template-columns:1fr 1fr}}

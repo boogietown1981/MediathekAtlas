@@ -64,6 +64,10 @@ add('schnee', 'Schneewittchen', ['Fantasy'], channel='ZDF', topic='Märchenperle
 add('holle', 'Frau Holle', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
 add('trick2', 'Bunte Trickwelt', ['Kinder', 'Animation'])
 add('trick3', 'Comic-Abenteuer', ['Kinder', 'Animation'])
+# 0.6.99: nicht erkannter Film aus einer Kinderreihe wartet auf Freigabe; KiKA-Livestream für „Fernsehen“
+add('wartet', 'Wartender Kinderfilm', [], topic='Kinderfilme', state='retry')
+c.execute("INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts,topic) VALUES('kikalive','KiKA Livestream','other',NULL,'kikalive','{}','format',0,'Livestream')")
+c.execute("INSERT INTO offers(id,work_id,payload,active) VALUES('o-kikalive','kikalive',?,1)", (json.dumps({'title': 'KiKA Livestream', 'channel': 'KiKA', 'topic': 'Livestream', 'duration': 0, 'url_video': 'https://media.example.org/kikalive.mp4'}),))
 c.commit()
 `;
 
@@ -80,6 +84,43 @@ async function waitFor(url, seconds) {
     await new Promise(r => setTimeout(r, 250));
   }
   throw new Error('MediathekAtlas ist nach ' + seconds + ' s nicht erreichbar');
+}
+
+// 0.6.99: „Fernsehen“ (Kindersender live) und Elternbereich (Wartet auf Freigabe → Freigeben)
+async function liveAndParents(page, url, check, asked) {
+  const titles = await page.locator('.kids-tile .kids-title').allTextContents();
+  check('wartender, nicht erkannter Film fehlt zunächst', !titles.includes('Wartender Kinderfilm'));
+  await page.locator('.kids-chip', { hasText: 'Fernsehen' }).click();
+  await page.waitForSelector('.kids-tile[data-kind=live]', { timeout: 15000 }).catch(() => check('Kindersender erscheinen', false));
+  const live = await page.locator('.kids-tile[data-kind=live] .kids-title').allTextContents();
+  check('nur KiKA live: ' + live.join(' | '), live.length === 1 && live[0] === 'KiKA');
+  await page.locator('.kids-tile[data-kind=live]').first().click();
+  await page.waitForFunction(() => { const v = document.getElementById('kids-video'); return !document.getElementById('kids-stage').hidden && v.currentTime > 0.3; }, null, { timeout: 20000 })
+    .catch(() => check('KiKA live spielt', false));
+  check('Livestream von der Sender-Adresse', asked.some(u => u.endsWith('/kikalive.mp4')));
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.99-kinderecke-live.png') });
+  await page.locator('#kids-close').click();
+  await page.waitForFunction(() => document.getElementById('kids-stage').hidden);
+  // Elternbereich in der Verwaltung
+  const admin = await page.context().browser().newPage({ viewport: { width: 1280, height: 900 } });
+  await admin.goto(url);
+  await admin.waitForFunction(() => typeof window.atlasShowView === 'function');
+  await admin.evaluate(() => window.atlasShowView('settings'));
+  await admin.locator('#kids-parents-panel > summary').click();
+  await admin.waitForSelector('#kids-waiting .kids-parents-row', { timeout: 20000 }).catch(() => check('Wartet auf Freigabe gefüllt', false));
+  check('Standardgrenze FSK 12', await admin.locator('#kids-max-age').inputValue() === '12');
+  const row = admin.locator('#kids-waiting .kids-parents-row', { hasText: 'Wartender Kinderfilm' });
+  check('Grund „Nicht erkannt“', (await row.textContent()).includes('Nicht erkannt'));
+  if (SHOTS) await admin.screenshot({ path: path.join(SHOTS, '0.6.99-eltern.png'), fullPage: false });
+  await row.locator('button', { hasText: 'Freigeben' }).click();
+  await admin.waitForSelector('#kids-choices .kids-parents-row', { timeout: 10000 }).catch(() => check('Entscheidung erscheint', false));
+  await admin.close();
+  await page.reload();
+  await page.waitForSelector('.kids-tile');
+  // steht in „Noch mehr“ hinter den ersten 40 Kacheln → über „Alle …“ öffnen
+  await page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Noch mehr' }) }).first().locator('.kids-more').click();
+  await page.waitForFunction(() => [...document.querySelectorAll('.kids-tile .kids-title')].some(t => t.textContent === 'Wartender Kinderfilm'), null, { timeout: 15000 })
+    .catch(() => check('freigegebener Film erscheint in der Kinderecke', false));
 }
 
 async function kidsCorner(browser, url, clip, problems) {
@@ -103,6 +144,7 @@ async function kidsCorner(browser, url, clip, problems) {
   check('Auswahl Filme/Serien oben: ' + chips.join(','), chips.includes('Filme') && chips.includes('Serien'));
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.46-kinderecke.png') });
   await scrolling(page, check);
+  await liveAndParents(page, url, check, asked);
 
   // Film abspielen
   await page.locator('.kids-tile', { hasText: 'Der kleine Rabe Socke' }).first().click();

@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover
-import series_autoload,api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import series_autoload,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -92,6 +92,7 @@ with db() as c:
     series_autoload.initialize(c)
     portal_sources.initialize(c)
     portal_control.initialize(c)
+    kids_rules.ensure(c);kids_rules.apply_limit(c)   # 0.6.99: Altersgrenze und Eltern-Freigaben der Kinderecke
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
@@ -1207,6 +1208,9 @@ def get_kids(self,path):
     def abos():
         with db() as c:return youtube_abos.kids(ROOT,c,watch=marks)
     data=_timed(parts,'abos',abos)
+    try:
+        with db() as c:data['live_enabled']=kids_rules.live_enabled(c)   # 0.6.99
+    except Exception:data['live_enabled']=False
     # 0.6.46: Kinderfilme und -serien aus dem Katalog (nur Kategorie „Kinder“, kids_catalog.py)
     try:data['catalog']=kids_catalog.with_progress(_timed(parts,'shelf',_kids_shelf),marks)
     except Exception as e:data['catalog']={'movies':[],'series':[],'error':core.safe_error(e)}
@@ -1216,6 +1220,34 @@ def get_kids(self,path):
 
 def _kids_shelf():
     return kids_catalog.shelf(ROOT,db,modules=_UNIFIED_SOURCES,merge=ui_prefs.load(ROOT)['merge_duplicates'])
+
+# 0.6.99: Elternbereich der Kinderecke – Altersgrenze, Freigaben, „Wartet auf Freigabe“ (kids_rules.py)
+@ROUTES.get('/api/kids-rules')
+def get_kids_rules(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:
+        out={'summary':kids_rules.summary(c),'choices':kids_rules.choices(c)}
+        if q.get('waiting',['0'])[0]=='1':out['waiting']=kids_rules.waiting(c)
+    return self.send(out)
+
+@ROUTES.post('/api/kids-rules')
+def post_kids_rules(self,path,d):
+    try:
+        with db() as c:
+            if 'live' in d:result={'live':kids_rules.set_live(c,d.get('live') is True)}
+            elif 'max_age' in d:result={'max_age':kids_rules.set_max_age(c,d.get('max_age'))}
+            else:result=kids_rules.choose(c,str(d.get('kind') or ''),str(d.get('id') or ''),d.get('choice'),str(d.get('title') or ''))
+    except ValueError as e:return self.send({'error':str(e)},400)
+    catalog.invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
+    diagnostics.event('kids_rules_changed',**({k:result[k] for k in ('max_age','live') if k in result} or {'choice':result.get('choice') or 'zurück'}))
+    return self.send(result)
+
+# 0.6.99: Kinder- und Familiensender (live_tv.kids_stations), nur wenn die Eltern es eingeschaltet haben
+@ROUTES.get('/api/kids-live')
+def get_kids_live(self,path):
+    with db() as c:
+        if not kids_rules.live_enabled(c):return self.send({'enabled':False,'stations':[]})
+        return self.send({'enabled':True,'stations':kids_catalog.live(c,ROOT)})
 
 @ROUTES.get('/api/kids-episodes')
 def get_kids_episodes(self,path):
@@ -2548,7 +2580,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2620,6 +2652,8 @@ if __name__=='__main__':
                 diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2))
             except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
+        # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke
+        threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),daemon=True,name='kids_ages').start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
         threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()

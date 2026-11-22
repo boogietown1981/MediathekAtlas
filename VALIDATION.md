@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.99 – Kinderecke: Altersgrenze, Elternfreigabe, Kindersender live (22. November 2026)
+- Automatisch: tests/test_v0699_kinder_freigabe.py (8), gesamte Suite, Klicktests kids_corner.cjs (Live-Sender, Elternbereich, Freigeben) und click_all.cjs. Wikidata-FSK am echten Netz und Zahlen an echten Daten: Mac-Prüfung (PRUEFLISTE in releases/0.6.99).
+
 ## 0.6.98 – Korrektur Kinderecke (22. November 2026)
 - Automatisch: tests/test_v0698_kinderecke_korrektur.py (4, auf 0.6.95 alle rot), gesamte Suite, Klicktests kids_corner.cjs und click_all.cjs. Zählung an echten Daten (Serien vorher/nachher, Stichprobe 50, Bereinigung): Mac-Prüfung (PRUEFLISTE in releases/0.6.98).
 

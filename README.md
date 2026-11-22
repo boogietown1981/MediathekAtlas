@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.98
+# MediathekAtlas · 0.6.99
+
+## Neu in 0.6.99: Kinderecke nach Altersfreigabe, Elternbereich, Kindersender live
+- Automatisch in die Kinderecke kommt: alles von KiKA und TOGGO; sonst nur Erkanntes, das eindeutig Kinderprogramm ist oder als Familien-, Animations-, Fantasy- oder Abenteuerfilm eine belegte Altersfreigabe bis zur eingestellten Grenze hat (z. B. Bibi & Tina, Märchen unter „Fantasy“); nie neben Horror, Thriller, Krimi, Erotik, Krieg oder Romantik. Ein Drama ab 12 kommt nicht allein über die Altersfreigabe hinein.
+- Altersgrenze FSK 0, 6 oder 12 (Standard 12) unter Verwaltung → „Kinderecke · Eltern“. Dort stehen auch die Titel, die auf deine Freigabe warten (nicht erkannt, ohne oder mit zu hoher Altersfreigabe), mit „Freigeben“/„Sperren“; jede Entscheidung lässt sich zurücknehmen.
+- Altersfreigaben (FSK) holt die App im Hintergrund aus Wikidata über die IMDb-Kennung; Anbieter mit eigener FSK-Angabe zählen ebenfalls. Das IMDb-Archiv enthält keine Altersfreigaben.
+- Neuer Knopf „Fernsehen“ in der Kinderecke: nur Kinder- und Familiensender live (z. B. KiKA), im Elternbereich abschaltbar.
 
 ## Neu in 0.6.98: Kinderecke ohne Nachrichten- und Talkreihen
 - Eine Serie von ARD, ZDF & Co. steht nur noch in der Kinderecke, wenn sie selbst eindeutig Kinderprogramm ist (mindestens 80 % der eingeordneten Folgen, KiKA/TOGGO oder Kinderreihe). Nachrichten-, Talk-, Politik- und Magazinreihen („heute“, „Politik“, „NACHTCAFÉ“, „Abendschau“ …) erscheinen nie, auch wenn einzelne Beiträge „Kinder“ heißen.

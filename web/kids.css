@@ -101,3 +101,4 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-more .kids-letter{font-size:64px}
 .kids-more .kids-thumb{background:linear-gradient(160deg,#6c5ce7,#20194f)}
 @media (hover:none){.kids-arrow{width:44px;height:44px;font-size:30px;opacity:.85}}
+.kids-new.kids-live{background:#ff3b5c;color:#fff;animation:none}
