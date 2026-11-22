@@ -34,7 +34,8 @@
     for (const v of list) {
       const tile = make('button', undefined, 'discover-video'); tile.type = 'button';
       tile.title = 'Im YouTube-Player ansehen (Vorschau, mit Werbung)';
-      const img = make('img'); img.alt = ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; img.src = v.poster; tile.append(img);
+      const img = make('img'); img.alt = ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; img.src = v.poster;
+      img.onload = () => { if (img.naturalHeight > img.naturalWidth) img.classList.add('is-portrait'); }; tile.append(img);
       tile.append(make('span', v.title || v.video, 'discover-video-title'));
       const meta = [minutes(v.duration), v.published ? new Date(v.published).toLocaleDateString('de-DE') : '', v.short ? 'Short' : '', v.age ? 'altersbeschränkt' : ''].filter(Boolean);
       tile.append(make('span', meta.join(' · '), 'discover-video-meta' + (v.age ? ' netzkino-error' : '')));

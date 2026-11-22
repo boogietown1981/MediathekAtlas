@@ -65,7 +65,9 @@
   function thumb(v, tall) {
     const t = make('span', 'kids-thumb');
     if (v.picture) { const img = make('img'); img.alt = ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; img.src = v.picture;
-      img.onerror = () => { img.remove(); t.classList.add('no-picture'); }; t.append(img); }
+      img.onerror = () => { img.remove(); t.classList.add('no-picture'); };
+      // 0.6.95: Hochformat-Bilder (Shorts, Handy-Clips) ganz zeigen statt die Mitte herauszuschneiden
+      img.onload = () => { if (!tall && img.naturalHeight > img.naturalWidth) t.classList.add('is-portrait'); }; t.append(img); }
     else t.classList.add('no-picture');
     if (tall && !v.picture) t.append(make('span', 'kids-letter', (v.title || '?').trim().charAt(0).toUpperCase()));
     return t;

@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.91
+# MediathekAtlas · 0.6.95
+
+## Neu in 0.6.95: Hochformat-Videos ganz im Bild
+- Kinderecke: Videos im Hochformat (YouTube-Shorts, Handy-Clips wie „Checker Tobi“) werden vollständig eingepasst statt nur das obere Drittel zu zeigen; ihre Vorschaubilder werden nicht mehr beschnitten.
 
 ## Neu in 0.6.91: Kinderecke zeigt Märchen, Serienfolgen und lässt sich blättern
 - Erkannte Märchenfilme (z. B. „Sechs auf einen Streich“, „Märchenperlen“) und Filme von KiKA stehen jetzt bei den Filmen der Kinderecke. Ausschluss bleibt: nie neben Horror, Thriller, Krimi, Erotik, Krieg.

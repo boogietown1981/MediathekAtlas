@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.95 – Hochformat-Videos (22. November 2026)
+- Automatisch: tests/browser/portrait_video.cjs (Kinderecke, Player, Ansehen-Modus, Vollbild; Hoch- und Querformat; 1280×800 und 390×844). Vorher rot für Kinderecke (Video 2.276 px hoch bei 800 px Fenster), danach grün. Echtes Short am Mac: Mac-Prüfung.
+
 ## 0.6.91 – Kinderecke: Märchen, Serienfolgen, Blättern (22. November 2026)
 - Automatisch: tests/test_v0691_kinderecke.py (5, vorher mit altem Code alle 5 rot), tests/test_v0646_kids_catalog.py, Klicktest tests/browser/kids_corner.cjs (Chromium, 264 Filme, Pfeile, „Alle …“). Echte Daten (Anzahl Märchen/KiKA, Folgen je Serie, Ladezeit /api/kids): Mac-Prüfung (PRUEFLISTE in releases/0.6.91).
 

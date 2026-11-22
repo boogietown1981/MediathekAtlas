@@ -1,3 +1,10 @@
+## 0.6.95 – Hochformat-Videos in der Kinderecke ganz zeigen
+- Grundlage: Björn 22.11.2026: „Checker Tobi“-Shorts (Hochformat) zeigten nur das obere Drittel. Basis 0.6.91 (331ac2e); 0.6.92–0.6.94 sind anderen Threads reserviert.
+- Ursache (im Browser belegt): `.kids-stage` ist ein Raster mit `place-items:center`; das Video mit `height:100%` lag in einer automatisch hohen Rasterzeile, die mit der natürlichen Höhe des Videos wuchs (9:16 bei voller Breite ≈ 2,8-fache Fensterhöhe). `object-fit:contain` passte das Bild in diese zu hohe Fläche ein, sichtbar war nur der obere Teil. Querformat war nie betroffen, der große Player und der Ansehen-Modus ebenfalls nicht (geprüft).
+- `web/kids.css`: Video absolut über die ganze Bühne (`position:absolute;inset:0`), auch im Vollbild.
+- Vorschaubilder im Hochformat (Kinderecke-Kacheln, Probeschauen in „Neue Kanäle entdecken“) werden eingepasst statt beschnitten.
+- Tests: `tests/browser/portrait_video.cjs`.
+
 ## 0.6.91 – Kinderecke: erkannte Märchen, Serienfolgen, Reihen blättern
 - Grundlage: Björn 22.11.2026: „ich sehe keine Märchen etc. die schon erkannt wurden, auch kann ich nicht weiter nach rechts scrollen, die Serien scheinen alle leer zu sein, obwohl hier zumindest bei ARD/ZDF einige gefunden wurden“. Basis 0.6.90.
 - Ursache Märchen: Ein erkannter Film trägt nur die Referenz-Genres; IMDb kennt kein „Kinder“ (Märchenfilm = „Family, Fantasy“), die Kategorie verlangte „Kinder“ oder Familie + Animation. Neu: `catalog.kids_signal_clause` – ein aktives Angebot vom Kindersender (KiKA, `KIDS_CHANNELS`) oder aus einer Kinder-/Märchenreihe (`KIDS_TOPIC`: Sechs auf einen Streich, Märchenperlen, Kinderfilme, Sandmännchen …) zählt als eindeutiges Signal. Gelesen aus den Angeboten (Themen einmal je Stunde), weil zusammengeführte Werke kein `works.topic` behalten. Weiter nur nach dem Abgleich, nie neben Horror/Thriller/Krimi/Erotik/Krieg. Rohgenre „Märchenfilm“ → auch „Kinder“.
