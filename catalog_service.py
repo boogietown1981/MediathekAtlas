@@ -1093,6 +1093,13 @@ class Service:
                     # (Hallo Niedersachsen) is a contribution, not an episode „ohne Treffer“.
                     outcome='segment'
                     delay=0
+                elif (imdb_without_episodes and not imdb_error and not sender_candidate and entry
+                      and m.get('sendung_suggestion_v0688')
+                      and catalog.refile_sendung_suggestions(c,row['show_key'],m.get('provider'),m.get('reference_id'))):
+                    # 0.6.92: filed by 0.6.88 as Folge of a suggested Sendung that IMDb lists without episodes
+                    # (Sportpanorama, Euromaxx …): the whole Sendung becomes contributions instead of „ungeklärt“.
+                    outcome='sendung'
+                    delay=0
                 elif sender_deferred or sender_error or imdb_error or not (archive and archive.updated):
                     outcome='retry'
                     delay=3600

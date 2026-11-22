@@ -133,7 +133,7 @@ TEMPLATE_GENERIC={'sport','sports','masterclass','kultur','wissen','geschichte',
     'reportage','reportagen','nachrichten','news','magazin','magazine','kinder','familie','ratgeber','verbraucher',
     'gesundheit','wirtschaft','religion','sendungen','videos','clips','highlights','extras','bonus','trailer','shorts',
     'wissenschaft','technik','digital','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur','essen',
-    'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme'}
+    'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme','europa'}
 
 def generic_identity_works(c,after='',limit=500):
     """0.6.86: identified works whose series identity is a subject word taken from their topic (template „Sport“).
@@ -1922,6 +1922,45 @@ def sendung_suggestion(m,source,sendung):
     rank={p:i for i,p in enumerate(SENDUNG_SUGGESTION_ORDER)}
     return sorted(strong,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
 
+def sendung_has_episodes(suggestion):
+    """Whether IMDb lists single episodes for the suggested series (None while the archive is not ready: then the
+    work waits, as before 0.6.88). A Wikidata identity without IMDb ID has none to search."""
+    import imdb_archive
+    archive=imdb_archive.ACTIVE
+    if not archive or not getattr(archive,'updated',0):return None
+    if suggestion.get('provider')=='Wikidata' and not imdb_archive.series_reference(suggestion):return False
+    try:return bool(archive.series_has_episodes({**suggestion,'kind':'series'}))
+    except Exception:return None
+
+def file_sendung_without_episodes(c,row,m,source,suggestion,sendung,grouping):
+    """File ``row`` under the Sendung (state 'format') and keep the Sendung's database identity as a note."""
+    own=dict(m);own['unknown_before']=unknown_before(row,m)
+    own['sendung_identity']={k:suggestion.get(k) for k in ('provider','reference_id','title','year') if suggestion.get(k) not in (None,'')}
+    label=UNKNOWN_GROUPINGS.get(grouping,'Folge')
+    return file_under_sendung(c,row,own,source,sendung,grouping,
+        reason=label+' der Sendung „'+sendung+'“ ('+str(suggestion.get('provider'))+' kennt die Sendung, aber keine Einzelfolgen); '
+               'wird deshalb nicht einzeln abgeglichen.')
+
+def refile_sendung_suggestions(c,show_key,provider,reference,limit=2000):
+    """0.6.92: works 0.6.88 identified as Folge of a suggested Sendung whose series IMDb lists without episodes are
+    filed under the Sendung (all of the series at once). Returns the number filed."""
+    if not show_key or not provider or not reference:return 0
+    rows=c.execute("""SELECT * FROM works WHERE show_key=? AND state='identified' AND json_extract(meta,'$.sendung_suggestion_v0688')=1
+        AND json_extract(meta,'$.provider')=? AND CAST(json_extract(meta,'$.reference_id') AS TEXT)=? LIMIT ?""",
+        (show_key,provider,str(reference),limit)).fetchall()
+    done=0
+    for row in rows:
+        m=json.loads(row['meta'] or '{}');source=best_source(c,row['id'])
+        if not source:continue
+        before=m.get('unknown_before') or {}
+        identity={k:m.get(k) for k in ('provider','reference_id','title','year') if m.get(k) not in (None,'')}
+        base={k:v for k,v in m.items() if k not in ('provider','reference_id','sendung_suggestion_v0688','state')}
+        base['unknown_before']=before
+        sendung=m.get('title') or row['title']
+        file_sendung_without_episodes(c,row,base,source,identity,sendung,m.get('sendung_grouping') or 'contribution')
+        done+=1
+    return done
+
 def identify_by_sendung(c,row,m,source,suggestion,sendung,grouping):
     """Identify ``row`` as Folge of the suggested series (state 'identified', episode not yet verified)."""
     own={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers','format_grouping')}
@@ -1931,7 +1970,7 @@ def identify_by_sendung(c,row,m,source,suggestion,sendung,grouping):
         if suggestion.get(field) not in (None,'',[]):own[field]=suggestion[field]
     label=UNKNOWN_GROUPINGS.get(grouping,'Folge')
     own.update(kind='series',episode_title=cleaned(source.get('title')) or str(row['title'] or ''),season=None,episode=None,
-               episode_verified=False,state='work_identified',sendung_suggestion_v0688=True,
+               episode_verified=False,state='work_identified',sendung_suggestion_v0688=True,sendung_grouping=grouping,
                reason=label+' der Sendung „'+str(own.get('title') or sendung)+'“ laut '+str(suggestion.get('provider'))+
                       ' (gleicher Name, passender Zeitraum); die Folge selbst wird noch gesucht.')
     dest=save_metadata(c,row['id'],own,'identified') or row['id']
@@ -2039,11 +2078,17 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
         soft=None if singles else unknown_soft_check(row,m,source,grouping,name,counts.get(topic,1))
         if soft=='suggestions':
             chosen=sendung_suggestion(m,source,name)
-            if chosen:
-                identify_by_sendung(c,row,m,source,chosen,name,grouping)
-                changed+=1;done['sendung_suggestion']=done.get('sendung_suggestion',0)+1
-                channels.setdefault(ch,{});channels[ch]['sendung_suggestion']=channels[ch].get('sendung_suggestion',0)+1
-                bucket=samples.setdefault('sendung_suggestion',[])
+            episodes=sendung_has_episodes(chosen) if chosen else None
+            if chosen and episodes is not None:
+                # 0.6.92 (Zwischendiagnose Pro 0.6.91: 1.100 Folgensuchen, 2 Treffer – Sportpanorama, NZZ Standpunkte,
+                # Euromaxx …): a Sendung without single episodes at IMDb has no episode to find; the work is its
+                # contribution, filed under the Sendung with the series identity kept as note.
+                outcome='sendung_suggestion' if episodes else 'sendung_without_episodes'
+                if episodes:identify_by_sendung(c,row,m,source,chosen,name,grouping)
+                else:file_sendung_without_episodes(c,row,m,source,chosen,name,grouping)
+                changed+=1;done[outcome]=done.get(outcome,0)+1
+                channels.setdefault(ch,{});channels[ch][outcome]=channels[ch].get(outcome,0)+1
+                bucket=samples.setdefault(outcome,[])
                 if len(bucket)<5:bucket.append({'title':str(source.get('title') or '')[:120],'topic':str(source.get('topic') or '')[:80],
                                                  'channel':ch,'suggestion':suggestion_brief(chosen)})
                 continue

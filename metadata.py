@@ -455,7 +455,8 @@ GENERIC|={'sport','sports','masterclass','doku','dokus','dokumentation','dokumen
           'kultur','wissen','geschichte','gesellschaft','unterhaltung','comedy','kabarett','satire','konzert','konzerte',
           'wissenschaft','technik','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur',
           'kurzfilm','kurzfilme','spielfilme','fernsehfilme','dokumentarfilm','dokumentarfilme','gesundheit',
-          'wirtschaft','religion','essen','kochen','garten','reisen','digital'}
+          'wirtschaft','religion','essen','kochen','garten','reisen','digital',
+          'europa'}   # 0.6.92 (Zwischendiagnose Pro 0.6.91: DW „Europa“ ↔ IMDb-Serie „Europa“ tt14808162)
 # arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
 # 0.6.49 (Diagnose 20.11.2026 abends): the French, Italian, Spanish and Polish ARTE sections

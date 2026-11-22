@@ -85,7 +85,8 @@ class SweepTests(unittest.TestCase):
 
     def test_works_with_the_sendung_as_suggestion_become_its_episodes(self):
         events = []
-        with patch.object(diagnostics, 'event', lambda name, **kw: events.append((name, kw))):
+        archive = SimpleNamespace(updated=1, series_has_episodes=lambda m: True)      # 0.6.92: IMDb lists episodes
+        with patch.object(diagnostics, 'event', lambda name, **kw: events.append((name, kw))), patch.object(imdb_archive, 'ACTIVE', archive):
             self.service.unknown_sweep(force=True)
         info = [kw for name, kw in events if name == 'unknown_classified'][0]
         w = self.works()
