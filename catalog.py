@@ -272,6 +272,18 @@ def origin_meta(c,row):
         m['genres']=normalized_genres(m.get('genres'))
     return m,template
 
+def defer_sender_siblings(c,topic,work_id,providers,until):
+    """0.6.89: works of the same Reihe (topic) that wait only for the same broadcaster wait until its allowance
+    renews (``until``, spread over 30 min) instead of asking again one by one. Works never checked and works
+    with other open providers stay as they are. Returns the number postponed."""
+    if not topic or not providers:return 0
+    marks=','.join('?'*len(providers))
+    return max(0,c.execute("""UPDATE works SET next_try=?+abs(random())%1800 WHERE topic=? AND id!=? AND state='retry' AND next_try<?
+        AND json_type(meta,'$.deferred_providers')='array'
+        AND NOT EXISTS(SELECT 1 FROM json_each(works.meta,'$.deferred_providers') d WHERE d.value NOT IN ("""+marks+"""))
+        AND COALESCE(json_array_length(meta,'$.metadata_warnings'),0)=0""",
+        (float(until),topic,work_id,float(until),*providers)).rowcount)
+
 def series_template_candidate(c,row,source):
     """Get a uniquely verified series identity already learned from another episode.
 
@@ -1854,8 +1866,15 @@ def unknown_soft_check(row,m,source,grouping,name,topic_works):
             else:return 'suggestions_no_sendung'
         elif topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
         elif not all(suggestion_weak(x,source,name,cleaned(source.get('title'))) for x in suggestions):return 'suggestions'
-    if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
+    if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS and not wikidata_only_warnings(m):return 'warnings'
     return None
+
+def wikidata_only_warnings(m):
+    """0.6.89 (Diagnose Pro 22.11.2026: 4.177 ARD works held as „warnings“, the warnings in the log only
+    „Wikidata: HTTP 429“ from the rate-limit series of 21.11.): a Wikidata error alone does not hold a work open;
+    IMDb Offline, TMDB and TVDB answered, and Wikidata alone never decides a kind."""
+    warnings=[str(w) for w in (m.get('metadata_warnings') or [])]
+    return bool(warnings) and all(w.startswith('Wikidata:') for w in warnings)
 
 # 0.6.88 (Diagnose Pro 22.11.2026: 4.692 Werke ohne Art „mit Sendungsvorschlag“, SRF 2.215, ARTE.DE 1.451):
 # the suggestion that holds the work open is the Sendung itself (exact name, broadcast period). Then the work is a

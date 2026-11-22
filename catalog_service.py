@@ -1,5 +1,5 @@
 """Interruptible catalogue refresh and rate-limited metadata queue."""
-import hashlib,json,time,threading,secrets,sqlite3
+import hashlib,json,random,time,threading,secrets,sqlite3
 from collections import deque
 import platform
 from pathlib import Path
@@ -14,6 +14,14 @@ def retry_delay(attempts,result):
     # A stable not-found verdict does not need daily full-provider queries.
     # Rechecks remain possible (new evidence/API updates) and manual priority bypasses the delay.
     return min(30*86400,3*86400*2**min(max(attempts-1,0),4))
+
+def sender_wait(result):
+    """Seconds until the broadcaster allowance renews when only broadcasters (ARD/ZDF Mediathek) are missing
+    from ``result`` because their hourly allowance or pause holds them back; None otherwise (0.6.89)."""
+    deferred=result.get('deferred_providers') or []
+    if not deferred or result.get('warnings') or any(p not in broadcaster.PROVIDERS for p in deferred):return None
+    until=max(broadcaster.automated_retry_at(p) for p in deferred)
+    return max(0.0,until-time.time()) if until else None
 
 def identified_delay(recognized,source,rand=None):
     """Next full provider check of a work that is identified but not yet matched.
@@ -658,7 +666,19 @@ class Service:
                 m.pop('deferred_providers',None)
             # Keep recognized show metadata if only its episode remains unresolved.
             if row['state']=='identified':outcome='identified'
-            c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+retry_delay(row['attempts']+1,result),wid))
+            delay=retry_delay(row['attempts']+1,result)
+            wait=sender_wait(result)
+            if wait is not None and not result['candidates']:
+                # 0.6.89: only the broadcaster is missing and its hourly allowance is spent; every film database
+                # answered without a hit. Wait for the allowance instead of asking again within the hour, and so
+                # do the Reihe's siblings that are waiting for the same broadcaster (Diagnose Pro 22.11.2026:
+                # „Frage trifft Antwort“ 35×, „Spickzettel“ 23× in 70 min, 283 of 286 retries „ARD Mediathek paused“).
+                delay=max(delay,wait+random.random()*1800)
+                topic=entry['source'].get('topic') if entry else ''
+                if topic:
+                    parked=catalog.defer_sender_siblings(c,topic,wid,result['deferred_providers'],time.time()+wait)
+                    if parked:self.after_commit(lambda:self.count_sender_parked(parked))
+            c.execute('UPDATE works SET meta=?,state=?,next_try=? WHERE id=?',(json.dumps(m),outcome,time.time()+delay,wid))
         return outcome,dest
     def record_episode_result(self,outcome,imported=False,sender_verified=False,
                               sender_item=False,sender_deferred=False,
@@ -1136,7 +1156,7 @@ class Service:
             # for explicit episode evidence. Manually prioritized works still
             # run the normal full provider chain.
             numbered=isinstance(m.get('season'),int) and isinstance(m.get('episode'),int)
-            if entry and not priority and not numbered and not m.get('deferred_providers') and row['state'] in ('pending','retry','review','identified'):
+            if entry and not priority and not numbered and row['state'] in ('pending','retry','review','identified'):
                 known=catalog.series_template_candidate(c,row,entry['source'])
                 if known:
                     import imdb_archive
@@ -1396,6 +1416,10 @@ class Service:
         if self.stop.is_set():return
         if done:diagnostics.event('episode_clip_sendung_undone',works=done,shows=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]));catalog.invalidate_listings()
         with self.db() as c:catalog.set_state(c,'clip_sendung_undo_v0685',{'works':done,'shows':shows,'at':time.time()})
+
+    def count_sender_parked(self,n):
+        with self.worker_lock:self.sender_parked=getattr(self,'sender_parked',0)+n
+        if self.sender_parked==n or self.sender_parked%500<n:diagnostics.event('metadata_sender_siblings_parked',works=n,total=self.sender_parked)
 
     def requeue_after_archive(self,force=False):
         """0.6.88: after a new IMDb archive, episode searches checked against the older one are due again
