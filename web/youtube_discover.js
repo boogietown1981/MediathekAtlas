@@ -49,7 +49,7 @@
   }
 
   function card(s) {
-    const box = make('article', undefined, 'abo-card discover-card');
+    const box = make('article', undefined, 'abo-card discover-card'); box.dataset.ref = s.ref;
     const body = make('div', undefined, 'abo-body');
     const head = make('div', undefined, 'abo-head'); head.append(make('strong', s.title));
     head.append(make('span', PROFILE[s.profile] || '', 'abo-badge'));
@@ -98,10 +98,15 @@
     const list = $('youtube-discover-list');
     const open = d.suggestions || [];
     $('youtube-discover-state').textContent = open.length ? '· ' + open.length + ' Vorschläge' : '';
-    const items = open.map(card);
+    // 22.11.2026: Während die Suche läuft (alle 5 s), bleiben Karten mit geöffneter Vorschau oder Fokus stehen
+    const old = new Map([...list.querySelectorAll(':scope > .discover-card')].map(n => [n.dataset.ref, n]));
+    const wasOpen = !!list.querySelector(':scope > .discover-decided')?.open;
+    const busy = n => n && (n.querySelector('.discover-videos') || n.contains(document.activeElement));
+    const items = open.map(s => busy(old.get(s.ref)) ? old.get(s.ref) : card(s));
     if (!items.length) items.push(make('p', d.running ? 'Suche läuft …' : (d.last ? 'Gerade keine neuen Vorschläge.' : 'Noch nicht gesucht. „Vorschläge suchen“ wählen.'), 'abo-empty'));
-    const past = decided(d.decided || []); if (past) items.push(past);
-    list.replaceChildren(...items);
+    const past = decided(d.decided || []); if (past) { past.open = wasOpen; items.push(past); }
+    const keep = window.MediathekAtlasYouTubeAbos?.keepInPlace;
+    if (keep) keep(list, items); else list.replaceChildren(...items);
     const when = d.last ? 'Zuletzt gesucht am ' + new Date(d.last * 1000).toLocaleString('de-DE', {dateStyle: 'short', timeStyle: 'short'}) + ' Uhr.' : '';
     $('youtube-discover-info').textContent = [d.running ? d.progress : when, d.error ? 'Hinweis: ' + d.error : ''].filter(Boolean).join(' ');
     clearTimeout(timer);
