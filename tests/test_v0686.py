@@ -76,8 +76,8 @@ class HealsFirst(unittest.TestCase):
         svc.early_heals()
         worker.join(5)
         self.assertEqual(claimed, ['episode'])
-        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0686', False))
-        self.assertTrue(catalog.get_state(c, 'generic_templates_v0687', False))
+        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0692', False))
+        self.assertTrue(catalog.get_state(c, 'generic_templates_v0692', False))
 
     def test_gate_opens_after_the_bound(self):
         _, svc = database_service()
@@ -112,7 +112,7 @@ class SubjectTemplates(unittest.TestCase):
         self.assertEqual((row['state'], row['title']), ('pending', 'Skirennen in Wengen'))
         puls_row = c.execute('SELECT * FROM works WHERE id=?', (rows['Schlaf und Gesundheit']['id'],)).fetchone()
         self.assertEqual((puls_row['title'], puls_row['state']), ('Puls', 'identified'))
-        self.assertEqual(catalog.get_state(c, 'generic_templates_v0687')['works'], 1)
+        self.assertEqual(catalog.get_state(c, 'generic_templates_v0692')['works'], 1)
 
 
 if __name__ == '__main__':

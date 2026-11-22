@@ -110,5 +110,39 @@ class TopicTests(Worker):
             self.assertTrue(catalog.get_state(c, 'topic_heal_v0692', False))
 
 
+class RestFromCheck0687(Worker):
+    """Mac-Prüfung 0.6.87 (22.11.2026), Restpunkte im echten Bestand."""
+    def ingest(self, title, topic, active=1):
+        with self.db() as c:
+            c.execute('CREATE TABLE IF NOT EXISTS metadata_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL)')
+            catalog.ingest(c, [{'title': title, 'topic': topic, 'duration': 900, 'channel': 'SWR', 'description': 'x',
+                                'url_video': 'https://example.org/%s.mp4' % abs(hash(title)), 'timestamp': 1795100000}])
+            wid = c.execute("SELECT work_id FROM offers WHERE json_extract(payload,'$.title')=?", (title,)).fetchone()[0]
+            if not active:c.execute('UPDATE offers SET active=0 WHERE work_id=?', (wid,))
+            return wid
+
+    def test_portal_contribution_without_separator_is_recognised_again(self):
+        wid = self.ingest('Religionen der Welt: Hinduismus', 'planet schule')
+        with self.db() as c:
+            m = {'kind': 'series', 'title': 'planet schule', 'provider': 'Sendung', 'state': 'format', 'format_grouping': 'contribution',
+                 'episode_title': 'Religionen der Welt: Hinduismus', 'reason': 'Beitrag der Sendung „planet schule“'}
+            c.execute("UPDATE works SET kind='series',title='planet schule',state='format',meta=? WHERE id=?", (json.dumps(m), wid))
+        self.svc.reseed_portal()
+        with self.db() as c:
+            r = c.execute('SELECT * FROM works WHERE id=?', (wid,)).fetchone()
+        self.assertNotEqual(catalog.key(r['title']), 'planet schule')
+        self.assertEqual(r['state'], 'pending')
+
+    def test_generic_identity_without_active_offer_is_reset(self):
+        wid = self.ingest('Die Welt der Pilze', 'Doku', active=0)
+        with self.db() as c:
+            m = {'kind': 'series', 'title': 'Doku', 'provider': 'IMDb Offline', 'reference_id': 'tt12848962', 'episode_verified': False}
+            c.execute("UPDATE works SET kind='series',title='Doku',state='identified',meta=? WHERE id=?", (json.dumps(m), wid))
+        self.svc.reset_generic_identities()
+        with self.db() as c:
+            r = c.execute('SELECT * FROM works WHERE id=?', (wid,)).fetchone()
+        self.assertNotEqual(json.loads(r['meta']).get('reference_id'), 'tt12848962')
+
+
 if __name__ == '__main__':
     unittest.main()

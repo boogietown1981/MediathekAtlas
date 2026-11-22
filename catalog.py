@@ -181,8 +181,14 @@ def portal_reseed(c,limit=500,after=''):
         if not source:continue
         if portal and key(source.get('topic') or row['topic']) not in PORTAL_TOPICS:
             source=dict(source,topic=next(iter(PORTAL_TOPICS)))      # read the title as the portal names it
-        if not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
+        if not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):
+            # 0.6.92 (Mac-Prüfung 0.6.87, echter Bestand): „Religionen der Welt: …“ without „·“ stayed a contribution
+            # of the Sendung „planet schule“. Such a filing is recognised again from the work's own title; an ARD
+            # identification without a series in the title stays (0.6.85, Mac-Prüfung 0.6.87: 113 such, accepted).
+            if not portal or row['state']!='format':continue
         fresh=seed(source)
+        if key(fresh.get('title')) in PORTAL_TOPICS:
+            fresh.update(kind='unknown',title=cleaned(source.get('title')) or row['title'],episode_title='')
         if row['kind']=='series' and key(row['title'])==key(fresh['title']):continue
         fresh['reason']='Reihe aus dem Titel (Planet Schule); neu erkennen'
         changed+=c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0,attempts=0 WHERE id=?",
