@@ -357,7 +357,7 @@ def episodes(root, c, data, source, series_id, marks=None):
                 continue
             meta, src = _dict(e.get('metadata')), _dict(e.get('source'))
             title = meta.get('episode_title') or src.get('title') or meta.get('title')
-            # 0.6.107: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern
+            # 0.6.106: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern
             if word_blocked(title) and str(src.get('channel') or '').strip().lower() not in _kids_channels():
                 continue
             out.append(_episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
@@ -399,12 +399,12 @@ NOT_KIDS_SHOW = re.compile(
     r'brisant|frontal|zib|nachtcaf[eé]|3nach9|extra 3|talk\w*|magazin\w*|review|schlager\w*|crisis|maischberger|'
     r'lanz|illner|hart aber fair|presseclub|kontraste|panorama|monitor|plusminus|report|mex|markt|reportage\w*|'
     r'kriminal\w*|aktenzeichen|tatort|polizeiruf|wetter|sportschau|sportstudio)\b')
-# 0.6.107: „Kinder“/„Kids“ im Namen hebt die Namenssperre nicht mehr auf (Kinderarmut, Kinderärzte, Kindernachrichten
+# 0.6.106: „Kinder“/„Kids“ im Namen hebt die Namenssperre nicht mehr auf (Kinderarmut, Kinderärzte, Kindernachrichten
 # kommen nur über ein KiKA-Angebot, das show_is_kids vorher prüft)
 KIDS_NAME = re.compile(r'(?i)\bkika\b|logo!|\btivi\b|sendung mit der maus|sandmännchen|checker|toggo')
 
 
-# 0.6.107 (Mac-Prüfung 0.6.105): Sicherheitsnetz über Titel, Reihen- und Folgentitel. Nur Angebote von Kindersendern
+# 0.6.106 (Mac-Prüfung 0.6.105): Sicherheitsnetz über Titel, Reihen- und Folgentitel. Nur Angebote von Kindersendern
 # (KiKA, TOGGO, ZDFtivi) sind ausgenommen, damit „Der Krieg und ich“ von KiKA bleibt.
 BAD_WORDS = re.compile(
     r'(?i)porno|\bsex|missbrauch|\bdoping|\btäter|\bkrebs|\bkrieg|\bmord|\bkrimi|verhütung|vergewaltig|\bgewalt|'

@@ -32,7 +32,7 @@ import catalog
 c = sqlite3.connect(sys.argv[1]); c.row_factory = sqlite3.Row
 catalog.initialize(c)
 def add(wid, title, genres, kind='movie', show=None, season=None, episode=None, state='matched', attempts=1, channel='Das Erste', topic=''):
-    meta = {'title': title if kind == 'movie' else show, 'kind': kind, 'genres': genres}
+    meta = {'title': title if kind == 'movie' else show, 'kind': kind, 'genres': genres, 'genre_source': 'TMDB'}  # 0.6.106: Referenz-Genres (aus Namen abgeleitetes „Kinder“ zählt nicht)
     if kind == 'series': meta.update(season=season, episode=episode, episode_title=title)
     c.execute('INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts) VALUES(?,?,?,?,?,?,?,?)',
               (wid, meta['title'], kind, 2015, show or wid, json.dumps(meta), state, attempts))

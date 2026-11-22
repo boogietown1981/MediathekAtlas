@@ -1,4 +1,4 @@
-"""0.6.107 (Mac-Prüfung 0.6.105, 22.11.2026): grundsätzliche Zulassung der Kinderecke.
+"""0.6.106 (Kinderecke-Teil, Mac-Prüfung 0.6.105, 22.11.2026): grundsätzliche Zulassung der Kinderecke.
 
 0.6.105 zeigte u. a. „Generation Porno - Was unsere Kinder online sehen“, „Die Kinder von Lügde“, „Geheimsache Doping:
 Kinder“ (Folge „Täter“), „Sex and the Scientists · Wie wir künftig Kinder kriegen“, „Ein Herz für Kinder“, „KRIMI.DE“,

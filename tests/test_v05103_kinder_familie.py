@@ -88,7 +88,7 @@ class MediathekTests(unittest.TestCase):
         self.assertEqual(labels('drama'), ['Drama', 'Familie'])
         self.assertEqual(json.loads(self.c.execute("SELECT meta FROM works WHERE id='drama'").fetchone()[0])['genres'], ['Drama', 'Familie'])
         titles = lambda g: sorted(i['work_id'] for i in catalog.listing(self.c, kind='movie', genre=g, downloaded='all')['items'])
-        # 0.6.107: aus Namen abgeleitetes „Kinder“ (Sender (abgeleitet)) ohne Kindersender/Kinderreihe zählt nicht mehr
+        # 0.6.106: aus Namen abgeleitetes „Kinder“ (Sender (abgeleitet)) ohne Kindersender/Kinderreihe zählt nicht mehr
         self.assertEqual(titles('Kinder'), ['pixar'])
         self.assertEqual(titles('Familie'), ['drama', 'pixar'])
         tree = {r['genre']: r['n'] for r in catalog.category_tree(self.c)}

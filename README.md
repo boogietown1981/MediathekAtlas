@@ -1,10 +1,11 @@
 # MediathekAtlas · 0.6.106
 
-## Neu in 0.6.106: Reihen unter ihrem bekannten Namen
+## Neu in 0.6.106: Kinderecke strenger, Reihen unter ihrem bekannten Namen
 - Eine Reihe heißt so, wie der Sender sie schreibt: „KiKA LIVE“ statt „KIKA LIVE“ aus TMDB.
 - Ableger einer KiKA-Reihe („KiKA LIVE fordert heraus“, „KiKA LIVE #ZuHauseUmDieWelt“, „KiKA LIVE - Fragen an die Astronautinnen“ …) stehen unter der Hauptreihe statt als eigene Mini-Reihen; der Ableger steht im Folgentitel.
 - „Anna, Nina, Pia und die wilden Tiere“, „Paula, Anna und die wilden Tiere“ und „Checker Can, Checker Tobi und Checker Julian“ (BR/ARD) zählen als Kinderprogramm und erscheinen in der Kinderecke.
 - „Kinder“ im Namen allein macht nichts mehr zum Kinderprogramm („Die Kinder von Lügde“, „Ein Herz für Kinder“, „Kinderärzte im Einsatz“); solche Zuordnungen werden einmalig entfernt.
+- Kinderecke: automatisch nur noch Angebote von KiKA, TOGGO und ZDFtivi, bekannte Kinderreihen (Maus, Sandmännchen, Löwenzahn, Checker …), Filme mit Kinder- oder Familienkennung aus einer Filmdatenbank und Ihre Freigaben. Alles andere steht unter „Wartet auf Freigabe“. Titel mit heiklen Wörtern (Porno, Missbrauch, Krieg, Mord, Krimi …) erscheinen nur, wenn sie von einem Kindersender kommen oder Sie sie freigegeben haben.
 
 ## Neu in 0.6.105: Altersregel der Kinderecke strenger
 - Über die Altersfreigabe kommt ein Film nur noch in die Kinderecke, wenn er zusätzlich als Familienfilm eingeordnet ist; nie neben Science-Fiction, Action, Mystery oder Romantik. „Fantasy“ oder „Abenteuer“ allein reichen nicht mehr (Monster-, Hai- und Actionfilme ab 12 aus Netzkino und Plex), solche Titel stehen unter „Wartet auf Freigabe“.

@@ -151,12 +151,12 @@ def _chosen(choice):
             "w.show_key IN (SELECT substr(key,6) FROM kids_choices WHERE choice='%s' AND key LIKE 'show:%%'))" % (choice, choice))
 
 
-# 0.6.107: diese Herkunft des Genres „Kinder“ ist aus Namen abgeleitet (Sender, Sendung, Thema) und kein Signal
+# 0.6.106: diese Herkunft des Genres „Kinder“ ist aus Namen abgeleitet (Sender, Sendung, Thema) und kein Signal
 DERIVED_SOURCES = ('Sender (abgeleitet)', 'Senderhinweis', 'Unbekannt', '')
 
 
 def kids_clause(c, signal, signal_args, has):
-    """SQL (auf works w) für die Kategorie „Kinder“ (0.6.107, Björn: im Zweifel draußen, KiKA/TOGGO immer, Rest per Freigabe).
+    """SQL (auf works w) für die Kategorie „Kinder“ (0.6.106, Björn: im Zweifel draußen, KiKA/TOGGO immer, Rest per Freigabe).
 
     Automatisch nur: (a) Angebot eines Kindersenders (ALWAYS_CHANNELS), (b) eine bekannte Kinderreihe aus der gepflegten
     Liste categories.KNOWN_KIDS_SERIES (Thema des Angebots), erkannt oder als Beitrag abgelegt, (c) Referenz-Genre „Kinder“ bzw.
@@ -210,7 +210,7 @@ def show_allowed(c, show_key):
 # ------------------------------------------------------------------ „Wartet auf Freigabe“
 def waiting(c, limit=300):
     """Titel mit Kinder-Hinweis, die die Regel (noch) nicht erfüllen: nicht erkannt, keine Freigabe bekannt oder
-    über der Grenze. Je Serie ein Eintrag. Nur lesen. 0.6.107: auch Reihen mit „Kinder“/„Märchen“ im Thema, die
+    über der Grenze. Je Serie ein Eintrag. Nur lesen. 0.6.106: auch Reihen mit „Kinder“/„Märchen“ im Thema, die
     seitdem kein automatisches Signal mehr sind – hier entscheiden die Eltern."""
     import catalog
     import categories
