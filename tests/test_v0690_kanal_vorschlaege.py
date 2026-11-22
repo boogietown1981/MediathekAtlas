@@ -184,6 +184,49 @@ class SourcesWithoutChannelsTab(Discover):
             disc.discover(self.root, now=NOW + 3600, runner=runner, seen=watch_state.states(self.root))
             self.assertEqual(len(calls), before)
 
+    def test_loose_handles_and_search_terms(self):
+        self.assertEqual(disc.mentions('Kamera: @TechTim\nInstagram: @nurinsta\nmail@example.org\nMit @Gast_Kanal.'),
+                         ['@techtim', '@gast_kanal'])
+        db = disc._connect(self.root)
+        with db:
+            for v, tags in ((vid(1), ['Experimente', 'Kinderkanal', 'Wasser']), (vid(2), ['experimente', 'Vulkan']),
+                            (vid(3), ['Wasser', '2026', 'Experimente'])):
+                db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (v, json.dumps(tags)))
+        self.assertEqual(disc.search_terms(db, [vid(1), vid(2), vid(3)], ['Kinderkanal']), ['Experimente', 'Wasser'])
+        db.close()
+
+    def test_search_source_from_watched_tags(self):
+        abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 1}, now=NOW)
+        ab.check(self.root, abo, now=NOW, request=self.api)
+        j = self.jobs()[0]
+        self.set_job(j['id'], 'done', path=j['target'])
+        watch_state.progress(self.root, 'job:' + j['id'], pos=400, duration=428, done=True, now=NOW)
+        with self.db() as c:
+            db = ab._connect(self.root); ab.sync_states(c, db); db.close()
+        db = disc._connect(self.root)
+        with db:
+            db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (j['source']['_video_id'], json.dumps(['Experimente'])))
+            db.execute('INSERT INTO youtube_described(video,at) VALUES(?,0)', (j['source']['_video_id'],))
+        db.close()
+
+        def runner(args, **kw):
+            url = args[-1]
+            if url.startswith('ytsearch'):
+                self.assertEqual(url, 'ytsearch20:Experimente')
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': [
+                    {'id': vid(70), 'channel_id': FEATURED, 'channel': 'Forscherkanal'},
+                    {'id': vid(71), 'channel_id': FEATURED, 'channel': 'Forscherkanal'},
+                    {'id': vid(72), 'channel_id': OWN, 'channel': 'Kinderkanal'}]}))
+            return types.SimpleNamespace(returncode=0, stderr='', stdout='{}')
+        with mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')), \
+                mock.patch.object(yd, 'js_args', return_value=[]), \
+                mock.patch.object(ab, '_request_for_key', return_value=None):
+            disc.discover(self.root, now=NOW + 10, runner=runner, seen=watch_state.states(self.root))
+        d = disc.overview(self.root)
+        self.assertEqual([s['ref'] for s in d['suggestions']], [FEATURED])
+        self.assertIn('Suche nach „Experimente“', d['suggestions'][0]['why'][0])
+        self.assertEqual(d['suggestions'][0]['title'], 'Forscherkanal')
+
     def test_companions_only_real_sidecars(self):
         folder = self.root / 'k'; folder.mkdir()
         video = folder / '2026 - Titel [abc].mp4'
