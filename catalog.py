@@ -795,12 +795,12 @@ CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','re
 # „Family, Fantasy“ there – so it never reached the Kinder category although the broadcaster files it as
 # children's programme. The kids channel or a kids/Märchen topic of an active offer now counts as a clear signal.
 # Merged works lose works.topic (a new id), so the signal is read from the offers, which move with the work.
-KIDS_TOPIC=re.compile(r'(?i)kinder(?:film|filme|serie|serien|kino|programm|sendung)|\bfür kinder\b|\bkika\b|märchen(?!haft)|maerchen(?!haft)|'
+KIDS_TOPIC=re.compile(r'(?i)kinder(?:film|filme|serie|serien|kino|programm|sendung)|\b(?:filme?|serien?|geschichten|hörspiele?|musik|lieder|wissen|nachrichten|kino) für kinder\b|\bkika\b|märchen(?!haft)|maerchen(?!haft)|'
                       r'sechs auf einen streich|sandmännchen|sendung mit der maus|sendung mit dem elefanten|\bzdftivi\b|\btivi\b|toggolino'
                       # 0.6.106 (Mac-Abfrage Kinderreihen 22.11.: BR/ARD-Reihen ohne Kindersender und ohne Genre „Kinder“
                       # fehlten in der Kinderecke): die belegt fehlenden BR/ARD-Kinderreihen beim Namen. Reihen mit eigenem
                       # Genre „Kinder“ (Löwenzahn, logo!) bleiben bei der Folgenregel aus 0.6.98.
-                      r'|\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b')
+                      r'|\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b|\blogo(?=!)')
 KIDS_SIGNAL_TTL=3600.0
 _KIDS_SIGNAL={}            # database file -> (monotonic, topics)
 _KIDS_SIGNAL_LOCK=threading.Lock()
@@ -819,6 +819,18 @@ def kids_topics(c):
                    if isinstance(t,str) and t and len(t)<=200 and KIDS_TOPIC.search(t)})[:5000]
     with _KIDS_SIGNAL_LOCK:_KIDS_SIGNAL[path]=(now,topics)
     return topics
+
+# 0.6.106 (Durchsicht Kinderecke 22.11.): Sendungs-Ablagen (state 'format') zählen nur über das Angebot – Kindersender
+# oder ein Thema aus dieser schmalen Liste –, nie über ein abgeleitetes Genre oder „… für Kinder“ im Namen.
+import categories as _categories
+FORMAT_KIDS_TOPIC=re.compile('(?i)'+_categories.KNOWN_KIDS_SERIES+r'|märchen(?!haft)|maerchen(?!haft)')
+
+def format_kids_signal_clause(c):
+    """SQL (on works w): an active offer from a kids channel or with a topic of FORMAT_KIDS_TOPIC (subset of KIDS_TOPIC)."""
+    topics=[t for t in kids_topics(c) if FORMAT_KIDS_TOPIC.search(t)];channels=sorted(KIDS_CHANNELS)
+    cond="lower(json_extract(k.payload,'$.channel')) IN (%s)"%','.join('?'*len(channels))
+    if topics:cond="(%s OR json_extract(k.payload,'$.topic') IN (%s))"%(cond,','.join('?'*len(topics)))
+    return 'EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND %s)'%cond,channels+topics
 
 def kids_signal_invalidate():
     with _KIDS_SIGNAL_LOCK:_KIDS_SIGNAL.clear()
@@ -2476,13 +2488,13 @@ def recheck_episode_queue_v0641(c,event=None):
     if event and n:event('episode_queue_recheck',version='0.6.41',works=n)
     return n
 
-def heal_derived_kids_v0696(c,event=None):
+def heal_derived_kids_v0696(c,event=None,merker='kids_genre_heal_v0696',version='0.6.98'):
     """0.6.98 (Mac-Prüfung 0.6.91): „Kinder“ that the broadcaster rule took from a description or an edition title
     (NACHTCAFÉ 302 of 302 works, Politik 11, heute 16, Abendschau 2) is removed again. Kept when the programme's
     own name (series or Sendung title, offer topic) names children's programme or an offer comes from a kids
     channel. Only genre_source „Sender (abgeleitet)“; reference genres and the user's own choices stay. Runs once,
     after the server start (genre index, only works labelled „Kinder“)."""
-    if get_state(c,'kids_genre_heal_v0696',False):return 0
+    if get_state(c,merker,False):return 0
     import broadcaster
     ids=[r[0] for r in c.execute("SELECT work_id FROM work_genres WHERE genre='Kinder'")]
     fixed=0
@@ -2505,9 +2517,15 @@ def heal_derived_kids_v0696(c,event=None):
         if not m['genres']:m['genre_source']='Unbekannt'
         c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
         fixed+=1
-    set_state(c,'kids_genre_heal_v0696',True)
-    if event and ids:event('kids_genre_heal',version='0.6.98',checked=len(ids),removed=fixed)
+    set_state(c,merker,True)
+    if event and ids:event('kids_genre_heal',version=version,checked=len(ids),removed=fixed)
     return fixed
+
+def heal_derived_kids_v06106(c,event=None):
+    """0.6.106 (Mac-Prüfung 0.6.105): the name rule itself was too wide (kinder\\w*: „Die Kinder von Lügde“,
+    „Kinderärzte im Einsatz“, „Geheimsache Doping: Kinder“). Same pass as 0.6.98 with the narrowed rule, once."""
+    if not get_state(c,'kids_genre_heal_v0696',False):set_state(c,'kids_genre_heal_v0696',True)   # one pass covers both
+    return heal_derived_kids_v0696(c,event,'kids_genre_heal_v06106','0.6.106')
 
 # 0.6.88 (Diagnosen 22.11.2026: Pro 121.780 / Air 116.533 Einträge, 0 fällig): an episode search without a hit
 # rests 30 days (7 with spent sender allowance), its siblings without IMDb episode list 30–37 days. Asking again
@@ -2563,7 +2581,7 @@ def build_deferred_indexes(connect,event=None,error=None):
         recheck_episode_queue_v0641(c,event)
     try:
         with connect() as c:
-            if heal_derived_kids_v0696(c,event):
+            if heal_derived_kids_v0696(c,event) | heal_derived_kids_v06106(c,event):
                 import kids_catalog,unified_index;invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
     except Exception as e:
         if error:error('kids_genre_heal_failed',e)

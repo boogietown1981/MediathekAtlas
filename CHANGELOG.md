@@ -3,9 +3,11 @@
 - `catalog.broadcaster_spelling`: Serie gleich Thema bis auf Groß-/Kleinschreibung → Schreibweise des Senders (save_metadata, einmalige Heilung `heal_series_spelling`).
 - `catalog.parent_sendung`: auf Kindersendern läuft eine Sendung „<Reihe> <Zusatz>“ unter der Hauptreihe, wenn es sie mit ≥ 20 Werken gibt (file_under_sendung, einmalige Heilung `heal_kids_spinoffs`); Folgentitel „<Ableger>: <Ausgabe>“, `sendung_name` bleibt.
 - `KIDS_TOPIC`: „Checker Can/Tobi/Julian“, „Anna/Paula/Pia/Nina … und die wilden Tiere“ („Der Doktor und die wilden Tiere“ nicht).
-- `kids_rules.SIGNAL_STATES`: für das Reihen-/Themensignal zählen auch als Beitrag ihrer Sendung abgelegte Werke (`format`, Checker 38, Paula 25 – alle `format`); unerkannte Werke warten weiter auf die Freigabe, der Altersweg bleibt bei erkannten.
+- Sendungs-Ablagen (`format`, Checker 38, Paula 25) zählen für die Kinderecke nur über das Angebot: Kindersender oder `catalog.FORMAT_KIDS_TOPIC` (Durchsicht Kinderecke: „Kinderärzte im Einsatz“, „Kinderarmut in Deutschland“, „Ein Herz für Kinder“ kamen über das abgeleitete Genre); unerkannte Werke warten weiter auf die Freigabe.
+- Eine gemeinsame Liste bekannter Kinderreihen `categories.KNOWN_KIDS_SERIES` für Sender-Genre, Themensignal und Sendungs-Ablagen.
+- Genre „Kinder“ aus dem Namen nur noch bei Kinderprogramm-Wörtern (Kinderfilm, -serie, -sendung, -nachrichten …) und bekannten Kinderreihen, nicht aus „kinder\w*“ (Mac-Prüfung 0.6.105: „Generation Porno - Was unsere Kinder online sehen“, „Die Kinder von Lügde“, „Geheimsache Doping: Kinder“, „Sex and the Scientists · Wie wir künftig Kinder kriegen“, „Ein Herz für Kinder“); „für Kinder“ im Thema nur als „Filme/Geschichten/Wissen … für Kinder“. Einmalige Bereinigung `heal_derived_kids_v06106` (Merker `kids_genre_heal_v06106`, Ereignis `kids_genre_heal` version 0.6.106).
 - Heilungen vor den Arbeitern, Merker `series_names_v06106`, Ereignis `catalog_series_names_healed`.
-- Tests: `tests/test_v06106.py` (7, davon 2 über kids_catalog: Liste und show_is_kids).
+- Tests: `tests/test_v06106.py` (10, davon 4 über kids_catalog/Kinderecke).
 
 ## 0.6.105 – Altersregel der Kinderecke nur mit Familiensignal, FSK-Suche für TMDB-Treffer
 - Grundlage: Mac-Prüfung 0.6.103 (Kopie von Björns Bestand, 22.11.2026): 832 Filme statt 209, davon 533 neu aus Netzkino und 77 aus Plex, allein über FSK ≤ 12 und „Abenteuer“/„Fantasy“, u. a. „5-Headed Shark Attack“, „Alien Predator War“, „55 Tage in Peking“, „An Egypt Affair“, „A Man called Hero“, „Anuk III“, „Prosperos Bücher“, „Jurassic Galaxy“, „Vom Suchen und Finden der Liebe“. Björns Vorgaben zusammen gelesen (Standard FSK 12, aber „im Zweifel nicht, ich gebe manuell frei“). Basis Sammelstand 0.6.104 (aaa9e6cb).

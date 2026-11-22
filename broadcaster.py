@@ -6,7 +6,7 @@ magazines, news and documentaries. Endpoints follow the public web/app clients (
 ard.py/zdf.py, MediathekView MServer); they are undocumented and may change, so every field is optional.
 """
 import datetime,json,re,threading,time,urllib.parse
-import core,diagnostics
+import categories,core,diagnostics
 PROVIDERS=('ARD Mediathek','ZDF Mediathek')
 IMAGE_HOSTS={'api.ardmediathek.de','img.ardmediathek.de','www.zdf.de','epg-image.zdf.de','www.zdfheute.de'}
 ARD_ITEM='https://api.ardmediathek.de/page-gateway/pages/ard/item/'
@@ -27,7 +27,10 @@ GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau|tagesthemen|nachrichten|aktuell|h
              (re.compile(r'(?i)\b(?:doku\w*|dokumentation\w*|reportage\w*|terra x|planet e)\b'),'Dokumentation'),
              (re.compile(r'(?i)\b(?:magazin\w*|servicezeit|ratgeber|verbraucher\w*|markt)\b'),'Magazin'),
              (re.compile(r'(?i)\b(?:talk\w*|gespräch\w*|interview\w*|stöckl|lanz|maischberger|illner)\b'),'Talk'),
-             (re.compile(r'(?i)\b(?:kinder\w*|kika|logo!|sendung mit der maus)\b'),'Kinder'),
+             # 0.6.106 (Durchsicht Kinderecke 22.11.: „Kinderärzte im Einsatz“, „Kinderarmut in Deutschland“ trugen als
+             # Sendungs-Ablage „Kinder“): nur Namen, die Kinderprogramm sagen, nicht jedes Wort mit „kinder…“
+             (re.compile(r'(?i)\bkinder(?:film|filme|serie|serien|kino|programm|sendung|sendungen|nachrichten|lieder|hörspiel|quiz|reporter)\b|'
+                         + categories.KNOWN_KIDS_SERIES),'Kinder'),
              (re.compile(r'(?i)\b(?:kultur\w*|literatur\w*|philosophie|scobel|musik\w*|konzert\w*)\b'),'Kultur')]
 _CACHE={};_LOCK=threading.Lock();_REQUEST_LOCK=threading.Lock();_PAUSED={};_TOKEN={};_LAST=[0.0]
 CACHE_SECONDS=86400;PAUSE_SECONDS=900;MIN_INTERVAL=.5

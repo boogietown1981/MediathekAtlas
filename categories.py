@@ -19,6 +19,15 @@ from __future__ import annotations
 
 import re
 
+# 0.6.106: bekannte Kinderreihen, deren Name das Kinderprogramm belegt, auch ohne Kindersender – EINE Liste für das
+# Sender-Genre (broadcaster.GENRE_HINTS), das Themensignal (catalog.KIDS_TOPIC) und Sendungs-Ablagen
+# (catalog.FORMAT_KIDS_TOPIC); die Kinderecke liest dieselbe Konstante. Nie bloß „Kinder“ im Namen („Die Kinder von
+# Lügde“, „Ein Herz für Kinder“, „Kinderärzte im Einsatz“ – Mac-Prüfungen 0.6.91/0.6.105).
+KNOWN_KIDS_SERIES = (r'sendung mit der maus|sendung mit dem elefanten|sandmännchen|sechs auf einen streich|'
+                     r'\bzdftivi\b|\btivi\b|toggolino|\bkika\b|\blogo(?=!)|'
+                     r'\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b')
+KNOWN_KIDS_SERIES_RE = re.compile('(?i)' + KNOWN_KIDS_SERIES)
+
 UNCLASSIFIED = 'Unklassifiziert'
 OTHER = 'Sonstige'
 # Ältere Stände zeigten 'Unbekannt'; als Filterwert weiter verstanden (gespeicherte Ansichten, Links).

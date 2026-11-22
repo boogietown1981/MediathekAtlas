@@ -144,6 +144,47 @@ class KidsCornerTests(Base):
         self.assertEqual(titles, ['Anna, Nina, Pia und die wilden Tiere', 'Checker Can, Checker Tobi und Checker Julian',
                                   'Paula, Anna und die wilden Tiere'])
 
+    def test_format_counts_only_by_offer_signal(self):
+        # Durchsicht Kinderecke 22.11.: abgeleitetes Genre „Kinder“ einer Sendungs-Ablage reicht nicht
+        self.reihe('show:checker', 'Checker Tobi', 8, 'format', channel='ARD', genres=('Kinder',))
+        self.reihe('show:aerzte', 'Kinderärzte im Einsatz', 8, 'format', channel='ARD', genres=('Kinder',))
+        self.reihe('show:armut', 'Kinderarmut in Deutschland', 8, 'format', channel='ARD', genres=('Kinder',))
+        self.reihe('show:herz', 'Ein Herz für Kinder', 8, 'format', channel='ZDF', genres=('Kinder',))
+        self.reihe('show:nachtcafe', 'NACHTCAFÉ', 8, 'format', channel='SWR', genres=('Kinder',))
+        with self.db() as c:
+            c.execute("UPDATE works SET meta=json_set(meta,'$.episode_title','Wenn Kinder pflegen') WHERE show_key='show:nachtcafe'")
+        titles = sorted(t['title'] for t in self.shelf()['series'])
+        self.assertEqual(titles, ['Checker Tobi'])
+        self.assertFalse(catalog.KIDS_TOPIC.search('Ein Herz für Kinder'))
+        import broadcaster
+        for name in ('Kinderärzte im Einsatz', 'Kinderarmut in Deutschland', 'Ein Herz für Kinder', 'NACHTCAFÉ'):
+            self.assertNotIn('Kinder', broadcaster.genres(name, names=(name,)), name)
+        for name in ('Checker Tobi', 'KiKA LIVE', 'Die Sendung mit der Maus', 'Kinderfilm am Sonntag'):
+            self.assertIn('Kinder', broadcaster.genres(name, names=(name,)), name)
+
+    def test_mac_0105_names_give_no_kids_genre(self):
+        import broadcaster
+        names = ('Generation Porno - Was unsere Kinder online sehen', 'Die Kinder von Lügde', 'Geheimsache Doping: Kinder',
+                 'Sex and the Scientists · Wie wir künftig Kinder kriegen', 'Ein Herz für Kinder', 'Kinderärzte im Einsatz')
+        for name in names:
+            self.assertNotIn('Kinder', broadcaster.genres(name, names=(name,)), name)
+            self.assertFalse(catalog.KIDS_TOPIC.search(name), name)
+        for name in ('logo!', 'logo! Nachrichten für Kinder', 'Kinderfilm', 'KiKA LIVE', 'Checker Tobi'):
+            self.assertIn('Kinder', broadcaster.genres(name, names=(name,)), name)
+
+    def test_heal_removes_kids_genre_derived_from_names(self):
+        for wid, title, channel in (('luegde', 'Die Kinder von Lügde', 'ZDFinfo'), ('doping', 'Geheimsache Doping: Kinder', 'ARD'),
+                                    ('checker', 'Checker Tobi', 'ARD'), ('kika', 'Kinder von Lügde (KiKA)', 'KiKA')):
+            self.add(wid, title, ['Kinder'], channel=channel, topic=title)
+            with self.db() as c:
+                c.execute("UPDATE works SET meta=json_set(meta,'$.genre_source','Sender (abgeleitet)') WHERE id=?", (wid,))
+        with self.db() as c:
+            catalog.set_state(c, 'kids_genre_heal_v0696', True)          # 0.6.98 already ran (Björns Bestand)
+            self.assertEqual(catalog.heal_derived_kids_v06106(c), 2)
+            left = {r[0] for r in c.execute("SELECT work_id FROM work_genres WHERE genre='Kinder'")}
+            self.assertEqual(left, {'checker', 'kika'})
+            self.assertEqual(catalog.heal_derived_kids_v06106(c), 0)     # once
+
     def test_unrecognised_works_still_wait(self):
         # Koordinator: das Themensignal zählt nur für eingeordnete Werke; unerkannte warten auf die Freigabe der Eltern
         self.reihe('show:anna', 'Anna, Nina, Pia und die wilden Tiere', 5, 'review')
