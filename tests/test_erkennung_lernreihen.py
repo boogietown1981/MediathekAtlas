@@ -90,5 +90,25 @@ class WikidataWarningTests(unittest.TestCase):
                                                     src, 'contribution', 'hr-Sinfonieorchester', 10), 'warnings')
 
 
+class TopicTests(Worker):
+    """Befund Kinderecke-Thread (22.11.2026): a move to the canonical ID dropped works.topic."""
+    def test_canonical_move_keeps_the_topic_and_old_losses_heal(self):
+        with self.db() as c:
+            c.execute('CREATE TABLE IF NOT EXISTS metadata_cache(id TEXT PRIMARY KEY,payload TEXT,checked REAL)')
+            catalog.ingest(c, [{'title': 'Der Film', 'topic': 'Filme für Kinder', 'duration': 5400, 'channel': 'KiKA',
+                                'url_video': 'https://example.org/film.mp4', 'timestamp': 1795100000}])
+            wid = c.execute('SELECT id FROM works').fetchone()[0]
+            m = json.loads(c.execute('SELECT meta FROM works WHERE id=?', (wid,)).fetchone()[0])
+            m.update(kind='movie', title='Der Film', year=2020, provider='TMDB', reference_id='42')
+            dest = catalog.save_metadata(c, wid, m, 'matched')
+            self.assertNotEqual(dest, wid)
+            self.assertEqual(c.execute('SELECT topic FROM works WHERE id=?', (dest,)).fetchone()[0], 'Filme für Kinder')
+            c.execute("UPDATE works SET topic='' WHERE id=?", (dest,))           # state left by older versions
+        self.svc.heal_topics()
+        with self.db() as c:
+            self.assertEqual(c.execute('SELECT topic FROM works WHERE id=?', (dest,)).fetchone()[0], 'Filme für Kinder')
+            self.assertTrue(catalog.get_state(c, 'topic_heal_v0692', False))
+
+
 if __name__ == '__main__':
     unittest.main()

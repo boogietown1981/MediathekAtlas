@@ -107,11 +107,23 @@ class Service:
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities()
+            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():
                 gate.set();diagnostics.event('catalog_heals_ready',seconds=round(time.monotonic()-getattr(self,'heals_started',time.monotonic()),1))
+    def heal_topics(self):
+        """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
+        total=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,done=catalog.heal_missing_topics(c)
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1;return
+            total+=n
+            if done:break
+        if total:diagnostics.event('catalog_topics_healed',works=total)
     def supervise(self,fn):
         while not self.stop.is_set():
             try:

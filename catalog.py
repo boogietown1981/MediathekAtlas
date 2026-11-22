@@ -272,6 +272,21 @@ def origin_meta(c,row):
         m['genres']=normalized_genres(m.get('genres'))
     return m,template
 
+def heal_missing_topics(c,limit=2000):
+    """Once (merker topic_heal_v0692): works that lost their topic on a move to the canonical ID take it back
+    from their best offer. One batch per call, cursor in topic_heal_cursor. Returns (healed, done)."""
+    if get_state(c,'topic_heal_v0692',False):return 0,True
+    after=int(get_state(c,'topic_heal_cursor',0) or 0)
+    rows=c.execute("""SELECT w.rowid,w.id,(SELECT json_extract(o.payload,'$.topic') FROM offers o WHERE o.work_id=w.id
+          ORDER BY o.active DESC,o.rank DESC LIMIT 1) t FROM works w
+        WHERE w.rowid>? AND COALESCE(w.topic,'')='' ORDER BY w.rowid LIMIT ?""",(after,limit)).fetchall()
+    todo=[(r[2],r[1]) for r in rows if r[2]]
+    c.executemany('UPDATE works SET topic=? WHERE id=?',todo)
+    if len(rows)<limit:
+        set_state(c,'topic_heal_v0692',{'at':time.time()});return len(todo),True
+    set_state(c,'topic_heal_cursor',rows[-1][0])
+    return len(todo),False
+
 def defer_sender_siblings(c,topic,work_id,providers,until):
     """0.6.89: works of the same Reihe (topic) that wait only for the same broadcaster wait until its allowance
     renews (``until``, spread over 30 min) instead of asking again one by one. Works never checked and works
@@ -951,12 +966,15 @@ def save_metadata(c,wid,m,state='manual'):
     # Otherwise every merge silently turns a repeat into an apparent first pass.
     seen_attempts=max(int(row['attempts'] or 0),int(old['attempts'] or 0) if old else 0)
     due=max(float(row['next_try'] or 0),float(old['next_try'] or 0) if old else 0)
-    c.execute("""INSERT INTO works(id,title,kind,year,show_key,meta,state,updated,attempts,next_try)
-        VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+    # 0.6.92 (Befund Kinderecke-Thread 22.11.2026): a move to the canonical ID created the new row without the
+    # offer topic (works.topic ''), so topic rules (Reihe, Kinderecke, Sendung) no longer saw the work.
+    c.execute("""INSERT INTO works(id,title,kind,year,show_key,meta,state,updated,attempts,next_try,topic)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
         title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,
         meta=excluded.meta,state=excluded.state,updated=excluded.updated,
-        attempts=MAX(works.attempts,excluded.attempts)""",
-        (dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time(),seen_attempts,due))
+        attempts=MAX(works.attempts,excluded.attempts),
+        topic=CASE WHEN COALESCE(works.topic,'')='' THEN excluded.topic ELSE works.topic END""",
+        (dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time(),seen_attempts,due,row['topic'] or ''))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
     m['genres']=normalized_genres(m.get('genres'))
     c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),dest))
