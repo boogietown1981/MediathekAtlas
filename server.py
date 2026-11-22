@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover
-import api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import series_autoload,api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -89,6 +89,7 @@ with db() as c:
     catalog.initialize(c,defer_heavy=__name__=='__main__')
     _boot('Katalogschema geprüft')
     subscriptions.initialize(c)
+    series_autoload.initialize(c)
     portal_sources.initialize(c)
     portal_control.initialize(c)
     if not catalog.get_state(c,'legacy_imported',False):
@@ -135,6 +136,9 @@ def settings():
 youtube.configure(lambda:settings().get('youtube',''))
 # 0.6.7: YouTube-Abos lesen Schlüssel und Downloadordner ebenso bei jeder Prüfung; Aufträge gehen in catalog.db.
 youtube_abos.configure(db=db,settings=settings)
+
+def series_autoload_summary():
+    with db() as c:return series_autoload.summary(ROOT,c,settings())
 
 def record(i):
     with db() as c:
@@ -1391,7 +1395,7 @@ def get_diagnostics(self,path):
            'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
            'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'dmax':lambda:dmax.state(ROOT),'filmfriend':lambda:filmfriend.state(ROOT),'dailyme':lambda:dailyme.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
            'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),'youtube_discover':lambda:youtube_discover.summary(ROOT),
-           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'archive_works':lambda:archive_recognition.summary(ROOT),
+           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'series_autoload':series_autoload_summary,'archive_works':lambda:archive_recognition.summary(ROOT),
            'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT),'cast_photos':lambda:__import__('cast_photos').store_stats(ROOT)}
     found=_bounded_parts(parts)
     overview=found.pop('overview')
@@ -2096,6 +2100,28 @@ def post_subscription_check(self,path,d):
                       queued=sum(x['queued'] for x in results))
     return self.send({'ok':True,'items':results})
 
+@ROUTES.get('/api/series-autoload')
+def get_series_autoload(self,path):
+    """0.6.94: angefangene Serien, die automatisch offline geladen werden, mit Schalter und Grenzen."""
+    with db() as c:return self.send(series_autoload.status(ROOT,c,settings()))
+
+@ROUTES.post('/api/series-autoload')
+def post_series_autoload(self,path,d):
+    action=str(d.get('action') or '')
+    if action=='settings':
+        s=json.loads(_settings_payload())
+        series_autoload.clean_settings(d,s)
+        with db() as c:store_settings(c,s)
+        diagnostics.event('series_autoload_settings',**series_autoload.config(s))
+        SERVICE.subscription_wake.set()
+    else:
+        with db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            result=series_autoload.change(c,str(d.get('show') or ''),action)
+        diagnostics.event('series_autoload_changed',action=action,cancelled=result['cancelled'])
+        if action=='resume':SERVICE.subscription_wake.set()
+    with db() as c:return self.send(series_autoload.status(ROOT,c,settings()))
+
 @ROUTES.post('/api/metadata-priority')
 def post_metadata_priority(self,path,d):
     ids=d.get('ids',[])
@@ -2418,7 +2444,10 @@ def post_retry(self,path,d):
 
 @ROUTES.post('/api/watch-progress')
 def post_watch_progress(self,path,d):
-    return self.send(watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info')))
+    result=watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info'))
+    # 0.6.94: zu Ende gesehen → angefangene Serie gleich prüfen (series_autoload, sonst spätestens nach einer Minute)
+    if result.get('done'):SERVICE.subscription_wake.set()
+    return self.send(result)
 
 @ROUTES.post('/api/watch-mark')
 def post_watch_mark(self,path,d):
@@ -2519,7 +2548,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default

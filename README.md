@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.91
+# MediathekAtlas · 0.6.94
+
+## Neu in 0.6.94: Angefangene Serien automatisch offline, gesehene Filme behalten
+- Ist eine Folge einer Serie zu Ende gesehen (Player oder Kinderecke), lädt MediathekAtlas die übrigen Folgen dieser Serie von selbst herunter: erst die folgenden, dann frühere, die noch nicht gesehen sind.
+- Kurze Serien werden komplett geladen. Lange oder tägliche Sendungen nur bis zur Grenze (Standard: 20 ungesehene Folgen und 20 GB je Serie); jede gesehene Folge macht Platz für die nächste. Bei wenig freiem Platz (Reserve aus YouTube → Abos, Platz fürs IMDb-Update) wird nichts nachgeladen.
+- Ein zu Ende gesehener Film wird dauerhaft offline gespeichert (Downloadordner, ohne 30-Tage-Frist), damit er sich jederzeit nochmal ansehen lässt; seine Sendereihe wird nicht mitgeladen.
+- Nur ARD, ZDF & Co. mit direkter Videodatei, bei Serien mit bestätigter Staffel/Folge. Anbieter mit Kopierschutz oder nur Link werden nie geladen.
+- Downloads → „Angefangene Serien automatisch laden“: Schalter, Grenzen, je Serie „Automatik beenden“; die Folgen stehen darunter unter „Angefangene Serie · …“ mit Fortschritt und Abbrechen. Schalter auch unter Einstellungen.
 
 ## Neu in 0.6.91: Kinderecke zeigt Märchen, Serienfolgen und lässt sich blättern
 - Erkannte Märchenfilme (z. B. „Sechs auf einen Streich“, „Märchenperlen“) und Filme von KiKA stehen jetzt bei den Filmen der Kinderecke. Ausschluss bleibt: nie neben Horror, Thriller, Krimi, Erotik, Krieg.

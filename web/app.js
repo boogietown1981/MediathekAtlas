@@ -702,7 +702,7 @@ const QUEUE_GROUPS=[
  {key:'done',title:'Fertig',open:false,test:j=>j.state==='done'},
  {key:'other',title:'Abgelaufen oder entfernt',open:false,test:()=>true}];
 const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',dailyme:'dailyme TV',sender:'Direkt vom Sender',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
-function jobOrigin(j){if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
+function jobOrigin(j){if(j.autoload_show)return j.autoload_kind==='movie'?'Gesehene Filme (zum Nochmal-Ansehen)':'Angefangene Serie · '+(j.autoload_title||j.metadata?.title||'Serie');if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
 function queueOpen(key,fallback){try{const v=localStorage.getItem('atlas-queue-'+key);return v===null?fallback:v==='1';}catch(_){return fallback;}}
 function queueTime(t){return new Date(t*1000).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
 let repairStarted=false,repairInfo='',queueLast=null;

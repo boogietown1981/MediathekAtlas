@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.94 – Angefangene Serien automatisch offline (22. November 2026)
+- Automatisch: tests/test_v0694_serien_nachladen.py (11), Klicktest tests/browser/series_autoload.cjs (Chromium). Echte Daten (Signal „zu Ende gesehen“ aus Player und Kinderecke, Downloads einer echten Serie, Reserve/Grenzen, Oberfläche): Mac-Prüfung (PRUEFLISTE in releases/0.6.94).
+
 ## 0.6.91 – Kinderecke: Märchen, Serienfolgen, Blättern (22. November 2026)
 - Automatisch: tests/test_v0691_kinderecke.py (5, vorher mit altem Code alle 5 rot), tests/test_v0646_kids_catalog.py, Klicktest tests/browser/kids_corner.cjs (Chromium, 264 Filme, Pfeile, „Alle …“). Echte Daten (Anzahl Märchen/KiKA, Folgen je Serie, Ladezeit /api/kids): Mac-Prüfung (PRUEFLISTE in releases/0.6.91).
 

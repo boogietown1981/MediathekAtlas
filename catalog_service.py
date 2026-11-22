@@ -41,6 +41,10 @@ def sqlite_busy(exc):
     return isinstance(exc,sqlite3.OperationalError) and any(
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
+class _Skip(Exception):
+    """Durchlauf auslassen (kein Fehler)."""
+
+
 class Service:
     def __init__(self,db,settings,stop,root):self.db=db;self.settings=settings;self.stop=stop;self.root=root;self.wake=threading.Event();self.restart=threading.Event();self.current={};self.last_log=0;self.metadata_status={};self.reclassification={};self.turn=0;self.checked=0;self.artwork_checked=0;self.metadata_wake=threading.Event();self.format_wake=threading.Event();self.mesh=None;self.mesh_filter=None;self.mesh_episode_filter=None;self.mesh_saved={'results':0,'episodes':0,'episodes_skipped':0};self.mesh_waiting={};self.mesh_usage={};self.mesh_status={'enabled':False};self.mesh_lock=threading.RLock();self.mesh_names={};self.mesh_running=threading.Lock();self.mesh_peers={};self.mesh_backlog={};self.mesh_pending=False;self.mesh_backfill_at=0.0;self.mesh_rate=0.0;self.mesh_mark=(time.monotonic(),0);self.mesh_beat=0;self.mesh_imported=0;self.mesh_invalid=0;self.first_pass_checks=0;self.repeat_checks=0;self.template_hits=0;self.news_shortcuts=0;self.recent_first=deque();self.started_at=time.monotonic();self.worker_lock=threading.RLock();self.active_checks=0;self.active_work={};self.provider_slots=threading.BoundedSemaphore(2);self.quality_counts={'matched':0,'identified':0,'review':0,'retry':0};self.sqlite_busy_count=0;self.subscription_wake=threading.Event();self.lease_gc_at=0;self.episode_checked=0;self.episode_matched=0;self.episode_unresolved=0;self.episode_suspected=0;self.episode_extras=0;self.episode_retried=0;self.episode_resets=0;self.episode_active=0;self.episode_last_count=(0,0,0);self.episode_sender_imported=0;self.episode_sender_items=0;self.episode_sender_matched=0;self.episode_sender_deferred=0;self.episode_sender_budget=0;self.episode_series_deferred=0;self.episode_editions=0;self.episode_segments=0;self.episode_samples=0;self.sqlite_busy_by_label={};self.episode_show_skipped=0
     HEAL_WAIT=600.0
@@ -198,6 +202,7 @@ class Service:
         import subscriptions
         while not self.stop.is_set():
             if not task_control.wait_if_paused('subscriptions',self.stop):return
+            busy=False
             try:
                 with self.db() as c:
                     c.execute('BEGIN IMMEDIATE')
@@ -208,8 +213,21 @@ class Service:
                                           queued=row['queued'],title=row['title'])
             except Exception as e:
                 # 0.6.56: right after the start the index build holds the database; the next try is 60 s later.
-                if sqlite_busy(e):self.sqlite_busy_count+=1;diagnostics.event('subscription_scheduler_busy')
+                busy=sqlite_busy(e)
+                if busy:self.sqlite_busy_count+=1;diagnostics.event('subscription_scheduler_busy')
                 else:diagnostics.error('subscription_scheduler_failed',e)
+            # 0.6.94: angefangene Serien (zu Ende gesehene Folge) automatisch offline nachladen;
+            # ist die Datenbank gerade gesperrt (Indexaufbau nach dem Start), erst im nächsten Durchlauf.
+            try:
+                if busy:raise _Skip()
+                import series_autoload
+                with self.db() as c:result=series_autoload.run(self.root,c,self.settings())
+                if result.get('started') or result.get('queued'):
+                    diagnostics.event('series_autoload_run',started=result.get('started',0),queued=result.get('queued',0))
+            except _Skip:pass
+            except Exception as e:
+                if sqlite_busy(e):self.sqlite_busy_count+=1;diagnostics.event('series_autoload_busy')
+                else:diagnostics.error('series_autoload_failed',e)
             self.subscription_wake.wait(60);self.subscription_wake.clear()
 
     def lease_work(self,queue='identity'):
