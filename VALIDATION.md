@@ -1,5 +1,9 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.87 – Themenwörter bei Suche und Auswahl (22. November 2026)
+- Automatisch: gesamte Python-Suite (1.848, alle grün nach Korrektur des neuen Tests), Node-Tests, Klicktest; neu `tests/test_v0687.py`: „Doku“/„Sport“/„Masterclass“/„Kultur“ werden nicht als Serie gesucht und nicht Serie aus dem Senderhinweis, „Terra X“ weiter; Serie „Doku“ nie für Thema „Doku“. Gegenprobe auf 0.6.86: beide Tests rot.
+- Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).
+
 ## 0.6.86 – Umzug exFAT, Heilungen zuerst, Themen-Vorlagen (22. November 2026)
 - Automatisch: gesamte Python-Suite, Node-Tests, Klicktest; neu `tests/test_v0686.py`: `._`-Dateien weder kopiert noch geprüft, beim Aufräumen entfernt, Ziel nur mit Hilfsdateien leer; Knopftext je Ziel; Folgen-Arbeiter wartet auf die Heilungen und läuft danach, Frist öffnet; „Sport“-Vorlage gelöscht und Werk neu erkannt, „Puls“ bleibt.
 - Nicht geprüft: echter Umzug exFAT → APFS auf dem Mac (Prüfliste), Wirkung auf Björns Bestand.

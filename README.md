@@ -1,6 +1,10 @@
-# MediathekAtlas · 0.6.86
+# MediathekAtlas · 0.6.87
 
-## Neu in 0.6.86: Umzug vom USB-Laufwerk, Heilungen vor der Erkennung
+## Neu in 0.6.87: Themenwörter werden keine Serie
+
+- Themen wie „Doku“, „Sport“ oder „Masterclass“ werden weder als Serie gesucht noch als Serie übernommen (vorher fand IMDb eine Serie „Doku“ für 93 ZDF-Werke).
+
+## Neu in 0.6.86 (nicht ausgegeben, in 0.6.87 enthalten): Umzug vom USB-Laufwerk, Heilungen vor der Erkennung
 
 - Ein Umzug des Speicherorts von einem exFAT-/USB-Laufwerk scheitert nicht mehr an den macOS-Hilfsdateien „._Name“. Sie werden weder kopiert noch geprüft und beim Aufräumen mit ihrer Datei entfernt.
 - Der Rückweg-Knopf heißt „Standardordner verwenden“, wenn der bisherige Datenstand im Standardordner liegt.

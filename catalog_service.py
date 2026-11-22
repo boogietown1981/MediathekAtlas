@@ -71,7 +71,7 @@ class Service:
         """0.6.86, once: subject templates („Sport“, „Masterclass“) are forgotten; works that took such an identity
         from their topic are recognised again from the sender data. Matches, user decisions and confirmed episodes stay."""
         with self.db() as c:
-            if catalog.get_state(c,'generic_templates_v0686',False):return
+            if catalog.get_state(c,'generic_templates_v0687',False):return
             dropped=catalog.drop_portal_templates(c)
         after='';done=0;shows={}
         while not self.stop.is_set():
@@ -80,7 +80,7 @@ class Service:
                     rows,after=catalog.generic_identity_works(c,after)
                     for row in rows:
                         if not row['payload']:continue
-                        if catalog.reset_identity(c,row,json.loads(row['payload']),'Thema ist keine Serie (%s); neu erkennen (0.6.86)'%row['title']):
+                        if catalog.reset_identity(c,row,json.loads(row['payload']),'Thema ist keine Serie (%s); neu erkennen (0.6.87)'%row['title']):
                             done+=1;shows[row['title']]=shows.get(row['title'],0)+1
                 if after is None:break
                 if self.stop.wait(.05):return
@@ -91,7 +91,7 @@ class Service:
         if self.stop.is_set():return
         if done or dropped:
             diagnostics.event('catalog_generic_templates_reset',templates_dropped=dropped,works=done,shows=shows);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'generic_templates_v0686',{'templates_dropped':dropped,'works':done,'shows':shows,'at':time.time()})
+        with self.db() as c:catalog.set_state(c,'generic_templates_v0687',{'templates_dropped':dropped,'works':done,'shows':shows,'at':time.time()})
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
@@ -1151,7 +1151,7 @@ class Service:
                     result=core.candidates(entry['source'],m,{**config,'_force_provider_refresh':bool(priority)})
                 if not result['warnings'] and not result.get('deferred_providers'):self.cache_result(ck,result)
             # 0.6.84: a portal („Planet Schule“ at TVDB/ARD) is never the automatic identity of a programme; it stays a suggestion.
-            usable=[x for x in result['candidates'] if not catalog.portal_identity(x)]
+            usable=[x for x in result['candidates'] if not catalog.portal_identity(x,entry['source'].get('topic'))]
             chosen=catalog.auto_choice(m,usable);recognized=chosen or catalog.work_choice(m,usable)
             outcome='retry' if result['warnings'] or result.get('deferred_providers') else 'review'
             for write_attempt in range(4):

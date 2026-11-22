@@ -107,9 +107,12 @@ def portal_series(topic,title):
     if not (2<=len(series)<=80) or not episode or key(series)==key(topic):return None
     return episode,series
 
-def portal_identity(m):
-    """0.6.84: a series identity that is only the portal („planet schule“ ARD Mediathek, TVDB „Planet Schule“)."""
-    return bool(m) and m.get('kind')=='series' and key(m.get('title')) in PORTAL_TOPICS
+def portal_identity(m,topic=''):
+    """0.6.84: a series identity that is only the portal („planet schule“ ARD Mediathek, TVDB „Planet Schule“).
+    0.6.87: or a subject word that is the offer's topic (IMDb series „Doku“ for the ZDF topic „Doku“)."""
+    if not m or m.get('kind')!='series':return False
+    name=key(m.get('title'))
+    return name in PORTAL_TOPICS or bool(topic) and name==key(topic) and name in TEMPLATE_GENERIC
 
 def template_topic(topic,title=''):
     """0.6.84: True if a series template may be learned or used for this topic.
@@ -147,7 +150,7 @@ def drop_portal_templates(c):
     for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
         try:m=json.loads(meta or '{}')
         except (TypeError,ValueError):m={}
-        if not template_topic(topic) or portal_identity(m):
+        if not template_topic(topic) or portal_identity(m,topic):
             gone+=c.execute('DELETE FROM series_templates WHERE topic=? AND provider=? AND reference=?',(topic,provider,ref)).rowcount
     return gone
 
@@ -189,6 +192,14 @@ def portal_reseed(c,limit=500,after=''):
 def seed(row):
     title=cleaned(row.get('title'));topic=cleaned(row.get('topic'));desc=core.clean(row.get('description',''));m=core.identify({**row,'title':title})
     ep=EP.search(title);reihe=portal_series(topic,title)
+    if m['kind']=='series' and topic and not ep and key(m['title'])==key(topic):
+        # 0.6.87: core.identify names the topic as series when the text says „Serie“; a subject or section topic
+        # („Doku“, „Sport“, „Serien“) is no series – the numbered part of the title may be one.
+        import metadata
+        if metadata.generic_topic(topic):
+            part=metadata.part_series(title)
+            if part and not metadata.generic_topic(part):m.update(title=part)
+            else:m.update(kind='unknown',title=title,episode_title='')
     if reihe:
         # 0.6.78: Planet Schule names the series after the dot ("Das schnelle Pendel · Achtung! Experiment").
         m.update(kind='series',year=None,title=reihe[1],episode_title=reihe[0])

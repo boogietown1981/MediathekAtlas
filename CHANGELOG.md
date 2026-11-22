@@ -1,3 +1,11 @@
+## 0.6.87 – Themenwörter auch bei Suche und Auswahl sperren; enthält 0.6.86
+- Grundlage: Bewertung der Erkennung (Air, 0.6.85, 22.11.2026, `berichte/bewertung-erkennung-2026-11-22-0685-air.md`): ZDF-Thema „Doku“ direkt über IMDb als Serie erkannt (93 Werke, 42 Laufzeit-Verdachte); 0.6.86 sperrte nur die Vorlage. Basis 0.6.86 (nicht ausgegeben).
+- `metadata.GENERIC` um Themenwörter erweitert (doku, sport, masterclass, kultur, wissen, geschichte, reportage, konzert, theater, kunst, gesundheit, wirtschaft, reisen …): kein Suchbegriff „Serie = Thema“ mehr.
+- `catalog.seed`: nennt `core.identify` das Thema als Serie, weil der Text „Serie“ sagt, und ist das Thema allgemein, wird daraus keine Serie (nummerierter Teil des Titels bleibt möglich).
+- `catalog.portal_identity(m, topic)`: eine Serie, deren Name ein Themenwort und gleich dem Thema des Angebots ist, wird nie automatisch gewählt.
+- Heilung `reset_generic_identities` mit Merker `generic_templates_v0687` (deckt „Doku“ mit ab).
+- Tests: `tests/test_v0687.py` (2; auf 0.6.86 rot).
+
 ## 0.6.86 – Umzug von exFAT (AppleDouble), Heilungen vor den Arbeitern, Themen-Vorlagen
 - Grundlage: Diagnose MacBook Air 22.11.2026 (0.6.85 seit 21.11. 21:50, erster echter Lauf; `berichte/diagnose-2026-11-22-morgen-0685-air.md`). Basis 0.6.85.
 - `storage_locations._skip_name`: `._*` (AppleDouble von exFAT/FAT/SMB) wird beim Kopieren, Prüfen und Aufräumen übersprungen; `remove_verified` löscht die Hilfsdatei zusammen mit ihrer Datei; ein Ziel mit nur Hilfsdateien gilt als leer. Betraf jeden Umzug von exFAT weg (Code seit 0.6.40).
