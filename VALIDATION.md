@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.89 – Archiv gesehener YouTube-Abo-Videos (22. November 2026)
+- Automatisch: tests/test_v0689_abo_archiv.py (6). Echte Verschiebung auf APFS/exFAT und Wiedergabe aus dem Archiv: Mac-Prüfung (PRUEFLISTE in releases/0.6.89).
+
 ## 0.6.88 – Folgensuche, Sendungsvorschläge, täglicher Abgleich (22. November 2026)
 - Siehe PRUEFLISTE in releases/0.6.88. Automatisch: tests/test_v0688.py; Ergebnisse der vollen Suite im Bericht an den Koordinator.
 

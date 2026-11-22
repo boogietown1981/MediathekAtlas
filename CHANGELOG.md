@@ -1,3 +1,12 @@
+## 0.6.89 – Gesehene YouTube-Abo-Videos ins Archiv
+- Grundlage: Björn 22.11.2026: „wenn offline geschaut wurde … in ein Archiv verschieben, sodass dieses nicht mehr zu den 30 Tagen zählt“. Basis 0.6.88.
+- Zu Ende gesehen (watch_state `done`, Player bis 45 s vor Schluss oder Ende) und 5 Minuten vorbei (`ARCHIVE_GRACE`): `youtube_abos.archive_watched` (je Minute aus `tick`, höchstens 20) verschiebt Video, Vorschaubild, NFO und metadata.json von `YouTube-Abos/<Kanal>/` nach `YouTube-Abos/_Archiv/<Kanal>/` (gleiches Laufwerk: Umbenennen; sonst Kopie mit Größenprüfung, bei Fehler zurück). Auftrag: neuer Pfad, `archived_at`, `archived_from`, ohne `offline_until`.
+- Archivierte Videos: Zustand `archived` in `youtube_abo_videos`; `netzkino_downloads.expire/stamp` überspringen sie (keine 30-Tage-Frist); sie zählen nicht zu `keep`, Budget je Abo und Gesamtbudget; Kinderecke, Ansehen-Modus und Dashboard zeigen sie weiter (gesehen, `archived`). Von Hand gelöscht → `expired`, nie neu geladen.
+- `_make_room` verschiebt gesehene Videos ins Archiv statt sie zu löschen; misslingt das, gilt die alte Regel.
+- Schalter in YouTube → Abos (`action=archive`, Einstellung `abo_archive`, Standard an) mit Archivgröße und Ordner. Das Archiv liegt im Zwischenspeicher und zieht mit ihm um.
+- Diagnose: `youtube_abos.summary` mit `archive` und `watch_signal` (fertige Abo-Videos, begonnen, zu Ende gesehen, `job:`-Einträge in watch.sqlite3), um das fehlende „Gesehen“-Signal vom 21.11. zu prüfen.
+- Tests: `tests/test_v0689_abo_archiv.py` (6).
+
 ## 0.6.88 – Folgensuche nach neuem IMDb-Stand, Sendungsvorschläge als Folge, täglicher Plattform-Abgleich
 - Grundlage: Diagnose MacBook Pro 22.11.2026 abends (0.6.87: Folgensuche 121.780 Einträge, 0 fällig; Air 0.6.85: 116.533 / 0; 4.692 Werke ohne Art „mit Sendungsvorschlag“, SRF 2.215, ARTE.DE 1.451) und Björns „ja“ zur täglichen Aktualisierung (22.11.2026). Basis 0.6.87.
 - Ursache „0 fällig“ (im Code belegt, kein Fehler): jede Folgensuche ohne Treffer ruht 30 Tage (7 bei Senderkontingent), Geschwister einer Serie ohne IMDb-Folgenliste 30–37 Tage. Eine frühere Wiederholung ohne neue Daten bringt dieselbe Antwort.

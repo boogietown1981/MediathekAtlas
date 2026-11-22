@@ -81,6 +81,15 @@ TOTAL_REASON = 'wartet: Gesamtbudget aller Abos erreicht'
 # Geschätzte Größe eines noch nicht geladenen Videos (Byte je Sekunde, MP4 H.264/AAC bei YouTube üblich)
 RATE = {'480': 110_000, '720': 250_000, '1080': 500_000}
 GB = 1000 ** 3                 # Anzeige wie im Finder (Dezimal-GB)
+# 0.6.89 (Björn 22.11.2026: „wenn offline geschaut wurde … in ein Archiv verschieben, sodass dieses nicht mehr zu den
+# 30 Tagen zählt“): zu Ende gesehene Abo-Videos wandern in den Unterordner ARCHIVE_FOLDER des Abo-Ordners. Dort gilt
+# keine 30-Tage-Frist mehr, und sie zählen weder zu „höchstens N Videos“ (keep) noch zum Budget je Abo oder zum
+# Gesamtbudget. Der Ordner liegt im Zwischenspeicher und zieht mit ihm um (Einstellungen → Speicherorte).
+ARCHIVE_FOLDER = '_Archiv'
+ARCHIVE_REASON = 'gesehen, im Archiv'
+ARCHIVE_DEFAULT = '1'          # an: Björn hat die Regel ausdrücklich gewünscht
+ARCHIVE_BATCH = 20             # höchstens so viele Verschiebungen je Minute (tick)
+ARCHIVE_GRACE = 300            # Sekunden nach „zu Ende gesehen“, bevor die Datei wandert
 
 SCHEMA = '''
 CREATE TABLE IF NOT EXISTS youtube_abos(
@@ -101,7 +110,8 @@ CREATE TABLE IF NOT EXISTS youtube_abo_videos(
 CREATE INDEX IF NOT EXISTS youtube_abo_videos_state ON youtube_abo_videos(abo_id, state);
 '''
 # Zustände eines Videos: old (vor dem Abo, „nur neue“), wanted (soll geladen werden), skipped (Filter),
-# queued/done/failed (Auftrag), expired (Frist abgelaufen oder entfernt: nie erneut laden).
+# queued/done/failed (Auftrag), expired (Frist abgelaufen oder entfernt: nie erneut laden),
+# archived (0.6.89: gesehen und ins Archiv verschoben; ohne Frist, zählt nicht zu keep/Budget).
 
 _DB = None                     # server.configure: Fabrik für catalog.db (Warteschlange „jobs“)
 _SETTINGS = lambda: {}
@@ -819,10 +829,16 @@ def _make_room(c, db, abo, now):
         seen = watch_state.states(Path(abo['_root']))
     except Exception:
         seen = {}
+    archive_on = archive_enabled(abo['_root'])
     rows = db.execute("SELECT video,job_id FROM youtube_abo_videos WHERE abo_id=? AND state='done' ORDER BY done_at",
                       (abo['id'],)).fetchall()
     for row in rows:
         mark = seen.get('job:' + row['job_id']) or {}
+        if mark.get('done') and archive_on:
+            # 0.6.89: gesehene Videos werden nicht gelöscht, sondern ins Archiv verschoben (zählen dann nicht mehr)
+            # Klappt das nicht (Datei liegt nicht im Abo-Ordner, Schreibfehler), gilt die alte Regel: löschen.
+            if archive_job(c, db, row['job_id'], now):
+                return True
         if mark.get('done') and not mark.get('pinned') and not mark.get('favorite'):
             # 0.6.11: hält ein anderes Abo (anderes Profil, gleicher Kanal) dieselbe Datei, bleibt sie liegen;
             # nur dieses Abo gibt seinen Platz frei.
@@ -860,14 +876,21 @@ def _make_room(c, db, abo, now):
 
 def sync_states(c, db, abo_id=None):
     """Zustände aus der Warteschlange übernehmen (fertig, Fehler, abgelaufen)."""
-    where, args = ("WHERE state IN ('queued','done','failed')", ()) if abo_id is None else \
-        ("WHERE abo_id=? AND state IN ('queued','done','failed')", (abo_id,))
+    where, args = ("WHERE state IN ('queued','done','failed','archived')", ()) if abo_id is None else \
+        ("WHERE abo_id=? AND state IN ('queued','done','failed','archived')", (abo_id,))
     rows = db.execute('SELECT abo_id,video,state,job_id,reason FROM youtube_abo_videos ' + where, args).fetchall()
     states = _job_states(c, [r['job_id'] for r in rows])
     changed = 0
     with db:
         for r in rows:
             job_state, payload = states.get(r['job_id'], (None, None))
+            if r['state'] == 'archived':
+                # 0.6.89: archivierte Videos bleiben, solange ihr Auftrag fertig ist; von Hand gelöscht → expired
+                if job_state != 'done':
+                    db.execute("UPDATE youtube_abo_videos SET state='expired',reason='aus dem Archiv entfernt' WHERE abo_id=? AND video=?",
+                               (r['abo_id'], r['video']))
+                    changed += 1
+                continue
             if job_state in ('queued', 'downloading', 'tagging'):
                 new = 'queued'
                 # 0.6.13: wartet der Auftrag nach einem vorübergehenden Fehler, steht der Grund am Video.
@@ -1342,6 +1365,11 @@ def tick(root):
     try:
         with _DB() as c:
             sync_states(c, db)
+            # 0.6.89: zu Ende gesehene Videos ins Archiv (je Minute höchstens ARCHIVE_BATCH)
+            try:
+                archive_watched(root, c, db)
+            except Exception as exc:          # nie den Planer anhalten
+                _notify('youtube_abo_archive_failed', reason=type(exc).__name__)
             # 0.6.68: Aufträge über dem Budget nicht erst bei der nächsten Kanalprüfung (bis 24 h) zurücknehmen
             # (Mac-Prüfung 0.6.67: 1,0 GB belegt, 76,9 GB „in Arbeit“ bei 10 GB Budget)
             if time.time() - _TRIMMED_AT >= TRIM_INTERVAL:
@@ -1491,7 +1519,8 @@ def _storage(root, c=None):
             'low': bool(free is not None and free < max(reserve * GB, imdb)), 'budget_default_gb': BUDGET_DEFAULT_GB,
             'total_gb': total, 'total_choices': list(TOTAL_CHOICES), 'used_total_gb': round(used / GB, 1),
             'total_full': bool(total and used >= total * GB * 0.95),
-            'imdb_need_gb': round(imdb / GB, 1), 'imdb_low': bool(imdb and free is not None and free < imdb)}
+            'imdb_need_gb': round(imdb / GB, 1), 'imdb_low': bool(imdb and free is not None and free < imdb),
+            'archive': archive_summary(root, c)}
 
 
 def _pause(now=None):
@@ -1514,7 +1543,7 @@ def kids(root, c, watch=None, profile='kinder'):
                                   db.execute('SELECT id,label,title,ref,kids,profile FROM youtube_abos WHERE profile=?', (profile,)))]
         ids = [a['id'] for a in abos]
         rows = [dict(r) for r in db.execute(
-            "SELECT abo_id,video,title,published,duration,job_id,done_at FROM youtube_abo_videos WHERE state='done' AND abo_id IN (%s)"
+            "SELECT abo_id,video,title,published,duration,job_id,done_at,state FROM youtube_abo_videos WHERE state IN ('done','archived') AND abo_id IN (%s)"
             % ','.join('?' * len(ids)), ids)] if ids else []
     finally:
         db.close()
@@ -1536,7 +1565,7 @@ def kids(root, c, watch=None, profile='kinder'):
                        'new': not mark, 'done': bool(mark.get('done')),
                        'progress': round(min(1, (mark.get('pos') or 0) / duration), 3) if duration and not mark.get('done') else 0,
                        'pos': mark.get('pos') or 0, 'poster': bool(poster_file(job)),
-                       'until': job.get('offline_until')})
+                       'until': job.get('offline_until'), 'archived': r['state'] == 'archived'})
     videos.sort(key=lambda v: (v['published'] or '', v['added']), reverse=True)
     channels = []
     for a in abos:
@@ -1576,6 +1605,171 @@ def library(root, c, watch=None):
     return data
 
 
+# ---------------------------------------------------------------- Archiv gesehener Videos (0.6.89)
+
+def archive_enabled(root):
+    db = youtube._connect(root)
+    try:
+        return youtube._get(db, 'abo_archive', ARCHIVE_DEFAULT) == '1'
+    finally:
+        db.close()
+
+
+def set_archive(root, value):
+    on = value in (True, 1, '1', 'true', 'on')
+    db = youtube._connect(root)
+    try:
+        with db:
+            youtube._set(db, 'abo_archive', '1' if on else '0')
+    finally:
+        db.close()
+    return on
+
+
+def archive_path(path):
+    """Ziel im Archiv: ``…/YouTube-Abos/<Kanal>/<Datei>`` → ``…/YouTube-Abos/_Archiv/<Kanal>/<Datei>``.
+    None, wenn die Datei nicht im Abo-Ordner liegt oder schon im Archiv ist."""
+    parts = Path(path).parts
+    for i in range(len(parts) - 2, -1, -1):
+        if parts[i] == FOLDER:
+            rest = parts[i + 1:]
+            if not rest or rest[0] == ARCHIVE_FOLDER:
+                return None
+            return Path(*parts[:i + 1], ARCHIVE_FOLDER, *rest)
+    return None
+
+
+def _move(src, dst):
+    """Datei verschieben; auf einem anderen Laufwerk kopieren und erst nach vollständiger Kopie löschen."""
+    import shutil
+    dst.parent.mkdir(parents=True, exist_ok=True)
+    try:
+        os.replace(src, dst)
+    except OSError as exc:
+        if getattr(exc, 'errno', None) != 18:          # EXDEV: anderes Laufwerk
+            raise
+        tmp = dst.with_name(dst.name + '.partial')
+        shutil.copy2(src, tmp)
+        if tmp.stat().st_size != src.stat().st_size:
+            tmp.unlink(missing_ok=True)
+            raise OSError('Kopie ins Archiv unvollständig')
+        os.replace(tmp, dst)
+        src.unlink()
+
+
+def _companions(video):
+    """Die Datei und ihre Begleiter (Vorschaubild, NFO, metadata.json, Untertitel) im selben Ordner."""
+    out = [video]
+    try:
+        for p in video.parent.iterdir():
+            if p != video and p.is_file() and not p.is_symlink() and p.name.startswith(video.stem) \
+                    and not p.name.endswith('.partial'):
+                out.append(p)
+    except OSError:
+        pass
+    return out
+
+
+def archive_job(c, db, job_id, now=None):
+    """Einen fertigen Abo-Auftrag ins Archiv verschieben. True, wenn er jetzt (oder schon) im Archiv liegt."""
+    now = time.time() if now is None else float(now)
+    row = c.execute("SELECT payload FROM jobs WHERE id=? AND state='done'", (str(job_id),)).fetchone()
+    if not row:
+        return False
+    try:
+        job = json.loads(row[0])
+    except (TypeError, ValueError):
+        return False
+    if not job.get('archived_at'):
+        old = Path(str(job.get('path') or job.get('target') or ''))
+        new = archive_path(old) if old.name else None
+        try:
+            present = bool(new) and old.is_file()
+        except OSError:
+            present = False
+        if not present:
+            return False
+        if new.exists():
+            new = new.with_name('%s (%s)%s' % (new.stem, str(job_id)[:6], new.suffix))
+        moved = []
+        try:
+            for part in _companions(old):
+                dest = new.with_name(new.stem + part.name[len(old.stem):])
+                _move(part, dest)
+                moved.append((part, dest))
+        except OSError as exc:
+            for src, dest in reversed(moved):              # halber Umzug: zurück an den alten Platz
+                try:
+                    _move(dest, src)
+                except OSError:
+                    pass
+            _notify('youtube_abo_archive_failed', reason=type(exc).__name__)
+            return False
+        for key in ('path', 'target'):
+            if job.get(key):
+                job[key] = str(new)
+        if isinstance(job.get('source'), dict) and job['source'].get('_target'):
+            job['source']['_target'] = str(new)
+        job['archived_at'] = now
+        job['archived_from'] = str(old)
+        job.pop('offline_until', None)
+        job.pop('offline_capped', None)
+        c.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(job), job['id']))
+        c.commit()
+    db.execute("UPDATE youtube_abo_videos SET state='archived',reason=? WHERE job_id=? AND state='done'",
+               (ARCHIVE_REASON, str(job_id)))
+    db.commit()
+    return True
+
+
+def archive_watched(root, c, db, now=None, limit=ARCHIVE_BATCH, seen=None):
+    """Zu Ende gesehene Abo-Videos ins Archiv verschieben. Gibt die Zahl zurück."""
+    if not archive_enabled(root):
+        return 0
+    jobs = [r[0] for r in db.execute("SELECT DISTINCT job_id FROM youtube_abo_videos WHERE state='done' AND job_id!=''")]
+    if not jobs:
+        return 0
+    if seen is None:
+        import watch_state
+        seen = watch_state.states(Path(root))
+    now = time.time() if now is None else float(now)
+    count = 0
+    for job_id in jobs:
+        if count >= limit:
+            break
+        mark = seen.get('job:' + job_id) or {}
+        # erst ARCHIVE_GRACE nach dem Ende: der Abspann läuft womöglich noch
+        if mark.get('done') and float(mark.get('watched_at') or 0) <= now - ARCHIVE_GRACE and archive_job(c, db, job_id, now):
+            count += 1
+    if count:
+        _notify('youtube_abo_archived', count=count)
+    return count
+
+
+def archive_summary(root, c=None):
+    """Archiv für die Verwaltung: an/aus, Zahl, Größe, Ordner."""
+    base = storage_locations.abo_base(_SETTINGS() or {})
+    out = {'enabled': archive_enabled(root), 'videos': 0, 'gb': 0.0,
+           'folder': str(Path(base) / FOLDER / ARCHIVE_FOLDER) if base else ''}
+    db = _connect(root)
+    try:
+        jobs = sorted({r[0] for r in db.execute("SELECT job_id FROM youtube_abo_videos WHERE state='archived' AND job_id!=''")})
+    finally:
+        db.close()
+    if c is not None and jobs:
+        states = _job_states(c, jobs)
+        size = 0
+        for job_id in jobs:
+            state, payload = states.get(job_id, (None, None))
+            if state == 'done':
+                out['videos'] += 1
+                size += _file_size(payload)
+        out['gb'] = round(size / GB, 1)
+    else:
+        out['videos'] = len(jobs)
+    return out
+
+
 def summary(root):
     """Zahlen für den Diagnoseexport (ohne Namen und Adressen)."""
     db = _connect(root)
@@ -1596,4 +1790,24 @@ def summary(root):
             # 0.6.79: Gesamtbudget und Platz fürs IMDb-Update in der Diagnose
             'waiting_for_total': waiting_total, 'total_gb': total_gb(root), 'reserve_gb': reserve_gb(root),
             'free_gb': round(free / GB, 1) if free is not None else None,
-            'imdb_need_gb': round(imdb_space(target) / GB, 1) if target else 0}
+            'imdb_need_gb': round(imdb_space(target) / GB, 1) if target else 0,
+            # 0.6.89: Archiv und „Gesehen“-Signal (21.11.: watch.sqlite3 ohne gesehene Abo-Einträge)
+            'archive': archive_enabled(root), 'watch_signal': _watch_signal(root)}
+
+
+def _watch_signal(root):
+    """Wie viele fertige/archivierte Abo-Videos der Player als begonnen bzw. zu Ende gesehen gemeldet hat."""
+    try:
+        import watch_state
+        seen = watch_state.states(Path(root))
+        db = _connect(root)
+        try:
+            jobs = {r[0] for r in db.execute("SELECT job_id FROM youtube_abo_videos WHERE state IN ('done','archived') AND job_id!=''")}
+        finally:
+            db.close()
+    except Exception:
+        return {}
+    marks = [seen.get('job:' + j) or {} for j in jobs]
+    return {'videos': len(jobs), 'started': sum(1 for m in marks if m and not m.get('done')),
+            'finished': sum(1 for m in marks if m.get('done')),
+            'watch_job_entries': sum(1 for k in seen if k.startswith('job:'))}

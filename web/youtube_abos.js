@@ -200,7 +200,7 @@
   }
   // 0.6.14 (Björn: lieber nur wenige Videos pro Stunde, damit YouTube nicht sperrt)
   function pace(d) {
-    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve', 'youtube-abos-total'].includes(document.activeElement?.id)) return;
+    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve', 'youtube-abos-total', 'youtube-abos-archive'].includes(document.activeElement?.id)) return;
     const pick = make('select'); pick.id = 'youtube-abos-per-hour'; pick.setAttribute('aria-label', 'Abo-Videos pro Stunde');
     for (const n of d.per_hour_choices || [d.per_hour || 4]) {
       const o = make('option', String(n)); o.value = n; o.selected = n === d.per_hour; pick.append(o);
@@ -227,6 +227,18 @@
     const all = make('span', undefined, 'abo-reserve'); all.append(' Alle Abos zusammen belegen höchstens ', tot,
       ' (jetzt ' + gb(st.used_total_gb || 0) + ' GB); gesehene Videos machen zuerst Platz.');
     host.append(all);
+    // 0.6.89: gesehene Videos ins Archiv (ohne 30-Tage-Frist, zählen nicht zu Budget und Anzahl)
+    const ar = st.archive; if (!ar) return;
+    const box = make('input'); box.type = 'checkbox'; box.id = 'youtube-abos-archive'; box.checked = !!ar.enabled;
+    box.onchange = () => act({action: 'archive', archive: box.checked}, box.checked ? 'Gespeichert: gesehene Videos wandern ins Archiv' :
+      'Gespeichert: gesehene Videos machen wieder Platz für neue (bereits archivierte bleiben)', box);
+    const label = make('label', undefined, 'abo-reserve'); label.htmlFor = box.id;
+    label.append(box, ' Zu Ende gesehene Videos ins Archiv verschieben: dort ohne ' + (d.days || 30) +
+      '-Tage-Frist, sie zählen nicht mehr zu Anzahl und Budget der Abos. Archiv: ' + (ar.videos || 0) + ' Videos, ' + gb(ar.gb || 0) + ' GB' +
+      (ar.folder ? ' (' + ar.folder + '; zieht mit dem Zwischenspeicher um).' : '.') +
+      (ar.enabled && ar.gb ? ' Das Archiv wächst ohne Grenze; nicht mehr gebrauchte Videos unter Speicher löschen.' : ''));
+    label.title = 'Ein Video gilt als gesehen, wenn es im MediathekAtlas-Player bis kurz vor das Ende lief. Außerhalb der App (z. B. im Finder) Geschautes erkennt die App nicht.';
+    host.append(label);
   }
   async function act(payload, message, button) {
     if (button) button.disabled = true;

@@ -276,7 +276,7 @@ def migrate_legacy(root, c, download_dir):
 def stamp(job, now=None):
     """Called when a job reaches 'done': start the offline period.
     0.6.54: a provider-named end of availability (``license.until``) is never exceeded."""
-    if is_offline(job) and not job.get('offline_until'):
+    if is_offline(job) and not job.get('offline_until') and not job.get('archived_at'):
         now = time.time() if now is None else float(now)
         job['downloaded_at'] = now
         job['offline_until'] = now + offline_seconds(job)
@@ -359,8 +359,8 @@ def expire(c, now=None):
     done = []
     for (payload,) in c.execute("SELECT payload FROM jobs WHERE state='done'").fetchall():
         job = json.loads(payload)
-        if not is_offline(job):
-            continue
+        if not is_offline(job) or job.get('archived_at'):
+            continue                    # 0.6.89: archivierte Abo-Videos (gesehen) haben keine Frist mehr
         if not job.get('offline_until'):
             stamp(job, now)  # finished without bookkeeping: start now, never early
             c.execute('UPDATE jobs SET payload=? WHERE id=?', (json.dumps(job), job['id']))

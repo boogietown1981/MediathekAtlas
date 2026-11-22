@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.88
+# MediathekAtlas · 0.6.89
+
+## Neu in 0.6.89: Gesehene YouTube-Abo-Videos ins Archiv
+- Läuft ein Abo-Video im MediathekAtlas-Player bis zum Ende, wandert es nach 5 Minuten in `YouTube-Abos/_Archiv/<Kanal>/`. Dort gilt keine 30-Tage-Frist, und es zählt nicht mehr zu Anzahl und Speicherbudget der Abos.
+- YouTube → Abos zeigt Archivgröße und Ordner; der Schalter „ins Archiv verschieben“ ist an und lässt sich ausschalten. Das Archiv zieht mit dem Zwischenspeicher um (Einstellungen → Speicherorte).
 
 ## Neu in 0.6.88: Folgensuche nach IMDb-Update, Sendungsvorschläge als Folge, tägliche Kataloge
 - Ruht die Folgensuche (alles geprüft), zeigt die Übersicht bis wann. Nach jedem neuen IMDb-Archiv wird alles „ohne Treffer“ verteilt über drei Tage erneut gesucht.
