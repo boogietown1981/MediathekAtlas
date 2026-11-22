@@ -53,6 +53,11 @@ add('t1', 'Tatort Folge', ['Krimi'], 'series', 'Tatort', 1, 1)
 add('gaensemagd', 'Zz Die Gänsemagd', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
 add('kikafilm', 'Ein KiKA-Film', ['Abenteuer'], channel='KiKA')
 add('m4', 'Die Maus im Wald', [], 'series', 'Die Maus', 1, 4, state='pending', attempts=0)
+# 0.6.98: eine Reihe muss selbst Kinderprogramm sein (mind. 80 % der eingeordneten Folgen); Nachrichtenreihe mit
+# einzelnen „Kinder“-Werken bleibt draußen
+add('m5', 'Die Maus im Schnee', ['Kinder'], 'series', 'Die Maus', 1, 5)
+add('m6', 'Die Maus im Regen', ['Kinder'], 'series', 'Die Maus', 1, 6)
+for i in range(12): add('pol%02d' % i, 'Politik heute %d' % i, ['Kinder'] if i < 2 else ['Talk'], 'series', 'Politik', 1, i + 1)
 for i in range(260): add('kf%03d' % i, 'Kinderfilm %03d' % i, ['Kinder'])
 # 0.6.93: Gruppen – drei Märchen, drei Zeichentrickfilme (kleinere Gruppen gehen in „Noch mehr“)
 add('schnee', 'Schneewittchen', ['Fantasy'], channel='ZDF', topic='Märchenperlen')
@@ -91,6 +96,7 @@ async function kidsCorner(browser, url, clip, problems) {
   const titles = await page.locator('.kids-tile .kids-title').allTextContents();
   check('Kinderfilme stehen in der Kinderecke: ' + titles.join(' | '), titles.includes('Der kleine Rabe Socke') && titles.includes('Ein KiKA-Film'));
   check('Serie steht in der Kinderecke', titles.includes('Die Maus'));
+  check('Nachrichten-/Talkreihe nicht in der Kinderecke', !titles.includes('Politik'));
   for (const bad of ['Kinderkrimi', 'Familiendrama', 'Noch nicht abgeglichen', 'Tatort'])
     check('„' + bad + '“ bleibt draußen', !titles.includes(bad));
   const chips = await page.locator('.kids-chip-name').allTextContents();
@@ -122,7 +128,7 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.waitForSelector('.kids-tile[data-kind=episode]', { timeout: 20000 });
   const eps = await page.locator('.kids-tile[data-kind=episode] .kids-title').allTextContents();
   // 0.6.91: Folgen ohne eigenen Abgleich gehören dazu, nur die Krimi-Folge fällt heraus
-  check('drei Folgen, Krimi-Folge fehlt: ' + eps.join(' | '), eps.length === 3 && eps[0].includes('Die Maus im Zoo') && eps[1].includes('Die Maus am Meer') && eps[2].includes('Die Maus im Wald'));
+  check('fünf Folgen, Krimi-Folge fehlt: ' + eps.join(' | '), eps.length === 5 && eps[0].includes('Die Maus im Zoo') && eps[1].includes('Die Maus am Meer') && eps[2].includes('Die Maus im Wald'));
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.46-kinderecke-serie.png') });
   await page.locator('.kids-tile[data-kind=episode]').first().click();
   await page.waitForFunction(() => !document.getElementById('kids-next').hidden, null, { timeout: 30000 })

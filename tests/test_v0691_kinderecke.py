@@ -104,12 +104,15 @@ class SeriesTests(Base):
         self.add('e2', 'Folge ohne Abgleich', [], kind='series', show='show:hase', season=1, episode=2, state='pending', attempts=0)
         self.add('e3', 'Folge nur Animation', ['Animation'], kind='series', show='show:hase', season=1, episode=3, state='identified')
         self.add('e4', 'Folge mit Krimi', ['Krimi'], kind='series', show='show:hase', season=1, episode=4)
+        # 0.6.98: die Reihe muss selbst Kinderprogramm sein (≥ 80 % der eingeordneten Folgen)
+        for n in (5, 6, 7):
+            self.add('e%d' % n, 'Weitere Folge %d' % n, ['Kinder'], kind='series', show='show:hase', season=1, episode=n)
         self.add('k1', 'KiKA-Folge', [], kind='series', show='show:kika', channel='KiKA', state='retry', attempts=2)
         data = self.shelf()
         self.assertEqual(sorted(t['series']['show'] for t in data['series']), ['show:hase', 'show:kika'])
         with self.db() as c:
             eps = kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:hase')
-            self.assertEqual([e['episode'] for e in eps['episodes']], [1, 2, 3])
+            self.assertEqual([e['episode'] for e in eps['episodes']], [1, 2, 3, 5, 6, 7])
             self.assertEqual(len(kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:kika')['episodes']), 1)
         self.assertFalse(kids_catalog.allowed_ref(data, {'offer': 'o-e4'}))
         self.assertTrue(kids_catalog.allowed_ref(data, {'offer': 'o-e2'}))

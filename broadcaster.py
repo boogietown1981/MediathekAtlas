@@ -274,9 +274,22 @@ def lookup(row):
         _CACHE[ref]=(time.time(),result)
     return result
 
-def genres(*texts):
+KIDS_HINT=next(p for p,g in GENRE_HINTS if g=='Kinder')
+
+def genres(*texts,names=None):
+    """Genre hints from programme texts. 0.6.98 (Mac-Prüfung 0.6.91: NACHTCAFÉ, Politik, heute, Abendschau in der
+    Kinderecke): „Kinder“ only from the programme's own name (Sendereihe, Thema, Sendung) given as ``names``, never
+    from a description or a single edition title – „Wenn Kinder pflegen“ in a talk show is no children's programme.
+    Without ``names`` every text counts as before (callers that pass only names)."""
     text=' '.join(t for t in texts if t)
-    return [genre for pattern,genre in GENRE_HINTS if pattern.search(text)][:2]
+    own=' '.join(t for t in (texts if names is None else names) if t)
+    out=[]
+    for pattern,genre in GENRE_HINTS:
+        if pattern.search(own if genre=='Kinder' else text):out.append(genre)
+    if 'Kinder' in out and len(out)>1:
+        # the name says children's programme: that is the label the Kinderecke needs, keep it within the two
+        out=['Kinder']+[g for g in out if g!='Kinder']
+    return out[:2]
 
 def candidate(row,meta,info):
     """Turn programme data into a conservative catalogue candidate.
@@ -292,7 +305,7 @@ def candidate(row,meta,info):
     # works lost the series from their title („Wasserinsekten · Natur nah“) again. A portal or section is no series.
     import metadata
     if own_series and metadata.generic_topic(series):own_series=False
-    hints=genres(series,topic,info.get('description','')[:300])
+    hints=genres(series,topic,info.get('description','')[:300],names=(series,topic))
     base={**meta,'provider':info['provider'],'description':info.get('description') or meta.get('description',''),'genres':hints,'genre_source':'Sender (abgeleitet)' if hints else meta.get('genre_source','Unbekannt'),
           'poster':info.get('series_image') or info.get('image') or meta.get('poster',''),'year_mismatch':False,'evidence_type':'broadcaster_page','confidence':'high',
           'broadcast':info.get('broadcast',''),'channel_source':info.get('channel',''),'series_description':info.get('series_description','')}

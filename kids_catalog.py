@@ -14,6 +14,8 @@ im Profil „Kinder“. Dieses Modul ergänzt Filme und Serien aus dem gemeinsam
   hinaus und bleibt draußen. Eine fertige Offline-Kopie spielt automatisch lokal (streaming.resolve).
 * Serienfolgen von ARD/ZDF werden je Folge noch einmal geprüft: eine Folge mit Ausschluss-Genre erscheint
   nicht, auch wenn die Serie als Ganzes passt (0.6.91: Folgen ohne eigene Kinder-Einordnung bleiben drin).
+* 0.6.98: Eine ARD/ZDF-Reihe muss selbst eindeutig Kinderprogramm sein (show_is_kids); ein einzelnes Werk mit
+  „Kinder“ öffnet keine Nachrichten- oder Talkreihe mehr.
 * 0.6.91: Als eindeutiges Kinder-Signal zählt auch der Sender (KiKA) oder eine Kinder-/Märchenreihe des Angebots
   (catalog.kids_signal_clause), weil erkannte Filme nur die Referenz-Genres tragen.
 * Folgen und Abspielen gibt es nur für Titel, die gerade in dieser Liste stehen (``allowed``): Die
@@ -143,6 +145,7 @@ def build(root, db, modules=None, merge=True, page=None):
             if not items or offset >= int(data.get('total') or 0):
                 break
         out[view] = tiles[:MAX_TITLES]
+    out['series'] = _kids_shows(db, out['series'])
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
@@ -325,22 +328,103 @@ def episodes(root, c, data, source, series_id, marks=None):
     return {'source': source, 'series': series_id, 'episodes': out}
 
 
-def excluded_works(c, show_key):
-    """0.6.91: Folgen einer Kinderserie, die nicht in die Kinderecke gehören (Ausschluss-Genre an der Folge).
+# 0.6.98 (Mac-Prüfung 0.6.91 nicht bestanden: „Politik“, „NACHTCAFÉ“, „heute“, „Aktuelle Kamera“, „Abendschau“
+# öffneten Hunderte Folgen mit Nachrichten und Beiträgen über Krankheit und Krieg). Eine Reihe stand schon in 0.6.90
+# in der Liste, sobald EIN Werk „Kinder“ trug (Politik 11 von 2.047, heute 16 von 12.005, Abendschau 2 von 432 –
+# Genre aus Beschreibung/Beitragstitel, broadcaster.genres); 0.6.91 öffnete dann alle Folgen. Jetzt:
+# * Eine ARD/ZDF-Reihe gehört nur hinein, wenn sie selbst eindeutig Kinderprogramm ist: unter den letzten
+#   SHOW_SAMPLE Werken sind mindestens SHOW_SHARE der eingeordneten Kinderprogramm (Kinder-Regel oder KiKA/TOGGO/
+#   Kinderreihe); Werke ohne Einordnung oder nur mit kinderfreundlichen Kategorien zählen nicht dagegen.
+# * Nachrichten-, Talk-, Politik- und Magazinnamen (NOT_KIDS_SHOW) nie, außer der Name sagt Kinder (logo!, KiKA).
+# * Je Folge: eine Folge mit Ausschluss-Genre oder mit einer Kategorie außerhalb von KIDS_FRIENDLY (Nachrichten,
+#   Talk, Drama, Dokumentation …) erscheint nur, wenn sie selbst Kinderprogramm ist.
+SHOW_SHARE = 0.8
+SHOW_SAMPLE = 100
+KIDS_FRIENDLY = ('Kinder', 'Familie', 'Animation', 'Abenteuer', 'Fantasy', 'Komödie', 'Natur & Tiere',
+                 'Wissen & Technik', 'Musik', 'Musical')
+NOT_KIDS_SHOW = re.compile(
+    r'(?i)\b(?:heute|tagesschau|tagesthemen|nachrichten|news|journal|politik\w*|abendschau|landesschau|aktuelle kamera|'
+    r'brisant|frontal|zib|nachtcaf[eé]|3nach9|extra 3|talk\w*|magazin\w*|review|schlager\w*|crisis|krieg\w*|maischberger|'
+    r'lanz|illner|hart aber fair|presseclub|kontraste|panorama|monitor|plusminus|report|mex|markt|reportage\w*|'
+    r'kriminal\w*|aktenzeichen|tatort|polizeiruf|wetter|sportschau|sportstudio)\b')
+KIDS_NAME = re.compile(r'(?i)kinder|\bkids?\b|\bkika\b|logo!|\btivi\b|sendung mit der maus|sandmännchen|checker|toggo')
 
-    Bis 0.6.88 musste jede Folge selbst unter „Kinder“ stehen. Folgen ohne eigenen Abgleich („Unklassifiziert“)
-    oder mit nur den Genres der Serienreferenz (IMDb „Animation“ ohne „Family“) fielen so heraus: Björn
-    (22.11.2026) sah die Serien „alle leer“, obwohl ARD/ZDF-Folgen gefunden waren. Die Serie als Ganzes hat die
-    Kinder-Regel bestanden; einzeln fällt nur noch heraus, was ein Ausschluss-Genre trägt (Horror, Thriller,
-    Krimi, Erotik, Krieg)."""
+
+def show_name_blocked(title):
+    title = str(title or '')
+    return bool(NOT_KIDS_SHOW.search(title)) and not KIDS_NAME.search(title)
+
+
+def _work_query(c):
+    """Abfrage je Reihe vorbereiten (Kategorie-Etiketten und Kinderreihen einmal lesen, nicht je Reihe)."""
     import catalog
     import categories
+    kids, kids_args = catalog.category_clause(c, CATEGORY)
+    sig, sig_args = catalog.kids_signal_clause(c)
     labels = catalog.category_labels(c)
-    raw = [r for name in categories.NOT_FOR_KIDS for r in labels.get(name) or []]
-    if not raw:
-        return set()
-    return {r[0] for r in c.execute('SELECT DISTINCT w.id FROM works w JOIN work_genres g ON g.work_id=w.id WHERE w.show_key=? '
-                                    'AND g.genre IN (%s)' % ','.join('?' * len(raw)), [show_key] + raw)}
+    bad = [r for name in categories.NOT_FOR_KIDS for r in labels.get(name) or []]
+    bad_sql = ('EXISTS(SELECT 1 FROM work_genres b WHERE b.work_id=w.id AND b.genre IN (%s))' % ','.join('?' * len(bad))) if bad else '0'
+    sql = ("SELECT w.id, ((%s) OR ((%s) AND NOT %s)) AS kids, %s AS bad, "
+           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres "
+           "FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?" % (kids, sig, bad_sql, bad_sql))
+    return sql, list(kids_args) + list(sig_args) + bad + bad, {}
+
+
+def _work_rows(c, show_key, limit=None, query=None):
+    """[(work_id, kids, against)] je Werk der Reihe (neueste zuerst)."""
+    import categories
+    sql, args, names_of = query or _work_query(c)
+    friendly = set(KIDS_FRIENDLY)
+    out = []
+    for wid, is_kids, is_bad, genres in c.execute(sql, args + [show_key, int(limit or -1)]):
+        names = set()
+        for raw in (genres or '').split('\x1f'):
+            if raw:
+                if raw not in names_of:
+                    names_of[raw] = set(categories.of_label(raw))
+                names |= names_of[raw]
+        against = bool(is_bad) or (not is_kids and bool(names - friendly))
+        out.append((wid, bool(is_kids) and not is_bad, against))
+    return out
+
+
+def show_is_kids(c, show_key, title='', query=None):
+    """Ist die ARD/ZDF-Reihe selbst eindeutig Kinderprogramm? (Regel oben)"""
+    if show_name_blocked(title):
+        return False
+    rows = _work_rows(c, show_key, SHOW_SAMPLE, query)
+    kids = sum(1 for _, k, _ in rows if k)
+    against = sum(1 for _, k, a in rows if a and not k)
+    return kids > 0 and kids >= SHOW_SHARE * (kids + against)
+
+
+def _kids_shows(db, tiles):
+    """Nur Reihen der Mediatheken behalten, die selbst Kinderprogramm sind (eine Verbindung für alle)."""
+    shows = [t for t in tiles if t.get('source') == 'mediatheken' and (t.get('series') or {}).get('show')]
+    if not shows or db is None:
+        return tiles
+    with db() as c:
+        query = _work_query(c)
+        drop = {t['id'] for t in shows if not show_is_kids(c, t['series']['show'], t.get('title'), query)}
+    return [t for t in tiles if t['id'] not in drop]
+
+
+def excluded_works(c, show_key):
+    """Folgen einer Kinderreihe, die nicht in die Kinderecke gehören.
+
+    0.6.91: Folgen ohne eigenen Abgleich bleiben drin (sonst waren Kinderserien „leer“). 0.6.98: heraus fällt jede
+    Folge mit Ausschluss-Genre und jede, die eine Kategorie außerhalb von KIDS_FRIENDLY trägt (Nachrichten, Talk,
+    Drama, Dokumentation …), ohne selbst Kinderprogramm zu sein. Ist die Reihe selbst kein Kinderprogramm
+    (show_is_kids), fallen alle Folgen heraus."""
+    rows = _work_rows(c, show_key)
+    if not show_is_kids(c, show_key, _show_title(c, show_key)):
+        return {wid for wid, _, _ in rows}
+    return {wid for wid, kids, against in rows if against and not kids}
+
+
+def _show_title(c, show_key):
+    row = c.execute('SELECT title FROM works WHERE show_key=? ORDER BY rowid DESC LIMIT 1', (show_key,)).fetchone()
+    return row[0] if row else ''
 
 
 def _episode(source, ref, title, season, episode, poster, duration):

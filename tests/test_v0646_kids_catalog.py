@@ -183,12 +183,15 @@ class MediathekTests(unittest.TestCase):
         self.add('m2', 'Die Maus am Meer', ['Kinder'], kind='series', show='show:maus', season=1, episode=2)
         self.add('m3', 'Sonderfolge Krimi', ['Kinder', 'Krimi'], kind='series', show='show:maus', season=1, episode=3)
         self.add('t1', 'Tatort', ['Krimi'], kind='series', show='show:tatort', season=1, episode=1)
+        # 0.6.98: die Reihe muss selbst Kinderprogramm sein (≥ 80 % der eingeordneten Folgen)
+        for n in (4, 5):
+            self.add('m%d' % n, 'Die Maus %d' % n, ['Kinder'], kind='series', show='show:maus', season=2, episode=n)
         data = self.shelf()
         self.assertEqual([t['series'] for t in data['series']], [{'show': 'show:maus'}])
         with self.db() as c:
             eps = kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:maus', {'offer:o-m1': {'pos': 100, 'done': True}})
             self.assertEqual([(e['episode'], e['title'], e['done']) for e in eps['episodes']],
-                             [(1, 'Die Maus im Zoo', True), (2, 'Die Maus am Meer', False)])
+                             [(1, 'Die Maus im Zoo', True), (2, 'Die Maus am Meer', False), (4, 'Die Maus 4', False), (5, 'Die Maus 5', False)])
             with self.assertRaises(ValueError):
                 kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:tatort')
             with self.assertRaises(ValueError):

@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.97
+# MediathekAtlas · 0.6.98
+
+## Neu in 0.6.98: Kinderecke ohne Nachrichten- und Talkreihen
+- Eine Serie von ARD, ZDF & Co. steht nur noch in der Kinderecke, wenn sie selbst eindeutig Kinderprogramm ist (mindestens 80 % der eingeordneten Folgen, KiKA/TOGGO oder Kinderreihe). Nachrichten-, Talk-, Politik- und Magazinreihen („heute“, „Politik“, „NACHTCAFÉ“, „Abendschau“ …) erscheinen nie, auch wenn einzelne Beiträge „Kinder“ heißen.
+- In einer Kinderserie fehlen Folgen, die als Nachrichten, Talk, Drama o. Ä. eingeordnet und nicht selbst Kinderprogramm sind.
+- Das Genre „Kinder“ wurde bisher auch aus Beschreibungen übernommen („Wenn Kinder pflegen“); das passiert nicht mehr und wird nach dem Start einmalig bereinigt.
 
 ## Neu in 0.6.97: Erkennung – falsche Sendungs-Zuordnungen zurück, Filme bei 3sat/ARD, Lernreihen
 - Werke, die 0.6.88–0.6.96 über einen unsicheren Vorschlag (Wikidata, Namensvetter ohne Jahr, nur Sendername als Thema) einer fremden Serie zugeordnet hatten, sind wieder offen. Solche Vorschläge entscheiden nicht mehr allein.

@@ -1665,7 +1665,7 @@ def backfill_film_hints(c,limit=400):
 def file_under_sendung(c,row,m,source,fmt,grouping=None,reason=None):
     """File one offer's work as contribution of the Sendung ``fmt`` (state 'format', provider 'Sendung')."""
     import broadcaster
-    hints=broadcaster.genres(fmt,source.get('title',''))
+    hints=broadcaster.genres(fmt,source.get('title',''),names=(fmt,))
     m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers')}
     edition=cleaned(source.get('title'))
     if key(edition)==key(fmt) and source.get('timestamp'):
@@ -1967,7 +1967,7 @@ def film_suffix_works(c):
     return [r[0] for r in rows if metadata.film_suffix_year(r[1])]
 
 def heal_sendung_suggestions(c,after='',limit=500):
-    """0.6.97, once: works 0.6.88–0.6.96 identified or filed from a suggestion the 0.6.97 rules no longer accept are
+    """0.6.97, once: works 0.6.88–0.6.98 identified or filed from a suggestion the 0.6.97 rules no longer accept are
     open works of unknown kind again (with their suggestions; the next sweep decides with the new rules).
     Returns (reopened, shows {title: n}, last id or None)."""
     rows=c.execute("""SELECT * FROM works WHERE id>? AND (json_extract(meta,'$.sendung_suggestion_v0688')=1
@@ -2403,6 +2403,39 @@ def recheck_episode_queue_v0641(c,event=None):
     if event and n:event('episode_queue_recheck',version='0.6.41',works=n)
     return n
 
+def heal_derived_kids_v0696(c,event=None):
+    """0.6.98 (Mac-Prüfung 0.6.91): „Kinder“ that the broadcaster rule took from a description or an edition title
+    (NACHTCAFÉ 302 of 302 works, Politik 11, heute 16, Abendschau 2) is removed again. Kept when the programme's
+    own name (series or Sendung title, offer topic) names children's programme or an offer comes from a kids
+    channel. Only genre_source „Sender (abgeleitet)“; reference genres and the user's own choices stay. Runs once,
+    after the server start (genre index, only works labelled „Kinder“)."""
+    if get_state(c,'kids_genre_heal_v0696',False):return 0
+    import broadcaster
+    ids=[r[0] for r in c.execute("SELECT work_id FROM work_genres WHERE genre='Kinder'")]
+    fixed=0
+    for wid in ids:
+        row=c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        try:m=json.loads(row[0] or '{}')
+        except ValueError:continue
+        if m.get('genre_source')!='Sender (abgeleitet)':continue
+        names=[str(m.get('title') or '')]
+        kids_channel=False
+        for (payload,) in c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1',(wid,)):
+            try:o=json.loads(payload or '{}')
+            except ValueError:continue
+            names.append(str(o.get('topic') or ''))
+            kids_channel=kids_channel or str(o.get('channel') or '').strip().lower() in KIDS_CHANNELS
+        if kids_channel or broadcaster.KIDS_HINT.search(' '.join(names)):continue
+        c.execute("DELETE FROM work_genres WHERE work_id=? AND genre='Kinder'",(wid,))
+        m['genres']=[g for g in (m.get('genres') or []) if g!='Kinder']
+        if not m['genres']:m['genre_source']='Unbekannt'
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+        fixed+=1
+    set_state(c,'kids_genre_heal_v0696',True)
+    if event and ids:event('kids_genre_heal',version='0.6.98',checked=len(ids),removed=fixed)
+    return fixed
+
 # 0.6.88 (Diagnosen 22.11.2026: Pro 121.780 / Air 116.533 Einträge, 0 fällig): an episode search without a hit
 # rests 30 days (7 with spent sender allowance), its siblings without IMDb episode list 30–37 days. Asking again
 # before new data only repeats the answer. New data is the weekly IMDb archive: what was checked against an
@@ -2455,6 +2488,13 @@ def build_deferred_indexes(connect,event=None,error=None):
     connect() returns a context-managed connection. Readers keep working (WAL); writers wait."""
     with connect() as c:
         recheck_episode_queue_v0641(c,event)
+    try:
+        with connect() as c:
+            if heal_derived_kids_v0696(c,event):
+                import kids_catalog,unified_index;invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
+    except Exception as e:
+        if error:error('kids_genre_heal_failed',e)
+    with connect() as c:
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
     MAINTENANCE.update(phase='running',started=started,
