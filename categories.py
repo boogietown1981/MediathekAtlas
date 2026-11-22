@@ -25,7 +25,14 @@ import re
 # Lügde“, „Ein Herz für Kinder“, „Kinderärzte im Einsatz“ – Mac-Prüfungen 0.6.91/0.6.105).
 KNOWN_KIDS_SERIES = (r'sendung mit der maus|sendung mit dem elefanten|sandmännchen|sechs auf einen streich|'
                      r'\bzdftivi\b|\btivi\b|toggolino|\bkika\b|\blogo(?=!)|'
-                     r'\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b')
+                     r'\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b|'
+                     # 0.6.106 (Kinderecke, Mac-Prüfung 0.6.105): weitere bekannte Kinderreihen und Märchenreihen; die
+                     # Kinderecke lässt ohne Kindersender nur Reihen dieser Liste automatisch zu (kids_rules.kids_clause)
+                     r'lach- und sachgeschichten|sesamstra(?:ß|ss)e|löwenzahn|märchenperlen|maerchenperlen|\bgrimms märchen\b|'
+                     r'märchenfilm|\bpur\+|schloss einstein|wissen macht ah|\b1, 2 oder 3\b|siebenstein|tigerenten|'
+                     r'\bkikaninchen\b|baumhaus|\bpumuckl\b|feuerwehrmann sam|\bjonalu\b|pettersson und findus|die biene maja|'
+                     r'wickie und die starken männer|\bpeppa wutz\b|die pfefferkörner|neues vom süderhof|\bdas erste kinderprogramm\b|'
+                     r'wir kinder aus dem möwenweg|meine freundin conni|\bbibi blocksberg\b|\bbibi (?:&|und) tina\b')
 KNOWN_KIDS_SERIES_RE = re.compile('(?i)' + KNOWN_KIDS_SERIES)
 
 UNCLASSIFIED = 'Unklassifiziert'

@@ -39,7 +39,7 @@ class Base(unittest.TestCase):
             c.close()
 
     def add(self, wid, title, genres, kind='movie', show=None, state='matched', ref=None, channel='Das Erste', topic='', episode=None):
-        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres}
+        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'genre_source': 'TMDB'}
         if ref:
             meta['reference_id'] = ref
         if kind == 'series':

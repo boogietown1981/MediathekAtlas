@@ -44,12 +44,12 @@ class ShowTests(Base):
         self.series('show:logo', 'logo!', 10, 10)
         self.series('show:kika', 'Schloss Einstein', 6, 0, other=(), channel='KiKA')
         self.series('show:wissen', 'Planet Wissen', 30, 3, other=('Dokumentation',))
-        self.series('show:loewe', 'Löwenzahn', 10, 9)                      # eine Nachrichten-Folge darin
+        self.series('show:loewe', 'Wolkenwald', 10, 9)                      # eine Nachrichten-Folge darin
         data = self.shelf()
         titles = sorted(t['title'] for t in data['series'])
         for bad in self.BAD + ('Planet Wissen',):
             self.assertNotIn(bad, titles)
-        self.assertEqual(titles, ['Die Sendung mit der Maus', 'Löwenzahn', 'Schloss Einstein', 'logo!'])
+        self.assertEqual(titles, ['Die Sendung mit der Maus', 'Schloss Einstein', 'Wolkenwald', 'logo!'])
         with self.db() as c:
             # Maus: alle 20, auch Doku-Folgen – die Reihe „Die Sendung mit der Maus“ ist selbst das Kinder-Signal
             self.assertEqual(len(kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:maus')['episodes']), 20)
@@ -63,9 +63,9 @@ class ShowTests(Base):
     def test_name_rule(self):
         for name in self.BAD + ('heute 19:00 Uhr', 'BRISANT', 'frontal', 'DW Nachrichten', 'Best of ZIB 2', 'Hamburg Journal',
                                 'CRISIS - Hinter der Front', '3nach9', 'extra 3', 'phoenix review', 'Schlager–Spaß mit Andy Borg',
-                                'Landesschau Rheinland-Pfalz', 'mex'):
+                                'Landesschau Rheinland-Pfalz', 'mex', 'Kinder-Talk'):
             self.assertTrue(kids_catalog.show_name_blocked(name), name)
-        for name in ('logo!', 'Die Sendung mit der Maus', 'KiKA Live', 'Checker Tobi', 'Schloss Einstein', 'Löwenzahn', 'Kindernachrichten'):
+        for name in ('logo!', 'Die Sendung mit der Maus', 'KiKA Live', 'Checker Tobi', 'Schloss Einstein', 'Löwenzahn'):
             self.assertFalse(kids_catalog.show_name_blocked(name), name)
 
 

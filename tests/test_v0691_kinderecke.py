@@ -51,7 +51,7 @@ class Base(unittest.TestCase):
 
     def add(self, wid, title, genres, kind='movie', show=None, state='matched', attempts=1, season=None, episode=None,
             channel='Das Erste', topic='', work_topic=None):
-        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres}
+        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'genre_source': 'TMDB'}  # 0.6.107: Referenz-Genres
         if kind == 'series':
             meta.update(season=season, episode=episode, episode_title=title)
         with self.db() as c:
@@ -92,9 +92,11 @@ class MaerchenTests(Base):
     def test_category_label_and_topic_rule(self):
         self.assertIn('Kinder', categories.of_label('Märchenfilm'))
         self.assertNotIn('Kinder', categories.of_label('Märchen'))
-        for topic in ('Sechs auf einen Streich', 'Märchenperlen', 'Kinderfilme', 'Filme für Kinder', 'Unser Sandmännchen'):
+        for topic in ('Sechs auf einen Streich', 'Märchenperlen', 'Unser Sandmännchen', 'Die Sendung mit der Maus', 'Checker Tobi'):
             self.assertTrue(catalog.KIDS_TOPIC.search(topic), topic)
-        for topic in ('Kinder der Utopie', 'Kinderärzte im Einsatz', 'Märchenhafte Landschaften', 'Tatort'):
+        # 0.6.107: „Kinder“ im Namen ist nie ein Signal (Mac-Prüfung 0.6.105)
+        for topic in ('Kinder der Utopie', 'Kinderärzte im Einsatz', 'Märchenhafte Landschaften', 'Tatort', 'Kinderfilme', 'Filme für Kinder',
+                      'Ein Herz für Kinder', 'Die Kinder von Lügde', 'Generation Porno - Was unsere Kinder online sehen'):
             self.assertFalse(catalog.KIDS_TOPIC.search(topic), topic)
 
 

@@ -151,27 +151,47 @@ def _chosen(choice):
             "w.show_key IN (SELECT substr(key,6) FROM kids_choices WHERE choice='%s' AND key LIKE 'show:%%'))" % (choice, choice))
 
 
+# 0.6.107: diese Herkunft des Genres „Kinder“ ist aus Namen abgeleitet (Sender, Sendung, Thema) und kein Signal
+DERIVED_SOURCES = ('Sender (abgeleitet)', 'Senderhinweis', 'Unbekannt', '')
+
+
 def kids_clause(c, signal, signal_args, has):
-    """SQL (auf works w) für die Kategorie „Kinder“ nach der Regel oben. ``signal``: das eindeutige Kinder-Signal
-    aus catalog.category_clause, ``has(names)``: dessen Helfer für Genre-Bedingungen."""
+    """SQL (auf works w) für die Kategorie „Kinder“ (0.6.107, Björn: im Zweifel draußen, KiKA/TOGGO immer, Rest per Freigabe).
+
+    Automatisch nur: (a) Angebot eines Kindersenders (ALWAYS_CHANNELS), (b) eine bekannte Kinderreihe aus der gepflegten
+    Liste categories.KNOWN_KIDS_SERIES (Thema des Angebots), erkannt oder als Beitrag abgelegt, (c) Referenz-Genre „Kinder“ bzw.
+    Familie + Animation aus einer Filmdatenbank (nicht aus Namen abgeleitet; eine bekannte
+    Freigabe über der Grenze schließt aus, eine fehlende nicht – sonst wären Kinderserien ohne Wikidata-Freigabe leer), (d) der Altersweg mit Kategorie Familie,
+    (e) Elternfreigabe. ``signal`` aus catalog.category_clause wird nicht mehr verwendet: es enthielt das aus Namen
+    abgeleitete Genre „Kinder“ („Die Kinder von Lügde“, „Ein Herz für Kinder“)."""
+    import catalog
     import categories
     ensure(c)
     limit = max_age(c)
     bad, bad_args = has(categories.NOT_FOR_KIDS)
     soft, soft_args = has(categories.AGE_PATH_EXCLUDED)
     hint, hint_args = has(categories.KIDS_AGE_HINTS)
+    kids_genre, kids_args = has(['Kinder'])
+    fam, fam_args = has(['Familie'])
+    ani, ani_args = has(['Animation'])
+    shows, shows_args = catalog.kids_signal_clause(c)          # Kindersender oder Thema aus KIDS_SHOWS
+    # eigene Auswahl (manual) zählt wie eine Referenz
+    reference = ("(w.state='manual' OR COALESCE(json_extract(w.meta,'$.genre_source'),'') NOT IN (%s))" % ','.join('?' * len(DERIVED_SOURCES)))
     age_ok = 'EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age IS NOT NULL AND a.age<=?)' % REF
     age_high = 'EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age>?)' % REF
     channel = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND lower(json_extract(k.payload,'$.channel')) IN (%s))"
                % ','.join('?' * len(ALWAYS_CHANNELS)))
-    import catalog
-    fmt_sig, fmt_args = catalog.format_kids_signal_clause(c)
-    sql = ('NOT %s AND (%s OR (%s AND NOT %s) OR (%s AND NOT %s AND NOT %s AND (%s OR (%s AND %s AND NOT %s))) '
-           'OR (%s AND NOT %s AND NOT %s AND %s))'
-           % (_chosen('block'), _chosen('allow'), channel, age_high, IDENTIFIED, bad, age_high, signal, age_ok, hint, soft,
-              FORMAT, bad, age_high, fmt_sig))
-    return sql, (list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(signal_args) + [limit]
-                 + list(hint_args) + list(soft_args) + list(bad_args) + [limit] + list(fmt_args))
+    listed = "w.state IN ('matched','manual','identified','format')"
+    sql = ('NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
+           '({listed} AND {shows}) OR '
+           '({ident} AND {ref} AND ({kids} OR ({fam} AND {ani}))) OR '
+           '({ident} AND {age_ok} AND {hint} AND NOT {soft}))))').format(
+        block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
+        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft)
+    args = (list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
+            + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
+            + [limit] + list(hint_args) + list(soft_args))
+    return sql, args
 
 
 def blocked_works(c, show_key):
@@ -190,7 +210,8 @@ def show_allowed(c, show_key):
 # ------------------------------------------------------------------ „Wartet auf Freigabe“
 def waiting(c, limit=300):
     """Titel mit Kinder-Hinweis, die die Regel (noch) nicht erfüllen: nicht erkannt, keine Freigabe bekannt oder
-    über der Grenze. Je Serie ein Eintrag. Nur lesen."""
+    über der Grenze. Je Serie ein Eintrag. Nur lesen. 0.6.107: auch Reihen mit „Kinder“/„Märchen“ im Thema, die
+    seitdem kein automatisches Signal mehr sind – hier entscheiden die Eltern."""
     import catalog
     import categories
     ensure(c)
@@ -208,7 +229,9 @@ def waiting(c, limit=300):
               COUNT(*) n, MIN(w.show_key) show_key, MIN(w.id) work_id
            FROM works w WHERE w.kind IN ('movie','series')
              AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)
-             AND (%s OR %s) AND NOT %s
+             AND (%s OR %s OR EXISTS(SELECT 1 FROM offers t WHERE t.work_id=w.id AND t.active=1
+                  AND (lower(json_extract(t.payload,'$.topic')) LIKE '%%kinder%%' OR json_extract(t.payload,'$.topic') LIKE '%%ärchen%%')))
+             AND NOT %s
              AND NOT EXISTS(SELECT 1 FROM kids_choices k WHERE k.key=%s)
            GROUP BY unit HAVING SUM(CASE WHEN %s THEN 1 ELSE 0 END)=0
            ORDER BY title COLLATE NOCASE LIMIT ?""" % (unit, IDENTIFIED, REF, REF, signal, hint_sql, bad_sql, unit, kids))

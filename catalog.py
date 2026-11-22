@@ -795,12 +795,13 @@ CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','re
 # „Family, Fantasy“ there – so it never reached the Kinder category although the broadcaster files it as
 # children's programme. The kids channel or a kids/Märchen topic of an active offer now counts as a clear signal.
 # Merged works lose works.topic (a new id), so the signal is read from the offers, which move with the work.
-KIDS_TOPIC=re.compile(r'(?i)kinder(?:film|filme|serie|serien|kino|programm|sendung)|\b(?:filme?|serien?|geschichten|hörspiele?|musik|lieder|wissen|nachrichten|kino) für kinder\b|\bkika\b|märchen(?!haft)|maerchen(?!haft)|'
-                      r'sechs auf einen streich|sandmännchen|sendung mit der maus|sendung mit dem elefanten|\bzdftivi\b|\btivi\b|toggolino'
-                      # 0.6.106 (Mac-Abfrage Kinderreihen 22.11.: BR/ARD-Reihen ohne Kindersender und ohne Genre „Kinder“
-                      # fehlten in der Kinderecke): die belegt fehlenden BR/ARD-Kinderreihen beim Namen. Reihen mit eigenem
-                      # Genre „Kinder“ (Löwenzahn, logo!) bleiben bei der Folgenregel aus 0.6.98.
-                      r'|\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b|\blogo(?=!)')
+# 0.6.106 (Mac-Prüfung 0.6.105: „Generation Porno - Was unsere Kinder online sehen“, „Die Kinder von Lügde“, „Geheimsache
+# Doping: Kinder“, „Ein Herz für Kinder“ in der Kinderecke): das Wort „Kinder“ oder „für Kinder“ in einem Reihen- oder
+# Themennamen ist nie ein Signal, auch kein allgemeines „Märchen“. Nur die gepflegte Liste bekannter Kinderreihen
+# (categories.KNOWN_KIDS_SERIES, eine Liste für Sender-Genre, Themensignal und Kinderecke) und die Kindersender zählen.
+import categories as _categories
+KIDS_SHOWS=_categories.KNOWN_KIDS_SERIES
+KIDS_TOPIC=re.compile(r'(?i)'+KIDS_SHOWS)
 KIDS_SIGNAL_TTL=3600.0
 _KIDS_SIGNAL={}            # database file -> (monotonic, topics)
 _KIDS_SIGNAL_LOCK=threading.Lock()
@@ -822,8 +823,7 @@ def kids_topics(c):
 
 # 0.6.106 (Durchsicht Kinderecke 22.11.): Sendungs-Ablagen (state 'format') zählen nur über das Angebot – Kindersender
 # oder ein Thema aus dieser schmalen Liste –, nie über ein abgeleitetes Genre oder „… für Kinder“ im Namen.
-import categories as _categories
-FORMAT_KIDS_TOPIC=re.compile('(?i)'+_categories.KNOWN_KIDS_SERIES+r'|märchen(?!haft)|maerchen(?!haft)')
+FORMAT_KIDS_TOPIC=KIDS_TOPIC     # seit der gemeinsamen Liste dieselbe Menge (kein allgemeines „Märchen“)
 
 def format_kids_signal_clause(c):
     """SQL (on works w): an active offer from a kids channel or with a topic of FORMAT_KIDS_TOPIC (subset of KIDS_TOPIC)."""

@@ -156,6 +156,7 @@ def build(root, db, modules=None, merge=True, page=None):
                 break
         out[view] = tiles[:MAX_TITLES]
     out['series'] = _kids_shows(db, out['series'])
+    out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
@@ -356,6 +357,9 @@ def episodes(root, c, data, source, series_id, marks=None):
                 continue
             meta, src = _dict(e.get('metadata')), _dict(e.get('source'))
             title = meta.get('episode_title') or src.get('title') or meta.get('title')
+            # 0.6.107: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern
+            if word_blocked(title) and str(src.get('channel') or '').strip().lower() not in _kids_channels():
+                continue
             out.append(_episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
                                 meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration')))
     else:
@@ -395,7 +399,62 @@ NOT_KIDS_SHOW = re.compile(
     r'brisant|frontal|zib|nachtcaf[eé]|3nach9|extra 3|talk\w*|magazin\w*|review|schlager\w*|crisis|maischberger|'
     r'lanz|illner|hart aber fair|presseclub|kontraste|panorama|monitor|plusminus|report|mex|markt|reportage\w*|'
     r'kriminal\w*|aktenzeichen|tatort|polizeiruf|wetter|sportschau|sportstudio)\b')
-KIDS_NAME = re.compile(r'(?i)kinder|\bkids?\b|\bkika\b|logo!|\btivi\b|sendung mit der maus|sandmännchen|checker|toggo')
+# 0.6.107: „Kinder“/„Kids“ im Namen hebt die Namenssperre nicht mehr auf (Kinderarmut, Kinderärzte, Kindernachrichten
+# kommen nur über ein KiKA-Angebot, das show_is_kids vorher prüft)
+KIDS_NAME = re.compile(r'(?i)\bkika\b|logo!|\btivi\b|sendung mit der maus|sandmännchen|checker|toggo')
+
+
+# 0.6.107 (Mac-Prüfung 0.6.105): Sicherheitsnetz über Titel, Reihen- und Folgentitel. Nur Angebote von Kindersendern
+# (KiKA, TOGGO, ZDFtivi) sind ausgenommen, damit „Der Krieg und ich“ von KiKA bleibt.
+BAD_WORDS = re.compile(
+    r'(?i)porno|\bsex|missbrauch|\bdoping|\btäter|\bkrebs|\bkrieg|\bmord|\bkrimi|verhütung|vergewaltig|\bgewalt|'
+    r'\bdrogen|\bsuizid|selbstmord|\bterror|\bnackt|\berotik|\bleiche|\bsterbe|\btöte|\bwaffe|\bamok|prostitu|\bfolter|'
+    r'\bhorror|\bzombie|\bmonster|\bkiller|\bblut|lügde|\bgeheimsache|\bcrime|\bprostitution|\bentführ|\bkidnapp')
+
+
+def word_blocked(title):
+    return bool(BAD_WORDS.search(str(title or '')))
+
+
+def _kids_channels():
+    import kids_rules
+    return set(kids_rules.ALWAYS_CHANNELS)
+
+
+def _from_kids_channel(c, tile):
+    """Ausnahme von der Wortsperre: Kindersender (Mediatheken: Angebot bzw. Reihe; TOGGO immer) oder Elternfreigabe."""
+    if tile.get('source') == 'toggo':
+        return True
+    if tile.get('source') != 'mediatheken' or c is None:
+        return False
+    chans = sorted(_kids_channels())
+    cond = "lower(trim(json_extract(o.payload,'$.channel'))) IN (%s)" % ','.join('?' * len(chans))
+    ref, series = _dict(tile.get('ref')), _dict(tile.get('series'))
+    # Elternfreigabe geht vor
+    if ref.get('offer') and c.execute("SELECT 1 FROM offers o JOIN kids_choices k ON k.key='work:'||o.work_id AND k.choice='allow' "
+                                      "WHERE o.id=?", (ref['offer'],)).fetchone():
+        return True
+    if series.get('show') and c.execute("SELECT 1 FROM kids_choices WHERE key=? AND choice='allow'", ('show:' + series['show'],)).fetchone():
+        return True
+    if ref.get('offer'):
+        return bool(c.execute('SELECT 1 FROM offers o WHERE o.id=? AND ' + cond, [ref['offer']] + chans).fetchone())
+    if series.get('show'):
+        return bool(c.execute('SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=? AND '
+                              + cond + ' LIMIT 1', [series['show']] + chans).fetchone())
+    return False
+
+
+def _word_safe(db, tiles):
+    """Titel mit heiklen Wörtern (BAD_WORDS) heraus, außer vom Kindersender."""
+    hits = [t for t in tiles if word_blocked(t.get('title'))]
+    if not hits:
+        return tiles
+    if db is None:
+        drop = {t['id'] for t in hits if t.get('source') != 'toggo'}
+    else:
+        with db() as c:
+            drop = {t['id'] for t in hits if not _from_kids_channel(c, t)}
+    return [t for t in tiles if t['id'] not in drop]
 
 
 def show_name_blocked(title):

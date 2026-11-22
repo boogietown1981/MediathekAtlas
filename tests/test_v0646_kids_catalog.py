@@ -142,7 +142,7 @@ class MediathekTests(unittest.TestCase):
             channel='Das Erste', topic=''):
         # 0.6.91: Sender KiKA und Kinder-/Märchenreihen zählen selbst als Kinder-Signal; die Genre-Regeln hier
         # prüfen deshalb mit einem allgemeinen Sender.
-        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'poster': 'https://img.example.org/%s.jpg' % wid}
+        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'genre_source': 'TMDB', 'poster': 'https://img.example.org/%s.jpg' % wid}
         if kind == 'series':
             meta.update(season=season, episode=episode, episode_title=title)
         with self.db() as c:
