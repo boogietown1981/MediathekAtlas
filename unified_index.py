@@ -315,10 +315,16 @@ _BUSY = set()
 ON_BUILD = None   # set by the server: called with (key, index, seconds) after every build
 
 
+_GEN = [0]   # 0.6.112: a build started before invalidate() must not store its stale result (Kinder-Altersgrenze)
+
+
 def _build_into(key, builder):
     started = time.monotonic()
+    gen = _GEN[0]
     value = builder()
     with _LOCK:
+        if gen != _GEN[0]:
+            return value
         _CACHE[key] = (time.monotonic(), value)
         while len(_CACHE) > _MAX:
             _CACHE.pop(min(_CACHE, key=lambda k: _CACHE[k][0]))
@@ -368,6 +374,7 @@ def _cached(key, builder):
 
 def invalidate():
     with _LOCK:
+        _GEN[0] += 1
         _CACHE.clear()
         _BUSY.clear()
 

@@ -457,7 +457,9 @@ def _snapshot_stamp(status):
     # Changes when a catalogue run starts or ends; then the stored view is built anew.
     # 0.5.107: "Meine Abos" changes what RTL+ lists and how Crunchyroll labels it.
     prefs=ui_prefs.load(ROOT)
-    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))+'|abo:%d%d'%(bool(prefs.get('abo_rtlplus')),bool(prefs.get('abo_crunchyroll')))
+    # 0.6.112 (Mac-Prüfung 0.6.109: Grenze 6 → 12 ließ Netzkino bei 270): die gespeicherte Ansicht trägt die Kategorie
+    # „Kinder“ zur Altersgrenze ihres Baus; eine andere Grenze baut sie neu
+    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))+'|abo:%d%d'%(bool(prefs.get('abo_rtlplus')),bool(prefs.get('abo_crunchyroll')))+'|kids:%d'%categories.KIDS_MAX_AGE
 def platform_context():
     """What platform_registry needs from the running server (read at call time, tests swap ROOT)."""
     return types.SimpleNamespace(root=ROOT,db=db,settings=settings,slots=SERVICE.provider_slots,portal_page=portal_page,job_ids=job_ids)

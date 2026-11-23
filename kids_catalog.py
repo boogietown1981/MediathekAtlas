@@ -146,6 +146,10 @@ def _from_offer(offer, view, limit=None):
     if not item_id or len(item_id) > 200:
         return None
     if item.get('kind') == 'series' or view == 'series':
+        # 0.6.112 (Mac-Prüfung 0.6.109: alle 231 TOGGO- und 18 Rakuten-Reihen öffneten ohne Folge, Kopierschutz):
+        # eine Reihe, die der Anbieter als nicht abspielbar führt, erscheint nicht (Kopierschutz wird nicht umgangen)
+        if item.get('playable') in (0, False) or item.get('drm') in (1, True):
+            return None
         return _tile(source, 'series', item.get('title'), item.get('year'), item.get('poster'), series={'id': item_id})
     if item.get('playable') in (0, False, None) or item.get('kind') == 'channel':
         return None
@@ -314,10 +318,15 @@ def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
     return _build_store(root, db, modules, merge, page)
 
 
+_GEN = [0]   # 0.6.112: eine vor invalidate() begonnene Liste wird nicht gespeichert (alte Altersgrenze/Freigabe)
+
+
 def _build_store(root, db, modules, merge, page):
+    gen = _GEN[0]
     value = build(root, db, modules, merge, page)
     with _LOCK:
-        _CACHE[str(root)] = (time.monotonic(), value)
+        if gen == _GEN[0]:
+            _CACHE[str(root)] = (time.monotonic(), value)
     return value
 
 
@@ -340,6 +349,7 @@ def _refresh(root, db, modules, merge, page):
 def invalidate():
     """Liste verwerfen (der nächste Aufruf baut neu und wartet darauf)."""
     with _LOCK:
+        _GEN[0] += 1
         _CACHE.clear()
 
 
@@ -401,7 +411,7 @@ def work_allowed(c, work_id, offer_id=None):
     if not kids_channel and (word_blocked(title) or any(word_blocked(t) for _, t in offers)):
         return False
     if kind == 'series' and show:
-        return wid not in excluded_works(c, show)
+        return episode_paths(c, show).get(wid) is not None
     clause, args = catalog.category_clause(c, CATEGORY)
     return bool(c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [wid] + list(args)).fetchone())
 
@@ -438,19 +448,21 @@ def episodes(root, c, data, source, series_id, marks=None):
     out = []
     if source == 'mediatheken':
         import catalog
-        blocked = excluded_works(c, series_id)
+        paths = episode_paths(c, series_id)
         show = catalog.show_detail(c, series_id, limit=MAX_EPISODES)
         for e in show.get('episodes') or []:
-            if e.get('work_id') in blocked or not (e.get('available') or e.get('downloaded')):
+            path = paths.get(e.get('work_id'))
+            if path is None or not (e.get('available') or e.get('downloaded')):
                 continue
             meta, src = _dict(e.get('metadata')), _dict(e.get('source'))
             title = meta.get('episode_title') or src.get('title') or meta.get('title')
-            # 0.6.106: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern
-            if word_blocked(title) and str(src.get('channel') or '').strip().lower() not in _kids_channels():
+            # 0.6.106: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern oder mit Freigabe
+            if word_blocked(title) and path not in ('freigabe', 'sender') and str(src.get('channel') or '').strip().lower() not in _kids_channels():
                 continue
             ep = _episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
                           meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration'))
             ep['channel'] = str(src.get('channel') or '')[:60]     # 0.6.109: für die Prüfung je Folge sichtbar
+            ep['weg'] = path                                        # 0.6.112: Zulassungsweg (episode_paths)
             out.append(ep)
     else:
         import portal_title
@@ -566,19 +578,30 @@ def _work_query(c):
     import kids_rules
     live, live_args = kids_rules.live_clause()
     # 0.6.109: Livestreams zählen nie als Kinderprogramm (auch nicht „KiKA Livestream“) und fallen immer heraus
+    chans = list(kids_rules.ALWAYS_CHANNELS)
+    sender = ("(NOT %s AND EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
+              "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s)))" % (live, ','.join('?' * len(chans))))
     sql = ("SELECT w.id, (NOT %s AND ((%s) OR ((%s) AND NOT %s))) AS kids, (%s OR %s) AS bad, "
-           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres "
-           "FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?" % (live, kids, sig, bad_sql, live, bad_sql))
-    return sql, list(live_args) + list(kids_args) + list(sig_args) + bad + list(live_args) + bad, {}
+           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres, %s AS sender, "
+           "%s AS live FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?"
+           % (live, kids, sig, bad_sql, live, bad_sql, sender, live))
+    return sql, (list(live_args) + list(kids_args) + list(sig_args) + bad + list(live_args) + bad
+                 + list(live_args) + chans + list(live_args)), {}
 
 
 def _work_rows(c, show_key, limit=None, query=None):
     """[(work_id, kids, against)] je Werk der Reihe (neueste zuerst)."""
+    return [r[:3] for r in _work_facts(c, show_key, limit, query)]
+
+
+def _work_facts(c, show_key, limit=None, query=None):
+    """[(work_id, kids, against, sender, live)] je Werk der Reihe (neueste zuerst); sender = eigenes Angebot vom
+    Kindersender (nicht Livestream)."""
     import categories
     sql, args, names_of = query or _work_query(c)
     friendly = set(KIDS_FRIENDLY)
     out = []
-    for wid, is_kids, is_bad, genres in c.execute(sql, args + [show_key, int(limit or -1)]):
+    for wid, is_kids, is_bad, genres, sender, live in c.execute(sql, args + [show_key, int(limit or -1)]):
         names = set()
         for raw in (genres or '').split('\x1f'):
             if raw:
@@ -588,7 +611,7 @@ def _work_rows(c, show_key, limit=None, query=None):
         # „kids“ folgt der Kinder-Regel (catalog.category_clause): 0.6.99 lässt KiKA/TOGGO und Elternfreigaben
         # auch neben einem Ausschluss-Genre zu, sonst schließt die Regel es selbst aus
         against = not is_kids and (bool(is_bad) or bool(names - friendly))
-        out.append((wid, bool(is_kids), against))
+        out.append((wid, bool(is_kids), against, bool(sender), bool(live)))
     return out
 
 
@@ -614,6 +637,9 @@ def show_basis(c, show_key, title='', query=None):
         return 'reihe'
     if show_name_blocked(title):
         return None
+    if youth_show(title):
+        # 0.6.112: Jugend-/Reportageformate (Young Crime, POV, ECHT) nur mit Folgen vom Kindersender, und dann nur diese
+        return 'jugend' if _kids_channel_works(c, show_key, mixed=False) else None
     rows = _work_rows(c, show_key, SHOW_SAMPLE, query)
     kids = sum(1 for _, k, _ in rows if k)
     against = sum(1 for _, k, a in rows if a and not k)
@@ -628,8 +654,8 @@ def show_basis(c, show_key, title='', query=None):
     return None
 
 
-def _kids_channel_works(c, show_key):
-    """Hat die Reihe Folgen vom Kindersender UND Folgen ohne Kindersender-Angebot (gemischte Reihe)?"""
+def _kids_channel_works(c, show_key, mixed=True):
+    """Hat die Reihe Folgen vom Kindersender UND (mixed) Folgen ohne Kindersender-Angebot (gemischte Reihe)?"""
     import kids_rules
     live, live_args = kids_rules.live_clause()
     chans = list(kids_rules.ALWAYS_CHANNELS)
@@ -637,7 +663,7 @@ def _kids_channel_works(c, show_key):
                "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s))" % ','.join('?' * len(chans)))
     has = lambda neg: c.execute("SELECT 1 FROM works w WHERE w.show_key=? AND %s%s AND NOT %s LIMIT 1" % (neg, on_kids, live),
                                 [show_key] + chans + live_args).fetchone()
-    return bool(has('') and has('NOT '))
+    return bool(has('') and (has('NOT ') or not mixed))
 
 
 def _curated_topic(c, show_key):
@@ -665,32 +691,92 @@ def _kids_shows(db, tiles):
         drop = set()
         for t in shows:
             basis = show_basis(c, t['series']['show'], t.get('title'), query)
-            if basis is None:
+            # 0.6.112 (Mac-Prüfung 0.6.109: „#Ukraine · Mein Land im Krieg“ mit 0 Folgen): ohne eine zulässige,
+            # abspielbare Folge keine Kachel
+            if basis is None or not _has_episode(c, t['series']['show'], basis):
                 drop.add(t['id'])
             else:
                 t['basis'] = basis
     return [t for t in tiles if t['id'] not in drop]
 
 
-def excluded_works(c, show_key):
-    """Folgen einer Kinderreihe, die nicht in die Kinderecke gehören.
+# 0.6.112 (Mac-Prüfung 0.6.109: Young Crime zeigte 5 ZDF-Folgen, POV eine WDR-Folge „Rechtsextremismus unter
+# Jugendlichen“): Jugend- und Reportageformate sind kein Kinderprogramm. Nur Folgen vom Kindersender oder mit
+# Elternfreigabe; der Rest steht auf der Warteliste.
+YOUTH_SHOW = re.compile(r'(?i)young crime|\bpov\b|deine geschichte zählt|\becht\b|\bjugend\w*|\bteens?\b|\bdrunter & drüber\b')
 
-    0.6.91: Folgen ohne eigenen Abgleich bleiben in bekannten Kinderreihen drin (sonst waren Kinderserien „leer“).
-    0.6.98: heraus fällt jede Folge mit Ausschluss-Genre und jede mit einer Kategorie außerhalb von KIDS_FRIENDLY.
-    0.6.109: in einer gemischten Reihe (show_basis 'gemischt') bleiben NUR die Folgen, die selbst zugelassen sind
-    (eigenes Kindersender-Angebot oder Kinder-Regel je Werk); Livestreams fallen immer heraus."""
+
+def youth_show(title):
+    return bool(YOUTH_SHOW.search(str(title or '')))
+
+
+def episode_paths(c, show_key, basis=None):
+    """{work_id: Weg oder None} je Folge einer Mediatheken-Reihe – EINE Entscheidung für Folgenliste, kids-play,
+    Nachladen und Prüfung. Wege: 'freigabe' (Eltern), 'sender' (eigenes Angebot vom Kindersender), 'reihe' (bekannte
+    Kinderreihe bzw. freigegebene Reihe), 'regel' (Kinder-Regel je Werk: Referenz-Genre, Familie + FSK, Kinderreihe im
+    Thema), 'anteil' (Reihe zu ≥ 80 % Kinderprogramm, Folge selbst noch nicht eingeordnet). None = nicht zulässig.
+
+    * Livestreams und gesperrte Folgen/Reihen: nie.
+    * 'jugend' (Young Crime, POV, ECHT): nur 'sender'/'freigabe'.
+    * 'gemischt' (Kindersender + andere Sender): 'sender', 'regel', 'freigabe'.
+    * 'anteil': dazu nicht eingeordnete Folgen ohne fremde Kategorie ('anteil').
+    * 'reihe'/'freigabe': jede Folge ohne Ausschluss-Genre/fremde Kategorie."""
     import kids_rules
-    rows = _work_rows(c, show_key)
+    facts = _work_facts(c, show_key)
     blocked = kids_rules.blocked_works(c, show_key)
-    basis = show_basis(c, show_key, _show_title(c, show_key)) if blocked is not None else None
-    if basis is None:
-        return {wid for wid, _, _ in rows}
-    if basis == 'gemischt':
-        out = {wid for wid, kids, _ in rows if not kids}
-    else:
-        out = {wid for wid, kids, against in rows if against and not kids}
-    allowed = {r[0] for r in c.execute("SELECT substr(key,6) FROM kids_choices WHERE choice='allow' AND key LIKE 'work:%'")} if out else set()
-    return (out - (allowed - _live_works(c, show_key))) | blocked
+    if basis is None and blocked is not None:
+        basis = show_basis(c, show_key, _show_title(c, show_key))
+    if blocked is None or basis is None:
+        return {f[0]: None for f in facts}
+    allowed = {r[0] for r in c.execute("SELECT substr(k.key,6) FROM kids_choices k JOIN works w ON w.id=substr(k.key,6) "
+                                       "WHERE k.choice='allow' AND k.key LIKE 'work:%' AND w.show_key=?", (show_key,))}
+    out = {}
+    for wid, kids, against, sender, live in facts:
+        if live or wid in blocked:
+            path = None
+        elif wid in allowed:
+            path = 'freigabe'
+        elif sender:
+            path = 'sender'
+        elif basis == 'jugend':
+            path = None
+        elif kids:
+            path = 'regel'
+        elif basis in ('reihe', 'freigabe') and not against:
+            path = basis
+        elif basis == 'anteil' and not against:
+            path = 'anteil'
+        else:
+            path = None
+        out[wid] = path
+    return out
+
+
+def _has_episode(c, show_key, basis):
+    """Mindestens eine zulässige Folge mit aktivem Angebot, deren Titel nicht gesperrt ist (außer Kindersender/Freigabe)."""
+    paths = episode_paths(c, show_key, basis)
+    # Folgen vom Kindersender oder mit Freigabe: Sperrwörter gelten dort nicht (wie episodes/work_allowed)
+    if any(p in ('freigabe', 'sender') and _active(c, wid) for wid, p in paths.items()):
+        return True
+    ok = [wid for wid, path in paths.items() if path]
+    chans = _kids_channels()
+    for i in range(0, len(ok), 500):
+        part = ok[i:i + 500]
+        for wid, title, otitle, ch in c.execute(
+                "SELECT w.id, w.title, json_extract(o.payload,'$.title'), lower(trim(json_extract(o.payload,'$.channel'))) "
+                "FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.id IN (%s)" % ','.join('?' * len(part)), part):
+            if ch in chans or not word_blocked(otitle):
+                return True
+    return False
+
+
+def _active(c, wid):
+    return bool(c.execute('SELECT 1 FROM offers WHERE work_id=? AND active=1 LIMIT 1', (wid,)).fetchone())
+
+
+def excluded_works(c, show_key):
+    """Folgen einer Reihe, die nicht in die Kinderecke gehören (episode_paths ohne Weg)."""
+    return {wid for wid, path in episode_paths(c, show_key).items() if path is None}
 
 
 def _live_works(c, show_key):
