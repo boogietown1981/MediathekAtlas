@@ -191,6 +191,7 @@ def build(root, db, modules=None, merge=True, page=None):
         out[view] = tiles[:MAX_TITLES]
     out['series'] = _kids_shows(db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
+    out['movies'] = _prefer_kids_offers(db, out['movies'])
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
@@ -407,6 +408,11 @@ def work_allowed(c, work_id, offer_id=None):
         offers = c.execute("SELECT lower(trim(json_extract(payload,'$.channel'))), json_extract(payload,'$.title') FROM offers "
                            "WHERE work_id=? AND active=1", (wid,)).fetchall()
     allowed = bool(c.execute("SELECT 1 FROM kids_choices WHERE key=? AND choice='allow'", ('work:' + wid,)).fetchone())
+    # 0.6.113 (Mac-Prüfung 0.6.112: Young Crime/POV/#Ukraine spielten das ZDF-/WDR-/rbtv-Angebot eines Werks, das über
+    # seinen KiKA-Zwilling zugelassen war): hat das Werk ein aktives Kindersender-Angebot, ist nur dieses zulässig
+    twin = kids_offer(c, wid)
+    if offer_id and twin and twin[0] != str(offer_id) and not allowed:
+        return False
     kids_channel = allowed or any(ch in _kids_channels() for ch, _ in offers)
     if not kids_channel and (word_blocked(title) or any(word_blocked(t) for _, t in offers)):
         return False
@@ -414,6 +420,16 @@ def work_allowed(c, work_id, offer_id=None):
         return episode_paths(c, show).get(wid) is not None
     clause, args = catalog.category_clause(c, CATEGORY)
     return bool(c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [wid] + list(args)).fetchone())
+
+
+def kids_offer(c, work_id):
+    """(offer_id, Sender) des aktiven Kindersender-Angebots eines Werks (KiKA vor TOGGO/ZDFtivi, stabil) oder None.
+    Die Kinderecke spielt und lädt bei solchen Werken immer dieses Angebot (0.6.113)."""
+    chans = sorted(_kids_channels())
+    row = c.execute("SELECT id, json_extract(payload,'$.channel') FROM offers WHERE work_id=? AND active=1 "
+                    "AND lower(trim(json_extract(payload,'$.channel'))) IN (%s) ORDER BY id LIMIT 1" % ','.join('?' * len(chans)),
+                    [str(work_id)] + chans).fetchone()
+    return (row[0], str(row[1] or '')) if row else None
 
 
 _EPISODES_SEEN = set()    # (quelle, id) der zuletzt ausgelieferten, geprüften Folgen
@@ -459,9 +475,15 @@ def episodes(root, c, data, source, series_id, marks=None):
             # 0.6.106: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern oder mit Freigabe
             if word_blocked(title) and path not in ('freigabe', 'sender') and str(src.get('channel') or '').strip().lower() not in _kids_channels():
                 continue
-            ep = _episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
+            offer_id, channel = str(e.get('id') or ''), str(src.get('channel') or '')
+            if path == 'sender' and channel.strip().lower() not in _kids_channels():
+                twin = kids_offer(c, e.get('work_id'))       # 0.6.113: den KiKA-Zwilling spielen, nicht ZDF/WDR/rbtv
+                if not twin:
+                    continue
+                offer_id, channel = twin
+            ep = _episode('mediatheken', {'offer': offer_id}, title, meta.get('season'), meta.get('episode'),
                           meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration'))
-            ep['channel'] = str(src.get('channel') or '')[:60]     # 0.6.109: für die Prüfung je Folge sichtbar
+            ep['channel'] = channel[:60]                            # 0.6.109: für die Prüfung je Folge sichtbar
             ep['weg'] = path                                        # 0.6.112: Zulassungsweg (episode_paths)
             out.append(ep)
     else:
@@ -546,6 +568,33 @@ def _from_kids_channel(c, tile):
         return bool(c.execute('SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=? AND '
                               + cond + ' LIMIT 1', [series['show']] + chans).fetchone())
     return False
+
+
+def _prefer_kids_offers(db, tiles):
+    """0.6.113: Mediatheken-Filme mit KiKA-Zwilling zeigen und spielen das Kindersender-Angebot; jede Kachel nennt den
+    Sender ihres Angebots (Prüfung). Ohne Datenbank unverändert."""
+    films = [t for t in tiles if t.get('source') == 'mediatheken' and _dict(t.get('ref')).get('offer')]
+    if not films or db is None:
+        return tiles
+    with db() as c:
+        for t in films:
+            row = c.execute("SELECT work_id, json_extract(payload,'$.channel') FROM offers WHERE id=?", (t['ref']['offer'],)).fetchone()
+            if not row:
+                continue
+            t['channel'] = str(row[1] or '')[:60]
+            try:
+                import kids_rules
+                t['weg'] = kids_rules.explain(c, row[0])           # 0.6.113: Zulassungsweg des Films (Prüfung)
+            except Exception:
+                t['weg'] = None
+            if t['channel'].strip().lower() in _kids_channels():
+                continue
+            twin = kids_offer(c, row[0])
+            if twin:
+                t['ref'] = {'offer': twin[0]}
+                t['key'] = watch_key(t['ref'])
+                t['channel'] = twin[1][:60]
+    return tiles
 
 
 def _word_safe(db, tiles):
@@ -710,7 +759,36 @@ def youth_show(title):
     return bool(YOUTH_SHOW.search(str(title or '')))
 
 
+_PATHS = {}   # 0.6.113: (Verbindung, Datenstand, Reihe) -> Wege; Nachladen fragt work_allowed je Folge (132 × ≈ 45 ms)
+
+
+def _data_key(c):
+    """Ändert sich mit jedem Schreiben (eigene Verbindung: total_changes, andere: PRAGMA data_version)."""
+    try:
+        path = c.execute('PRAGMA database_list').fetchone()[2] or ''
+        if not path:
+            return None            # :memory: – nie zwischenspeichern
+        return (path, id(c), c.execute('PRAGMA data_version').fetchone()[0], c.total_changes, _GEN[0])
+    except Exception:
+        return None
+
+
 def episode_paths(c, show_key, basis=None):
+    """Weg je Folge (siehe _episode_paths); gleicher Datenstand derselben Verbindung wird nicht neu berechnet."""
+    key = _data_key(c)
+    if key is not None and basis is None:
+        hit = _PATHS.get((key, show_key))
+        if hit is not None:
+            return hit
+    value = _episode_paths(c, show_key, basis)
+    if key is not None and basis is None:
+        if len(_PATHS) > 256:
+            _PATHS.clear()
+        _PATHS[(key, show_key)] = value
+    return value
+
+
+def _episode_paths(c, show_key, basis=None):
     """{work_id: Weg oder None} je Folge einer Mediatheken-Reihe – EINE Entscheidung für Folgenliste, kids-play,
     Nachladen und Prüfung. Wege: 'freigabe' (Eltern), 'sender' (eigenes Angebot vom Kindersender), 'reihe' (bekannte
     Kinderreihe bzw. freigegebene Reihe), 'regel' (Kinder-Regel je Werk: Referenz-Genre, Familie + FSK, Kinderreihe im
@@ -722,10 +800,11 @@ def episode_paths(c, show_key, basis=None):
     * 'anteil': dazu nicht eingeordnete Folgen ohne fremde Kategorie ('anteil').
     * 'reihe'/'freigabe': jede Folge ohne Ausschluss-Genre/fremde Kategorie."""
     import kids_rules
-    facts = _work_facts(c, show_key)
+    query = _work_query(c)
+    facts = _work_facts(c, show_key, None, query)
     blocked = kids_rules.blocked_works(c, show_key)
     if basis is None and blocked is not None:
-        basis = show_basis(c, show_key, _show_title(c, show_key))
+        basis = show_basis(c, show_key, _show_title(c, show_key), query)
     if blocked is None or basis is None:
         return {f[0]: None for f in facts}
     allowed = {r[0] for r in c.execute("SELECT substr(k.key,6) FROM kids_choices k JOIN works w ON w.id=substr(k.key,6) "
