@@ -2,6 +2,7 @@
 (validieren) und dann für die Kinderecke freigeben. Ohne Konto, ohne KI; synthetische Antworten."""
 import json
 import sys
+import urllib.parse
 import types
 import unittest
 from pathlib import Path
@@ -372,6 +373,104 @@ class ResolveAndRank(Fixture):
 
     def test_empty_archive_has_bytes(self):
         self.assertEqual(ab.archive_summary(self.root, None).get('bytes'), 0)
+
+
+class WithApiKey(Fixture):
+    """Mac-Prüfung 0.6.112 (23.11.2026): mit API-Schlüssel scheiterten Empfehlungen (channelSections) und Suche
+    (search) an der Endpunktliste von youtube._request („Ungültige YouTube-Anfrage“) und verbrauchten das Budget;
+    der Lauf dauerte 8 Minuten. Hier läuft alles über den echten youtube._request mit nachgebildeter Antwort."""
+    SEARCHED = 'UC' + 's' * 22
+
+    def setUp(self):
+        super().setUp()
+        mock.patch.object(yd, 'find_tool', return_value=None).start()     # ohne yt-dlp: nur der API-Weg
+        self.calls = []
+        self.quota = False
+        mock.patch.object(yt.urllib.request, 'urlopen', side_effect=self.urlopen).start()
+
+    def answer(self, endpoint, q):
+        if endpoint == 'channelSections':
+            return {'items': [{'snippet': {'type': 'multipleChannels'}, 'contentDetails': {'channels': [FEATURED]}}]}
+        if endpoint == 'search':
+            if self.quota:
+                raise yt.urllib.error.HTTPError('https://x', 403, 'quotaExceeded', {}, __import__('io').BytesIO(b'{}'))
+            return {'items': [{'snippet': {'channelId': self.SEARCHED, 'channelTitle': 'Forscherkanal'}}]}
+        if endpoint == 'channels':
+            ids = (q.get('id') or 'UC' + 'h' * 22).split(',')
+            return {'items': [{'id': i, 'snippet': {'title': {FEATURED: 'Tierkanal', self.SEARCHED: 'Forscherkanal'}.get(i, 'Kanal'),
+                                                     'thumbnails': {'high': {'url': 'https://yt3.ggpht.com/%s.jpg' % i}}},
+                               'contentDetails': {'relatedPlaylists': {'uploads': 'UU' + i[2:]}}} for i in ids]}
+        if endpoint == 'playlists':
+            return {'items': []}
+        if endpoint == 'playlistItems':
+            return {'items': [{'snippet': {'resourceId': {'videoId': vid(90 + n)}}, 'contentDetails': {'videoId': vid(90 + n)}}
+                              for n in range(3)]}
+        if endpoint == 'videos':
+            return {'items': [{'id': i, 'snippet': {'title': 'Experimente für Kinder %s' % i[-2:], 'description': 'Mehr bei youtube.com/@Gastkanal',
+                                                    'tags': ['Experimente', 'Wasser']},
+                               'contentDetails': {'duration': 'PT5M'}, 'status': {'embeddable': True}} for i in q['id'].split(',')]}
+        raise AssertionError(endpoint)
+
+    def urlopen(self, req, timeout=None):
+        url = req.full_url
+        endpoint = url.split('/youtube/v3/')[1].split('?')[0]
+        q = dict(urllib.parse.parse_qsl(url.split('?', 1)[1]))
+        self.calls.append(endpoint)
+        body = json.dumps(self.answer(endpoint, q)).encode()
+        return __import__('io').BytesIO(body)
+
+    def prepare(self):
+        abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 2}, now=NOW)
+        ab.check(self.root, abo, now=NOW, request=self.api)
+        for j in self.jobs():
+            self.set_job(j['id'], 'done', path=j['target'])
+        with self.db() as c:
+            db = ab._connect(self.root); ab.sync_states(c, db); db.close()
+        db = ab._connect(self.root)
+        with db:
+            db.execute('UPDATE youtube_abos SET channel_id=?', (OWN,))
+        db.close()
+
+    def run_discover(self):
+        request = lambda endpoint, query: yt._request(endpoint, query, 'SCHLUESSEL')  # noqa: E731
+        disc._RUNNING['last_error'] = ''
+        return disc.discover(self.root, now=NOW + 10, request=request, seen=watch_state.states(self.root))
+
+    def test_endpoints_allowed(self):
+        for endpoint in ('channelSections', 'search', 'channels', 'playlists', 'playlistItems', 'videos'):
+            self.assertIn(endpoint, yt.ENDPOINTS)
+
+    def test_featured_search_and_tags_over_api(self):
+        self.prepare()
+        self.run_discover()
+        self.assertNotIn('Ungültige', disc._RUNNING['last_error'])
+        self.assertIn('channelSections', self.calls)
+        self.assertIn('search', self.calls)                   # Suche mit eigenem Budget, Schlagwörter kamen aus videos.list
+        src = disc.summary(self.root)['sources']
+        self.assertGreaterEqual(src['featured'], 1)
+        self.assertGreaterEqual(src['search_fallback'], 1)
+        got = {s['ref']: s for s in disc.overview(self.root)['suggestions']}
+        self.assertEqual(got[FEATURED]['title'], 'Tierkanal')
+        self.assertEqual(got[self.SEARCHED]['title'], 'Forscherkanal')
+        self.assertTrue(got[self.SEARCHED]['avatar'].startswith('https://yt3.ggpht.com/'))
+        self.assertIn('@gastkanal', got)                      # Beschreibung aus videos.list
+
+    def test_search_quota_falls_back_to_ytdlp(self):
+        self.prepare()
+        self.quota = True
+        urls = []
+
+        def runner(args, **kw):
+            urls.append(args[-1])
+            if args[-1].startswith('ytsearch'):
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': [
+                    {'id': vid(70), 'channel_id': self.SEARCHED, 'channel': 'Forscherkanal'}]}))
+            return types.SimpleNamespace(returncode=0, stderr='', stdout='{}')
+        with mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')), mock.patch.object(yd, 'js_args', return_value=[]):
+            request = lambda endpoint, query: yt._request(endpoint, query, 'SCHLUESSEL')  # noqa: E731
+            disc.discover(self.root, now=NOW + 10, request=request, runner=runner, seen=watch_state.states(self.root))
+        self.assertTrue([u for u in urls if u.startswith('ytsearch20:Experimente')])
+        self.assertIn(self.SEARCHED, {s['ref'] for s in disc.overview(self.root)['suggestions']})
 
 
 if __name__ == '__main__':
