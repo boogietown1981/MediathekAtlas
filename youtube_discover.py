@@ -33,6 +33,7 @@ import re
 import subprocess
 import threading
 import time
+from concurrent.futures import ThreadPoolExecutor
 import urllib.parse
 
 import youtube
@@ -50,6 +51,7 @@ START_COUNT = 3                # 0.6.98 (Mac-Prüfung 0.6.90: 5 × 26 Min. ≈ 2
 # Kanal-Kennung, vorn englische Kanäle aus den Beschreibungen eines einzigen Abos, ohne Kindersignal.
 SEARCH_PER_RUN = 6             # Suchen je Lauf, eigenes Budget (Mac-Prüfung 0.6.112: Empfehlungen verbrauchten alles)
 BACKFILL_API = 200             # mit Schlüssel: so viele Videos je Lauf über videos.list (4 Einheiten)
+API_WORKERS = 4                # gleichzeitige API-Abrufe (Mac-Prüfung 0.6.114: etwa 3–4 s je Abruf, Lauf 10 Min.)
 RESOLVE_PER_RUN_API = 30       # mit Schlüssel (je Kanal channels + playlistItems + videos, wenige Sekunden)
 RESOLVE_PER_RUN = 15           # so viele Vorschläge ohne Namen/Kanalbild werden je Lauf aufgelöst (je ein Listenabruf)
 RESOLVE_VIDEOS = 12            # Videotitel je aufgelöstem Kanal (Kindersignal, Sprache)
@@ -373,12 +375,14 @@ def playlist_channels_api(request, abo):
     if not abo.get('channel_id'):
         return []
     items = (request('playlists', {'part': 'snippet', 'channelId': abo['channel_id'], 'maxResults': PLAYLISTS_PER_ABO * 2}) or {}).get('items') or []
+    lists = [i for i in items[:PLAYLISTS_PER_ABO] if re.fullmatch(youtube.PLAYLIST_ID, str((i or {}).get('id') or ''))]
+
+    def read(pid):
+        return (request('playlistItems', {'part': 'snippet', 'playlistId': pid, 'maxResults': PLAYLIST_VIDEOS}) or {}).get('items') or []
+    with ThreadPoolExecutor(max_workers=API_WORKERS) as pool:     # die Playlists eines Abos gleichzeitig lesen
+        answers = list(pool.map(read, [i['id'] for i in lists]))
     groups = []
-    for item in items[:PLAYLISTS_PER_ABO]:
-        pid = str((item or {}).get('id') or '')
-        if not re.fullmatch(youtube.PLAYLIST_ID, pid):
-            continue
-        rows = (request('playlistItems', {'part': 'snippet', 'playlistId': pid, 'maxResults': PLAYLIST_VIDEOS}) or {}).get('items') or []
+    for item, rows in zip(lists, answers):
         groups.append((youtube._text((item.get('snippet') or {}).get('title'), 80),
                        [{'channel_id': (r.get('snippet') or {}).get('videoOwnerChannelId'),
                          'channel': (r.get('snippet') or {}).get('videoOwnerChannelTitle')} for r in rows if isinstance(r, dict)]))
@@ -557,6 +561,79 @@ def backfill_descriptions(root, db, videos, runner=None, limit=BACKFILL_PER_RUN)
 _MISSING = re.compile(r'does not exist|not found|404|nicht gefunden|unavailable|terminated|has been removed', re.I)
 
 
+def _channel_info(node):
+    """Kanalangaben aus einem channels.list-Eintrag: Name, ID, Kanalbild, Uploads-Playlist."""
+    import youtube_abos
+    snippet = node.get('snippet') or {}
+    thumbs = snippet.get('thumbnails') if isinstance(snippet.get('thumbnails'), dict) else {}
+    avatar = ''
+    for size in ('high', 'medium', 'default'):
+        url = str((thumbs.get(size) or {}).get('url') or '') if isinstance(thumbs.get(size), dict) else ''
+        if url.startswith('https://') and youtube_abos.AVATAR_HOSTS.fullmatch((urllib.parse.urlsplit(url).hostname or '').lower()):
+            avatar = url
+            break
+    uploads = str(((node.get('contentDetails') or {}).get('relatedPlaylists') or {}).get('uploads') or '')
+    return {'title': youtube._text(snippet.get('title'), 120), 'channel_id': str(node.get('id') or '')[:40], 'avatar': avatar,
+            'uploads': uploads if re.fullmatch(youtube.PLAYLIST_ID, uploads) else ''}
+
+
+def resolve_api(request, refs, now):
+    """Mit Schlüssel (Mac-Prüfung 0.6.114: einzeln 11 s je Kanal): Kanal-IDs gebündelt über channels.list (bis 50 je
+    Abruf), Handles einzeln, dann die neuesten Videotitel aus playlistItems (Titel stehen dort, kein videos.list);
+    alles mit API_WORKERS gleichzeitigen Abrufen. {ref: info}; fehlt ein Kanal in der Antwort: ``missing``.
+    Ein fehlgeschlagener Abruf lässt seine Kanäle aus (nächster Lauf)."""
+    part = {'part': 'snippet,contentDetails'}
+    ids = [r for r in refs if re.fullmatch(youtube.CHANNEL_ID, r)]
+    others = [r for r in refs if r not in ids]
+
+    def by_ids(chunk):
+        return chunk, (request('channels', {**part, 'id': ','.join(chunk), 'maxResults': 50}) or {}).get('items') or []
+
+    def by_name(ref):
+        query = {**part, 'forUsername': ref[5:]} if ref.startswith('user:') else {**part, 'forHandle': ref}
+        return [ref], (request('channels', query) or {}).get('items') or []
+
+    def safe(fn, arg):
+        try:
+            return fn(arg)
+        except Exception as exc:              # noqa: BLE001
+            _RUNNING['last_error'] = ('YouTube-API: ' + (str(exc) or type(exc).__name__))[:200]
+            return None
+
+    out, channels = {}, {}
+    with ThreadPoolExecutor(max_workers=API_WORKERS) as pool:
+        jobs = [pool.submit(safe, by_ids, ids[i:i + 50]) for i in range(0, len(ids), 50)] + \
+               [pool.submit(safe, by_name, r) for r in others]
+        for job in jobs:
+            answer = job.result()
+            if answer is None:
+                continue
+            asked, items = answer
+            nodes = {str(n.get('id')): n for n in items if isinstance(n, dict)}
+            for ref in asked:
+                node = nodes.get(ref) if ref in nodes else (next(iter(nodes.values())) if len(asked) == 1 and nodes else None)
+                if node is None:
+                    out[ref] = {'at': now, 'missing': True}
+                else:
+                    channels[ref] = _channel_info(node)
+
+        def titles(ref):
+            pid = channels[ref]['uploads']
+            if not pid:
+                return ref, []
+            rows = (request('playlistItems', {'part': 'snippet', 'playlistId': pid, 'maxResults': RESOLVE_VIDEOS}) or {}).get('items') or []
+            return ref, [' '.join(str((r.get('snippet') or {}).get('title') or '').split())[:200] for r in rows if isinstance(r, dict)]
+        for answer in pool.map(lambda r: safe(titles, r), list(channels)):
+            if answer is None:
+                continue
+            ref, names = answer
+            names = [n for n in names if n and n not in ('Private video', 'Deleted video')][:RESOLVE_VIDEOS]
+            ch = channels[ref]
+            out[ref] = {'at': now, 'title': ch['title'], 'channel_id': ch['channel_id'], 'avatar': ch['avatar'], 'videos': names,
+                        'lang': language([ch['title'], *names])}
+    return out
+
+
 def resolve(root, db, refs, now, request, runner, budget):
     """{ref: info} mit Name, Kanalbild, Kanal-ID, Titeln der neuesten Videos und Sprache. Je Kanal höchstens alle vier
     Wochen ein Listenabruf (``budget`` = [erlaubte Abrufe]); ``info['missing']``: Kanal gibt es nicht (Tippfehler,
@@ -565,6 +642,27 @@ def resolve(root, db, refs, now, request, runner, budget):
     import download_retry
     known = {r[0]: (r[1], r[2]) for r in db.execute('SELECT ref,title,avatar FROM youtube_suggestions')}
     out = {}
+    if request is not None:
+        todo = []
+        for ref in refs:
+            try:
+                info = json.loads(youtube._get(db, 'resolve:' + ref, '{}'))
+            except ValueError:
+                info = {}
+            if info.get('at', 0) > now - 4 * WEEK or budget[0] <= 0:
+                if info:
+                    out[ref] = info
+                continue
+            budget[0] -= 1
+            todo.append(ref)
+            if info:
+                out[ref] = info                   # bis die neue Antwort da ist
+        fresh = resolve_api(request, todo, now) if todo else {}
+        with db:
+            for ref, info in fresh.items():
+                youtube._set(db, 'resolve:' + ref, json.dumps(info, ensure_ascii=False))
+        out.update(fresh)
+        return out
     for ref in refs:
         title, avatar = known.get(ref, ('', ''))
         try:                                      # eigener Speicher: auch weggefallene (fehlend, abonniert, doppelt)
@@ -648,7 +746,20 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
             lanes.setdefault(profile_by_abo.get(r['abo_id']), []).append(r)
         lanes = [lanes[k] for k in sorted(lanes, key=lambda k: k != 'kinder')]
         order = [lane[i] for i in range(max((len(l) for l in lanes), default=0)) for lane in lanes if i < len(lane)]
-        _CALLS.clear()
+        _CALLS.clear()               # Mac-Prüfung 0.6.114: Zähler auch mit 0 melden
+        _CALLS.update({k + '_' + w: 0 for k in ('search', 'playlists') for w in ('api', 'ytdlp', 'api_failed')})
+        _CALLS.update(api_calls=0, api_seconds=0.0)
+        if request is not None:
+            plain, lock = request, threading.Lock()
+
+            def request(endpoint, query, _plain=plain):      # Dauer der API-Abrufe für die Diagnose
+                begun = time.time()
+                try:
+                    return _plain(endpoint, query)
+                finally:
+                    with lock:
+                        _CALLS['api_calls'] += 1
+                        _CALLS['api_seconds'] = round(_CALLS['api_seconds'] + time.time() - begun, 1)
         timings = {}
         mark = time.time()
         api_ok = False
