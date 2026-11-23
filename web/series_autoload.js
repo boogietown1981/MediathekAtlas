@@ -30,7 +30,7 @@ function row(r){
  if(r.kind==='movie'){head.append(el('span',' · '+(r.ready?'offline gespeichert':r.waiting?'wird geladen':r.state==='done'?'erledigt':'vorgemerkt'),'muted'));li.append(head);
   if(r.note)li.append(el('small',r.note,'sal-note'));const actions=el('div',undefined,'sal-actions');const b=el('button','Aus der Liste nehmen');b.type='button';b.title='Eintrag entfernen; ein noch wartender Download wird abgebrochen, eine fertige Datei bleibt';
   b.onclick=()=>busy(b,async()=>{render(await api('series-autoload',{action:'forget',show:r.show}));if(typeof refresh==='function')refresh();});actions.append(b);li.append(actions);return li;}
- const facts=[r.last?'zuletzt gesehen '+r.last:'',r.ready?r.ready+' bereit':'',r.waiting?r.waiting+' in Warteschlange':'',r.unseen?'ungesehen '+gb(r.bytes):'',r.more?r.more+' weitere verfügbar':'',r.unconfirmed?r.unconfirmed+' ohne bestätigte Folgennummer':'',r.failed?r.failed+' abgebrochen/fehlgeschlagen':''].filter(Boolean);
+ const facts=[r.last?'zuletzt gesehen '+r.last:'',r.ready?r.ready+' bereit':'',r.waiting?r.waiting+' in Warteschlange':'',r.unseen?'ungesehen '+gb(r.bytes):'',r.more?r.more+' weitere verfügbar':'',r.unconfirmed?r.unconfirmed+' ohne bestätigte Folgennummer':'',r.versions?r.versions+(r.versions===1?' Folge':' Folgen')+' nur als Originalfassung/Sonderfassung ladbar':'',r.failed?r.failed+' abgebrochen/fehlgeschlagen':''].filter(Boolean);
  head.append(el('span',' · '+(r.state==='stopped'?'beendet':'aktiv')+(facts.length?' · '+facts.join(' · '):''),'muted'));
  li.append(head);if(r.note)li.append(el('small',r.note,'sal-note'));
  const actions=el('div',undefined,'sal-actions');

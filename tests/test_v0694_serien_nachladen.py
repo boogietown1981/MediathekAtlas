@@ -14,8 +14,8 @@ import series_autoload
 import watch_state
 
 
-def source(title, show='Bibi und Tina', minutes=25):
-    return {'title': title, 'topic': show, 'description': show + ' – ' + title, 'channel': 'ZDF', 'duration': minutes * 60,
+def source(title, show='Bibi und Tina', minutes=25, channel='ZDF'):
+    return {'title': title, 'topic': show, 'description': show + ' – ' + title, 'channel': channel, 'duration': minutes * 60,
             'url_video': 'https://example.org/' + title.replace(' ', '_') + '.mp4'}
 
 
@@ -40,9 +40,9 @@ class SerienNachladen(unittest.TestCase):
         self.c.close()
         self.tmp.cleanup()
 
-    def episode(self, ep, state='matched', show='Bibi und Tina', season=1, minutes=25):
-        title = 'Abenteuer Nummer %s %d' % (show, ep)
-        catalog.ingest(self.c, [source(title, show, minutes)])
+    def episode(self, ep, state='matched', show='Bibi und Tina', season=1, minutes=25, channel='ZDF', suffix=''):
+        title = 'Abenteuer Nummer %s %d%s' % (show, ep, suffix)
+        catalog.ingest(self.c, [source(title, show, minutes, channel)])
         w = self.c.execute("SELECT w.* FROM works w JOIN offers o ON o.work_id=w.id WHERE json_extract(o.payload,'$.title')=?",
                            (title,)).fetchone()
         m = json.loads(w['meta'])
@@ -51,6 +51,25 @@ class SerienNachladen(unittest.TestCase):
         new_id = catalog.save_metadata(self.c, w['id'], m, state) or w['id']
         self.c.commit()
         return new_id
+
+    def twin(self, work_id, suffix):
+        """Dieselbe Folge als eigenes Werk (so führt der Katalog bei Björn z. B. die OmU-Fassung von „Loulou“)."""
+        w = self.c.execute('SELECT * FROM works WHERE id=?', (work_id,)).fetchone()
+        m = json.loads(w['meta'])
+        title = m['episode_title'] + suffix
+        catalog.ingest(self.c, [{**source(title), 'topic': 'Bibi und Tina'}])
+        o = self.c.execute("SELECT id,work_id FROM offers WHERE json_extract(payload,'$.title')=?", (title,)).fetchone()
+        new = 'omu' + work_id[:20]
+        self.c.execute('INSERT INTO works(id,kind,title,show_key,meta,state) SELECT ?,kind,title,show_key,meta,state FROM works WHERE id=?',
+                       (new, work_id))
+        self.c.execute('UPDATE offers SET work_id=? WHERE id=?', (new, o['id']))
+        # die deutsche Fassung ans Ende der Tabelle: series_download.plan sieht die OmU zuerst (wie bei Björn möglich)
+        cols = [r[1] for r in self.c.execute('PRAGMA table_info(works)')]
+        row = self.c.execute('SELECT * FROM works WHERE id=?', (work_id,)).fetchone()
+        self.c.execute('DELETE FROM works WHERE id=?', (work_id,))
+        self.c.execute('INSERT INTO works(%s) VALUES(%s)' % (','.join(cols), ','.join('?' * len(cols))), tuple(row))
+        self.c.commit()
+        return new
 
     def watch(self, key, at=None):
         watch_state.progress(self.root, key, 1500, 1500, True, now=at or self.now)
@@ -101,6 +120,66 @@ class SerienNachladen(unittest.TestCase):
         self.assertEqual(len(self.jobs()), 20)                       # Standardgrenze im ersten Lauf
         self.assertEqual(self.jobs()[0]['metadata']['episode'], 9)
         self.assertIn('Nach S01E02 geht es mit S01E09 weiter', self.c.execute('SELECT note FROM series_autoload').fetchone()[0])
+
+    def test_0_6_10x_omu_als_eigenes_werk_wird_nicht_zusaetzlich_geladen(self):
+        ids = [self.episode(n) for n in range(1, 4)]
+        omu = self.twin(ids[1], ' (Originalversion mit Untertitel)')
+        self.watch(ids[0])
+        self.run_once()
+        jobs = self.jobs()
+        self.assertEqual(sorted(j['metadata']['episode'] for j in jobs), [2, 3])
+        self.assertNotIn('Originalversion', json.dumps([j['source'].get('title') for j in jobs]))
+        self.assertFalse(any(j.get('autoload_version') for j in jobs))
+        # beide Werke der Folge 2 hängen am selben Auftrag: kein zweiter Lauf lädt die OmU nach
+        linked = {r[0] for r in self.c.execute('SELECT work_id FROM series_autoload_items WHERE job_id=?',
+                                               ([j for j in jobs if j['metadata']['episode'] == 2][0]['id'],))}
+        self.assertEqual(linked, {ids[1], omu})
+        self.assertEqual(self.run_once(offset=series_autoload.CHECK_EVERY + 1)['queued'], 0)
+        row = series_autoload.status(self.root, self.c, self.settings)['series'][0]
+        self.assertEqual(row['waiting'], 2)
+
+    def test_0_6_10x_nur_omu_ladbar_wird_sichtbar_gekennzeichnet(self):
+        first, second = self.episode(1), self.episode(2)
+        self.twin(second, ' (Originalversion mit Untertitel)')
+        self.c.execute('UPDATE offers SET active=0 WHERE work_id=?', (second,))   # deutsche Fassung nicht (mehr) ladbar
+        self.c.commit()
+        self.watch(first)
+        self.run_once()
+        jobs = self.jobs()
+        self.assertEqual(len(jobs), 1)
+        self.assertEqual(jobs[0]['autoload_version'], 'Nur als Originalfassung mit Untertiteln ladbar')
+        self.assertEqual(series_autoload.status(self.root, self.c, self.settings)['series'][0]['versions'], 1)
+
+    def test_0_6_10x_aus_der_kinderecke_nur_kinderreihen(self):
+        adult = [self.episode(n, show='Politik am Abend') for n in range(1, 4)]
+        offer = self.c.execute('SELECT id FROM offers WHERE work_id=?', (adult[0],)).fetchone()[0]
+        self.watch('offer:' + offer)                                    # Kinderecke
+        self.run_once()
+        self.assertEqual(self.jobs(), [])
+        self.assertIn('keine Kinderreihe', self.c.execute('SELECT note FROM series_autoload').fetchone()[0])
+        kika = [self.episode(n, show='Löwenzahn', channel='KiKA') for n in range(1, 4)]
+        offer = self.c.execute('SELECT id FROM offers WHERE work_id=?', (kika[0],)).fetchone()[0]
+        self.watch('offer:' + offer, at=self.now + 5)
+        self.run_once(offset=10)
+        self.assertEqual(sorted(j['metadata']['episode'] for j in self.jobs()), [2, 3])
+
+    def test_0_6_10x_grosser_player_ohne_kinderfilter(self):
+        adult = [self.episode(n, show='Politik am Abend') for n in range(1, 4)]
+        self.watch(adult[0])
+        self.run_once()
+        self.assertEqual(len(self.jobs()), 2)
+
+    def test_0_6_10x_sehr_lange_serie_bekommt_ausschnitt(self):
+        import series_download
+        ids = [self.episode(n) for n in range(1, 13)]
+        self.watch(ids[3])
+        show = self.c.execute('SELECT show_key FROM works WHERE id=?', (ids[0],)).fetchone()[0]
+        with patch.object(series_download, 'MAX_ROWS', 10), patch.object(series_download, 'WINDOW_AFTER', 5), \
+                patch.object(series_download, 'WINDOW_BEFORE', 2):
+            with self.assertRaises(ValueError):                   # „Ganze Serie laden“ bleibt gesperrt
+                series_download.plan(self.c, show, self.downloads)
+            self.run_once()
+        self.assertEqual(sorted(j['metadata']['episode'] for j in self.jobs()), [3, 5, 6, 7, 8, 9])
 
     def test_grenze_je_serie_gleitet_mit_gesehenen_folgen(self):
         ids = [self.episode(n) for n in range(1, 9)]
