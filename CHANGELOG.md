@@ -1,3 +1,12 @@
+## Vorbereitung 0.6.121 – Kinderecke: Bilder statt Anfangsbuchstaben, Doku nicht unter Zeichentrick, deckende Kopfleiste; auf 0.6.120
+- Grundlage: Björn 23.11.2026 mit Bildschirmfoto: in der Kinderecke tragen einige Reihen/Filme nur den Anfangsbuchstaben („Animanimals“ einmal mit, einmal ohne Bild, „#WIR – Freundschaft grenzenlos“, „Anna auf dem Bauernhof“, „Anna, Paula, Pia und die wilden Tiere“, „Carolin testet“, „Die wilde Natur“); „Asterix und Co. – Die Comicwelten des Albert Uderzo“ unter „Zeichentrick“; oberste Reihe als unscharfer Streifen unter der Kopfleiste.
+- Ursache Bilder: Die IMDb-Datensätze enthalten keine Bilder; Bilder kommen von TMDB, TVDB, Fanart.tv, Wikidata oder dem Anbieter. Die Kinderecke nahm zudem nur das Bild des ersten abspielbaren Angebots eines zusammengeführten Titels (die Werkliste nimmt das erste vorhandene) und bei Mediatheken-Reihen nur das Bild des stellvertretenden Werks.
+- Neu: Bild aus einem anderen Angebot desselben Titels; bei Mediatheken-Reihen das Bild einer anderen Folge bzw. des erkannten Reihen-Werks; sonst das Bild einer gleichnamigen Kachel derselben Art. Ohne jedes Bild bleibt der Anfangsbuchstabe.
+- Gruppen: Dokumentationen (Kategorie oder „Doku“/„Documentary“ im Genre) nie unter „Zeichentrick“.
+- Kopfleiste der Kinderecke deckend statt nach unten durchsichtig (die darunter gescrollte Reihe schimmerte als unscharfer Streifen durch).
+- Nicht geändert: doppelte Reihen unter verschiedenen Schlüsseln („Animanimals“, „Anna, Paula, Pia …“) – Sache der Erkennung.
+- Tests: `tests/test_v06121_kinder_bilder.py` (4, auf 0.6.120 rot).
+
 ## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (E6); auf 0.6.119
 
 - E6: `catalog.unify_show_spelling` benennt nur Werke eines Senders um, der die Markenschreibweise selbst in Titel oder Thema führt (ARD/MDR „Mittagsmagazin“ 289 Werke bekamen SRFs „MittagsMagazin“, weil ein show_key über Sender reicht). Auch Werke anderer Art unter der Reihe (3 „Kikaninchen“-Ausschnitte blieben).
