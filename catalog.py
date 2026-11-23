@@ -978,7 +978,11 @@ def broadcaster_spelling(title,topic):
     title=str(title or '');topic=str(topic or '').strip()
     if not title or not topic or title==topic or title.casefold()!=topic.casefold():return None
     if _all_upper(topic) or _all_lower(topic):return None
-    if _all_lower(title):return topic
+    if _all_lower(title):
+        # Mac-Prüfung S an 0.6.109: „rbb aktuell“ → „rbb AKTUELL“ ist keine bessere Schreibweise – aus ganz klein nur,
+        # wenn dabei kein Wort ganz in Großbuchstaben entsteht (Abkürzungen bis 3 Buchstaben wie „SWR“ erlaubt)
+        if any(len(w)>3 and _all_upper(w) for w in re.findall(r'\w+',topic)):return None
+        return topic
     if _all_upper(title) and _camel(topic):return topic
     return None
 
