@@ -134,7 +134,7 @@ class RuleTests(Base):
             reasons = {w['title']: w['reason'] for w in kids_rules.waiting(c)}
         self.assertEqual(reasons, {'Fantasy ohne FSK': 'Keine Altersfreigabe bekannt', 'Abenteuer ab 12': 'FSK 12 (über der Grenze)',
                                    'Familienfilm noch nicht gesucht': 'Altersfreigabe wird noch gesucht',
-                                   'Fantasy ab 6': 'FSK 6, aber kein Familien- oder Kinderhinweis'})
+                                   'Fantasy ab 6': 'FSK 6, aber kein eindeutiger Kinderfilm (Familien-, Drama- oder Fernsehfilm)'})
 
 
 class FetchTests(Base):

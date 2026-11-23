@@ -190,6 +190,7 @@ def build(root, db, modules=None, merge=True, page=None):
                 break
         out[view] = tiles[:MAX_TITLES]
     out['series'] = _kids_shows(db, out['series'])
+    out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     out['movies'] = _prefer_kids_offers(db, out['movies'])
     out['movies'], out['series'] = _parent_blocks(db, out['movies']), _parent_blocks(db, out['series'])
@@ -198,6 +199,52 @@ def build(root, db, modules=None, merge=True, page=None):
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
     out['pending'] = pending
     return out
+
+
+EMPTY_TTL = 7 * 86400   # 0.6.114: so lange bleibt eine leer geöffnete Plattform-Serie ausgeblendet, dann neuer Versuch
+
+
+def _drop_empty_platform_series(root, db, tiles):
+    """0.6.114 (Mac-Prüfung 0.6.113, K3: „The Beverly Hillbillies“ (JustWatch) öffnete ohne Folge): Plattform-Serien
+    heraus, die beim letzten Öffnen keine abspielbare Folge hatten (kids_empty_series) bzw. deren JustWatch-Folgen schon
+    geladen und alle nicht abspielbar sind. Ohne Netz."""
+    plat = [t for t in tiles if t.get('source') != 'mediatheken' and (t.get('series') or {}).get('id')]
+    if not plat:
+        return tiles
+    drop = set()
+    if db is not None:
+        try:
+            import kids_rules
+            with db() as c:
+                kids_rules.ensure(c)
+                since = time.time() - EMPTY_TTL
+                empty = {(r[0], r[1]) for r in c.execute('SELECT source, id FROM kids_empty_series WHERE checked>?', (since,))}
+            drop |= {t['id'] for t in plat if (t['source'], str(t['series']['id'])) in empty}
+        except Exception:
+            pass
+    jw = [t for t in plat if t['source'] == 'justwatch']
+    if jw and root:
+        try:
+            import justwatch
+            gone = justwatch.series_without_playable(root, [t['series']['id'] for t in jw])
+            drop |= {t['id'] for t in jw if str(t['series']['id']) in gone}
+        except Exception:
+            pass
+    return [t for t in tiles if t['id'] not in drop] if drop else tiles
+
+
+def _note_empty_series(c, source, series_id, empty):
+    """Leer geöffnete Plattform-Serie merken (nächste Liste ohne sie) bzw. wieder freigeben."""
+    import kids_rules
+    kids_rules.ensure(c)
+    known = c.execute('SELECT 1 FROM kids_empty_series WHERE source=? AND id=?', (source, str(series_id))).fetchone()
+    if empty:
+        c.execute('INSERT OR REPLACE INTO kids_empty_series VALUES(?,?,?)', (source, str(series_id), time.time()))
+        if not known:
+            invalidate()
+    elif known:
+        c.execute('DELETE FROM kids_empty_series WHERE source=? AND id=?', (source, str(series_id)))
+        invalidate()
 
 
 def _current_limit(db):
@@ -497,6 +544,11 @@ def episodes(root, c, data, source, series_id, marks=None):
                 continue
             ref = {source: e['id']}
             out.append(_episode(source, ref, e.get('title'), e.get('season'), e.get('episode'), e.get('poster'), e.get('duration')))
+        if not any('nicht aktualisiert' in str(n) for n in model.get('notes') or []):   # Netzfehler: nichts merken
+            try:
+                _note_empty_series(c, source, series_id, not any(e['key'] for e in out))
+            except Exception:
+                pass
     out = [e for e in out if e['key']][:MAX_EPISODES]
     for e in out:
         mark = marks.get(e['key']) or {}
@@ -600,7 +652,12 @@ def _prefer_kids_offers(db, tiles):
     films = [t for t in tiles if t.get('source') == 'mediatheken' and _dict(t.get('ref')).get('offer')]
     if not films or db is None:
         return tiles
+    import kids_rules
     with db() as c:
+        try:
+            ctx = kids_rules.explain_context(c)      # 0.6.114: einmal je Liste, nicht je Film
+        except Exception:
+            ctx = None
         for t in films:
             row = c.execute("SELECT work_id, json_extract(payload,'$.channel') FROM offers WHERE id=?", (t['ref']['offer'],)).fetchone()
             if not row:
@@ -608,8 +665,7 @@ def _prefer_kids_offers(db, tiles):
             t['work'] = row[0]                                       # 0.6.113: Sperrziel der Elternansicht
             t['channel'] = str(row[1] or '')[:60]
             try:
-                import kids_rules
-                t['weg'] = kids_rules.explain(c, row[0])           # 0.6.113: Zulassungsweg des Films (Prüfung)
+                t['weg'] = kids_rules.explain(c, row[0], ctx) if ctx else None   # 0.6.113: Zulassungsweg (Prüfung)
             except Exception:
                 t['weg'] = None
             if t['channel'].strip().lower() in _kids_channels():
@@ -767,7 +823,7 @@ def _kids_shows(db, tiles):
             basis = show_basis(c, t['series']['show'], t.get('title'), query)
             # 0.6.112 (Mac-Prüfung 0.6.109: „#Ukraine · Mein Land im Krieg“ mit 0 Folgen): ohne eine zulässige,
             # abspielbare Folge keine Kachel
-            if basis is None or not _has_episode(c, t['series']['show'], basis):
+            if basis is None or not _has_episode(c, t['series']['show'], basis, query):
                 drop.add(t['id'])
             else:
                 t['basis'] = basis
@@ -798,14 +854,14 @@ def _data_key(c):
         return None
 
 
-def episode_paths(c, show_key, basis=None):
+def episode_paths(c, show_key, basis=None, query=None):
     """Weg je Folge (siehe _episode_paths); gleicher Datenstand derselben Verbindung wird nicht neu berechnet."""
     key = _data_key(c)
     if key is not None and basis is None:
         hit = _PATHS.get((key, show_key))
         if hit is not None:
             return hit
-    value = _episode_paths(c, show_key, basis)
+    value = _episode_paths(c, show_key, basis, query)
     if key is not None and basis is None:
         if len(_PATHS) > 256:
             _PATHS.clear()
@@ -813,7 +869,7 @@ def episode_paths(c, show_key, basis=None):
     return value
 
 
-def _episode_paths(c, show_key, basis=None):
+def _episode_paths(c, show_key, basis=None, query=None):
     """{work_id: Weg oder None} je Folge einer Mediatheken-Reihe – EINE Entscheidung für Folgenliste, kids-play,
     Nachladen und Prüfung. Wege: 'freigabe' (Eltern), 'sender' (eigenes Angebot vom Kindersender), 'reihe' (bekannte
     Kinderreihe bzw. freigegebene Reihe), 'regel' (Kinder-Regel je Werk: Referenz-Genre, Familie + FSK, Kinderreihe im
@@ -825,7 +881,7 @@ def _episode_paths(c, show_key, basis=None):
     * 'anteil': dazu nicht eingeordnete Folgen ohne fremde Kategorie ('anteil').
     * 'reihe'/'freigabe': jede Folge ohne Ausschluss-Genre/fremde Kategorie."""
     import kids_rules
-    query = _work_query(c)
+    query = query or _work_query(c)        # 0.6.114: _kids_shows reicht die Abfrage durch (einmal je Liste)
     facts = _work_facts(c, show_key, None, query)
     blocked = kids_rules.blocked_works(c, show_key)
     if basis is None and blocked is not None:
@@ -856,9 +912,9 @@ def _episode_paths(c, show_key, basis=None):
     return out
 
 
-def _has_episode(c, show_key, basis):
+def _has_episode(c, show_key, basis, query=None):
     """Mindestens eine zulässige Folge mit aktivem Angebot, deren Titel nicht gesperrt ist (außer Kindersender/Freigabe)."""
-    paths = episode_paths(c, show_key, basis)
+    paths = episode_paths(c, show_key, basis, query)
     # Folgen vom Kindersender oder mit Freigabe: Sperrwörter gelten dort nicht (wie episodes/work_allowed)
     if any(p in ('freigabe', 'sender') and _active(c, wid) for wid, p in paths.items()):
         return True

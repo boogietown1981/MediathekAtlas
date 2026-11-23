@@ -173,6 +173,8 @@ NOT_FOR_FAMILY = ('Horror', 'Erotik')
 # Romantik schließen den Altersweg zusätzlich zum Sicherheitsnetz aus.
 KIDS_AGE_HINTS = ('Familie',)
 AGE_PATH_EXCLUDED = ('Romantik', 'Science-Fiction', 'Action', 'Mystery')
+# 0.6.114 (Mac-Prüfung 0.6.113): auf dem Altersweg der Mediatheken nur mit eigenem Kindersignal (kids_rules.kids_clause)
+AGE_PATH_ADULT = ('Drama',)
 KIDS_MAX_AGE = 12       # 0.6.99: Standard FSK 12 (Björn), einstellbar im Elternbereich (kids_rules)
 FAMILY_MAX_AGE = 12     # FSK 0/6/12
 

@@ -446,6 +446,25 @@ def _series(db, series_id):
     return dict(row)
 
 
+def series_without_playable(root, ids):
+    """0.6.114 (Mac-Prüfung 0.6.113: „The Beverly Hillbillies“ öffnete in der Kinderecke leer): von diesen Serien die,
+    deren Folgen schon geladen wurden und von denen keine im Browser abspielbar ist. Nur lokal, ohne Netz."""
+    ids = [str(i) for i in ids if VALID_ID.fullmatch(str(i or ''))]
+    if not ids:
+        return set()
+    db = _connect(root)
+    try:
+        checked = {r[0][len('series_checked:'):] for r in db.execute(
+            "SELECT name FROM justwatch_state WHERE name IN (%s)" % ','.join('?' * len(ids)), ['series_checked:' + i for i in ids])}
+        if not checked:
+            return set()
+        ok = {r[0] for r in db.execute("SELECT DISTINCT series_id FROM justwatch_items WHERE kind='episode' AND playable=1 "
+                                       "AND series_id IN (%s)" % ','.join('?' * len(checked)), list(checked))}
+        return checked - ok
+    finally:
+        db.close()
+
+
 def load_episodes(root, series_id, post=None, now=None):
     """Fetch seasons/episodes of a series (only those on JustWatch TV Free); returns fresh streams."""
     now = time.time() if now is None else now
