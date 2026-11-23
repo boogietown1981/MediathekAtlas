@@ -6,6 +6,7 @@
 - Sehr lange Serien (> 1.000 Folgen, z. B. „Sturm der Liebe“, „In aller Freundschaft“): `series_download.plan(..., around=(Staffel, Folge))` nimmt fürs Nachladen nur einen Ausschnitt (300 Folgen danach, 100 davor) statt nichts; „Ganze Serie laden“ bleibt bei der 1.000er-Sperre.
 - Tests: `tests/test_v0694_serien_nachladen.py` +6 (19; Zwilling und Kinderregel schlagen ohne die Änderung fehl).
 
+- Schreibweise (Mac-Prüfung S an 0.6.109: „rbb aktuell“ → „rbb AKTUELL“): aus ganz klein nur, wenn kein Wort mit mehr als 3 Buchstaben ganz groß wird.
 ## 0.6.110 – Kanal-Vorschläge mit Namen, Kindersignal und Sprache; Prüflauf; auf 0.6.109
 - Grundlage: Mac-Prüfung 0.6.106 (23.11.2026, YouTube-Teil mit Vorbehalt): 30 Vorschläge, alle nur „in N Videos von … erwähnt“, nur Handles ohne Anzeigenamen, eine als Handle gelesene Kanal-Kennung (@ucpiavfna4…), vorn englische Kanäle aus den Beschreibungen eines einzigen Abos; Playlist- und Suchquelle liefen nicht (Abos in der Kopie aus, nichts zu Ende gesehen). Abo-Einstellungen bestanden. Basis 0.6.109 (2ca209a3).
 - `youtube_discover.norm`: „@UC…“ ist eine Kanal-Kennung (Groß/klein bleibt); vor der Korrektur kleingeschriebene Kennungen (`@uc…`, nicht mehr auflösbar) werden verworfen.

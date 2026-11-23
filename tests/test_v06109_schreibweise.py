@@ -13,14 +13,16 @@ import sys
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 from test_diagnosis_fixes import database  # noqa: E402
 
-BETTER = [('kulturzeit', 'Kulturzeit'), ('KIKA LIVE', 'KiKA LIVE'), ('scobel', 'Scobel'), ('maischberger', 'Maischberger')]
+BETTER = [('kulturzeit', 'Kulturzeit'), ('KIKA LIVE', 'KiKA LIVE'), ('scobel', 'Scobel'), ('maischberger', 'Maischberger'),
+          ('quer', 'Quer'), ('wochenspiegel', 'Wochenspiegel'), ('swr aktuell', 'SWR Aktuell')]
 WORSE = [('MDR Sachsenspiegel', 'MDR SACHSENSPIEGEL'), ('ZDFinfo Doku', 'ZDFinfo doku'), ('phoenix runde', 'PHOENIX RUNDE'),
          ('Report Mainz', 'REPORT MAINZ'), ('WimS', 'Wims'), ('unter den linden', 'UNTER DEN LINDEN'), ('Presseclub', 'PRESSECLUB'),
          ('gesundheitheute', 'GESUNDHEITHEUTE'), ('ECO Talk', 'Eco Talk'), ('SingAlarm', 'Singalarm'), ('Respekt', 'RESPEKT'),
          ('Schweizweit', 'SCHWEIZWEIT'), ('BesserEsser', 'Besseresser'), ('UNBUBBLE', 'Unbubble'), ('Ich bin ich', 'ICH bin ICH'),
          ('Heimatjournal', 'HEIMATJOURNAL'), ('Erlebnis Hessen', 'erlebnis hessen'), ('Puls', 'PULS'), ('Makro', 'makro')]
 NEUTRAL = [('Nano', 'nano'), ('PUR+', 'pur+'), ('Alles Wissen', 'alles wissen'), ('Auslandsjournal', 'auslandsjournal'),
-           ('Extra 3', 'extra 3'), ('Live nach neun', 'Live nach Neun')]
+           ('Extra 3', 'extra 3'), ('Live nach neun', 'Live nach Neun'),
+           ('rbb aktuell', 'rbb AKTUELL')]                    # Mac-Prüfung S an 0.6.109
 
 
 class RuleTests(unittest.TestCase):
