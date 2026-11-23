@@ -90,8 +90,8 @@ class HealTests(unittest.TestCase):
         self.assertEqual(usedom['title'], 'Tatort Usedom')
         self.assertNotEqual(usedom['show_key'], 'tatort')
         with self.db() as c:
-            state = catalog.get_state(c, 'series_names_v06106')
-            self.assertEqual((state['spelled'], state['moved']), (25, 2))
+            self.assertEqual(catalog.get_state(c, 'series_names_v06106')['moved'], 2)
+            self.assertEqual(catalog.get_state(c, 'series_spelling_v06109')['spelled'], 25)
             c.execute("UPDATE works SET title='KIKA LIVE' WHERE id=?", (self.ids['Folge 1'],))
         self.svc.heal_series_names()                          # once
         self.assertEqual(self.row(self.ids['Folge 1'])['title'], 'KIKA LIVE')

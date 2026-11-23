@@ -115,22 +115,29 @@ class Service:
             if gate is not None and not gate.is_set():
                 gate.set();diagnostics.event('catalog_heals_ready',seconds=round(time.monotonic()-getattr(self,'heals_started',time.monotonic()),1))
     def heal_series_names(self):
-        """0.6.106, once (before the workers): broadcaster spelling of series names, kids spin-offs under the main Reihe."""
+        """Once each (before the workers): kids spin-offs under the main Reihe (0.6.106), broadcaster spelling of series
+        names (0.6.109; the 0.6.106 spelling rule never ran on a released version and is replaced)."""
+        spelled=moved=restored=0;names={};spin={};pairs=[];back=[]
         for attempt in range(30):
             try:
                 with self.db() as c:
-                    if catalog.get_state(c,'series_names_v06106',False):return
-                    spelled,names=catalog.heal_series_spelling(c)
-                    moved,spin=catalog.heal_kids_spinoffs(c)
-                    catalog.set_state(c,'series_names_v06106',{'spelled':spelled,'moved':moved,'at':time.time()})
+                    if not catalog.get_state(c,'series_spelling_v06109',False):
+                        restored,back=catalog.restore_unstyled_series_titles(c)
+                        spelled,names,pairs=catalog.heal_series_spelling(c)
+                        catalog.set_state(c,'series_spelling_v06109',{'spelled':spelled,'pairs':pairs,'restored':restored,'restored_pairs':back,'at':time.time()})
+                    if not catalog.get_state(c,'series_names_v06106',False):
+                        moved,spin=catalog.heal_kids_spinoffs(c)
+                        catalog.set_state(c,'series_names_v06106',{'moved':moved,'at':time.time()})
                 break
             except sqlite3.OperationalError as e:
                 if not sqlite_busy(e):raise
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return
         else:return
-        if spelled or moved:
-            diagnostics.event('catalog_series_names_healed',spelled=spelled,moved=moved,
+        if restored:
+            diagnostics.event('catalog_series_titles_restored',works=restored,names=len(back),pairs=[list(p[1:]) for p in back[:30]])
+        if spelled or moved or restored:
+            diagnostics.event('catalog_series_names_healed',spelled=spelled,moved=moved,names_changed=len(pairs),
                               names=dict(sorted(names.items(),key=lambda x:-x[1])[:20]),spin_offs=dict(list(spin.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
     def heal_sendung_suggestions(self):
