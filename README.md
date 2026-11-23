@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.115
+# MediathekAtlas · 0.6.116
+
+## Neu in 0.6.116: Märchen zurück in der Kinderecke, ganze Sendungen werden erkannt, Vorschläge schneller
+- Märchen- und Kinderbuchverfilmungen mit belegter Altersfreigabe (z. B. Aschenputtel, Der kleine Lord, Heidi und Peter) stehen wieder in der Kinderecke; die Liste ist direkt nach dem Start vollständig.
+- Ganze Sendungen, die nur wegen Wörtern wie „Pressekonferenz“ als Clip galten (z. B. eine nummerierte Serienfolge), werden jetzt normal erkannt. Podcasts und Trailer bleiben Clips.
+- Kanal-Vorschläge werden schneller aufgelöst.
 
 ## Neu in 0.6.115: Kinderecke – Familienfilme nur mit eigenem Kindersignal
 - Ein Familienfilm mit Altersfreigabe kommt nur noch automatisch in die Kinderecke, wenn er erkennbar für Kinder ist (Zeichentrick, Märchen, bekannte Kinderbuch-Vorlage oder Kinderreihe). Alle anderen warten im Elternbereich auf deine Freigabe.

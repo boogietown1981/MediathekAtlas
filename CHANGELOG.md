@@ -1,4 +1,15 @@
-## Vorbereitung 0.6.116 – Kinderecke: Märchen und Kinderbücher zurück, Liste nach dem Start vollständig; auf 0.6.115
+## 0.6.116 – Sammelstand: Erkennung ganze Sendungen, YouTube-Vorschläge schneller, Kinderecke Märchen/Startphase; auf 0.6.115
+
+### Erkennung (Mac-Prüfung 0.6.114: 128 von 900 „Extra zu …“ ≥ 25 min, meist ganze Sendungen)
+- `catalog.full_programme`: ≥ 25 min oder nummeriert „(n/m)“ ab 10 min ist eine ganze Sendung – nie Extra oder Clip, sondern Art unknown pending (Erkennung). Nummerierte vor jeder Sendungsregel („Brombeerland (9/14) – Die Pressekonferenz“, „Wetter extrem (1/3)“). Nie Trailer, Podcast/Audio/Hörspiel („Podcast mit Nachklang (4316)“ bleibt Clip, nie Folge von „Rote Rosen“); Pressekonferenz nur nummeriert.
+- Heilung `full_programmes_v06116` vor den Arbeitern: solche Werke aus „Extra zu …“/clip werden wieder geöffnet; Ereignis `catalog_full_programmes_reopened`.
+- E3 (0.6.114) bewertet: Sportpanorama, NZZ Standpunkte, Euromaxx kennt IMDb mit Folgen – sie bleiben in der Folgensuche (gewollt).
+- Tests: `tests/test_v06116.py` (2).
+
+### YouTube-Kanalvorschläge schneller (86972317)
+- Prüfwerte seconds_resolve, seconds_sources, api_calls, api_seconds; Tests in `tests/test_v0690_kanal_vorschlaege.py`.
+
+### Kinderecke: Märchen und Kinderbücher zurück, Liste nach dem Start vollständig
 - Grundlage: Prüfvermerk 0.6.115 (23.11.2026): Märchen-/Kinderfilme ohne erkanntes Kindersignal auf der Warteliste (Aschenputtel, Der Hirsch mit dem goldenen Geweih, Die Seekönigin, Vier zauberhafte Schwestern, Heidi und Peter, Huck Finn, Gevatter Tod, Der kleine Lord, Grüße vom Mars, Die Baumhauskönige); nach dem Start fehlten laut `kids_list_changed` 2,5 min lang neun Kinderserien (Odo, Nö-Nö Schnabeltier, Ormhildur, KiKANiNCHEN, Nitso, Oh là là in Nizza, Ohne Eltern in den Schnee, Palmen Party Portugal, SPEEED!).
 - Altersweg: ein Märchen-/Kinderbuchtitel (`categories.KIDS_CLASSICS`, erweitert um die Titel oben und weitere Grimm-/Hauff-/Lindgren-/Kinderbuch-Klassiker) oder ein Märchen-Signal ersetzt den Familien-Hinweis – Märchenfilme führen oft nur Fantasy. Belegte Freigabe bis zur Grenze bleibt Pflicht; Horror/Action usw. schließen weiter aus. „Gevatter Tod“ bewusst nicht in der Liste (Warteliste, Eltern entscheiden). `explain` nennt solche Filme Weg „alter“.
 - Startphase: Ursache war das Blättern im gemeinsamen Index – wurde er zwischen zwei Seiten neu aufgebaut (Namensheilung/Ableger der Erkennung kurz nach dem Start), verrutschte die Seitenzählung und ein Block Titel fiel bis zum nächsten Neuaufbau heraus. `unified_index.page` liefert jetzt die Kennung des Index-Stands (`index`, Zähler je Aufbau); die Kinderecke liest eine Art neu, wenn sich der Stand beim Blättern ändert (bis 3 Versuche, sonst gilt die Liste als vorläufig und wird kurz zwischengespeichert). „Dein Song 2023/2024/2025“ als eigene Kacheln stammen aus der Ableger-Regel der Erkennung, nicht aus der Kinderecke.
