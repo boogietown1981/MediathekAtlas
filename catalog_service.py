@@ -64,6 +64,7 @@ class Service:
         # checked 10 works as „Planet Schule“ afterwards. Recognition and episode workers wait for the quick once-heals
         # (refile_loop.early_heals), at most HEAL_WAIT seconds. Outside start() (tests, tools) the gate stays open.
         self.heals_done=threading.Event();self.heals_started=time.monotonic()
+        self.first_format_pass=threading.Event()   # 0.6.124: set after the first Jahrgänge/Schreibweisen pass
         for fn in (self.sync_loop,self.refile_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
         # Eight long-lived workers are cheap while idle; actual concurrency is configurable.
@@ -74,6 +75,19 @@ class Service:
         for index in range(MAX_EPISODE_WORKERS):
             fn=lambda index=index:self.episode_loop(index)
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name='episode_worker_%d'%(index+1)).start()
+    def startup_settled(self,timeout=900.0,stop=None):
+        """0.6.124 (Diagnose Air 0.6.120, N-H: Kinderecke vorab nach 8,7 s gebaut, von Jahrgängen/Schreibweisen 30 s
+        später verworfen, erster Aufruf 19,4 s): waits until the once-heals and the first format pass are done
+        (at most timeout seconds in all). True if settled, False on timeout or stop."""
+        deadline=time.monotonic()+timeout;stop=stop or self.stop
+        for name in ('heals_done','first_format_pass'):
+            while True:   # start() creates the gates after the index build
+                gate=getattr(self,name,None)
+                if gate is not None and gate.is_set():break
+                if stop.is_set() or time.monotonic()>deadline:return False
+                if gate is None:stop.wait(1)
+                else:gate.wait(1)
+        return True
     def wait_for_heals(self):
         """0.6.86: True while a worker must still wait for the once-heals (checked every 2 s)."""
         gate=getattr(self,'heals_done',None)
@@ -252,7 +266,9 @@ class Service:
         next_try, so each film turn of the worker takes them before the ~5,000 other new works."""
         with self.db() as c:
             # Diagnose Air 23.11.2026: once more with the title year in matching (catalog.match_meta)
-            if catalog.get_state(c,'film_rules_suffix_year',False):return
+            # 0.6.124 (Diagnose Air 0.6.120): once more with title parts (metadata.film_part_candidates) and the new
+            # cache key – the 0.6.119/0.6.120 pass got the old search results from the 24-h cache.
+            if catalog.get_state(c,'film_rules_parts_v06124',False):return
             ids=catalog.film_suffix_works(c)
             c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
             undone=catalog.undo_short_year_close(c)
@@ -269,12 +285,12 @@ class Service:
                 if self.stop.wait(2):return
         if self.stop.is_set():return
         diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched,
-                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.108')
+                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.124')
         if matched or undone:catalog.invalidate_listings()
         state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
         with self.db() as c:
             catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
-            catalog.set_state(c,'film_rules_suffix_year',state)
+            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1451,7 +1467,7 @@ class Service:
         self.metadata_state(phase='checking',title=m['title'],work_id=wid,providers=providers)
         started=time.monotonic()
         try:
-            ck=catalog.digest(json.dumps(['v0531',config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
+            ck=catalog.digest(json.dumps(['v0531',metadata.SEARCH_REV,metadata.query_title(m['title']),config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
             with self.db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(ck,time.time()-86400)).fetchone()
             if cached and not priority:result=json.loads(cached[0])
             else:
@@ -1550,6 +1566,8 @@ class Service:
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
             self.merge_year_editions()
             self.unify_show_spelling()
+            gate=getattr(self,'first_format_pass',None)
+            if gate is not None:gate.set()
             waiting=self.refile_suggested_sendungen()=='waiting'
             self.unknown_sweep()
             # 0.6.114: an undecided B2 refiling is tried again after 2 minutes, not after an hour

@@ -506,6 +506,23 @@ QUERY_NOISE=(FILM_SUFFIX,)+QUERY_NOISE
 # cut inside the word („(Originalvers“, „(mit Untert“). Search title only – work identities are unchanged.
 TRUNCATED_NOTE=re.compile(r'(?i)\s*[([]\s*(?:mit\s+)?(?:orig\w*|untert\w*|hörf\w*|hörfilm|audio\w*|gebärd\w*|omu\b|ov\b|vost\w*|dgs\b|ad\b)[^)\]]*$')
 QUERY_NOISE=QUERY_NOISE+(TRUNCATED_NOTE,)
+# 0.6.124 (Diagnose Air 0.6.120, N-D): the result cache (catalog_service, 24 h) was keyed by the stored title only, so
+# requeued works got the answer of the old search („from_cache“) after a change of the search. The revision and the
+# search title are part of the key now; raise SEARCH_REV whenever the queries change.
+SEARCH_REV='v06124'
+def film_title_parts(title):
+    """0.6.124 (Diagnose Air 0.6.120, 3sat-Filme „prüfen“ ohne IMDb-Treffer): 3sat joins series/author and film
+    title or original and German title – „The Pledge - Das Versprechen“, „Jussi Adler-Olsen: Erlösung“. The local
+    IMDb archive only knows exact names, so each part (and the rest after each separator) is a further query."""
+    text=str(title or '').strip()
+    pieces=[x.strip() for x in re.split(r'\s+[-–]\s+|:\s+',text) if x.strip()]
+    if len(pieces)<2:return []
+    out=[]
+    for i,x in enumerate(pieces):
+        rest=text[text.find(x):].strip() if i else ''
+        for v in (x,rest):
+            if v and v!=text and len(v)>=4 and not generic_topic(v) and v not in out:out.append(v)
+    return out[:6]
 def film_suffix_year(title):
     """Year of a 3sat film title „… - Spielfilm, USA 1993“, else None."""
     m=FILM_SUFFIX.search(str(title or ''))
@@ -535,6 +552,18 @@ def provider_complete(start,**fields):
     seconds=round(time.monotonic()-start,2)
     if seconds>=PROVIDER_SLOW_SECONDS:diagnostics.event('provider_complete',seconds=seconds,**fields)
 
+def film_part_candidates(row,meta,year):
+    """0.6.124: IMDb films named by one part of a 3sat title. Same year as the title suffix (or one apart); a part
+    is no exact title, so the hit is only verified with an agreeing running time, else it stays a suggestion."""
+    import imdb_archive
+    found={}
+    for part in film_title_parts(meta['title']):
+        for h in imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'movie','title':part}):
+            if not h.get('year') or abs(int(h['year'])-int(year))>1:continue
+            h=dict(h,reason=f'Titelteil „{part}“ im lokalen IMDb-Archiv, Jahr aus dem Titelzusatz',title_part=part)
+            if not (h.get('runtime_agrees') and int(h['year'])==int(year)):h.update(similarity=.9,confidence='possible')
+            found.setdefault(h['reference_id'],h)
+    return list(found.values())
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
     suffix_year=film_suffix_year(meta['title']) or film_suffix_year(row.get('title'))
@@ -590,6 +619,8 @@ def candidates(row,meta,settings):
     if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
         try:
             local=imdb_archive.ACTIVE.candidates(row,meta)
+            if suffix_year and kind in ('movie','unknown') and not any(x.get('kind')=='movie' for x in local):
+                local.extend(film_part_candidates(row,meta,suffix_year))
             if meta.get('kind') not in ('movie','series') and row.get('topic') and row['topic']!=meta.get('title'):
                 local.extend(imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'series','title':row['topic']}))
             out.extend(local)

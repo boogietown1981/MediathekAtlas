@@ -2684,9 +2684,13 @@ if __name__=='__main__':
                     with db() as c:catalog.listing(c,kind=kind,downloaded=downloaded)
                     diagnostics.event('catalog_listing_prewarmed',kind=kind,downloaded=downloaded,seconds=round(time.monotonic()-started,2))
                 except Exception as e:diagnostics.error('catalog_listing_prewarm_failed',e)
+            # 0.6.124 (Diagnose Air 0.6.120, N-H): the Kinderecke after the start heals and the first Jahrgänge/
+            # Schreibweisen pass, which would discard an earlier build (first call 19,4 s).
+            settled=SERVICE.startup_settled(stop=STOP)
+            if STOP.is_set():return
             try:
                 started=time.monotonic();_kids_shelf()
-                diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2))
+                diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2),after_heals=settled)
             except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke

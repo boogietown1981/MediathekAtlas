@@ -1,3 +1,12 @@
+## 0.6.124 – Diagnose Air 0.6.120 (N-D, N-H): 3sat-Filme über Titelteile, Suchspeicher mit Revision, Kinderecke nach den Heilungen; auf 0.6.123
+
+- Grundlage: Diagnose Air 23.11.2026 19:44 Uhr (berichte/diagnose-2026-11-23-abend-06120-air.md): die 0.6.120-Filmheilung reihte 225 3sat-Filme neu ein, alle Stichproben endeten „prüfen“ mit `from_cache: true` und meist 0 IMDb-Treffern.
+- Ursache 1: `metadata_cache` (24 h) war nur mit dem gespeicherten Titel verschlüsselt; eine geänderte Suche (z. B. 0.6.121 `TRUNCATED_NOTE`) kam bei neu eingereihten Werken nicht an. Neu im Schlüssel: `metadata.SEARCH_REV` ('v06124', bei jeder Änderung der Abfragen erhöhen) und der Suchtitel `metadata.query_title`.
+- Ursache 2: Das lokale IMDb-Archiv sucht nur exakte Namen; 3sat verbindet Original-/deutschen Titel oder Reihe/Autor und Titel. Neu `metadata.film_title_parts`/`film_part_candidates`: ohne exakten Filmtreffer und mit Jahr aus dem Titelzusatz wird jeder Titelteil gesucht; nur Filme mit Jahr ±1; ein Treffer ist nur mit gleichem Jahr und passender Laufzeit automatisch, sonst Vorschlag (Ähnlichkeit 0,9). Zwei Teile mit verschiedenen Filmen entscheiden nichts.
+- Filmheilung läuft dafür noch einmal (Merker `film_rules_parts_v06124`, Ereignis `catalog_film_rules_applied` mit version 0.6.124).
+- N-H: Kinderecke-Vorabaufbau wartet auf die Start-Heilungen und den ersten Formatdurchlauf (Jahrgänge/Schreibweisen verwarfen die Liste, erster Aufruf 19,4 s), höchstens 15 min (`Service.startup_settled`, Ereignis `kids_shelf_prewarmed` mit `after_heals`).
+- Tests: `tests/test_v06124.py` (8).
+
 ## 0.6.123 – Erkennung: Sendungsausgaben/Teile/Kurzbeiträge nicht als Film; Einstellungen warten auf belegte Datenbank; auf 0.6.122
 
 - Grundlage: Björn 23.11.2026 (Bildschirmfotos ARD Mediathek „Filme > Unbekannt“): „10 vor 10 vom <Datum>“, nummerierte Teile und kurze Clips standen als Film auf „prüfen“. Ursache: `catalog.seed` setzte die Art Film über Filmwörter in Beschreibung/Kategorie, ohne Titelform und Laufzeit zu beachten.

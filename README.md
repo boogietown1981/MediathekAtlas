@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.123
+# MediathekAtlas · 0.6.124
+
+## Neu in 0.6.124: 3sat-Filme besser erkannt, Kinderecke schneller nach dem Start
+- 3sat-Filme, deren Titel zwei Namen verbindet („The Pledge - Das Versprechen“, „Jussi Adler-Olsen: Erlösung“), werden auch über den einzelnen Titelteil im IMDb-Archiv gefunden – nur mit passendem Jahr; automatisch verknüpft nur, wenn auch die Laufzeit passt.
+- Nach einer Änderung der Suche werden erneut geprüfte Titel wirklich neu gesucht statt mit dem gespeicherten alten Ergebnis beantwortet.
+- Die Kinderecke wird nach dem Start erst vorbereitet, wenn die einmaligen Aufräumarbeiten fertig sind – der erste Aufruf muss sie dann nicht neu bauen.
 
 ## Neu in 0.6.123: keine Sendungsausgaben mehr unter „Filme“
 - Datierte Sendungsausgaben („10 vor 10 vom 21.11.2026“), nummerierte Teile („Teil 3“, „Folge 12“) und Videos unter 20 Minuten werden nicht mehr als Film eingeordnet, nur weil die Beschreibung „Film“ enthält; Kurz-, Animations- und Trickfilme bleiben Filme. Bereits so eingeordnete offene Werke werden einmal neu eingeordnet.
