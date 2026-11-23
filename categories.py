@@ -201,6 +201,10 @@ KIDS_CLASSICS = (
     'raupe nimmersatt', 'fünf freunde', 'hanni und nanni', 'die vorstadtkrokodile', 'rico, oskar', 'ostwind',
     'black beauty', 'lassie', 'schloss hinterm regenbogen', 'die schwarze mühle', 'kleiner muck',
 )
+# 0.6.117 (Mac-Prüfung 0.6.116): Märchen mit Tod/Grauen als Hauptmotiv nehmen nie automatisch den Altersweg, auch nicht
+# über Märchen-Thema oder -Titel – Warteliste, die Eltern entscheiden
+KIDS_TALE_EXCLUDED = ('gevatter tod', 'das kalte herz', 'das totenhemdchen', 'das mädchen ohne hände', 'machandelboom',
+                      'blaubart')
 KIDS_MAX_AGE = 12       # 0.6.99: Standard FSK 12 (Björn), einstellbar im Elternbereich (kids_rules)
 FAMILY_MAX_AGE = 12     # FSK 0/6/12
 

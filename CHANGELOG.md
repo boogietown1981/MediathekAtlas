@@ -1,3 +1,9 @@
+## Vorbereitung 0.6.117 – Kinderecke K7: dunkle Märchen auf die Warteliste, Märchen mit Romantik zulassen; auf 0.6.116
+- Grundlage: Mac-Prüfung 0.6.116 (23.11.2026), K7 nicht erfüllt: „Gevatter Tod“ (MDR 1980, nur Fantasy, FSK 6) war über den Altersweg sichtbar; „Aschenputtel“ aus der Mediathek (Familie/Fantasy/Romantik, FSK 0) stand auf der Warteliste (Ausschluss „Romantik“). Sonst bestanden (K8, K14 stabil, FUND 0).
+- Märchen dürfen auf dem Altersweg „Romantik“ tragen, wenn ein Märchen-/Kinderbuch-Signal (Titel, Rohgenre, Thema) vorliegt; Action, Science-Fiction und Mystery schließen weiter aus, Romantik ohne Märchen-Signal ebenfalls.
+- `categories.KIDS_TALE_EXCLUDED` (Gevatter Tod, Das kalte Herz, Das Totenhemdchen, Das Mädchen ohne Hände, Machandelboom, Blaubart): nie über den Altersweg oder eine Märchenreihe, nur vom Kindersender oder per Elternfreigabe.
+- Tests: `tests/test_v06117_kinder_k7.py` (2, auf 0.6.116 1 rot).
+
 ## 0.6.116 – Sammelstand: Erkennung ganze Sendungen, YouTube-Vorschläge schneller, Kinderecke Märchen/Startphase; auf 0.6.115
 
 ### Erkennung (Mac-Prüfung 0.6.114: 128 von 900 „Extra zu …“ ≥ 25 min, meist ganze Sendungen)

@@ -197,7 +197,6 @@ def kids_clause(c, signal, signal_args, has):
     ensure(c)
     limit = max_age(c)
     bad, bad_args = has(categories.NOT_FOR_KIDS)
-    soft, soft_args = has(categories.AGE_PATH_EXCLUDED)
     hint, hint_args = has(categories.KIDS_AGE_HINTS)
     kids_genre, kids_args = has(['Kinder'])
     fam, fam_args = has(['Familie'])
@@ -222,15 +221,25 @@ def kids_clause(c, signal, signal_args, has):
     # Warteliste): ein Märchen-/Kinderbuchtitel ersetzt den Familien-Hinweis (Märchenfilme führen oft nur Fantasy);
     # die belegte Freigabe bis zur Grenze bleibt Pflicht (Björn: „Fantasyfilme … nur mit IMDb-Freigabe“)
     tale = '(%s OR %s)' % (FAIRY_TALE, classics)
+    # 0.6.117 (Mac-Prüfung 0.6.116, K7): „Aschenputtel“ (Familie/Fantasy/Romantik, FSK 0) blieb an „Romantik“ hängen –
+    # bei Märchen gehört Romantik dazu; die übrigen Ausschlüsse (Action, Science-Fiction, Mystery) gelten weiter.
+    # „Gevatter Tod“ (MDR 1980, Märchen-Thema, FSK 6) kam über das Märchen-Signal – Titel aus
+    # categories.KIDS_TALE_EXCLUDED nehmen weder den Altersweg noch den Weg über eine Märchenreihe (Warteliste, Eltern
+    # entscheiden); vom Kindersender bleiben sie zugelassen.
+    hard, hard_args = has([n for n in categories.AGE_PATH_EXCLUDED if n != 'Romantik'])
+    rom, rom_args = has(['Romantik'] if 'Romantik' in categories.AGE_PATH_EXCLUDED else [])
+    dark = '(%s)' % ' OR '.join(['lower(w.title) LIKE ?'] * len(categories.KIDS_TALE_EXCLUDED))
+    dark_args = ['%%%s%%' % t for t in categories.KIDS_TALE_EXCLUDED]
     sql = ('NOT {live} AND NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
-           '({listed} AND {shows}) OR '
+           '({listed} AND {shows} AND NOT {dark}) OR '
            '({ident} AND {ref} AND ({kids} OR ({fam} AND {ani}))) OR '
-           '({ident} AND {age_ok} AND ({hint} OR {tale}) AND NOT {soft} AND {own}))))').format(
+           '({ident} AND {age_ok} AND ({hint} OR {tale}) AND NOT {hard} AND (NOT {rom} OR {tale}) AND {own} AND NOT {dark}))))').format(
         live=live, block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
-        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, tale=tale, soft=soft, own=own)
-    args = (list(live_args) + list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
+        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, tale=tale, hard=hard, rom=rom, own=own, dark=dark)
+    args = (list(live_args) + list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args) + dark_args
             + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
-            + [limit] + list(hint_args) + classics_args + list(soft_args) + list(ani_args) + classics_args + list(shows_args))
+            + [limit] + list(hint_args) + classics_args + list(hard_args) + list(rom_args) + classics_args
+            + list(ani_args) + classics_args + list(shows_args) + dark_args)
     return sql, args
 
 
