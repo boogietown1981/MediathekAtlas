@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.116
+# MediathekAtlas · 0.6.117
+
+## Neu in 0.6.117: Erkennung sauberer, Kataloge täglich aktuell, Kinderecke genauer
+- Sportarten wie „Schwimmen“ gelten nie mehr als Serie; eine nur bei Wikidata bekannte Serie wird nicht mehr auf alle Beiträge eines Themas übertragen. Bereits falsch zugeordnete Beiträge werden neu erkannt.
+- Jahrgänge einer Sendung („Dein Song 2023“, „Dein Song 2024“) erscheinen als eine Reihe; das Jahr steht im Folgentitel.
+- filmfriend, DMAX/TLC, Red Bull TV und dailyme aktualisieren sich jetzt täglich (in den Einstellungen der Plattform abschaltbar).
+- Bilder: Einträge, die TVDB nicht kennt, werden erst nach einer Woche wieder abgefragt statt stündlich.
+- Kinderecke: dunkle Märchen wie „Gevatter Tod“ warten auf Freigabe, „Aschenputtel“ ist sichtbar.
 
 ## Neu in 0.6.116: Märchen zurück in der Kinderecke, ganze Sendungen werden erkannt, Vorschläge schneller
 - Märchen- und Kinderbuchverfilmungen mit belegter Altersfreigabe (z. B. Aschenputtel, Der kleine Lord, Heidi und Peter) stehen wieder in der Kinderecke; die Liste ist direkt nach dem Start vollständig.

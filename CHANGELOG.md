@@ -1,4 +1,15 @@
-## Vorbereitung 0.6.117 – Kinderecke K7: dunkle Märchen auf die Warteliste, Märchen mit Romantik zulassen; auf 0.6.116
+## 0.6.117 – Sammelstand: Erkennung (Air-Langzeitdiagnose, Mac-Urteil 0.6.116, Jahrgänge), Kinderecke K7; auf 0.6.116
+
+### Erkennung
+- Grundlage: Langzeitdiagnose MacBook Air (0.6.85, 34,5 h, berichte/diagnose-2026-11-23-morgen-0685-air.md) N-A/N-B/N-C und Mac-Prüfung 0.6.116.
+- N-A: `metadata.SPORT_WORDS` (Schwimmen, Biathlon, Ski alpin, Formel 1 …) in `metadata.GENERIC` und `catalog.TEMPLATE_GENERIC`. `catalog.wikidata_only`: eine Serienidentität nur aus Wikidata (ohne IMDb-ID) wird nie als Vorlage gelernt, nie über `series_template_candidate` und nie an die Werke eines Themas weitergegeben. Heilung `generic_templates_v06117`: Themenwort-Identitäten (jetzt mit Sportarten) und Wikidata-only-Identitäten mit Themennamen an ≥ 20 Werken werden neu erkannt; Wikidata-only-Vorlagen gelöscht.
+- N-B: TVDB/TMDB „HTTP 404“ im Bilderabgleich ist eine Antwort: Ergebnis 7 Tage im Zwischenspeicher, für alle Werke mit gleichem Schlüssel und alle Folgen der Reihe; nächste Prüfung nach 7 Tagen (vorher stündlich: „The True Story of…“ 1.002× in 22 h). Echte Fehler weiter nach 1 h.
+- N-C: `platform_registry.DAILY_V06117` – filmfriend, DMAX/TLC, Red Bull TV, dailyme einmalig auf täglich (Merker `auto_daily_v06117` je Plattform; ein späteres „aus“ bleibt). filmfriend holt Details (mit IMDb-Kennung) nur im Katalog-Lauf.
+- Jahrgänge: `catalog.merge_year_editions` in jedem Formatdurchlauf – Sendungsablagen „<Reihe> <Jahr>“ aus mindestens zwei Jahren (2000..nächstes Jahr, je ≥ 2 Werke, gleicher Sender) werden eine Reihe; nie bei Ereignissen (Olympia, EM/WM, Wahlen …), Filmen oder Datenbank-Identitäten.
+- Mac-Prüfung 0.6.116: Download-Worker übersteht „database is locked“ während der Start-Heilungen (Anspruch wird verschoben, Fortschritt übersprungen, Endzustand mit Wiederholung); „Trailer Park“ (55 min) ist keine Vorschau (Trailer nur < 25 min); B2-Ablage behält die Senderschreibweise („KiKANiNCHEN“ statt „Kikaninchen“), Heilung `full_programmes_v06117`. Der YouTube-Auftrag „Offline-Speichern ausgeschaltet“ stammt aus Björns Warteschlange in der Kopie (YouTube-Speichern dort aus) – Schutz wie vorgesehen.
+- Tests: `tests/test_v06117_air.py` (8), `tests/test_v06117_jahrgaenge.py` (4), `tests/test_v0688.py` erweitert.
+
+### Kinderecke K7: dunkle Märchen auf die Warteliste, Märchen mit Romantik zulassen
 - Grundlage: Mac-Prüfung 0.6.116 (23.11.2026), K7 nicht erfüllt: „Gevatter Tod“ (MDR 1980, nur Fantasy, FSK 6) war über den Altersweg sichtbar; „Aschenputtel“ aus der Mediathek (Familie/Fantasy/Romantik, FSK 0) stand auf der Warteliste (Ausschluss „Romantik“). Sonst bestanden (K8, K14 stabil, FUND 0).
 - Märchen dürfen auf dem Altersweg „Romantik“ tragen, wenn ein Märchen-/Kinderbuch-Signal (Titel, Rohgenre, Thema) vorliegt; Action, Science-Fiction und Mystery schließen weiter aus, Romantik ohne Märchen-Signal ebenfalls.
 - `categories.KIDS_TALE_EXCLUDED` (Gevatter Tod, Das kalte Herz, Das Totenhemdchen, Das Mädchen ohne Hände, Machandelboom, Blaubart): nie über den Altersweg oder eine Märchenreihe, nur vom Kindersender oder per Elternfreigabe.
