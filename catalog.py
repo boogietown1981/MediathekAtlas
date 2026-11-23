@@ -233,6 +233,20 @@ def portal_reseed(c,limit=500,after=''):
                            (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount
     return changed,(rows[-1]['id'] if rows else None)
 
+SHORT_FILM=re.compile(r'(?i)\b(?:kurzfilm\w*|short|animationsfilm\w*|trickfilm\w*)\b')
+FILM_SHORTEST=1200
+def film_shaped(row,title,topic,desc):
+    """0.6.123 (Björn 23.11.2026, Bildschirmfoto „Filme > Unbekannt“): a film word in the broadcaster's text made
+    „10 vor 10 vom 02.06.2022“ (25 min), „18.00 Uhr (22.01.2019)“, „67. Nordische Filmtage starten in Lübeck“ (4 min)
+    and „11er Haus (4/5)“ films. A dated edition, a numbered part or a video under 20 minutes (unless it is called a
+    short film) is no film; such a work stays of unknown kind and the Sendung rules file it."""
+    import metadata
+    if DATED.search(title) or DATED_DAY.search(title) or EDITION_NUMBERING.search(title) or metadata.PART.search(title):return False
+    try:duration=int(row.get('duration') or 0)
+    except (TypeError,ValueError):duration=0
+    if 0<duration<FILM_SHORTEST and not SHORT_FILM.search(' '.join((title,topic,desc[:200]))):return False
+    return True
+
 def seed(row):
     title=cleaned(row.get('title'));topic=cleaned(row.get('topic'));desc=core.clean(row.get('description',''));m=core.identify({**row,'title':title})
     ep=EP.search(title);reihe=portal_series(topic,title)
@@ -267,6 +281,7 @@ def seed(row):
             else:m.update(kind='series',title=topic or title,episode_title=title)
         elif re.search(r'(?i)\b(?:nachrichten|tagesschau|wetter|sportstudio|trailer|teaser|podcast|pressekonferenz|tagesthemen|gottesdienst|magazin)\b',topic+' '+title):m['kind']='other'
     if re.search(r'(?i)^\s*(?:trailer|teaser|vorschau)\b',title):m.update(kind='other',title=title,year=None,season=None,episode=None)
+    if m['kind']=='movie' and not film_shaped(row,title,topic,desc):m.update(kind='unknown',title=title,year=None)
     if m['kind']=='movie' and not m.get('year'):
         y=re.search(r'\((19\d{2}|20\d{2})\)$',title)
         if y:m.update(year=int(y.group(1)),title=title[:y.start()].strip())
@@ -1649,6 +1664,23 @@ def requeue_from_source(c,row,source,reason):
     return c.execute("""UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0
         WHERE id=? AND state IN ('pending','retry','review','format')""",
                      (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
+
+def reseed_non_films(c,after='',limit=500):
+    """0.6.123, once: open works taken for films although they are dated editions, numbered parts or short videos
+    (film_shaped) get their sender seed again – the Sendung rules then file them. Returns (changed, samples, last id)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND kind='movie' AND state IN ('pending','retry','review') ORDER BY id LIMIT ?""",
+                   (after,limit)).fetchall()
+    changed=0;samples=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested'):continue
+        source=best_source(c,row['id'])
+        if not source or seed(source)['kind']=='movie':continue
+        if requeue_from_source(c,row,source,'Kein Film (Ausgabe, nummerierter Teil oder Kurzbeitrag); neu einordnen (0.6.123)'):
+            changed+=1
+            if len(samples)<20:samples.append(str(source.get('title') or '')[:80])
+    return changed,samples,(rows[-1]['id'] if rows else None)
 
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""

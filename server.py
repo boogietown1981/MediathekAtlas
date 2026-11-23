@@ -1485,8 +1485,20 @@ def _storage_for_export():
     try:
         o=STORAGE.overview();return {'locations':o['locations'],'move':o['move'],'pending':o['pending'],'last':o['last'],'previous':o['previous']}
     except Exception as e:return {'error':core.safe_error(e)}
+def write_waiting(fn,tries=4,wait=1.0):
+    """0.6.123 (Mac-Prüfung 0.6.120: POST /api/series-autoload settings → „database is locked“ während der
+    Start-Heilungen): a user write waits for a busy database (each try up to the 30 s connection timeout)
+    and is repeated instead of showing the error. The function runs in its own transaction each try."""
+    for attempt in range(tries):
+        try:
+            with db() as c:return fn(c)
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e) or attempt==tries-1:raise
+            SERVICE.sqlite_busy_count+=1
+            diagnostics.event('settings_write_busy',attempt=attempt+1)
+            STOP.wait(wait)
 def _save_settings(s):
-    with db() as c:store_settings(c,s)
+    write_waiting(lambda c:store_settings(c,s))
 STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error,imdb=IMDB)
 
 @ROUTES.get('/api/storage-locations')
@@ -1762,7 +1774,7 @@ def post_youtube_key(self,path,d):
     elif key:
         if not __import__('re').fullmatch(r'[A-Za-z0-9_\-]{20,80}',key):raise ValueError('Das sieht nicht wie ein Google-API-Schlüssel aus')
         s['youtube']=key
-    with db() as c:store_settings(c,s)
+    _save_settings(s)
     started=bool(s.get('youtube')) and youtube.start_sync(ROOT)
     return self.send({'status':youtube.state(ROOT),'started':started})
 
@@ -2167,7 +2179,7 @@ def post_series_autoload(self,path,d):
     if action=='settings':
         s=json.loads(_settings_payload())
         series_autoload.clean_settings(d,s)
-        with db() as c:store_settings(c,s)
+        _save_settings(s)
         diagnostics.event('series_autoload_settings',**series_autoload.config(s))
         SERVICE.subscription_wake.set()
     else:
@@ -2273,10 +2285,11 @@ def post_settings(self,path,d):
         if folder:folder=str(meshjournal.check_folder(folder,create=d.get('mesh_init') is True))
         s['mesh_dir']=folder
     if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
-    with db() as c:
+    def write(c):
         store_settings(c,s)
         if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
             c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
+    write_waiting(write)
     if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     return self.send({'ok':True})
 
@@ -2333,7 +2346,7 @@ def post_mesh_direct(self,path,d):
         if name:s['mesh_name']=name
     elif action=='folder-off':s['mesh_dir']=''
     else:raise ValueError('Unbekannte Aktion')
-    with db() as c:store_settings(c,s)
+    _save_settings(s)
     diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
     threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}

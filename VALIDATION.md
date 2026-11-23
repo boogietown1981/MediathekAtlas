@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.123 – Keine Sendungsausgaben als Film, Einstellungen bei belegter Datenbank (23. November 2026)
+- Automatisch: tests/test_v06123.py (5), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.123).
+
 ## 0.6.122 – Sammelstand Erkennung 0.6.121 + Kinderecke-Bilder (23. November 2026)
 - Automatisch: tests/test_v06121.py, tests/test_v06121_kinder_bilder.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.122).
 

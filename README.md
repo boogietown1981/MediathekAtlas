@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.122
+# MediathekAtlas · 0.6.123
+
+## Neu in 0.6.123: keine Sendungsausgaben mehr unter „Filme“
+- Datierte Sendungsausgaben („10 vor 10 vom 21.11.2026“), nummerierte Teile („Teil 3“, „Folge 12“) und Videos unter 20 Minuten werden nicht mehr als Film eingeordnet, nur weil die Beschreibung „Film“ enthält; Kurz-, Animations- und Trickfilme bleiben Filme. Bereits so eingeordnete offene Werke werden einmal neu eingeordnet.
+- Einstellungen (z. B. Serien automatisch laden) speichern während der Start-Heilungen: bei belegter Datenbank wird gewartet und wiederholt statt „database is locked“ zu melden.
 
 ## Neu in 0.6.122: Bilder in der Kinderecke, abgeschnittene Titel, längere Diagnosen
 - Kinderecke: Reihen und Filme ohne eigenes Bild nehmen das Bild eines anderen Angebots, einer anderen Folge oder der erkannten Reihe statt nur des Anfangsbuchstabens; Dokus stehen nicht mehr unter „Zeichentrick“; die Kopfleiste ist deckend.

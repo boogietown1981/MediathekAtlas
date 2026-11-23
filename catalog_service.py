@@ -139,6 +139,25 @@ class Service:
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return None
         return None
+    def reseed_non_films(self):
+        """0.6.123, once (before the workers): catalog.reseed_non_films – „10 vor 10 vom …“ is no film."""
+        with self.db() as c:
+            if catalog.get_state(c,'film_seed_v06123',False):return None
+        after='';done=0;samples=[]
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,s,after=catalog.reseed_non_films(c,after)
+                done+=n;samples+=s[:20-len(samples)]
+                if after is None:break
+                if self.stop.wait(.05):return None
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.busy('film_seed')
+                if self.stop.wait(2):return None
+        if self.stop.is_set():return None
+        if done:diagnostics.event('catalog_non_films_reseeded',works=done,samples=samples);catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'film_seed_v06123',{'works':done,'at':time.time()})
+        return done
     def requeue_truncated_notes(self):
         """0.6.121, once: works with a cut version note in the title are searched again with the cleaned title."""
         try:
@@ -155,7 +174,7 @@ class Service:
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.requeue_truncated_notes();self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
+            self.requeue_truncated_notes();self.reseed_non_films();self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():

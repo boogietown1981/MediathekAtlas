@@ -1,3 +1,12 @@
+## 0.6.123 – Erkennung: Sendungsausgaben/Teile/Kurzbeiträge nicht als Film; Einstellungen warten auf belegte Datenbank; auf 0.6.122
+
+- Grundlage: Björn 23.11.2026 (Bildschirmfotos ARD Mediathek „Filme > Unbekannt“): „10 vor 10 vom <Datum>“, nummerierte Teile und kurze Clips standen als Film auf „prüfen“. Ursache: `catalog.seed` setzte die Art Film über Filmwörter in Beschreibung/Kategorie, ohne Titelform und Laufzeit zu beachten.
+- `catalog.film_shaped`: kein Film bei datierter Ausgabe (`DATED`, `DATED_DAY` ohne Jahr), Ausgabennummerierung (`EDITION_NUMBERING`), Teilangabe (`metadata.PART`) oder Laufzeit unter 20 min (außer Kurz-/Animations-/Trickfilm in Titel, Thema oder Beschreibung). Gilt beim Anlegen (`seed`).
+- Einmalige Heilung `catalog.reseed_non_films` (Merker `film_seed_v06123`, in den Start-Heilungen, belegt-fest, Ereignis `catalog_non_films_reseeded`): Film-Werke auf pending/retry/review, deren bestes Angebot heute kein Film mehr wäre, werden über `requeue_from_source` neu eingeordnet. Verknüpfte Filme (matched/identified) bleiben unberührt.
+- Mac-Prüfung 0.6.120 (Nachlade-Test): `POST /api/series-autoload` (settings) meldete während der Start-Heilungen einmal „database is locked“. Neu `server.write_waiting`: Einstellungen speichern (alle Wege über `store_settings`, auch `/api/settings` mit Neu-Einreihung) wartet und wiederholt bis zu 4× bei belegter Datenbank (Ereignis `settings_write_busy`).
+- Nicht in dieser Version (vorgemerkt): „#BR24 Zeitreise“/„#BR24Zeitreise“ als ein Schlüssel, „14: Diaries of the Great War“ als eine Reihe, doppelte Reihenschlüssel (Animanimals, „Anna, Paula, Pia …“), Genre-Nachtrag für verknüpfte Werke ohne Genre.
+- Tests: `tests/test_v06123.py` (5).
+
 ## 0.6.122 – Sammelstand: Erkennung 0.6.121 + Kinderecke-Bilder; auf main 0.6.120
 
 ### Erkennung (0.6.121, nicht ausgegeben – Langzeitdiagnose Air N-D/N-F)
