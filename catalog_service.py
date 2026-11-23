@@ -112,11 +112,28 @@ class Service:
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names()
+            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():
                 gate.set();diagnostics.event('catalog_heals_ready',seconds=round(time.monotonic()-getattr(self,'heals_started',time.monotonic()),1))
+    def reopen_full_programmes(self):
+        """0.6.116, once (before the workers): catalog.reopen_full_programmes – whole programmes out of „Extra zu …“/clip."""
+        for attempt in range(30):
+            try:
+                with self.db() as c:
+                    if catalog.get_state(c,'full_programmes_v06116',False):return None
+                    n,samples=catalog.reopen_full_programmes(c)
+                    catalog.set_state(c,'full_programmes_v06116',{'reopened':n,'at':time.time()})
+                break
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return None
+        else:return None
+        diagnostics.event('catalog_full_programmes_reopened',works=n,samples=samples)
+        if n:catalog.invalidate_listings()
+        return n
     def heal_series_names(self):
         """Once each (before the workers): kids spin-offs under the main Reihe (0.6.106), broadcaster spelling of series
         names (0.6.109; the 0.6.106 spelling rule never ran on a released version and is replaced)."""

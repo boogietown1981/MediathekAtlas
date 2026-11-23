@@ -1818,21 +1818,66 @@ def assign_formats(c,limit=500):
             m.update(state='format',reason='Ausgabe der Sendung „'+m['title']+'“ ('+m['provider']+'); wird nicht einzeln abgeglichen.')
             c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
             assigned+=1;continue
+        if row['kind']=='other' and NUMBERED_PART.search(cleaned(source.get('title'))) and open_full_programme(c,row,m,source):
+            # 0.6.116: a numbered whole programme („Wetter extrem (1/3)“) is an episode, before any Sendung rule
+            assigned+=1;continue
         if row['kind']=='other' and programme_extra(c,row,m,source):
             assigned+=1;continue
         if not format_contribution(m,source,counts[topic]):
-            if row['kind']=='other' and file_open_clip(c,row,m,source):assigned+=1
+            if row['kind']=='other' and (open_full_programme(c,row,m,source) or file_open_clip(c,row,m,source)):assigned+=1
             continue
         file_under_sendung(c,row,m,source,cleaned(source.get('topic')))
         assigned+=1
     if not dirty_mode:set_state(c,'format_cursor',cursor if rows else 'complete')
     return len(rows),assigned
 
+# 0.6.116 (Mac-Prüfung 0.6.114: 128 von 900 „Extra zu …“ waren 25 min oder länger, meist ganze Sendungen –
+# „Brombeerland (9/14) – Die Pressekonferenz“ 39 min, „Wetter extrem (1/3)“, Terra Xpress XXL, „27 – Das europäische
+# Magazin“): the import's clip words („Pressekonferenz“, „Podcast“, „Magazin“) do not make a whole programme a clip.
+FULL_PROGRAMME_SECONDS=25*60
+NUMBERED_PART=re.compile(r'\(\s*\d{1,3}\s*/\s*\d{1,3}\s*\)')
+AUDIO_CLIP=re.compile(r'(?i)podcast|\baudio\b|hörspiel')
+PRESS_CLIP=re.compile(r'(?i)pressekonferenz|pressestatement|\bstatement\b')
+def full_programme(source):
+    """True for an offer that is a whole programme: ≥ 25 min, or numbered „(n/m)“ and ≥ 10 min. Never a trailer or a
+    podcast („Podcast mit Nachklang (4316)“ of „Rote Rosen“ must not become a Folge); a press conference only numbered."""
+    title=cleaned(source.get('title'))
+    if TRAILER.search(title) or AUDIO_CLIP.search(title):return False
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):duration=0
+    numbered=bool(NUMBERED_PART.search(title))
+    if PRESS_CLIP.search(title) and not numbered:return False
+    return duration>=FULL_PROGRAMME_SECONDS or (duration>=600 and numbered)
+
+def open_full_programme(c,row,m,source):
+    """A whole programme the import took for a clip is recognised like any work of unknown kind (pending, first pass);
+    a Sendung rule (format_contribution) still files it first. Returns True when reopened."""
+    if row['kind']!='other' or row['state'] not in ('pending','format') or m.get('scan_requested') or not full_programme(source):return False
+    m={k:v for k,v in m.items() if k not in ('format_grouping','related_series_title','state','reason')}
+    m.update(kind='unknown',full_programme_v06116=True,reason='Ganze Sendung (nicht nur ein Clip); wird erkannt.')
+    c.execute("UPDATE works SET kind='unknown',state='pending',attempts=0,next_try=0,meta=? WHERE id=?",(json.dumps(m),row['id']))
+    return True
+
+def reopen_full_programmes(c,limit=100000):
+    """0.6.116, once: whole programmes 0.6.113/0.6.114 filed as „Extra zu …“ or clip are reopened. Returns (n, samples)."""
+    rows=c.execute("""SELECT * FROM works WHERE kind='other' AND state='format'
+        AND (json_extract(meta,'$.format_grouping')='clip' OR json_extract(meta,'$.reason') LIKE 'Extra zu „%') LIMIT ?""",(limit,)).fetchall()
+    n=0;samples=[]
+    for row in rows:
+        m=json.loads(row['meta'] or '{}')
+        if m.get('scan_requested'):continue
+        source=best_source(c,row['id'])
+        if not source or not open_full_programme(c,row,m,source):continue
+        n+=1
+        if len(samples)<20:samples.append({'title':str(source.get('title') or '')[:80],'duration':int(source.get('duration') or 0)})
+    return n,samples
+
 def programme_extra(c,row,m,source):
     """0.6.114 (Mac-Prüfung 0.6.113 E2: „Extra: Interview mit Lucia Chiarla“ wurde Beitrag einer Sendung „Es geht um
     Luis“ – so heißt ein Film): a clip whose topic is the topic of a recognised film or series (not a Sendung) is an
     extra of that programme, never a new Sendung of the same name."""
     if row['kind']!='other' or row['state']!='pending' or m.get('scan_requested'):return False
+    if full_programme(source):return False     # 0.6.116: a whole programme is no extra
     topic=row['topic'] or source.get('topic') or ''
     # news/magazine clips keep joining their Sendung (0.5.80), even when a database knows the Sendung as series
     if not topic or FORMAT_WORDS.search(cleaned(topic)) or key(topic) in FORMAT_GENERIC:return False
