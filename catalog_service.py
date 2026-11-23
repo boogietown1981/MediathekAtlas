@@ -117,13 +117,14 @@ class Service:
     def heal_series_names(self):
         """Once each (before the workers): kids spin-offs under the main Reihe (0.6.106), broadcaster spelling of series
         names (0.6.109; the 0.6.106 spelling rule never ran on a released version and is replaced)."""
-        spelled=moved=0;names={};spin={};pairs=[]
+        spelled=moved=restored=0;names={};spin={};pairs=[];back=[]
         for attempt in range(30):
             try:
                 with self.db() as c:
                     if not catalog.get_state(c,'series_spelling_v06109',False):
+                        restored,back=catalog.restore_unstyled_series_titles(c)
                         spelled,names,pairs=catalog.heal_series_spelling(c)
-                        catalog.set_state(c,'series_spelling_v06109',{'spelled':spelled,'pairs':pairs,'at':time.time()})
+                        catalog.set_state(c,'series_spelling_v06109',{'spelled':spelled,'pairs':pairs,'restored':restored,'restored_pairs':back,'at':time.time()})
                     if not catalog.get_state(c,'series_names_v06106',False):
                         moved,spin=catalog.heal_kids_spinoffs(c)
                         catalog.set_state(c,'series_names_v06106',{'moved':moved,'at':time.time()})
@@ -133,7 +134,9 @@ class Service:
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return
         else:return
-        if spelled or moved:
+        if restored:
+            diagnostics.event('catalog_series_titles_restored',works=restored,names=len(back),pairs=[list(p[1:]) for p in back[:30]])
+        if spelled or moved or restored:
             diagnostics.event('catalog_series_names_healed',spelled=spelled,moved=moved,names_changed=len(pairs),
                               names=dict(sorted(names.items(),key=lambda x:-x[1])[:20]),spin_offs=dict(list(spin.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()

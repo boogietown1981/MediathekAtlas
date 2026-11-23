@@ -2073,6 +2073,35 @@ def heal_series_spelling(c):
         done+=k;shows[topic]=shows.get(topic,0)+k;pairs.append((show,title,topic))
     return done,shows,pairs
 
+def old_spelling_rule_ran(c):
+    """The 0.6.106 spelling rule (Mac-Prüfung A1: rund 15.000 Titel schlechter) ran on this catalogue: its merker
+    stored 'spelled' (0.6.109 stores only 'moved' there)."""
+    st=get_state(c,'series_names_v06106',None)
+    return isinstance(st,dict) and 'spelled' in st
+
+def restore_unstyled_series_titles(c):
+    """Once (0.6.109), only where the 0.6.106 rule ran: a series title in ganz groß/ganz klein goes back to a mixed
+    spelling found in the work's own offers (Thema oder Titel), the most frequent one. Never anything else: on a
+    catalogue without the old rule nothing changes. Returns (works, [(show_key, old, new)])."""
+    if not old_spelling_rule_ran(c):return 0,[]
+    shows={}
+    for show,title in c.execute("SELECT DISTINCT show_key,title FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''"):
+        if _all_upper(title) or _all_lower(title):shows[(show,title)]={}
+    for (show,title),seen in shows.items():
+        for topic,name in c.execute("""SELECT json_extract(o.payload,'$.topic'),json_extract(o.payload,'$.title') FROM works w
+                JOIN offers o ON o.work_id=w.id WHERE w.show_key=? AND w.title=?""",(show,title)):
+            for text in (topic,name):
+                text=str(text or '').strip()
+                if text and text.casefold()==title.casefold() and not _all_upper(text) and not _all_lower(text):
+                    seen[text]=seen.get(text,0)+1
+    done=0;pairs=[]
+    for (show,title),seen in shows.items():
+        if not seen:continue
+        best=max(sorted(seen),key=lambda t:seen[t])
+        done+=c.execute("UPDATE works SET title=?,meta=json_set(meta,'$.title',?) WHERE show_key=? AND title=?",(best,best,show,title)).rowcount
+        pairs.append((show,title,best))
+    return done,pairs
+
 def heal_kids_spinoffs(c):
     """Once (0.6.106): Sendung filings of kids-channel spin-offs („KiKA LIVE fordert heraus“) move under the main Reihe."""
     moved=0;shows={}
