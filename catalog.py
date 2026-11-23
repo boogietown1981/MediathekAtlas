@@ -2059,6 +2059,47 @@ def unify_show_spelling(c):
                 if changed:out[title]=target
     return out
 
+def merge_spacing_variants(c):
+    """0.6.127 (Björn 23.11.2026, Mac-Abfrage: „#BR24 Zeitreise“ 150 Werke f07074db… und „#BR24Zeitreise“ 79 Werke
+    17964125… als zwei Reihen): Reihen desselben Senders, deren Titel sich nur in Leerzeichen unterscheiden (gleiches
+    Jahr), werden eine Reihe – unter dem Schlüssel mit den meisten Werken. Nie bei verschiedenen Datenbank-Identitäten
+    (IMDb/TVDB), nie über Sender hinweg; Nutzerentscheidungen bleiben. Idempotent; returns {old title: new title}."""
+    groups={}
+    for show,title,year,n in c.execute("""SELECT show_key,title,year,COUNT(*) FROM works WHERE kind='series'
+            AND COALESCE(show_key,'')!='' AND state!='manual' GROUP BY show_key,title"""):
+        k=key(title).replace(' ','')
+        if len(k)<4:continue
+        g=groups.setdefault((k,year),{})
+        title_n=g.setdefault(show,{})
+        title_n[title]=title_n.get(title,0)+n
+    out={}
+    for (k,year),shows in groups.items():
+        if len(shows)<2:continue
+        info={}
+        for show in shows:
+            refs=set();channels=set()
+            for r in c.execute("""SELECT w.state,json_extract(w.meta,'$.provider') provider,json_extract(w.meta,'$.reference_id') ref,
+                    (SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM offers o WHERE o.work_id=w.id
+                     ORDER BY o.active DESC,o.rank DESC LIMIT 1) channel FROM works w WHERE w.show_key=?""",(show,)):
+                if r['channel']:channels.add(r['channel'])
+                if r['ref'] and r['provider'] in ('IMDb Offline','TVDB','TMDB','OMDb'):refs.add(str(r['ref']))
+            info[show]=(refs,channels,sum(shows[show].values()))
+        all_refs=set().union(*(v[0] for v in info.values()))
+        if len(all_refs)>1:continue
+        target=max(info,key=lambda s:(bool(info[s][0]),info[s][2],s))
+        target_title=max(shows[target].items(),key=lambda x:(x[1],x[0]))[0]
+        for show,(refs,channels,_) in info.items():
+            if show==target or not channels or not (channels & info[target][1]):continue
+            for w in c.execute("SELECT id,title,meta FROM works WHERE show_key=? AND state!='manual'",(show,)).fetchall():
+                try:m=json.loads(w['meta'] or '{}')
+                except (TypeError,ValueError):continue
+                old=w['title'];m['title']=target_title
+                reason=str(m.get('reason') or '')
+                if reason and old:m['reason']=reason.replace('„'+str(old)+'“','„'+target_title+'“')
+                c.execute('UPDATE works SET title=?,show_key=?,meta=? WHERE id=?',(target_title,target,json.dumps(m),w['id']))
+                if old!=target_title:out[old]=target_title
+    return out
+
 def reopen_full_programmes(c,limit=100000):
     """0.6.116, once: whole programmes 0.6.113/0.6.114 filed as „Extra zu …“ or clip are reopened. Returns (n, samples)."""
     rows=c.execute("""SELECT * FROM works WHERE kind='other' AND state='format'

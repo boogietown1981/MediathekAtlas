@@ -1601,9 +1601,14 @@ class Service:
         self.spelling_at=time.monotonic()
         try:
             with self.db() as c:changed=catalog.unify_show_spelling(c)
+            # 0.6.127: „#BR24 Zeitreise“/„#BR24Zeitreise“ – Reihen, die sich nur in Leerzeichen unterscheiden
+            with self.db() as c:spaced=catalog.merge_spacing_variants(c)
         except sqlite3.OperationalError as e:
             if not sqlite_busy(e):raise
             self.sqlite_busy_count+=1;self.spelling_at=time.monotonic()-self.SPELLING_EVERY+300;return None
+        if spaced:
+            diagnostics.event('catalog_spacing_variants_merged',titles=len(spaced),samples=dict(list(spaced.items())[:30]))
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
         if changed:
             diagnostics.event('catalog_show_spelling_unified',titles=len(changed),samples=dict(list(changed.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
