@@ -50,6 +50,7 @@ START_COUNT = 3                # 0.6.98 (Mac-Prüfung 0.6.90: 5 × 26 Min. ≈ 2
 # Kanal-Kennung, vorn englische Kanäle aus den Beschreibungen eines einzigen Abos, ohne Kindersignal.
 SEARCH_PER_RUN = 6             # Suchen je Lauf, eigenes Budget (Mac-Prüfung 0.6.112: Empfehlungen verbrauchten alles)
 BACKFILL_API = 200             # mit Schlüssel: so viele Videos je Lauf über videos.list (4 Einheiten)
+RESOLVE_PER_RUN_API = 30       # mit Schlüssel (je Kanal channels + playlistItems + videos, wenige Sekunden)
 RESOLVE_PER_RUN = 15           # so viele Vorschläge ohne Namen/Kanalbild werden je Lauf aufgelöst (je ein Listenabruf)
 RESOLVE_VIDEOS = 12            # Videotitel je aufgelöstem Kanal (Kindersignal, Sprache)
 MENTIONS_PER_ABO = 5           # aus den Beschreibungen eines Abos zählen höchstens so viele erwähnte Kanäle
@@ -150,13 +151,31 @@ def _api_mentions(db, videos, request=None, now=None, limit=BACKFILL_API):
     yt-dlp-Nachholens (Mac-Prüfung 0.6.112: Lauf 8 Minuten)."""
     known = {r[0] for r in db.execute('SELECT video FROM youtube_described')}
     tagged = {r[0] for r in db.execute('SELECT video FROM youtube_tagged')}
+    ok = False
     if request is not None:
         todo = [v for v in videos if (v not in known or v not in tagged) and youtube.VALID_VIDEO.fullmatch(v)][:limit]
         if todo:
+            # Mac-Prüfung 0.6.113: Speicherstände von vor 0.6.113 haben keine Schlagwörter; sie blieben eine Woche gültig,
+            # also fehlten die Themen (Kinder-Abos ohne Suche) und yt-dlp holte langsam nach. Solche Einträge neu lesen.
+            stale = []
+            for start in range(0, len(todo), 400):
+                chunk = todo[start:start + 400]
+                for vid, payload in db.execute('SELECT id,payload FROM youtube_videos WHERE id IN (%s)' % ','.join('?' * len(chunk)), chunk):
+                    try:
+                        facts = json.loads(payload)
+                    except ValueError:
+                        facts = None
+                    if isinstance(facts, dict) and 'tags' not in facts:
+                        stale.append(vid)
+            with db:
+                db.executemany('DELETE FROM youtube_videos WHERE id=?', [(v,) for v in stale])
             try:
                 youtube.load_facts(request, db, todo, time.time() if now is None else now)
+                ok = True
             except Exception as exc:          # noqa: BLE001 – Schlüssel ungültig/Kontingent: yt-dlp holt nach
                 _RUNNING['last_error'] = ('YouTube-API: ' + (str(exc) or type(exc).__name__))[:200]
+        else:
+            ok = True
     missing = [v for v in videos if v not in known or v not in tagged]
     for start in range(0, len(missing), 400):
         chunk = missing[start:start + 400]
@@ -172,6 +191,7 @@ def _api_mentions(db, videos, request=None, now=None, limit=BACKFILL_API):
             if vid not in tagged and isinstance(facts.get('tags'), list):    # ältere Speicherstände ohne Schlagwörter: yt-dlp
                 db.execute('INSERT OR REPLACE INTO youtube_tagged(video,tags,at) VALUES(?,?,?)',
                            (vid, json.dumps(facts['tags'][:30], ensure_ascii=False), time.time()))
+    return ok
 
 
 # ---------------------------------------------------------------- Empfohlene Kanäle eines Abos
@@ -270,16 +290,27 @@ def _cached(db, key, now, budget, fetch, fresh=False):
     return refs
 
 
-def _api_or_ytdlp(api, ytdlp):
+_CALLS = {}                    # je Lauf: Abrufe je Weg (Diagnose), z. B. search_api, search_ytdlp, search_api_failed
+
+
+def _api_or_ytdlp(api, ytdlp, kind=''):
     """Erst die Data API (mit Schlüssel), bei Fehler (Kontingent, Schlüssel, Endpunkt) yt-dlp; ohne yt-dlp bleibt der Fehler."""
+    def count(what):
+        if kind:
+            _CALLS[kind + '_' + what] = _CALLS.get(kind + '_' + what, 0) + 1
+
     def fetch():
         if api is not None:
             try:
-                return api()
+                found = api()
+                count('api')
+                return found
             except Exception as exc:          # noqa: BLE001
+                count('api_failed')
                 _RUNNING['last_error'] = ('YouTube-API: ' + (str(exc) or type(exc).__name__))[:200]
                 if ytdlp is None:
                     raise
+        count('ytdlp')
         return ytdlp()
     return fetch
 
@@ -372,7 +403,7 @@ def _playlists(root, db, abo, now, request, runner, budget, fresh=False):
     if abo['kind'] != 'channel':
         return []
     fetch = _api_or_ytdlp((lambda: playlist_channels_api(request, abo)) if request is not None else None,
-                          lambda: playlist_channels_ytdlp(root, abo, runner))
+                          lambda: playlist_channels_ytdlp(root, abo, runner), 'playlists')
     return _cached(db, 'playlists:%d' % abo['id'], now, budget, fetch, fresh)
 
 
@@ -610,16 +641,31 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
         import download_retry
         paused = bool(download_retry.blocked_until('youtube', now)[0]) and request is None
         order = sorted(rows, key=lambda r: not (seen.get('job:' + (r['job_id'] or '')) or {}).get('done'))
+        # Mac-Prüfung 0.6.113: Kinder-Abos zuerst und abwechselnd mit den übrigen, damit ihre Videos Schlagwörter bekommen
+        profile_by_abo = {a['id']: a['profile'] for a in abos}
+        lanes = {}
+        for r in order:
+            lanes.setdefault(profile_by_abo.get(r['abo_id']), []).append(r)
+        lanes = [lanes[k] for k in sorted(lanes, key=lambda k: k != 'kinder')]
+        order = [lane[i] for i in range(max((len(l) for l in lanes), default=0)) for lane in lanes if i < len(lane)]
+        _CALLS.clear()
+        timings = {}
+        mark = time.time()
+        api_ok = False
         if request is not None:
-            _api_mentions(db, [r['video'] for r in order], request=request if not paused else None, now=now)
+            api_ok = _api_mentions(db, [r['video'] for r in order], request=request if not paused else None, now=now)
             db.commit()
-        if not paused:
+        timings['seconds_api_videos'] = round(time.time() - mark, 1)
+        mark = time.time()
+        if not paused and not api_ok:
             # 0.6.98: Beschreibungen schon geladener Videos nachholen (gesehene zuerst); mit Schlüssel nur, was die API nicht hatte
             _RUNNING['progress'] = 'Videobeschreibungen werden gelesen …'
             try:
                 backfill_descriptions(root, db, [r['video'] for r in order], runner=runner)
             except (OSError, subprocess.SubprocessError, ValueError) as exc:
                 _RUNNING['last_error'] = str(exc)[:200]
+        timings['seconds_backfill'] = round(time.time() - mark, 1)
+        mark = time.time()
         mention_rows = {}
         for vid, ref in db.execute('SELECT video,ref FROM youtube_mentions'):
             mention_rows.setdefault(vid, []).append(ref)
@@ -680,17 +726,25 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
         _RUNNING['progress'] = 'Themen gesehener Videos werden gesucht …'
         profile_of = {a['id']: a['profile'] for a in abos}
         names = [a['label'] or a['title'] or '' for a in abos]
-        for profile in sorted({a['profile'] for a in abos}):
+        terms_by_profile = {}
+        profiles = sorted({a['profile'] for a in abos}, key=lambda k: k != 'kinder')     # Kinderprofil zuerst
+        share = max(3, SEARCH_PER_RUN // max(1, len(profiles)))
+        for profile in profiles:
+            own_budget = [min(share, search_budget[0])]
             watched = [v for abo_id, items in by_abo.items() if profile_of.get(abo_id) == profile for v, d in items if d]
             terms, source, label = search_terms(db, watched, names), 'search', 'Thema gesehener Videos'
             if not terms:                    # Nachbesserung 0.6.106: noch nichts zu Ende gesehen → Themen aller Abo-Videos
                 every = [v for abo_id, items in by_abo.items() if profile_of.get(abo_id) == profile for v, _d in items]
                 terms, source, label = search_terms(db, every, names), 'search_fallback', 'Thema der Abo-Videos'
+            terms_by_profile[profile] = len(terms)
             for term in terms:
                 query = term + (' für Kinder' if profile == 'kinder' and 'kind' not in term.lower() else '')
                 fetch = _api_or_ytdlp((lambda t=query: search_channels_api(request, t)) if request is not None else None,
-                                      lambda t=query: search_channels_ytdlp(root, t, runner))
-                for ref, title, hits in _cached(db, 'search:%s:%s' % (profile, term.lower()), now, search_budget if not paused else [0], fetch, probe):
+                                      lambda t=query: search_channels_ytdlp(root, t, runner), 'search')
+                before = own_budget[0]
+                found = _cached(db, 'search:%s:%s' % (profile, term.lower()), now, own_budget if not paused else [0], fetch, probe)
+                search_budget[0] -= before - own_budget[0]
+                for ref, title, hits in found:
                     add(ref, (1.0 if source == 'search' else 0.8) + 0.3 * min(hits - 1, 3), 'YouTube-Suche nach „%s“ (%s)' % (term, label),
                         profile, title, source)
         for ref, abos_seen in mention_abos.items():
@@ -698,8 +752,15 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
                 scores[ref] *= SINGLE_SOURCE
         # Nachbesserung 0.6.106: die besten Vorschläge auflösen (Name, Kanalbild, Kanal-ID, Videotitel, Sprache)
         _RUNNING['progress'] = 'Vorgeschlagene Kanäle werden gelesen …'
-        top = sorted(scores, key=lambda r: -scores[r])[:MAX_SUGGESTIONS + 10]
-        infos = resolve(root, db, top, now, request, runner, [RESOLVE_PER_RUN] if not paused else [0])
+        timings['seconds_sources'] = round(time.time() - mark, 1)
+        mark = time.time()
+        # Mac-Prüfung 0.6.113: Kinder-Vorschläge zuerst auflösen (vorher verbrauchten Suchtreffer fürs Erwachsenenprofil
+        # das Budget); mit Schlüssel kostet ein Kanal drei Einheiten, also mehr je Lauf
+        kids_first = lambda r: (max(profile_score[r], key=profile_score[r].get) != 'kinder', -scores[r])  # noqa: E731
+        top = sorted(scores, key=kids_first)[:MAX_SUGGESTIONS + 10]
+        infos = resolve(root, db, top, now, request, runner,
+                        [(RESOLVE_PER_RUN_API if request is not None else RESOLVE_PER_RUN)] if not paused else [0])
+        timings['seconds_resolve'] = round(time.time() - mark, 1)
         by_channel = {}
         for ref in top:
             info = infos.get(ref) or {}
@@ -738,7 +799,11 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
                 if info.get('lang') == 'en':
                     scores[ref] *= 0.3
                     why[ref].insert(0, 'englischsprachig')
-            ranked = sorted(scores, key=lambda r: -scores[r])[:MAX_SUGGESTIONS]
+            # je Profil eigene Plätze: Suchtreffer fürs Erwachsenenprofil verdrängen keine Kinder-Vorschläge (Mac-Prüfung 0.6.113)
+            by_profile = {}
+            for ref in sorted(scores, key=lambda r: -scores[r]):
+                by_profile.setdefault(max(profile_score[ref], key=profile_score[ref].get), []).append(ref)
+            ranked = [r for refs in by_profile.values() for r in refs[:MAX_SUGGESTIONS]]
             for ref in ranked:
                 profile = max(profile_score[ref], key=profile_score[ref].get)
                 old = known.get(ref)
@@ -759,9 +824,10 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
     finally:
         db.close()
     _notify('youtube_discover_done', open=count, network_reads=FEATURED_PER_RUN - budget[0] + SEARCH_PER_RUN - search_budget[0],
-            api=request is not None, seconds=round(time.time() - started, 1), paused=paused,
+            api=request is not None, seconds=round(time.time() - started, 1), paused=paused, api_videos=api_ok,
+            terms=terms_by_profile, **timings, **_CALLS,
             described=len(mention_rows), probe=bool(probe), resolved=sum(1 for i in infos.values() if i.get('title')), **sources)
-    _RUNNING['sources'] = dict(sources)
+    _RUNNING['sources'] = {**sources, **_CALLS, **timings, 'terms': terms_by_profile}
     return count
 
 
