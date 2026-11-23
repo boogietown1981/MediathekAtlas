@@ -3,7 +3,7 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover, epg
 import series_autoload,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
@@ -1131,6 +1131,8 @@ def get_live_tv(self,path):
                                          provider=q.get('provider',[''])[0][:20],group=q.get('group',[''])[0][:120])
     try:data['pluto']=pluto.state(ROOT)
     except Exception:data['pluto']={}   # 0.5.67: a busy Pluto database must not hold back the stations
+    try:data['epg']=epg.state(ROOT)   # Programmführer: status line and load button in the tab
+    except Exception:data['epg']={}
     try:data['samsung']=samsung_tvplus.state(ROOT)   # 0.5.97: hint and load button in the tab
     except Exception:data['samsung']={}
     # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
@@ -1451,7 +1453,7 @@ def get_diagnostics(self,path):
            'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
            'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'dmax':lambda:dmax.state(ROOT),'filmfriend':lambda:filmfriend.state(ROOT),'dailyme':lambda:dailyme.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
            'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),'youtube_discover':lambda:youtube_discover.summary(ROOT),
-           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'series_autoload':series_autoload_summary,'archive_works':lambda:archive_recognition.summary(ROOT),
+           'live_tv':live_tv_summary,'epg':lambda:epg.summary(ROOT),'watch':lambda:watch_state.summary(ROOT),'series_autoload':series_autoload_summary,'archive_works':lambda:archive_recognition.summary(ROOT),
            'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT),'cast_photos':lambda:__import__('cast_photos').store_stats(ROOT)}
     found=_bounded_parts(parts)
     overview=found.pop('overview')
@@ -1783,6 +1785,23 @@ def get_state(self,path):
     return self.send({'maintenance':dict(catalog.MAINTENANCE),'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'cache_dir':s.get('cache_dir',''),'storage_problems':storage_locations.problems(s),'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
 
 # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
+# Programmführer (epg.py): programme of the public broadcasters for the Live-TV tab and as recognition evidence
+@ROUTES.get('/api/epg')
+def get_epg(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    station=q.get('station',[''])[0][:60]
+    if not station:return self.send(epg.state(ROOT))
+    try:return self.send({'station':station,'broadcasts':epg.schedule(ROOT,station,q.get('day',[''])[0][:10] or None)})
+    except ValueError as e:return self.send({'error':str(e)},400)
+
+@ROUTES.post('/api/epg-sync')
+def post_epg_sync(self,path,d):
+    return self.send({'started':epg.start_sync(ROOT),'status':epg.state(ROOT)})
+
+@ROUTES.post('/api/epg-auto')
+def post_epg_auto(self,path,d):
+    return self.send({'status':epg.set_auto(ROOT,d.get('enabled'))})
+
 @ROUTES.post('/api/samsung-sync')
 def post_samsung_sync(self,path,d):
     return self.send({'started':samsung_tvplus.start_sync(ROOT),'status':samsung_tvplus.state(ROOT)})
@@ -2705,7 +2724,7 @@ if __name__=='__main__':
         # 0.6.0: one planner (planner.py) instead of two threads per platform; Samsung TV Plus and
         # the Archive.org recognition join it (formerly samsung_tvplus.loop, archive_recognition.loop).
         PLANNER[0]=platform_registry.start_background(platform_context(),STOP,
-            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos)],
+            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos),planner.CatalogJob('epg',epg)],
             extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()

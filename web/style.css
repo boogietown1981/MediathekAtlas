@@ -773,6 +773,12 @@ dialog.atlas-offline-choice::backdrop{background:#000a}
 .livetv-initials{display:flex;align-items:center;justify-content:center;font-weight:700;font-size:14px;color:#8af1d1;background:#1d3330;border:1px solid #31564c}
 .livetv-fav{padding:4px 9px;border-radius:999px;background:transparent;color:#f1cd8d;border-color:#3b4756}
 .livetv-summary{color:#9caec1;font-size:12px;line-height:1.5;margin:0}
+.livetv-programme{font-size:12px;line-height:1.45;margin:0}
+.livetv-programme p{margin:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+.livetv-now span:last-of-type{color:inherit}
+.livetv-next{color:#9caec1}
+.livetv-progress{height:3px;background:rgba(156,174,193,.25);border-radius:2px;margin:3px 0 4px;overflow:hidden}
+.livetv-progress span{display:block;height:100%;background:#4f9cf0}
 .livetv-actions{display:flex;flex-wrap:wrap;gap:6px;align-items:center;margin-top:auto}
 .livetv-actions button{padding:8px 12px}
 .livetv-source{font-size:11px}
@@ -1336,3 +1342,4 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .kids-parents-row{display:grid;grid-template-columns:minmax(160px,2fr) minmax(90px,1fr) minmax(140px,1.4fr) auto auto;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;background:rgba(127,127,127,.08)}
 .kids-parents-reason{color:#e0a040}.kids-parents-ok{color:#45b36b}
 @media (max-width:700px){.kids-parents-row{grid-template-columns:1fr 1fr}}
+.linklike{background:none;border:0;padding:0;color:#7cb8ff;cursor:pointer;font:inherit;text-decoration:underline}

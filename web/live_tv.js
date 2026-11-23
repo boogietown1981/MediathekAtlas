@@ -52,6 +52,45 @@
     return make('span', station.name.length <= 5 ? station.name : short || '▶', 'livetv-logo livetv-initials');
   }
 
+  function clock(sec) {
+    return new Date(sec * 1000).toLocaleTimeString('de-DE', { hour: '2-digit', minute: '2-digit' });
+  }
+
+  function episodeText(b) {
+    const parts = [];
+    if (b.season || b.episode) parts.push((b.season ? 'S' + b.season : '') + (b.episode ? (b.season ? ' ' : '') + 'F' + b.episode : ''));
+    if (b.genre) parts.push(b.genre);
+    if (b.repeat) parts.push('Wdh.');
+    return parts.join(' · ');
+  }
+
+  function programme(prog) {
+    const box = make('div', undefined, 'livetv-programme');
+    const now = prog.now, next = prog.next;
+    if (now) {
+      const p = make('p', undefined, 'livetv-now');
+      p.append(make('strong', 'Jetzt '), make('span', clock(now.start) + '–' + clock(now.stop) + ' ', 'muted'),
+               make('span', now.title + (now.subtitle ? ' – ' + now.subtitle : '')));
+      const extra = episodeText(now);
+      if (extra) p.append(make('small', ' · ' + extra, 'muted'));
+      p.title = [now.title, now.subtitle, extra].filter(Boolean).join(' · ');
+      box.append(p);
+      const span = Math.max(1, now.stop - now.start);
+      const done = Math.min(1, Math.max(0, (Date.now() / 1000 - now.start) / span));
+      const bar = make('div', undefined, 'livetv-progress');
+      const fill = make('span'); fill.style.width = Math.round(done * 100) + '%';
+      bar.append(fill); bar.setAttribute('role', 'progressbar'); bar.setAttribute('aria-valuenow', String(Math.round(done * 100)));
+      bar.setAttribute('aria-valuemin', '0'); bar.setAttribute('aria-valuemax', '100');
+      box.append(bar);
+    }
+    if (next) {
+      const p = make('p', undefined, 'livetv-next');
+      p.append(make('span', (now ? 'Danach ' : 'Ab ') + clock(next.start) + ' ', 'muted'), make('span', next.title + (next.subtitle ? ' – ' + next.subtitle : '')));
+      box.append(p);
+    }
+    return box;
+  }
+
   function tile(station, favs) {
     const box = make('article', undefined, 'livetv-station');
     box.dataset.key = station.key;
@@ -67,7 +106,10 @@
     fav.onclick = () => { const f = favourites(); f.has(station.key) ? f.delete(station.key) : f.add(station.key); setFavourites(f); render(); };
     head.append(fav);
     box.append(head);
-    if (station.summary) box.append(make('p', station.summary.length > 160 ? station.summary.slice(0, 157) + '…' : station.summary, 'livetv-summary'));
+    // EPG (Programmführer der Sender): laufende Sendung mit Fortschritt und die nächste, statt des Beschreibungstexts
+    const prog = station.programme;
+    if (prog && (prog.now || prog.next)) box.append(programme(prog));
+    else if (station.summary) box.append(make('p', station.summary.length > 160 ? station.summary.slice(0, 157) + '…' : station.summary, 'livetv-summary'));
     const actions = make('div', undefined, 'netzkino-actions livetv-actions');
     const many = station.sources.length > 1;
     station.sources.forEach((src, i) => {
@@ -199,6 +241,42 @@
     $('samsung-sync').onclick = e => samsungLoad(e.currentTarget);
   }
 
+  // Programmführer (epg.py): status, automatic switch and load button in the Live-TV tab.
+  const EPG_SOURCE = {srf: 'SRF', ard: 'ARD', zdf: 'ZDF'};
+  function epgSetup(st) {
+    if (!$('epg-setup') || !st || st.auto === undefined) return;
+    const auto = $('epg-auto');
+    if (document.activeElement !== auto) auto.checked = !!st.auto;
+    $('epg-sync').disabled = !!st.running;
+    $('epg-setup-state').textContent = '· Automatik ' + (st.auto ? 'an' : 'aus') + (st.broadcasts ? ' · ' + st.broadcasts.toLocaleString('de-DE') + ' Sendungen' : '');
+    const parts = [];
+    if (st.running) parts.push('Programm wird geladen …');
+    else if (st.last_success) parts.push('Stand ' + stamp(st.last_success) + (st.first ? ' · von ' + stamp(st.first) + ' bis ' + stamp(st.last) : ''));
+    else parts.push('Programm noch nicht geladen');
+    for (const [key, v] of Object.entries(st.sources || {})) if (v && v.error) parts.push((EPG_SOURCE[key] || key) + ': ' + v.error);
+    if (!st.running && st.auto && st.next_attempt > Date.now() / 1000) parts.push('nächste Aktualisierung ' + stamp(st.next_attempt));
+    const n = $('epg-setup-status'); n.textContent = parts.join(' · '); n.classList.toggle('netzkino-error', st.last_result === 'error' && !st.running);
+  }
+  if ($('epg-setup')) {
+    $('epg-auto').onchange = async e => {
+      const enabled = e.target.checked;
+      try { epgSetup((await window.api('epg-auto', {enabled})).status); }
+      catch (err) { e.target.checked = !enabled; $('epg-setup-status').textContent = 'Automatik nicht gespeichert: ' + err.message; }
+    };
+    $('epg-sync').onclick = async e => {
+      const button = e.currentTarget; button.disabled = true;
+      try { epgSetup((await window.api('epg-sync', {})).status); } catch (err) { $('epg-setup-status').textContent = 'Laden nicht möglich: ' + err.message; button.disabled = false; return; }
+      for (let i = 0; i < 80; i++) {
+        await new Promise(r => setTimeout(r, 3000));
+        let st; try { st = await window.api('epg'); } catch { break; }
+        epgSetup(st);
+        if (!st.running) break;
+      }
+      button.disabled = false;
+      refresh();
+    };
+  }
+
   async function refresh() {
     const call = ++seq;
     const params = {q: $('livetv-filter').value.trim(), provider, group};
@@ -225,6 +303,7 @@
     say((d.total ? d.total + ' Sender' : narrowed ? 'Keine Sender für diese Auswahl (' + [params.q && 'Suche „' + params.q + '“', provider && 'Anbieter', group && 'Gruppe „' + group + '“'].filter(Boolean).join(', ') + ').' : 'Keine Sender gefunden.') + (extra.length ? ' · ' + extra.join(' · ') : ''),
       (d.providers || []).some(p => p.error));
     samsungSetup(d.samsung);
+    epgSetup(d.epg);
     const sm = d.samsung || {}, smCount = (d.providers || []).find(p => p.key === 'samsung')?.channels || 0;
     if (!sm.running && (!smCount || sm.last_result === 'error')) {
       const load = make('button', smCount ? 'Samsung-TV-Plus-Liste neu laden' : 'Samsung-TV-Plus-Sender laden'); load.type = 'button';

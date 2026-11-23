@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.125
+# MediathekAtlas · 0.6.126
+
+## Neu in 0.6.126: Programmführer im Live-TV
+- Die Sender von ARD (Das Erste, Dritte, ONE, ARD alpha, tagesschau24), ZDF (mit ZDFneo, ZDFinfo, 3sat, KiKA, phoenix) und SRF zeigen im Live-TV, was gerade läuft (mit Fortschritt) und was danach kommt – direkt aus den Programmdaten der Sender, ohne Konto und ohne Schlüssel, alle 6 Stunden aktualisiert (Live-TV → „Programmführer · ARD, ZDF, SRF“, abschaltbar).
+- In der Detailansicht eines Werks führt „Sendetermine bei Wunschliste“ zur Suche bei TV Wunschliste (nur als Link; MediathekAtlas liest die Seite nicht aus).
 
 ## Neu in 0.6.125: Filme bleiben Filme, Einstellungen sofort gespeichert
 - Filme in Spielfilmlänge (ab 60 Minuten) bleiben Filme, auch mit Nummer im Titel („Der Amsterdam-Krimi (2)“, „Wo ist Anne Frank – Teil 1“); nur datierte Sendungsausgaben und kurze nummerierte Teile gelten nicht als Film. Die Neu-Einordnung aus 0.6.123 nimmt nur noch solche Werke.

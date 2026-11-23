@@ -1,3 +1,17 @@
+## 0.6.126 – Programmführer (EPG) Stufe 1: Jetzt/Danach im Live-TV; Wunschliste-Link; auf 0.6.125
+
+- Björn (23.11.2026): EPG für die TV-Sender im Live-TV und als Beleg für die Erkennung. Einschätzung: berichte/einschaetzung-epg-2026-11-23.md.
+- Neu `epg.py`: Programmdaten direkt von den Sendern, eigene Datei `epg.sqlite3` (nicht catalog.db), Lauf alle 6 h über den Planer (`planner.CatalogJob('epg')`, Schalter „Automatik“, Standard an):
+  - SRF: SRG Integration Layer `il.srgssr.ch/integrationlayer/2.0/srf/programGuide/tv/byDate/<Tag>` (live geprüft 23.11.: ~14–20 Tage zurück, ~5 Wochen voraus; Genre, Staffel/Folge, Wiederholung, `mediaUrn`).
+  - ARD: `programm-api.ard.de/program/api/program?day=<Tag>` (alle ARD-Sender je Tag; live geprüft: einige Tage zurück, 30 Tage = 404).
+  - ZDF-Familie: `api.zdf.de/cmdm/epg/broadcasts` mit Gast-Token (App-Token, sonst aus zdf.de/live-tv wie mediathekview/zapp-backend). Nicht live geprüft.
+  - Tage: gestern bis 7 Tage voraus bei jedem Lauf, ältere Tage einmal (erster Lauf bis 14 Tage zurück); Sendungen älter als 400 Tage werden gelöscht. Eine Quelle, die nicht antwortet, hält die anderen nicht auf (`partial`). Ereignis `epg_loaded` (nur Zahlen).
+- Live-TV: `live_tv._attach_programme` hängt je Sender `programme` (now/next) an und stellt „Jetzt: … · danach …“ vor die Beschreibung; Kachel zeigt Jetzt mit Uhrzeit, Fortschrittsbalken, Staffel/Folge/Genre und Danach. Block „Programmführer · ARD, ZDF, SRF“ mit Automatik und „↻ Programm jetzt laden“. Neue Sender SRF zwei/SRF info in `STATIONS`.
+- API: `GET /api/epg` (Status; mit `station`/`day` die Sendungen eines Tages), `POST /api/epg-sync`, `POST /api/epg-auto`; Diagnose-Export Teil `epg`.
+- Vorbereitet für Stufe 2 (noch nicht in der Erkennung verwendet): `epg.match` (SRF exakt über die Video-ID, sonst Sender + Sendezeit ±5 min + Dauer ±20 %), `epg.kind_hint` (Genre → Film/Sendung). Messabfrage: berichte/abfragen/epg-zeitfenster-0726.sql.
+- Detailansicht: „Sendetermine bei Wunschliste“ (Formular-POST an wunschliste.de/suche erst auf Klick, neuer Tab). Kein automatisches Auslesen (Impressum: nur privater Gebrauch; Feeds per robots.txt gesperrt).
+- Tests: `tests/test_epg_programmfuehrer.py` (16), Klicktest `tests/browser/epg_live.cjs`.
+
 ## 0.6.125 – Korrektur Mac-Urteil 0.6.123 (F: echte Filme umgestuft, S: Einstellungen „database is locked“); auf 0.6.124
 
 - F (Mac-Prüfung 0.6.123: 489 Werke als „Kein Film“ umgestuft, 244 davon ab 80 min ohne Datum – Löwenzahn-Filme, Bullerbü, „It Follows (Englisch)“, „Der Amsterdam-Krimi (2)“, „Wo ist Anne Frank – Teil 1/2“; Kinderecke verlor 9 Filme). Zwei Ursachen:
