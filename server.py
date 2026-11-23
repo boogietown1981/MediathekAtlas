@@ -1265,7 +1265,9 @@ def get_kids_play(self,path):
     ref={k:v[0] for k,v in q.items() if k in kids_catalog.REF_KEYS and v and v[0]}
     if 'job' in ref and len(ref)==1:
         with db() as c:ok=any(v['job']==ref['job'] for v in youtube_abos.kids(ROOT,c)['videos'])
-    else:ok=kids_catalog.allowed_ref(_kids_shelf(),ref)
+    else:
+        shelf=_kids_shelf()
+        with db() as c:ok=kids_catalog.allowed_ref(shelf,ref,c)   # 0.6.109: je Werk serverseitig geprüft
     if not ok:return self.send({'error':'Dieses Video gibt es in der Kinderecke nicht'},404)
     return get_play(self,path)
 

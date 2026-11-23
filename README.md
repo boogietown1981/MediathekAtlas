@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.108
+# MediathekAtlas · 0.6.109
+
+## Neu in 0.6.109: Kinderecke zeigt nur, was selbst für Kinder ist
+- Reihen, in denen nur einzelne Folgen von KiKA, TOGGO oder ZDFtivi stammen (z. B. „WUMMS“, „Young Crime“), zeigen nur noch diese Folgen. Sportschau, Nachrichten und Livestreams erscheinen nicht mehr unter Filme und Serien.
+- Live-Fernsehen gibt es in der Kinderecke nur unter „Fernsehen“ und nur mit echten Kindersendern; „Familie“ im Sendernamen reicht dafür nicht.
+- Die Altersgrenze im Elternbereich gilt jetzt auch für Netzkino, Plex und Pluto TV. Familienserien für Erwachsene kommen nicht mehr über die Altersfreigabe hinein.
+- „Wartet auf Freigabe“ zeigt alle wartenden Titel, nicht mehr höchstens 300.
 
 ## Neu in 0.6.108: Filme von 3sat werden wirklich gesucht
 - Filme mit dem 3sat-Zusatz im Titel („8 Mile - Spielfilm, USA 2002“) werden jetzt als Erstes neu gesucht. In 0.6.97 standen sie auf „prüfen“ und kamen nie an die Reihe.

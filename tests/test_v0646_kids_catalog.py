@@ -69,7 +69,7 @@ class SelectionTests(unittest.TestCase):
     def test_all_pages_and_series_tiles(self):
         movies = [{'cats': ['Kinder'], 'offers': [portal('plex', 'm.%d' % i, 'Film %d' % i)]} for i in range(5)]
         series = [{'cats': ['Kinder'], 'offers': [portal('toggo', 'serie-1', 'Paw', kind='series')]},
-                  {'cats': ['Kinder'], 'offers': [{'source': 'netzkino', 'item': {'kind': 'series', 'series_key': 'series-' + 'a' * 24, 'title': 'Biene'}}]},
+                  {'cats': ['Kinder'], 'offers': [{'source': 'netzkino', 'item': {'kind': 'series', 'series_key': 'series-' + 'a' * 24, 'title': 'Biene', 'source_genres': ['Kinder']}}]},
                   {'cats': ['Kinder'], 'offers': [{'source': 'mediatheken', 'item': {'series_parent': True, 'show_key': 'show:maus', 'metadata': {'title': 'Maus'}}}]}]
         data, page = self.build({'movies': movies, 'series': series})
         self.assertEqual(len(data['movies']), 5)

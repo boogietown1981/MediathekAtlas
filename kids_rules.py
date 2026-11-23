@@ -155,6 +155,18 @@ def _chosen(choice):
 DERIVED_SOURCES = ('Sender (abgeleitet)', 'Senderhinweis', 'Unbekannt', '')
 
 
+def live_clause():
+    """0.6.109 (Mac-Prüfung 0.6.106: Reihe „Livestream“ mit ARD/ZDF/PHOENIX/ORF-Livestreams in der Kinderecke, weil EIN
+    Angebot „KiKA Livestream“ hieß): Livestreams sind nie Filme oder Serien der Kinderecke; Live nur unter „Fernsehen“
+    (live_tv.kids_stations). SQL auf works w."""
+    import catalog
+    topics = list(catalog.LIVE_TOPICS)
+    return ("(w.kind NOT IN ('movie','series') OR COALESCE(json_extract(w.meta,'$.live'),0) NOT IN (0,'false') "
+            "OR COALESCE(w.topic,'') IN (%s) OR EXISTS(SELECT 1 FROM offers l WHERE l.work_id=w.id AND l.active=1 "
+            "AND json_extract(l.payload,'$.topic') IN (%s)))" % (','.join('?' * len(topics)), ','.join('?' * len(topics))),
+            topics + topics)
+
+
 def kids_clause(c, signal, signal_args, has):
     """SQL (auf works w) für die Kategorie „Kinder“ (0.6.106, Björn: im Zweifel draußen, KiKA/TOGGO immer, Rest per Freigabe).
 
@@ -182,13 +194,14 @@ def kids_clause(c, signal, signal_args, has):
     channel = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND lower(json_extract(k.payload,'$.channel')) IN (%s))"
                % ','.join('?' * len(ALWAYS_CHANNELS)))
     listed = "w.state IN ('matched','manual','identified','format')"
-    sql = ('NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
+    live, live_args = live_clause()
+    sql = ('NOT {live} AND NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
            '({listed} AND {shows}) OR '
            '({ident} AND {ref} AND ({kids} OR ({fam} AND {ani}))) OR '
            '({ident} AND {age_ok} AND {hint} AND NOT {soft}))))').format(
-        block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
+        live=live, block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
         ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft)
-    args = (list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
+    args = (list(live_args) + list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
             + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
             + [limit] + list(hint_args) + list(soft_args))
     return sql, args
@@ -208,7 +221,7 @@ def show_allowed(c, show_key):
 
 
 # ------------------------------------------------------------------ „Wartet auf Freigabe“
-def waiting(c, limit=300):
+def waiting(c, limit=3000):   # 0.6.109: Mac-Prüfung 0.6.106 sah genau 300 (abgeschnitten)
     """Titel mit Kinder-Hinweis, die die Regel (noch) nicht erfüllen: nicht erkannt, keine Freigabe bekannt oder
     über der Grenze. Je Serie ein Eintrag. Nur lesen. 0.6.106: auch Reihen mit „Kinder“/„Märchen“ im Thema, die
     seitdem kein automatisches Signal mehr sind – hier entscheiden die Eltern."""

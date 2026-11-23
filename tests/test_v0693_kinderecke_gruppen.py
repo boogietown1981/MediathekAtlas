@@ -36,7 +36,7 @@ class GroupTests(unittest.TestCase):
         movies = [entry('Märchen %d' % i, ['Kinder'], genre='Märchen') for i in range(3)]
         movies += [entry('Trick %d' % i, ['Animation', 'Kinder']) for i in range(2)]          # zu klein → Noch mehr
         movies += [entry('Film %d' % i, ['Kinder']) for i in range(4)]
-        series = [entry('Trickserie', ['Animation', 'Kinder'], kind='series')]                  # zählt mit: 3 Zeichentrick
+        series = [entry('Trickserie', ['Animation', 'Kinder'], genre='Kinder', kind='series')]                  # zählt mit: 3 Zeichentrick
 
         def page(root, db, kind='movies', offset=0, **kw):
             rows = movies if kind == 'movies' else series

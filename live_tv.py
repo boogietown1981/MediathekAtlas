@@ -380,7 +380,9 @@ def is_live_topic(topic):
 # 0.6.99 (Björn, 22.11.2026: „auch möchte ich, dass die Live-TV-Sender als Option dort auftauchen, also nur die für
 # Kinder, also Kids, Kinder, Familie“): Sender für die Kinderecke. Nur abspielbare Quellen (kein Link zum Anbieter,
 # Kinder sollen die Kinderecke nicht verlassen), nur Sender, deren Name oder Rubrik eindeutig Kinder/Familie nennt.
-KIDS_LIVE = re.compile(r'(?i)\bkids?\b|kinder|famil|cartoon|toons?\b|\bjunior\b|kika|toggo|nick(?:elodeon|\s*jr)?\b|disney|'
+# 0.6.109 (Mac-Prüfung 0.6.106): „famil“ eng gefasst – „Eine schrecklich nette Familie“, „Eine himmlische Familie“ sind
+# Sitcom-/Serien-Sender für Erwachsene; nur Familienkino/-filme/-programm (Björn: „Kids, Kinder, Familie“) zählen
+KIDS_LIVE = re.compile(r'(?i)\bkids?\b|kinder|\bfamilien(?:kino|filme?|programm)\b|\bfamily (?:movies?|kids)\b|cartoon|toons?\b|\bjunior\b|kika|toggo|nick(?:elodeon|\s*jr)?\b|disney|'
                        r'\bbaby\b|zeichentrick|trickfilm|sesam|paw patrol|peppa|spongebob|pok[eé]mon|\blego\b|schlümpfe|biene maja')
 KIDS_LIVE_NOT = re.compile(r'(?i)\banime\b|horror|krimi|crime|thrill|erotik|adult|\bwar\b|krieg')
 

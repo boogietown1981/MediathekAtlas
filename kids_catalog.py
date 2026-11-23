@@ -85,11 +85,40 @@ def _tile(source, kind, title, year, poster, ref=None, series=None, duration=0):
     return entry
 
 
-def _from_offer(offer, view):
+def _platform_ok(source, item, view, limit):
+    """0.6.109 (Mac-Prüfung 0.6.106): Plattform-Titel nach der AKTUELLEN Altersgrenze und strengerer Serienregel.
+
+    * Die Kategorie „Kinder“ der Plattform-Kataloge wird beim Abgleich mit der damaligen Grenze berechnet; bei
+      Grenze 6 blieben Netzkino-Filme mit FSK 12 („Run The Race“, „Die Bockreiter“) drin. Jetzt zählt die eigene
+      FSK-Angabe des Anbieters gegen die Grenze im Elternbereich.
+    * Serien kommen nicht über den Altersweg (Familie + FSK): Pluto-Familienserien für Erwachsene („Familie Dr. Kleist“,
+      „Eine himmlische Familie“, „Moesha“, „Sabrina“) – nur mit Kinder-Genre bzw. Familie + Animation des Anbieters.
+      TOGGO ist Kindersender und immer zugelassen."""
+    import categories
+    import portal_reference
+    if source == 'toggo':
+        return True
+    age = portal_reference.age_of(item)
+    if age is not None and age > limit:
+        return False
+    if item.get('kind') == 'series' or view == 'series':
+        labels = []
+        for many in (item.get('source_genres'), item.get('genres')):
+            if isinstance(many, (list, tuple)):
+                labels.extend(str(x) for x in many[:20])
+        if isinstance(item.get('genre'), str):
+            labels.extend(portal_reference.split_labels(item['genre']))
+        return 'Kinder' in categories.refine(categories.of_labels(labels), age)
+    return True
+
+
+def _from_offer(offer, view, limit=None):
     """Kachel aus einem Angebot des gemeinsamen Katalogs; None, wenn es hier nicht abspielbar ist."""
     offer = _dict(offer)
     source, item = offer.get('source'), _dict(offer.get('item'))
     if source not in SOURCES:
+        return None
+    if source != 'mediatheken' and limit is not None and not _platform_ok(source, item, view, limit):
         return None
     if source == 'mediatheken':
         meta, src = _dict(item.get('metadata')), _dict(item.get('source'))
@@ -130,6 +159,7 @@ def build(root, db, modules=None, merge=True, page=None):
         import unified_index
         page = unified_index.page
     out, pending = {}, False
+    limit = _current_limit(db)
     for view in ('movies', 'series'):
         tiles, seen, offset = [], set(), 0
         while len(tiles) < MAX_TITLES:
@@ -139,7 +169,7 @@ def build(root, db, modules=None, merge=True, page=None):
             for entry in items:
                 # die erste abspielbare Quelle eines zusammengeführten Titels (Reihenfolge des Katalogs)
                 try:
-                    tile = next((t for t in (_from_offer(o, view) for o in _dict(entry).get('offers') or []) if t), None)
+                    tile = next((t for t in (_from_offer(o, view, limit) for o in _dict(entry).get('offers') or []) if t), None)
                 except Exception as exc:   # 0.6.103: ein Titel mit unerwarteter Form wird übersprungen, nie die ganze Liste
                     _skipped(entry, exc)
                     tile = None
@@ -162,6 +192,19 @@ def build(root, db, modules=None, merge=True, page=None):
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
     out['pending'] = pending
     return out
+
+
+def _current_limit(db):
+    """Altersgrenze aus dem Elternbereich (Standard 12)."""
+    import categories
+    import kids_rules
+    if db is None:
+        return categories.KIDS_MAX_AGE
+    try:
+        with db() as c:
+            return kids_rules.max_age(c)
+    except Exception:
+        return categories.KIDS_MAX_AGE
 
 
 # 0.6.93 (Björn, 22.11.2026: „für Filme und Serien noch eine Gruppierung, die es meiner Tochter leichter macht, etwas
@@ -305,17 +348,62 @@ def _listed(data, source, kind, field, value):
                for t in data.get('movies', []) + data.get('series', []))
 
 
-def allowed_ref(data, ref):
-    """Darf die Kinderecke diesen Film abspielen? Nur, was in ihrer Liste steht (oder eine geprüfte Folge)."""
+def allowed_ref(data, ref, c=None):
+    """Darf die Kinderecke diesen Film abspielen? Nur, was in ihrer Liste steht (oder eine geprüfte Folge).
+
+    0.6.109 (Mac-Prüfung 0.6.106: „ARD Livestream“ über die Reihe „Livestream“ abspielbar): mit Verbindung ``c``
+    prüft der Server ein Mediatheken-Angebot zusätzlich je Werk nach derselben Regel wie die Liste."""
     if not isinstance(ref, dict) or len(ref) != 1:
         return False
     (name, value), = ref.items()
     source = 'mediatheken' if name == 'offer' else name
-    if _listed(data, source, 'ref', name, value):
+    if (name, str(value)) in _LIVE_SEEN:          # 0.6.99: zuletzt ausgelieferte Kinder-Live-Sender (nur „Fernsehen“)
         return True
-    if (name, str(value)) in _LIVE_SEEN:          # 0.6.99: zuletzt ausgelieferte Kinder-Live-Sender
-        return True
-    return (source, str(value)) in _EPISODES_SEEN
+    if not (_listed(data, source, 'ref', name, value) or (source, str(value)) in _EPISODES_SEEN):
+        return False
+    if c is not None and name == 'offer':
+        return offer_allowed(c, str(value))
+    return True
+
+
+def offer_allowed(c, offer_id):
+    """Ein Mediatheken-Angebot ist in der Kinderecke zulässig (siehe work_allowed)."""
+    row = c.execute('SELECT work_id FROM offers WHERE id=?', (str(offer_id),)).fetchone()
+    return bool(row) and work_allowed(c, row[0], str(offer_id))
+
+
+def work_allowed(c, work_id, offer_id=None):
+    """EINE Entscheidung je Werk/Angebot für Liste, Folgenliste, /api/kids-play und Nachladen (0.6.109).
+
+    ``work_id``: works.id (Film oder Folge der Mediatheken); ``offer_id``: optional das konkrete Angebot (dann zählen
+    dessen Sender und Titel, sonst alle aktiven Angebote des Werks). False für: Livestream, von den Eltern gesperrt,
+    Sperrwort im Titel ohne Kindersender/Elternfreigabe, Folge außerhalb von show_basis/excluded_works, Film ohne
+    Kinder-Regel (catalog.category_clause „Kinder“)."""
+    import catalog
+    import kids_rules
+    w = c.execute('SELECT id, kind, show_key, title FROM works WHERE id=?', (str(work_id),)).fetchone()
+    if not w:
+        return False
+    wid, kind, show, title = w[0], w[1], w[2], w[3]
+    live, live_args = kids_rules.live_clause()
+    if c.execute('SELECT 1 FROM works w WHERE w.id=? AND ' + live, [wid] + live_args).fetchone():
+        return False
+    if offer_id:
+        offers = c.execute("SELECT lower(trim(json_extract(payload,'$.channel'))), json_extract(payload,'$.title') FROM offers "
+                           "WHERE id=? AND work_id=?", (str(offer_id), wid)).fetchall()
+        if not offers:
+            return False
+    else:
+        offers = c.execute("SELECT lower(trim(json_extract(payload,'$.channel'))), json_extract(payload,'$.title') FROM offers "
+                           "WHERE work_id=? AND active=1", (wid,)).fetchall()
+    allowed = bool(c.execute("SELECT 1 FROM kids_choices WHERE key=? AND choice='allow'", ('work:' + wid,)).fetchone())
+    kids_channel = allowed or any(ch in _kids_channels() for ch, _ in offers)
+    if not kids_channel and (word_blocked(title) or any(word_blocked(t) for _, t in offers)):
+        return False
+    if kind == 'series' and show:
+        return wid not in excluded_works(c, show)
+    clause, args = catalog.category_clause(c, CATEGORY)
+    return bool(c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [wid] + list(args)).fetchone())
 
 
 _EPISODES_SEEN = set()    # (quelle, id) der zuletzt ausgelieferten, geprüften Folgen
@@ -360,13 +448,17 @@ def episodes(root, c, data, source, series_id, marks=None):
             # 0.6.106: Folgentitel mit heiklen Wörtern („Täter“, „Verhütung“) nur von Kindersendern
             if word_blocked(title) and str(src.get('channel') or '').strip().lower() not in _kids_channels():
                 continue
-            out.append(_episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
-                                meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration')))
+            ep = _episode('mediatheken', {'offer': str(e.get('id') or '')}, title, meta.get('season'), meta.get('episode'),
+                          meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration'))
+            ep['channel'] = str(src.get('channel') or '')[:60]     # 0.6.109: für die Prüfung je Folge sichtbar
+            out.append(ep)
     else:
         import portal_title
         model = portal_title.model(root, source, series_id)
         for e in model.get('episodes') or []:
             if not e.get('playable') or not e.get('id'):
+                continue
+            if source != 'toggo' and word_blocked(e.get('title')):   # 0.6.109: Pluto „Let's Talk About Sex“
                 continue
             ref = {source: e['id']}
             out.append(_episode(source, ref, e.get('title'), e.get('season'), e.get('episode'), e.get('poster'), e.get('duration')))
@@ -471,10 +563,13 @@ def _work_query(c):
     labels = catalog.category_labels(c)
     bad = [r for name in categories.NOT_FOR_KIDS for r in labels.get(name) or []]
     bad_sql = ('EXISTS(SELECT 1 FROM work_genres b WHERE b.work_id=w.id AND b.genre IN (%s))' % ','.join('?' * len(bad))) if bad else '0'
-    sql = ("SELECT w.id, ((%s) OR ((%s) AND NOT %s)) AS kids, %s AS bad, "
+    import kids_rules
+    live, live_args = kids_rules.live_clause()
+    # 0.6.109: Livestreams zählen nie als Kinderprogramm (auch nicht „KiKA Livestream“) und fallen immer heraus
+    sql = ("SELECT w.id, (NOT %s AND ((%s) OR ((%s) AND NOT %s))) AS kids, (%s OR %s) AS bad, "
            "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres "
-           "FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?" % (kids, sig, bad_sql, bad_sql))
-    return sql, list(kids_args) + list(sig_args) + bad + bad, {}
+           "FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?" % (live, kids, sig, bad_sql, live, bad_sql))
+    return sql, list(live_args) + list(kids_args) + list(sig_args) + bad + list(live_args) + bad, {}
 
 
 def _work_rows(c, show_key, limit=None, query=None):
@@ -497,23 +592,67 @@ def _work_rows(c, show_key, limit=None, query=None):
     return out
 
 
-def show_is_kids(c, show_key, title='', query=None):
-    """Ist die ARD/ZDF-Reihe selbst eindeutig Kinderprogramm? (Regel oben; 0.6.99: Elternfreigabe/-sperre gehen vor)"""
+def show_basis(c, show_key, title='', query=None):
+    """Warum eine Mediatheken-Reihe in der Kinderecke steht – oder None.
+
+    0.6.109 (Mac-Prüfung 0.6.106: „Livestream“, „WUMMS“, „Sportschau“, „POV · Deine Geschichte zählt“, „Young Crime“,
+    „#Ukraine · Mein Land im Krieg“ standen mit ALLEN Folgen drin, weil einzelne Angebote von KiKA kamen). Der
+    Kindersender gilt je Folge, nicht je Reihe:
+    * 'freigabe': von den Eltern freigegeben – alle Folgen außer Ausschluss-Genres und Sperren.
+    * 'reihe': bekannte Kinderreihe (categories.KNOWN_KIDS_SERIES im Reihennamen oder im Thema eines Angebots) –
+      Folgen wie bisher (Ausschluss-Genres und fremde Kategorien heraus).
+    * Nachrichten-/Sportnamen (NOT_KIDS_SHOW) sonst nie.
+    * 'anteil': mindestens SHOW_SHARE der eingeordneten letzten Werke sind Kinderprogramm (0.6.98) – Folgen wie 'reihe'.
+    * 'gemischt': sonst nur, wenn Folgen ein eigenes Angebot vom Kindersender haben, und dann NUR die selbst
+      zugelassenen Folgen (Young Crime: 24 KiKA, 34 ZDF)."""
+    import catalog
     import kids_rules
     if kids_rules.show_allowed(c, show_key):
-        return True
-    # 0.6.103 (Björn: „alles was definitiv von KiKA oder TOGGO kommt“): eine Reihe mit Angeboten vom Kindersender
-    # gilt vor Anteil und Namenssperre („Wissen macht Ah!“ 48 %, „Der Krieg und ich“, „KiKA LIVE“)
-    if c.execute("SELECT 1 FROM works w JOIN offers k ON k.work_id=w.id AND k.active=1 WHERE w.show_key=? "
-                 "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s) LIMIT 1" % ','.join('?' * len(kids_rules.ALWAYS_CHANNELS)),
-                 [show_key] + list(kids_rules.ALWAYS_CHANNELS)).fetchone():
-        return True
+        return 'freigabe'
+    title = title or _show_title(c, show_key)
+    if catalog.KIDS_TOPIC.search(str(title or '')) or _curated_topic(c, show_key):
+        return 'reihe'
     if show_name_blocked(title):
-        return False
+        return None
     rows = _work_rows(c, show_key, SHOW_SAMPLE, query)
     kids = sum(1 for _, k, _ in rows if k)
     against = sum(1 for _, k, a in rows if a and not k)
-    return kids > 0 and kids >= SHOW_SHARE * (kids + against)
+    if not kids:
+        return None
+    if _kids_channel_works(c, show_key):
+        # Kindersender und andere Sender in einer Reihe (WUMMS: 2 KiKA, 174 ARD/funk ohne Genre): nur die eigenen
+        # Kinder-Folgen, auch wenn der Anteil unter den eingeordneten hoch aussieht
+        return 'gemischt'
+    if kids >= SHOW_SHARE * (kids + against):
+        return 'anteil'               # 0.6.98: die Reihe ist selbst Kinderprogramm (≥ 80 % der eingeordneten)
+    return None
+
+
+def _kids_channel_works(c, show_key):
+    """Hat die Reihe Folgen vom Kindersender UND Folgen ohne Kindersender-Angebot (gemischte Reihe)?"""
+    import kids_rules
+    live, live_args = kids_rules.live_clause()
+    chans = list(kids_rules.ALWAYS_CHANNELS)
+    on_kids = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
+               "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s))" % ','.join('?' * len(chans)))
+    has = lambda neg: c.execute("SELECT 1 FROM works w WHERE w.show_key=? AND %s%s AND NOT %s LIMIT 1" % (neg, on_kids, live),
+                                [show_key] + chans + live_args).fetchone()
+    return bool(has('') and has('NOT '))
+
+
+def _curated_topic(c, show_key):
+    import catalog
+    topics = catalog.kids_topics(c)
+    if not topics:
+        return False
+    return bool(c.execute("SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=? "
+                          "AND json_extract(o.payload,'$.topic') IN (%s) LIMIT 1" % ','.join('?' * len(topics)),
+                          [show_key] + list(topics)).fetchone())
+
+
+def show_is_kids(c, show_key, title='', query=None):
+    """Gehört die ARD/ZDF-Reihe in die Kinderecke? (show_basis; Elternfreigabe/-sperre gehen vor)"""
+    return show_basis(c, show_key, title, query) is not None
 
 
 def _kids_shows(db, tiles):
@@ -523,26 +662,41 @@ def _kids_shows(db, tiles):
         return tiles
     with db() as c:
         query = _work_query(c)
-        drop = {t['id'] for t in shows if not show_is_kids(c, t['series']['show'], t.get('title'), query)}
+        drop = set()
+        for t in shows:
+            basis = show_basis(c, t['series']['show'], t.get('title'), query)
+            if basis is None:
+                drop.add(t['id'])
+            else:
+                t['basis'] = basis
     return [t for t in tiles if t['id'] not in drop]
 
 
 def excluded_works(c, show_key):
     """Folgen einer Kinderreihe, die nicht in die Kinderecke gehören.
 
-    0.6.91: Folgen ohne eigenen Abgleich bleiben drin (sonst waren Kinderserien „leer“). 0.6.98: heraus fällt jede
-    Folge mit Ausschluss-Genre und jede, die eine Kategorie außerhalb von KIDS_FRIENDLY trägt (Nachrichten, Talk,
-    Drama, Dokumentation …), ohne selbst Kinderprogramm zu sein. Ist die Reihe selbst kein Kinderprogramm
-    (show_is_kids), fallen alle Folgen heraus."""
+    0.6.91: Folgen ohne eigenen Abgleich bleiben in bekannten Kinderreihen drin (sonst waren Kinderserien „leer“).
+    0.6.98: heraus fällt jede Folge mit Ausschluss-Genre und jede mit einer Kategorie außerhalb von KIDS_FRIENDLY.
+    0.6.109: in einer gemischten Reihe (show_basis 'gemischt') bleiben NUR die Folgen, die selbst zugelassen sind
+    (eigenes Kindersender-Angebot oder Kinder-Regel je Werk); Livestreams fallen immer heraus."""
     import kids_rules
     rows = _work_rows(c, show_key)
-    # 0.6.99: von den Eltern gesperrte Serie/Folgen fallen heraus, einzeln freigegebene Folgen bleiben drin
     blocked = kids_rules.blocked_works(c, show_key)
-    if blocked is None or not show_is_kids(c, show_key, _show_title(c, show_key)):
+    basis = show_basis(c, show_key, _show_title(c, show_key)) if blocked is not None else None
+    if basis is None:
         return {wid for wid, _, _ in rows}
-    out = {wid for wid, kids, against in rows if against and not kids}
+    if basis == 'gemischt':
+        out = {wid for wid, kids, _ in rows if not kids}
+    else:
+        out = {wid for wid, kids, against in rows if against and not kids}
     allowed = {r[0] for r in c.execute("SELECT substr(key,6) FROM kids_choices WHERE choice='allow' AND key LIKE 'work:%'")} if out else set()
-    return (out - allowed) | blocked
+    return (out - (allowed - _live_works(c, show_key))) | blocked
+
+
+def _live_works(c, show_key):
+    import kids_rules
+    live, args = kids_rules.live_clause()
+    return {r[0] for r in c.execute('SELECT w.id FROM works w WHERE w.show_key=? AND ' + live, [show_key] + args)}
 
 
 def _show_title(c, show_key):
