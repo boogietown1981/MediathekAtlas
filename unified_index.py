@@ -315,6 +315,7 @@ _BUSY = set()
 ON_BUILD = None   # set by the server: called with (key, index, seconds) after every build
 
 
+_SERIAL = [0]
 _GEN = [0]   # 0.6.112: a build started before invalidate() must not store its stale result (Kinder-Altersgrenze)
 
 
@@ -322,6 +323,9 @@ def _build_into(key, builder):
     started = time.monotonic()
     gen = _GEN[0]
     value = builder()
+    if isinstance(value, dict):
+        _SERIAL[0] += 1
+        value['serial'] = _SERIAL[0]      # 0.6.116: Index-Stand für blätternde Leser (kids_catalog._collect)
     with _LOCK:
         if gen != _GEN[0]:
             return value
@@ -426,4 +430,5 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
     return {'items': items, 'total': len(index['entries']), 'offset': offset, 'page': PAGE,
             'counts': index['counts'], 'errors': index['errors'], 'genre_counts': index['genre_counts'],
             'merged': index['merged'], 'names': NAMES, 'pending': index.get('pending') or [],
-            'language': language, 'only': only}
+            'language': language, 'only': only,
+            'index': index.get('serial')}   # 0.6.116: Kennung des Index-Stands – wer blättert, erkennt einen Neuaufbau zwischen den Seiten

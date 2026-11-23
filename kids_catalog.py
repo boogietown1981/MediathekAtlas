@@ -165,30 +165,59 @@ def build(root, db, modules=None, merge=True, page=None):
     out, pending = {}, False
     limit = _current_limit(db)
     for view in ('movies', 'series'):
-        tiles, seen, offset = [], set(), 0
-        while len(tiles) < MAX_TITLES:
-            data = page(root, db, kind=view, genre=CATEGORY, sort='title', offset=offset, merge_duplicates=merge, modules=modules)
-            items = data.get('items') or []
-            pending = pending or bool(data.get('pending'))
-            for entry in items:
-                # die erste abspielbare Quelle eines zusammengeführten Titels (Reihenfolge des Katalogs)
-                try:
-                    tile = next((t for t in (_from_offer(o, view, limit) for o in _dict(entry).get('offers') or []) if t), None)
-                except Exception as exc:   # 0.6.103: ein Titel mit unerwarteter Form wird übersprungen, nie die ganze Liste
-                    _skipped(entry, exc)
-                    tile = None
-                if tile and tile['id'] not in seen:
-                    seen.add(tile['id'])
-                    try:
-                        tile['group'] = group_of(entry)
-                    except Exception as exc:   # 0.6.103: eine unerwartete Angebotsform kostet nie die ganze Liste
-                        _skipped(entry, exc)
-                        tile['group'] = 'mehr'
-                    tiles.append(tile)
-            offset += len(items)
-            if not items or offset >= int(data.get('total') or 0):
-                break
+        tiles, pend = _collect(root, db, page, view, merge, modules, limit)
+        pending = pending or pend
         out[view] = tiles[:MAX_TITLES]
+    return _finish(db, root, out, pending)
+
+
+def _collect(root, db, page, view, merge, modules, limit, attempts=3):
+    """Kacheln einer Art aus dem gemeinsamen Index, Seite für Seite.
+
+    0.6.116 (Prüfvermerk 0.6.115: nach dem Start fehlten 2,5 min lang neun Kinderserien K…S, dazu „Dein Song 2023/
+    2024/2025“ als eigene Kacheln): der Index wurde zwischen zwei Seiten neu aufgebaut (Namensheilung der Erkennung),
+    die Seitenzählung verrutschte und ein Block wurde übersprungen. Ändert sich der Index-Stand beim Blättern, wird die
+    Art neu gelesen; gelingt kein ruhiger Durchlauf, gilt die Liste als vorläufig (kurz zwischengespeichert)."""
+    for attempt in range(attempts):
+        tiles, pending, moved = _collect_once(root, db, page, view, merge, modules, limit)
+        if not moved:
+            return tiles, pending
+    return tiles, True
+
+
+def _collect_once(root, db, page, view, merge, modules, limit):
+    pending, index = False, None
+    tiles, seen, offset = [], set(), 0
+    while len(tiles) < MAX_TITLES:
+        data = page(root, db, kind=view, genre=CATEGORY, sort='title', offset=offset, merge_duplicates=merge, modules=modules)
+        if index is None:
+            index = data.get('index')
+        elif data.get('index') != index:
+            return tiles, pending, True
+        items = data.get('items') or []
+        pending = pending or bool(data.get('pending'))
+        for entry in items:
+            # die erste abspielbare Quelle eines zusammengeführten Titels (Reihenfolge des Katalogs)
+            try:
+                tile = next((t for t in (_from_offer(o, view, limit) for o in _dict(entry).get('offers') or []) if t), None)
+            except Exception as exc:   # 0.6.103: ein Titel mit unerwarteter Form wird übersprungen, nie die ganze Liste
+                _skipped(entry, exc)
+                tile = None
+            if tile and tile['id'] not in seen:
+                seen.add(tile['id'])
+                try:
+                    tile['group'] = group_of(entry)
+                except Exception as exc:   # 0.6.103: eine unerwartete Angebotsform kostet nie die ganze Liste
+                    _skipped(entry, exc)
+                    tile['group'] = 'mehr'
+                tiles.append(tile)
+        offset += len(items)
+        if not items or offset >= int(data.get('total') or 0):
+            break
+    return tiles, pending, False
+
+
+def _finish(db, root, out, pending):
     out['series'] = _kids_shows(db, out['series'])
     out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])

@@ -218,15 +218,19 @@ def kids_clause(c, signal, signal_args, has):
     classics = '(%s)' % ' OR '.join(['lower(w.title) LIKE ?'] * len(categories.KIDS_CLASSICS))
     classics_args = ['%%%s%%' % t for t in categories.KIDS_CLASSICS]
     own = '(%s OR %s OR %s OR %s)' % (ani, FAIRY_TALE, classics, shows)
+    # 0.6.116 (Prüfvermerk 0.6.115: Aschenputtel, Der Hirsch mit dem goldenen Geweih, Die Seekönigin … auf der
+    # Warteliste): ein Märchen-/Kinderbuchtitel ersetzt den Familien-Hinweis (Märchenfilme führen oft nur Fantasy);
+    # die belegte Freigabe bis zur Grenze bleibt Pflicht (Björn: „Fantasyfilme … nur mit IMDb-Freigabe“)
+    tale = '(%s OR %s)' % (FAIRY_TALE, classics)
     sql = ('NOT {live} AND NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
            '({listed} AND {shows}) OR '
            '({ident} AND {ref} AND ({kids} OR ({fam} AND {ani}))) OR '
-           '({ident} AND {age_ok} AND {hint} AND NOT {soft} AND {own}))))').format(
+           '({ident} AND {age_ok} AND ({hint} OR {tale}) AND NOT {soft} AND {own}))))').format(
         live=live, block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
-        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft, own=own)
+        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, tale=tale, soft=soft, own=own)
     args = (list(live_args) + list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
             + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
-            + [limit] + list(hint_args) + list(soft_args) + list(ani_args) + classics_args + list(shows_args))
+            + [limit] + list(hint_args) + classics_args + list(soft_args) + list(ani_args) + classics_args + list(shows_args))
     return sql, args
 
 
@@ -257,8 +261,8 @@ def explain_context(c):
               ('reihe', "w.state IN ('matched','manual','identified','format') AND " + shows, list(shows_args)),
               ('referenz', '%s AND %s AND (%s OR (%s AND %s))' % (IDENTIFIED, reference, kids_genre, fam, ani),
                list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)),
-              ('alter', '%s AND EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age IS NOT NULL AND a.age<=?) AND %s'
-               % (IDENTIFIED, REF, hint), [limit] + list(hint_args)))
+              ('alter', '%s AND EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age IS NOT NULL AND a.age<=?)'
+               % (IDENTIFIED, REF), [limit]))
     return {'clause': clause, 'args': list(args), 'checks': checks}
 
 

@@ -190,6 +190,16 @@ KIDS_CLASSICS = (
     'hexe lilli', 'mein name ist eugen', 'bibi & tina', 'bibi und tina', 'bibi blocksberg', 'benjamin blümchen',
     'sams im glück', 'der zauberer von oz', 'alice im wunderland', 'nils holgersson',
     'die biene maja', 'wickie', 'pumuckl', 'pettersson und findus', 'die schöne und das biest', 'aladin',
+    # 0.6.116 (Prüfvermerk 0.6.115: echte Märchen-/Kinderfilme auf der Warteliste). Bewusst NICHT: „Gevatter Tod“
+    # (Tod als Hauptfigur) – bleibt auf der Warteliste, Eltern entscheiden
+    'hirsch mit dem goldenen geweih', 'seekönigin', 'vier zauberhafte schwestern', 'heidi und peter', 'huck finn',
+    'tom sawyer', 'der kleine lord', 'grüße vom mars', 'baumhauskönige', 'aschenbrödel', 'der kleine muck', 'kalif storch',
+    'die salzprinzessin', 'der süße brei', 'singende klingende bäumchen', 'schweinehirt', 'die kluge bauerntochter',
+    'der eisenhans', 'die zertanzten schuhe', 'das wasser des lebens', 'drei goldenen haare', 'allerleirauh',
+    'die weiße schlange', 'das dschungelbuch', 'die schatzinsel', 'mio, mein mio', 'brüder löwenherz', 'madita',
+    'karlsson vom dach', 'der kleine eisbär', 'lauras stern', 'petronella apfelmus', 'mary poppins', 'paddington',
+    'raupe nimmersatt', 'fünf freunde', 'hanni und nanni', 'die vorstadtkrokodile', 'rico, oskar', 'ostwind',
+    'black beauty', 'lassie', 'schloss hinterm regenbogen', 'die schwarze mühle', 'kleiner muck',
 )
 KIDS_MAX_AGE = 12       # 0.6.99: Standard FSK 12 (Björn), einstellbar im Elternbereich (kids_rules)
 FAMILY_MAX_AGE = 12     # FSK 0/6/12
