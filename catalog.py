@@ -112,7 +112,20 @@ def portal_identity(m,topic=''):
     0.6.87: or a subject word that is the offer's topic (IMDb series „Doku“ for the ZDF topic „Doku“)."""
     if not m or m.get('kind')!='series':return False
     name=key(m.get('title'))
-    return name in PORTAL_TOPICS or bool(topic) and name==key(topic) and name in TEMPLATE_GENERIC
+    if name in PORTAL_TOPICS:return True
+    if name not in TEMPLATE_GENERIC:return False
+    # 0.6.118 (Mac-Prüfung 0.6.117: 1.045 Fußball-/Skibeiträge mit der ZDF-Seite „Schwimmen“ als Serie): a subject
+    # word is no programme identity under any topic unless IMDb or TVDB know it as a series. A sport may be a real
+    # series („Formel 1“, TVDB 387219); a subject word named like the topic stays excluded even then (IMDb „Doku“, 0.6.87).
+    if not database_series(m):return True
+    return name not in _metadata.SPORT_WORDS and bool(topic) and name==key(topic)
+
+def database_series(m):
+    """0.6.118: True if IMDb or TVDB know the identity as a series (an IMDb tt-ID or a TVDB reference)."""
+    m=m or {}
+    if str(m.get('imdb_id') or '').startswith('tt'):return True
+    if m.get('provider') in ('TVDB','OMDb','IMDb Offline') and m.get('reference_id'):return True
+    return bool(m.get('tvdb_id'))
 
 def template_topic(topic,title=''):
     """0.6.84: True if a series template may be learned or used for this topic.
@@ -137,30 +150,37 @@ TEMPLATE_GENERIC={'sport','sports','masterclass','kultur','wissen','geschichte',
 import metadata as _metadata
 TEMPLATE_GENERIC|=_metadata.SPORT_WORDS   # 0.6.117: „Schwimmen“ (Air 23.11.2026, 1.144 Werke)
 
-def wikidata_only(m):
-    """0.6.117: a series identity only Wikidata knows (no IMDb ID). It may name the work itself, but it is never learned
-    as template or carried to every work of a topic – Wikidata also lists sports and subjects as „series“."""
-    return (m or {}).get('provider')=='Wikidata' and not str((m or {}).get('imdb_id') or '').startswith('tt')
-WIKIDATA_SPREAD_MIN=20
-
 def generic_identity_works(c,after='',limit=500):
-    """0.6.86: identified works whose series identity is a subject word taken from their topic (template „Sport“).
-    Read only; (rows with best offer payload, last id or None)."""
+    """0.6.86: identified works whose series identity is a subject word (template „Sport“).
+    0.6.118 (Mac-Prüfung 0.6.117): whatever their topic („Schwimmen“ on Fußball/Ski offers), but never an identity
+    IMDb or TVDB know as a series („Formel 1“, TVDB 387219) – those rows are left out.
+    0.6.117 also reset Wikidata-only Sendungen named like their topic (Tell-Star, Cinema Strikes Back, Berichte vom Tage):
+    that pass is gone, they are real programmes. Read only; (rows with best offer payload, last id or None)."""
     marks=','.join('?'*len(TEMPLATE_GENERIC))
     rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
         FROM works w WHERE w.id>? AND w.state='identified' AND w.kind='series' AND lower(w.title) IN (%s)
-          AND lower(w.topic)=lower(w.title) ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
-    return rows,(rows[-1]['id'] if rows else None)
+        ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
+    last=rows[-1]['id'] if rows else None
+    keep=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if portal_identity(dict(m,kind='series',title=row['title']),row['topic']):keep.append(row)
+    return keep,last
 
-def wikidata_spread_works(c,after='',limit=500):
-    """0.6.117: identified works carrying a Wikidata-only identity named like their topic that was spread over at least
-    WIKIDATA_SPREAD_MIN works (the „Schwimmen“ pattern). Read only; (rows with payload, last id or None)."""
-    rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
-        FROM works w WHERE w.id>? AND w.state='identified' AND w.kind='series' AND json_extract(w.meta,'$.provider')='Wikidata'
-          AND COALESCE(json_extract(w.meta,'$.imdb_id'),'') NOT LIKE 'tt%' AND lower(w.topic)=lower(w.title)
-          AND (SELECT COUNT(*) FROM works x WHERE x.show_key=w.show_key AND x.state='identified')>=?
-        ORDER BY w.id LIMIT ?""",(after,WIKIDATA_SPREAD_MIN,limit)).fetchall()
+UNDO_GENERIC_REASON='Thema ist keine Serie (%s); neu erkennen (0.6.87)'
+def undo_generic_reset_works(c,shows,after=0,limit=500):
+    """0.6.118: works 0.6.117 reset as „Thema ist keine Serie“ although their name is a real programme (Tell-Star,
+    Formel 1, Sonntagsmärchen; generic_templates_v06117 'shows'). Read only; (rows, last id or None)."""
+    titles=[t for t in shows if key(t) not in TEMPLATE_GENERIC or key(t) in REAL_SPORT_SERIES]
+    if not titles:return [],None
+    reasons=[UNDO_GENERIC_REASON%t for t in titles]
+    marks=','.join('?'*len(reasons))
+    rows=c.execute("""SELECT id,state,meta FROM works WHERE id>? AND state IN ('pending','retry','review','format')
+        AND json_extract(meta,'$.reason') IN (%s) ORDER BY id LIMIT ?"""%marks,(after,*reasons,limit)).fetchall()
     return rows,(rows[-1]['id'] if rows else None)
+# Sports words that are also real series at IMDb/TVDB; a reset under such a name is undone (it is recognised again).
+REAL_SPORT_SERIES={'formel 1','formel e'}
 
 def drop_portal_templates(c):
     """0.6.84: forget templates learned for a portal/section topic or with a portal identity (returns count)."""
@@ -168,7 +188,7 @@ def drop_portal_templates(c):
     for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
         try:m=json.loads(meta or '{}')
         except (TypeError,ValueError):m={}
-        if not template_topic(topic) or portal_identity(m,topic) or wikidata_only(m):
+        if not template_topic(topic) or portal_identity(m,topic):
             gone+=c.execute('DELETE FROM series_templates WHERE topic=? AND provider=? AND reference=?',(topic,provider,ref)).rowcount
     return gone
 
@@ -338,7 +358,7 @@ def series_template_candidate(c,row,source):
     templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
     if len(templates)!=1:return None
     known=json.loads(templates[0][0])
-    if known.get('kind')!='series' or key(known.get('title'))!=key(topic) or wikidata_only(known):return None
+    if known.get('kind')!='series' or key(known.get('title'))!=key(topic):return None
     if not known.get('reference_id') or not known.get('provider'):return None
     own=json.loads(row['meta'])
     if own.get('year') and known.get('year') and own['year']!=known['year']:return None
@@ -1611,6 +1631,15 @@ def reset_identity(c,row,source,reason):
     return c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0 WHERE id=? AND state='identified'",
                      (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
 
+def requeue_from_source(c,row,source,reason):
+    """0.6.118: undo of an automatic reset – the work is recognised again from the sender data, with a fresh attempt
+    count (also when a format rule filed it meanwhile). User decisions and matches are never touched."""
+    if row['state'] not in ('pending','retry','review','format'):return False
+    fresh=seed(source);fresh['reason']=reason
+    return c.execute("""UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0
+        WHERE id=? AND state IN ('pending','retry','review','format')""",
+                     (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
+
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
     done={'edition':0,'segment':0}
@@ -1892,6 +1921,45 @@ def restore_sendung_spelling(c):
         if reason:m['reason']=reason.replace('„'+str(row['title'])+'“','„'+topic+'“')
         c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(topic,json.dumps(m),row['id']))
         out[row['title']]=topic
+    return out
+
+def _shouting(t):
+    letters=[ch for ch in str(t or '') if ch.isalpha()]
+    return len(letters)>3 and all(ch.isupper() for ch in letters)
+
+def unify_show_spelling(c):
+    """0.6.118 (Mac-Prüfung 0.6.117: „KiKANiNCHEN“ 50 and „Kikaninchen“ 368 works under one show_key): spellings of one
+    Reihe that differ only in case become one – the broadcaster's topic spelling most works carry, never an all-caps
+    one when another spelling exists („PRESSECLUB“, A1 0.6.106). User decisions stay. Idempotent; returns {old: new}."""
+    shows={}
+    for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
+            AND state!='manual' GROUP BY show_key,title"""):
+        shows.setdefault(show,[]).append((title,n))
+    out={}
+    for show,titles in shows.items():
+        if len(titles)<2:continue
+        by_key={}
+        for title,n in titles:by_key.setdefault(key(title),[]).append((title,n))
+        for k,variants in by_key.items():
+            if len(variants)<2:continue
+            votes={}
+            for topic,n in c.execute("SELECT topic,COUNT(*) FROM works WHERE show_key=? GROUP BY topic",(show,)):
+                t=cleaned(topic)
+                if t and key(t)==k:votes[t]=votes.get(t,0)+n
+            for title,n in variants:votes.setdefault(title,0)
+            calm=[t for t in votes if not _shouting(t)]
+            pool=calm or list(votes)
+            target=max(pool,key=lambda t:(votes[t],sum(n for v,n in variants if v==t),t))
+            for title,n in variants:
+                if title==target:continue
+                for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
+                    try:m=json.loads(w['meta'] or '{}')
+                    except (TypeError,ValueError):continue
+                    m['title']=target
+                    reason=str(m.get('reason') or '')
+                    if reason:m['reason']=reason.replace('„'+str(title)+'“','„'+target+'“')
+                    c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(target,json.dumps(m),w['id']))
+                out[title]=target
     return out
 
 def reopen_full_programmes(c,limit=100000):
@@ -2270,23 +2338,38 @@ def year_edition(title):
     return stem,year
 
 def merge_year_editions(c):
-    """Idempotent (every format pass): Sendung filings „<Reihe> <Jahr>“ of at least two years (each with
-    YEAR_EDITION_MIN_WORKS works, same sender) go under one Reihe „<Reihe>“. Returns (moved, {Reihe: [years]})."""
+    """Idempotent (every format pass): Sendung filings „<Reihe> <Jahr>“ of at least two years (0.6.118: together more than
+    YEAR_EDITION_MIN_WORKS works) go under one Reihe „<Reihe>“. Returns (moved, {Reihe: [years]})."""
     groups={}
     for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE kind='series' AND state='format'
             AND json_extract(meta,'$.provider')='Sendung' AND title GLOB '*20[0-9][0-9]*' GROUP BY show_key,title"""):
         hit=year_edition(title)
-        if not hit or n<YEAR_EDITION_MIN_WORKS:continue
+        if not hit:continue
         ch=c.execute("""SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM works w JOIN offers o ON o.work_id=w.id
             WHERE w.show_key=? AND w.title=? ORDER BY o.active DESC LIMIT 1""",(show,title)).fetchone()
-        groups.setdefault((key(hit[0]),ch[0] if ch else ''),[]).append((show,title,hit[0],hit[1]))
+        groups.setdefault(key(hit[0]),[]).append((show,title,hit[0],hit[1],n,ch[0] if ch else ''))
     moved=0;merged={}
-    for (stem_key,_),items in groups.items():
-        if len({y for *_,y in items})<2:continue
+    for stem_key,found in groups.items():
+        # 0.6.118 (Mac-Prüfung 0.6.117: „Dein Song 2022“–„2026“ with 1–6 works each stayed apart): one work per year is
+        # enough when the Reihe has YEAR_EDITION_MIN_WORKS+1 works over at least two years; editions of different
+        # senders (ZDF/KiKA) are one Reihe from three years on, otherwise the sender with most works decides.
+        years={x[3] for x in found}
+        if len(years)<2 or sum(x[4] for x in found)<=YEAR_EDITION_MIN_WORKS:continue
+        if len(years)<3:
+            senders={}
+            for x in found:senders[x[5]]=senders.get(x[5],0)+x[4]
+            main=max(senders,key=senders.get)
+            found=[x for x in found if x[5] in (main,'')]
+            if len({x[3] for x in found})<2:continue
+        items=[x[:4] for x in found]
         stem=sorted((x[2] for x in items),key=len)[0]
         own=c.execute("""SELECT show_key,title FROM works WHERE kind='series' AND state='format' AND json_extract(meta,'$.provider')='Sendung'
             AND title=? AND COALESCE(show_key,'')!='' LIMIT 1""",(stem,)).fetchone()
+        # 0.6.118: „Dein Song“ appeared twice in the Kinderecke – the Reihe may already be known under its database identity
+        own=own or c.execute("""SELECT show_key,title FROM works WHERE kind='series' AND state IN ('identified','matched','format')
+            AND lower(title)=lower(?) AND COALESCE(show_key,'')!='' GROUP BY show_key ORDER BY COUNT(*) DESC LIMIT 1""",(stem,)).fetchone()
         target=own[0] if own else showkey({'kind':'series','title':stem})
+        if own and key(own[1])==key(stem):stem=own[1]
         for show,title,_,year in items:
             for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=?",(show,title)).fetchall():
                 m=json.loads(w['meta'] or '{}')

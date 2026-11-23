@@ -1,3 +1,12 @@
+## 0.6.118 – Korrektur Mac-Urteil 0.6.117 (Erkennung E1/E4/E6, Sperren im Import); auf 0.6.117
+
+- E1: `catalog.portal_identity` – ein Themenwort (`TEMPLATE_GENERIC`, mit Sportarten) ist unter jedem Thema keine Serienidentität, außer IMDb/TVDB kennen es (`catalog.database_series`: tt-ID oder TVDB-/IMDb-Referenz, „Formel 1“ TVDB 387219). Damit fällt die ZDF-Seite „Schwimmen“ (1.045 Fußball-/Skibeiträge) als Kandidat, Vorlage und Weitergabe weg. Die Wikidata-only-Sperre aus 0.6.117 ist zurückgenommen (Tell-Star, Cinema Strikes Back, Berichte vom Tage … sind echte Sendungen). Heilung `generic_templates_v06118`: Themenwort-Identitäten unter jedem Thema neu erkennen (nie IMDb/TVDB-Serien); auf Prüfkopien mit 0.6.117-Lauf werden die zurückgesetzten echten Reihen (Rücknahme aus `generic_templates_v06117.shows`) mit frischem Versuchszähler neu erkannt (`undone_v06117`).
+- E4: `catalog.merge_year_editions` – ein Werk je Jahr genügt, wenn die Reihe zusammen mehr als 2 Werke aus ≥ 2 Jahren hat; ab 3 Jahren auch über Sender hinweg (ZDF/KiKA), sonst entscheidet der Sender mit den meisten Werken; Ziel ist auch eine schon bekannte Reihe gleichen Namens.
+- E6: `catalog.unify_show_spelling` (Start und alle 6 h im Formatdurchlauf, Ereignis `catalog_show_spelling_unified`): Schreibweisen einer Reihe, die sich nur in Groß-/Kleinschreibung unterscheiden, werden die Senderschreibweise des Themas; nie ganz groß, wenn es eine andere gibt.
+- Sperren: Filmlisten-Import wartet auf die Start-Heilungen; `begin_snapshot`/`ingest_incremental`/`finish_snapshot` wiederholen bei belegter Datenbank (bis 1 min, ohne Doppelzählung), Fortschrittsanzeige überspringt, Statuslesen fängt ab; sonst Warnung `catalog_sync_busy` und neuer Versuch nach 1 min.
+- Kinderecke: Warteliste nennt bei `KIDS_TALE_EXCLUDED` („Gevatter Tod“) den eigenen Grund statt „Altersfreigabe wird noch gesucht“ (nur Anzeigetext).
+- Tests: `tests/test_v06118.py` (11) mit Tell-Star, Formel 1, Sonntagsmärchen, Cinema Strikes Back; `tests/test_v06117_air.py` angepasst.
+
 ## 0.6.117 – Sammelstand: Erkennung (Air-Langzeitdiagnose, Mac-Urteil 0.6.116, Jahrgänge), Kinderecke K7; auf 0.6.116
 
 ### Erkennung

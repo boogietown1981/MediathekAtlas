@@ -334,8 +334,12 @@ def waiting(c, limit=3000):   # 0.6.109: Mac-Prüfung 0.6.106 sah genau 300 (abg
     out = []
     lim = max_age(c)
     for r in c.execute(sql, args):
+        title = (r['title'] or '').lower()
         if not r['identified']:
             reason = 'Nicht erkannt'
+        elif any(t in title for t in categories.KIDS_TALE_EXCLUDED):
+            # 0.6.118 (Mac-Prüfung 0.6.117: „Gevatter Tod“ stand mit „Altersfreigabe wird noch gesucht“ da): nur Anzeigetext
+            reason = 'Märchen mit Tod oder Grauen als Hauptmotiv – bitte selbst entscheiden'
         elif r['age'] is not None and r['age'] > lim:
             reason = 'FSK %d (über der Grenze)' % r['age']
         elif r['age'] is not None:

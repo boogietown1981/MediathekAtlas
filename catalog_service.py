@@ -86,11 +86,16 @@ class Service:
         """0.6.86, once: subject templates („Sport“, „Masterclass“) are forgotten; works that took such an identity
         from their topic are recognised again from the sender data. Matches, user decisions and confirmed episodes stay."""
         with self.db() as c:
-            # 0.6.117: again with the sports words and Wikidata-only spreads („Schwimmen“, Air 23.11.2026)
-            if catalog.get_state(c,'generic_templates_v06117',False):return
+            # 0.6.118: again for subject words under any topic („Schwimmen“ on Fußball offers, Mac-Prüfung 0.6.117),
+            # never for IMDb/TVDB series; the 0.6.117 Wikidata pass is undone (Tell-Star, Formel 1, Sonntagsmärchen).
+            if catalog.get_state(c,'generic_templates_v06118',False):return
             dropped=catalog.drop_portal_templates(c)
+            earlier=catalog.get_state(c,'generic_templates_v06117',None)
+        undo_shows=dict((earlier or {}).get('shows') or {}) if isinstance(earlier,dict) else {}
+        undone=self.undo_generic_reset(undo_shows) if undo_shows else 0
+        if undone is None:return
         after='';done=0;shows={}
-        passes=[catalog.generic_identity_works,catalog.wikidata_spread_works]
+        passes=[catalog.generic_identity_works]
         while not self.stop.is_set() and passes:
             try:
                 with self.db() as c:
@@ -108,11 +113,32 @@ class Service:
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return
         if self.stop.is_set():return
-        if done or dropped:
-            diagnostics.event('catalog_generic_templates_reset',templates_dropped=dropped,works=done,shows=shows);catalog.invalidate_listings()
+        if done or dropped or undone:
+            diagnostics.event('catalog_generic_templates_reset',templates_dropped=dropped,works=done,shows=shows,undone_v06117=undone);catalog.invalidate_listings()
         with self.db() as c:
-            state={'templates_dropped':dropped,'works':done,'shows':shows,'at':time.time()}
-            catalog.set_state(c,'generic_templates_v0692',state);catalog.set_state(c,'generic_templates_v06117',state)
+            state={'templates_dropped':dropped,'works':done,'shows':shows,'undone_v06117':undone,'at':time.time()}
+            catalog.set_state(c,'generic_templates_v0692',state);catalog.set_state(c,'generic_templates_v06118',state)
+            if earlier is None:catalog.set_state(c,'generic_templates_v06117',state)
+    def undo_generic_reset(self,shows):
+        """0.6.118, once (inside reset_generic_identities): works the 0.6.117 pass reset under a real programme's name are
+        recognised again. Only test copies ever ran 0.6.117. Returns the count, None when stopped."""
+        after=0;done=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    rows,last=catalog.undo_generic_reset_works(c,shows,after)
+                    for row in rows:
+                        source=catalog.best_source(c,row['id'])
+                        if source and catalog.requeue_from_source(c,row,source,'Erneut erkennen: Rücknahme 0.6.117 (%s)'%(json.loads(row['meta'] or '{}').get('reason') or '')[23:-24]):
+                            done+=1
+                if last is None:return done
+                after=last
+                if self.stop.wait(.05):return None
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return None
+        return None
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
@@ -261,25 +287,51 @@ class Service:
         self.current={**state,'updated_at':time.time()}
         if changed or time.monotonic()-self.last_log>15:
             diagnostics.event('catalog_progress',**self.current);self.last_log=time.monotonic()
-        with self.db() as c:catalog.set_state(c,'sync',self.current)
+        # 0.6.118 (Sprungtest 0.6.85→0.6.117: feed_download_failed „database is locked“): the progress record is only a
+        # display; a busy database skips it instead of aborting the download.
+        try:
+            with self.db() as c:catalog.set_state(c,'sync',self.current)
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.busy('sync_status')
+    def busy(self,label):
+        self.sqlite_busy_count+=1;self.sqlite_busy_by_label[label]=self.sqlite_busy_by_label.get(label,0)+1
+    def write_retry(self,label,fn,tries=20,wait=3):
+        """0.6.118: one write transaction ``fn(c)``, retried while the database is busy (start heals, large imports)."""
+        for attempt in range(tries):
+            try:
+                with self.db() as c:return fn(c)
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e) or attempt==tries-1:raise
+                self.busy(label)
+                if self.stop.wait(wait):raise InterruptedError('Beendet')
     def import_snapshot(self,path,started,cancelled):
         """Stream a full official snapshot, but only reprocess changed/new rows."""
         import_started=time.monotonic()
         count=0;batch=[];changes={'added':0,'changed':0,'unchanged':0,'reactivated':0}
-        with self.db() as c:catalog.begin_snapshot(c)
+        self.write_retry('sync_begin',catalog.begin_snapshot)
+        def ingest(batch):
+            # a rolled-back batch must not count twice
+            before=dict(changes)
+            def run(c):
+                changes.clear();changes.update(before)
+                catalog.ingest_incremental(c,batch,started,changes)
+            self.write_retry('sync_ingest',run)
         for row in filmlist.read_rows(path):
             batch.append(row)
             if len(batch)>=500:
                 if cancelled():raise InterruptedError('Import pausiert')
-                with self.db() as c:catalog.ingest_incremental(c,batch,started,changes)
+                ingest(batch)
                 count+=len(batch);batch=[]
                 self.status(phase='importing',processed=count)
         if cancelled():raise InterruptedError('Import pausiert')
-        with self.db() as c:
-            catalog.ingest_incremental(c,batch,started,changes);count+=len(batch)
-            if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
-            changes=catalog.finish_snapshot(c,started,changes)
+        ingest(batch);count+=len(batch)
+        if count<1:raise ValueError('Leere Filmliste; bisherige Verfügbarkeit bleibt erhalten')
+        def finish(c):
+            done=catalog.finish_snapshot(c,started,dict(changes))
             catalog.set_state(c,'last_complete',time.time())
+            return done
+        changes=self.write_retry('sync_finish',finish)
         catalog.invalidate_listings()
         self.format_wake.set();self.subscription_wake.set()
         diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
@@ -292,10 +344,19 @@ class Service:
             if task_control.paused('filmlist'):
                 task_control.note('filmlist','Pausiert');continue
             if not config.get('auto_catalog',True) and not requested:continue
-            with self.db() as c:
-                last=catalog.get_state(c,'last_complete',0)
-                try:has_subscriptions=bool(c.execute('SELECT 1 FROM subscriptions WHERE enabled=1 LIMIT 1').fetchone())
-                except sqlite3.OperationalError:has_subscriptions=False
+            # 0.6.118 (Sprungtest 0.6.85→0.6.117: 4× „database is locked“ right after the start heals): the import
+            # waits for the once-heals like the workers do.
+            if self.wait_for_heals():continue
+            try:
+                with self.db() as c:
+                    last=catalog.get_state(c,'last_complete',0)
+                    try:has_subscriptions=bool(c.execute('SELECT 1 FROM subscriptions WHERE enabled=1 LIMIT 1').fetchone())
+                    except sqlite3.OperationalError as e:
+                        if sqlite_busy(e):raise
+                        has_subscriptions=False
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.busy('sync_state');continue
             # Active subscriptions need fresh offers; hourly-ish feed import is
             # still bounded, cancellable and uses the incremental diff.
             interval=2*3600 if has_subscriptions else 12*3600
@@ -306,6 +367,11 @@ class Service:
                 path=filmlist.download(self.root,self.status,cancelled)
                 self.import_snapshot(path,started,cancelled)
             except InterruptedError:self.status(phase='paused')
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                # still busy after a minute of retries: try again soon, not after 5 min, and say so as a warning
+                self.busy('sync');diagnostics.event('catalog_sync_busy',level='WARNING',error=core.safe_error(e))
+                self.status(phase='waiting',error='Datenbank belegt, neuer Versuch in 1 min');retry_after=time.time()+60
             except Exception as e:
                 diagnostics.error('catalog_sync_failed',e)
                 self.status(phase='error',error=core.safe_error(e));retry_after=time.time()+300
@@ -777,10 +843,10 @@ class Service:
             dest=catalog.save_metadata(c,wid,recognized,outcome) or wid
             if recognized['kind']=='series' and not recognized.get('video_role_needs_review'):
                 if (metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])
-                        and catalog.template_topic(entry['source'].get('topic')) and not catalog.wikidata_only(recognized)):
+                        and catalog.template_topic(entry['source'].get('topic')) and not catalog.portal_identity(recognized)):
                     c.execute('INSERT OR REPLACE INTO series_templates VALUES(?,?,?,?)',(catalog.key(entry['source']['topic']),recognized['provider'],recognized['reference_id'],json.dumps(recognized)))
                 if row['show_key']:catalog.propagate_series(c,row['show_key'],recognized)
-                elif metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']) and not catalog.wikidata_only(recognized):
+                elif metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']) and not catalog.portal_identity(recognized):
                     peers=c.execute("SELECT * FROM works WHERE topic=? AND kind='unknown' AND state NOT IN ('manual','matched')",(entry['source']['topic'],)).fetchall()
                     for peer in peers:
                         own=json.loads(peer['meta']);own.update(kind='series',episode_title=own['title'])
@@ -1447,6 +1513,7 @@ class Service:
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
             self.merge_year_editions()
+            self.unify_show_spelling()
             waiting=self.refile_suggested_sendungen()=='waiting'
             self.unknown_sweep()
             # 0.6.114: an undecided B2 refiling is tried again after 2 minutes, not after an hour
@@ -1462,6 +1529,20 @@ class Service:
             diagnostics.event('catalog_year_editions_merged',works=moved,shows=dict(list(merged.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
         return moved
+    SPELLING_EVERY=6*3600
+    def unify_show_spelling(self,force=False):
+        """0.6.118, at start and then every 6 h in the format pass: one spelling per Reihe (catalog.unify_show_spelling)."""
+        if not force and time.monotonic()-getattr(self,'spelling_at',-1e9)<self.SPELLING_EVERY:return None
+        self.spelling_at=time.monotonic()
+        try:
+            with self.db() as c:changed=catalog.unify_show_spelling(c)
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1;self.spelling_at=time.monotonic()-self.SPELLING_EVERY+300;return None
+        if changed:
+            diagnostics.event('catalog_show_spelling_unified',titles=len(changed),samples=dict(list(changed.items())[:30]))
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        return changed
     def refile_suggested_sendungen(self):
         """0.6.113, once when the IMDb archive is ready (catalog.refile_suggested_sendungen): Folgen that 0.6.88 filed
         under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days.

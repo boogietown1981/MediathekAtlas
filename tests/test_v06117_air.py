@@ -92,30 +92,32 @@ class WikidataOnly(unittest.TestCase):
             self.assertTrue(metadata.generic_topic(w), w);self.assertFalse(catalog.template_topic(w), w)
         self.assertTrue(catalog.template_topic('Sportschau Club'))
 
-    def test_wikidata_only_template_never_used(self):
+    def test_wikidata_template_of_a_real_sendung_is_used_a_sport_word_never(self):
+        # 0.6.118 (Mac-Prüfung 0.6.117): Wikidata-only Sendungen are real programmes; a subject word never is
         with self.db() as c:
-            c.execute('INSERT INTO series_templates VALUES(?,?,?,?)', (catalog.key('Kunstturnen'), 'Wikidata', 'Q9',
-                      json.dumps({'kind': 'series', 'title': 'Kunstturnen', 'provider': 'Wikidata', 'reference_id': 'Q9'})))
-            catalog.ingest(c, [{'title': 'Kür am Barren', 'topic': 'Kunstturnen', 'description': 'x', 'duration': 900, 'channel': 'ZDF',
-                                'url_video': 'https://example.org/k.mp4'}])
+            for topic in ('Schwimmen', 'Cinema Strikes Back'):
+                c.execute('INSERT INTO series_templates VALUES(?,?,?,?)', (catalog.key(topic), 'Wikidata', 'Q9',
+                          json.dumps({'kind': 'series', 'title': topic, 'provider': 'Wikidata', 'reference_id': 'Q9'})))
+            self.assertEqual(catalog.drop_portal_templates(c), 1)
+            catalog.ingest(c, [{'title': 'Ein Blick auf Alien', 'topic': 'Cinema Strikes Back', 'description': 'x', 'duration': 900,
+                                'channel': 'ARTE', 'url_video': 'https://example.org/k.mp4'}])
             row = c.execute('SELECT * FROM works').fetchone()
             src = json.loads(c.execute('SELECT payload FROM offers').fetchone()[0])
-            self.assertIsNone(catalog.series_template_candidate(c, row, src))
-            self.assertEqual(catalog.drop_portal_templates(c), 1)
+            self.assertEqual(catalog.series_template_candidate(c, row, src)['title'], 'Cinema Strikes Back')
 
-    def test_heal_resets_spread_wikidata_identities_only(self):
+    def test_heal_resets_sport_words_only(self):
         with self.db() as c:
-            self.identify(c, 'Kunstturnen', 25)                                  # spread, Wikidata only
+            self.identify(c, 'Kunstturnen', 25)                                  # real-looking name, Wikidata only: kept (0.6.118)
             self.identify(c, 'Schwimmen', 3)                                     # sport word
-            self.identify(c, 'Unser Dorf', 5, ref='Q7')                          # small, kept
-            self.identify(c, 'Lindenstraße', 25, ref='Q8', imdb='tt0090509')     # Wikidata with IMDb ID, kept
+            self.identify(c, 'Unser Dorf', 5, ref='Q7')                          # kept
+            self.identify(c, 'Lindenstraße', 25, ref='Q8', imdb='tt0090509')     # kept
         self.svc.reset_generic_identities()
         with self.db() as c:
             left = {r[0]: r[1] for r in c.execute("SELECT topic,COUNT(*) FROM works WHERE state='identified' AND kind='series' GROUP BY topic")}
-            done = catalog.get_state(c, 'generic_templates_v06117')
-        self.assertNotIn('Kunstturnen', left);self.assertNotIn('Schwimmen', left)
-        self.assertEqual((left.get('Unser Dorf'), left.get('Lindenstraße')), (5, 25))
-        self.assertEqual(done['works'], 28)
+            done = catalog.get_state(c, 'generic_templates_v06118')
+        self.assertNotIn('Schwimmen', left)
+        self.assertEqual((left.get('Kunstturnen'), left.get('Unser Dorf'), left.get('Lindenstraße')), (25, 5, 25))
+        self.assertEqual(done['works'], 3)
         self.assertIsNone(self.svc.reset_generic_identities())                  # once
 
 

@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.117
+# MediathekAtlas · 0.6.118
+
+## Neu in 0.6.118: Korrektur der Erkennung aus 0.6.117
+- Sportarten und Themenwörter („Schwimmen“, „Sport“) werden nie mehr zur Serie – unter jedem Thema. Echte Sendungen (Tell-Star, Cinema Strikes Back, Sonntagsmärchen) und Reihen, die IMDb oder TVDB kennen (Formel 1), bleiben unangetastet.
+- Jahrgänge einer Sendung („Dein Song 2022“ bis „2026“) werden eine Reihe, auch mit nur einer Folge je Jahr und bei ZDF/KiKA gemischt.
+- Eine Reihe hat eine Schreibweise (KiKANiNCHEN), nie die ganz großgeschriebene, wenn es eine andere gibt.
+- Filmlisten-Import übersteht eine belegte Datenbank (kein „database is locked“ mehr nach den Start-Heilungen).
+- Kinderecke: „Gevatter Tod“ & Co. warten mit eigenem Grund.
+
 
 ## Neu in 0.6.117: Erkennung sauberer, Kataloge täglich aktuell, Kinderecke genauer
 - Sportarten wie „Schwimmen“ gelten nie mehr als Serie; eine nur bei Wikidata bekannte Serie wird nicht mehr auf alle Beiträge eines Themas übertragen. Bereits falsch zugeordnete Beiträge werden neu erkannt.
