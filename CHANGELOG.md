@@ -1,9 +1,20 @@
-## 0.6.121 – Langzeitdiagnose Air N-D/N-F; auf main 0.6.120
+## 0.6.122 – Sammelstand: Erkennung 0.6.121 + Kinderecke-Bilder; auf main 0.6.120
+
+### Erkennung (0.6.121, nicht ausgegeben – Langzeitdiagnose Air N-D/N-F)
 
 - N-D: `metadata.TRUNCATED_NOTE` – eine offene Klammer am Titelende, die wie ein Fassungs-/Barrierefreiheitshinweis beginnt („(Originalversion“, „(mit Untert“, „(OmU“), fällt aus dem Suchtitel; Werkkennungen bleiben unverändert. Offene Werke damit einmal neu eingereiht (Merker `truncated_notes_v06121`, Ereignis `catalog_truncated_notes_requeued`).
 - N-F: `artwork.log_due` – `artwork_checked` mit Fehler einmal je Titel und Tag, Erfolge jede 25. Prüfung (vorher 73 % des Protokolls, Diagnosefenster 44 h).
 - Abfragen Runde 7 für die restlichen Werke ohne Art: `berichte/abfragen/ohne-art-0721-runde7.sql` (Projektablage).
 - Tests: `tests/test_v06121.py` (6).
+
+### Kinderecke-Bilder (Kinderecke-Thread, 295d0cea): Bilder statt Anfangsbuchstaben, Doku nicht unter Zeichentrick, deckende Kopfleiste
+- Grundlage: Björn 23.11.2026 mit Bildschirmfoto: in der Kinderecke tragen einige Reihen/Filme nur den Anfangsbuchstaben („Animanimals“ einmal mit, einmal ohne Bild, „#WIR – Freundschaft grenzenlos“, „Anna auf dem Bauernhof“, „Anna, Paula, Pia und die wilden Tiere“, „Carolin testet“, „Die wilde Natur“); „Asterix und Co. – Die Comicwelten des Albert Uderzo“ unter „Zeichentrick“; oberste Reihe als unscharfer Streifen unter der Kopfleiste.
+- Ursache Bilder: Die IMDb-Datensätze enthalten keine Bilder; Bilder kommen von TMDB, TVDB, Fanart.tv, Wikidata oder dem Anbieter. Die Kinderecke nahm zudem nur das Bild des ersten abspielbaren Angebots eines zusammengeführten Titels (die Werkliste nimmt das erste vorhandene) und bei Mediatheken-Reihen nur das Bild des stellvertretenden Werks.
+- Neu: Bild aus einem anderen Angebot desselben Titels; bei Mediatheken-Reihen das Bild einer anderen Folge bzw. des erkannten Reihen-Werks; sonst das Bild einer gleichnamigen Kachel derselben Art. Ohne jedes Bild bleibt der Anfangsbuchstabe.
+- Gruppen: Dokumentationen (Kategorie oder „Doku“/„Documentary“ im Genre) nie unter „Zeichentrick“.
+- Kopfleiste der Kinderecke deckend statt nach unten durchsichtig (die darunter gescrollte Reihe schimmerte als unscharfer Streifen durch).
+- Nicht geändert: doppelte Reihen unter verschiedenen Schlüsseln („Animanimals“, „Anna, Paula, Pia …“) – Sache der Erkennung.
+- Tests: `tests/test_v06121_kinder_bilder.py` (4, auf 0.6.120 rot).
 
 ## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (E6); auf 0.6.119
 

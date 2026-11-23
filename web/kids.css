@@ -9,7 +9,7 @@ html,body{margin:0;min-height:100%;background:radial-gradient(1200px 600px at 10
   background-attachment:fixed;color:var(--ink);-webkit-tap-highlight-color:transparent}
 button{font:inherit;color:inherit;cursor:pointer}
 .kids-top{position:sticky;top:0;z-index:5;padding:14px 22px 10px;padding-top:max(14px,env(safe-area-inset-top));
-  background:linear-gradient(180deg,rgba(27,20,70,.97) 70%,rgba(27,20,70,0));backdrop-filter:blur(6px)}
+  background:rgb(27,20,70);box-shadow:0 6px 14px rgba(10,6,40,.55)}   /* 0.6.121: deckend – vorher schimmerte die darunter gescrollte Reihe als unscharfer Streifen durch */
 .kids-logo{margin:0 0 10px;font-size:28px;font-weight:800;letter-spacing:.5px;display:flex;align-items:center;gap:10px}
 .kids-logo-mark{display:inline-grid;place-items:center;width:42px;height:42px;border-radius:14px;font-size:20px;
   background:linear-gradient(135deg,var(--accent),#ff9a3f);box-shadow:0 6px 18px rgba(255,93,143,.45)}

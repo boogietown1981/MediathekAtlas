@@ -205,6 +205,8 @@ def _collect_once(root, db, page, view, merge, modules, limit):
                 tile = None
             if tile and tile['id'] not in seen:
                 seen.add(tile['id'])
+                if not tile.get('poster'):          # 0.6.121: Bild eines anderen Angebots desselben Titels
+                    tile['poster'] = _entry_poster(entry)
                 try:
                     tile['group'] = group_of(entry)
                 except Exception as exc:   # 0.6.103: eine unerwartete Angebotsform kostet nie die ganze Liste
@@ -217,8 +219,55 @@ def _collect_once(root, db, page, view, merge, modules, limit):
     return tiles, pending, False
 
 
+def _offer_poster(offer):
+    offer = _dict(offer)
+    item = _dict(offer.get('item'))
+    if offer.get('source') == 'mediatheken':
+        return _https(_dict(item.get('metadata')).get('poster'))
+    return _https(item.get('poster'))
+
+
+def _entry_poster(entry):
+    """Erstes brauchbares Bild unter allen Angeboten eines zusammengeführten Titels (wie die Werkliste)."""
+    return next((p for p in (_offer_poster(o) for o in _dict(entry).get('offers') or []) if p), '')
+
+
+def _title_key(title):
+    return re.sub(r'[^0-9a-zäöüß]+', '', str(title or '').casefold())
+
+
+def _fill_pictures(db, out):
+    """0.6.121 (Björn 23.11.2026: „einige Serien oder Filme haben nur den Buchstaben als Bild“): Kacheln ohne Bild
+    bekommen, wo vorhanden, ein Bild aus dem eigenen Bestand – Mediatheken-Reihe: das Bild einer anderen Folge bzw. des
+    erkannten Werks derselben Reihe; sonst das Bild einer gleichnamigen Kachel derselben Art (z. B. dieselbe Reihe
+    unter zweitem Schlüssel oder bei einem anderen Anbieter). IMDb liefert keine Bilder; ohne Bild bei TMDB/TVDB/
+    Fanart.tv/Wikidata/Anbieter bleibt der Anfangsbuchstabe."""
+    shows = [t for t in out.get('series') or [] if not t.get('poster') and t.get('source') == 'mediatheken'
+             and (t.get('series') or {}).get('show')]
+    if shows and db is not None:
+        try:
+            with db() as c:
+                for t in shows:
+                    row = c.execute("SELECT json_extract(meta,'$.poster') FROM works WHERE show_key=? AND "
+                                    "json_extract(meta,'$.poster') LIKE 'https://%' ORDER BY (kind='series') DESC, rowid LIMIT 1",
+                                    (t['series']['show'],)).fetchone()
+                    if row:
+                        t['poster'] = _https(row[0])
+        except Exception:
+            pass
+    for view in ('movies', 'series'):
+        known = {}
+        for t in out.get(view) or []:
+            if t.get('poster'):
+                known.setdefault(_title_key(t.get('title')), t['poster'])
+        for t in out.get(view) or []:
+            if not t.get('poster'):
+                t['poster'] = known.get(_title_key(t.get('title')), '')
+
+
 def _finish(db, root, out, pending):
     out['series'] = _kids_shows(db, out['series'])
+    _fill_pictures(db, out)
     out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     out['movies'] = _prefer_kids_offers(db, out['movies'])
@@ -356,12 +405,17 @@ def _signals(entry):
     return cats, ' | '.join(text)[:2000]
 
 
+DOCU = re.compile(r'(?i)\bdoku|documentar')
+
+
 def group_of(entry):
     """Gruppe eines Katalogtitels: Märchen vor Zeichentrick (Märchen gibt es auch gezeichnet), sonst Kategorie oder Text."""
     cats, text = _signals(entry)
     for gid, _name, _icon, rx in GROUPS:
         if rx is None:
             return gid
+        if gid == 'trick' and ('Dokumentation' in cats or DOCU.search(text)):
+            continue      # 0.6.121: „Asterix und Co. – Die Comicwelten des Albert Uderzo“ ist eine Doku, kein Trickfilm
         if (GROUP_CATEGORIES.get(gid, set()) & cats) or rx.search(text):
             return gid
     return 'mehr'
