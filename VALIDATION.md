@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.113 – Sammelstand Erkennung/YouTube/Kinderecke (23. November 2026)
+- Automatisch: tests/test_v06113.py (8), tests/test_v06113_kinder_zwilling.py (6), tests/test_v06113_kinder_sperren.py (4), tests/test_v0690_kanal_vorschlaege.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.113, Teile E, Y, K; pruefe_kinderecke.py).
+
 ## 0.6.112 – Kinderecke Wege je Folge (23. November 2026)
 - Automatisch: tests/test_v06112_kinder_wege.py (7, auf 0.6.111 rot), gesamte Suite, Klicktests kids_corner/click_all/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.112, Skript pruefe_kinderecke.py mit Weg je Folge).
 

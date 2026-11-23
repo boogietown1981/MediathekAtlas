@@ -1,4 +1,12 @@
-# MediathekAtlas · 0.6.112
+# MediathekAtlas · 0.6.113
+
+## Neu in 0.6.113: Erkennung räumt auf, YouTube-Vorschläge mit API-Schlüssel, Kinderecke spielt das KiKA-Angebot
+- Trailer, Vorschauen, Podcasts und Pressekonferenzen bleiben nicht mehr dauerhaft „offen“: Trailer gehören als Extra zu ihrer Reihe, die übrigen Clips werden als Clip abgelegt, nie als Folge einer echten Serie.
+- Sendungen, die IMDb ohne Einzelfolgen kennt (z. B. Sportpanorama, Euromaxx), führen ihre Ausgaben jetzt sofort als Beiträge, statt 30 Tage auf die Folgensuche zu warten.
+- Läuft der Abgleich leer, steht im Protokoll, warum die übrigen offenen Werke warten (z. B. Angebot abgelaufen).
+- Kanal-Vorschläge funktionieren auch mit eigenem YouTube-API-Schlüssel.
+- Hat eine Folge ein KiKA-Angebot, zeigt und spielt die Kinderecke genau dieses.
+- Eltern können sichtbare Titel der Kinderecke direkt sperren (Einstellungen → Kinderecke · Eltern → „In der Kinderecke“).
 
 ## Neu in 0.6.112: Kinderecke genauer
 - Jugend- und Reportageformate wie „Young Crime“ oder „POV“ zeigen in der Kinderecke nur Folgen von KiKA; andere Folgen warten auf Ihre Freigabe.

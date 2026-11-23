@@ -1,4 +1,16 @@
-## Vorbereitung 0.6.113 – Kinderecke: KiKA-Zwilling, Weg je Film, leere Referenz, schnellere Folgenwege; auf 0.6.112
+## 0.6.113 – Sammelstand: Erkennung (B2, offene Clips, Leerlauf-Diagnose), YouTube-Vorschläge mit API-Schlüssel, Kinderecke KiKA-Zwilling und Sperren sichtbarer Titel; auf 0.6.112
+
+### Erkennung (Mac-Prüfung 0.6.108: Filmregel bestanden, B2 nicht nachweisbar, Arbeiter nach 22 min „waiting“)
+- Rückstau-Abfrage (berichte/abfragen/rueckstau-0713.sql, Ausgabe daneben): 2.414 Werke Art „other“ pending mit 0 Versuchen (Trailer, Vorschauen, Podcasts, Pressekonferenzen) – `pick()` wählt Clips nie, der Sendungsdurchlauf ließ sie offen; 2.216 „unknown“ pending ohne aktives Angebot (abgelaufen, gewollt); B2-Folgen 1.035 ruhten bis 29.11. in der Folgenwarteschlange.
+- `catalog.file_open_clip` + `FORMAT_REV` 6 (ein voller Formatdurchlauf): offene Clips enden als Extra (Trailer/Vorschau, Grund nennt die Reihe) oder `format_grouping` 'clip' – bewusst nicht unter der Sendung, damit z. B. ein „Rote Rosen“-Podcast nie Folge der echten Serie wird. Ausdrücklich angeforderte Prüfungen bleiben unberührt.
+- B2: `catalog.refile_suggested_sendungen` einmalig (Merker `sendung_refile_v06113`, im Formatdurchlauf, sobald das IMDb-Archiv bereit ist): alle 0.6.88-Folgen einer vorgeschlagenen Sendung ohne IMDb-Folgen werden Beiträge; Ereignis `catalog_sendung_suggestions_refiled`. In der Folgensuche legt der Geschwisterzweig Merker-Werke ab statt sie 30 Tage zu parken (`episode_sendung_without_episodes`, via=sibling).
+- `catalog.queue_blockers` + Ereignis `recognition_idle` beim Wechsel in „waiting“ (höchstens alle 30 min): offene Werke je Art und Grund (not_due, episode_queue, no_active_offer, leased, not_selected_kind, selectable).
+- Tests: `tests/test_v06113.py` (8; Geschwisterzweig auf altem Code rot).
+
+### YouTube-Kanalvorschläge (Mac-Prüfung 0.6.112: ValueError bei channelSections/search mit API-Schlüssel)
+- channelSections und search zugelassen, Fallback auf yt-dlp, eigenes Suchbudget, Beschreibungen/Schlagwörter über videos.list (38b31402); Tests in `tests/test_v0690_kanal_vorschlaege.py`.
+
+### Kinderecke: KiKA-Zwilling, Weg je Film, leere Referenz, schnellere Folgenwege
 - Grundlage: Mac-Prüfung 0.6.112 (23.11.2026) alles erfüllt außer K4: Folgen von „Young Crime“/„POV“ waren über ihr KiKA-Angebot zugelassen, die Kinderecke zeigte und spielte aber das ZDF-/WDR-Angebot desselben Werks. Nachladen Pfefferkörner (132 Folgen) 5,8 s, kids-episodes 6,0 s.
 - KiKA-Zwilling: `kids_catalog.kids_offer(c, work_id)` liefert das aktive Kindersender-Angebot eines Werks. Folgenliste und Filmkacheln tauschen darauf (Feld `channel` = Sender des gezeigten Angebots, Feld `weg`); `work_allowed(c, wid, offer_id)` lehnt jedes andere Angebot eines Werks mit Kindersender-Zwilling ab (außer Elternfreigabe) – damit spielen /api/kids-play und das Nachladen (`offer_allowed`) nur das KiKA-Angebot. Ist das KiKA-Angebot nicht mehr aktiv, entfällt die Zulassung über den Sender.
 - `kids_rules.explain(c, work_id)`: Weg eines Werks durch die Kinder-Regel ('freigabe', 'sender', 'reihe', 'referenz', 'alter') für Prüfung und Anzeige; Filmkacheln tragen ihn als `weg`.
