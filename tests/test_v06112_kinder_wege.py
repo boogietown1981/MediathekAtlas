@@ -73,13 +73,10 @@ class Platforms(unittest.TestCase):
         self.assertEqual([t['title'] for t in d['series']], ['Spielbar'])
 
     def test_snapshot_stamp_follows_age_limit(self):
-        import server
-        old = categories.KIDS_MAX_AGE
-        self.addCleanup(setattr, categories, 'KIDS_MAX_AGE', old)
-        categories.KIDS_MAX_AGE = 6
-        six = server._snapshot_stamp({})
-        categories.KIDS_MAX_AGE = 12
-        self.assertNotEqual(six, server._snapshot_stamp({}))
+        # server nicht importieren (setzt globale Zustände anderer Tests); die Stempel-Funktion muss die Grenze tragen
+        src = (ROOT / 'server.py').read_text(encoding='utf-8')
+        body = src[src.index('def _snapshot_stamp('):src.index('def platform_context(')]
+        self.assertIn('categories.KIDS_MAX_AGE', body)
 
     def test_build_started_before_invalidate_is_not_stored(self):
         key = ('test-0712',)

@@ -50,7 +50,9 @@ IDENTIFIED = "w.state IN ('matched','manual','identified')"
 FORMAT = "w.state='format'"
 # 0.6.105: die IMDb-Kennung steht bei TMDB-/TVDB-Treffern in meta.imdb_id, reference_id ist dann die TMDB-ID
 # (Mac-Prüfung 0.6.103: reference_ages blieb leer)
-REF = "COALESCE(NULLIF(json_extract(w.meta,'$.imdb_id'),''),json_extract(w.meta,'$.reference_id'))"
+# 0.6.113 (Mac-Prüfung 0.6.112, „Wer hat eigentlich die Liebe erfunden?“: IMDb Offline ohne Kennung): ohne Kennung
+# gibt es keine belegte Freigabe – ein leerer Schlüssel darf nie einen Eintrag in reference_ages treffen
+REF = "NULLIF(COALESCE(NULLIF(json_extract(w.meta,'$.imdb_id'),''),json_extract(w.meta,'$.reference_id')),'')"
 
 HINT_GENRES = ('Kinder', 'Familie', 'Animation', 'Fantasy', 'Abenteuer')   # Kandidaten für „Wartet auf Freigabe“
 
@@ -205,6 +207,44 @@ def kids_clause(c, signal, signal_args, has):
             + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
             + [limit] + list(hint_args) + list(soft_args))
     return sql, args
+
+
+def explain(c, work_id):
+    """0.6.113: über welchen Weg ein Werk die Kinder-Regel erfüllt – 'freigabe', 'sender', 'reihe' (bekannte Kinderreihe
+    im Thema), 'referenz' (Kinder-Genre bzw. Familie + Animation aus einer Filmdatenbank), 'alter' (Familie + belegte
+    Freigabe bis zur Grenze) – oder None. Für Prüfung und Anzeige; entscheidet dasselbe wie kids_clause."""
+    import catalog
+    import categories
+    labels = catalog.category_labels(c)
+
+    def has(names):
+        raw = [r for n in names for r in labels.get(n) or []]
+        if not raw:
+            return '0', []
+        return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))' % ','.join('?' * len(raw)), raw
+    clause, args = kids_clause(c, '', [], has)
+    if not c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [str(work_id)] + list(args)).fetchone():
+        return None
+    limit = max_age(c)
+    kids_genre, kids_args = has(['Kinder'])
+    fam, fam_args = has(['Familie'])
+    ani, ani_args = has(['Animation'])
+    hint, hint_args = has(categories.KIDS_AGE_HINTS)
+    shows, shows_args = catalog.kids_signal_clause(c)
+    reference = ("(w.state='manual' OR COALESCE(json_extract(w.meta,'$.genre_source'),'') NOT IN (%s))" % ','.join('?' * len(DERIVED_SOURCES)))
+    channel = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND lower(json_extract(k.payload,'$.channel')) IN (%s))"
+               % ','.join('?' * len(ALWAYS_CHANNELS)))
+    checks = (('freigabe', _chosen('allow'), []),
+              ('sender', channel, list(ALWAYS_CHANNELS)),
+              ('reihe', "w.state IN ('matched','manual','identified','format') AND " + shows, list(shows_args)),
+              ('referenz', '%s AND %s AND (%s OR (%s AND %s))' % (IDENTIFIED, reference, kids_genre, fam, ani),
+               list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)),
+              ('alter', '%s AND EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age IS NOT NULL AND a.age<=?) AND %s'
+               % (IDENTIFIED, REF, hint), [limit] + list(hint_args)))
+    for name, sql, a in checks:
+        if c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % sql, [str(work_id)] + a).fetchone():
+            return name
+    return 'unbekannt'
 
 
 def blocked_works(c, show_key):
