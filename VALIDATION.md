@@ -3,6 +3,7 @@
 ## 0.6.109 – Kinderecke Senderweg (23. November 2026)
 - Automatisch: tests/test_v06109_kinder_senderweg.py (8, auf 0.6.108 rot), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.109, Wortsuche + Folgen ohne Kindersender).
 
+- Schreibweise der Reihen: tests/test_v06109_schreibweise.py (Paare der Mac-Prüfung A1 in beide Richtungen, Rücknahme mit/ohne alte Regel).
 ## 0.6.108 – Korrektur Erkennung (23. November 2026)
 - Automatisch: tests/test_v06108.py (6, u. a. 8 Mile über den Arbeiter vor dem Rückstau), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.108).
 

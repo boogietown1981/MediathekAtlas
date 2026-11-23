@@ -6,6 +6,7 @@
 - Die Altersgrenze im Elternbereich gilt jetzt auch für Netzkino, Plex und Pluto TV. Familienserien für Erwachsene kommen nicht mehr über die Altersfreigabe hinein.
 - „Wartet auf Freigabe“ zeigt alle wartenden Titel, nicht mehr höchstens 300.
 
+- Reihentitel werden nur noch behutsam an die Schreibweise des Senders angepasst (aus „kulturzeit“ wird „Kulturzeit“, aus „KIKA LIVE“ „KiKA LIVE“), nie mehr in Großbuchstaben („MDR Sachsenspiegel“ bleibt).
 ## Neu in 0.6.108: Filme von 3sat werden wirklich gesucht
 - Filme mit dem 3sat-Zusatz im Titel („8 Mile - Spielfilm, USA 2002“) werden jetzt als Erstes neu gesucht. In 0.6.97 standen sie auf „prüfen“ und kamen nie an die Reihe.
 - Ein Film mit um ein Jahr abweichendem Jahr gilt nur noch ab 40 Minuten Laufzeit; zwei Kurzclips von SRF („Sport“, „Moda“), die so fälschlich Filme wurden, werden neu erkannt.
