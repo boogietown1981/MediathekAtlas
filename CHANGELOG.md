@@ -1,3 +1,8 @@
+## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (E6); auf 0.6.119
+
+- E6: `catalog.unify_show_spelling` benennt nur Werke eines Senders um, der die Markenschreibweise selbst in Titel oder Thema führt (ARD/MDR „Mittagsmagazin“ 289 Werke bekamen SRFs „MittagsMagazin“, weil ein show_key über Sender reicht). Auch Werke anderer Art unter der Reihe (3 „Kikaninchen“-Ausschnitte blieben).
+- Tests: `tests/test_v06120.py` (2).
+
 ## 0.6.119 – Korrektur Mac-Urteil 0.6.118 (E4, E6) und Air-Diagnose 0.6.116 (3sat-Filme, Altersrunde); auf 0.6.118
 
 - 3sat-Filme (Air 23.11.: 18/18 „prüfen“): das Jahr aus „- Spielfilm, Land Jahr“ galt seit 0.6.97 nur für die Suche. `catalog.match_meta` gibt es auch der Entscheidung (Erkennungsarbeiter, `rematch_movie_suggestions`): exakter Titel + gleiches Jahr = Film verknüpft; ±1 braucht weiter die Laufzeit. Einmalig neu eingereiht (Merker `film_rules_suffix_year`).

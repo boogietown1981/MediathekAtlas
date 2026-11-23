@@ -1943,13 +1943,16 @@ def unify_show_spelling(c):
     0.6.119 (Mac-Prüfung 0.6.118: the majority rule turned it the wrong way round – „Kikaninchen“ 418, „Reporter“ →
     „reporter“, „FORUM WIRTSCHAFT“ → „forum wirtschaft“, „Trailer: SAARTHEMA“): only towards a deliberate brand spelling.
     A Reihe whose titles or topics carry exactly one brand spelling (brand_spelling) gets it for its plainly written
-    variants; every other case difference stays as it is. User decisions stay. Idempotent; returns {old: new}."""
+    variants; every other case difference stays as it is. User decisions stay. Idempotent; returns {old: new}.
+    0.6.120 (Mac-Prüfung 0.6.119: ARD/MDR „Mittagsmagazin“ 289 works took SRF's „MittagsMagazin“ – one show_key over
+    several senders): only works of a sender that itself writes the brand spelling (title or topic) are renamed; also
+    clips and extras under the Reihe (3 „Kikaninchen“ of kind 'other' were left)."""
     shows={}
-    for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
+    for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE COALESCE(show_key,'')!=''
             AND state!='manual' GROUP BY show_key,title"""):
         shows.setdefault(show,[]).append((title,n))
     topic_brands={}
-    for show,topic in c.execute("""SELECT show_key,topic FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
+    for show,topic in c.execute("""SELECT show_key,topic FROM works WHERE COALESCE(show_key,'')!=''
             AND COALESCE(topic,'')!='' GROUP BY show_key,topic"""):
         if brand_spelling(topic):topic_brands.setdefault(show,[]).append(cleaned(topic))
     out={}
@@ -1962,15 +1965,24 @@ def unify_show_spelling(c):
             brands={t for t in variants+[t for t in topic_brands.get(show,()) if key(t)==k] if brand_spelling(t)}
             if len(brands)!=1:continue
             target=brands.pop()
+            channels={}
+            for w in c.execute("""SELECT w.id,w.title,w.topic,(SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM offers o
+                    WHERE o.work_id=w.id ORDER BY o.active DESC,o.rank DESC LIMIT 1) channel FROM works w WHERE w.show_key=?""",(show,)):
+                channels[w['id']]=(w['channel'] or '',w['title']==target or cleaned(w['topic'])==target)
+            brand_senders={ch for ch,brand in channels.values() if brand and ch}
+            if not brand_senders:continue
             for title in plain:
+                changed=False
                 for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
+                    if channels.get(w['id'],('',False))[0] not in brand_senders:continue
+                    changed=True
                     try:m=json.loads(w['meta'] or '{}')
                     except (TypeError,ValueError):continue
                     m['title']=target
                     reason=str(m.get('reason') or '')
                     if reason:m['reason']=reason.replace('„'+str(title)+'“','„'+target+'“')
                     c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(target,json.dumps(m),w['id']))
-                out[title]=target
+                if changed:out[title]=target
     return out
 
 def reopen_full_programmes(c,limit=100000):

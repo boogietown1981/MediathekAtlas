@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.119
+# MediathekAtlas · 0.6.120
+
+## Neu in 0.6.120: Schreibweise je Sender
+- Markenschreibweisen (KiKANiNCHEN) gelten nur für den Sender, der sie selbst so schreibt: ARD und MDR behalten „Mittagsmagazin“, SRF „MittagsMagazin“. Auch Ausschnitte und Extras einer Reihe werden angeglichen.
+
 
 ## Neu in 0.6.119: 3sat-Filme, Jahrgänge, Schreibweisen
 - 3sat-Filme mit Titelzusatz („… - Spielfilm, USA 1993“) werden verknüpft, wenn Titel und Jahr stimmen – vorher blieben sie auf „prüfen“, sobald die Laufzeit nicht passte.
