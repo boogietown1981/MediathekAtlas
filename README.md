@@ -1,6 +1,7 @@
-# MediathekAtlas · 0.6.121
+# MediathekAtlas · 0.6.122
 
-## Neu in 0.6.121: abgeschnittene Titel, längere Diagnosen
+## Neu in 0.6.122: Bilder in der Kinderecke, abgeschnittene Titel, längere Diagnosen
+- Kinderecke: Reihen und Filme ohne eigenes Bild nehmen das Bild eines anderen Angebots, einer anderen Folge oder der erkannten Reihe statt nur des Anfangsbuchstabens; Dokus stehen nicht mehr unter „Zeichentrick“; die Kopfleiste ist deckend.
 - Titel, die der Sender nach 80 Zeichen abschneidet („… (Originalversion“), werden ohne den Rest des Hinweises gesucht und einmal neu geprüft.
 - Der Bilder-Abgleich schreibt Fehler je Titel nur noch einmal am Tag und Erfolge als Stichprobe ins Protokoll – eine Diagnose reicht dadurch deutlich länger.
 

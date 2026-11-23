@@ -1,7 +1,7 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
-## 0.6.121 – Langzeitdiagnose Air N-D/N-F (23. November 2026)
-- Automatisch: tests/test_v06121.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.121).
+## 0.6.122 – Sammelstand Erkennung 0.6.121 + Kinderecke-Bilder (23. November 2026)
+- Automatisch: tests/test_v06121.py, tests/test_v06121_kinder_bilder.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.122).
 
 ## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (23. November 2026)
 - Automatisch: tests/test_v06120.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.120).
