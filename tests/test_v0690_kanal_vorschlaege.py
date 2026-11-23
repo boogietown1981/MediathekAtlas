@@ -400,7 +400,7 @@ class WithApiKey(Fixture):
             ids = (q.get('id') or 'UC' + 'h' * 22).split(',')
             return {'items': [{'id': i, 'snippet': {'title': {FEATURED: 'Tierkanal', self.SEARCHED: 'Forscherkanal'}.get(i, 'Kanal'),
                                                      'thumbnails': {'high': {'url': 'https://yt3.ggpht.com/%s.jpg' % i}}},
-                               'contentDetails': {'relatedPlaylists': {'uploads': 'UU' + i[2:]}}} for i in ids]}
+                               'contentDetails': {'relatedPlaylists': {'uploads': 'UU' + i[2:]}}} for i in ids if 'xxxx' not in i]}
         if endpoint == 'playlists':
             return {'items': []}
         if endpoint == 'playlistItems':
@@ -514,6 +514,35 @@ class KidsFirstWithApi(WithApiKey):
         self.assertEqual({s['profile'] for s in got}, {'kinder', 'erwachsene'})
         self.assertIn(self.SEARCHED, [s['ref'] for s in got])            # Kinder-Platz trotz stärkerer Erwachsenen-Treffer
         self.assertEqual([s['ref'] for s in got if s['avatar']], [self.SEARCHED])   # einziges Auflösen ging an den Kinder-Vorschlag
+
+
+class FastResolveWithApi(WithApiKey):
+    """Mac-Prüfung 0.6.114: Auflösen 333 s (etwa 11 s je Kanal, je Kanal channels + playlistItems + videos einzeln).
+    Jetzt Kanal-IDs gebündelt, Videotitel aus playlistItems, gleichzeitig."""
+
+    def test_ids_batched_titles_from_playlist_items(self):
+        ids = ['UC' + c * 22 for c in 'pqr']
+        gone = 'UC' + 'x' * 22
+        request = lambda endpoint, query: yt._request(endpoint, query, 'SCHLUESSEL')  # noqa: E731
+        got = disc.resolve_api(request, ids + [gone, '@handle'], NOW)
+        channel_calls = [q for e, q in self.queries if e == 'channels']
+        self.assertEqual(len(channel_calls), 2)                               # eine Bündelabfrage + ein Handle
+        self.assertEqual(sorted(next(q['id'] for q in channel_calls if 'id' in q).split(',')), sorted(ids + [gone]))
+        self.assertEqual(len([e for e, _ in self.queries if e == 'playlistItems']), 4)
+        self.assertNotIn('videos', [e for e, _ in self.queries])
+        self.assertEqual(set(got), set(ids) | {gone, '@handle'})
+        self.assertTrue(got[gone].get('missing'))
+        got = {k: v for k, v in got.items() if k != gone}
+        self.assertEqual(got['@handle']['channel_id'], 'UC' + 'h' * 22)
+        self.assertTrue(all(i['avatar'].startswith('https://yt3.ggpht.com/') for i in got.values()))
+
+    def test_missing_id_and_diagnosis_counters(self):
+        self.prepare()
+        self.run_discover()
+        src = disc.summary(self.root)['sources']
+        for key in ('search_api', 'search_ytdlp', 'search_api_failed', 'playlists_api', 'api_calls', 'api_seconds'):
+            self.assertIn(key, src)
+        self.assertGreater(src['api_calls'], 0)
 
 
 if __name__ == '__main__':
