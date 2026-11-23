@@ -5,6 +5,7 @@ import sqlite3
 import sys
 import tempfile
 import threading
+import time
 import unittest
 from contextlib import contextmanager
 from pathlib import Path
@@ -67,42 +68,48 @@ if __name__ == '__main__':
 
 
 class SettingsWriteWaitsTests(unittest.TestCase):
-    """0.6.123 (Mac-Prüfung 0.6.120): saving settings during the start heals answered „database is locked“."""
+    """0.6.123/0.6.125 (Mac-Prüfungen 0.6.120/0.6.123): saving settings during the start heals answered „database is
+    locked“ (later 134 s). Now: short try, else kept in memory and written in the background."""
 
-    def test_write_waits_for_busy_database(self):
+    def test_busy_write_is_deferred_and_visible_at_once(self):
         import sqlite3
         import server
-        calls = []
+        locked = threading.Event();locked.set()
+        written = []
 
-        def fn(c):
-            calls.append(1)
-            if len(calls) < 3:
+        @contextmanager
+        def fake_db(timeout=30):
+            if locked.is_set():
                 raise sqlite3.OperationalError('database is locked')
-            return 'ok'
+            yield 'conn'
 
-        class FakeDb:
-            def __call__(self):
-                return self
-            def __enter__(self):
-                return None
-            def __exit__(self, *a):
-                return False
-        old = server.db
-        server.db = FakeDb()
+        old_db, old_quick = server.db, server.SETTINGS_QUICK_TIMEOUT
+        server.db = fake_db
         try:
-            self.assertEqual(server.write_waiting(fn, wait=0), 'ok')
-            self.assertEqual(len(calls), 3)
-            calls.clear()
-            with self.assertRaises(sqlite3.OperationalError):
-                server.write_waiting(lambda c: calls.append(1) or (_ for _ in ()).throw(sqlite3.OperationalError('database is locked')), tries=2, wait=0)
-            self.assertEqual(len(calls), 2)
-            with self.assertRaises(sqlite3.OperationalError):   # other errors are not retried
-                server.write_waiting(lambda c: (_ for _ in ()).throw(sqlite3.OperationalError('no such table: x')), wait=0)
+            payload = json.dumps({'series_autoload': {'enabled': True}, 'marker': 'v06125'})
+            started = time.monotonic()
+            self.assertFalse(server.write_waiting(lambda c: written.append(1), payload))
+            self.assertLess(time.monotonic() - started, 1)
+            self.assertEqual(json.loads(server._settings_payload())['marker'], 'v06125')
+            # a second change while the first waits is queued behind it, never written before it
+            self.assertFalse(server.write_waiting(lambda c: written.append(2), json.dumps({'marker': 'second'})))
+            self.assertEqual(json.loads(server._settings_payload())['marker'], 'second')
+            locked.clear()
+            deadline = time.monotonic() + 10
+            while server._SETTINGS_DEFERRED and time.monotonic() < deadline:
+                time.sleep(.1)
+            self.assertEqual(written, [1, 2])
+            self.assertEqual(json.loads(server._settings_payload())['marker'], 'second')
+            self.assertTrue(server.write_waiting(lambda c: written.append(3)))   # free database: written at once
+            self.assertEqual(written, [1, 2, 3])
+            with self.assertRaises(sqlite3.OperationalError):   # other errors are not deferred
+                server.write_waiting(lambda c: (_ for _ in ()).throw(sqlite3.OperationalError('no such table: x')))
         finally:
-            server.db = old
+            server.db, server.SETTINGS_QUICK_TIMEOUT = old_db, old_quick
+            server.invalidate_settings()
 
     def test_settings_endpoints_use_waiting_write(self):
         from pathlib import Path
         s = (Path(__file__).resolve().parent.parent / 'server.py').read_text(encoding='utf-8')
         self.assertNotIn('with db() as c:store_settings(c,s)', s)
-        self.assertIn('write_waiting(write)', s)
+        self.assertIn('write_waiting(write,json.dumps(s))', s)

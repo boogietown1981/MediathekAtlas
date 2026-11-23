@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.124
+# MediathekAtlas · 0.6.125
+
+## Neu in 0.6.125: Filme bleiben Filme, Einstellungen sofort gespeichert
+- Filme in Spielfilmlänge (ab 60 Minuten) bleiben Filme, auch mit Nummer im Titel („Der Amsterdam-Krimi (2)“, „Wo ist Anne Frank – Teil 1“); nur datierte Sendungsausgaben und kurze nummerierte Teile gelten nicht als Film. Die Neu-Einordnung aus 0.6.123 nimmt nur noch solche Werke.
+- Einstellungen werden auch direkt nach dem Start sofort übernommen: ist die Datenbank belegt, gilt die Änderung gleich und wird im Hintergrund gespeichert.
 
 ## Neu in 0.6.124: 3sat-Filme besser erkannt, Kinderecke schneller nach dem Start
 - 3sat-Filme, deren Titel zwei Namen verbindet („The Pledge - Das Versprechen“, „Jussi Adler-Olsen: Erlösung“), werden auch über den einzelnen Titelteil im IMDb-Archiv gefunden – nur mit passendem Jahr; automatisch verknüpft nur, wenn auch die Laufzeit passt.

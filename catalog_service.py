@@ -154,24 +154,35 @@ class Service:
                 if self.stop.wait(2):return None
         return None
     def reseed_non_films(self):
-        """0.6.123, once (before the workers): catalog.reseed_non_films – „10 vor 10 vom …“ is no film."""
+        """0.6.123, once (before the workers): catalog.reseed_non_films – „10 vor 10 vom …“ is no film.
+        0.6.125 (Mac-Prüfung 0.6.123: 489 echte Filme umgestuft): where the 0.6.123 pass ran, its films come back first
+        (catalog.restore_reseeded_films); the corrected pass runs once under film_seed_v06125."""
         with self.db() as c:
-            if catalog.get_state(c,'film_seed_v06123',False):return None
-        after='';done=0;samples=[]
+            if catalog.get_state(c,'film_seed_v06125',False):return None
+            old_ran=bool(catalog.get_state(c,'film_seed_v06123',False))
+        if old_ran:
+            restored=self.batched(catalog.restore_reseeded_films,'film_seed_restore')
+            if restored is None:return None
+            if restored[0]:diagnostics.event('catalog_films_restored',works=restored[0],samples=restored[1]);catalog.invalidate_listings()
+        done=self.batched(catalog.reseed_non_films,'film_seed')
+        if done is None:return None
+        if done[0]:diagnostics.event('catalog_non_films_reseeded',works=done[0],samples=done[1]);catalog.invalidate_listings()
+        with self.db() as c:catalog.set_state(c,'film_seed_v06125',{'works':done[0],'restored':restored[0] if old_ran else 0,'at':time.time()})
+        return done[0]
+    def batched(self,fn,label):
+        """Runs fn(c,after) -> (n, samples, last id) in short transactions until done; (total, samples) or None on stop."""
+        after='';total=0;samples=[]
         while not self.stop.is_set():
             try:
-                with self.db() as c:n,s,after=catalog.reseed_non_films(c,after)
-                done+=n;samples+=s[:20-len(samples)]
-                if after is None:break
+                with self.db() as c:n,s,after=fn(c,after)
+                total+=n;samples+=s[:20-len(samples)]
+                if after is None:return total,samples
                 if self.stop.wait(.05):return None
             except sqlite3.OperationalError as e:
                 if not sqlite_busy(e):raise
-                self.busy('film_seed')
+                self.busy(label)
                 if self.stop.wait(2):return None
-        if self.stop.is_set():return None
-        if done:diagnostics.event('catalog_non_films_reseeded',works=done,samples=samples);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'film_seed_v06123',{'works':done,'at':time.time()})
-        return done
+        return None
     def requeue_truncated_notes(self):
         """0.6.121, once: works with a cut version note in the title are searched again with the cleaned title."""
         try:

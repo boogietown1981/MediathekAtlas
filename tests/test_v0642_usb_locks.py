@@ -78,7 +78,7 @@ class MeshCursorTests(unittest.TestCase):
 class SourceChecks(unittest.TestCase):
     server=(ROOT/'server.py').read_text(encoding='utf-8')
     def test_catalog_connections_use_normal_sync(self):
-        block=self.server[self.server.index('def db():'):self.server.index('_BOOT=')]
+        block=self.server[self.server.index('def db('):self.server.index('_BOOT=')]
         self.assertIn("PRAGMA synchronous=NORMAL",block)
     def test_settings_writes_go_through_cache_invalidation(self):
         writes=re.findall(r"INSERT OR REPLACE INTO settings",self.server)

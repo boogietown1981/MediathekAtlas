@@ -235,19 +235,25 @@ def portal_reseed(c,limit=500,after=''):
 
 SHORT_FILM=re.compile(r'(?i)\b(?:kurzfilm\w*|short|animationsfilm\w*|trickfilm\w*)\b')
 FILM_SHORTEST=1200
+FILM_FEATURE=60*60   # 0.6.125: Spielfilmlänge
 def film_shaped(row,title,topic,desc):
     """0.6.123 (Björn 23.11.2026, Bildschirmfoto „Filme > Unbekannt“): a film word in the broadcaster's text made
     „10 vor 10 vom 02.06.2022“ (25 min), „18.00 Uhr (22.01.2019)“, „67. Nordische Filmtage starten in Lübeck“ (4 min)
     and „11er Haus (4/5)“ films. A dated edition, a numbered part or a video under 20 minutes (unless it is called a
     short film) is no film; such a work stays of unknown kind and the Sendung rules file it."""
     import metadata
-    if DATED.search(title) or DATED_DAY.search(title) or EDITION_NUMBERING.search(title) or metadata.PART.search(title):return False
+    if DATED.search(title) or DATED_DAY.search(title):return False
     try:duration=int(row.get('duration') or 0)
     except (TypeError,ValueError):duration=0
+    # 0.6.125 (Mac-Prüfung 0.6.123: 489 Werke umgestuft, 244 davon ab 80 min – „Der Amsterdam-Krimi (2)“,
+    # „Wo ist Anne Frank – Teil 1/2“, Löwenzahn- und Bullerbü-Filme): from feature length on a numbered part is a
+    # film of a film series; only a dated edition is no film.
+    if duration>=FILM_FEATURE:return True
+    if EDITION_NUMBERING.search(title) or metadata.PART.search(title):return False
     if 0<duration<FILM_SHORTEST and not SHORT_FILM.search(' '.join((title,topic,desc[:200]))):return False
     return True
 
-def seed(row):
+def seed(row,shape=True):
     title=cleaned(row.get('title'));topic=cleaned(row.get('topic'));desc=core.clean(row.get('description',''));m=core.identify({**row,'title':title})
     ep=EP.search(title);reihe=portal_series(topic,title)
     if m['kind']=='series' and topic and not ep and key(m['title'])==key(topic):
@@ -281,7 +287,7 @@ def seed(row):
             else:m.update(kind='series',title=topic or title,episode_title=title)
         elif re.search(r'(?i)\b(?:nachrichten|tagesschau|wetter|sportstudio|trailer|teaser|podcast|pressekonferenz|tagesthemen|gottesdienst|magazin)\b',topic+' '+title):m['kind']='other'
     if re.search(r'(?i)^\s*(?:trailer|teaser|vorschau)\b',title):m.update(kind='other',title=title,year=None,season=None,episode=None)
-    if m['kind']=='movie' and not film_shaped(row,title,topic,desc):m.update(kind='unknown',title=title,year=None)
+    if shape and m['kind']=='movie' and not film_shaped(row,title,topic,desc):m.update(kind='unknown',title=title,year=None)
     if m['kind']=='movie' and not m.get('year'):
         y=re.search(r'\((19\d{2}|20\d{2})\)$',title)
         if y:m.update(year=int(y.group(1)),title=title[:y.start()].strip())
@@ -1676,11 +1682,47 @@ def reseed_non_films(c,after='',limit=500):
         except (TypeError,ValueError):continue
         if m.get('scan_requested'):continue
         source=best_source(c,row['id'])
-        if not source or seed(source)['kind']=='movie':continue
-        if requeue_from_source(c,row,source,'Kein Film (Ausgabe, nummerierter Teil oder Kurzbeitrag); neu einordnen (0.6.123)'):
+        # 0.6.125 (Mac-Prüfung 0.6.123): only works that film_shaped itself rejects – 0.6.123 took every work whose
+        # sender seed is not „movie“, also films the recognition had made films (Löwenzahn, Bullerbü, „It Follows“).
+        if not source or film_shaped(source,str(source.get('title') or ''),str(source.get('topic') or ''),str(source.get('description') or '')):continue
+        if requeue_from_source(c,row,source,NON_FILM_REASON):
             changed+=1
             if len(samples)<20:samples.append(str(source.get('title') or '')[:80])
     return changed,samples,(rows[-1]['id'] if rows else None)
+NON_FILM_REASON='Kein Film (Ausgabe, nummerierter Teil oder Kurzbeitrag); neu einordnen (0.6.123)'
+
+def restore_reseeded_films(c,after='',limit=500):
+    """0.6.125, only where the 0.6.123 heal ran (Prüfkopien; Björns Geräte hatten 0.6.123 nie): open works of unknown
+    or series kind whose sender offer names a film (seed) and that film_shaped accepts become films again, as before
+    0.6.123. Matches, user decisions and filed works stay. Returns (restored, samples, last id)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND kind IN ('unknown','series') AND state IN ('pending','retry','review')
+        ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    restored=0;samples=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested') or m.get('episode_verified'):continue
+        source=best_source(c,row['id'])
+        if not source:continue
+        title=str(source.get('title') or '')
+        if m.get('reason')!=NON_FILM_REASON and not _film_seed_ignoring_shape(source):continue
+        if not film_shaped(source,title,str(source.get('topic') or ''),str(source.get('description') or '')):continue
+        fresh=seed(source)
+        if fresh['kind']!='movie':
+            # a work still carrying the 0.6.123 reason was a film before (often by recognition, not by the seed)
+            fresh=_film_seed_ignoring_shape(source) or (dict(fresh,kind='movie') if m.get('reason')==NON_FILM_REASON else None)
+            if not fresh:continue
+        fresh['reason']='Film wiederhergestellt (0.6.125, Rücknahme 0.6.123)'
+        if c.execute("""UPDATE works SET title=?,kind='movie',show_key=?,meta=?,state='pending',attempts=0,next_try=0
+            WHERE id=? AND state IN ('pending','retry','review')""",(fresh['title'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount:
+            restored+=1
+            if len(samples)<20:samples.append(title[:80])
+    return restored,samples,(rows[-1]['id'] if rows else None)
+
+def _film_seed_ignoring_shape(source):
+    """The seed 0.6.122 made: a film by the sender's words alone (film_shaped not applied), else None."""
+    m=seed(source,shape=False)
+    return m if m['kind']=='movie' else None
 
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""

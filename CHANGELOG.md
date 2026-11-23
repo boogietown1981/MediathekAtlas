@@ -1,3 +1,13 @@
+## 0.6.125 – Korrektur Mac-Urteil 0.6.123 (F: echte Filme umgestuft, S: Einstellungen „database is locked“); auf 0.6.124
+
+- F (Mac-Prüfung 0.6.123: 489 Werke als „Kein Film“ umgestuft, 244 davon ab 80 min ohne Datum – Löwenzahn-Filme, Bullerbü, „It Follows (Englisch)“, „Der Amsterdam-Krimi (2)“, „Wo ist Anne Frank – Teil 1/2“; Kinderecke verlor 9 Filme). Zwei Ursachen:
+  - `catalog.reseed_non_films` stufte jedes offene Film-Werk um, dessen Sender-Vorschlag (`seed`) nicht „Film“ ergab – auch Filme, die erst die Erkennung zu Filmen gemacht hatte. Jetzt nur Werke, die `film_shaped` selbst ablehnt.
+  - `film_shaped`: ab Spielfilmlänge (`FILM_FEATURE` 60 min) ist ein nummerierter Teil ein Film einer Filmreihe; nur eine datierte Ausgabe ist dann kein Film.
+  - Rücknahme für Prüfkopien, auf denen 0.6.123/0.6.124 lief (Merker `film_seed_v06123` vorhanden): `catalog.restore_reseeded_films` macht offene Werke (unknown/series, nicht verknüpft, keine bestätigte Folge) wieder zu Filmen, wenn sie noch den 0.6.123-Grund tragen oder der Sender-Vorschlag ohne Formprüfung „Film“ war, und `film_shaped` sie annimmt (Ereignis `catalog_films_restored`). Nicht exakt: Werke, deren Grund die Erkennung inzwischen überschrieben hat und die nur über die Erkennung Filme waren, bleiben – Prüfungen daher ab frischer Kopie. Björns Geräte hatten 0.6.123/0.6.124 nie.
+  - Neuer Merker `film_seed_v06125` (die korrigierte Neu-Einordnung läuft einmal, auch wo 0.6.123 lief).
+- S (Mac-Prüfung 0.6.123: erster POST /api/series-autoload settings → „database is locked“, zweiter 134 s): `server.write_waiting` versucht höchstens 5 s (`SETTINGS_QUICK_TIMEOUT`); ist die Datenbank belegt, gilt die Änderung sofort im Speicher (`settings()`), ein Hintergrundfaden schreibt sie, sobald die Datenbank frei ist (Ereignisse `settings_write_deferred`, `settings_write_done`); spätere Änderungen reihen sich dahinter ein und landen nie vor einer früheren. `db()` nimmt dafür einen `timeout`.
+- Tests: `tests/test_v06125.py` (4), `tests/test_v06123.py` angepasst.
+
 ## 0.6.124 – Diagnose Air 0.6.120 (N-D, N-H): 3sat-Filme über Titelteile, Suchspeicher mit Revision, Kinderecke nach den Heilungen; auf 0.6.123
 
 - Grundlage: Diagnose Air 23.11.2026 19:44 Uhr (berichte/diagnose-2026-11-23-abend-06120-air.md): die 0.6.120-Filmheilung reihte 225 3sat-Filme neu ein, alle Stichproben endeten „prüfen“ mit `from_cache: true` und meist 0 IMDb-Treffern.

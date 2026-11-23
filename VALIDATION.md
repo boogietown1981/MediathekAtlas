@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.125 – Korrektur Mac-Urteil 0.6.123 (F, S) (23. November 2026)
+- Automatisch: tests/test_v06125.py (4), tests/test_v06123.py (angepasst), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.125).
+
 ## 0.6.124 – 3sat-Titelteile, Suchspeicher, Kinderecke nach Heilungen (23. November 2026)
 - Automatisch: tests/test_v06124.py (8), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.124).
 

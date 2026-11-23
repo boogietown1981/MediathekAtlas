@@ -66,8 +66,8 @@ def job_ids(q):
 
 
 @contextmanager
-def db():
-    c=sqlite3.connect(ROOT/'catalog.db',timeout=30);c.row_factory=sqlite3.Row
+def db(timeout=30):
+    c=sqlite3.connect(ROOT/'catalog.db',timeout=timeout);c.row_factory=sqlite3.Row
     # 0.6.42: WAL + NORMAL syncs only at checkpoints instead of on every small commit. On an
     # external USB disk (Björn: /Volumes/Docking-2) FULL made each commit wait for the disk and
     # other writers ran into „database is locked“. WAL+NORMAL cannot corrupt the database; after a
@@ -1485,20 +1485,61 @@ def _storage_for_export():
     try:
         o=STORAGE.overview();return {'locations':o['locations'],'move':o['move'],'pending':o['pending'],'last':o['last'],'previous':o['previous']}
     except Exception as e:return {'error':core.safe_error(e)}
-def write_waiting(fn,tries=4,wait=1.0):
-    """0.6.123 (Mac-Prüfung 0.6.120: POST /api/series-autoload settings → „database is locked“ während der
-    Start-Heilungen): a user write waits for a busy database (each try up to the 30 s connection timeout)
-    and is repeated instead of showing the error. The function runs in its own transaction each try."""
-    for attempt in range(tries):
+SETTINGS_QUICK_TIMEOUT=5
+_SETTINGS_DEFERRED=[];_SETTINGS_DEFERRED_LOCK=threading.Lock();_SETTINGS_LATEST=[None]
+def _pin_latest_settings():
+    # the newest deferred settings stay readable until written (time.monotonic()-inf is always below SETTINGS_TTL)
+    if _SETTINGS_LATEST[0] is not None:
+        with _SETTINGS_LOCK:_SETTINGS_CACHE.update(payload=_SETTINGS_LATEST[0],at=float('inf'),gen=_SETTINGS_CACHE['gen']+1)
+def write_waiting(fn,payload=None):
+    """0.6.123/0.6.125 (Mac-Prüfungen 0.6.120 und 0.6.123: POST /api/series-autoload settings → „database is locked“,
+    einmal 134 s Antwortzeit, während die Start-Heilungen schreiben): a user's settings write tries the database for
+    at most SETTINGS_QUICK_TIMEOUT seconds. If it is busy, the change is kept in memory (settings() returns it at
+    once) and written by a background thread as soon as the database is free; the request answers right away.
+    The function runs in its own transaction. Returns True if written now, False if deferred."""
+    with _SETTINGS_DEFERRED_LOCK:queued=bool(_SETTINGS_DEFERRED)
+    if not queued:   # an earlier deferred write must never land after this newer one
         try:
-            with db() as c:return fn(c)
+            with db(timeout=SETTINGS_QUICK_TIMEOUT) as c:fn(c)
+            return True
         except sqlite3.OperationalError as e:
-            if not catalog_service.sqlite_busy(e) or attempt==tries-1:raise
-            SERVICE.sqlite_busy_count+=1
-            diagnostics.event('settings_write_busy',attempt=attempt+1)
-            STOP.wait(wait)
+            if not catalog_service.sqlite_busy(e):raise
+        SERVICE.sqlite_busy_count+=1
+    with _SETTINGS_DEFERRED_LOCK:
+        _SETTINGS_DEFERRED.append(fn);start=len(_SETTINGS_DEFERRED)==1
+        if payload is not None:_SETTINGS_LATEST[0]=payload
+        _pin_latest_settings()
+    diagnostics.event('settings_write_deferred',waiting=len(_SETTINGS_DEFERRED))
+    if start:threading.Thread(target=_write_deferred_settings,daemon=True,name='settings_deferred').start()
+    return False
+def _write_deferred_settings():
+    tries=0
+    while True:
+        with _SETTINGS_DEFERRED_LOCK:pending=list(_SETTINGS_DEFERRED)
+        if not pending:return
+        tries+=1
+        try:
+            with db() as c:
+                for fn in pending:fn(c)
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):
+                diagnostics.error('settings_write_failed',e)
+                with _SETTINGS_DEFERRED_LOCK:
+                    del _SETTINGS_DEFERRED[:len(pending)]
+                    if not _SETTINGS_DEFERRED:_SETTINGS_LATEST[0]=None
+                invalidate_settings();continue
+            if STOP.wait(2):return
+            continue
+        with _SETTINGS_DEFERRED_LOCK:
+            del _SETTINGS_DEFERRED[:len(pending)]
+            if _SETTINGS_DEFERRED:_pin_latest_settings()   # store_settings above showed an older one meanwhile
+            else:
+                if _SETTINGS_LATEST[0] is not None:
+                    with _SETTINGS_LOCK:_SETTINGS_CACHE.update(payload=_SETTINGS_LATEST[0],at=time.monotonic(),gen=_SETTINGS_CACHE['gen']+1)
+                _SETTINGS_LATEST[0]=None
+        diagnostics.event('settings_write_done',writes=len(pending),tries=tries)
 def _save_settings(s):
-    write_waiting(lambda c:store_settings(c,s))
+    write_waiting(lambda c:store_settings(c,s),json.dumps(s))
 STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error,imdb=IMDB)
 
 @ROUTES.get('/api/storage-locations')
@@ -2289,7 +2330,7 @@ def post_settings(self,path,d):
         store_settings(c,s)
         if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
             c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
-    write_waiting(write)
+    write_waiting(write,json.dumps(s))
     if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     return self.send({'ok':True})
 
