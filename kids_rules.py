@@ -124,7 +124,8 @@ def set_max_age(c, value):
 
 def _key(kind, value):
     value = str(value or '')
-    if kind not in ('work', 'show') or not value or len(value) > 200:
+    # 0.6.113: 'tile' = Kachel einer Plattform (Netzkino, Pluto, Plex …), gesperrt über ihre Kachel-Kennung
+    if kind not in ('work', 'show', 'tile') or not value or len(value) > 200:
         raise ValueError('Unbekannter Eintrag')
     return '%s:%s' % (kind, value)
 
@@ -146,6 +147,12 @@ def choices(c):
     ensure(c)
     return [{'key': k, 'kind': kind, 'id': k.split(':', 1)[1], 'choice': ch, 'title': t or '', 'updated': u}
             for k, ch, t, kind, u in c.execute('SELECT key,choice,title,kind,updated FROM kids_choices ORDER BY title COLLATE NOCASE')]
+
+
+def blocked_tiles(c):
+    """0.6.113: von den Eltern gesperrte Plattform-Kacheln (Kennung wie kids_catalog._tile 'id')."""
+    ensure(c)
+    return {r[0] for r in c.execute("SELECT substr(key,6) FROM kids_choices WHERE choice='block' AND key LIKE 'tile:%'")}
 
 
 def _chosen(choice):
