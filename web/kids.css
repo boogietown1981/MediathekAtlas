@@ -38,6 +38,7 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-tile:hover,.kids-tile:focus-visible{transform:translateY(-4px) scale(1.02);box-shadow:0 16px 34px rgba(0,0,0,.45);outline:4px solid #fff;outline-offset:-4px}
 .kids-thumb{position:relative;aspect-ratio:16/9;background:linear-gradient(135deg,var(--chip,#6c5ce7),#20194f);display:grid;place-items:center}
 .kids-thumb img{position:absolute;inset:0;width:100%;height:100%;object-fit:cover}
+.kids-thumb.is-portrait{background:#000}.kids-thumb.is-portrait img{object-fit:contain}
 .kids-thumb .kids-play{position:relative;width:64px;height:64px;border-radius:50%;background:rgba(255,255,255,.92);color:#2c1f6b;display:grid;place-items:center;
   font-size:26px;padding-left:5px;opacity:0;transform:scale(.8);transition:.15s;box-shadow:0 6px 16px rgba(0,0,0,.35)}
 .kids-tile:hover .kids-play,.kids-tile:focus-visible .kids-play{opacity:1;transform:scale(1)}
@@ -60,7 +61,9 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-parents.holding span{width:100%;transition:width 2s linear}
 /* Abspielen: das ganze Bild, große Bedienelemente */
 .kids-stage{position:fixed;inset:0;z-index:20;background:#000;display:grid;place-items:center}
-.kids-stage video{width:100%;height:100%;object-fit:contain;background:#000}
+/* 0.6.95: absolut statt Rasterzelle. Die Zelle wuchs mit der natürlichen Höhe des Videos (Hochformat 9:16 bei voller
+   Breite ≈ 2,8-fache Fensterhöhe), sichtbar war nur das obere Drittel (Björn 22.11.2026, „Checker Tobi“-Shorts). */
+.kids-stage video{position:absolute;inset:0;width:100%;height:100%;object-fit:contain;background:#000}
 .kids-close{position:absolute;top:max(18px,env(safe-area-inset-top));left:18px;width:68px;height:68px;border-radius:50%;border:0;font-size:30px;font-weight:900;
   background:rgba(255,255,255,.92);color:#2c1f6b;box-shadow:0 6px 16px rgba(0,0,0,.5);transition:opacity .3s}
 .kids-stage.idle .kids-close{opacity:0}
@@ -87,3 +90,18 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-series-head h2{margin:0;font-size:26px;font-weight:800}
 .kids-back{font-size:18px}
 @media (max-width:600px){.kids-strip.is-posters{grid-auto-columns:44vw}.kids-grid.is-posters{grid-template-columns:repeat(2,1fr)}}
+/* 0.6.91: Reihen blättern ohne Seitwärtsrad: große runde Pfeile an den Rändern, „Alle …“-Kachel am Ende */
+.kids-scroller{position:relative}
+.kids-arrow{position:absolute;top:calc(50% - 32px);z-index:3;width:56px;height:56px;border:0;border-radius:50%;padding:0;
+  display:grid;place-items:center;font-size:40px;font-weight:900;line-height:1;background:rgba(255,255,255,.92);color:#2c1f6b;
+  box-shadow:0 6px 18px rgba(0,0,0,.45);transition:transform .15s,opacity .15s}
+.kids-arrow:hover,.kids-arrow:focus-visible{transform:scale(1.1);outline:none}
+.kids-arrow-prev{left:-8px}.kids-arrow-next{right:-8px}
+.kids-chips-scroller .kids-arrow{top:calc(50% - 30px);width:44px;height:44px;font-size:30px}
+.kids-more .kids-letter{font-size:64px}
+.kids-more .kids-thumb{background:linear-gradient(160deg,#6c5ce7,#20194f)}
+@media (hover:none){.kids-arrow{width:44px;height:44px;font-size:30px;opacity:.85}}
+.kids-new.kids-live{background:#ff3b5c;color:#fff;animation:none}
+
+/* 0.6.103: Hinweis, solange der Katalog nach dem Start noch zusammengestellt wird */
+.kids-loading{margin:8px 0 0;font-size:16px;color:var(--soft);text-align:center}

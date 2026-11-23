@@ -295,6 +295,8 @@ function catalogProgress(c){
      ['editions','Sendungsausgaben: '+countLabel(c.episode_editions_session||0)+' · Beiträge: '+countLabel(c.episode_segments_session||0)]
    ];
    // 0.6.65: without the IMDb offline archive the episode search can only postpone (Mac-Gegenprüfung 0.6.58).
+   // 0.6.88: a resting queue says why and until when (searches without a hit rest 30 days; a new IMDb archive brings them back)
+   if((c.episode_queue_total||0)>0&&!(c.episode_queue_due||0)&&c.episode_queue_next_due)chips.push(['rest','Folgensuche ruht: alles geprüft, nächste Prüfung '+new Date(c.episode_queue_next_due*1000).toLocaleString('de-DE',{dateStyle:'short',timeStyle:'short'})+' oder nach dem nächsten IMDb-Update']);
    if(c.episode_imdb_ready===false&&(c.episode_queue_total||0)>0)chips.push(['imdb-wait','Folgensuche wartet auf das IMDb-Offline-Archiv – Prüfungen werden stündlich wiederholt']);
    if(c.sqlite_busy_retries_session){
      // 0.6.67: where the locks happened (episode search, recognition …)
@@ -682,7 +684,7 @@ function jobRow(j,server,shared){
  const title=el('td',undefined,'q-title'),open=openJobDetails.has(j.id),toggle=el('button',(open?'▾ ':'▸ ')+jobTitle(j),'q-toggle');toggle.type='button';toggle.title=jobTitle(j)+' · Details ein-/ausblenden';
  toggle.setAttribute('aria-expanded',String(open));toggle.onclick=()=>{open?openJobDetails.delete(j.id):openJobDetails.add(j.id);if(queueLast)renderQueue(...queueLast);};
  const episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
- title.append(toggle,el('small',[episode,(m.genres||[]).filter(g=>g!=='YouTube-Abo').slice(0,2).join(' · '),m.provider].filter(Boolean).join(' · '),'muted'));
+ title.append(toggle,el('small',[episode,(m.genres||[]).filter(g=>g!=='YouTube-Abo').slice(0,2).join(' · '),m.provider].filter(Boolean).join(' · '),'muted'));if(j.autoload_version)title.append(el('small',' · '+j.autoload_version,'muted q-version'));
  const size=el('td',jobSize(j),'q-size num');
  tr.append(thumb,title,jobStatus(j,shared),size,jobActions(j,server));
  return open?[tr,jobDetails(j,server)]:[tr];}
@@ -700,7 +702,7 @@ const QUEUE_GROUPS=[
  {key:'done',title:'Fertig',open:false,test:j=>j.state==='done'},
  {key:'other',title:'Abgelaufen oder entfernt',open:false,test:()=>true}];
 const ORIGINS={netzkino:'Netzkino',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',plex:'Plex',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',dailyme:'dailyme TV',sender:'Direkt vom Sender',rtlplus:'RTL+',archive:'Internet Archive',internet_archive:'Internet Archive'};
-function jobOrigin(j){if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
+function jobOrigin(j){if(j.autoload_show)return j.autoload_kind==='movie'?'Gesehene Filme (zum Nochmal-Ansehen)':'Angefangene Serie · '+(j.autoload_title||j.metadata?.title||'Serie');if(j.youtube_abo)return 'YouTube-Abo · '+(j.source?.channel||'Kanal');if(ORIGINS[j.origin])return ORIGINS[j.origin];const ch=j.source?.channel;return ch?'Mediathek · '+ch:'Weitere Downloads';}
 function queueOpen(key,fallback){try{const v=localStorage.getItem('atlas-queue-'+key);return v===null?fallback:v==='1';}catch(_){return fallback;}}
 function queueTime(t){return new Date(t*1000).toLocaleString('de-DE',{weekday:'short',day:'2-digit',month:'2-digit',hour:'2-digit',minute:'2-digit'});}
 let repairStarted=false,repairInfo='',queueLast=null;

@@ -81,7 +81,7 @@ class PortalOtherTopic(unittest.TestCase):
         self.assertEqual(out[rows[1][0]], ('Der Erzähler', 'pending'))
         self.assertEqual(out[rows[2][0]], ('Planet Schule', 'identified'))      # no series in the title
         self.assertEqual(out[rows[3][0]], ('Servicezeit', 'identified'))        # not a portal
-        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0686', False))
+        self.assertTrue(catalog.get_state(c, 'portal_reseed_v0692', False))
 
 
 if __name__ == '__main__':

@@ -19,6 +19,22 @@ from __future__ import annotations
 
 import re
 
+# 0.6.106: bekannte Kinderreihen, deren Name das Kinderprogramm belegt, auch ohne Kindersender – EINE Liste für das
+# Sender-Genre (broadcaster.GENRE_HINTS), das Themensignal (catalog.KIDS_TOPIC) und Sendungs-Ablagen
+# (catalog.FORMAT_KIDS_TOPIC); die Kinderecke liest dieselbe Konstante. Nie bloß „Kinder“ im Namen („Die Kinder von
+# Lügde“, „Ein Herz für Kinder“, „Kinderärzte im Einsatz“ – Mac-Prüfungen 0.6.91/0.6.105).
+KNOWN_KIDS_SERIES = (r'sendung mit der maus|sendung mit dem elefanten|sandmännchen|sechs auf einen streich|'
+                     r'\bzdftivi\b|\btivi\b|toggolino|\bkika\b|\blogo(?=!)|'
+                     r'\bchecker (?:can|tobi|julian)\b|\b(?:anna|paula|pia|nina)\b[^|]{0,40}\bund die wilden tiere\b|'
+                     # 0.6.106 (Kinderecke, Mac-Prüfung 0.6.105): weitere bekannte Kinderreihen und Märchenreihen; die
+                     # Kinderecke lässt ohne Kindersender nur Reihen dieser Liste automatisch zu (kids_rules.kids_clause)
+                     r'lach- und sachgeschichten|sesamstra(?:ß|ss)e|löwenzahn|märchenperlen|maerchenperlen|\bgrimms märchen\b|'
+                     r'märchenfilm|\bpur\+|schloss einstein|wissen macht ah|\b1, 2 oder 3\b|siebenstein|tigerenten|'
+                     r'\bkikaninchen\b|baumhaus|\bpumuckl\b|feuerwehrmann sam|\bjonalu\b|pettersson und findus|die biene maja|'
+                     r'wickie und die starken männer|\bpeppa wutz\b|die pfefferkörner|neues vom süderhof|\bdas erste kinderprogramm\b|'
+                     r'wir kinder aus dem möwenweg|meine freundin conni|\bbibi blocksberg\b|\bbibi (?:&|und) tina\b')
+KNOWN_KIDS_SERIES_RE = re.compile('(?i)' + KNOWN_KIDS_SERIES)
+
 UNCLASSIFIED = 'Unklassifiziert'
 OTHER = 'Sonstige'
 # Ältere Stände zeigten 'Unbekannt'; als Filterwert weiter verstanden (gespeicherte Ansichten, Links).
@@ -49,7 +65,7 @@ _RULES = (
     ('Horror', r'horror|slasher|zombie|monster|splatter|grusel|vampir|werwolf'),
     # 0.5.103 (Björn): „Kinder“ nur bei eindeutigen Kinder-Signalen, „Familie“ (TMDB „Family“, Weihnachten …)
     # getrennt. Jugend/Teen ist kein Kinder-Signal (Teen-Horror, Jugenddrama).
-    ('Kinder', r'kinder(?!garten cop)|\bkids?\b|children|vorschul|preschool|toggolino|\bkika\b|sendung mit der maus'),
+    ('Kinder', r'kinder(?!garten cop)|\bkids?\b|children|vorschul|preschool|toggolino|\bkika\b|sendung mit der maus|m(?:ä|a|ae)rchenfilm'),
     ('Familie', r'famil|weihnacht|christmas|elternschaft|feiertag'),
     ('Komödie', r'kom(?:ö|o|oe)die|comedy|dramedy|sitcom|kabarett|satire|parodie|parody|spoof|stand ?up|humor|mockbuster|slapstick'),
     ('Krieg', r'krieg|\bwar\b|milit'),
@@ -151,7 +167,45 @@ def of_labels(labels):
 # 0.5.103: Inhalte, die nie unter „Kinder“ (bzw. „Familie“) stehen, auch wenn ein Anbieter es so etikettiert.
 NOT_FOR_KIDS = ('Horror', 'Thriller', 'Krimi', 'Erotik', 'Krieg')
 NOT_FOR_FAMILY = ('Horror', 'Erotik')
-KIDS_MAX_AGE = 6        # FSK 0/6
+# 0.6.105 (Mac-Prüfung 0.6.103: 533 Netzkino-Filme über die Altersregel, u. a. „5-Headed Shark Attack“, „Alien Predator
+# War“, „55 Tage in Peking“ mit FSK 12 und „Abenteuer“/„Fantasy“): der Altersweg braucht ein klares Familiensignal;
+# „Fantasy“ oder „Abenteuer“ allein reicht nicht (→ „Wartet auf Freigabe“). Science-Fiction, Action, Mystery und
+# Romantik schließen den Altersweg zusätzlich zum Sicherheitsnetz aus.
+KIDS_AGE_HINTS = ('Familie',)
+AGE_PATH_EXCLUDED = ('Romantik', 'Science-Fiction', 'Action', 'Mystery')
+# 0.6.115 (Mac-Prüfung 0.6.114: „Trauung mit Hindernissen“, 3sat, nur Familie + FSK 6): der Altersweg der Mediatheken
+# braucht immer ein eigenes Kindersignal. Belegbar über den Titel: klassische Märchen und bekannte Kinderbuch-Vorlagen
+# (Kleinbuchstaben, Teil des Titels). Alles andere wartet auf die Eltern.
+KIDS_CLASSICS = (
+    'hänsel und gretel', 'zwerg nase', 'rotkäppchen', 'schneewittchen', 'aschenputtel', 'dornröschen', 'frau holle',
+    'rumpelstilzchen', 'froschkönig', 'rapunzel', 'bremer stadtmusikanten', 'gestiefelte kater', 'tapfere schneiderlein',
+    'tischlein deck dich', 'schneeweißchen', 'könig drosselbart', 'gänsemagd', 'sterntaler', 'des kaisers neue kleider',
+    'schneekönigin', 'hässliche entlein', 'kleine meerjungfrau', 'die zwölf brüder', 'die sechs schwäne', 'die sieben raben',
+    'die goldene gans', 'brüderchen und schwesterchen', 'jorinde und joringel', 'hans im glück', 'das blaue licht',
+    'prinzessin auf der erbse', 'räuber hotzenplotz', 'das kleine gespenst', 'die kleine hexe', 'der kleine wassermann',
+    'das sams', 'jim knopf', 'pippi langstrumpf', 'ronja räubertochter', 'michel aus lönneberga', 'bullerbü',
+    'das fliegende klassenzimmer', 'emil und die detektive', 'pünktchen und anton', 'das doppelte lottchen', 'pinocchio',
+    'peter pan', 'die unendliche geschichte', 'der kleine prinz', 'urmel', 'die wilden kerle', 'die wilden hühner',
+    'drache kokosnuss', 'rennschwein rudi rüssel', 'das kleine ich bin ich', 'grüffelo', 'schule der magischen tiere',
+    'hexe lilli', 'mein name ist eugen', 'bibi & tina', 'bibi und tina', 'bibi blocksberg', 'benjamin blümchen',
+    'sams im glück', 'der zauberer von oz', 'alice im wunderland', 'nils holgersson',
+    'die biene maja', 'wickie', 'pumuckl', 'pettersson und findus', 'die schöne und das biest', 'aladin',
+    # 0.6.116 (Prüfvermerk 0.6.115: echte Märchen-/Kinderfilme auf der Warteliste). Bewusst NICHT: „Gevatter Tod“
+    # (Tod als Hauptfigur) – bleibt auf der Warteliste, Eltern entscheiden
+    'hirsch mit dem goldenen geweih', 'seekönigin', 'vier zauberhafte schwestern', 'heidi und peter', 'huck finn',
+    'tom sawyer', 'der kleine lord', 'grüße vom mars', 'baumhauskönige', 'aschenbrödel', 'der kleine muck', 'kalif storch',
+    'die salzprinzessin', 'der süße brei', 'singende klingende bäumchen', 'schweinehirt', 'die kluge bauerntochter',
+    'der eisenhans', 'die zertanzten schuhe', 'das wasser des lebens', 'drei goldenen haare', 'allerleirauh',
+    'die weiße schlange', 'das dschungelbuch', 'die schatzinsel', 'mio, mein mio', 'brüder löwenherz', 'madita',
+    'karlsson vom dach', 'der kleine eisbär', 'lauras stern', 'petronella apfelmus', 'mary poppins', 'paddington',
+    'raupe nimmersatt', 'fünf freunde', 'hanni und nanni', 'die vorstadtkrokodile', 'rico, oskar', 'ostwind',
+    'black beauty', 'lassie', 'schloss hinterm regenbogen', 'die schwarze mühle', 'kleiner muck',
+)
+# 0.6.117 (Mac-Prüfung 0.6.116): Märchen mit Tod/Grauen als Hauptmotiv nehmen nie automatisch den Altersweg, auch nicht
+# über Märchen-Thema oder -Titel – Warteliste, die Eltern entscheiden
+KIDS_TALE_EXCLUDED = ('gevatter tod', 'das kalte herz', 'das totenhemdchen', 'das mädchen ohne hände', 'machandelboom',
+                      'blaubart')
+KIDS_MAX_AGE = 12       # 0.6.99: Standard FSK 12 (Björn), einstellbar im Elternbereich (kids_rules)
 FAMILY_MAX_AGE = 12     # FSK 0/6/12
 
 
@@ -197,6 +251,14 @@ def classify(reference_labels=(), provider_labels=(), checked=True, age=None):
     if not checked:
         return [UNCLASSIFIED]
     names = refine(of_labels(reference_labels) or of_labels(provider_labels), age)
+    # 0.6.99 (Björn: „das soll für alle Kategorien gelten“): a proven age rating up to the parents' limit
+    # (kids_rules, KIDS_MAX_AGE) makes a checked family title a kids title (Bibi & Tina = Family/Comedy, Märchen =
+    # Family/Fantasy), never next to the safety-net genres or AGE_PATH_EXCLUDED. 0.6.105: Fantasy/Abenteuer alone
+    # no longer count (Netzkino „Alien Predator War“, FSK 12): „im Zweifel nicht“.
+    a = age_of(age)
+    if (a is not None and a <= KIDS_MAX_AGE and 'Kinder' not in names and set(names) & set(KIDS_AGE_HINTS)
+            and not set(names) & set(NOT_FOR_KIDS + AGE_PATH_EXCLUDED)):
+        names = sorted(set(names) | {'Kinder'}, key=ORDER.get)
     return names or [OTHER]
 
 

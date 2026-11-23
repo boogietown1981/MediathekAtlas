@@ -455,7 +455,19 @@ GENERIC|={'sport','sports','masterclass','doku','dokus','dokumentation','dokumen
           'kultur','wissen','geschichte','gesellschaft','unterhaltung','comedy','kabarett','satire','konzert','konzerte',
           'wissenschaft','technik','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur',
           'kurzfilm','kurzfilme','spielfilme','fernsehfilme','dokumentarfilm','dokumentarfilme','gesundheit',
-          'wirtschaft','religion','essen','kochen','garten','reisen','digital'}
+          'wirtschaft','religion','essen','kochen','garten','reisen','digital',
+          'europa'}   # 0.6.92 (Zwischendiagnose Pro 0.6.91: DW „Europa“ ↔ IMDb-Serie „Europa“ tt14808162)
+# 0.6.117 (Langzeitdiagnose Air 23.11.2026: Wikidata kannte „Schwimmen“ als Serie, 1.144 Werke): sports name a subject,
+# never a Sendung. One list for the series search, the topic rules and catalog.TEMPLATE_GENERIC.
+SPORT_WORDS={'schwimmen','wasserspringen','biathlon','skispringen','ski alpin','ski nordisch','langlauf','skilanglauf',
+             'nordische kombination','rodeln','bob','skeleton','eiskunstlauf','eisschnelllauf','shorttrack','snowboard',
+             'freestyle','leichtathletik','fußball','fussball','frauenfußball','handball','basketball','volleyball',
+             'beachvolleyball','eishockey','hockey','radsport','rad','bahnrad','mountainbike','tennis','tischtennis',
+             'badminton','turnen','gerätturnen','formel 1','formel e','motorsport','motorrad','boxen','golf','reiten',
+             'pferdesport','segeln','rudern','kanu','triathlon','ringen','judo','fechten','darts','snooker','schach',
+             'klettern','sportklettern','wintersport','sommersport','sportschießen','gewichtheben','rugby','american football',
+             'baseball','curling','squash','surfen','e-sport','esport'}
+GENERIC|=SPORT_WORDS
 # arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
 # 0.6.49 (Diagnose 20.11.2026 abends): the French, Italian, Spanish and Polish ARTE sections
@@ -481,6 +493,17 @@ QUERY_NOISE=(
     re.compile(r'(?i)\s*[-–,]?\s*\b(?:season|saison|staffel|temporada|sezon|stagione)\s*\d{1,2}\b'),
     re.compile(r'\s*\(\d{1,3}(?:\s*/\s*\d{1,3})?\)'),
 )
+# 0.6.97 (Mac-Abfrage Runde 6, 22.11.2026: 1.012 3sat-Filme „prüfen“, fast alle ohne jeden Vorschlag): 3sat schreibt
+# Gattung, Länder und Jahr in den Titel – „Der Schut - Spielfilm, BRD/Frankreich/Italien 1964“, „Danowski - Blutapfel -
+# Fernsehfilm, Deutschland 2019“, „Helge Schneider - The Klimperclown - Dokumentarfilm von Helge Schneider, Deutschland
+# 2025“. Gesucht wird ohne diesen Zusatz, das Jahr gilt als Erscheinungsjahr.
+FILM_SUFFIX=re.compile(r'(?i)\s+[-–]\s+(?:spielfilm|fernsehfilm|dokumentarfilm|kurzfilm|animationsfilm|trickfilm|fernsehspiel|stummfilm|musikfilm|kinofilm)'
+                       r'(?:\s+von\s+[^,]{2,80})?,\s*[^,]{2,80}?\s+((?:18|19|20)\d{2})\s*$')
+QUERY_NOISE=(FILM_SUFFIX,)+QUERY_NOISE
+def film_suffix_year(title):
+    """Year of a 3sat film title „… - Spielfilm, USA 1993“, else None."""
+    m=FILM_SUFFIX.search(str(title or ''))
+    return int(m.group(1)) if m else None
 PART=re.compile(r'\s*\(\d{1,3}\s*/\s*\d{1,3}\)')
 def query_title(title):
     """Title without language-version or accessibility suffixes such as "(Originalversion mit Untertitel)",
@@ -508,7 +531,9 @@ def provider_complete(start,**fields):
 
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
+    suffix_year=film_suffix_year(meta['title']) or film_suffix_year(row.get('title'))
     meta['title']=query_title(meta['title'])
+    if suffix_year and kind in ('movie','unknown') and not meta.get('year'):meta['year']=suffix_year
     if kind=='series':queries=[('series',meta['title'])]
     elif kind=='movie':queries=[('movie',meta['title'])]
     else:

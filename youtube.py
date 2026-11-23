@@ -63,7 +63,9 @@ VALID_ID = re.compile(r'(?:[vet]\.%s|[sm]\.%s)' % (VIDEO_ID, PLAYLIST_ID))
 MUSIC_KINDS = ('album', 'track')     # 0.5.71: music videos (playlist = album, video = track)
 MAX_BATCH = 500                   # videos one click may queue for offline saving
 VALID_VIDEO = re.compile(VIDEO_ID)
-ENDPOINTS = ('channels', 'playlists', 'playlistItems', 'videos')
+# 23.11.2026 (Mac-Prüfung 0.6.112): Kanal-Vorschläge brauchen channelSections (1 Einheit) und search (100 Einheiten,
+# höchstens wenige Suchen je Woche); ohne sie scheiterte jeder Vorschlagslauf mit Schlüssel an „Ungültige YouTube-Anfrage“.
+ENDPOINTS = ('channels', 'playlists', 'playlistItems', 'videos', 'channelSections', 'search')
 IMAGE_HOST = 'i.ytimg.com'
 NO_OFFLINE = ('YouTube erlaubt das Herunterladen nur über eigene Funktionen (YouTube Premium in den '
               'YouTube-Apps) oder mit schriftlicher Erlaubnis von YouTube und Rechteinhaber. MediathekAtlas '
@@ -431,7 +433,8 @@ def video_facts(node, region=REGION):
             'language': _text(snippet.get('defaultAudioLanguage') or snippet.get('defaultLanguage'), 12),
             'duration': duration_seconds(details.get('duration')), 'poster': _thumb(snippet),
             'playable': not age and embeddable, 'reason': reason, 'rating': 'FSK 18' if age and not fsk else fsk,
-            'kids': status.get('madeForKids') is True}
+            'kids': status.get('madeForKids') is True,
+            'tags': [_text(x, 40) for x in (snippet.get('tags') if isinstance(snippet.get('tags'), list) else []) if isinstance(x, str)][:30]}
 
 
 # 0.5.54 (Björn, 12.11.2026): channels also upload promo videos that reach the minimum length.
@@ -587,7 +590,7 @@ def music_items(source, entries, facts_by_id):
 # ---------------------------------------------------------------- network
 
 def _request(endpoint, query, key):
-    """One request to the fixed YouTube Data API host; only the four read endpoints are used."""
+    """One request to the fixed YouTube Data API host; only the read endpoints in ENDPOINTS are used."""
     if endpoint not in ENDPOINTS:
         raise ValueError('Ungültige YouTube-Anfrage')
     url = API + endpoint + '?' + urllib.parse.urlencode({**query, 'key': key})
@@ -1250,9 +1253,12 @@ def loop(root, stop):
 
 # ---------------------------------------------------------------- playback
 
-def play_info(root, item_id):
+def play_info(root, item_id, preview=False):
     """What the player window needs for the official embedded YouTube player (no stream address,
-    no download: YouTube plays the video itself, with its adverts)."""
+    no download: YouTube plays the video itself, with its adverts).
+
+    0.6.90 ``preview``: a video of a suggested channel (youtube_discover) that is not in the catalogue
+    plays in the embedded player as well, so a parent can look at it before approving the channel."""
     if not VALID_ID.fullmatch(str(item_id or '')):
         raise ValueError('Ungültiger YouTube-Titel')
     db = _connect(root)
@@ -1260,6 +1266,11 @@ def play_info(root, item_id):
         row = _row(db, item_id)
     finally:
         db.close()
+    if not row and preview and str(item_id).startswith('v.') and VALID_VIDEO.fullmatch(str(item_id)[2:]):
+        vid = str(item_id)[2:]
+        return {'mode': 'embed', 'provider': 'youtube', 'video_id': vid, 'embed': EMBED + vid, 'title': '',
+                'duration': 0, 'web_url': video_url(vid), 'quality': 'offizieller YouTube-Player, mit Werbung (Vorschau)',
+                'channel': '', 'offline': False, 'offline_hint': ''}
     if not row:
         raise ValueError('YouTube-Titel nicht im Katalog; bitte Katalog neu laden')
     if row['kind'] == 'series':

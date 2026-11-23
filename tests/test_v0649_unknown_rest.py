@@ -211,8 +211,14 @@ class SweepTests(unittest.TestCase):
                          ('unknown', 'review', 'Die Bergbauern'))
         self.assertEqual(w['Die Bergbauern']['meta']['suggestions'][0]['year'], 2005)
         self.assertEqual(w['Grenzgänger']['state'], 'format')                       # weak namesake: stays filed
-        info = self.sweep()
-        self.assertEqual(self.works()['Die Bergbauern']['kind'], 'unknown')
+        from types import SimpleNamespace
+        import imdb_archive
+        with patch.object(imdb_archive, 'ACTIVE', SimpleNamespace(updated=1, series_has_episodes=lambda m: True)):
+            info = self.sweep()
+        # 0.6.88: the Sendung's own series is no reason to wait any more – the work becomes its Folge (identified,
+        # episode search), instead of staying without a kind (before: 'unknown').
+        r = self.works()['Die Bergbauern']
+        self.assertEqual((r['kind'], r['state'], r['title'], r['meta']['year']), ('series', 'identified', 'DOK', 2005))
 
     def test_new_rules_run_right_after_the_update(self):
         with self.db() as c:

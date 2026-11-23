@@ -16,10 +16,13 @@
     return 'geprüft ' + (m < 1 ? 'gerade eben' : m < 60 ? 'vor ' + m + ' Min.' : m < 1440 ? 'vor ' + Math.round(m / 60) + ' Std.' : 'am ' + new Date(t * 1000).toLocaleDateString('de-DE'));
   };
   const gb = v => (Number(v) || 0).toLocaleString('de-DE', {maximumFractionDigits: 1});
+  // 0.6.98: kleine Archive in MB statt „0,0 GB“
+  // Nachbesserung 0.6.106: leeres Archiv „0 MB“ (bisher „0 GB“, weil die Byte-Zahl fehlte)
+  const size = a => { const b = a.bytes ?? (Number(a.gb) || 0) * 1e9; return b < 1e9 ? Math.round(b / 1e6).toLocaleString('de-DE') + ' MB' : gb(a.gb || b / 1e9) + ' GB'; };
   const PROFILES = {kinder: {icon: '★', label: 'Kinderecke', hint: 'erscheint nur in der Kinderecke'},
     erwachsene: {icon: '▶', label: 'Für mich', hint: 'erscheint nur im Ansehen-Modus'}};
   const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['retry', 'neuer Versuch geplant', 'wait'], ['wanted', 'warten', 'wait'],
-    ['failed', 'Fehler', 'bad'], ['skipped', 'ausgelassen', 'muted'], ['expired', 'abgelaufen', 'muted']];
+    ['failed', 'Fehler', 'bad'], ['skipped', 'ausgelassen', 'muted'], ['expired', 'abgelaufen', 'muted'], ['archived', 'im Archiv', 'ok']];
   let data = {abos: [], profiles: []}, current = 'kinder', timer = 0;
 
   // ------------------------------------------------------------ ein Formular für Neu und Ändern
@@ -106,8 +109,14 @@
   function iconButton(symbol, title, fn) {
     const b = make('button', symbol, 'abo-icon'); b.type = 'button'; b.title = title; b.setAttribute('aria-label', title); b.onclick = fn; return b;
   }
-  function card(a) {
-    const box = make('article', undefined, 'abo-card' + (a.enabled ? '' : ' is-paused'));
+  // Björn 22.11.2026 (Einstellungen klappten beim Ändern von selbst zu): eine Aktualisierung baut die
+  // Karte im selben Element neu auf; ein offenes ⚙-Formular samt Eingaben, Fokus und offene Details bleiben.
+  function card(a, prev) {
+    const box = prev || make('article');
+    box.className = 'abo-card' + (a.enabled ? '' : ' is-paused'); box.dataset.id = a.id;
+    const kept = box.querySelector(':scope > .abo-form');
+    const whyOpen = !!box.querySelector('.abo-why')?.open;
+    for (const n of [...box.childNodes]) if (n !== kept) n.remove();
     const body = make('div', undefined, 'abo-body');
     const head = make('div', undefined, 'abo-head');
     head.append(make('strong', a.name));
@@ -135,7 +144,7 @@
     else if (a.budget_planned_full) body.append(make('p', 'Speicherbudget verplant: ' + gb(a.used_gb) + ' GB belegt, ca. ' + gb(a.planned_gb) + ' GB werden gerade geladen. Weitere Videos warten, bis Platz frei ist.' + (a.waiting_for_budget ? ' (' + a.waiting_for_budget + ' warten)' : ''), 'muted abo-budget-hint'));
     else if (a.budget_full) body.append(make('p', 'Speicherbudget erreicht: neue Videos warten, bis gesehene Platz machen.' + (a.waiting_for_budget ? ' (' + a.waiting_for_budget + ' warten)' : '') + ' Mehr Platz unter ⚙ „Speicher höchstens“.', 'muted abo-budget-hint'));
     if (a.reasons?.length) {
-      const why = make('details', undefined, 'abo-why'); why.append(make('summary', 'Warum ausgelassen oder verzögert?'));
+      const why = make('details', undefined, 'abo-why'); why.open = whyOpen; why.append(make('summary', 'Warum ausgelassen oder verzögert?'));
       why.append(make('p', a.reasons.map(r => r.count + ' × ' + r.reason).join(' · '), 'muted')); body.append(why);
     }
     const acts = make('div', undefined, 'abo-actions');
@@ -143,8 +152,10 @@
       iconButton('↻', 'Jetzt prüfen', () => act({action: 'check', id: a.id}, '„' + a.name + '“ wird geprüft …')),
       iconButton('⚙', 'Einstellungen', () => {
         const open = box.querySelector('.abo-form'); if (open) { open.remove(); return; }
-        box.append(form(a, false, (values, button) => act({action: 'update', id: a.id, ...values},
-          values.profile !== a.profile ? 'Verschoben nach „' + PROFILES[values.profile].label + '“.' : 'Gespeichert, wird gleich neu geprüft.', button), () => box.querySelector('.abo-form')?.remove()));
+        box.append(form(a, false, async (values, button) => {
+          if (await act({action: 'update', id: a.id, ...values},
+            values.profile !== a.profile ? 'Verschoben nach „' + PROFILES[values.profile].label + '“.' : 'Gespeichert, wird gleich neu geprüft.', button)) box.querySelector('.abo-form')?.remove();
+        }, () => box.querySelector('.abo-form')?.remove()));
       }),
       iconButton(a.enabled ? '⏸' : '▶', a.enabled ? 'Pausieren' : 'Fortsetzen', () => act({action: 'update', id: a.id, enabled: !a.enabled}, a.enabled ? 'Pausiert.' : 'Fortgesetzt.')),
       iconButton('✕', 'Abo beenden', () => {
@@ -152,15 +163,22 @@
       }));
     const link = make('a', '↗', 'abo-icon'); link.href = a.url; link.target = '_blank'; link.rel = 'noopener noreferrer'; link.title = 'Auf YouTube öffnen';
     acts.append(link);
-    box.append(avatar(a), body, acts);
+    box.prepend(avatar(a), body, acts);
     return box;
+  }
+  // Kinder in Reihenfolge bringen, ohne bleibende Elemente aus dem Dokument zu nehmen (sonst geht der Fokus verloren)
+  function keepInPlace(host, nodes) {
+    nodes.forEach((n, i) => { if (host.children[i] !== n) host.insertBefore(n, host.children[i] || null); });
+    while (host.children.length > nodes.length) host.lastElementChild.remove();
   }
   function render() {
     tabs();
-    const list = $('youtube-abos-list'); list.replaceChildren();
+    const list = $('youtube-abos-list');
+    const old = new Map([...list.querySelectorAll(':scope > .abo-card')].map(n => [n.dataset.id, n]));
     const own = (data.abos || []).filter(a => a.profile === current);
-    if (!own.length) list.append(make('p', current === 'kinder' ? 'Noch keine Kanäle für die Kinderecke.' : 'Noch keine eigenen Kanäle für den Ansehen-Modus.', 'abo-empty'));
-    for (const a of own) list.append(card(a));
+    const nodes = own.map(a => card(a, old.get(String(a.id))));
+    if (!own.length) nodes.push(make('p', current === 'kinder' ? 'Noch keine Kanäle für die Kinderecke.' : 'Noch keine eigenen Kanäle für den Ansehen-Modus.', 'abo-empty'));
+    keepInPlace(list, nodes);
     const add = $('youtube-abo-add');
     if (!add.querySelector('.abo-form')) {
       add.replaceChildren();
@@ -200,7 +218,7 @@
   }
   // 0.6.14 (Björn: lieber nur wenige Videos pro Stunde, damit YouTube nicht sperrt)
   function pace(d) {
-    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve', 'youtube-abos-total'].includes(document.activeElement?.id)) return;
+    const host = $('youtube-abos-pace'); if (!host || ['youtube-abos-per-hour', 'youtube-abos-reserve', 'youtube-abos-total', 'youtube-abos-archive'].includes(document.activeElement?.id)) return;
     const pick = make('select'); pick.id = 'youtube-abos-per-hour'; pick.setAttribute('aria-label', 'Abo-Videos pro Stunde');
     for (const n of d.per_hour_choices || [d.per_hour || 4]) {
       const o = make('option', String(n)); o.value = n; o.selected = n === d.per_hour; pick.append(o);
@@ -227,6 +245,18 @@
     const all = make('span', undefined, 'abo-reserve'); all.append(' Alle Abos zusammen belegen höchstens ', tot,
       ' (jetzt ' + gb(st.used_total_gb || 0) + ' GB); gesehene Videos machen zuerst Platz.');
     host.append(all);
+    // 0.6.89: gesehene Videos ins Archiv (ohne 30-Tage-Frist, zählen nicht zu Budget und Anzahl)
+    const ar = st.archive; if (!ar) return;
+    const box = make('input'); box.type = 'checkbox'; box.id = 'youtube-abos-archive'; box.checked = !!ar.enabled;
+    box.onchange = () => act({action: 'archive', archive: box.checked}, box.checked ? 'Gespeichert: gesehene Videos wandern ins Archiv' :
+      'Gespeichert: gesehene Videos machen wieder Platz für neue (bereits archivierte bleiben)', box);
+    const label = make('label', undefined, 'abo-reserve'); label.htmlFor = box.id;
+    label.append(box, ' Zu Ende gesehene Videos ins Archiv verschieben: dort ohne ' + (d.days || 30) +
+      '-Tage-Frist, sie zählen nicht mehr zu Anzahl und Budget der Abos. Archiv: ' + (ar.videos || 0) + ' Videos, ' + size(ar) +
+      (ar.folder ? ' (' + ar.folder + '; zieht mit dem Zwischenspeicher um).' : '.') +
+      (ar.enabled && ar.videos ? ' Das Archiv wächst ohne Grenze; nicht mehr gebrauchte Videos unter Speicher löschen.' : ''));
+    label.title = 'Ein Video gilt als gesehen, wenn es im MediathekAtlas-Player bis kurz vor das Ende lief. Außerhalb der App (z. B. im Finder) Geschautes erkennt die App nicht.';
+    host.append(label);
   }
   async function act(payload, message, button) {
     if (button) button.disabled = true;
@@ -238,5 +268,5 @@
     try { show(await window.api('youtube-abos')); } catch (e) { say(e.message, true); }
   }
   $('youtube-abos').addEventListener('toggle', () => { if ($('youtube-abos').open) load(); });
-  window.MediathekAtlasYouTubeAbos = {refresh: load};
+  window.MediathekAtlasYouTubeAbos = {refresh: load, keepInPlace};
 })();

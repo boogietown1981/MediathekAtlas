@@ -210,10 +210,50 @@ def planner_jobs(extra_catalog=(), extra_enrichment=()):
     return catalog, enrichment
 
 
+# 0.6.88 (Björn, 22.11.2026: „ja zu den Aktualisierungen“): these catalogues reload daily. The switch lives in
+# each platform's own database with default '0' (only the very first load ran by itself), so the catalogues
+# of Pluto, Joyn, Rakuten, RTL+, TOGGO and JustWatch stayed at the state of 19.11.2026.
+DAILY_V0688 = ('pluto', 'joyn', 'rakuten', 'rtlplus', 'toggo', 'justwatch')
+DAILY_MARK = 'auto_daily_v0688'
+# 0.6.117 (Langzeitdiagnose MacBook Air 23.11.2026, 0.6.85, 34,5 h): filmfriend, DMAX/TLC, Red Bull TV and dailyme
+# never ran again after their first load on 21.11. (same default '0'); 2,660 filmfriend details with IMDb ID – the
+# most direct recognition source – waited unchanged, because details are only fetched in the catalogue run.
+DAILY_V06117 = ('filmfriend', 'dmax', 'redbulltv', 'dailyme')
+DAILY_MARK_V06117 = 'auto_daily_v06117'
+
+
+def enable_daily_once(root, keys=DAILY_V0688, mark=DAILY_MARK):
+    """Switch the daily catalogue run on once per platform (marker in the platform's database), so that a later
+    „aus“ of the user stays. Returns the keys switched on now."""
+    switched = []
+    for p in PLATFORMS:
+        if p.key not in keys:
+            continue
+        try:
+            db = p.module._connect(root)
+            try:
+                if p.module._get(db, mark, ''):
+                    continue
+                with db:
+                    if p.module._get(db, 'auto', '0') != '1':
+                        p.module._set(db, 'auto', 1)
+                        switched.append(p.key)
+                    p.module._set(db, mark, '1')
+            finally:
+                db.close()
+        except Exception as exc:   # one broken platform database must not stop the others or the start
+            diagnostics.error('platform_daily_switch_failed', exc, platform=p.key)
+    if switched:
+        diagnostics.event('platform_daily_switched_on', platforms=switched)
+    return switched
+
+
 def start_background(ctx, stop, extra_catalog=(), extra_enrichment=()):
     """Reference checks and daily catalogue runs of every platform through one planner (0.6.0):
     one catalogue thread and two reference-check threads instead of two threads per platform."""
     import planner
+    enable_daily_once(ctx.root)
+    enable_daily_once(ctx.root, DAILY_V06117, DAILY_MARK_V06117)
     catalog, enrichment = planner_jobs(extra_catalog, extra_enrichment)
     plan = planner.Planner(ctx.root, ctx.settings, ctx.slots, stop, catalog, enrichment)
     plan.start()

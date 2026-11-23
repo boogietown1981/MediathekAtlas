@@ -225,6 +225,15 @@ def states(root):
                        'watched_at': r['watched_at'], 'pos': r['pos']} for r in rows}
 
 
+def finished_since(root, since, limit=200):
+    """0.6.94: zu Ende gesehene Einträge seit ``since`` (älteste zuerst) für das automatische Nachladen."""
+    with _db(root) as c:
+        rows = c.execute('SELECT key,ref,open,kind,watched_at FROM entries WHERE done=1 AND watched_at>? '
+                         'ORDER BY watched_at LIMIT ?', (float(since), int(limit))).fetchall()
+    return [{'key': r['key'], 'ref': json.loads(r['ref'] or '{}'), 'open': json.loads(r['open'] or '{}'),
+             'kind': r['kind'], 'watched_at': r['watched_at']} for r in rows]
+
+
 def summary(root):
     """Counts for the diagnosis export (no titles)."""
     with _db(root) as c:

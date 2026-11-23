@@ -1,5 +1,89 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (23. November 2026)
+- Automatisch: tests/test_v06120.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.120).
+
+## 0.6.119 – Korrektur Mac-Urteil 0.6.118 (23. November 2026)
+- Automatisch: tests/test_v06119.py, tests/test_film_suffix_year.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.119).
+
+## 0.6.118 – Korrektur Mac-Urteil 0.6.117 (23. November 2026)
+- Automatisch: tests/test_v06118.py, tests/test_v06117_air.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.118).
+
+## 0.6.117 – Sammelstand Erkennung/Kinderecke (23. November 2026)
+- Automatisch: tests/test_v06117_air.py, tests/test_v06117_jahrgaenge.py, tests/test_v06117_kinder_k7.py, tests/test_v0688.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.117).
+
+## 0.6.116 – Sammelstand Erkennung/YouTube/Kinderecke (23. November 2026)
+- Automatisch: tests/test_v06116.py (2), tests/test_v06116_kinder_maerchen_start.py, tests/test_v0690_kanal_vorschlaege.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.116).
+
+## 0.6.115 – Kinderecke: Altersweg nur mit eigenem Kindersignal, Listen-Stempel (23. November 2026)
+- Automatisch: tests/test_v06115_kinder_altersweg.py (3), angepasst test_v0699, test_v06114_kinder_nachbesserung; gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.115, Teil K; pruefe_kinderecke.py mit --stabil).
+
+## 0.6.114 – Sammelstand Erkennung/YouTube/Kinderecke (23. November 2026)
+- Automatisch: tests/test_v06114.py (10), tests/test_v06114_kinder_nachbesserung.py (6), tests/test_v0690_kanal_vorschlaege.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.114, Teile E, Y, K).
+
+## 0.6.113 – Sammelstand Erkennung/YouTube/Kinderecke (23. November 2026)
+- Automatisch: tests/test_v06113.py (8), tests/test_v06113_kinder_zwilling.py (6), tests/test_v06113_kinder_sperren.py (4), tests/test_v0690_kanal_vorschlaege.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.113, Teile E, Y, K; pruefe_kinderecke.py).
+
+## 0.6.112 – Kinderecke Wege je Folge (23. November 2026)
+- Automatisch: tests/test_v06112_kinder_wege.py (7, auf 0.6.111 rot), gesamte Suite, Klicktests kids_corner/click_all/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.112, Skript pruefe_kinderecke.py mit Weg je Folge).
+
+## 0.6.111 – Serien-Nachladen nachgebessert (23. November 2026)
+- Automatisch: tests/test_v0694_serien_nachladen.py (19), gesamte Suite, Klicktests series_autoload.cjs, click_all.cjs. Echte Downloads und Prüfung an Björns Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.111).
+
+## 0.6.110 – Kanal-Vorschläge nachgebessert (23. November 2026)
+- Automatisch: tests/test_v0690_kanal_vorschlaege.py (20), gesamte Suite, Klicktests youtube_discover.cjs, abo_settings.cjs, click_all.cjs. Echte YouTube-Abfragen und Prüflauf: Mac-Prüfung (PRUEFLISTE in releases/0.6.110).
+
+## 0.6.109 – Kinderecke Senderweg (23. November 2026)
+- Automatisch: tests/test_v06109_kinder_senderweg.py (8, auf 0.6.108 rot), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.109, Wortsuche + Folgen ohne Kindersender).
+
+- Schreibweise der Reihen: tests/test_v06109_schreibweise.py (Paare der Mac-Prüfung A1 in beide Richtungen, Rücknahme mit/ohne alte Regel).
+## 0.6.108 – Korrektur Erkennung (23. November 2026)
+- Automatisch: tests/test_v06108.py (6, u. a. 8 Mile über den Arbeiter vor dem Rückstau), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.108).
+
+## 0.6.106 – Reihennamen (22. November 2026)
+- Automatisch: tests/test_v06106.py (10), tests/test_v06106_kinder_zulassung.py (10, auf 0.6.105 rot), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Zahlen am echten Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.106).
+
+## 0.6.105 – Altersregel Kinderecke (22. November 2026)
+- Automatisch: tests/test_v0705_kinder_altersweg.py (3, auf 0.6.104 rot), gesamte Suite 1.938 grün, Klicktests kids_corner/click_all. Zahlen an echten Daten und Wikidata-FSK: Mac-Prüfung (PRUEFLISTE in releases/0.6.105).
+
+## 0.6.104 – Sammelstand 0.6.103 + 0.6.100 + 0.6.101 (22. November 2026)
+Volle Suite, Node-Tests und alle Klicktests (Chromium) auf dem zusammengeführten Stand; Mac-Prüfung nach PRUEFLISTE 0.6.104.
+
+## 0.6.103 – Kinderecke leer / Live-Sender-Fehler (22. November 2026)
+- Automatisch: tests/test_v0703_kinderecke_datenformen.py (2, auf 0.6.99 rot), gesamte Suite, Klicktests. Echte Daten (Liste gefüllt, Live-Sender spielen, kein kids_shelf_prewarm_failed): Mac-Prüfung (PRUEFLISTE in releases/0.6.103).
+
+## 0.6.99 – Kinderecke: Altersgrenze, Elternfreigabe, Kindersender live (22. November 2026)
+- Automatisch: tests/test_v0699_kinder_freigabe.py (8), gesamte Suite, Klicktests kids_corner.cjs (Live-Sender, Elternbereich, Freigeben) und click_all.cjs. Wikidata-FSK am echten Netz und Zahlen an echten Daten: Mac-Prüfung (PRUEFLISTE in releases/0.6.99).
+## 0.6.100 – Kanal-Vorschläge ohne Reiter „Kanäle“ (22. November 2026)
+- Automatisch: tests/test_v0690_kanal_vorschlaege.py, test_v0689_abo_archiv.py, gesamte Suite, Klicktests youtube_discover.cjs, portrait_video.cjs, kids_corner.cjs, click_all.cjs. Echte YouTube-Abfragen (Suche, Playlists, Schlagwörter mit Deno): Mac-Prüfung (PRUEFLISTE in releases/0.6.100).
+## 0.6.101 – Serien-Nachladen: deutsche Fassung, Lücken, Fenster (22. November 2026)
+- Automatisch: tests/test_v0694_serien_nachladen.py (13). Echte Fassungswahl bei ARTE/OmU-Doppelangeboten: Mac-Prüfung (PRUEFLISTE in releases/0.6.101).
+
+## 0.6.98 – Korrektur Kinderecke (22. November 2026)
+- Automatisch: tests/test_v0698_kinderecke_korrektur.py (4, auf 0.6.95 alle rot), gesamte Suite, Klicktests kids_corner.cjs und click_all.cjs. Zählung an echten Daten (Serien vorher/nachher, Stichprobe 50, Bereinigung): Mac-Prüfung (PRUEFLISTE in releases/0.6.98).
+
+## 0.6.97 – Korrektur Sendungsvorschläge, Filme 3sat/ARD, Lernreihen (22. November 2026)
+- Siehe releases/0.6.97/PRUEFLISTE.md. Automatisch: tests/test_v0697.py, test_erkennung_*.py.
+
+## 0.6.93 – Gruppen in der Kinderecke (22. November 2026)
+- Automatisch: tests/test_v0693_kinderecke_gruppen.py (4), Klicktest tests/browser/kids_corner.cjs (Gruppenreihen, Chips, „Alle …“). Verteilung auf echte Daten: Mac-Prüfung (PRUEFLISTE in releases/0.6.93).
+## 0.6.94 – Angefangene Serien automatisch offline (22. November 2026)
+- Automatisch: tests/test_v0694_serien_nachladen.py (11), Klicktest tests/browser/series_autoload.cjs (Chromium). Echte Daten (Signal „zu Ende gesehen“ aus Player und Kinderecke, Downloads einer echten Serie, Reserve/Grenzen, Oberfläche): Mac-Prüfung (PRUEFLISTE in releases/0.6.94).
+## 0.6.95 – Hochformat-Videos (22. November 2026)
+- Automatisch: tests/browser/portrait_video.cjs (Kinderecke, Player, Ansehen-Modus, Vollbild; Hoch- und Querformat; 1280×800 und 390×844). Vorher rot für Kinderecke (Video 2.276 px hoch bei 800 px Fenster), danach grün. Echtes Short am Mac: Mac-Prüfung.
+
+## 0.6.91 – Kinderecke: Märchen, Serienfolgen, Blättern (22. November 2026)
+- Automatisch: tests/test_v0691_kinderecke.py (5, vorher mit altem Code alle 5 rot), tests/test_v0646_kids_catalog.py, Klicktest tests/browser/kids_corner.cjs (Chromium, 264 Filme, Pfeile, „Alle …“). Echte Daten (Anzahl Märchen/KiKA, Folgen je Serie, Ladezeit /api/kids): Mac-Prüfung (PRUEFLISTE in releases/0.6.91).
+
+## 0.6.90 – Kanal-Vorschläge (22. November 2026)
+- Automatisch: tests/test_v0690_kanal_vorschlaege.py (6), tests/browser/youtube_discover.cjs (Chromium). Echte YouTube-Antworten (Reiter „Kanäle“ über yt-dlp, channelSections, --write-description): Mac-Prüfung.
+
+## 0.6.89 – Archiv gesehener YouTube-Abo-Videos (22. November 2026)
+- Automatisch: tests/test_v0689_abo_archiv.py (6). Echte Verschiebung auf APFS/exFAT und Wiedergabe aus dem Archiv: Mac-Prüfung (PRUEFLISTE in releases/0.6.89).
+
+## 0.6.88 – Folgensuche, Sendungsvorschläge, täglicher Abgleich (22. November 2026)
+- Siehe PRUEFLISTE in releases/0.6.88. Automatisch: tests/test_v0688.py; Ergebnisse der vollen Suite im Bericht an den Koordinator.
+
 ## 0.6.87 – Themenwörter bei Suche und Auswahl (22. November 2026)
 - Automatisch: gesamte Python-Suite (1.848, alle grün nach Korrektur des neuen Tests), Node-Tests, Klicktest; neu `tests/test_v0687.py`: „Doku“/„Sport“/„Masterclass“/„Kultur“ werden nicht als Serie gesucht und nicht Serie aus dem Senderhinweis, „Terra X“ weiter; Serie „Doku“ nie für Thema „Doku“. Gegenprobe auf 0.6.86: beide Tests rot.
 - Nicht geprüft: Wirkung auf Björns Bestand (Prüfliste).

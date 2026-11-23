@@ -327,6 +327,9 @@ def fetch(row, src, directory, update, cancelled, runner=None):
         # 0.6.13: subscription videos come in batches; short pauses between YouTube's requests make the
         # bot check ("Sign in to confirm you're not a bot") less likely. A single click stays immediate.
         args += ['--sleep-requests', str(SLEEP_REQUESTS), '--sleep-interval', str(SLEEP_MIN), '--max-sleep-interval', str(SLEEP_MAX)]
+    if row.get('_abo'):
+        # 0.6.90: the description (one small text file, no extra request) names related channels (youtube_discover)
+        args.append('--write-description')
     if ffmpeg:
         args += ['--ffmpeg-location', str(ffmpeg)]
     args.append(youtube.video_url(video))
@@ -394,7 +397,14 @@ def fetch(row, src, directory, update, cancelled, runner=None):
             if retry:
                 raise download_retry.RetryLater(message, block=block)
             raise ValueError(message)
-        files = [p for p in work.iterdir() if p.is_file() and p.name.startswith('video.') and p.stat().st_size]
+        described = work / 'video.description'
+        if row.get('_abo') and described.is_file():
+            try:
+                import youtube_discover
+                youtube_discover.record_mentions(root, video, described.read_text(encoding='utf-8', errors='replace')[:20000])
+            except Exception:                    # never fail a finished download because of suggestions
+                pass
+        files = [p for p in work.iterdir() if p.is_file() and p.name.startswith('video.') and p.suffix != '.description' and p.stat().st_size]
         if not files:
             raise ValueError('yt-dlp lieferte keine Videodatei')
         os.replace(max(files, key=lambda p: p.stat().st_size), src)

@@ -4,14 +4,17 @@
    Der Abspielstand geht wie im großen Player an /api/watch-progress (Schlüssel job:<id>).
    0.6.46: dazu Kinderfilme und Kinderserien aus dem Katalog (kids_catalog.py, nur Kategorie „Kinder“,
    nur ohne Kopierschutz im eigenen Player). Serien öffnen ihre Folgen in der Kinderecke; abgespielt
-   wird über /api/kids-play, das nur Einträge dieser Liste annimmt. */
+   wird über /api/kids-play, das nur Einträge dieser Liste annimmt.
+   0.6.93: Gruppen (Märchen, Zeichentrick, Tiere & Natur, Wissen, Abenteuer, Lustiges, Noch mehr) als Reihen
+   und als Bild-Chips oben.
+   0.6.91: Pfeilknöpfe zum Blättern der Reihen, „Alle …“-Kachel am Ende gekürzter Reihen. */
 (() => {
   'use strict';
   const $ = id => document.getElementById(id);
   const token = document.querySelector('meta[name=atlas-token]').content;
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const COLORS = ['#ff5d8f', '#ff9a3f', '#ffd23f', '#45d483', '#3fc4ff', '#6c5ce7', '#c56cf0', '#20bf6b', '#fd7272', '#4b7bec'];
-  const state = {channels: [], videos: [], movies: [], series: [], filter: 'all', show: null, episodes: [], current: null, list: [],
+  const state = {channels: [], videos: [], movies: [], series: [], groups: [], liveEnabled: false, live: null, filter: 'all', show: null, episodes: [], current: null, list: [],
     nextTimer: 0, lastSent: 0, offset: 0, hls: null};
 
   async function api(path, data) {
@@ -30,7 +33,8 @@
   const channelOf = v => state.channels.find(c => c.id === v.abo) || {};
   // Ein Abo-Video wird zu einem abspielbaren Eintrag wie Filme und Folgen (ref, key, Bild).
   const fromAbo = v => Object.assign(v, {type: 'abo', ref: {job: v.job}, key: 'job:' + v.job, picture: v.poster ? image('job', v.job) : '', group: v.abo});
-  const fromCatalog = (t, type) => Object.assign(t, {type, picture: t.poster || '', group: type});
+  // 0.6.93: die Gruppe des Servers (Märchen …) heißt hier theme; group bleibt die Abspielreihe (nextOf)
+  const fromCatalog = (t, type) => Object.assign(t, {type, picture: t.poster || '', theme: t.group || 'mehr', group: type});
 
   // ------------------------------------------------------------ Auswahl oben
   function chip(id, name, opts) {
@@ -44,23 +48,33 @@
     b.onclick = () => { state.filter = id; state.show = null; render(); window.scrollTo({top: 0, behavior: 'smooth'}); };
     return b;
   }
+  let chipsWrapped = false;
   function renderChannels() {
-    const host = $('kids-channels'); host.replaceChildren();
+    const host = $('kids-channels');
+    if (!chipsWrapped) { chipsWrapped = true; const parent = host.parentNode, after = host.nextSibling; parent.insertBefore(scroller(host, 'kids-chips-scroller'), after); }
+    host.replaceChildren();
     if (!state.videos.length && !state.movies.length && !state.series.length) return;
     const fresh = state.videos.filter(v => v.new).length;
     host.append(chip('all', 'Alle', {color: '#6c5ce7', letter: '★'}));
     if (fresh) host.append(chip('new', 'Neu', {color: '#ffd23f', letter: '✨', badge: fresh}));
     if (state.movies.length) host.append(chip('movies', 'Filme', {color: '#ff9a3f', letter: '🎬'}));
     if (state.series.length) host.append(chip('series', 'Serien', {color: '#3fc4ff', letter: '📺'}));
+    // 0.6.93: Gruppen mit Bild-Symbol (Märchen, Zeichentrick, Tiere …), auch für Kinder, die noch nicht lesen
+    for (const g of state.groups) host.append(chip('g:' + g.id, g.name, {color: color(g.id), letter: g.icon}));
+    // 0.6.99: Kinder- und Familiensender live (nur wenn die Eltern es eingeschaltet haben)
+    if (state.liveEnabled) host.append(chip('live', 'Fernsehen', {color: '#20bf6b', letter: '📡'}));
     for (const c of state.channels.filter(c => c.videos))
       host.append(chip(c.id, c.name, {color: color(c.id), letter: (c.name || '?').trim().charAt(0).toUpperCase(), avatar: c.avatar ? image('abo', c.id) : '', badge: c.new}));
+    if (host.kidsUpdate) requestAnimationFrame(host.kidsUpdate);
   }
 
   // ------------------------------------------------------------ Kacheln
   function thumb(v, tall) {
     const t = make('span', 'kids-thumb');
     if (v.picture) { const img = make('img'); img.alt = ''; img.loading = 'lazy'; img.referrerPolicy = 'no-referrer'; img.src = v.picture;
-      img.onerror = () => { img.remove(); t.classList.add('no-picture'); }; t.append(img); }
+      img.onerror = () => { img.remove(); t.classList.add('no-picture'); };
+      // 0.6.95: Hochformat-Bilder (Shorts, Handy-Clips) ganz zeigen statt die Mitte herauszuschneiden
+      img.onload = () => { if (!tall && img.naturalHeight > img.naturalWidth) t.classList.add('is-portrait'); }; t.append(img); }
     else t.classList.add('no-picture');
     if (tall && !v.picture) t.append(make('span', 'kids-letter', (v.title || '?').trim().charAt(0).toUpperCase()));
     return t;
@@ -74,6 +88,7 @@
     b.dataset.kind = v.type;
     const th = thumb(v, tall);
     th.append(make('span', 'kids-play', v.type === 'series' ? '☰' : '▶'));
+    if (v.type === 'live') th.append(make('span', 'kids-new kids-live', 'LIVE'));
     if (v.new) th.append(make('span', 'kids-new', 'NEU'));
     else if (v.done) th.append(make('span', 'kids-seen', '✓'));
     if (v.duration && v.type !== 'series') th.append(make('span', 'kids-time', clock(v.duration)));
@@ -84,27 +99,92 @@
     b.onclick = () => (v.type === 'series' ? openSeries(v) : play(v, list));
     return b;
   }
-  function row(title, note, list, grid, all) {
+  // 0.6.91 (Björn, 22.11.2026: „kann nicht weiter nach rechts scrollen“): Reihen lassen sich mit großen
+  // Pfeilknöpfen blättern (Maus ohne Seitwärtsrad, Tastatur); am Ende einer gekürzten Reihe führt eine
+  // „Alle …“-Kachel zur ganzen Liste.
+  function scroller(box, cls) {
+    const wrap = make('div', 'kids-scroller' + (cls ? ' ' + cls : ''));
+    const arrow = (dir, label) => {
+      const b = make('button', 'kids-arrow kids-arrow-' + (dir < 0 ? 'prev' : 'next'), dir < 0 ? '‹' : '›');
+      b.type = 'button'; b.setAttribute('aria-label', label); b.tabIndex = -1;
+      b.onclick = () => box.scrollBy({left: dir * Math.max(200, box.clientWidth * 0.85), behavior: 'smooth'});
+      return b;
+    };
+    const prev = arrow(-1, 'Zurück blättern'), next = arrow(1, 'Weiter blättern');
+    const update = () => {
+      const max = box.scrollWidth - box.clientWidth;
+      prev.hidden = box.scrollLeft <= 4; next.hidden = box.scrollLeft >= max - 4;
+    };
+    box.addEventListener('scroll', update, {passive: true});
+    if (window.ResizeObserver) new ResizeObserver(update).observe(box); else window.addEventListener('resize', update);
+    requestAnimationFrame(update); box.kidsUpdate = update;
+    wrap.append(prev, box, next); return wrap;
+  }
+  function moreTile(n, filter, name) {
+    const b = make('button', 'kids-tile kids-more is-poster'); b.type = 'button';
+    b.setAttribute('aria-label', 'Alle ' + n + ' ' + name + ' anzeigen');
+    const th = make('span', 'kids-thumb no-picture'); th.append(make('span', 'kids-letter', '→'));
+    b.append(th, make('span', 'kids-title', 'Alle ' + n + ' ' + name));
+    b.onclick = () => { state.filter = filter; state.show = null; render(); window.scrollTo({top: 0, behavior: 'smooth'}); };
+    return b;
+  }
+  function row(title, note, list, grid, all, more) {
     const sec = make('section', 'kids-row'); const h = make('h2', '', title);
     if (note) h.append(make('small', '', note));
     const box = make('div', grid ? 'kids-grid' : 'kids-strip');
     if (list.some(v => v.type === 'movie' || v.type === 'series')) box.classList.add('is-posters');
     for (const v of list) box.append(tile(v, all || list));
-    sec.append(h, box); return sec;
+    if (more) box.append(moreTile(more.n, more.filter, more.name));
+    sec.append(h, grid ? box : scroller(box)); return sec;
   }
+  const STRIP = 40;          // Kacheln je Reihe in „Alle“; der Rest über „Alle …“ bzw. die Auswahl oben
   const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
+  // 0.6.93: Filme und Serien in wenigen Gruppen statt einer langen Reihe (kids_catalog.GROUPS). Ohne Gruppen
+  // (ältere Server) bleibt es bei einer Reihe „Filme“ bzw. „Serien“.
+  const byTitle = list => list.sort((a, b) => String(a.title).localeCompare(String(b.title), 'de', {sensitivity: 'base'}));
+  const inGroup = (list, id) => list.filter(v => (v.theme || 'mehr') === id);
+  function grouped(main, list, what) {
+    const cut = (n, filter) => (n > STRIP ? {n, filter, name: 'Titel'} : null);
+    const groups = state.groups.length ? state.groups : [{id: 'mehr', name: what || 'Filme und Serien', icon: ''}];
+    for (const g of groups) {
+      const own = state.groups.length ? inGroup(list, g.id) : list;
+      if (!own.length) continue;
+      const title = (g.icon ? g.icon + ' ' : '') + g.name + (what && state.groups.length ? ' · ' + what : '');
+      main.append(row(title, count(own.length, 'Titel', 'Titel'), own.slice(0, STRIP), false, own,
+        state.groups.length ? cut(own.length, 'g:' + g.id) : cut(own.length, what === 'Serien' ? 'series' : 'movies')));
+    }
+  }
+  // 0.6.99: Live-Sender für Kinder (/api/kids-live); kein Weiterschauen, kein „nächstes Video“
+  async function loadLive() {
+    try { const d = await api('kids-live'); state.live = (d.stations || []).map(t => Object.assign(t, {type: 'live', picture: t.poster || '', key: '', group: 'live', theme: 'live'})); }
+    catch (e) { state.live = []; }
+    if (state.filter === 'live' && $('kids-stage').hidden) render();
+  }
+  function renderLive(main) {
+    if (state.live === null) { main.append(make('p', 'kids-empty', 'Sender werden geladen …')); loadLive(); return; }
+    if (!state.live.length) { main.append(make('p', 'kids-empty', 'Gerade gibt es keine Kindersender.')); return; }
+    main.append(row('📡 Fernsehen', count(state.live.length, 'Sender', 'Sender'), state.live, true));
+  }
   function render() {
     renderChannels();
     const main = $('kids-main'); main.replaceChildren();
     if (state.show) { renderSeries(main); return; }
+    if (state.pending && state.filter !== 'live') main.append(make('p', 'kids-loading', 'Filme und Serien werden noch zusammengestellt …'));
     if (!state.videos.length && !state.movies.length && !state.series.length) {
+      if (state.pending) return;
       const p = make('div', 'kids-empty'); p.append(make('span', 'big', '📺'), document.createTextNode('Hier ist noch nichts zum Anschauen.'));
       p.append(make('small', '', 'Für Eltern: In MediathekAtlas unter Plattformen → YouTube → „Kanal-Abos“ einen Kanal abonnieren. Fertig geladene Videos erscheinen dann hier, auch ohne Internet. Kinderfilme und Kinderserien aus dem Katalog erscheinen, sobald sie nach dem Abgleich eindeutig als „Kinder“ eingeordnet sind.'));
       main.append(p); return;
     }
     if (state.filter === 'new') { main.append(row('Neu für dich', '', state.videos.filter(v => v.new), true)); return; }
-    if (state.filter === 'movies') { main.append(row('Filme', count(state.movies.length, 'Film', 'Filme'), state.movies, true)); return; }
-    if (state.filter === 'series') { main.append(row('Serien', count(state.series.length, 'Serie', 'Serien'), state.series, true)); return; }
+    if (state.filter === 'live') { renderLive(main); return; }
+    if (state.filter === 'movies') { grouped(main, state.movies, 'Filme'); return; }
+    if (state.filter === 'series') { grouped(main, state.series, 'Serien'); return; }
+    if (state.filter.startsWith('g:')) {
+      const g = state.groups.find(x => 'g:' + x.id === state.filter) || {name: '', icon: ''};
+      const list = inGroup(byTitle([...state.movies, ...state.series]), g.id);
+      main.append(row(g.icon + ' ' + g.name, count(list.length, 'Titel', 'Titel'), list, true)); return;
+    }
     if (state.filter !== 'all') {
       const c = state.channels.find(x => x.id === state.filter);
       main.append(row(c ? c.name : 'Kanal', '', state.videos.filter(v => v.abo === state.filter), true)); return;
@@ -113,11 +193,11 @@
     if (fresh.length) main.append(row('Neu für dich', count(fresh.length, 'Video', 'Videos'), fresh.slice(0, 30)));
     const started = [...state.videos, ...state.movies].filter(v => v.progress > 0);
     if (started.length) main.append(row('Weiterschauen', '', started.slice(0, 20)));
-    if (state.movies.length) main.append(row('Filme', count(state.movies.length, 'Film', 'Filme'), state.movies.slice(0, 40), false, state.movies));
-    if (state.series.length) main.append(row('Serien', count(state.series.length, 'Serie', 'Serien'), state.series.slice(0, 40)));
+    const cut = (n, filter, name) => (n > STRIP ? {n, filter, name} : null);
+    grouped(main, byTitle([...state.movies, ...state.series]), '');
     for (const c of state.channels) {
       const own = state.videos.filter(v => v.abo === c.id);
-      if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, 40), false, own));
+      if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, STRIP), false, own, cut(own.length, c.id, 'Videos')));
     }
   }
 
@@ -150,16 +230,47 @@
     try {
       const d = await api('kids');
       state.channels = d.channels || []; state.videos = (d.videos || []).map(fromAbo);
+      state.liveEnabled = !!d.live_enabled;
       const cat = d.catalog || {};
       state.movies = (cat.movies || []).map(t => fromCatalog(t, 'movie'));
       state.series = (cat.series || []).map(t => fromCatalog(t, 'series'));
+      state.groups = Array.isArray(cat.groups) ? cat.groups : [];
+      state.pending = !!cat.pending;     // 0.6.103: unvollständige Liste nach dem Start sichtbar als „wird geladen“
       if (cat.pending) setTimeout(load, 8000);   // der Katalog wird nach dem Start noch zusammengestellt
     }
     catch (e) { if (!state.videos.length && !state.movies.length) { $('kids-main').replaceChildren(make('p', 'kids-empty', 'Gerade nicht erreichbar. Gleich nochmal versuchen.')); } return; }
     if (!$('kids-stage').hidden) return;      // nicht während des Abspielens umbauen
+    // 0.6.103 (Björn: „kann nicht weiter nach rechts scrollen“): das Neuladen alle 60 s baute alles neu, gescrollte
+    // Reihen sprangen an den Anfang. Unveränderte Daten bauen nichts um; sonst bleiben Scrollstellen erhalten.
+    const sig = JSON.stringify([state.channels, state.videos, state.movies, state.series, state.groups, state.pending, state.liveEnabled]);
+    if (sig === state.sig && $('kids-main').childElementCount && !window.__kidsForce) return;
+    window.__kidsForce = false;
+    state.sig = sig;
+    const keep = keepScroll();
     if (state.show && !state.series.some(s => s.id === state.show.id)) state.show = null;
-    if (!['all', 'new', 'movies', 'series'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)) state.filter = 'all';
+    if (state.filter === 'live' && !state.liveEnabled) state.filter = 'all';
+    if (!['all', 'new', 'movies', 'series', 'live'].includes(state.filter) && !state.channels.some(c => c.id === state.filter)
+        && !state.groups.some(g => 'g:' + g.id === state.filter)) state.filter = 'all';
     render();
+    keep();
+  }
+  function keepScroll() {
+    const rows = new Map();
+    for (const strip of document.querySelectorAll('#kids-main .kids-strip')) {
+      const h = strip.closest('.kids-row')?.querySelector('h2');
+      if (h && strip.scrollLeft) rows.set(h.textContent, strip.scrollLeft);
+    }
+    const chips = document.querySelector('.kids-chips-scroller .kids-strip, .kids-chips-scroller > div');
+    const chipLeft = chips ? chips.scrollLeft : 0, y = window.scrollY;
+    return () => {
+      for (const strip of document.querySelectorAll('#kids-main .kids-strip')) {
+        const h = strip.closest('.kids-row')?.querySelector('h2');
+        if (h && rows.has(h.textContent)) strip.scrollLeft = rows.get(h.textContent);
+      }
+      const c = document.querySelector('.kids-chips-scroller .kids-strip, .kids-chips-scroller > div');
+      if (c && chipLeft) c.scrollLeft = chipLeft;
+      if (y) window.scrollTo(0, y);
+    };
   }
 
   // ------------------------------------------------------------ Abspielen im Vollbild
@@ -226,7 +337,7 @@
     render(); load();
   }
   function nextOf(v) {
-    if (v.type === 'movie') return null;        // nach einem Film geht es zurück zur Übersicht
+    if (v.type === 'movie' || v.type === 'live') return null;        // nach einem Film geht es zurück zur Übersicht
     const list = (state.list || []).filter(x => x.type === v.type && x.group === v.group);
     const i = list.findIndex(x => x === v || (x.key && x.key === v.key));
     if (v.type === 'episode') return list[i + 1] || null;
@@ -271,5 +382,6 @@
 
   load();
   setInterval(load, 60000);
+  window.__kidsReload = load;   // Klicktest: Aktualisierung auslösen
   document.addEventListener('visibilitychange', () => { if (!document.hidden) load(); });
 })();

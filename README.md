@@ -1,4 +1,156 @@
-# MediathekAtlas · 0.6.87
+# MediathekAtlas · 0.6.120
+
+## Neu in 0.6.120: Schreibweise je Sender
+- Markenschreibweisen (KiKANiNCHEN) gelten nur für den Sender, der sie selbst so schreibt: ARD und MDR behalten „Mittagsmagazin“, SRF „MittagsMagazin“. Auch Ausschnitte und Extras einer Reihe werden angeglichen.
+
+
+## Neu in 0.6.119: 3sat-Filme, Jahrgänge, Schreibweisen
+- 3sat-Filme mit Titelzusatz („… - Spielfilm, USA 1993“) werden verknüpft, wenn Titel und Jahr stimmen – vorher blieben sie auf „prüfen“, sobald die Laufzeit nicht passte.
+- Jahrgänge („Dein Song 2022“ … „2026“) kommen auch aus „prüfen“ unter die bekannte Reihe.
+- Schreibweisen werden nur noch zu einer belegten Markenschreibweise angeglichen (KiKANiNCHEN); sonst bleibt alles, wie der Sender es schreibt.
+- Altersrunde der Kinderecke wartet auf die Start-Heilungen; eine belegte Datenbank ist kein Fehler mehr.
+
+
+## Neu in 0.6.118: Korrektur der Erkennung aus 0.6.117
+- Sportarten und Themenwörter („Schwimmen“, „Sport“) werden nie mehr zur Serie – unter jedem Thema. Echte Sendungen (Tell-Star, Cinema Strikes Back, Sonntagsmärchen) und Reihen, die IMDb oder TVDB kennen (Formel 1), bleiben unangetastet.
+- Jahrgänge einer Sendung („Dein Song 2022“ bis „2026“) werden eine Reihe, auch mit nur einer Folge je Jahr und bei ZDF/KiKA gemischt.
+- Eine Reihe hat eine Schreibweise (KiKANiNCHEN), nie die ganz großgeschriebene, wenn es eine andere gibt.
+- Filmlisten-Import übersteht eine belegte Datenbank (kein „database is locked“ mehr nach den Start-Heilungen).
+- Kinderecke: „Gevatter Tod“ & Co. warten mit eigenem Grund.
+
+
+## Neu in 0.6.117: Erkennung sauberer, Kataloge täglich aktuell, Kinderecke genauer
+- Sportarten wie „Schwimmen“ gelten nie mehr als Serie; eine nur bei Wikidata bekannte Serie wird nicht mehr auf alle Beiträge eines Themas übertragen. Bereits falsch zugeordnete Beiträge werden neu erkannt.
+- Jahrgänge einer Sendung („Dein Song 2023“, „Dein Song 2024“) erscheinen als eine Reihe; das Jahr steht im Folgentitel.
+- filmfriend, DMAX/TLC, Red Bull TV und dailyme aktualisieren sich jetzt täglich (in den Einstellungen der Plattform abschaltbar).
+- Bilder: Einträge, die TVDB nicht kennt, werden erst nach einer Woche wieder abgefragt statt stündlich.
+- Kinderecke: dunkle Märchen wie „Gevatter Tod“ warten auf Freigabe, „Aschenputtel“ ist sichtbar.
+
+## Neu in 0.6.116: Märchen zurück in der Kinderecke, ganze Sendungen werden erkannt, Vorschläge schneller
+- Märchen- und Kinderbuchverfilmungen mit belegter Altersfreigabe (z. B. Aschenputtel, Der kleine Lord, Heidi und Peter) stehen wieder in der Kinderecke; die Liste ist direkt nach dem Start vollständig.
+- Ganze Sendungen, die nur wegen Wörtern wie „Pressekonferenz“ als Clip galten (z. B. eine nummerierte Serienfolge), werden jetzt normal erkannt. Podcasts und Trailer bleiben Clips.
+- Kanal-Vorschläge werden schneller aufgelöst.
+
+## Neu in 0.6.115: Kinderecke – Familienfilme nur mit eigenem Kindersignal
+- Ein Familienfilm mit Altersfreigabe kommt nur noch automatisch in die Kinderecke, wenn er erkennbar für Kinder ist (Zeichentrick, Märchen, bekannte Kinderbuch-Vorlage oder Kinderreihe). Alle anderen warten im Elternbereich auf deine Freigabe.
+- Die Diagnose nennt, welche Titel bei einem Neuaufbau der Kinderecke hinzukommen oder wegfallen.
+
+## Neu in 0.6.114: Nachbesserungen an Erkennung, Kanal-Vorschlägen und Kinderecke
+- Sendungen, die IMDb ohne Einzelfolgen kennt, werden jetzt wirklich als Beiträge abgelegt (in 0.6.113 blieb das aus).
+- Interviews und Ausschnitte zu einem erkannten Film oder einer Serie erscheinen als Extra dazu, nicht als eigene Sendung.
+- Kanal-Vorschläge suchen zuerst für das Kinderprofil und sind schneller.
+- Die Kinderecke lässt Erwachsenen-Fernsehfilme draußen, blendet leere Plattform-Reihen aus und lädt wieder schnell.
+
+## Neu in 0.6.113: Erkennung räumt auf, YouTube-Vorschläge mit API-Schlüssel, Kinderecke spielt das KiKA-Angebot
+- Trailer, Vorschauen, Podcasts und Pressekonferenzen bleiben nicht mehr dauerhaft „offen“: Trailer gehören als Extra zu ihrer Reihe, die übrigen Clips werden als Clip abgelegt, nie als Folge einer echten Serie.
+- Sendungen, die IMDb ohne Einzelfolgen kennt (z. B. Sportpanorama, Euromaxx), führen ihre Ausgaben jetzt sofort als Beiträge, statt 30 Tage auf die Folgensuche zu warten.
+- Läuft der Abgleich leer, steht im Protokoll, warum die übrigen offenen Werke warten (z. B. Angebot abgelaufen).
+- Kanal-Vorschläge funktionieren auch mit eigenem YouTube-API-Schlüssel.
+- Hat eine Folge ein KiKA-Angebot, zeigt und spielt die Kinderecke genau dieses.
+- Eltern können sichtbare Titel der Kinderecke direkt sperren (Einstellungen → Kinderecke · Eltern → „In der Kinderecke“).
+
+## Neu in 0.6.112: Kinderecke genauer
+- Jugend- und Reportageformate wie „Young Crime“ oder „POV“ zeigen in der Kinderecke nur Folgen von KiKA; andere Folgen warten auf Ihre Freigabe.
+- Reihen ohne abspielbare Folge erscheinen nicht mehr. TOGGO-Serien fehlen deshalb, solange TOGGO sie nur mit Kopierschutz anbietet.
+- Eine geänderte Altersgrenze wirkt in beide Richtungen sofort auch für Netzkino, Plex und Pluto TV.
+
+## Neu in 0.6.111: Angefangene Serien genauer nachladen
+- Gibt es eine Folge in deutscher Fassung und als Originalfassung mit Untertiteln, wird nur eine davon geladen, bevorzugt die deutsche. Ist nur eine Sonderfassung ladbar, steht das am Auftrag in der Downloads-Liste.
+- Wurde die Folge in der Kinderecke zu Ende gesehen, lädt MediathekAtlas nur Folgen und Filme nach, die die Kinderecke auch zeigen würde.
+- Sehr lange Serien (über 1.000 Folgen) laden die Folgen rund um die zuletzt gesehene, statt gar nichts.
+
+## Neu in 0.6.110: Kanal-Vorschläge mit Namen und Kanalbild
+- Vorschläge unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ zeigen jetzt Namen und Kanalbild. Für die Kinderecke stehen deutschsprachige Kanäle mit erkennbarem Kinderbezug vorn; englischsprachige und solche ohne Kinderbezug rutschen nach hinten.
+- Die Suche liefert schon beim ersten Mal Vorschläge, auch wenn noch nichts zu Ende geschaut wurde.
+
+## Neu in 0.6.109: Kinderecke zeigt nur, was selbst für Kinder ist
+- Reihen, in denen nur einzelne Folgen von KiKA, TOGGO oder ZDFtivi stammen (z. B. „WUMMS“, „Young Crime“), zeigen nur noch diese Folgen. Sportschau, Nachrichten und Livestreams erscheinen nicht mehr unter Filme und Serien.
+- Live-Fernsehen gibt es in der Kinderecke nur unter „Fernsehen“ und nur mit echten Kindersendern; „Familie“ im Sendernamen reicht dafür nicht.
+- Die Altersgrenze im Elternbereich gilt jetzt auch für Netzkino, Plex und Pluto TV. Familienserien für Erwachsene kommen nicht mehr über die Altersfreigabe hinein.
+- „Wartet auf Freigabe“ zeigt alle wartenden Titel, nicht mehr höchstens 300.
+
+- Reihentitel werden nur noch behutsam an die Schreibweise des Senders angepasst (aus „kulturzeit“ wird „Kulturzeit“, aus „KIKA LIVE“ „KiKA LIVE“), nie mehr in Großbuchstaben („MDR Sachsenspiegel“ bleibt).
+## Neu in 0.6.108: Filme von 3sat werden wirklich gesucht
+- Filme mit dem 3sat-Zusatz im Titel („8 Mile - Spielfilm, USA 2002“) werden jetzt als Erstes neu gesucht. In 0.6.97 standen sie auf „prüfen“ und kamen nie an die Reihe.
+- Ein Film mit um ein Jahr abweichendem Jahr gilt nur noch ab 40 Minuten Laufzeit; zwei Kurzclips von SRF („Sport“, „Moda“), die so fälschlich Filme wurden, werden neu erkannt.
+- Sendungen, für die IMDb keine Einzelfolgen kennt, stehen jetzt im Protokoll, und die Regeln für Werke ohne Art laufen einmal neu über den Bestand.
+
+## Neu in 0.6.106: Kinderecke strenger, Reihen unter ihrem bekannten Namen
+- Eine Reihe heißt so, wie der Sender sie schreibt: „KiKA LIVE“ statt „KIKA LIVE“ aus TMDB.
+- Ableger einer KiKA-Reihe („KiKA LIVE fordert heraus“, „KiKA LIVE #ZuHauseUmDieWelt“, „KiKA LIVE - Fragen an die Astronautinnen“ …) stehen unter der Hauptreihe statt als eigene Mini-Reihen; der Ableger steht im Folgentitel.
+- „Anna, Nina, Pia und die wilden Tiere“, „Paula, Anna und die wilden Tiere“ und „Checker Can, Checker Tobi und Checker Julian“ (BR/ARD) zählen als Kinderprogramm und erscheinen in der Kinderecke.
+- „Kinder“ im Namen allein macht nichts mehr zum Kinderprogramm („Die Kinder von Lügde“, „Ein Herz für Kinder“, „Kinderärzte im Einsatz“); solche Zuordnungen werden einmalig entfernt.
+- Kinderecke: automatisch nur noch Angebote von KiKA, TOGGO und ZDFtivi, bekannte Kinderreihen (Maus, Sandmännchen, Löwenzahn, Checker …), Filme mit Kinder- oder Familienkennung aus einer Filmdatenbank und Ihre Freigaben. Alles andere steht unter „Wartet auf Freigabe“. Titel mit heiklen Wörtern (Porno, Missbrauch, Krieg, Mord, Krimi …) erscheinen nur, wenn sie von einem Kindersender kommen oder Sie sie freigegeben haben.
+
+## Neu in 0.6.105: Altersregel der Kinderecke strenger
+- Über die Altersfreigabe kommt ein Film nur noch in die Kinderecke, wenn er zusätzlich als Familienfilm eingeordnet ist; nie neben Science-Fiction, Action, Mystery oder Romantik. „Fantasy“ oder „Abenteuer“ allein reichen nicht mehr (Monster-, Hai- und Actionfilme ab 12 aus Netzkino und Plex), solche Titel stehen unter „Wartet auf Freigabe“.
+- Die Altersfreigaben aus Wikidata werden jetzt auch für Filme gesucht, die über TMDB erkannt wurden.
+
+
+## Neu in 0.6.104: Sammelstand
+- Enthält 0.6.103 (Kinderecke wieder gefüllt, Live-Sender spielen; mit 0.6.99 Altersfreigabe und Elternbereich), 0.6.100 (Kanal-Vorschläge, Abo-Einstellungen bleiben offen) und 0.6.101 (Serien-Nachladen mit deutscher Fassung).
+
+## Neu in 0.6.103: Kinderecke wieder gefüllt, Live-Sender spielen
+- 0.6.98 und 0.6.99 zeigten in der Kinderecke keine Filme und Serien, und jeder Live-Sender meldete „'str' object has no attribute 'get'“. Ursache: Ein einziger Titel eines anderen Portals mit anderer Datenform brach den ganzen Listenaufbau ab. Jetzt wird jedes Feld nur in der erwarteten Form gelesen, und ein unlesbarer Titel wird übersprungen und protokolliert statt die Liste zu leeren.
+- Reihen vom Kinderkanal KiKA (z. B. „Wissen macht Ah!“, „Der Krieg und ich“, „KiKA LIVE“) stehen immer in der Kinderecke. Solange die Liste nach dem Start noch entsteht, steht dort „wird noch zusammengestellt“.
+- Eine weitergeblätterte Reihe springt beim automatischen Aktualisieren nicht mehr an den Anfang zurück.
+
+## Neu in 0.6.101: Serien-Nachladen lädt die deutsche Fassung
+- Angefangene Serien und gesehene Filme werden in der deutschen Fassung geladen, nicht als Originalversion mit Untertitel, Hörfassung oder Gebärdensprache, wenn es die deutsche gibt.
+- Fehlen Folgen zwischen der gesehenen und der nächsten ladbaren, nennt der Kasten unter Downloads die Lücke. Das Fenster (Standard 20 Folgen) füllt sich sofort, nicht in Zehnerschritten.
+
+## Neu in 0.6.100: Kanal-Vorschläge mit echten Treffern
+- Unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ kommen Vorschläge jetzt aus den Playlists deiner Abos, aus @Kanal-Erwähnungen in Beschreibungen und Titeln und aus einer YouTube-Suche nach den Schlagwörtern gesehener Videos. Für die Kinderecke werden kindgerechte Kanäle bevorzugt und Prank-, Horror- oder Gaming-Kanäle nach hinten gestellt.
+- Freigeben geht weiterhin erst nach dem Probeschauen; eine Freigabe lädt zum Start die 3 neuesten Videos.
+- Abo-Einstellungen und die Vorschau in „Neue Kanäle entdecken“ bleiben bei der Aktualisierung offen (Korrektur aus der Prüfung).
+
+## Neu in 0.6.99: Kinderecke nach Altersfreigabe, Elternbereich, Kindersender live
+- Automatisch in die Kinderecke kommt: alles von KiKA und TOGGO; sonst nur Erkanntes, das eindeutig Kinderprogramm ist oder als Familien-, Animations-, Fantasy- oder Abenteuerfilm eine belegte Altersfreigabe bis zur eingestellten Grenze hat (z. B. Bibi & Tina, Märchen unter „Fantasy“); nie neben Horror, Thriller, Krimi, Erotik, Krieg oder Romantik. Ein Drama ab 12 kommt nicht allein über die Altersfreigabe hinein.
+- Altersgrenze FSK 0, 6 oder 12 (Standard 12) unter Verwaltung → „Kinderecke · Eltern“. Dort stehen auch die Titel, die auf deine Freigabe warten (nicht erkannt, ohne oder mit zu hoher Altersfreigabe), mit „Freigeben“/„Sperren“; jede Entscheidung lässt sich zurücknehmen.
+- Altersfreigaben (FSK) holt die App im Hintergrund aus Wikidata über die IMDb-Kennung; Anbieter mit eigener FSK-Angabe zählen ebenfalls. Das IMDb-Archiv enthält keine Altersfreigaben.
+- Neuer Knopf „Fernsehen“ in der Kinderecke: nur Kinder- und Familiensender live (z. B. KiKA), im Elternbereich abschaltbar.
+
+## Neu in 0.6.98: Kinderecke ohne Nachrichten- und Talkreihen
+- Eine Serie von ARD, ZDF & Co. steht nur noch in der Kinderecke, wenn sie selbst eindeutig Kinderprogramm ist (mindestens 80 % der eingeordneten Folgen, KiKA/TOGGO oder Kinderreihe). Nachrichten-, Talk-, Politik- und Magazinreihen („heute“, „Politik“, „NACHTCAFÉ“, „Abendschau“ …) erscheinen nie, auch wenn einzelne Beiträge „Kinder“ heißen.
+- In einer Kinderserie fehlen Folgen, die als Nachrichten, Talk, Drama o. Ä. eingeordnet und nicht selbst Kinderprogramm sind.
+- Das Genre „Kinder“ wurde bisher auch aus Beschreibungen übernommen („Wenn Kinder pflegen“); das passiert nicht mehr und wird nach dem Start einmalig bereinigt.
+
+## Neu in 0.6.97: Erkennung – falsche Sendungs-Zuordnungen zurück, Filme bei 3sat/ARD, Lernreihen
+- Werke, die 0.6.88–0.6.96 über einen unsicheren Vorschlag (Wikidata, Namensvetter ohne Jahr, nur Sendername als Thema) einer fremden Serie zugeordnet hatten, sind wieder offen. Solche Vorschläge entscheiden nicht mehr allein.
+- Kennt IMDb eine Sendung, aber keine Einzelfolgen (Sportpanorama, Euromaxx …), werden ihre Werke Beiträge der Sendung statt „Folge ungeklärt“.
+- 3sat-Filme mit „- Spielfilm, USA 1993“ im Titel werden ohne diesen Zusatz gesucht; ein Jahr Abstand (Produktion/Erscheinen) gilt bei passender Laufzeit als derselbe Film. Beides wird einmal auf vorhandene Filme angewendet.
+- Lernreihen warten gemeinsam auf das Stundenkontingent der ARD Mediathek; die gelernte Reihe gilt für alle Folgen. Reine Wikidata-Fehler halten Werke ohne Art nicht mehr fest. Das Thema eines Werks bleibt beim Zusammenführen erhalten. „Europa“ ist ein Themenwort.
+- Enthält 0.6.89–0.6.95 (0.6.92 nicht vergeben).
+
+## Neu in 0.6.93: Gruppen in der Kinderecke
+- Filme und Serien stehen in wenigen Gruppen mit Bild-Symbol: 🏰 Märchen, 🎨 Zeichentrick, 🐾 Tiere & Natur, 🔬 Wissen, 🗺️ Abenteuer, 😂 Lustiges, ⭐ Noch mehr. Oben gibt es für jede Gruppe einen runden Knopf, so findet auch ein Kind etwas, das noch nicht liest.
+- Leere Gruppen erscheinen nicht, sehr kleine (unter 3 Titeln) stehen unter „Noch mehr“. Die Einordnung folgt den Kategorien und Reihen des Katalogs, ohne KI.
+## Neu in 0.6.94: Angefangene Serien automatisch offline, gesehene Filme behalten
+- Ist eine Folge einer Serie zu Ende gesehen (Player oder Kinderecke), lädt MediathekAtlas die übrigen Folgen dieser Serie von selbst herunter: erst die folgenden, dann frühere, die noch nicht gesehen sind.
+- Kurze Serien werden komplett geladen. Lange oder tägliche Sendungen nur bis zur Grenze (Standard: 20 ungesehene Folgen und 20 GB je Serie); jede gesehene Folge macht Platz für die nächste. Bei wenig freiem Platz (Reserve aus YouTube → Abos, Platz fürs IMDb-Update) wird nichts nachgeladen.
+- Ein zu Ende gesehener Film wird dauerhaft offline gespeichert (Downloadordner, ohne 30-Tage-Frist), damit er sich jederzeit nochmal ansehen lässt; seine Sendereihe wird nicht mitgeladen.
+- Nur ARD, ZDF & Co. mit direkter Videodatei, bei Serien mit bestätigter Staffel/Folge. Anbieter mit Kopierschutz oder nur Link werden nie geladen.
+- Downloads → „Angefangene Serien automatisch laden“: Schalter, Grenzen, je Serie „Automatik beenden“; die Folgen stehen darunter unter „Angefangene Serie · …“ mit Fortschritt und Abbrechen. Schalter auch unter Einstellungen.
+## Neu in 0.6.95: Hochformat-Videos ganz im Bild
+- Kinderecke: Videos im Hochformat (YouTube-Shorts, Handy-Clips wie „Checker Tobi“) werden vollständig eingepasst statt nur das obere Drittel zu zeigen; ihre Vorschaubilder werden nicht mehr beschnitten.
+
+## Neu in 0.6.91: Kinderecke zeigt Märchen, Serienfolgen und lässt sich blättern
+- Erkannte Märchenfilme (z. B. „Sechs auf einen Streich“, „Märchenperlen“) und Filme von KiKA stehen jetzt bei den Filmen der Kinderecke. Ausschluss bleibt: nie neben Horror, Thriller, Krimi, Erotik, Krieg.
+- Kinderserien von ARD, ZDF & Co. zeigen ihre Folgen, auch wenn eine Folge selbst noch nicht abgeglichen ist.
+- Reihen haben große Pfeilknöpfe zum Blättern (auch ohne Seitwärtsrad); am Ende einer Reihe führt „Alle … Filme“ zur ganzen Liste. Die Liste endet nicht mehr nach 240 Titeln.
+
+## Neu in 0.6.90: Neue YouTube-Kanäle entdecken, prüfen, freigeben
+- YouTube → Kanal-Abos → „Neue Kanäle entdecken“: Vorschläge aus den Kanälen, die eure Abos selbst empfehlen, und aus Links in den Beschreibungen geladener Videos; was zu Ende geschaut wurde, zählt mehr. Ohne Konto, ohne KI.
+- „Videos ansehen“ zeigt die neuesten Videos (abspielbar im offiziellen YouTube-Player). Erst danach lässt sich der Kanal „Für die Kinderecke freigeben“ (neues Kinder-Abo) oder „Für mich abonnieren“. „Nicht vorschlagen“ blendet ihn dauerhaft aus. Die Kinderecke zeigt nie Vorschläge.
+
+## Neu in 0.6.89: Gesehene YouTube-Abo-Videos ins Archiv
+- Läuft ein Abo-Video im MediathekAtlas-Player bis zum Ende, wandert es nach 5 Minuten in `YouTube-Abos/_Archiv/<Kanal>/`. Dort gilt keine 30-Tage-Frist, und es zählt nicht mehr zu Anzahl und Speicherbudget der Abos.
+- YouTube → Abos zeigt Archivgröße und Ordner; der Schalter „ins Archiv verschieben“ ist an und lässt sich ausschalten. Das Archiv zieht mit dem Zwischenspeicher um (Einstellungen → Speicherorte).
+
+## Neu in 0.6.88: Folgensuche nach IMDb-Update, Sendungsvorschläge als Folge, tägliche Kataloge
+- Ruht die Folgensuche (alles geprüft), zeigt die Übersicht bis wann. Nach jedem neuen IMDb-Archiv wird alles „ohne Treffer“ verteilt über drei Tage erneut gesucht.
+- Werke ohne Art, deren Sendung genau so in IMDb/TVDB/TMDB steht, werden Folgen dieser Serie und kommen in die Folgensuche.
+- Pluto TV, Joyn, Rakuten TV, RTL+, TOGGO und JustWatch aktualisieren ihren Katalog wieder täglich (einmalig eingeschaltet, abschaltbar).
 
 ## Neu in 0.6.87: Themenwörter werden keine Serie
 

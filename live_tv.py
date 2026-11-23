@@ -375,3 +375,32 @@ def summary(c, root):
 
 def is_live_topic(topic):
     return str(topic or '').strip() in LIVE_TOPICS
+
+
+# 0.6.99 (Björn, 22.11.2026: „auch möchte ich, dass die Live-TV-Sender als Option dort auftauchen, also nur die für
+# Kinder, also Kids, Kinder, Familie“): Sender für die Kinderecke. Nur abspielbare Quellen (kein Link zum Anbieter,
+# Kinder sollen die Kinderecke nicht verlassen), nur Sender, deren Name oder Rubrik eindeutig Kinder/Familie nennt.
+# 0.6.109 (Mac-Prüfung 0.6.106): „famil“ eng gefasst – „Eine schrecklich nette Familie“, „Eine himmlische Familie“ sind
+# Sitcom-/Serien-Sender für Erwachsene; nur Familienkino/-filme/-programm (Björn: „Kids, Kinder, Familie“) zählen
+KIDS_LIVE = re.compile(r'(?i)\bkids?\b|kinder|\bfamilien(?:kino|filme?|programm)\b|\bfamily (?:movies?|kids)\b|cartoon|toons?\b|\bjunior\b|kika|toggo|nick(?:elodeon|\s*jr)?\b|disney|'
+                       r'\bbaby\b|zeichentrick|trickfilm|sesam|paw patrol|peppa|spongebob|pok[eé]mon|\blego\b|schlümpfe|biene maja')
+KIDS_LIVE_NOT = re.compile(r'(?i)\banime\b|horror|krimi|crime|thrill|erotik|adult|\bwar\b|krieg')
+
+
+def kids_stations(c, root, budget=None):
+    """Kinder- und Familiensender mit abspielbaren Quellen, für die Kinderecke."""
+    data = overview(c, root)
+    out = []
+    for s in data['stations']:
+        text = ' '.join([s.get('name') or '', s.get('group') or ''] + [x.get('title') or '' for x in s.get('sources') or []])
+        if not (s.get('key') == 'kika' or KIDS_LIVE.search(text)) or KIDS_LIVE_NOT.search(text):
+            continue
+        sources = [x for x in s.get('sources') or [] if isinstance(x.get('play'), dict) and len(x['play']) == 1]
+        if not sources:
+            continue
+        best = sources[0]
+        logo = s.get('logo') or ''
+        out.append({'source': 'live', 'kind': 'live', 'id': 'live:%s' % s['key'], 'title': s['name'], 'station': s['key'],
+                    'poster': logo if str(logo).startswith('https://') else '', 'ref': dict(best['play']),
+                    'provider': best.get('provider_name') or '', 'summary': (s.get('summary') or '')[:200]})
+    return out

@@ -112,7 +112,20 @@ def portal_identity(m,topic=''):
     0.6.87: or a subject word that is the offer's topic (IMDb series „Doku“ for the ZDF topic „Doku“)."""
     if not m or m.get('kind')!='series':return False
     name=key(m.get('title'))
-    return name in PORTAL_TOPICS or bool(topic) and name==key(topic) and name in TEMPLATE_GENERIC
+    if name in PORTAL_TOPICS:return True
+    if name not in TEMPLATE_GENERIC:return False
+    # 0.6.118 (Mac-Prüfung 0.6.117: 1.045 Fußball-/Skibeiträge mit der ZDF-Seite „Schwimmen“ als Serie): a subject
+    # word is no programme identity under any topic unless IMDb or TVDB know it as a series. A sport may be a real
+    # series („Formel 1“, TVDB 387219); a subject word named like the topic stays excluded even then (IMDb „Doku“, 0.6.87).
+    if not database_series(m):return True
+    return name not in _metadata.SPORT_WORDS and bool(topic) and name==key(topic)
+
+def database_series(m):
+    """0.6.118: True if IMDb or TVDB know the identity as a series (an IMDb tt-ID or a TVDB reference)."""
+    m=m or {}
+    if str(m.get('imdb_id') or '').startswith('tt'):return True
+    if m.get('provider') in ('TVDB','OMDb','IMDb Offline') and m.get('reference_id'):return True
+    return bool(m.get('tvdb_id'))
 
 def template_topic(topic,title=''):
     """0.6.84: True if a series template may be learned or used for this topic.
@@ -133,16 +146,41 @@ TEMPLATE_GENERIC={'sport','sports','masterclass','kultur','wissen','geschichte',
     'reportage','reportagen','nachrichten','news','magazin','magazine','kinder','familie','ratgeber','verbraucher',
     'gesundheit','wirtschaft','religion','sendungen','videos','clips','highlights','extras','bonus','trailer','shorts',
     'wissenschaft','technik','digital','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur','essen',
-    'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme'}
+    'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme','europa'}
+import metadata as _metadata
+TEMPLATE_GENERIC|=_metadata.SPORT_WORDS   # 0.6.117: „Schwimmen“ (Air 23.11.2026, 1.144 Werke)
 
 def generic_identity_works(c,after='',limit=500):
-    """0.6.86: identified works whose series identity is a subject word taken from their topic (template „Sport“).
-    Read only; (rows with best offer payload, last id or None)."""
+    """0.6.86: identified works whose series identity is a subject word (template „Sport“).
+    0.6.118 (Mac-Prüfung 0.6.117): whatever their topic („Schwimmen“ on Fußball/Ski offers), but never an identity
+    IMDb or TVDB know as a series („Formel 1“, TVDB 387219) – those rows are left out.
+    0.6.117 also reset Wikidata-only Sendungen named like their topic (Tell-Star, Cinema Strikes Back, Berichte vom Tage):
+    that pass is gone, they are real programmes. Read only; (rows with best offer payload, last id or None)."""
     marks=','.join('?'*len(TEMPLATE_GENERIC))
     rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
         FROM works w WHERE w.id>? AND w.state='identified' AND w.kind='series' AND lower(w.title) IN (%s)
-          AND lower(w.topic)=lower(w.title) ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
+        ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
+    last=rows[-1]['id'] if rows else None
+    keep=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if portal_identity(dict(m,kind='series',title=row['title']),row['topic']):keep.append(row)
+    return keep,last
+
+UNDO_GENERIC_REASON='Thema ist keine Serie (%s); neu erkennen (0.6.87)'
+def undo_generic_reset_works(c,shows,after=0,limit=500):
+    """0.6.118: works 0.6.117 reset as „Thema ist keine Serie“ although their name is a real programme (Tell-Star,
+    Formel 1, Sonntagsmärchen; generic_templates_v06117 'shows'). Read only; (rows, last id or None)."""
+    titles=[t for t in shows if key(t) not in TEMPLATE_GENERIC or key(t) in REAL_SPORT_SERIES]
+    if not titles:return [],None
+    reasons=[UNDO_GENERIC_REASON%t for t in titles]
+    marks=','.join('?'*len(reasons))
+    rows=c.execute("""SELECT id,state,meta FROM works WHERE id>? AND state IN ('pending','retry','review','format')
+        AND json_extract(meta,'$.reason') IN (%s) ORDER BY id LIMIT ?"""%marks,(after,*reasons,limit)).fetchall()
     return rows,(rows[-1]['id'] if rows else None)
+# Sports words that are also real series at IMDb/TVDB; a reset under such a name is undone (it is recognised again).
+REAL_SPORT_SERIES={'formel 1','formel e'}
 
 def drop_portal_templates(c):
     """0.6.84: forget templates learned for a portal/section topic or with a portal identity (returns count)."""
@@ -181,8 +219,14 @@ def portal_reseed(c,limit=500,after=''):
         if not source:continue
         if portal and key(source.get('topic') or row['topic']) not in PORTAL_TOPICS:
             source=dict(source,topic=next(iter(PORTAL_TOPICS)))      # read the title as the portal names it
-        if not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):continue
+        if not portal_series(source.get('topic') or row['topic'],cleaned(source.get('title'))):
+            # 0.6.92 (Mac-Prüfung 0.6.87, echter Bestand): „Religionen der Welt: …“ without „·“ stayed a contribution
+            # of the Sendung „planet schule“. Such a filing is recognised again from the work's own title; an ARD
+            # identification without a series in the title stays (0.6.85, Mac-Prüfung 0.6.87: 113 such, accepted).
+            if not portal or row['state']!='format':continue
         fresh=seed(source)
+        if key(fresh.get('title')) in PORTAL_TOPICS:
+            fresh.update(kind='unknown',title=cleaned(source.get('title')) or row['title'],episode_title='')
         if row['kind']=='series' and key(row['title'])==key(fresh['title']):continue
         fresh['reason']='Reihe aus dem Titel (Planet Schule); neu erkennen'
         changed+=c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0,attempts=0 WHERE id=?",
@@ -271,6 +315,33 @@ def origin_meta(c,row):
         for k in ('title','year','provider','reference_id','poster','genres','genre_source','reference_runtime_seconds'):m[k]=template.get(k)
         m['genres']=normalized_genres(m.get('genres'))
     return m,template
+
+def heal_missing_topics(c,limit=2000):
+    """Once (merker topic_heal_v0692): works that lost their topic on a move to the canonical ID take it back
+    from their best offer. One batch per call, cursor in topic_heal_cursor. Returns (healed, done)."""
+    if get_state(c,'topic_heal_v0692',False):return 0,True
+    after=int(get_state(c,'topic_heal_cursor',0) or 0)
+    rows=c.execute("""SELECT w.rowid,w.id,(SELECT json_extract(o.payload,'$.topic') FROM offers o WHERE o.work_id=w.id
+          ORDER BY o.active DESC,o.rank DESC LIMIT 1) t FROM works w
+        WHERE w.rowid>? AND COALESCE(w.topic,'')='' ORDER BY w.rowid LIMIT ?""",(after,limit)).fetchall()
+    todo=[(r[2],r[1]) for r in rows if r[2]]
+    c.executemany('UPDATE works SET topic=? WHERE id=?',todo)
+    if len(rows)<limit:
+        set_state(c,'topic_heal_v0692',{'at':time.time()});return len(todo),True
+    set_state(c,'topic_heal_cursor',rows[-1][0])
+    return len(todo),False
+
+def defer_sender_siblings(c,topic,work_id,providers,until):
+    """0.6.89: works of the same Reihe (topic) that wait only for the same broadcaster wait until its allowance
+    renews (``until``, spread over 30 min) instead of asking again one by one. Works never checked and works
+    with other open providers stay as they are. Returns the number postponed."""
+    if not topic or not providers:return 0
+    marks=','.join('?'*len(providers))
+    return max(0,c.execute("""UPDATE works SET next_try=?+abs(random())%1800 WHERE topic=? AND id!=? AND state='retry' AND next_try<?
+        AND json_type(meta,'$.deferred_providers')='array'
+        AND NOT EXISTS(SELECT 1 FROM json_each(works.meta,'$.deferred_providers') d WHERE d.value NOT IN ("""+marks+"""))
+        AND COALESCE(json_array_length(meta,'$.metadata_warnings'),0)=0""",
+        (float(until),topic,work_id,float(until),*providers)).rowcount)
 
 def series_template_candidate(c,row,source):
     """Get a uniquely verified series identity already learned from another episode.
@@ -757,6 +828,58 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
 # Before that it is listed under categories.UNCLASSIFIED, regardless of the broadcaster's labels.
 CLASSIFIED_SQL="(w.attempts>0 OR w.state IN ('matched','manual','identified','review','format'))"
 
+# 0.6.91 (Björn, 22.11.2026: „ich sehe keine Märchen etc. die schon erkannt wurden“): a recognized film carries
+# only the reference genres. IMDb has no „Kinder“ genre – a Märchenfilm of „Sechs auf einen Streich“ is
+# „Family, Fantasy“ there – so it never reached the Kinder category although the broadcaster files it as
+# children's programme. The kids channel or a kids/Märchen topic of an active offer now counts as a clear signal.
+# Merged works lose works.topic (a new id), so the signal is read from the offers, which move with the work.
+# 0.6.106 (Mac-Prüfung 0.6.105: „Generation Porno - Was unsere Kinder online sehen“, „Die Kinder von Lügde“, „Geheimsache
+# Doping: Kinder“, „Ein Herz für Kinder“ in der Kinderecke): das Wort „Kinder“ oder „für Kinder“ in einem Reihen- oder
+# Themennamen ist nie ein Signal, auch kein allgemeines „Märchen“. Nur die gepflegte Liste bekannter Kinderreihen
+# (categories.KNOWN_KIDS_SERIES, eine Liste für Sender-Genre, Themensignal und Kinderecke) und die Kindersender zählen.
+import categories as _categories
+KIDS_SHOWS=_categories.KNOWN_KIDS_SERIES
+KIDS_TOPIC=re.compile(r'(?i)'+KIDS_SHOWS)
+KIDS_SIGNAL_TTL=3600.0
+_KIDS_SIGNAL={}            # database file -> (monotonic, topics)
+_KIDS_SIGNAL_LOCK=threading.Lock()
+
+def kids_topics(c):
+    """Topics (Sendereihen) of active offers that name children's programme (cached one hour)."""
+    try:path=c.execute('PRAGMA database_list').fetchone()[2] or ':memory:'
+    except Exception:path=':memory:'
+    now=time.monotonic()
+    with _KIDS_SIGNAL_LOCK:
+        hit=_KIDS_SIGNAL.get(path)
+        if hit and now-hit[0]<=KIDS_SIGNAL_TTL and path!=':memory:':return hit[1]
+    # The offers, not works.topic: a recognized work moved to its canonical id keeps no topic, and a Reihe whose films
+    # are all recognized (Sechs auf einen Streich) would vanish. One read of the offers per hour (~1 s per 600,000).
+    topics=sorted({t for (t,) in c.execute("SELECT DISTINCT json_extract(payload,'$.topic') FROM offers WHERE active=1")
+                   if isinstance(t,str) and t and len(t)<=200 and KIDS_TOPIC.search(t)})[:5000]
+    with _KIDS_SIGNAL_LOCK:_KIDS_SIGNAL[path]=(now,topics)
+    return topics
+
+# 0.6.106 (Durchsicht Kinderecke 22.11.): Sendungs-Ablagen (state 'format') zählen nur über das Angebot – Kindersender
+# oder ein Thema aus dieser schmalen Liste –, nie über ein abgeleitetes Genre oder „… für Kinder“ im Namen.
+FORMAT_KIDS_TOPIC=KIDS_TOPIC     # seit der gemeinsamen Liste dieselbe Menge (kein allgemeines „Märchen“)
+
+def format_kids_signal_clause(c):
+    """SQL (on works w): an active offer from a kids channel or with a topic of FORMAT_KIDS_TOPIC (subset of KIDS_TOPIC)."""
+    topics=[t for t in kids_topics(c) if FORMAT_KIDS_TOPIC.search(t)];channels=sorted(KIDS_CHANNELS)
+    cond="lower(json_extract(k.payload,'$.channel')) IN (%s)"%','.join('?'*len(channels))
+    if topics:cond="(%s OR json_extract(k.payload,'$.topic') IN (%s))"%(cond,','.join('?'*len(topics)))
+    return 'EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND %s)'%cond,channels+topics
+
+def kids_signal_invalidate():
+    with _KIDS_SIGNAL_LOCK:_KIDS_SIGNAL.clear()
+
+def kids_signal_clause(c):
+    """0.6.91: SQL (on works w) – an active offer comes from a kids channel or a kids/Märchen topic."""
+    topics=kids_topics(c);channels=sorted(KIDS_CHANNELS)
+    cond="lower(json_extract(k.payload,'$.channel')) IN (%s)"%','.join('?'*len(channels))
+    if topics:cond='(%s OR json_extract(k.payload,\'$.topic\') IN (%s))'%(cond,','.join('?'*len(topics)))
+    return 'EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 AND %s)'%cond,channels+topics
+
 def category_labels(c):
     """Fixed category -> raw genres stored in work_genres that name it (genre index, small)."""
     import categories
@@ -790,7 +913,14 @@ def category_clause(c,genre):
         own,own_args=has([text])
         if text=='Kinder':
             fam,fam_args=has(['Familie']);ani,ani_args=has(['Animation'])
-            own='(%s OR (%s AND %s))'%(own,fam,ani);own_args=own_args+fam_args+ani_args
+            # 0.6.91: the broadcaster's own kids signal (KiKA, Märchen-Reihen, Kinderfilme) also counts, read from
+            # the offers because a recognized work keeps only the reference genres (IMDb knows no „Kinder“).
+            sig,sig_args=kids_signal_clause(c)
+            own='(%s OR (%s AND %s) OR %s)'%(own,fam,ani,sig);own_args=own_args+fam_args+ani_args+sig_args
+            # 0.6.99 (Björn: „im Zweifel nicht, ich gebe dann manuell frei“): only recognized works, by kids signal or by
+            # a proven age rating up to the parents' limit (any category); parents' release/block on top (kids_rules).
+            import kids_rules
+            return kids_rules.kids_clause(c,own,own_args,has)
         bad,bad_args=has(categories.NOT_FOR_KIDS if text=='Kinder' else categories.NOT_FOR_FAMILY)
         return CLASSIFIED_SQL+' AND '+own+' AND NOT '+bad,own_args+bad_args
     if text in categories.CATEGORIES:
@@ -823,6 +953,23 @@ def category_tree(c):
 
 def tree(c):
     return [dict(r) for r in c.execute("SELECT w.kind,COALESCE(g.genre,'Unbekannt') genre,COUNT(DISTINCT CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END) n FROM works w LEFT JOIN work_genres g ON g.work_id=w.id WHERE EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) GROUP BY w.kind,g.genre")]
+
+def queue_blockers(c,now=None):
+    """0.6.113 (Mac-Prüfung 0.6.108: Arbeiter „waiting“ bei 4.854 pending): open works (pending/retry) per kind and the
+    first reason the recognition selection (CatalogService.pick) leaves them out, in its order. 'other' is never
+    selected by design (clips go through the Sendung pass). Uses the index work_retry(state,next_try)."""
+    now=time.time() if now is None else now
+    out={}
+    for kind,reason,n in c.execute("""SELECT w.kind,
+            CASE WHEN w.kind NOT IN ('movie','series','unknown') THEN 'not_selected_kind'
+                 WHEN w.next_try>? THEN 'not_due'
+                 WHEN EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id) THEN 'episode_queue'
+                 WHEN NOT EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) THEN 'no_active_offer'
+                 WHEN EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?) THEN 'leased'
+                 ELSE 'selectable' END,COUNT(*)
+            FROM works w WHERE w.state IN ('pending','retry') GROUP BY 1,2""",(now,now)):
+        out.setdefault(kind,{})[reason]=n
+    return out
 
 def stats(c):
     """One indexed classification pass, instead of separate full-work scans for each tile."""
@@ -866,6 +1013,34 @@ def canonical(m):
         base+='|s%s-e%s'%(m['season'],m['episode'])
     return digest(base)
 
+def _letters(text):return [ch for ch in str(text or '') if ch.isalpha()]
+def _all_upper(text):
+    letters=_letters(text);return bool(letters) and all(ch.isupper() for ch in letters)
+def _all_lower(text):
+    letters=_letters(text);return bool(letters) and all(ch.islower() for ch in letters)
+def _camel(text):
+    """A stylised brand spelling: a lower-case letter followed by a capital inside one word (KiKA, ZDFinfo, iPad)."""
+    return bool(re.search(r'[a-zäöüß][A-ZÄÖÜ]',str(text or '')))
+
+def broadcaster_spelling(title,topic):
+    """0.6.106/0.6.109: TMDB „KIKA LIVE“, KiKA „KiKA LIVE“ – a series named like the broadcaster's Reihe except for
+    upper/lower case may take the broadcaster's spelling. None if nothing to change.
+
+    0.6.109 (Mac-Prüfung A1 an 0.6.106: 29.878 Werke, 137 Namen, rund die Hälfte schlechter – „MDR SACHSENSPIEGEL“,
+    „PRESSECLUB“, „ZDFinfo doku“, „Wims“): only an unstyled name (ganz groß oder ganz klein) becomes a mixed spelling,
+    never the other way round; from ganz groß only to a stylised brand spelling (KiKA), not to plain title case
+    („UNBUBBLE“ bleibt). kulturzeit → Kulturzeit, scobel → Scobel, maischberger → Maischberger, KIKA LIVE → KiKA LIVE."""
+    title=str(title or '');topic=str(topic or '').strip()
+    if not title or not topic or title==topic or title.casefold()!=topic.casefold():return None
+    if _all_upper(topic) or _all_lower(topic):return None
+    if _all_lower(title):
+        # Mac-Prüfung S an 0.6.109: „rbb aktuell“ → „rbb AKTUELL“ ist keine bessere Schreibweise – aus ganz klein nur,
+        # wenn dabei kein Wort ganz in Großbuchstaben entsteht (Abkürzungen bis 3 Buchstaben wie „SWR“ erlaubt)
+        if any(len(w)>3 and _all_upper(w) for w in re.findall(r'\w+',topic)):return None
+        return topic
+    if _all_upper(title) and _camel(topic):return topic
+    return None
+
 def save_metadata(c,wid,m,state='manual'):
     m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
     row=c.execute('SELECT * FROM works WHERE id=?',(wid,)).fetchone()
@@ -876,6 +1051,8 @@ def save_metadata(c,wid,m,state='manual'):
         m.pop('fanart',None);m.pop('artwork_provider',None)
         for field in ('networks','studios','ratings','imdb_id','discovery_enriched','show_description'):
             if m.get(field)==previous.get(field):m.pop(field,None)
+    spelled=broadcaster_spelling(m.get('title'),row['topic'] if 'topic' in row.keys() else '') if m.get('kind')=='series' else None
+    if spelled:m['title']=spelled
     original_dest=canonical(m) or wid
     alias=c.execute('SELECT new_id FROM work_aliases WHERE old_id=?',(original_dest,)).fetchone()
     dest=alias[0] if alias else original_dest
@@ -900,12 +1077,15 @@ def save_metadata(c,wid,m,state='manual'):
     # Otherwise every merge silently turns a repeat into an apparent first pass.
     seen_attempts=max(int(row['attempts'] or 0),int(old['attempts'] or 0) if old else 0)
     due=max(float(row['next_try'] or 0),float(old['next_try'] or 0) if old else 0)
-    c.execute("""INSERT INTO works(id,title,kind,year,show_key,meta,state,updated,attempts,next_try)
-        VALUES(?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
+    # 0.6.92 (Befund Kinderecke-Thread 22.11.2026): a move to the canonical ID created the new row without the
+    # offer topic (works.topic ''), so topic rules (Reihe, Kinderecke, Sendung) no longer saw the work.
+    c.execute("""INSERT INTO works(id,title,kind,year,show_key,meta,state,updated,attempts,next_try,topic)
+        VALUES(?,?,?,?,?,?,?,?,?,?,?) ON CONFLICT(id) DO UPDATE SET
         title=excluded.title,kind=excluded.kind,year=excluded.year,show_key=excluded.show_key,
         meta=excluded.meta,state=excluded.state,updated=excluded.updated,
-        attempts=MAX(works.attempts,excluded.attempts)""",
-        (dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time(),seen_attempts,due))
+        attempts=MAX(works.attempts,excluded.attempts),
+        topic=CASE WHEN COALESCE(works.topic,'')='' THEN excluded.topic ELSE works.topic END""",
+        (dest,m['title'],m['kind'],m.get('year'),showkey(m),json.dumps(m),state,time.time(),seen_attempts,due,row['topic'] or ''))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(dest,))
     m['genres']=normalized_genres(m.get('genres'))
     c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),dest))
@@ -1029,6 +1209,16 @@ def deduplicate_movie_batch(c,limit=200):
         reconcile_movie_duplicates(c,row['id'])
     set_state(c,state,cursor if rows else 'complete')
     return len(rows),get_state(c,'movie_dedup_total_v0521',0)-before
+
+def match_meta(meta,source=None):
+    """Diagnose Air 23.11.2026 (0.6.116: 18 von 18 3sat-Filmen mit Titelzusatz „prüfen“): the work's own meta has no
+    year – only the search copy took the year from „… - Spielfilm, USA 1993“ (0.6.97). Without it a film is matched
+    only when the running time agrees (8 Mile on the Pro did, „Lauf Junge lauf“ on the Air did not). Matching uses the
+    title year like a broadcaster year; ±1 still needs the running time (matching.year_close)."""
+    if not meta or meta.get('year') or meta.get('kind') not in ('movie','unknown'):return meta
+    import metadata
+    year=metadata.film_suffix_year(meta.get('title')) or metadata.film_suffix_year((source or {}).get('title'))
+    return dict(meta,year=year) if year else meta
 
 def auto_choice(meta,rows):
     import matching
@@ -1451,6 +1641,15 @@ def reset_identity(c,row,source,reason):
     return c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',next_try=0 WHERE id=? AND state='identified'",
                      (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
 
+def requeue_from_source(c,row,source,reason):
+    """0.6.118: undo of an automatic reset – the work is recognised again from the sender data, with a fresh attempt
+    count (also when a format rule filed it meanwhile). User decisions and matches are never touched."""
+    if row['state'] not in ('pending','retry','review','format'):return False
+    fresh=seed(source);fresh['reason']=reason
+    return c.execute("""UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0
+        WHERE id=? AND state IN ('pending','retry','review','format')""",
+                     (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
+
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
     done={'edition':0,'segment':0}
@@ -1587,28 +1786,51 @@ def backfill_film_hints(c,limit=400):
     set_state(c,'film_hint_cursor_v0524',cursor if rows else 'complete')
     return len(rows)
 
+# 0.6.106 (Mac-Abfrage Kinderreihen 22.11.2026): KiKA führt Ableger einer Reihe unter eigenem Thema – „KiKA LIVE fordert
+# heraus“, „KiKA LIVE präsentiert“, „KiKA LIVE #ZuHauseUmDieWelt“, „KiKA LIVE - Fragen an die Astronautinnen“ (11 Reihen
+# mit 2–9 Werken neben der Hauptreihe mit 641). Auf Kindersendern laufen sie unter der Hauptreihe, wenn es sie mit
+# mindestens SPIN_OFF_MIN Werken gibt; der Ableger bleibt im Folgentitel sichtbar.
+SPIN_OFF_MIN=20
+def parent_sendung(c,fmt,source):
+    """(show_key, title) of the main Reihe a kids-channel spin-off „<Reihe> <Zusatz>“ belongs to, else None."""
+    if str((source or {}).get('channel') or '').strip().lower() not in KIDS_CHANNELS:return None
+    import metadata
+    words=str(fmt or '').split()
+    for n in range(len(words)-1,1,-1):
+        prefix=' '.join(words[:n]).rstrip(' -–:#·|').strip()
+        if len(prefix.split())<2 or len(prefix)<5 or key(prefix)==key(fmt) or metadata.generic_topic(prefix):continue
+        r=c.execute("SELECT show_key,title,COUNT(*) FROM works WHERE topic=? AND kind='series' AND COALESCE(show_key,'')!='' "
+                    "GROUP BY show_key ORDER BY 3 DESC LIMIT 1",(prefix,)).fetchone()
+        if r and r[2]>=SPIN_OFF_MIN:return r[0],r[1]
+    return None
+
 def file_under_sendung(c,row,m,source,fmt,grouping=None,reason=None):
     """File one offer's work as contribution of the Sendung ``fmt`` (state 'format', provider 'Sendung')."""
     import broadcaster
-    hints=broadcaster.genres(fmt,source.get('title',''))
+    hints=broadcaster.genres(fmt,source.get('title',''),names=(fmt,))
     m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers')}
     edition=cleaned(source.get('title'))
     if key(edition)==key(fmt) and source.get('timestamp'):
         # Editions named like the Sendung are told apart by their broadcast date.
         try:edition+=' · '+time.strftime('%d.%m.%Y',time.localtime(int(source['timestamp'])))
         except (TypeError,ValueError,OverflowError,OSError):pass
+    parent=parent_sendung(c,fmt,source)
+    if parent:
+        m['sendung_name']=fmt
+        if not key(edition).startswith(key(fmt)):edition=fmt+': '+edition
+        fmt=parent[1]
     m.update(kind='series',title=fmt,episode_title=edition,year=None,season=m.get('season'),episode=m.get('episode'),provider='Sendung',reference_id=None,
              state='format',genres=normalized_genres(hints or m.get('genres')),genre_source='Sender (abgeleitet)' if hints else m.get('genre_source','Unbekannt'),
              reason=reason or 'Beitrag der Sendung „'+fmt+'“; wird nicht mit Filmdatenbanken abgeglichen.')
     if grouping:m['format_grouping']=grouping
-    c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,showkey(m),json.dumps(m),row['id']))
+    c.execute("UPDATE works SET title=?,kind='series',year=NULL,show_key=?,meta=?,state='format',next_try=0 WHERE id=?",(fmt,parent[0] if parent else showkey(m),json.dumps(m),row['id']))
     c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
     for g in m['genres']:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
     c.execute('DELETE FROM film_hints WHERE work_id=?',(row['id'],))
     return m
 
 # Raise when the format rules change: existing catalogues then get one more format pass.
-FORMAT_REV=5   # 0.5.80: clips ('other') and editions named like their Sendung; 0.6.39: dated editions (also after a check without hit)
+FORMAT_REV=6   # 0.6.113: clips ('other') never end open (file_open_clip); 0.5.80: clips ('other') and editions named like their Sendung; 0.6.39: dated editions (also after a check without hit)
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
@@ -1653,11 +1875,170 @@ def assign_formats(c,limit=500):
             m.update(state='format',reason='Ausgabe der Sendung „'+m['title']+'“ ('+m['provider']+'); wird nicht einzeln abgeglichen.')
             c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
             assigned+=1;continue
-        if not format_contribution(m,source,counts[topic]):continue
+        if row['kind']=='other' and NUMBERED_PART.search(cleaned(source.get('title'))) and open_full_programme(c,row,m,source):
+            # 0.6.116: a numbered whole programme („Wetter extrem (1/3)“) is an episode, before any Sendung rule
+            assigned+=1;continue
+        if row['kind']=='other' and programme_extra(c,row,m,source):
+            assigned+=1;continue
+        if not format_contribution(m,source,counts[topic]):
+            if row['kind']=='other' and (open_full_programme(c,row,m,source) or file_open_clip(c,row,m,source)):assigned+=1
+            continue
         file_under_sendung(c,row,m,source,cleaned(source.get('topic')))
         assigned+=1
     if not dirty_mode:set_state(c,'format_cursor',cursor if rows else 'complete')
     return len(rows),assigned
+
+# 0.6.116 (Mac-Prüfung 0.6.114: 128 von 900 „Extra zu …“ waren 25 min oder länger, meist ganze Sendungen –
+# „Brombeerland (9/14) – Die Pressekonferenz“ 39 min, „Wetter extrem (1/3)“, Terra Xpress XXL, „27 – Das europäische
+# Magazin“): the import's clip words („Pressekonferenz“, „Podcast“, „Magazin“) do not make a whole programme a clip.
+FULL_PROGRAMME_SECONDS=25*60
+NUMBERED_PART=re.compile(r'\(\s*\d{1,3}\s*/\s*\d{1,3}\s*\)')
+AUDIO_CLIP=re.compile(r'(?i)podcast|\baudio\b|hörspiel')
+PRESS_CLIP=re.compile(r'(?i)pressekonferenz|pressestatement|\bstatement\b')
+def full_programme(source):
+    """True for an offer that is a whole programme: ≥ 25 min, or numbered „(n/m)“ and ≥ 10 min. Never a trailer or a
+    podcast („Podcast mit Nachklang (4316)“ of „Rote Rosen“ must not become a Folge); a press conference only numbered."""
+    title=cleaned(source.get('title'))
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):duration=0
+    # 0.6.117 (Mac-Prüfung 0.6.116: „Trailer Park“, 55 min, lag als Extra unter „Theater und Tanz“): a title that only
+    # begins with „Trailer“ is a trailer when it is short.
+    if (TRAILER.search(title) and duration<FULL_PROGRAMME_SECONDS) or AUDIO_CLIP.search(title):return False
+    numbered=bool(NUMBERED_PART.search(title))
+    if PRESS_CLIP.search(title) and not numbered:return False
+    return duration>=FULL_PROGRAMME_SECONDS or (duration>=600 and numbered)
+
+def open_full_programme(c,row,m,source):
+    """A whole programme the import took for a clip is recognised like any work of unknown kind (pending, first pass);
+    a Sendung rule (format_contribution) still files it first. Returns True when reopened."""
+    if row['kind']!='other' or row['state'] not in ('pending','format') or m.get('scan_requested') or not full_programme(source):return False
+    m={k:v for k,v in m.items() if k not in ('format_grouping','related_series_title','state','reason')}
+    m.update(kind='unknown',full_programme_v06116=True,reason='Ganze Sendung (nicht nur ein Clip); wird erkannt.')
+    c.execute("UPDATE works SET kind='unknown',state='pending',attempts=0,next_try=0,meta=? WHERE id=?",(json.dumps(m),row['id']))
+    return True
+
+def restore_sendung_spelling(c):
+    """0.6.117, once: Sendung filings with a database identity (sendung_identity, B2 since 0.6.113) named in the
+    database's spelling get the broadcaster's spelling of their topic back („Kikaninchen“ → „KiKANiNCHEN“).
+    show_key is unchanged (it is built from the normalised name). Returns {old: new}."""
+    out={}
+    for row in c.execute("""SELECT id,title,topic,meta FROM works WHERE state='format' AND kind='series'
+            AND json_type(meta,'$.sendung_identity')='object' AND COALESCE(topic,'')!=''""").fetchall():
+        topic=cleaned(row['topic'])
+        if not topic or row['title']==topic or key(row['title'])!=key(topic):continue
+        m=json.loads(row['meta'] or '{}');m['title']=topic
+        reason=str(m.get('reason') or '')
+        if reason:m['reason']=reason.replace('„'+str(row['title'])+'“','„'+topic+'“')
+        c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(topic,json.dumps(m),row['id']))
+        out[row['title']]=topic
+    return out
+
+BRAND_CASE=re.compile(r'[a-zäöüß][A-ZÄÖÜ]')
+def brand_spelling(t):
+    """0.6.119: a deliberate brand spelling – a capital after a small letter inside a word („KiKANiNCHEN“, „kulturMATINEE“)."""
+    return bool(BRAND_CASE.search(str(t or '')))
+
+def unify_show_spelling(c):
+    """0.6.118 (Mac-Prüfung 0.6.117: „KiKANiNCHEN“ 50 and „Kikaninchen“ 368 works under one show_key).
+    0.6.119 (Mac-Prüfung 0.6.118: the majority rule turned it the wrong way round – „Kikaninchen“ 418, „Reporter“ →
+    „reporter“, „FORUM WIRTSCHAFT“ → „forum wirtschaft“, „Trailer: SAARTHEMA“): only towards a deliberate brand spelling.
+    A Reihe whose titles or topics carry exactly one brand spelling (brand_spelling) gets it for its plainly written
+    variants; every other case difference stays as it is. User decisions stay. Idempotent; returns {old: new}.
+    0.6.120 (Mac-Prüfung 0.6.119: ARD/MDR „Mittagsmagazin“ 289 works took SRF's „MittagsMagazin“ – one show_key over
+    several senders): only works of a sender that itself writes the brand spelling (title or topic) are renamed; also
+    clips and extras under the Reihe (3 „Kikaninchen“ of kind 'other' were left)."""
+    shows={}
+    for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE COALESCE(show_key,'')!=''
+            AND state!='manual' GROUP BY show_key,title"""):
+        shows.setdefault(show,[]).append((title,n))
+    topic_brands={}
+    for show,topic in c.execute("""SELECT show_key,topic FROM works WHERE COALESCE(show_key,'')!=''
+            AND COALESCE(topic,'')!='' GROUP BY show_key,topic"""):
+        if brand_spelling(topic):topic_brands.setdefault(show,[]).append(cleaned(topic))
+    out={}
+    for show,titles in shows.items():
+        by_key={}
+        for title,n in titles:by_key.setdefault(key(title),[]).append(title)
+        for k,variants in by_key.items():
+            plain=[t for t in variants if not brand_spelling(t)]
+            if not plain:continue
+            brands={t for t in variants+[t for t in topic_brands.get(show,()) if key(t)==k] if brand_spelling(t)}
+            if len(brands)!=1:continue
+            target=brands.pop()
+            channels={}
+            for w in c.execute("""SELECT w.id,w.title,w.topic,(SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM offers o
+                    WHERE o.work_id=w.id ORDER BY o.active DESC,o.rank DESC LIMIT 1) channel FROM works w WHERE w.show_key=?""",(show,)):
+                channels[w['id']]=(w['channel'] or '',w['title']==target or cleaned(w['topic'])==target)
+            brand_senders={ch for ch,brand in channels.values() if brand and ch}
+            if not brand_senders:continue
+            for title in plain:
+                changed=False
+                for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
+                    if channels.get(w['id'],('',False))[0] not in brand_senders:continue
+                    changed=True
+                    try:m=json.loads(w['meta'] or '{}')
+                    except (TypeError,ValueError):continue
+                    m['title']=target
+                    reason=str(m.get('reason') or '')
+                    if reason:m['reason']=reason.replace('„'+str(title)+'“','„'+target+'“')
+                    c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(target,json.dumps(m),w['id']))
+                if changed:out[title]=target
+    return out
+
+def reopen_full_programmes(c,limit=100000):
+    """0.6.116, once: whole programmes 0.6.113/0.6.114 filed as „Extra zu …“ or clip are reopened. Returns (n, samples)."""
+    rows=c.execute("""SELECT * FROM works WHERE kind='other' AND state='format'
+        AND (json_extract(meta,'$.format_grouping')='clip' OR json_extract(meta,'$.reason') LIKE 'Extra zu „%'
+             OR json_extract(meta,'$.reason') LIKE 'Trailer/Vorschau%') LIMIT ?""",(limit,)).fetchall()
+    n=0;samples=[]
+    for row in rows:
+        m=json.loads(row['meta'] or '{}')
+        if m.get('scan_requested'):continue
+        source=best_source(c,row['id'])
+        if not source or not open_full_programme(c,row,m,source):continue
+        n+=1
+        if len(samples)<20:samples.append({'title':str(source.get('title') or '')[:80],'duration':int(source.get('duration') or 0)})
+    return n,samples
+
+def programme_extra(c,row,m,source):
+    """0.6.114 (Mac-Prüfung 0.6.113 E2: „Extra: Interview mit Lucia Chiarla“ wurde Beitrag einer Sendung „Es geht um
+    Luis“ – so heißt ein Film): a clip whose topic is the topic of a recognised film or series (not a Sendung) is an
+    extra of that programme, never a new Sendung of the same name."""
+    if row['kind']!='other' or row['state']!='pending' or m.get('scan_requested'):return False
+    if full_programme(source):return False     # 0.6.116: a whole programme is no extra
+    topic=row['topic'] or source.get('topic') or ''
+    # news/magazine clips keep joining their Sendung (0.5.80), even when a database knows the Sendung as series
+    if not topic or FORMAT_WORDS.search(cleaned(topic)) or key(topic) in FORMAT_GENERIC:return False
+    real=c.execute("""SELECT 1 FROM works WHERE topic=? AND id!=? AND state IN ('matched','manual')
+        AND (kind='movie' OR (kind='series' AND json_extract(meta,'$.provider') IN ('TMDB','TVDB','IMDb Offline','OMDb'))) LIMIT 1""",
+        (topic,row['id'])).fetchone()
+    if not real:return False
+    name=cleaned(source.get('topic')) or topic
+    m.update(kind='other',state='format',episode_verified=False,related_series_title=name,
+             reason='Extra zu „'+name+'“ (Interview, Ausschnitt, Trailer); keine vollständige Sendung, wird nicht abgeglichen.')
+    c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+    return True
+
+def file_open_clip(c,row,m,source):
+    """0.6.113 (Mac-Prüfung 0.6.108, Rückstau-Abfrage: 2.414 Werke der Art 'other' pending mit 0 Versuchen – Trailer,
+    Vorschauen, Podcasts, Pressekonferenzen): the recognition never selects clips (CatalogService.pick), so a clip the
+    Sendung rules (format_contribution) leave out stayed open for good. Now it ends as extra (trailer/preview) or clip
+    (format_grouping 'clip', not 'single': the Einzelsendung recheck must not file it as Folge of a real series).
+    Never a user decision or a requested check; „Erneut prüfen“ (prioritize) still checks it on request."""
+    if row['kind']!='other' or row['state']!='pending' or m.get('scan_requested'):return False
+    title=cleaned(source.get('title'));topic=cleaned(source.get('topic'))
+    if TRAILER.search(title) and not full_programme(source):
+        if topic:m['related_series_title']=topic
+        m.update(kind='other',state='format',episode_verified=False,
+                 reason='Trailer/Vorschau'+(' zu „'+topic+'“' if topic else '')+'; keine vollständige Sendung, wird nicht abgeglichen.')
+        c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+        return True
+    # 0.6.113: not under the Sendung – a podcast of „Rote Rosen“ (1.056 works) would turn into a Folge of the series.
+    if topic:m['related_series_title']=topic
+    m.update(kind='other',state='format',format_grouping='clip',episode_verified=False,
+             reason='Clip (Podcast, Pressekonferenz, Ausschnitt); keine vollständige Sendung, wird nicht abgeglichen.')
+    c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+    return True
 
 def restart_formats(c):set_state(c,'format_cursor',0)
 
@@ -1704,7 +2085,7 @@ def unknown_hard_reason(row,m):
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
 # 0.6.78 (Mac-Prüfung 0.6.77): rev 6 for the Wikidata rule of 0.6.77; without the raise the sweep waited up to
 # UNKNOWN_SWEEP_INTERVAL (6 h) after the update, so the check saw no effect within 30 minutes.
-UNKNOWN_RULES_REV=6              # raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=8              # 0.6.108: re-pass for 0.6.97 rules (Mac-Prüfung B2: never ran on existing works); 0.6.88: Sendungsvorschlag → Folge; raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1815,8 +2196,390 @@ def unknown_soft_check(row,m,source,grouping,name,topic_works):
             else:return 'suggestions_no_sendung'
         elif topic_works<UNKNOWN_SUGGESTION_MIN_WORKS:return 'suggestions_small_sendung'
         elif not all(suggestion_weak(x,source,name,cleaned(source.get('title'))) for x in suggestions):return 'suggestions'
-    if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS:return 'warnings'
+    if m.get('metadata_warnings') and int(row['attempts'] or 0)<UNKNOWN_WARNING_ATTEMPTS and not wikidata_only_warnings(m):return 'warnings'
     return None
+
+def wikidata_only_warnings(m):
+    """0.6.89 (Diagnose Pro 22.11.2026: 4.177 ARD works held as „warnings“, the warnings in the log only
+    „Wikidata: HTTP 429“ from the rate-limit series of 21.11.): a Wikidata error alone does not hold a work open;
+    IMDb Offline, TMDB and TVDB answered, and Wikidata alone never decides a kind."""
+    warnings=[str(w) for w in (m.get('metadata_warnings') or [])]
+    return bool(warnings) and all(w.startswith('Wikidata:') for w in warnings)
+
+# 0.6.88 (Diagnose Pro 22.11.2026: 4.692 Werke ohne Art „mit Sendungsvorschlag“, SRF 2.215, ARTE.DE 1.451):
+# the suggestion that holds the work open is the Sendung itself (exact name, broadcast period). Then the work is a
+# Folge of that series: identified with the series' identity, the episode queue looks for the episode.
+SENDUNG_SUGGESTION_ORDER=('IMDb Offline','TVDB','TMDB','OMDb','Wikidata')
+
+# 0.6.97 (Mac-Prüfung 0.6.88, nicht bestanden: 74 von 1.223 Werken falsch): Wikidata nannte einzelne Folgen fremder
+# Serien („Wahrheit oder Pflicht“ Q50386201, „Zurück zur Natur“ Q62122968, „Verkehrte Welt“, „Die Bruderschaft“,
+# „Das Tribunal“ – 61 Werke), IMDb Namensvettern ohne Jahr („Headhunter“ tt24510162, „Lipstick“ tt14445290) und unter
+# dem Thema „3sat“ (nur der Sender) einen Namensvetter („Entführt“ tt3625998). Keine dieser Quellen genügt allein.
+SENDER_TOPICS={'3sat','ard','zdf','arte','kika','srf','orf','phoenix','dw','br','hr','mdr','ndr','rbb','sr','swr','wdr','one',
+               'zdfneo','zdfinfo','tagesschau24','ard-alpha','mediathek','ard mediathek','zdf mediathek','filme im ersten'}
+
+def sender_topic(source):
+    """True if the offer's topic only names the broadcaster or its Mediathek (no Sendung)."""
+    topic=key(cleaned(source.get('topic')))
+    return bool(topic) and (topic in SENDER_TOPICS or topic in PORTAL_TOPICS or topic==key(source.get('channel')))
+
+def sendung_suggestion_ok(x,source):
+    """The rules 0.6.97 adds for the chosen suggestion: no Wikidata, a year, a topic that is more than the sender."""
+    return (x.get('provider')!='Wikidata' and _year(x.get('year')) is not None and not sender_topic(source))
+
+def sendung_suggestion(m,source,sendung):
+    """The series suggestion to identify a work of unknown kind with, or None.
+
+    Only when every suggestion that is no weak evidence (suggestion_weak) is a series with exactly the Sendung's
+    name and with a reference, and no database names two different series of that name (namesakes stay open).
+    0.6.97: Wikidata suggestions never decide (they stay evidence), the chosen one needs a year, and an offer filed
+    only under its sender („3sat“) is never identified this way."""
+    if not sendung or not template_topic(sendung) or sender_topic(source):return None
+    work_title=cleaned(source.get('title'))
+    strong=[x for x in (m.get('suggestions') or []) if isinstance(x,dict) and not suggestion_weak(x,source,sendung,work_title)]
+    if not strong:return None
+    refs={}
+    for x in strong:
+        if x.get('kind')!='series' or key(x.get('title'))!=key(sendung) or not x.get('reference_id') or not x.get('provider'):return None
+        refs.setdefault(x['provider'],set()).add(str(x['reference_id']))
+    if any(len(v)>1 for v in refs.values()):return None
+    usable=[x for x in strong if sendung_suggestion_ok(x,source)]
+    if not usable:return None
+    rank={p:i for i,p in enumerate(SENDUNG_SUGGESTION_ORDER)}
+    return sorted(usable,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
+
+YEAR_CLOSE_REASON='Film: Titel und Laufzeit stimmen, Jahr ein Jahr versetzt (Produktions-/Erscheinungsjahr)'
+def undo_short_year_close(c):
+    """0.6.108, once: films matched by the 0.6.97 year rule from a clip (< matching.YEAR_CLOSE_MIN_SECONDS: SRF „Dai,
+    domanda!“ „Sport“ 9 min, „Moda“ 10 min) are recognised again from the sender data. Returns [(id,title)]."""
+    import matching
+    out=[]
+    for row in c.execute("SELECT * FROM works WHERE kind='movie' AND state='matched' AND json_extract(meta,'$.reason')=?",(YEAR_CLOSE_REASON,)).fetchall():
+        offer=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+        if not offer:continue
+        source=json.loads(offer[0] or '{}')
+        try:duration=float(source.get('duration') or 0)
+        except (TypeError,ValueError):duration=0
+        if duration>=matching.YEAR_CLOSE_MIN_SECONDS:continue
+        fresh=seed(source);fresh['reason']='0.6.108: Kurzclip, kein Film (Jahr-±1-Regel zurückgenommen)';fresh['year_close_undone_v06108']=True
+        c.execute("UPDATE works SET title=?,kind=?,year=?,show_key=?,meta=?,state='pending',next_try=0 WHERE id=?",
+                  (fresh['title'],fresh['kind'],fresh.get('year'),showkey(fresh),json.dumps(fresh),row['id']))
+        out.append((row['id'],row['title']))
+    return out
+
+def rematch_movie_suggestions(c,after='',limit=500):
+    """0.6.97, once: films „prüfen“ whose stored suggestions the year rule (matching.year_close) now accepts are
+    matched. Returns (matched, last id or None)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND kind='movie' AND state='review'
+        AND json_array_length(meta,'$.suggestions')>0 ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    done=0
+    for row in rows:
+        m=json.loads(row['meta'] or '{}')
+        if m.get('scan_requested'):continue
+        offer=c.execute("SELECT json_extract(payload,'$.duration') FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1",(row['id'],)).fetchone()
+        try:duration=float(offer[0]) if offer and offer[0] else 0
+        except (TypeError,ValueError):duration=0
+        usable=[dict(x,source_duration_seconds=x.get('source_duration_seconds') or duration) for x in m.get('suggestions') or []
+                if isinstance(x,dict) and x.get('kind')=='movie']
+        judged=match_meta(m,{'title':row['title']})
+        chosen=auto_choice(judged,usable)
+        if not chosen or chosen.get('kind')!='movie':continue
+        if str(chosen.get('year'))==str(judged.get('year')):chosen.update(state='auto_matched',reason='Titel und Jahr aus dem Sendertitel stimmen überein')
+        else:chosen.update(state='auto_matched',year_close=True,reason=YEAR_CLOSE_REASON)
+        save_metadata(c,row['id'],chosen,'matched');done+=1
+    return done,(rows[-1]['id'] if rows else None)
+
+def film_suffix_works(c):
+    """0.6.97: ids of open films/unknown works whose title carries 3sat's „- Spielfilm, Land Jahr“ (searched again)."""
+    import metadata
+    rows=c.execute("""SELECT id,title FROM works WHERE kind IN ('movie','unknown') AND state IN ('review','retry','pending')
+        AND (title LIKE '% - Spielfilm,%' OR title LIKE '% - Fernsehfilm,%' OR title LIKE '% - Dokumentarfilm%' OR title LIKE '% - Kurzfilm,%'
+             OR title LIKE '% - Animationsfilm,%' OR title LIKE '% - Fernsehspiel,%' OR title LIKE '% - Stummfilm,%' OR title LIKE '% - Musikfilm,%')""").fetchall()
+    return [r[0] for r in rows if metadata.film_suffix_year(r[1])]
+
+def heal_series_spelling(c):
+    """Once (0.6.109): series named like their Reihe except for case take the broadcaster's spelling where
+    broadcaster_spelling allows it (most offers). Returns (works, {new name: works}, [(show_key, old, new)]) – the
+    pairs are kept in catalog_state so that a later version can undo them exactly."""
+    best={}
+    for show,title,topic,n in c.execute("SELECT show_key,title,topic,COUNT(*) FROM works WHERE kind='series' AND COALESCE(show_key,'')!='' "
+                                        "AND COALESCE(topic,'')!='' AND lower(title)=lower(topic) GROUP BY 1,2,3"):
+        if n>best.get((show,title),(0,''))[0]:best[(show,title)]=(n,topic)
+    done=0;shows={};pairs=[]
+    for (show,title),(n,topic) in best.items():
+        if topic==title or not broadcaster_spelling(title,topic):continue      # the most frequent spelling decides, not any spelling
+        k=c.execute("UPDATE works SET title=?,meta=json_set(meta,'$.title',?) WHERE show_key=? AND title=?",(topic,topic,show,title)).rowcount
+        done+=k;shows[topic]=shows.get(topic,0)+k;pairs.append((show,title,topic))
+    return done,shows,pairs
+
+def old_spelling_rule_ran(c):
+    """The 0.6.106 spelling rule (Mac-Prüfung A1: rund 15.000 Titel schlechter) ran on this catalogue: its merker
+    stored 'spelled' (0.6.109 stores only 'moved' there)."""
+    st=get_state(c,'series_names_v06106',None)
+    return isinstance(st,dict) and 'spelled' in st
+
+def restore_unstyled_series_titles(c):
+    """Once (0.6.109), only where the 0.6.106 rule ran: a series title in ganz groß/ganz klein goes back to a mixed
+    spelling found in the work's own offers (Thema oder Titel), the most frequent one. Never anything else: on a
+    catalogue without the old rule nothing changes. Returns (works, [(show_key, old, new)])."""
+    if not old_spelling_rule_ran(c):return 0,[]
+    shows={}
+    for show,title in c.execute("SELECT DISTINCT show_key,title FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''"):
+        if _all_upper(title) or _all_lower(title):shows[(show,title)]={}
+    for (show,title),seen in shows.items():
+        for topic,name in c.execute("""SELECT json_extract(o.payload,'$.topic'),json_extract(o.payload,'$.title') FROM works w
+                JOIN offers o ON o.work_id=w.id WHERE w.show_key=? AND w.title=?""",(show,title)):
+            for text in (topic,name):
+                text=str(text or '').strip()
+                if text and text.casefold()==title.casefold() and not _all_upper(text) and not _all_lower(text):
+                    seen[text]=seen.get(text,0)+1
+    done=0;pairs=[]
+    for (show,title),seen in shows.items():
+        if not seen:continue
+        best=max(sorted(seen),key=lambda t:seen[t])
+        done+=c.execute("UPDATE works SET title=?,meta=json_set(meta,'$.title',?) WHERE show_key=? AND title=?",(best,best,show,title)).rowcount
+        pairs.append((show,title,best))
+    return done,pairs
+
+# 0.6.117 (Mac-Prüfung 0.6.115/0.6.116: „Dein Song 2023“, „Dein Song 2024“, „Dein Song 2025“ als eigene Kacheln):
+# a broadcaster topic „<Reihe> <Jahr>“ names a Staffel/Jahrgang of the Reihe. Sendung filings of several such years
+# with the same stem and sender become one Reihe; the year stays in the Folgentitel. Not for films or database
+# identities (only provider 'Sendung'), not for single years („Berlin 1945“), not for events whose year is the
+# event („Olympia 2024“, „Fußball-EM 2021“, „Bundestagswahl 2025“), not for years outside 2000..next year.
+YEAR_EDITION=re.compile(r'^(?P<stem>.*?\S)[\s\-–:·|,(]+(?P<year>20\d{2})\)?$')
+YEAR_EVENT=re.compile(r'(?i)\b(?:olympia\w*|olympische|paralympics|wm|em|weltmeisterschaft\w*|europameisterschaft\w*|'
+                      r'world cup|euro|tour de france|wahl\w*|\w*wahl|wahlen|jahresrückblick\w*|rückblick|silvester\w*|'
+                      r'neujahr\w*|karneval\w*|fastnacht\w*|fasching\w*|festival\w*|gipfel|spiele)\b')
+YEAR_EDITION_MIN_WORKS=2
+def year_edition(title):
+    """(stem, year) when ``title`` is „<Reihe> <Jahr>“ with a usable stem, else None."""
+    import metadata
+    mt=YEAR_EDITION.match(str(title or '').strip())
+    if not mt:return None
+    stem=mt.group('stem').rstrip(' -–:·|,(').strip();year=int(mt.group('year'))
+    if not 2000<=year<=time.localtime().tm_year+1:return None
+    if len(key(stem))<3 or not re.search(r'[^\W\d_]',stem) or metadata.generic_topic(stem) or YEAR_EVENT.search(stem):return None
+    if key(stem) in FORMAT_GENERIC:return None
+    return stem,year
+
+def merge_year_editions(c):
+    """Idempotent (every format pass): Sendung filings „<Reihe> <Jahr>“ of at least two years (0.6.118: together more than
+    YEAR_EDITION_MIN_WORKS works) go under one Reihe „<Reihe>“. Returns (moved, {Reihe: [years]})."""
+    groups={}
+    for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE kind='series' AND state='format'
+            AND json_extract(meta,'$.provider')='Sendung' AND title GLOB '*20[0-9][0-9]*' GROUP BY show_key,title"""):
+        hit=year_edition(title)
+        if not hit:continue
+        ch=c.execute("""SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM works w JOIN offers o ON o.work_id=w.id
+            WHERE w.show_key=? AND w.title=? ORDER BY o.active DESC LIMIT 1""",(show,title)).fetchone()
+        groups.setdefault(key(hit[0]),[]).append((show,title,hit[0],hit[1],n,ch[0] if ch else ''))
+    moved=0;merged={}
+    for stem_key,found in groups.items():
+        # 0.6.118 (Mac-Prüfung 0.6.117: „Dein Song 2022“–„2026“ with 1–6 works each stayed apart): one work per year is
+        # enough when the Reihe has YEAR_EDITION_MIN_WORKS+1 works over at least two years; editions of different
+        # senders (ZDF/KiKA) are one Reihe from three years on, otherwise the sender with most works decides.
+        years={x[3] for x in found}
+        if len(years)<2 or sum(x[4] for x in found)<=YEAR_EDITION_MIN_WORKS:continue
+        if len(years)<3:
+            senders={}
+            for x in found:senders[x[5]]=senders.get(x[5],0)+x[4]
+            main=max(senders,key=senders.get)
+            found=[x for x in found if x[5] in (main,'')]
+            if len({x[3] for x in found})<2:continue
+        items=[x[:4] for x in found]
+        stem=sorted((x[2] for x in items),key=len)[0]
+        own=c.execute("""SELECT show_key,title FROM works WHERE kind='series' AND state='format' AND json_extract(meta,'$.provider')='Sendung'
+            AND title=? AND COALESCE(show_key,'')!='' LIMIT 1""",(stem,)).fetchone()
+        # 0.6.118: „Dein Song“ appeared twice in the Kinderecke – the Reihe may already be known under its database identity
+        own=own or c.execute("""SELECT show_key,title FROM works WHERE kind='series' AND state IN ('identified','matched','format')
+            AND lower(title)=lower(?) AND COALESCE(show_key,'')!='' GROUP BY show_key ORDER BY COUNT(*) DESC LIMIT 1""",(stem,)).fetchone()
+        target=own[0] if own else showkey({'kind':'series','title':stem})
+        if own and key(own[1])==key(stem):stem=own[1]
+        for show,title,_,year in items:
+            for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=?",(show,title)).fetchall():
+                m=json.loads(w['meta'] or '{}')
+                if m.get('provider')!='Sendung':continue
+                ep=str(m.get('episode_title') or '')
+                if not key(ep).startswith(key(title)):ep=title+': '+ep if ep else title
+                m.update(title=stem,episode_title=ep,sendung_name=title,year_edition_v06117=year)
+                c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(stem,target,json.dumps(m),w['id']));moved+=1
+        merged[stem]=sorted({y for *_,y in items})
+    n,opened=merge_open_year_editions(c)
+    moved+=n
+    for stem,years in opened.items():merged[stem]=sorted(set(merged.get(stem,[]))|set(years))
+    return moved,merged
+
+YEAR_EDITION_REIHE_MIN=10
+def merge_open_year_editions(c):
+    """0.6.119 (Mac-Prüfung 0.6.118: „Dein Song 2022“–„2026“, 17 works, all „prüfen“ – merge_year_editions only saw
+    filed Sendungen): open works („prüfen“/retry) named „<Reihe> <Jahr>“ are filed as contributions of that Reihe when
+    it is known with at least YEAR_EDITION_REIHE_MIN works (any identity), or – without such a Reihe – when they span
+    two years with more than YEAR_EDITION_MIN_WORKS works. Returns (moved, {Reihe: [years]})."""
+    groups={}
+    for row in c.execute("""SELECT * FROM works WHERE state IN ('review','retry') AND kind IN ('series','unknown')
+            AND title GLOB '*20[0-9][0-9]*'""").fetchall():
+        hit=year_edition(row['title'])
+        if hit:groups.setdefault(key(hit[0]),[]).append((row,hit[0],hit[1]))
+    moved=0;merged={}
+    for stem_key,items in groups.items():
+        stem=sorted((x[1] for x in items),key=len)[0]
+        known=[r for r in c.execute("""SELECT show_key,title,COUNT(*) n FROM works WHERE kind='series' AND state IN ('identified','matched','format')
+                AND title=? COLLATE NOCASE AND COALESCE(show_key,'')!='' GROUP BY show_key ORDER BY n DESC""",(stem,)).fetchall()
+               if key(r['title'])==stem_key]
+        target=known[0] if known and known[0]['n']>=YEAR_EDITION_REIHE_MIN else None
+        if not target and (len({y for *_,y in items})<2 or len(items)<=YEAR_EDITION_MIN_WORKS):continue
+        name=target['title'] if target else stem
+        for row,_,year in items:
+            try:m=json.loads(row['meta'] or '{}')
+            except (TypeError,ValueError):continue
+            if m.get('scan_requested'):continue
+            source=best_source(c,row['id'])
+            if not source:continue
+            filed=file_under_sendung(c,row,m,source,name,'contribution',
+                                     reason='Jahrgang %d der Sendung „%s“; wird nicht mit Filmdatenbanken abgeglichen.'%(year,name))
+            ep=str(filed.get('episode_title') or '')
+            if not key(ep).startswith(key(row['title'])):ep=row['title']+': '+ep if ep else row['title']
+            filed.update(episode_title=ep,sendung_name=row['title'],year_edition_v06119=year)
+            show=target['show_key'] if target else showkey({'kind':'series','title':name})
+            c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(name,show,json.dumps(filed),row['id']));moved+=1
+            merged.setdefault(name,set()).add(year)
+    return moved,{k:sorted(v) for k,v in merged.items()}
+
+def heal_kids_spinoffs(c):
+    """Once (0.6.106): Sendung filings of kids-channel spin-offs („KiKA LIVE fordert heraus“) move under the main Reihe."""
+    moved=0;shows={}
+    rows=c.execute("SELECT show_key,title,MIN(id) FROM works WHERE kind='series' AND state='format' AND COALESCE(show_key,'')!='' "
+                   "AND json_extract(meta,'$.provider')='Sendung' GROUP BY show_key,title").fetchall()
+    for show,title,wid in rows:
+        if len(str(title or '').split())<3:continue
+        ch=c.execute("SELECT json_extract(o.payload,'$.channel') FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 "
+                     "WHERE w.show_key=? LIMIT 1",(show,)).fetchone()
+        parent=parent_sendung(c,title,{'channel':ch[0] if ch else ''})
+        if not parent or parent[0]==show:continue
+        for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=?",(show,title)).fetchall():
+            m=json.loads(w['meta'])
+            if m.get('provider')!='Sendung':continue
+            ep=str(m.get('episode_title') or '')
+            if not key(ep).startswith(key(title)):ep=title+': '+ep if ep else title
+            m.update(title=parent[1],episode_title=ep,sendung_name=title,spin_off_v06106=True)
+            c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(parent[1],parent[0],json.dumps(m),w['id']));moved+=1
+        shows[title]=parent[1]
+    return moved,shows
+
+def heal_sendung_suggestions(c,after='',limit=500):
+    """0.6.97, once: works 0.6.88–0.6.98 identified or filed from a suggestion the 0.6.97 rules no longer accept are
+    open works of unknown kind again (with their suggestions; the next sweep decides with the new rules).
+    Returns (reopened, shows {title: n}, last id or None)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND (json_extract(meta,'$.sendung_suggestion_v0688')=1
+        OR json_type(meta,'$.sendung_identity')='object') ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    reopened=0;shows={}
+    for row in rows:
+        if row['state'] in ('manual','matched'):continue
+        m=json.loads(row['meta'] or '{}')
+        if m.get('episode_verified'):continue
+        identity=m.get('sendung_identity') if isinstance(m.get('sendung_identity'),dict) else {k:m.get(k) for k in ('provider','reference_id','year')}
+        source=best_source(c,row['id']) or {}
+        if sendung_suggestion_ok(identity,source):continue
+        restored=restore_unknown(m)
+        if not restored:continue
+        title,kind,meta=restored
+        for k in ('sendung_suggestion_v0688','sendung_identity','sendung_grouping'):meta.pop(k,None)
+        meta['sendung_suggestion_undone_v0697']=True
+        c.execute("UPDATE works SET title=?,kind=?,show_key='',meta=?,state='review',next_try=0 WHERE id=?",(title,kind,json.dumps(meta),row['id']))
+        c.execute('DELETE FROM episode_queue WHERE work_id=?',(row['id'],))
+        reopened+=1;name=str(m.get('title') or row['title'])[:80];shows[name]=shows.get(name,0)+1
+    return reopened,shows,(rows[-1]['id'] if rows else None)
+
+def sendung_has_episodes(suggestion):
+    """Whether IMDb lists single episodes for the suggested series (None while the archive is not ready: then the
+    work waits, as before 0.6.88). A Wikidata identity without IMDb ID has none to search."""
+    import imdb_archive
+    archive=imdb_archive.ACTIVE
+    if not archive or not getattr(archive,'updated',0):return None
+    if suggestion.get('provider')=='Wikidata' and not imdb_archive.series_reference(suggestion):return False
+    try:return bool(archive.series_has_episodes({**suggestion,'kind':'series'}))
+    except Exception as exc:
+        # 0.6.114: never silent – a failing lookup looked like "archive not ready" (Mac-Prüfung 0.6.113 E3)
+        global _HAS_EPISODES_LOGGED
+        if time.time()-_HAS_EPISODES_LOGGED>600:
+            _HAS_EPISODES_LOGGED=time.time()
+            import diagnostics
+            diagnostics.error('sendung_has_episodes_failed',exc,title=str(suggestion.get('title') or '')[:80])
+        return None
+_HAS_EPISODES_LOGGED=0
+
+def file_sendung_without_episodes(c,row,m,source,suggestion,sendung,grouping):
+    """File ``row`` under the Sendung (state 'format') and keep the Sendung's database identity as a note."""
+    # 0.6.117 (Mac-Prüfung 0.6.116: „KiKANiNCHEN“ landete unter „Kikaninchen“): the Sendung keeps the broadcaster's
+    # spelling of its name; the database spelling stays in sendung_identity.
+    topic=cleaned((source or {}).get('topic'))
+    if topic and key(topic)==key(sendung):sendung=topic
+    own=dict(m);own['unknown_before']=unknown_before(row,m)
+    own['sendung_identity']={k:suggestion.get(k) for k in ('provider','reference_id','title','year') if suggestion.get(k) not in (None,'')}
+    label=UNKNOWN_GROUPINGS.get(grouping,'Folge')
+    return file_under_sendung(c,row,own,source,sendung,grouping,
+        reason=label+' der Sendung „'+sendung+'“ ('+str(suggestion.get('provider'))+' kennt die Sendung, aber keine Einzelfolgen); '
+               'wird deshalb nicht einzeln abgeglichen.')
+
+def refile_sendung_suggestions(c,show_key,provider,reference,limit=2000):
+    """0.6.92: works 0.6.88 identified as Folge of a suggested Sendung whose series IMDb lists without episodes are
+    filed under the Sendung (all of the series at once). Returns the number filed."""
+    if not show_key or not provider or not reference:return 0
+    rows=c.execute("""SELECT * FROM works WHERE show_key=? AND state='identified' AND json_extract(meta,'$.sendung_suggestion_v0688')=1
+        AND json_extract(meta,'$.provider')=? AND CAST(json_extract(meta,'$.reference_id') AS TEXT)=? LIMIT ?""",
+        (show_key,provider,str(reference),limit)).fetchall()
+    done=0
+    for row in rows:
+        m=json.loads(row['meta'] or '{}');source=best_source(c,row['id'])
+        if not source:continue
+        before=m.get('unknown_before') or {}
+        identity={k:m.get(k) for k in ('provider','reference_id','title','year') if m.get(k) not in (None,'')}
+        base={k:v for k,v in m.items() if k not in ('provider','reference_id','sendung_suggestion_v0688','state')}
+        base['unknown_before']=before
+        sendung=m.get('title') or row['title']
+        file_sendung_without_episodes(c,row,base,source,identity,sendung,m.get('sendung_grouping') or 'contribution')
+        done+=1
+    return done
+
+def refile_suggested_sendungen(c,after='',limit=5000):
+    """0.6.113 (Mac-Prüfung 0.6.108, B2 nicht nachweisbar): the works 0.6.88 identified as Folge of a suggested
+    Sendung rest 30 days in the episode queue after their first search (and siblings without the marker park them
+    again), so a Sendung without IMDb episodes was never filed. Every such Sendung is decided here at once from the
+    local IMDb archive, page by page (show_key > ``after``).
+    Returns (refiled works, {Sendung: works}, kept Sendungen, last show_key or None when done; False = archive not ready)."""
+    groups=c.execute("""SELECT show_key,json_extract(meta,'$.provider') provider,CAST(json_extract(meta,'$.reference_id') AS TEXT) ref,
+            MAX(json_extract(meta,'$.title')) title,MAX(json_extract(meta,'$.year')) year,MAX(json_extract(meta,'$.imdb_id')) imdb_id
+        FROM works WHERE state='identified' AND json_extract(meta,'$.sendung_suggestion_v0688')=1 AND show_key>?
+        GROUP BY 1,2,3 ORDER BY 1 LIMIT ?""",(after,limit)).fetchall()
+    refiled=0;shows={};kept=0
+    for g in groups:
+        identity={'provider':g['provider'],'reference_id':g['ref'],'title':g['title'],'year':g['year'],'imdb_id':g['imdb_id']}
+        episodes=sendung_has_episodes({k:v for k,v in identity.items() if v not in (None,'')})
+        if episodes is None:return refiled,shows,kept,False
+        if episodes:
+            kept+=1;continue
+        n=refile_sendung_suggestions(c,g['show_key'],g['provider'],g['ref'],limit=100000)
+        refiled+=n
+        if n:shows[str(g['title'] or g['show_key'])[:80]]=n
+    return refiled,shows,kept,(groups[-1]['show_key'] if len(groups)==limit else None)
+
+def identify_by_sendung(c,row,m,source,suggestion,sendung,grouping):
+    """Identify ``row`` as Folge of the suggested series (state 'identified', episode not yet verified)."""
+    own={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings','deferred_providers','format_grouping')}
+    own['unknown_before']=unknown_before(row,m)
+    for field in ('title','year','provider','reference_id','poster','genres','genre_source','reference_runtime_seconds',
+                  'imdb_id','networks','show_description'):
+        if suggestion.get(field) not in (None,'',[]):own[field]=suggestion[field]
+    label=UNKNOWN_GROUPINGS.get(grouping,'Folge')
+    own.update(kind='series',episode_title=cleaned(source.get('title')) or str(row['title'] or ''),season=None,episode=None,
+               episode_verified=False,state='work_identified',sendung_suggestion_v0688=True,sendung_grouping=grouping,
+               reason=label+' der Sendung „'+str(own.get('title') or sendung)+'“ laut '+str(suggestion.get('provider'))+
+                      ' (gleicher Name, passender Zeitraum); die Folge selbst wird noch gesucht.')
+    dest=save_metadata(c,row['id'],own,'identified') or row['id']
+    # the series identity is settled; the episode queue (not the recognition) works on the Folge
+    c.execute('UPDATE works SET next_try=? WHERE id=?',(time.time()+30*86400,dest))
+    c.execute('DELETE FROM film_hints WHERE work_id=?',(dest,))
+    return dest
 
 def unknown_role(source,topic_works):
     """(grouping, Sendung name) for a checked work of unknown kind; grouping is one of UNKNOWN_GROUPINGS.
@@ -1915,6 +2678,22 @@ def classify_unknown(c,ids,counts,summary=None,singles=False):
         if grouping=='series_rubric':
             _count(summary,'series_rubric',ch,cleaned(topic));continue
         soft=None if singles else unknown_soft_check(row,m,source,grouping,name,counts.get(topic,1))
+        if soft=='suggestions':
+            chosen=sendung_suggestion(m,source,name)
+            episodes=sendung_has_episodes(chosen) if chosen else None
+            if chosen and episodes is not None:
+                # 0.6.92 (Zwischendiagnose Pro 0.6.91: 1.100 Folgensuchen, 2 Treffer – Sportpanorama, NZZ Standpunkte,
+                # Euromaxx …): a Sendung without single episodes at IMDb has no episode to find; the work is its
+                # contribution, filed under the Sendung with the series identity kept as note.
+                outcome='sendung_suggestion' if episodes else 'sendung_without_episodes'
+                if episodes:identify_by_sendung(c,row,m,source,chosen,name,grouping)
+                else:file_sendung_without_episodes(c,row,m,source,chosen,name,grouping)
+                changed+=1;done[outcome]=done.get(outcome,0)+1
+                channels.setdefault(ch,{});channels[ch][outcome]=channels[ch].get(outcome,0)+1
+                bucket=samples.setdefault(outcome,[])
+                if len(bucket)<5:bucket.append({'title':str(source.get('title') or '')[:120],'topic':str(source.get('topic') or '')[:80],
+                                                 'channel':ch,'suggestion':suggestion_brief(chosen)})
+                continue
         if soft:
             _count(summary,soft,ch,cleaned(topic))
             if soft=='suggestions':
@@ -2158,11 +2937,104 @@ def recheck_episode_queue_v0641(c,event=None):
     if event and n:event('episode_queue_recheck',version='0.6.41',works=n)
     return n
 
+def heal_derived_kids_v0696(c,event=None,merker='kids_genre_heal_v0696',version='0.6.98'):
+    """0.6.98 (Mac-Prüfung 0.6.91): „Kinder“ that the broadcaster rule took from a description or an edition title
+    (NACHTCAFÉ 302 of 302 works, Politik 11, heute 16, Abendschau 2) is removed again. Kept when the programme's
+    own name (series or Sendung title, offer topic) names children's programme or an offer comes from a kids
+    channel. Only genre_source „Sender (abgeleitet)“; reference genres and the user's own choices stay. Runs once,
+    after the server start (genre index, only works labelled „Kinder“)."""
+    if get_state(c,merker,False):return 0
+    import broadcaster
+    ids=[r[0] for r in c.execute("SELECT work_id FROM work_genres WHERE genre='Kinder'")]
+    fixed=0
+    for wid in ids:
+        row=c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()
+        if not row:continue
+        try:m=json.loads(row[0] or '{}')
+        except ValueError:continue
+        if m.get('genre_source')!='Sender (abgeleitet)':continue
+        names=[str(m.get('title') or '')]
+        kids_channel=False
+        for (payload,) in c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1',(wid,)):
+            try:o=json.loads(payload or '{}')
+            except ValueError:continue
+            names.append(str(o.get('topic') or ''))
+            kids_channel=kids_channel or str(o.get('channel') or '').strip().lower() in KIDS_CHANNELS
+        if kids_channel or broadcaster.KIDS_HINT.search(' '.join(names)):continue
+        c.execute("DELETE FROM work_genres WHERE work_id=? AND genre='Kinder'",(wid,))
+        m['genres']=[g for g in (m.get('genres') or []) if g!='Kinder']
+        if not m['genres']:m['genre_source']='Unbekannt'
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+        fixed+=1
+    set_state(c,merker,True)
+    if event and ids:event('kids_genre_heal',version=version,checked=len(ids),removed=fixed)
+    return fixed
+
+def heal_derived_kids_v06106(c,event=None):
+    """0.6.106 (Mac-Prüfung 0.6.105): the name rule itself was too wide (kinder\\w*: „Die Kinder von Lügde“,
+    „Kinderärzte im Einsatz“, „Geheimsache Doping: Kinder“). Same pass as 0.6.98 with the narrowed rule, once."""
+    if not get_state(c,'kids_genre_heal_v0696',False):set_state(c,'kids_genre_heal_v0696',True)   # one pass covers both
+    return heal_derived_kids_v0696(c,event,'kids_genre_heal_v06106','0.6.106')
+
+# 0.6.88 (Diagnosen 22.11.2026: Pro 121.780 / Air 116.533 Einträge, 0 fällig): an episode search without a hit
+# rests 30 days (7 with spent sender allowance), its siblings without IMDb episode list 30–37 days. Asking again
+# before new data only repeats the answer. New data is the weekly IMDb archive: what was checked against an
+# older archive becomes due again, spread over ARCHIVE_RECHECK_SPREAD so that new works keep their place.
+ARCHIVE_RECHECK_SPREAD=3*86400
+ARCHIVE_RECHECK_OUTCOMES=('unresolved','unresolved_remote')
+
+def archive_recheck_ids(c,archive_updated,now=None):
+    """Queue entries checked against an IMDb archive older than ``archive_updated`` that rest beyond now.
+
+    Every entry „ohne Treffer“ comes back; of a series whose siblings rest as 'no_imdb_episodes' only one entry
+    per series (the first) when none of its entries comes back anyway: its answer decides for the siblings
+    (CatalogService.release_siblings / defer_series_without_episodes). Ordered oldest check first."""
+    now=time.time() if now is None else now
+    if not archive_updated:return []
+    rows=c.execute("""SELECT q.work_id,q.last_outcome,w.show_key FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.updated>0 AND q.updated<? AND q.next_try>?
+          AND q.last_outcome IN ('unresolved','unresolved_remote','no_imdb_episodes')
+        ORDER BY q.updated,q.work_id""",(float(archive_updated),now)).fetchall()
+    shows={r['show_key'] for r in rows if r['last_outcome'] in ARCHIVE_RECHECK_OUTCOMES and r['show_key']}
+    out=[]
+    for r in rows:
+        if r['last_outcome'] in ARCHIVE_RECHECK_OUTCOMES:out.append(r['work_id'])
+        elif r['show_key'] and r['show_key'] not in shows:
+            shows.add(r['show_key']);out.append(r['work_id'])
+    return out
+
+def release_no_episode_siblings(c,show_key,provider,reference,now=None,spread=6*3600):
+    """IMDb now lists episodes for this series: its siblings that rest as 'no_imdb_episodes' are due again
+    (spread over ``spread`` seconds). Returns the number released."""
+    if not show_key or not provider or not reference:return 0
+    now=time.time() if now is None else now
+    ids=[r[0] for r in c.execute("""SELECT q.work_id FROM episode_queue q JOIN works w ON w.id=q.work_id
+        WHERE q.last_outcome='no_imdb_episodes' AND q.next_try>? AND w.show_key=?
+          AND json_extract(w.meta,'$.provider')=? AND CAST(json_extract(w.meta,'$.reference_id') AS TEXT)=?""",
+        (now,show_key,provider,str(reference)))]
+    c.executemany('UPDATE episode_queue SET next_try=? WHERE work_id=?',
+                  [(now+(i*spread/max(1,len(ids)) if len(ids)>1 else 0),w) for i,w in enumerate(ids)])
+    return len(ids)
+
+def episode_queue_overview(c,now=None):
+    """Why the episode queue rests (0.6.88): entries per last outcome and the next due time."""
+    now=time.time() if now is None else now
+    waiting={str(o or 'pending'):n for o,n in c.execute('SELECT last_outcome,COUNT(*) FROM episode_queue WHERE next_try>? GROUP BY last_outcome',(now,))}
+    nxt=c.execute('SELECT MIN(next_try) FROM episode_queue WHERE next_try>?',(now,)).fetchone()[0]
+    return {'waiting':waiting,'next_due':float(nxt) if nxt else None}
+
 def build_deferred_indexes(connect,event=None,error=None):
     """Create indexes that need a full table pass, after the server is reachable.
     connect() returns a context-managed connection. Readers keep working (WAL); writers wait."""
     with connect() as c:
         recheck_episode_queue_v0641(c,event)
+    try:
+        with connect() as c:
+            if heal_derived_kids_v0696(c,event) | heal_derived_kids_v06106(c,event):
+                import kids_catalog,unified_index;invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
+    except Exception as e:
+        if error:error('kids_genre_heal_failed',e)
+    with connect() as c:
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
     MAINTENANCE.update(phase='running',started=started,

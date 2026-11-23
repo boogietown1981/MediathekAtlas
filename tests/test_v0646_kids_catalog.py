@@ -69,7 +69,7 @@ class SelectionTests(unittest.TestCase):
     def test_all_pages_and_series_tiles(self):
         movies = [{'cats': ['Kinder'], 'offers': [portal('plex', 'm.%d' % i, 'Film %d' % i)]} for i in range(5)]
         series = [{'cats': ['Kinder'], 'offers': [portal('toggo', 'serie-1', 'Paw', kind='series')]},
-                  {'cats': ['Kinder'], 'offers': [{'source': 'netzkino', 'item': {'kind': 'series', 'series_key': 'series-' + 'a' * 24, 'title': 'Biene'}}]},
+                  {'cats': ['Kinder'], 'offers': [{'source': 'netzkino', 'item': {'kind': 'series', 'series_key': 'series-' + 'a' * 24, 'title': 'Biene', 'source_genres': ['Kinder']}}]},
                   {'cats': ['Kinder'], 'offers': [{'source': 'mediatheken', 'item': {'series_parent': True, 'show_key': 'show:maus', 'metadata': {'title': 'Maus'}}}]}]
         data, page = self.build({'movies': movies, 'series': series})
         self.assertEqual(len(data['movies']), 5)
@@ -138,15 +138,18 @@ class MediathekTests(unittest.TestCase):
         finally:
             c.close()
 
-    def add(self, wid, title, genres, kind='movie', show=None, state='matched', attempts=1, season=None, episode=None, active=1):
-        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'poster': 'https://img.example.org/%s.jpg' % wid}
+    def add(self, wid, title, genres, kind='movie', show=None, state='matched', attempts=1, season=None, episode=None, active=1,
+            channel='Das Erste', topic=''):
+        # 0.6.91: Sender KiKA und Kinder-/Märchenreihen zählen selbst als Kinder-Signal; die Genre-Regeln hier
+        # prüfen deshalb mit einem allgemeinen Sender.
+        meta = {'title': title if kind == 'movie' else (show or title), 'kind': kind, 'genres': genres, 'genre_source': 'TMDB', 'poster': 'https://img.example.org/%s.jpg' % wid}
         if kind == 'series':
             meta.update(season=season, episode=episode, episode_title=title)
         with self.db() as c:
             c.execute("INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts) VALUES(?,?,?,?,?,?,?,?)",
                       (wid, meta['title'], kind, 2015, show or wid, json.dumps(meta), state, attempts))
             c.execute("INSERT INTO offers(id,work_id,payload,active) VALUES(?,?,?,?)",
-                      ('o-' + wid, wid, json.dumps({'title': title, 'channel': 'KiKA', 'duration': 1500, 'url_video': 'https://example.org/%s.mp4' % wid}), active))
+                      ('o-' + wid, wid, json.dumps({'title': title, 'channel': channel, 'topic': topic, 'duration': 1500, 'url_video': 'https://example.org/%s.mp4' % wid}), active))
             for g in genres:
                 c.execute('INSERT INTO work_genres VALUES(?,?)', (wid, g))
 
@@ -180,12 +183,15 @@ class MediathekTests(unittest.TestCase):
         self.add('m2', 'Die Maus am Meer', ['Kinder'], kind='series', show='show:maus', season=1, episode=2)
         self.add('m3', 'Sonderfolge Krimi', ['Kinder', 'Krimi'], kind='series', show='show:maus', season=1, episode=3)
         self.add('t1', 'Tatort', ['Krimi'], kind='series', show='show:tatort', season=1, episode=1)
+        # 0.6.98: die Reihe muss selbst Kinderprogramm sein (≥ 80 % der eingeordneten Folgen)
+        for n in (4, 5):
+            self.add('m%d' % n, 'Die Maus %d' % n, ['Kinder'], kind='series', show='show:maus', season=2, episode=n)
         data = self.shelf()
         self.assertEqual([t['series'] for t in data['series']], [{'show': 'show:maus'}])
         with self.db() as c:
             eps = kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:maus', {'offer:o-m1': {'pos': 100, 'done': True}})
             self.assertEqual([(e['episode'], e['title'], e['done']) for e in eps['episodes']],
-                             [(1, 'Die Maus im Zoo', True), (2, 'Die Maus am Meer', False)])
+                             [(1, 'Die Maus im Zoo', True), (2, 'Die Maus am Meer', False), (4, 'Die Maus 4', False), (5, 'Die Maus 5', False)])
             with self.assertRaises(ValueError):
                 kids_catalog.episodes(self.root, c, data, 'mediatheken', 'show:tatort')
             with self.assertRaises(ValueError):

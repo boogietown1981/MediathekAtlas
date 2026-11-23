@@ -40,7 +40,11 @@ class RuleTests(unittest.TestCase):
         self.assertEqual([categories.age_of(v) for v in ('FSK 0', 'ab 6', 12, 'de/16', 'TV-MA', '', None, 'PG-13')],
                          [0, 6, 12, 16, 16, None, None, 12])
         self.assertIn('Kinder', categories.classify(['Kinderfilm'], age='FSK 6'))
+        # 0.6.99: Grenze einstellbar (Standard FSK 12); über der Grenze nie „Kinder“
+        old = categories.KIDS_MAX_AGE; self.addCleanup(setattr, categories, 'KIDS_MAX_AGE', old); categories.KIDS_MAX_AGE = 6
         self.assertNotIn('Kinder', categories.classify(['Kinderfilm', 'Abenteuer'], age='FSK 12'))
+        categories.KIDS_MAX_AGE = 12
+        self.assertNotIn('Kinder', categories.classify(['Kinderfilm', 'Abenteuer'], age='FSK 16'))
         self.assertIn('Familie', categories.classify(['Family', 'Abenteuer'], age='FSK 12'))
         self.assertNotIn('Familie', categories.classify(['Family', 'Abenteuer'], age='FSK 16'))
 
@@ -84,7 +88,8 @@ class MediathekTests(unittest.TestCase):
         self.assertEqual(labels('drama'), ['Drama', 'Familie'])
         self.assertEqual(json.loads(self.c.execute("SELECT meta FROM works WHERE id='drama'").fetchone()[0])['genres'], ['Drama', 'Familie'])
         titles = lambda g: sorted(i['work_id'] for i in catalog.listing(self.c, kind='movie', genre=g, downloaded='all')['items'])
-        self.assertEqual(titles('Kinder'), ['maus', 'pixar'])
+        # 0.6.106: aus Namen abgeleitetes „Kinder“ (Sender (abgeleitet)) ohne Kindersender/Kinderreihe zählt nicht mehr
+        self.assertEqual(titles('Kinder'), ['pixar'])
         self.assertEqual(titles('Familie'), ['drama', 'pixar'])
         tree = {r['genre']: r['n'] for r in catalog.category_tree(self.c)}
         self.assertEqual((tree['Kinder'], tree['Familie'], tree['Horror']), (2, 2, 1))

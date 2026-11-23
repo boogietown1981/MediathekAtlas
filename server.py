@@ -3,8 +3,8 @@ import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbro
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos
-import api_keys,page_scripts,watch_state,kids_catalog,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover
+import series_autoload,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -89,8 +89,10 @@ with db() as c:
     catalog.initialize(c,defer_heavy=__name__=='__main__')
     _boot('Katalogschema geprüft')
     subscriptions.initialize(c)
+    series_autoload.initialize(c)
     portal_sources.initialize(c)
     portal_control.initialize(c)
+    kids_rules.ensure(c);kids_rules.apply_limit(c)   # 0.6.99: Altersgrenze und Eltern-Freigaben der Kinderecke
     if not catalog.get_state(c,'legacy_imported',False):
         catalog.ingest(c,[json.loads(r[0]) for r in c.execute('SELECT payload FROM records').fetchall()])
         catalog.set_state(c,'legacy_imported',True)
@@ -136,6 +138,9 @@ youtube.configure(lambda:settings().get('youtube',''))
 # 0.6.7: YouTube-Abos lesen Schlüssel und Downloadordner ebenso bei jeder Prüfung; Aufträge gehen in catalog.db.
 youtube_abos.configure(db=db,settings=settings)
 
+def series_autoload_summary():
+    with db() as c:return series_autoload.summary(ROOT,c,settings())
+
 def record(i):
     with db() as c:
         found=catalog.source(c,i)
@@ -146,10 +151,23 @@ def record(i):
 
 def put_job(j):
     if j['state']=='done':netzkino_downloads.stamp(j)
-    with db() as c:
-        c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
-        if j['state']=='queued':job_queue.supersede(c,j)
-        if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
+    # 0.6.117 (Mac-Prüfung 0.6.116: 2× background_worker_failed „database is locked“ im Download-Worker während der
+    # Start-Heilungen): a busy database delays the write instead of ending the download. A progress update is
+    # dropped after the first busy wait (the next one follows within seconds); a final state is written in any case.
+    progress=j.get('state')=='downloading'
+    for attempt in range(1 if progress else 10):
+        try:
+            with db() as c:
+                c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
+                if j['state']=='queued':job_queue.supersede(c,j)
+                if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
+            break
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):raise
+            SERVICE.sqlite_busy_count+=1
+            if progress:return
+            if attempt==9:raise
+            STOP.wait(2)
     # 0.5.61: subtitle files listed in the Archive.org manifest go next to the finished video.
     if j['state']=='done' and j.get('origin')==archive_downloads.ORIGIN and j.get('sidecars') and not j.get('sidecars_fetched'):
         def subtitles(job=dict(j)):
@@ -337,33 +355,39 @@ def worker():
         # 0.5.55: Verwaltung → Aufgaben can hold the queue; a running download is finished first.
         if task_control.paused('downloads'):continue
         if storage_locations.downloads_held():continue   # 0.6.20: Umzug von Downloads/Zwischenspeicher läuft
-        with db() as c:
-            j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
-            if not j:continue
-            # 0.6.20: Ziel auf einem abgezogenen Laufwerk: warten statt einen leeren Ordner neu anzulegen.
-            missing=storage_locations.root_problem(j.get('root'),settings())
-            if missing:
-                if time.time()-STORAGE_WARNED[0]>3600:
-                    STORAGE_WARNED[0]=time.time();diagnostics.event('download_target_unavailable',root=j.get('root'))
-                continue
-            if j.get('night'):
-                # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
-                later=justwatch.night_start()
-                if later>time.time() and not justwatch_downloads.released(j):   # 0.5.76: released already (22/23 h) -> start now
-                    j['not_before']=later;c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
-            # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
-            local_only=netzkino_downloads.is_portal(j)
-            o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
-            blocked=None if local_only else SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
-            if blocked:
-                # Queued before the other instance's claim arrived (e.g. series packages).
-                j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
-            # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
-            # 0.6.14: subscription videos start at most N per hour, evenly spaced (single clicks are not paced).
-            forced=bool(j.get('force_now'))
-            if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced,c=c):
-                c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
-            c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
+        # 0.6.117 (Mac-Prüfung 0.6.116: 2× background_worker_failed „database is locked“ während der Start-Heilungen):
+        # a busy database postpones the claim instead of restarting the worker.
+        try:
+            with db() as c:
+                j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
+                if not j:continue
+                # 0.6.20: Ziel auf einem abgezogenen Laufwerk: warten statt einen leeren Ordner neu anzulegen.
+                missing=storage_locations.root_problem(j.get('root'),settings())
+                if missing:
+                    if time.time()-STORAGE_WARNED[0]>3600:
+                        STORAGE_WARNED[0]=time.time();diagnostics.event('download_target_unavailable',root=j.get('root'))
+                    continue
+                if j.get('night'):
+                    # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
+                    later=justwatch.night_start()
+                    if later>time.time() and not justwatch_downloads.released(j):   # 0.5.76: released already (22/23 h) -> start now
+                        j['not_before']=later;c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
+                # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
+                local_only=netzkino_downloads.is_portal(j)
+                o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
+                blocked=None if local_only else SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
+                if blocked:
+                    # Queued before the other instance's claim arrived (e.g. series packages).
+                    j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
+                # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
+                # 0.6.14: subscription videos start at most N per hour, evenly spaced (single clicks are not paced).
+                forced=bool(j.get('force_now'))
+                if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced,c=c):
+                    c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
+                c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):raise
+            SERVICE.sqlite_busy_count+=1;continue
         def cancelled():
             with db() as c:x=c.execute('SELECT state FROM jobs WHERE id=?',(j['id'],)).fetchone()
             return not x or x[0]=='cancelled'
@@ -452,7 +476,9 @@ def _snapshot_stamp(status):
     # Changes when a catalogue run starts or ends; then the stored view is built anew.
     # 0.5.107: "Meine Abos" changes what RTL+ lists and how Crunchyroll labels it.
     prefs=ui_prefs.load(ROOT)
-    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))+'|abo:%d%d'%(bool(prefs.get('abo_rtlplus')),bool(prefs.get('abo_crunchyroll')))
+    # 0.6.112 (Mac-Prüfung 0.6.109: Grenze 6 → 12 ließ Netzkino bei 270): die gespeicherte Ansicht trägt die Kategorie
+    # „Kinder“ zur Altersgrenze ihres Baus; eine andere Grenze baut sie neu
+    return '|'.join(str(status.get(k) or '') for k in ('last_success','last_loaded','last_attempt','running'))+'|abo:%d%d'%(bool(prefs.get('abo_rtlplus')),bool(prefs.get('abo_crunchyroll')))+'|kids:%d'%categories.KIDS_MAX_AGE
 def platform_context():
     """What platform_registry needs from the running server (read at call time, tests swap ROOT)."""
     return types.SimpleNamespace(root=ROOT,db=db,settings=settings,slots=SERVICE.provider_slots,portal_page=portal_page,job_ids=job_ids)
@@ -1161,11 +1187,26 @@ def post_youtube_abos(self,path,d):
     elif action=='pace':youtube_abos.set_per_hour(ROOT,d.get('per_hour'))   # 0.6.14: Abo-Videos pro Stunde
     elif action=='reserve':youtube_abos.set_reserve(ROOT,d.get('reserve_gb'))   # 0.6.45: freier Speicher, den Abos lassen
     elif action=='total':youtube_abos.set_total(ROOT,d.get('total_gb'))   # 0.6.79: Gesamtbudget aller Abos
+    elif action=='archive':youtube_abos.set_archive(ROOT,d.get('archive'))   # 0.6.89: gesehene Videos ins Archiv
     else:youtube_abos.change(ROOT,d.get('id'),d)
     diagnostics.event('youtube_abos_changed',action=action)
     # A new abo or "Jetzt prüfen" is read right away (a running check takes it on its next round).
     started=action in ('add','check','update') and youtube_abos.start_sync(ROOT)
     with db() as c:return self.send({**youtube_abos.overview(ROOT,c),'started':bool(started)})
+
+# 0.6.90: Kanal-Vorschläge aus dem eigenen Sehverhalten, prüfen und freigeben (web/youtube_discover.js)
+@ROUTES.get('/api/youtube-discover')
+def get_youtube_discover(self,path):
+    return self.send(youtube_discover.overview(ROOT))
+
+@ROUTES.post('/api/youtube-discover')
+def post_youtube_discover(self,path,d):
+    action=str(d.get('action',''))[:10];ref=str(d.get('ref',''))[:60]
+    if action=='search':return self.send({**youtube_discover.overview(ROOT),'started':youtube_discover.start(ROOT,force=True,probe=d.get('probe') is True)})
+    if action=='preview':return self.send(youtube_discover.preview(ROOT,ref,refresh=d.get('refresh') is True))
+    result=youtube_discover.decide(ROOT,ref,action)
+    if result.get('abo'):youtube_abos.start_sync(ROOT)          # neues Abo gleich prüfen
+    return self.send({**youtube_discover.overview(ROOT),**result})
 
 @ROUTES.get('/kinder',stage='signed')
 def get_kinder(self,path):
@@ -1188,6 +1229,9 @@ def get_kids(self,path):
     def abos():
         with db() as c:return youtube_abos.kids(ROOT,c,watch=marks)
     data=_timed(parts,'abos',abos)
+    try:
+        with db() as c:data['live_enabled']=kids_rules.live_enabled(c)   # 0.6.99
+    except Exception:data['live_enabled']=False
     # 0.6.46: Kinderfilme und -serien aus dem Katalog (nur Kategorie „Kinder“, kids_catalog.py)
     try:data['catalog']=kids_catalog.with_progress(_timed(parts,'shelf',_kids_shelf),marks)
     except Exception as e:data['catalog']={'movies':[],'series':[],'error':core.safe_error(e)}
@@ -1197,6 +1241,35 @@ def get_kids(self,path):
 
 def _kids_shelf():
     return kids_catalog.shelf(ROOT,db,modules=_UNIFIED_SOURCES,merge=ui_prefs.load(ROOT)['merge_duplicates'])
+
+# 0.6.99: Elternbereich der Kinderecke – Altersgrenze, Freigaben, „Wartet auf Freigabe“ (kids_rules.py)
+@ROUTES.get('/api/kids-rules')
+def get_kids_rules(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:
+        out={'summary':kids_rules.summary(c),'choices':kids_rules.choices(c)}
+        if q.get('waiting',['0'])[0]=='1':out['waiting']=kids_rules.waiting(c)
+    return self.send(out)
+
+@ROUTES.post('/api/kids-rules')
+def post_kids_rules(self,path,d):
+    try:
+        with db() as c:
+            if 'live' in d:result={'live':kids_rules.set_live(c,d.get('live') is True)}
+            elif 'max_age' in d:result={'max_age':kids_rules.set_max_age(c,d.get('max_age'))}
+            else:result=kids_rules.choose(c,str(d.get('kind') or ''),str(d.get('id') or ''),d.get('choice'),str(d.get('title') or ''))
+    except ValueError as e:return self.send({'error':str(e)},400)
+    catalog.invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
+    if result.get('choice')=='block':kids_catalog._EPISODES_SEEN.clear()   # 0.6.113: Folgen einer gesperrten Reihe nicht mehr abspielbar
+    diagnostics.event('kids_rules_changed',**({k:result[k] for k in ('max_age','live') if k in result} or {'choice':result.get('choice') or 'zurück'}))
+    return self.send(result)
+
+# 0.6.99: Kinder- und Familiensender (live_tv.kids_stations), nur wenn die Eltern es eingeschaltet haben
+@ROUTES.get('/api/kids-live')
+def get_kids_live(self,path):
+    with db() as c:
+        if not kids_rules.live_enabled(c):return self.send({'enabled':False,'stations':[]})
+        return self.send({'enabled':True,'stations':kids_catalog.live(c,ROOT)})
 
 @ROUTES.get('/api/kids-episodes')
 def get_kids_episodes(self,path):
@@ -1214,7 +1287,9 @@ def get_kids_play(self,path):
     ref={k:v[0] for k,v in q.items() if k in kids_catalog.REF_KEYS and v and v[0]}
     if 'job' in ref and len(ref)==1:
         with db() as c:ok=any(v['job']==ref['job'] for v in youtube_abos.kids(ROOT,c)['videos'])
-    else:ok=kids_catalog.allowed_ref(_kids_shelf(),ref)
+    else:
+        shelf=_kids_shelf()
+        with db() as c:ok=kids_catalog.allowed_ref(shelf,ref,c)   # 0.6.109: je Werk serverseitig geprüft
     if not ok:return self.send({'error':'Dieses Video gibt es in der Kinderecke nicht'},404)
     return get_play(self,path)
 
@@ -1318,7 +1393,7 @@ def get_play(self,path,v1=False):
         if done:ref['job']=done[0]['id']
         elif direct_youtube:ref['youtube']=yt_id   # 0.5.78: own player, stream resolved by yt-dlp (opt-in switch)
         else:
-            try:info=youtube.play_info(ROOT,yt_id)
+            try:info=youtube.play_info(ROOT,yt_id,preview=q.get('preview',[''])[0]=='1')   # 0.6.90: Vorschau eines Vorschlags
             except ValueError as e:return self.send({'error':str(e)},404)
             diagnostics.event('playback_start',mode='embed',origin='online',hls=False,provider='youtube')
             return self.send(info)
@@ -1375,8 +1450,8 @@ def get_diagnostics(self,path):
            'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),
            'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
            'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'dmax':lambda:dmax.state(ROOT),'filmfriend':lambda:filmfriend.state(ROOT),'dailyme':lambda:dailyme.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
-           'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),
-           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'archive_works':lambda:archive_recognition.summary(ROOT),
+           'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),'youtube_discover':lambda:youtube_discover.summary(ROOT),
+           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'series_autoload':series_autoload_summary,'archive_works':lambda:archive_recognition.summary(ROOT),
            'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT),'cast_photos':lambda:__import__('cast_photos').store_stats(ROOT)}
     found=_bounded_parts(parts)
     overview=found.pop('overview')
@@ -2081,6 +2156,28 @@ def post_subscription_check(self,path,d):
                       queued=sum(x['queued'] for x in results))
     return self.send({'ok':True,'items':results})
 
+@ROUTES.get('/api/series-autoload')
+def get_series_autoload(self,path):
+    """0.6.94: angefangene Serien, die automatisch offline geladen werden, mit Schalter und Grenzen."""
+    with db() as c:return self.send(series_autoload.status(ROOT,c,settings()))
+
+@ROUTES.post('/api/series-autoload')
+def post_series_autoload(self,path,d):
+    action=str(d.get('action') or '')
+    if action=='settings':
+        s=json.loads(_settings_payload())
+        series_autoload.clean_settings(d,s)
+        with db() as c:store_settings(c,s)
+        diagnostics.event('series_autoload_settings',**series_autoload.config(s))
+        SERVICE.subscription_wake.set()
+    else:
+        with db() as c:
+            c.execute('BEGIN IMMEDIATE')
+            result=series_autoload.change(c,str(d.get('show') or ''),action)
+        diagnostics.event('series_autoload_changed',action=action,cancelled=result['cancelled'])
+        if action=='resume':SERVICE.subscription_wake.set()
+    with db() as c:return self.send(series_autoload.status(ROOT,c,settings()))
+
 @ROUTES.post('/api/metadata-priority')
 def post_metadata_priority(self,path,d):
     ids=d.get('ids',[])
@@ -2403,7 +2500,10 @@ def post_retry(self,path,d):
 
 @ROUTES.post('/api/watch-progress')
 def post_watch_progress(self,path,d):
-    return self.send(watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info')))
+    result=watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info'))
+    # 0.6.94: zu Ende gesehen → angefangene Serie gleich prüfen (series_autoload, sonst spätestens nach einer Minute)
+    if result.get('done'):SERVICE.subscription_wake.set()
+    return self.send(result)
 
 @ROUTES.post('/api/watch-mark')
 def post_watch_mark(self,path,d):
@@ -2504,7 +2604,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2576,6 +2676,9 @@ if __name__=='__main__':
                 diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2))
             except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
+        # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke
+        threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),
+                         kwargs={'ready':lambda:getattr(SERVICE,'heals_done',None) is None or SERVICE.heals_done.is_set()},daemon=True,name='kids_ages').start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
         threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()

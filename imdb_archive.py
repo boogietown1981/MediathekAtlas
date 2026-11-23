@@ -490,7 +490,10 @@ class Archive:
         return c
     def _lookup(self,sql,params,key):
         """Cache raw exact-match rows, never episode-specific final decisions."""
-        cache=self._reader_local.queries
+        cache=getattr(self._reader_local,'queries',None)
+        if cache is None:
+            # 0.6.114: a thread's first lookup opens its reader (before: AttributeError outside the worker threads)
+            self._reader();cache=self._reader_local.queries
         if key in cache:
             self._count('query_hits');return cache[key]
         self._count('query_misses')
@@ -638,6 +641,22 @@ class Archive:
         return len(rows)==1 and rows[0]['seasonNumber']==1 and (rows[0]['top'] or 0)>=100
     def has_episodes(self,series):
         return bool(self._lookup('SELECT 1 FROM title_episode WHERE parentTconst=? LIMIT 1',(series,),('has_episodes',series)))
+    def series_has_episodes(self,meta):
+        """True if IMDb lists single episodes for the series ``meta`` names (by IMDb ID, else exact title within one
+        year, as episode_evidence locates it); False if not or unknown to IMDb; None while the archive is not ready."""
+        if not self.updated:return None
+        # 0.6.114 (Mac-Prüfung 0.6.113 E3): the format/sweep thread had no reader; _lookup raised AttributeError
+        # ('queries'), which sendung_has_episodes took for "archive not ready" – B2 never filed anything there.
+        self._reader()
+        known=series_reference(meta)
+        if known:return self.has_episodes(known)
+        title=meta.get('title') or ''
+        hits=self._lookup('SELECT DISTINCT b.* FROM names n JOIN title_basics b ON b.tconst=n.tconst WHERE n.name=? AND b.titleType IN (?,?) LIMIT 21',(norm(title),*SERIES_TYPES),('series_title',norm(title)))
+        if len(hits)>20:return False
+        year=meta.get('year')
+        if isinstance(year,int) and not isinstance(year,bool):
+            hits=[h for h in hits if h['startYear'] is None or abs(h['startYear']-year)<=1]
+        return any(self.has_episodes(h['tconst']) for h in hits)
     def episode_evidence(self,row,meta):
         """Episode of an already identified series; the series identity is never replaced.
 
