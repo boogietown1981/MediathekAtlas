@@ -958,12 +958,29 @@ def canonical(m):
         base+='|s%s-e%s'%(m['season'],m['episode'])
     return digest(base)
 
+def _letters(text):return [ch for ch in str(text or '') if ch.isalpha()]
+def _all_upper(text):
+    letters=_letters(text);return bool(letters) and all(ch.isupper() for ch in letters)
+def _all_lower(text):
+    letters=_letters(text);return bool(letters) and all(ch.islower() for ch in letters)
+def _camel(text):
+    """A stylised brand spelling: a lower-case letter followed by a capital inside one word (KiKA, ZDFinfo, iPad)."""
+    return bool(re.search(r'[a-zäöüß][A-ZÄÖÜ]',str(text or '')))
+
 def broadcaster_spelling(title,topic):
-    """0.6.106: TMDB „KIKA LIVE“, KiKA „KiKA LIVE“ – a series named like the broadcaster's Reihe except for upper/lower
-    case is shown in the broadcaster's spelling (children search and read the name they know). None if nothing to change."""
+    """0.6.106/0.6.109: TMDB „KIKA LIVE“, KiKA „KiKA LIVE“ – a series named like the broadcaster's Reihe except for
+    upper/lower case may take the broadcaster's spelling. None if nothing to change.
+
+    0.6.109 (Mac-Prüfung A1 an 0.6.106: 29.878 Werke, 137 Namen, rund die Hälfte schlechter – „MDR SACHSENSPIEGEL“,
+    „PRESSECLUB“, „ZDFinfo doku“, „Wims“): only an unstyled name (ganz groß oder ganz klein) becomes a mixed spelling,
+    never the other way round; from ganz groß only to a stylised brand spelling (KiKA), not to plain title case
+    („UNBUBBLE“ bleibt). kulturzeit → Kulturzeit, scobel → Scobel, maischberger → Maischberger, KIKA LIVE → KiKA LIVE."""
     title=str(title or '');topic=str(topic or '').strip()
     if not title or not topic or title==topic or title.casefold()!=topic.casefold():return None
-    return topic
+    if _all_upper(topic) or _all_lower(topic):return None
+    if _all_lower(title):return topic
+    if _all_upper(title) and _camel(topic):return topic
+    return None
 
 def save_metadata(c,wid,m,state='manual'):
     m={k:v for k,v in m.items() if k not in ('suggestions','metadata_warnings')}
@@ -2042,16 +2059,19 @@ def film_suffix_works(c):
     return [r[0] for r in rows if metadata.film_suffix_year(r[1])]
 
 def heal_series_spelling(c):
-    """Once (0.6.106): series named like their Reihe except for case take the broadcaster's spelling (most offers)."""
+    """Once (0.6.109): series named like their Reihe except for case take the broadcaster's spelling where
+    broadcaster_spelling allows it (most offers). Returns (works, {new name: works}, [(show_key, old, new)]) – the
+    pairs are kept in catalog_state so that a later version can undo them exactly."""
     best={}
     for show,title,topic,n in c.execute("SELECT show_key,title,topic,COUNT(*) FROM works WHERE kind='series' AND COALESCE(show_key,'')!='' "
-                                        "AND COALESCE(topic,'')!='' AND title!=topic AND lower(title)=lower(topic) GROUP BY 1,2,3"):
-        if broadcaster_spelling(title,topic) and n>best.get((show,title),(0,''))[0]:best[(show,title)]=(n,topic)
-    done=0;shows={}
+                                        "AND COALESCE(topic,'')!='' AND lower(title)=lower(topic) GROUP BY 1,2,3"):
+        if n>best.get((show,title),(0,''))[0]:best[(show,title)]=(n,topic)
+    done=0;shows={};pairs=[]
     for (show,title),(n,topic) in best.items():
-        done+=c.execute("UPDATE works SET title=?,meta=json_set(meta,'$.title',?) WHERE show_key=? AND title=?",(topic,topic,show,title)).rowcount
-        shows[topic]=n
-    return done,shows
+        if topic==title or not broadcaster_spelling(title,topic):continue      # the most frequent spelling decides, not any spelling
+        k=c.execute("UPDATE works SET title=?,meta=json_set(meta,'$.title',?) WHERE show_key=? AND title=?",(topic,topic,show,title)).rowcount
+        done+=k;shows[topic]=shows.get(topic,0)+k;pairs.append((show,title,topic))
+    return done,shows,pairs
 
 def heal_kids_spinoffs(c):
     """Once (0.6.106): Sendung filings of kids-channel spin-offs („KiKA LIVE fordert heraus“) move under the main Reihe."""
