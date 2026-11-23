@@ -1210,6 +1210,16 @@ def deduplicate_movie_batch(c,limit=200):
     set_state(c,state,cursor if rows else 'complete')
     return len(rows),get_state(c,'movie_dedup_total_v0521',0)-before
 
+def match_meta(meta,source=None):
+    """Diagnose Air 23.11.2026 (0.6.116: 18 von 18 3sat-Filmen mit Titelzusatz „prüfen“): the work's own meta has no
+    year – only the search copy took the year from „… - Spielfilm, USA 1993“ (0.6.97). Without it a film is matched
+    only when the running time agrees (8 Mile on the Pro did, „Lauf Junge lauf“ on the Air did not). Matching uses the
+    title year like a broadcaster year; ±1 still needs the running time (matching.year_close)."""
+    if not meta or meta.get('year') or meta.get('kind') not in ('movie','unknown'):return meta
+    import metadata
+    year=metadata.film_suffix_year(meta.get('title')) or metadata.film_suffix_year((source or {}).get('title'))
+    return dict(meta,year=year) if year else meta
+
 def auto_choice(meta,rows):
     import matching
     return matching.choose(meta,rows)
@@ -2258,9 +2268,11 @@ def rematch_movie_suggestions(c,after='',limit=500):
         except (TypeError,ValueError):duration=0
         usable=[dict(x,source_duration_seconds=x.get('source_duration_seconds') or duration) for x in m.get('suggestions') or []
                 if isinstance(x,dict) and x.get('kind')=='movie']
-        chosen=auto_choice(m,usable)
+        judged=match_meta(m,{'title':row['title']})
+        chosen=auto_choice(judged,usable)
         if not chosen or chosen.get('kind')!='movie':continue
-        chosen.update(state='auto_matched',year_close=True,reason=YEAR_CLOSE_REASON)
+        if str(chosen.get('year'))==str(judged.get('year')):chosen.update(state='auto_matched',reason='Titel und Jahr aus dem Sendertitel stimmen überein')
+        else:chosen.update(state='auto_matched',year_close=True,reason=YEAR_CLOSE_REASON)
         save_metadata(c,row['id'],chosen,'matched');done+=1
     return done,(rows[-1]['id'] if rows else None)
 

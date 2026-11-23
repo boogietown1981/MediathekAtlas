@@ -449,11 +449,30 @@ def summary(c):
             'paused_until': state['paused_until'] if state['paused_until'] > time.time() else 0}
 
 
-def loop(db, stop, version='', event=None, error=None, interval=1200):
-    """Hintergrund: alle 20 Minuten eine Runde (nach dem Start 3 Minuten warten)."""
+BUSY_RETRY = 60
+READY_WAIT = 900
+
+
+def _busy(exc):
+    import sqlite3
+    return isinstance(exc, sqlite3.OperationalError) and ('locked' in str(exc).lower() or 'busy' in str(exc).lower())
+
+
+def loop(db, stop, version='', event=None, error=None, interval=1200, ready=None):
+    """Hintergrund: alle 20 Minuten eine Runde (nach dem Start 3 Minuten warten).
+
+    Diagnose Air 23.11.2026 (Sprung 0.6.85 → 0.6.116): einmal „database is locked“ in store während der
+    Start-Heilungen. Die erste Runde wartet jetzt auf die Heilungen (``ready``, höchstens 15 min); eine belegte
+    Datenbank ist eine Warnung mit neuem Versuch nach 1 min statt eines Fehlers mit 20 min Pause."""
     if stop.wait(180):
         return
+    waited = 180
+    while ready is not None and not ready() and waited < READY_WAIT:
+        if stop.wait(5):
+            return
+        waited += 5
     while not stop.is_set():
+        pause = interval
         try:
             n = fetch_round(db, version, stop=stop)
             if n and event:
@@ -461,7 +480,11 @@ def loop(db, stop, version='', event=None, error=None, interval=1200):
                     s = summary(c)
                 event('kids_ages_round', checked=n, total=s['checked'], with_age=s['with_age'])
         except Exception as exc:
-            if error:
+            if _busy(exc):
+                pause = BUSY_RETRY
+                if event:
+                    event('kids_ages_busy', level='WARNING', retry_seconds=BUSY_RETRY)
+            elif error:
                 error('kids_ages_failed', exc)
-        if stop.wait(interval):
+        if stop.wait(pause):
             return

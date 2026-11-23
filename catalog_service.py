@@ -219,7 +219,8 @@ class Service:
         worker never picks state 'review'. Now they become first passes (pending, attempts 0) with the oldest
         next_try, so each film turn of the worker takes them before the ~5,000 other new works."""
         with self.db() as c:
-            if catalog.get_state(c,'film_rules_v06108',False):return
+            # Diagnose Air 23.11.2026: once more with the title year in matching (catalog.match_meta)
+            if catalog.get_state(c,'film_rules_suffix_year',False):return
             ids=catalog.film_suffix_works(c)
             c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
             undone=catalog.undo_short_year_close(c)
@@ -239,7 +240,9 @@ class Service:
                           clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.108')
         if matched or undone:catalog.invalidate_listings()
         state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
-        with self.db() as c:catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
+        with self.db() as c:
+            catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
+            catalog.set_state(c,'film_rules_suffix_year',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1426,7 +1429,8 @@ class Service:
                 if not result['warnings'] and not result.get('deferred_providers'):self.cache_result(ck,result)
             # 0.6.84: a portal („Planet Schule“ at TVDB/ARD) is never the automatic identity of a programme; it stays a suggestion.
             usable=[x for x in result['candidates'] if not catalog.portal_identity(x,entry['source'].get('topic'))]
-            chosen=catalog.auto_choice(m,usable);recognized=chosen or catalog.work_choice(m,usable)
+            judged=catalog.match_meta(m,entry['source'])
+            chosen=catalog.auto_choice(judged,usable);recognized=chosen or catalog.work_choice(judged,usable)
             outcome='retry' if result['warnings'] or result.get('deferred_providers') else 'review'
             for write_attempt in range(4):
                 try:

@@ -2677,7 +2677,8 @@ if __name__=='__main__':
             except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke
-        threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),daemon=True,name='kids_ages').start()
+        threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),
+                         kwargs={'ready':lambda:getattr(SERVICE,'heals_done',None) is None or SERVICE.heals_done.is_set()},daemon=True,name='kids_ages').start()
         threading.Thread(target=IMDB.loop,daemon=True,name='imdb_archive').start()
         # Weekly verified catalog.db snapshot, 4 automatic ones kept (0.5.56).
         threading.Thread(target=db_backup.loop,args=(ROOT,STOP,diagnostics.event,diagnostics.error),daemon=True,name='db_backup').start()
