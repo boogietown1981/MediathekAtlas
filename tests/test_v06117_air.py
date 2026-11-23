@@ -119,5 +119,54 @@ class WikidataOnly(unittest.TestCase):
         self.assertIsNone(self.svc.reset_generic_identities())                  # once
 
 
+class MacFunde0616(unittest.TestCase):
+    """Mac-Prüfung 0.6.116: „Trailer Park“ (55 min) als Extra, „KiKANiNCHEN“ unter „Kikaninchen“."""
+    def test_long_title_beginning_with_trailer_is_a_programme(self):
+        self.assertTrue(catalog.full_programme({'title': 'Trailer Park', 'duration': 3300}))
+        self.assertFalse(catalog.full_programme({'title': 'Trailer: Tatort', 'duration': 35}))
+
+    def test_heal_reopens_trailer_park_and_restores_spelling(self):
+        tmp = tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        root = Path(tmp.name)
+        @contextmanager
+        def db():
+            c = sqlite3.connect(root / 'catalog.db');c.row_factory = sqlite3.Row
+            try:
+                with c:yield c
+            finally:c.close()
+        with db() as c:
+            catalog.initialize(c)
+            catalog.ingest(c, [{'title': 'Trailer Park', 'topic': 'Theater und Tanz', 'description': 'x', 'duration': 3300, 'channel': '3sat',
+                                'url_video': 'https://example.org/tp.mp4'},
+                               {'title': 'Folge 1', 'topic': 'KiKANiNCHEN', 'description': 'x', 'duration': 600, 'channel': 'KiKA',
+                                'url_video': 'https://example.org/kk.mp4'}])
+            tp = c.execute("SELECT work_id FROM offers WHERE json_extract(payload,'$.title')='Trailer Park'").fetchone()[0]
+            kk = c.execute("SELECT work_id FROM offers WHERE json_extract(payload,'$.title')='Folge 1'").fetchone()[0]
+            c.execute("UPDATE works SET kind='other',state='format',meta=json_set(meta,'$.reason','Extra zu „Theater und Tanz“ (Interview, Ausschnitt, Trailer); x') WHERE id=?", (tp,))
+            row = c.execute('SELECT * FROM works WHERE id=?', (kk,)).fetchone()
+            catalog.file_under_sendung(c, row, dict(json.loads(row['meta']), sendung_identity={'provider': 'TMDB', 'reference_id': '1', 'title': 'Kikaninchen'}),
+                                       {'title': 'Folge 1', 'topic': 'KiKANiNCHEN'}, 'Kikaninchen', 'contribution',
+                                       reason='Folge der Sendung „Kikaninchen“ (TMDB kennt die Sendung, aber keine Einzelfolgen)')
+            catalog.set_state(c, 'full_programmes_v06116', {'reopened': 0})       # 0.6.116 heal already ran
+        svc = catalog_service.Service(db, lambda: {}, threading.Event(), root)
+        self.assertEqual(svc.reopen_full_programmes(), 1)
+        with db() as c:
+            self.assertEqual(c.execute('SELECT kind,state FROM works WHERE id=?', (tp,)).fetchone()[:], ('unknown', 'pending'))
+            r = c.execute('SELECT title,meta FROM works WHERE id=?', (kk,)).fetchone()
+        self.assertEqual(r['title'], 'KiKANiNCHEN')
+        self.assertIn('„KiKANiNCHEN“', json.loads(r['meta'])['reason'])
+
+    def test_new_b2_filing_keeps_broadcaster_spelling(self):
+        tmp = tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        with sqlite3.connect(Path(tmp.name) / 'c.db') as c:
+            c.row_factory = sqlite3.Row;catalog.initialize(c)
+            catalog.ingest(c, [{'title': 'Folge 2', 'topic': 'KiKANiNCHEN', 'description': 'x', 'duration': 600, 'channel': 'KiKA',
+                                'url_video': 'https://example.org/k2.mp4'}])
+            row = c.execute('SELECT * FROM works').fetchone()
+            catalog.file_sendung_without_episodes(c, row, json.loads(row['meta']), {'title': 'Folge 2', 'topic': 'KiKANiNCHEN'},
+                                                  {'provider': 'TMDB', 'reference_id': '1', 'title': 'Kikaninchen'}, 'Kikaninchen', 'contribution')
+            self.assertEqual(c.execute('SELECT title FROM works').fetchone()[0], 'KiKANiNCHEN')
+
+
 if __name__ == '__main__':
     unittest.main()

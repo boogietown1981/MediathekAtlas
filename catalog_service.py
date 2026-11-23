@@ -126,17 +126,20 @@ class Service:
         for attempt in range(30):
             try:
                 with self.db() as c:
-                    if catalog.get_state(c,'full_programmes_v06116',False):return None
+                    # 0.6.117: once more for „Trailer Park“ (55 min) and similar long titles beginning with „Trailer“
+                    if catalog.get_state(c,'full_programmes_v06117',False):return None
                     n,samples=catalog.reopen_full_programmes(c)
+                    spelled=catalog.restore_sendung_spelling(c)
                     catalog.set_state(c,'full_programmes_v06116',{'reopened':n,'at':time.time()})
+                    catalog.set_state(c,'full_programmes_v06117',{'reopened':n,'spelling':spelled,'at':time.time()})
                 break
             except sqlite3.OperationalError as e:
                 if not sqlite_busy(e):raise
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return None
         else:return None
-        diagnostics.event('catalog_full_programmes_reopened',works=n,samples=samples)
-        if n:catalog.invalidate_listings()
+        diagnostics.event('catalog_full_programmes_reopened',works=n,samples=samples,sendung_spelling=dict(list(spelled.items())[:20]))
+        if n or spelled:catalog.invalidate_listings()
         return n
     def heal_series_names(self):
         """Once each (before the workers): kids spin-offs under the main Reihe (0.6.106), broadcaster spelling of series

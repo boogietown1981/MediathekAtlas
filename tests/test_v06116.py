@@ -23,7 +23,7 @@ class FullProgramme(Worker):
                 src('Brombeerland (9/14) – Die Pressekonferenz', 'Brombeerland', 2, 2340, 'ARD'),
                 src('Extra: Interview mit der Hauptdarstellerin', 'Brombeerland', 3, 300, 'ARD'),
                 src('Wetter extrem (1/3)', 'Wetter extrem', 4, 1800, 'ZDF'),
-                src('Trailer: Brombeerland', 'Brombeerland', 5, 2000, 'ARD'),
+                src('Trailer: Brombeerland', 'Brombeerland', 5, 120, 'ARD'),
                 src('Podcast mit Nachklang (4316)', 'Brombeerland', 6, 2956, 'ARD'),
                 src('u.a. Pressekonferenz von Angela Merkel', 'phoenix der tag', 7, 1857, 'PHOENIX')]
         with self.db() as c:

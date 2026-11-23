@@ -1860,9 +1860,11 @@ def full_programme(source):
     """True for an offer that is a whole programme: ≥ 25 min, or numbered „(n/m)“ and ≥ 10 min. Never a trailer or a
     podcast („Podcast mit Nachklang (4316)“ of „Rote Rosen“ must not become a Folge); a press conference only numbered."""
     title=cleaned(source.get('title'))
-    if TRAILER.search(title) or AUDIO_CLIP.search(title):return False
     try:duration=int(source.get('duration') or 0)
     except (TypeError,ValueError):duration=0
+    # 0.6.117 (Mac-Prüfung 0.6.116: „Trailer Park“, 55 min, lag als Extra unter „Theater und Tanz“): a title that only
+    # begins with „Trailer“ is a trailer when it is short.
+    if (TRAILER.search(title) and duration<FULL_PROGRAMME_SECONDS) or AUDIO_CLIP.search(title):return False
     numbered=bool(NUMBERED_PART.search(title))
     if PRESS_CLIP.search(title) and not numbered:return False
     return duration>=FULL_PROGRAMME_SECONDS or (duration>=600 and numbered)
@@ -1876,10 +1878,27 @@ def open_full_programme(c,row,m,source):
     c.execute("UPDATE works SET kind='unknown',state='pending',attempts=0,next_try=0,meta=? WHERE id=?",(json.dumps(m),row['id']))
     return True
 
+def restore_sendung_spelling(c):
+    """0.6.117, once: Sendung filings with a database identity (sendung_identity, B2 since 0.6.113) named in the
+    database's spelling get the broadcaster's spelling of their topic back („Kikaninchen“ → „KiKANiNCHEN“).
+    show_key is unchanged (it is built from the normalised name). Returns {old: new}."""
+    out={}
+    for row in c.execute("""SELECT id,title,topic,meta FROM works WHERE state='format' AND kind='series'
+            AND json_type(meta,'$.sendung_identity')='object' AND COALESCE(topic,'')!=''""").fetchall():
+        topic=cleaned(row['topic'])
+        if not topic or row['title']==topic or key(row['title'])!=key(topic):continue
+        m=json.loads(row['meta'] or '{}');m['title']=topic
+        reason=str(m.get('reason') or '')
+        if reason:m['reason']=reason.replace('„'+str(row['title'])+'“','„'+topic+'“')
+        c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(topic,json.dumps(m),row['id']))
+        out[row['title']]=topic
+    return out
+
 def reopen_full_programmes(c,limit=100000):
     """0.6.116, once: whole programmes 0.6.113/0.6.114 filed as „Extra zu …“ or clip are reopened. Returns (n, samples)."""
     rows=c.execute("""SELECT * FROM works WHERE kind='other' AND state='format'
-        AND (json_extract(meta,'$.format_grouping')='clip' OR json_extract(meta,'$.reason') LIKE 'Extra zu „%') LIMIT ?""",(limit,)).fetchall()
+        AND (json_extract(meta,'$.format_grouping')='clip' OR json_extract(meta,'$.reason') LIKE 'Extra zu „%'
+             OR json_extract(meta,'$.reason') LIKE 'Trailer/Vorschau%') LIMIT ?""",(limit,)).fetchall()
     n=0;samples=[]
     for row in rows:
         m=json.loads(row['meta'] or '{}')
@@ -1917,7 +1936,7 @@ def file_open_clip(c,row,m,source):
     Never a user decision or a requested check; „Erneut prüfen“ (prioritize) still checks it on request."""
     if row['kind']!='other' or row['state']!='pending' or m.get('scan_requested'):return False
     title=cleaned(source.get('title'));topic=cleaned(source.get('topic'))
-    if TRAILER.search(title):
+    if TRAILER.search(title) and not full_programme(source):
         if topic:m['related_series_title']=topic
         m.update(kind='other',state='format',episode_verified=False,
                  reason='Trailer/Vorschau'+(' zu „'+topic+'“' if topic else '')+'; keine vollständige Sendung, wird nicht abgeglichen.')
@@ -2344,6 +2363,10 @@ _HAS_EPISODES_LOGGED=0
 
 def file_sendung_without_episodes(c,row,m,source,suggestion,sendung,grouping):
     """File ``row`` under the Sendung (state 'format') and keep the Sendung's database identity as a note."""
+    # 0.6.117 (Mac-Prüfung 0.6.116: „KiKANiNCHEN“ landete unter „Kikaninchen“): the Sendung keeps the broadcaster's
+    # spelling of its name; the database spelling stays in sendung_identity.
+    topic=cleaned((source or {}).get('topic'))
+    if topic and key(topic)==key(sendung):sendung=topic
     own=dict(m);own['unknown_before']=unknown_before(row,m)
     own['sendung_identity']={k:suggestion.get(k) for k in ('provider','reference_id','title','year') if suggestion.get(k) not in (None,'')}
     label=UNKNOWN_GROUPINGS.get(grouping,'Folge')
