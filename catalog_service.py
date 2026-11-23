@@ -441,6 +441,7 @@ class Service:
             with self.worker_lock:active=max(0,self.active_checks-self.episode_active)
             if queue=='identity' and not active and self.metadata_status.get('phase')!='waiting':
                 self.metadata_state(phase='waiting')
+                self.report_idle()
             return False
         wid,owner=claim
         thread=threading.current_thread().name
@@ -517,6 +518,20 @@ class Service:
             return 0
         return max(rows,key=evidence)  # stable FIFO for equal evidence
 
+    def report_idle(self,every=1800):
+        """0.6.113: when recognition runs out of work, say why the open works wait (catalog.queue_blockers); at most
+        every 30 minutes. A 'selectable' count above 0 here would be a selection fault."""
+        now=time.time()
+        if now-getattr(self,'idle_reported_at',0)<every:return None
+        self.idle_reported_at=now
+        try:
+            with self.db() as c:blockers=catalog.queue_blockers(c,now)
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1;return None
+        selectable=sum(v.get('selectable',0) for v in blockers.values())
+        diagnostics.event('recognition_idle',level='WARNING' if selectable else 'INFO',selectable=selectable,blockers=blockers)
+        return blockers
     def pick(self,c):
         """User priority, bounded show completion, new work, then due retries.
 
@@ -1204,6 +1219,12 @@ class Service:
                     self.after_commit(lambda:self.sample_unresolved(m,source,evidence))
                     self.mesh_episode_publish(c,selected_id,time.time()+delay,archive.updated,config.get('sender_direct_lookup',False))
                 if outcome=='unresolved' and imdb_without_episodes:
+                    # 0.6.113: siblings 0.6.88 filed as Folge of this suggested Sendung become its contributions, even when
+                    # the work searched here does not carry the marker (before, they were parked for 30 days with the rest).
+                    siblings=catalog.refile_sendung_suggestions(c,row['show_key'],m.get('provider'),m.get('reference_id')) if not imdb_error and not sender_candidate else 0
+                    if siblings:
+                        refiled=dict(show=m.get('title',''),provider=m.get('provider'),reference=m.get('reference_id'),works=siblings,via='sibling')
+                        self.after_commit(lambda:diagnostics.event('episode_sendung_without_episodes',**refiled))
                     # counted as episode_series_deferred ("Ohne IMDb-Folgenliste verschoben") after the commit
                     self.defer_series_without_episodes(c,row['show_key'],m,selected_id,config,archive.updated)
                 if evidence and evidence.get('series_with_episodes') and not imdb_error:
@@ -1378,8 +1399,27 @@ class Service:
                 if self.stop.wait(.05):return
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
+            self.refile_suggested_sendungen()
             self.unknown_sweep()
             self.format_wake.wait(3600);self.format_wake.clear()
+    def refile_suggested_sendungen(self):
+        """0.6.113, once when the IMDb archive is ready (catalog.refile_suggested_sendungen): Folgen that 0.6.88 filed
+        under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days."""
+        try:
+            with self.db() as c:
+                if catalog.get_state(c,'sendung_refile_v06113',False):return None
+                refiled,shows,kept,cursor=catalog.refile_suggested_sendungen(c)
+                if cursor is False:
+                    # archive not ready: nothing decided, the next format pass (hourly) tries again
+                    return None
+                catalog.set_state(c,'sendung_refile_v06113',{'refiled':refiled,'shows':len(shows),'kept':kept,'at':time.time()})
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1;return None
+        diagnostics.event('catalog_sendung_suggestions_refiled',works=refiled,shows=len(shows),kept_with_episodes=kept,
+                          samples=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]))
+        if refiled:catalog.invalidate_listings()
+        return refiled
     def unknown_sweep(self,force=False,batch=200):
         """0.6.43: give checked works of unknown kind their kind (Sendung, Einzelsendung, Film), in the background.
 

@@ -916,6 +916,23 @@ def category_tree(c):
 def tree(c):
     return [dict(r) for r in c.execute("SELECT w.kind,COALESCE(g.genre,'Unbekannt') genre,COUNT(DISTINCT CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END) n FROM works w LEFT JOIN work_genres g ON g.work_id=w.id WHERE EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) GROUP BY w.kind,g.genre")]
 
+def queue_blockers(c,now=None):
+    """0.6.113 (Mac-Prüfung 0.6.108: Arbeiter „waiting“ bei 4.854 pending): open works (pending/retry) per kind and the
+    first reason the recognition selection (CatalogService.pick) leaves them out, in its order. 'other' is never
+    selected by design (clips go through the Sendung pass). Uses the index work_retry(state,next_try)."""
+    now=time.time() if now is None else now
+    out={}
+    for kind,reason,n in c.execute("""SELECT w.kind,
+            CASE WHEN w.kind NOT IN ('movie','series','unknown') THEN 'not_selected_kind'
+                 WHEN w.next_try>? THEN 'not_due'
+                 WHEN EXISTS(SELECT 1 FROM episode_queue q WHERE q.work_id=w.id) THEN 'episode_queue'
+                 WHEN NOT EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) THEN 'no_active_offer'
+                 WHEN EXISTS(SELECT 1 FROM metadata_leases l WHERE l.work_id=w.id AND l.expires>?) THEN 'leased'
+                 ELSE 'selectable' END,COUNT(*)
+            FROM works w WHERE w.state IN ('pending','retry') GROUP BY 1,2""",(now,now)):
+        out.setdefault(kind,{})[reason]=n
+    return out
+
 def stats(c):
     """One indexed classification pass, instead of separate full-work scans for each tile."""
     grouped=c.execute('SELECT kind,state,COUNT(*) n FROM works GROUP BY kind,state').fetchall()
@@ -1756,7 +1773,7 @@ def file_under_sendung(c,row,m,source,fmt,grouping=None,reason=None):
     return m
 
 # Raise when the format rules change: existing catalogues then get one more format pass.
-FORMAT_REV=5   # 0.5.80: clips ('other') and editions named like their Sendung; 0.6.39: dated editions (also after a check without hit)
+FORMAT_REV=6   # 0.6.113: clips ('other') never end open (file_open_clip); 0.5.80: clips ('other') and editions named like their Sendung; 0.6.39: dated editions (also after a check without hit)
 def assign_formats(c,limit=500):
     """Group news and magazine contributions under their format and take them out of the provider scan."""
     import broadcaster
@@ -1801,11 +1818,34 @@ def assign_formats(c,limit=500):
             m.update(state='format',reason='Ausgabe der Sendung „'+m['title']+'“ ('+m['provider']+'); wird nicht einzeln abgeglichen.')
             c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
             assigned+=1;continue
-        if not format_contribution(m,source,counts[topic]):continue
+        if not format_contribution(m,source,counts[topic]):
+            if row['kind']=='other' and file_open_clip(c,row,m,source):assigned+=1
+            continue
         file_under_sendung(c,row,m,source,cleaned(source.get('topic')))
         assigned+=1
     if not dirty_mode:set_state(c,'format_cursor',cursor if rows else 'complete')
     return len(rows),assigned
+
+def file_open_clip(c,row,m,source):
+    """0.6.113 (Mac-Prüfung 0.6.108, Rückstau-Abfrage: 2.414 Werke der Art 'other' pending mit 0 Versuchen – Trailer,
+    Vorschauen, Podcasts, Pressekonferenzen): the recognition never selects clips (CatalogService.pick), so a clip the
+    Sendung rules (format_contribution) leave out stayed open for good. Now it ends as extra (trailer/preview) or clip
+    (format_grouping 'clip', not 'single': the Einzelsendung recheck must not file it as Folge of a real series).
+    Never a user decision or a requested check; „Erneut prüfen“ (prioritize) still checks it on request."""
+    if row['kind']!='other' or row['state']!='pending' or m.get('scan_requested'):return False
+    title=cleaned(source.get('title'));topic=cleaned(source.get('topic'))
+    if TRAILER.search(title):
+        if topic:m['related_series_title']=topic
+        m.update(kind='other',state='format',episode_verified=False,
+                 reason='Trailer/Vorschau'+(' zu „'+topic+'“' if topic else '')+'; keine vollständige Sendung, wird nicht abgeglichen.')
+        c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+        return True
+    # 0.6.113: not under the Sendung – a podcast of „Rote Rosen“ (1.056 works) would turn into a Folge of the series.
+    if topic:m['related_series_title']=topic
+    m.update(kind='other',state='format',format_grouping='clip',episode_verified=False,
+             reason='Clip (Podcast, Pressekonferenz, Ausschnitt); keine vollständige Sendung, wird nicht abgeglichen.')
+    c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+    return True
 
 def restart_formats(c):set_state(c,'format_cursor',0)
 
@@ -2189,6 +2229,28 @@ def refile_sendung_suggestions(c,show_key,provider,reference,limit=2000):
         file_sendung_without_episodes(c,row,base,source,identity,sendung,m.get('sendung_grouping') or 'contribution')
         done+=1
     return done
+
+def refile_suggested_sendungen(c,after='',limit=5000):
+    """0.6.113 (Mac-Prüfung 0.6.108, B2 nicht nachweisbar): the works 0.6.88 identified as Folge of a suggested
+    Sendung rest 30 days in the episode queue after their first search (and siblings without the marker park them
+    again), so a Sendung without IMDb episodes was never filed. Every such Sendung is decided here at once from the
+    local IMDb archive, page by page (show_key > ``after``).
+    Returns (refiled works, {Sendung: works}, kept Sendungen, last show_key or None when done; False = archive not ready)."""
+    groups=c.execute("""SELECT show_key,json_extract(meta,'$.provider') provider,CAST(json_extract(meta,'$.reference_id') AS TEXT) ref,
+            MAX(json_extract(meta,'$.title')) title,MAX(json_extract(meta,'$.year')) year,MAX(json_extract(meta,'$.imdb_id')) imdb_id
+        FROM works WHERE state='identified' AND json_extract(meta,'$.sendung_suggestion_v0688')=1 AND show_key>?
+        GROUP BY 1,2,3 ORDER BY 1 LIMIT ?""",(after,limit)).fetchall()
+    refiled=0;shows={};kept=0
+    for g in groups:
+        identity={'provider':g['provider'],'reference_id':g['ref'],'title':g['title'],'year':g['year'],'imdb_id':g['imdb_id']}
+        episodes=sendung_has_episodes({k:v for k,v in identity.items() if v not in (None,'')})
+        if episodes is None:return refiled,shows,kept,False
+        if episodes:
+            kept+=1;continue
+        n=refile_sendung_suggestions(c,g['show_key'],g['provider'],g['ref'],limit=100000)
+        refiled+=n
+        if n:shows[str(g['title'] or g['show_key'])[:80]]=n
+    return refiled,shows,kept,(groups[-1]['show_key'] if len(groups)==limit else None)
 
 def identify_by_sendung(c,row,m,source,suggestion,sendung,grouping):
     """Identify ``row`` as Folge of the suggested series (state 'identified', episode not yet verified)."""
