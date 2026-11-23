@@ -385,6 +385,7 @@ class WithApiKey(Fixture):
         super().setUp()
         mock.patch.object(yd, 'find_tool', return_value=None).start()     # ohne yt-dlp: nur der API-Weg
         self.calls = []
+        self.queries = []
         self.quota = False
         mock.patch.object(yt.urllib.request, 'urlopen', side_effect=self.urlopen).start()
 
@@ -416,6 +417,7 @@ class WithApiKey(Fixture):
         endpoint = url.split('/youtube/v3/')[1].split('?')[0]
         q = dict(urllib.parse.parse_qsl(url.split('?', 1)[1]))
         self.calls.append(endpoint)
+        self.queries.append((endpoint, q))
         body = json.dumps(self.answer(endpoint, q)).encode()
         return __import__('io').BytesIO(body)
 
@@ -471,6 +473,47 @@ class WithApiKey(Fixture):
             disc.discover(self.root, now=NOW + 10, request=request, runner=runner, seen=watch_state.states(self.root))
         self.assertTrue([u for u in urls if u.startswith('ytsearch20:Experimente')])
         self.assertIn(self.SEARCHED, {s['ref'] for s in disc.overview(self.root)['suggestions']})
+
+
+class KidsFirstWithApi(WithApiKey):
+    """Mac-Prüfung 0.6.113 (23.11.2026): alle 28 Suchtreffer im Erwachsenenprofil, Kinderprofil ohne Suche,
+    4 von 9 Kinder-Vorschlägen nicht aufgelöst, Lauf 11 Minuten (yt-dlp holte Schlagwörter nach)."""
+
+    def test_old_cache_without_tags_is_refreshed_and_kids_search_runs(self):
+        self.prepare()
+        ydb = yt._connect(self.root)
+        with ydb:                                  # Speicherstand von vor 0.6.113: ohne Schlüssel „tags“
+            for vid_, payload in ydb.execute('SELECT id,payload FROM youtube_videos').fetchall():
+                facts = json.loads(payload)
+                if isinstance(facts, dict):
+                    facts.pop('tags', None)
+                    ydb.execute('UPDATE youtube_videos SET payload=? WHERE id=?', (json.dumps(facts), vid_))
+        ydb.close()
+        with mock.patch.object(disc, 'backfill_descriptions', side_effect=AssertionError('mit Schlüssel kein yt-dlp-Nachholen')):
+            self.run_discover()
+        searched = [q['q'] for e, q in self.queries if e == 'search']
+        self.assertIn('Experimente für Kinder', searched)
+        src = disc.summary(self.root)['sources']
+        self.assertEqual(src['terms']['kinder'], 2)
+        self.assertGreaterEqual(src['search_api'], 1)
+        self.assertIn('seconds_resolve', src)
+
+    def test_kids_candidates_resolved_first_and_keep_their_places(self):
+        self.prepare()
+        ab.add(self.root, {'url': '@Grosskanal', 'profile': 'erwachsene'}, now=NOW)     # Erwachsenen-Abo ohne Videos
+        adult = ['UC%s' % (c * 22) for c in 'abcd']
+        terms = lambda db, videos, names, limit=3: ['Biologie'] if not videos else ['Experimente']  # noqa: E731
+        search = lambda request, term: ([(self.SEARCHED, 'Forscherkanal', 1)] if 'Kinder' in term  # noqa: E731
+                                        else [(r, 'Erwachsen', 3) for r in adult])
+        with mock.patch.object(disc, 'RESOLVE_PER_RUN_API', 1), mock.patch.object(disc, 'MAX_SUGGESTIONS', 2), \
+                mock.patch.object(disc, 'search_terms', side_effect=terms), \
+                mock.patch.object(disc, 'search_channels_api', side_effect=search), \
+                mock.patch.object(disc, 'featured_with_api', return_value=[]):
+            self.run_discover()
+        got = disc.overview(self.root)['suggestions']
+        self.assertEqual({s['profile'] for s in got}, {'kinder', 'erwachsene'})
+        self.assertIn(self.SEARCHED, [s['ref'] for s in got])            # Kinder-Platz trotz stärkerer Erwachsenen-Treffer
+        self.assertEqual([s['ref'] for s in got if s['avatar']], [self.SEARCHED])   # einziges Auflösen ging an den Kinder-Vorschlag
 
 
 if __name__ == '__main__':
