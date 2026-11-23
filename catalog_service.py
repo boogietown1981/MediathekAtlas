@@ -1439,10 +1439,22 @@ class Service:
                 if self.stop.wait(.05):return
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
+            self.merge_year_editions()
             waiting=self.refile_suggested_sendungen()=='waiting'
             self.unknown_sweep()
             # 0.6.114: an undecided B2 refiling is tried again after 2 minutes, not after an hour
             self.format_wake.wait(REFILE_RETRY if waiting else 3600);self.format_wake.clear()
+    def merge_year_editions(self):
+        """0.6.117, every format pass: Jahrgänge „<Reihe> <Jahr>“ of a Sendung become one Reihe (catalog.merge_year_editions)."""
+        try:
+            with self.db() as c:moved,merged=catalog.merge_year_editions(c)
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.sqlite_busy_count+=1;return 0
+        if moved:
+            diagnostics.event('catalog_year_editions_merged',works=moved,shows=dict(list(merged.items())[:30]))
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        return moved
     def refile_suggested_sendungen(self):
         """0.6.113, once when the IMDb archive is ready (catalog.refile_suggested_sendungen): Folgen that 0.6.88 filed
         under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days.

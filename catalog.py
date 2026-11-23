@@ -2211,6 +2211,56 @@ def restore_unstyled_series_titles(c):
         pairs.append((show,title,best))
     return done,pairs
 
+# 0.6.117 (Mac-Prüfung 0.6.115/0.6.116: „Dein Song 2023“, „Dein Song 2024“, „Dein Song 2025“ als eigene Kacheln):
+# a broadcaster topic „<Reihe> <Jahr>“ names a Staffel/Jahrgang of the Reihe. Sendung filings of several such years
+# with the same stem and sender become one Reihe; the year stays in the Folgentitel. Not for films or database
+# identities (only provider 'Sendung'), not for single years („Berlin 1945“), not for events whose year is the
+# event („Olympia 2024“, „Fußball-EM 2021“, „Bundestagswahl 2025“), not for years outside 2000..next year.
+YEAR_EDITION=re.compile(r'^(?P<stem>.*?\S)[\s\-–:·|,(]+(?P<year>20\d{2})\)?$')
+YEAR_EVENT=re.compile(r'(?i)\b(?:olympia\w*|olympische|paralympics|wm|em|weltmeisterschaft\w*|europameisterschaft\w*|'
+                      r'world cup|euro|tour de france|wahl\w*|\w*wahl|wahlen|jahresrückblick\w*|rückblick|silvester\w*|'
+                      r'neujahr\w*|karneval\w*|fastnacht\w*|fasching\w*|festival\w*|gipfel|spiele)\b')
+YEAR_EDITION_MIN_WORKS=2
+def year_edition(title):
+    """(stem, year) when ``title`` is „<Reihe> <Jahr>“ with a usable stem, else None."""
+    import metadata
+    mt=YEAR_EDITION.match(str(title or '').strip())
+    if not mt:return None
+    stem=mt.group('stem').rstrip(' -–:·|,(').strip();year=int(mt.group('year'))
+    if not 2000<=year<=time.localtime().tm_year+1:return None
+    if len(key(stem))<3 or not re.search(r'[^\W\d_]',stem) or metadata.generic_topic(stem) or YEAR_EVENT.search(stem):return None
+    if key(stem) in FORMAT_GENERIC:return None
+    return stem,year
+
+def merge_year_editions(c):
+    """Idempotent (every format pass): Sendung filings „<Reihe> <Jahr>“ of at least two years (each with
+    YEAR_EDITION_MIN_WORKS works, same sender) go under one Reihe „<Reihe>“. Returns (moved, {Reihe: [years]})."""
+    groups={}
+    for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE kind='series' AND state='format'
+            AND json_extract(meta,'$.provider')='Sendung' AND title GLOB '*20[0-9][0-9]*' GROUP BY show_key,title"""):
+        hit=year_edition(title)
+        if not hit or n<YEAR_EDITION_MIN_WORKS:continue
+        ch=c.execute("""SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM works w JOIN offers o ON o.work_id=w.id
+            WHERE w.show_key=? AND w.title=? ORDER BY o.active DESC LIMIT 1""",(show,title)).fetchone()
+        groups.setdefault((key(hit[0]),ch[0] if ch else ''),[]).append((show,title,hit[0],hit[1]))
+    moved=0;merged={}
+    for (stem_key,_),items in groups.items():
+        if len({y for *_,y in items})<2:continue
+        stem=sorted((x[2] for x in items),key=len)[0]
+        own=c.execute("""SELECT show_key,title FROM works WHERE kind='series' AND state='format' AND json_extract(meta,'$.provider')='Sendung'
+            AND title=? AND COALESCE(show_key,'')!='' LIMIT 1""",(stem,)).fetchone()
+        target=own[0] if own else showkey({'kind':'series','title':stem})
+        for show,title,_,year in items:
+            for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=?",(show,title)).fetchall():
+                m=json.loads(w['meta'] or '{}')
+                if m.get('provider')!='Sendung':continue
+                ep=str(m.get('episode_title') or '')
+                if not key(ep).startswith(key(title)):ep=title+': '+ep if ep else title
+                m.update(title=stem,episode_title=ep,sendung_name=title,year_edition_v06117=year)
+                c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(stem,target,json.dumps(m),w['id']));moved+=1
+        merged[stem]=sorted({y for *_,y in items})
+    return moved,merged
+
 def heal_kids_spinoffs(c):
     """Once (0.6.106): Sendung filings of kids-channel spin-offs („KiKA LIVE fordert heraus“) move under the main Reihe."""
     moved=0;shows={}
