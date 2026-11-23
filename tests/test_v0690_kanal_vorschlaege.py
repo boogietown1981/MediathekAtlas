@@ -33,6 +33,8 @@ class Discover(Fixture):
     def setUp(self):
         super().setUp()
         mock.patch.object(yd, 'find_tool', return_value=None).start()
+        # Auflösen (Name/Videotitel je Vorschlag) prüft die Klasse ResolveAndRank; hier ohne Netz
+        mock.patch.object(disc, 'resolve', return_value={}).start()
 
     def prepare(self):
         abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 2}, now=NOW)
@@ -245,6 +247,131 @@ class SourcesWithoutChannelsTab(Discover):
             (folder / n).write_text('x')
         got = sorted(p.name for p in ab._companions(video))
         self.assertEqual(got, sorted([video.name, *names[:4]]))
+
+
+class ResolveAndRank(Fixture):
+    """Nachbesserung nach Mac-Prüfung 0.6.106 (23.11.2026): nur Handles ohne Namen, eine als Handle gelesene Kanal-
+    Kennung, vorn englische Kanäle aus den Beschreibungen eines einzigen Abos, Suche ohne gesehene Videos leer."""
+    ID = 'UCAbcdefghijklmnopqrstuv'
+
+    def setUp(self):
+        super().setUp()
+        mock.patch.object(yd, 'find_tool', return_value=(['yt-dlp'], 'test')).start()
+        mock.patch.object(yd, 'js_args', return_value=[]).start()
+        mock.patch.object(ab, '_request_for_key', return_value=None).start()
+
+    def subscribed(self, profile='kinder', enabled=True):
+        abo = ab.add(self.root, {'url': '@Kinderkanal', 'mode': 'new', 'start_count': 2, 'profile': profile}, now=NOW)
+        ab.check(self.root, abo, now=NOW, request=self.api)
+        for j in self.jobs():
+            self.set_job(j['id'], 'done', path=j['target'])
+        with self.db() as c:
+            db = ab._connect(self.root); ab.sync_states(c, db); db.close()
+        db = ab._connect(self.root)
+        with db:
+            db.execute('UPDATE youtube_abos SET channel_id=?,enabled=?', (OWN, int(enabled)))
+        db.close()
+        return abo
+
+    @staticmethod
+    def listing(channel, cid, titles):
+        return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps(
+            {'channel': channel, 'channel_id': cid, 'thumbnails': [{'id': 'avatar_uncropped', 'url': 'https://yt3.ggpht.com/a.jpg'}],
+             'entries': [{'id': vid(80 + n), 'title': t} for n, t in enumerate(titles)]}))
+
+    def test_channel_id_written_as_handle(self):
+        self.assertEqual(disc.norm('@' + self.ID), self.ID)
+        self.assertEqual(disc.mentions('Schaut bei https://www.youtube.com/@%s vorbei' % self.ID), [self.ID])
+        self.assertTrue(disc._LOST_ID.fullmatch('@' + self.ID.lower()))
+
+    def test_resolve_names_language_kids_signal_and_single_abo(self):
+        self.subscribed()
+        refs = ['@EnglishKid', '@Lernkanal', '@Weg', '@Doppel', '@' + self.ID, '@Eins', '@Zwei', '@Drei']
+        disc.record_mentions(self.root, vid(38), ' '.join(refs))
+        db = disc._connect(self.root)
+        with db:                                   # alter Stand: kleingeschriebene Kennung aus 0.6.100
+            db.execute('INSERT INTO youtube_mentions(video,ref) VALUES(?,?)', (vid(37), '@' + self.ID.lower()))
+        db.close()
+        calls = []
+
+        def runner(args, **kw):
+            url = args[-1]
+            calls.append(url)
+            if '--skip-download' in args or url.endswith('/playlists') or url.startswith('ytsearch'):
+                return types.SimpleNamespace(returncode=0, stderr='', stdout='{}')
+            if '/@englishkid/' in url:
+                return self.listing('Fun Kid Show', 'UC' + 'e' * 22, ['How we build the tallest tower', 'What is the moon? Learn with us',
+                                                                       'The big truck song for you'])
+            if '/@lernkanal/' in url:
+                return self.listing('Lernkanal', 'UC' + 'l' * 22, ['Wie funktioniert ein Vulkan? Für Kinder erklärt',
+                                                                   'Was ist der Mond? Kinderwissen', 'Das Wetter für Kinder'])
+            if '/@weg/' in url:
+                return types.SimpleNamespace(returncode=1, stdout='', stderr='ERROR: [youtube:tab] @weg: This channel does not exist.')
+            if '/@doppel/' in url or '/channel/%s/' % self.ID in url:
+                return self.listing('Doppelkanal', self.ID, ['Wir basteln eine Laterne', 'Ein Bild malen mit Wasserfarben'])
+            if '/@eins/' in url:
+                return self.listing('Kinderkanal Zweitname', OWN, ['x'])     # schon abonniert (gleiche Kanal-ID)
+            name = url.split('/@')[1].split('/')[0]
+            return self.listing('Irgendwer ' + name, 'UC' + (name * 22)[:22], ['Vlog', 'Mein Tag'])
+        with mock.patch.object(disc, 'MENTIONS_PER_ABO', 10):
+            disc.discover(self.root, now=NOW + 10, runner=runner, seen=watch_state.states(self.root))
+        d = disc.overview(self.root)
+        got = {s['ref']: s for s in d['suggestions']}
+        self.assertIn('@zwei', got)
+        self.assertNotIn('@weg', got)                                   # gibt es nicht
+        self.assertNotIn('@eins', got)                                  # derselbe Kanal wie das Abo
+        self.assertNotIn('@' + self.ID.lower(), got)                    # verlorene Kennung nie als Handle
+        self.assertEqual(len([r for r in got if r in ('@doppel', self.ID)]), 1)   # Handle und Kennung zusammengelegt
+        self.assertEqual(got['@lernkanal']['title'], 'Lernkanal')
+        self.assertEqual(got['@lernkanal']['avatar'], 'https://yt3.ggpht.com/a.jpg')
+        self.assertIn('Kindersignal', got['@lernkanal']['why'][0])
+        self.assertEqual(got['@englishkid']['title'], 'Fun Kid Show')
+        self.assertEqual(got['@englishkid']['why'][0], 'englischsprachig')
+        order = [s['ref'] for s in d['suggestions']]
+        self.assertLess(order.index('@lernkanal'), order.index('@englishkid'))
+        self.assertFalse(got['@lernkanal']['checked'])                  # Auflösen ersetzt nicht das Ansehen vor der Freigabe
+        # zweiter Lauf: Angaben aus dem Speicher (vier Wochen), kein neuer Listenabruf
+        before = len([c for c in calls if '/videos' in c])
+        with mock.patch.object(disc, 'MENTIONS_PER_ABO', 10):
+            disc.discover(self.root, now=NOW + 3600, runner=runner, seen=watch_state.states(self.root))
+        self.assertEqual(len([c for c in calls if '/videos' in c]), before)
+        # Standard: aus den Beschreibungen eines Abos zählen höchstens 5 Kanäle
+        disc.discover(self.root, now=NOW + 7200, runner=runner, seen=watch_state.states(self.root))
+        self.assertLessEqual(len(disc.overview(self.root)['suggestions']), 5)
+
+    def test_search_fallback_without_watched_and_probe_with_paused_abo(self):
+        self.subscribed(enabled=False)
+        db = disc._connect(self.root)
+        with db:
+            for j in self.jobs():
+                db.execute('INSERT INTO youtube_tagged(video,tags,at) VALUES(?,?,0)', (j['source']['_video_id'], json.dumps(['Experimente'])))
+                db.execute('INSERT INTO youtube_described(video,at) VALUES(?,0)', (j['source']['_video_id'],))
+        db.close()
+        urls = []
+
+        def runner(args, **kw):
+            url = args[-1]
+            urls.append(url)
+            if url.startswith('ytsearch'):
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': [
+                    {'id': vid(70), 'channel_id': FEATURED, 'channel': 'Forscherkanal'}]}))
+            if url.endswith('/playlists'):
+                return types.SimpleNamespace(returncode=0, stderr='', stdout=json.dumps({'entries': []}))
+            return self.listing('Forscherkanal', FEATURED, ['Experimente für Kinder', 'Kinderwissen: Wasser'])
+        disc.discover(self.root, now=NOW + 10, runner=runner, seen=watch_state.states(self.root))
+        self.assertIn('ytsearch20:Experimente für Kinder', urls)          # ohne gesehene Videos: Themen der Abo-Videos
+        self.assertFalse([u for u in urls if u.endswith('/playlists')])  # pausiertes Abo: keine Playlists
+        s = disc.overview(self.root)['suggestions'][0]
+        self.assertTrue(any('Thema der Abo-Videos' in w for w in s['why']))
+        self.assertEqual(disc.summary(self.root)['sources']['search_fallback'], 1)
+        # Prüflauf: auch pausierte Abos, ohne Wochenspeicher
+        urls.clear()
+        disc.discover(self.root, now=NOW + 20, runner=runner, seen=watch_state.states(self.root), probe=True)
+        self.assertTrue([u for u in urls if u.endswith('/playlists')])
+        self.assertTrue([u for u in urls if u.startswith('ytsearch')])
+
+    def test_empty_archive_has_bytes(self):
+        self.assertEqual(ab.archive_summary(self.root, None).get('bytes'), 0)
 
 
 if __name__ == '__main__':

@@ -17,7 +17,8 @@
   };
   const gb = v => (Number(v) || 0).toLocaleString('de-DE', {maximumFractionDigits: 1});
   // 0.6.98: kleine Archive in MB statt „0,0 GB“
-  const size = a => (a.bytes || 0) < 1e9 && a.bytes !== undefined ? Math.round((a.bytes || 0) / 1e6).toLocaleString('de-DE') + ' MB' : gb(a.gb || 0) + ' GB';
+  // Nachbesserung 0.6.106: leeres Archiv „0 MB“ (bisher „0 GB“, weil die Byte-Zahl fehlte)
+  const size = a => { const b = a.bytes ?? (Number(a.gb) || 0) * 1e9; return b < 1e9 ? Math.round(b / 1e6).toLocaleString('de-DE') + ' MB' : gb(a.gb || b / 1e9) + ' GB'; };
   const PROFILES = {kinder: {icon: '★', label: 'Kinderecke', hint: 'erscheint nur in der Kinderecke'},
     erwachsene: {icon: '▶', label: 'Für mich', hint: 'erscheint nur im Ansehen-Modus'}};
   const CHIPS = [['done', 'offline', 'ok'], ['queued', 'werden geladen', 'busy'], ['retry', 'neuer Versuch geplant', 'wait'], ['wanted', 'warten', 'wait'],

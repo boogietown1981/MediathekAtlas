@@ -1761,7 +1761,7 @@ def archive_watched(root, c, db, now=None, limit=ARCHIVE_BATCH, seen=None):
 def archive_summary(root, c=None):
     """Archiv für die Verwaltung: an/aus, Zahl, Größe, Ordner."""
     base = storage_locations.abo_base(_SETTINGS() or {})
-    out = {'enabled': archive_enabled(root), 'videos': 0, 'gb': 0.0,
+    out = {'enabled': archive_enabled(root), 'videos': 0, 'gb': 0.0, 'bytes': 0,
            'folder': str(Path(base) / FOLDER / ARCHIVE_FOLDER) if base else ''}
     db = _connect(root)
     try:

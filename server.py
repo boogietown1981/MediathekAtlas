@@ -1181,7 +1181,7 @@ def get_youtube_discover(self,path):
 @ROUTES.post('/api/youtube-discover')
 def post_youtube_discover(self,path,d):
     action=str(d.get('action',''))[:10];ref=str(d.get('ref',''))[:60]
-    if action=='search':return self.send({**youtube_discover.overview(ROOT),'started':youtube_discover.start(ROOT,force=True)})
+    if action=='search':return self.send({**youtube_discover.overview(ROOT),'started':youtube_discover.start(ROOT,force=True,probe=d.get('probe') is True)})
     if action=='preview':return self.send(youtube_discover.preview(ROOT,ref,refresh=d.get('refresh') is True))
     result=youtube_discover.decide(ROOT,ref,action)
     if result.get('abo'):youtube_abos.start_sync(ROOT)          # neues Abo gleich prüfen

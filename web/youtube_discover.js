@@ -52,6 +52,7 @@
     const box = make('article', undefined, 'abo-card discover-card'); box.dataset.ref = s.ref;
     const body = make('div', undefined, 'abo-body');
     const head = make('div', undefined, 'abo-head'); head.append(make('strong', s.title));
+    if (s.ref.startsWith('@') && s.title.toLowerCase() !== s.ref) head.append(make('span', s.ref, 'muted'));
     head.append(make('span', PROFILE[s.profile] || '', 'abo-badge'));
     body.append(head);
     body.append(make('p', (s.why || []).join(' · '), 'abo-rules'));
