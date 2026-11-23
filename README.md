@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.109
+# MediathekAtlas · 0.6.110
+
+## Neu in 0.6.110: Kanal-Vorschläge mit Namen und Kanalbild
+- Vorschläge unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ zeigen jetzt Namen und Kanalbild. Für die Kinderecke stehen deutschsprachige Kanäle mit erkennbarem Kinderbezug vorn; englischsprachige und solche ohne Kinderbezug rutschen nach hinten.
+- Die Suche liefert schon beim ersten Mal Vorschläge, auch wenn noch nichts zu Ende geschaut wurde.
 
 ## Neu in 0.6.109: Kinderecke zeigt nur, was selbst für Kinder ist
 - Reihen, in denen nur einzelne Folgen von KiKA, TOGGO oder ZDFtivi stammen (z. B. „WUMMS“, „Young Crime“), zeigen nur noch diese Folgen. Sportschau, Nachrichten und Livestreams erscheinen nicht mehr unter Filme und Serien.

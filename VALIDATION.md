@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.110 – Kanal-Vorschläge nachgebessert (23. November 2026)
+- Automatisch: tests/test_v0690_kanal_vorschlaege.py (20), gesamte Suite, Klicktests youtube_discover.cjs, abo_settings.cjs, click_all.cjs. Echte YouTube-Abfragen und Prüflauf: Mac-Prüfung (PRUEFLISTE in releases/0.6.110).
+
 ## 0.6.109 – Kinderecke Senderweg (23. November 2026)
 - Automatisch: tests/test_v06109_kinder_senderweg.py (8, auf 0.6.108 rot), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.109, Wortsuche + Folgen ohne Kindersender).
 
