@@ -184,8 +184,8 @@ def activate(c, work, now, films=True, kids=False):
             title = str(json.loads(work['meta'] or '{}').get('title') or '')[:200]
         except ValueError:
             title = ''
-        c.execute('''INSERT INTO series_autoload(show_key,title,state,created,updated,trigger_work,last_watched,next_check,kind)
-                     VALUES(?,?,'active',?,?,?,?,0,'movie')''', (show, title, now, now, work['id'], now))
+        c.execute('''INSERT INTO series_autoload(show_key,title,state,created,updated,trigger_work,last_watched,next_check,kind,kids)
+                     VALUES(?,?,'active',?,?,?,?,0,'movie',?)''', (show, title, now, now, work['id'], now, int(kids)))
         return 'new'
     if work is None or work['kind'] != 'series' or not work['show_key']:
         return None
@@ -329,12 +329,8 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
         return [], {}, str(exc)
     tried = {r[0] for r in c.execute('SELECT work_id FROM series_autoload_items WHERE show_key=?', (show,))}
     twins = _twins(c, show)
-    kids_block = None
-    if show_row['kids']:
-        kids_block = _kids_blocked(c, show)
-        if kids_block is True:
-            return [], {}, ('Aus der Kinderecke angestoßen, aber keine Kinderreihe nach den Regeln der Kinderecke: '
-                            'es wird nichts nachgeladen')
+    kids = bool(show_row['kids'])
+    kids_skipped = 0
     after, before = [], []
     last = (show_row['last_season'], show_row['last_episode'])
     for item in result['eligible']:
@@ -346,8 +342,12 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
             group = [work_id, *group]
         if not work_id or tried & set(group) or any(_seen(done, w, _offers(c, w)) for w in group):
             continue
-        if kids_block is not None and not _kids_ok(c, group, kids_block):
-            continue
+        if kids:
+            # 0.6.109: dieselbe Entscheidung wie Liste, Folgenliste und /api/kids-play (kids_catalog.work_allowed)
+            group = _kids_allowed(c, group)
+            if not group:
+                kids_skipped += 1
+                continue
         item = {**item, '_group': group}
         m = item['metadata']
         pos = (m.get('season'), m.get('episode'))
@@ -374,6 +374,9 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
         job_id = secrets.token_hex(8)
         source, version = _with_offer(c, item['_group'], item, now)
         group = item['_group']
+        if kids and not _kids_offer_ok(c, source.get('_id')):
+            kids_skipped += 1
+            continue
         j = {**{k: v for k, v in item.items() if k != '_group'}, 'source': source, 'id': job_id, 'state': 'queued',
              'received': 0, 'total': 0, 'autoload_show': show,
              'autoload_title': show_row['title'] or item['metadata'].get('title') or '', 'autoload_at': now}
@@ -391,6 +394,9 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
             gap = ('Nach S%02dE%02d geht es mit S%02dE%02d weiter: die Folgen dazwischen sind beim Sender nicht als Datei '
                    'verfügbar oder ihre Folgennummer ist noch unbestätigt' % (last[0], last[1] or 0, nxt[0], nxt[1]))
             note = gap + (' · ' + note if note else '')
+    if kids and kids_skipped and not jobs and not (after or before):
+        note = ('Aus der Kinderecke angestoßen: %d Folgen sind nach den Regeln der Kinderecke nicht zulässig und werden '
+                'nicht geladen' % kids_skipped)
     if not note and not jobs and not (after or before):
         note = ('Keine weiteren Folgen mit bestätigter Folgennummer verfügbar' if not unconfirmed else
                 '%d Folgen warten noch auf die Folgenerkennung (Staffel/Folge unbestätigt)' % unconfirmed)
@@ -537,31 +543,22 @@ def _twins(c, show):
     return out
 
 
-def _kids_blocked(c, show):
-    """Aus der Kinderecke angestoßen: True, wenn die Reihe keine Kinderreihe ist, sonst die gesperrten Werke
-    (gleiche Regel wie die Folgenliste der Kinderecke, kids_catalog)."""
+def _kids_allowed(c, group):
+    """Aus der Kinderecke angestoßen: nur Werke der Folge, die kids_catalog.work_allowed zulässt (im Zweifel keines)."""
     import kids_catalog
     try:
-        if not kids_catalog.show_is_kids(c, show, kids_catalog._show_title(c, show)):
-            return True
-        return set(kids_catalog.excluded_works(c, show))
+        return [w for w in group if kids_catalog.work_allowed(c, w)]
     except Exception:
-        return True                       # im Zweifel aus der Kinderecke nichts laden
+        return []
 
 
-def _kids_ok(c, group, blocked):
-    """Folge selbst für die Kinderecke zulässig: kein gesperrtes Werk, Folgentitel ohne heikle Wörter
-    (außer vom Kindersender)."""
+def _kids_offer_ok(c, offer_id):
+    """Die gewählte Fassung selbst muss in der Kinderecke zulässig sein (Sender und Titel des Angebots)."""
     import kids_catalog
-    if set(group) & blocked:
+    try:
+        return bool(offer_id) and kids_catalog.offer_allowed(c, offer_id)
+    except Exception:
         return False
-    chans = kids_catalog._kids_channels()
-    for w in group:
-        for title, channel in c.execute("SELECT json_extract(payload,'$.title'),json_extract(payload,'$.channel') FROM offers "
-                                        "WHERE work_id=? AND active=1 LIMIT 10", (w,)):
-            if kids_catalog.word_blocked(title) and str(channel or '').strip().lower() not in chans:
-                return False
-    return True
 
 
 def film_plan(c, root, download_dir, row, done):
@@ -601,6 +598,8 @@ def film_plan(c, root, download_dir, row, done):
     if room:
         return [], room.replace('Serien-Downloads', 'Film-Downloads')
     source, version = _with_offer(c, w['id'], item, time.time())
+    if row['kids'] and not _kids_offer_ok(c, source.get('_id')):
+        return [], 'Aus der Kinderecke angestoßen, aber nach den Regeln der Kinderecke nicht zulässig'
     j = {'id': secrets.token_hex(8), 'source': source, 'autoload_version': version,
          'metadata': meta, 'root': str(download_dir), 'quality': 'best', 'target': target, 'state': 'queued',
          'received': 0, 'total': 0, 'autoload_show': row['show_key'], 'autoload_title': row['title'] or meta.get('title') or '',

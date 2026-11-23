@@ -29,6 +29,8 @@ class SerienNachladen(unittest.TestCase):
         catalog.initialize(self.c)
         self.c.execute('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT)')
         series_autoload.initialize(self.c)
+        import kids_rules
+        kids_rules.ensure(self.c)
         self.c.commit()
         self.settings = {'download_dir': str(self.downloads)}
         self.now = time.time()
@@ -156,7 +158,7 @@ class SerienNachladen(unittest.TestCase):
         self.watch('offer:' + offer)                                    # Kinderecke
         self.run_once()
         self.assertEqual(self.jobs(), [])
-        self.assertIn('keine Kinderreihe', self.c.execute('SELECT note FROM series_autoload').fetchone()[0])
+        self.assertIn('nach den Regeln der Kinderecke nicht zulässig', self.c.execute('SELECT note FROM series_autoload').fetchone()[0])
         kika = [self.episode(n, show='Löwenzahn', channel='KiKA') for n in range(1, 4)]
         offer = self.c.execute('SELECT id FROM offers WHERE work_id=?', (kika[0],)).fetchone()[0]
         self.watch('offer:' + offer, at=self.now + 5)
@@ -191,7 +193,7 @@ class SerienNachladen(unittest.TestCase):
         self.assertIn('Grenze erreicht', note)
         # zwei automatisch geladene Folgen in der Kinderecke zu Ende gesehen (Schlüssel job:<id>)
         self.watch('job:' + jobs[0]['id'], at=self.now + 10)
-        self.watch('offer:' + jobs[1]['source']['_id'], at=self.now + 11)
+        self.watch(self.c.execute('SELECT work_id FROM offers WHERE id=?', (jobs[1]['source']['_id'],)).fetchone()[0], at=self.now + 11)
         self.run_once(offset=20, settings={'series_autoload_max': 5})
         self.assertEqual(len(self.jobs()), 7)
 
@@ -228,8 +230,8 @@ class SerienNachladen(unittest.TestCase):
         self.assertEqual(self.run_once(offset=series_autoload.CHECK_EVERY * 3)['queued'], 0)
         self.assertEqual(self.c.execute('SELECT state FROM series_autoload').fetchone()[0], 'stopped')
 
-    def film(self, title='Das tapfere Schneiderlein', state='matched'):
-        catalog.ingest(self.c, [{'title': title, 'topic': 'Sechs auf einen Streich', 'channel': 'ARD', 'description': 'Märchenfilm',
+    def film(self, title='Das tapfere Schneiderlein', state='matched', topic='Sechs auf einen Streich'):
+        catalog.ingest(self.c, [{'title': title, 'topic': topic, 'channel': 'ARD', 'description': 'Märchenfilm',
                                  'duration': 3600, 'url_video': 'https://example.org/' + title.replace(' ', '_') + '.mp4'}])
         w = self.c.execute("SELECT w.* FROM works w JOIN offers o ON o.work_id=w.id WHERE json_extract(o.payload,'$.title')=?",
                            (title,)).fetchone()
@@ -242,7 +244,7 @@ class SerienNachladen(unittest.TestCase):
     def test_zu_ende_gesehener_film_wird_dauerhaft_offline_gespeichert(self):
         film = self.film()
         self.film('Frau Holle')                                    # gleiche Sendereihe: wird nicht mitgeladen
-        self.watch('offer:' + self.c.execute('SELECT id FROM offers WHERE work_id=?', (film,)).fetchone()[0])  # Kinderecke
+        self.watch(film)                                            # großer Player (Kinderecke: eigener Test)
         self.run_once()
         jobs = self.jobs()
         self.assertEqual([(j['metadata']['title'], j['autoload_kind']) for j in jobs], [('Das tapfere Schneiderlein', 'movie')])
@@ -251,6 +253,17 @@ class SerienNachladen(unittest.TestCase):
         self.watch(film, at=self.now + 50)                          # nochmal gesehen: kein zweiter Auftrag
         self.run_once(offset=60)
         self.assertEqual(len(self.jobs()), 1)
+
+    def test_0_6_109_film_aus_der_kinderecke_nur_wenn_zulaessig(self):
+        film = self.film('Der Bankraub', topic='FilmMittwoch im Ersten')   # ARD-Film ohne Kinder-Regel
+        maerchen = self.film()                                     # Märchenreihe: in der Kinderecke zulässig
+        self.watch('offer:' + self.c.execute('SELECT id FROM offers WHERE work_id=?', (film,)).fetchone()[0])
+        self.run_once()
+        self.assertEqual(self.jobs(), [])
+        self.assertIn('nicht zulässig', self.c.execute("SELECT note FROM series_autoload WHERE kind='movie'").fetchone()[0])
+        self.watch('offer:' + self.c.execute('SELECT id FROM offers WHERE work_id=?', (maerchen,)).fetchone()[0], at=self.now + 5)
+        self.run_once(offset=10)
+        self.assertEqual([j['metadata']['title'] for j in self.jobs()], ['Das tapfere Schneiderlein'])
 
     def test_anbieterkopien_und_ausgeschaltet_loesen_nichts_aus(self):
         film = self.film()
