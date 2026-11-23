@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.113
+# MediathekAtlas · 0.6.114
+
+## Neu in 0.6.114: Nachbesserungen an Erkennung, Kanal-Vorschlägen und Kinderecke
+- Sendungen, die IMDb ohne Einzelfolgen kennt, werden jetzt wirklich als Beiträge abgelegt (in 0.6.113 blieb das aus).
+- Interviews und Ausschnitte zu einem erkannten Film oder einer Serie erscheinen als Extra dazu, nicht als eigene Sendung.
+- Kanal-Vorschläge suchen zuerst für das Kinderprofil und sind schneller.
+- Die Kinderecke lässt Erwachsenen-Fernsehfilme draußen, blendet leere Plattform-Reihen aus und lädt wieder schnell.
 
 ## Neu in 0.6.113: Erkennung räumt auf, YouTube-Vorschläge mit API-Schlüssel, Kinderecke spielt das KiKA-Angebot
 - Trailer, Vorschauen, Podcasts und Pressekonferenzen bleiben nicht mehr dauerhaft „offen“: Trailer gehören als Extra zu ihrer Reihe, die übrigen Clips werden als Clip abgelegt, nie als Folge einer echten Serie.

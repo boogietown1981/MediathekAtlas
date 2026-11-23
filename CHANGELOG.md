@@ -1,4 +1,16 @@
-## Vorbereitung 0.6.114 – Kinderecke: Altersweg ohne Erwachsenen-Fernsehfilme, leere Plattform-Reihen, Liste wieder schnell; auf 0.6.113
+## 0.6.114 – Sammelstand: Erkennung (B2 im Format-Thread, Leerlauf ehrlich, Extras), YouTube-Vorschläge Kinderprofil, Kinderecke; auf 0.6.113
+
+### Erkennung (Mac-Prüfung 0.6.113: E3 und E5 nicht erfüllt, E2 9 Fälle)
+- E3: im Format-/Sweep-Thread hatte das IMDb-Archiv keinen Leser; `_lookup` warf AttributeError ('queries'), `sendung_has_episodes` las das als „Archiv nicht bereit“ – die B2-Ablage (und B2 im unknown_sweep) lief dort nie. `_lookup`/`series_has_episodes` öffnen den Leser je Thread; Fehler als `sendung_has_episodes_failed` (höchstens alle 10 min). Offene Ablage meldet `catalog_sendung_refile_waiting` (Grund) und wird nach `REFILE_RETRY` 120 s wiederholt statt nach einer Stunde.
+- Start: „database is locked“ in `assign_formats` verschiebt nur den Stapel statt den Worker neu zu starten.
+- E5: `lease_work` meldet `LEASE_BUSY`, wenn Arbeit da ist, aber nicht beansprucht werden kann – kein „waiting“. `recognition_idle` zählt und wählt im selben Lesestand und kommt nur ohne Auswahl (Feld `lease_busy`).
+- E2: `catalog.programme_extra` – ein Clip zum Thema eines erkannten Films oder einer TMDB/TVDB/IMDb-Serie wird „Extra zu …“ statt neue Sendung gleichen Namens („Extra: Interview mit Lucia Chiarla“ → nicht Sendung „Es geht um Luis“); Nachrichten-/Magazinclips weiter unter ihrer Sendung.
+- Tests: `tests/test_v06114.py` (10; echtes Archiv im frischen Thread, auf 0.6.113 rot).
+
+### YouTube-Kanalvorschläge (Mac-Prüfung 0.6.113: Kinderprofil ohne Suche, 647 s)
+- Kinderprofil zuerst (Schlagwörter, Suche, Auflösen), eigene Plätze je Profil, alte API-Speicherstände ohne Schlagwörter neu lesen, mit Schlüssel kein yt-dlp-Nachholen, Zeiten und Wege in der Diagnose (a902bad6).
+
+### Kinderecke: Altersweg ohne Erwachsenen-Fernsehfilme, leere Plattform-Reihen, Liste wieder schnell
 - Grundlage: Mac-Prüfung Kinderecke 0.6.113 (23.11.2026, frische Kopie): inhaltlich bestanden; offen K3 („The Beverly Hillbillies“, JustWatch, öffnete leer), Neuberechnung der Liste 27–32 s statt ≈ 7 s (Start: kids_slow_parts shelf 25,1 s), Altersweg ließ Fernsehfilme für Erwachsene herein („Amore mio – Niemand ist wie Du“, „Trauung mit Hindernissen“, „Familie mit Hindernissen“, „Oma wider Willen“, „Wintertochter“, „Wer hat eigentlich die Liebe erfunden?“).
 - Altersweg (Familie + belegte FSK, Mediatheken): ist der Film zugleich Drama (`categories.AGE_PATH_ADULT`) oder Fernsehfilm (Rohgenre TV-Film/TV Movie/Fernsehfilm), braucht er ein eigenes Kindersignal – Animation, Märchen (Titel, Rohgenre oder Thema) oder bekannte Kinderreihe; sonst Warteliste („FSK n, aber kein eindeutiger Kinderfilm (Familien-, Drama- oder Fernsehfilm)“). Kindersender, Referenz-Genre Kinder und Elternfreigabe unverändert; Plattformen (Netzkino, Pluto …) unverändert.
 - Leere Plattform-Reihen: öffnet eine Plattform-Serie ohne abspielbare Folge, merkt die Kinderecke sie (`kids_empty_series`, 7 Tage) und lässt sie aus der nächsten Liste; bei Ladefehlern wird nichts gemerkt. JustWatch-Serien, deren Folgen schon geladen und alle nicht abspielbar sind, fehlen sofort (`justwatch.series_without_playable`, nur lokal).
