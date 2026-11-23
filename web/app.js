@@ -684,7 +684,7 @@ function jobRow(j,server,shared){
  const title=el('td',undefined,'q-title'),open=openJobDetails.has(j.id),toggle=el('button',(open?'▾ ':'▸ ')+jobTitle(j),'q-toggle');toggle.type='button';toggle.title=jobTitle(j)+' · Details ein-/ausblenden';
  toggle.setAttribute('aria-expanded',String(open));toggle.onclick=()=>{open?openJobDetails.delete(j.id):openJobDetails.add(j.id);if(queueLast)renderQueue(...queueLast);};
  const episode=m.kind==='series'&&Number.isInteger(m.season)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0')+(m.episode_title?' · '+m.episode_title:''):'';
- title.append(toggle,el('small',[episode,(m.genres||[]).filter(g=>g!=='YouTube-Abo').slice(0,2).join(' · '),m.provider].filter(Boolean).join(' · '),'muted'));
+ title.append(toggle,el('small',[episode,(m.genres||[]).filter(g=>g!=='YouTube-Abo').slice(0,2).join(' · '),m.provider].filter(Boolean).join(' · '),'muted'));if(j.autoload_version)title.append(el('small',' · '+j.autoload_version,'muted q-version'));
  const size=el('td',jobSize(j),'q-size num');
  tr.append(thumb,title,jobStatus(j,shared),size,jobActions(j,server));
  return open?[tr,jobDetails(j,server)]:[tr];}

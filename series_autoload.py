@@ -61,6 +61,9 @@ CREATE INDEX IF NOT EXISTS series_autoload_items_job ON series_autoload_items(jo
 
 def initialize(c):
     c.executescript(SCHEMA)
+    cols = {r[1] for r in c.execute('PRAGMA table_info(series_autoload)')}
+    if 'kids' not in cols:          # 0.6.10x: angestoßen aus der Kinderecke
+        c.execute('ALTER TABLE series_autoload ADD COLUMN kids INTEGER NOT NULL DEFAULT 0')
 
 
 def config(s):
@@ -170,7 +173,7 @@ def watch_state_sources():
     return set(watch_state.REF_KEYS) - {'offer', 'job'}
 
 
-def activate(c, work, now, films=True):
+def activate(c, work, now, films=True, kids=False):
     """Serie eines zu Ende gesehenen Werks einschalten (beendete Serien bleiben aus); ein Film wird einmal
     vorgemerkt (Schlüssel ``film:<Werk>``)."""
     if work is not None and work['kind'] == 'movie' and films:
@@ -196,13 +199,15 @@ def activate(c, work, now, films=True):
     row = c.execute('SELECT state,last_season,last_episode FROM series_autoload WHERE show_key=?', (show,)).fetchone()
     if row is None:
         c.execute('''INSERT INTO series_autoload(show_key,title,state,created,updated,trigger_work,last_season,last_episode,
-                     last_watched,next_check) VALUES(?,?,?,?,?,?,?,?,?,0)''',
-                  (show, str(meta.get('title') or '')[:200], 'active', now, now, work['id'], season, episode, now))
+                     last_watched,next_check,kids) VALUES(?,?,?,?,?,?,?,?,?,0,?)''',
+                  (show, str(meta.get('title') or '')[:200], 'active', now, now, work['id'], season, episode, now, int(kids)))
         return 'new'
     if row['state'] == 'stopped':
         return None
     later = season is not None and episode is not None and (
         row['last_season'] is None or (season, episode) > (row['last_season'], row['last_episode'] or 0))
+    if kids:
+        c.execute('UPDATE series_autoload SET kids=1 WHERE show_key=?', (show,))
     c.execute('''UPDATE series_autoload SET updated=?,last_watched=?,next_check=0,
                  last_season=CASE WHEN ? THEN ? ELSE last_season END,
                  last_episode=CASE WHEN ? THEN ? ELSE last_episode END WHERE show_key=?''',
@@ -220,7 +225,8 @@ def collect(root, c, now, films=True):
     entries = watch_state.finished_since(root, cursor)
     started = 0
     for e in entries:
-        if activate(c, resolve(c, e['key'], e['ref']), now, films) == 'new':
+        # Die Kinderecke meldet ARD/ZDF-Folgen und -Filme als offer:<id>, der große Player als Werk-ID
+        if activate(c, resolve(c, e['key'], e['ref']), now, films, kids=e['key'].startswith('offer:')) == 'new':
             started += 1
         cursor = max(cursor, e['watched_at'])
     if entries or catalog.get_state(c, 'series_autoload_cursor', None) is None:
@@ -249,14 +255,21 @@ def _offers(c, work_id):
 
 
 def held(c, show, done):
-    """Automatisch geladene, noch nicht gesehene Folgen einer Serie: (Anzahl, geschätzte Byte, laufend, fertig)."""
-    count = size = running = finished = 0
+    """Automatisch geladene, noch nicht gesehene Folgen einer Serie: (Anzahl, geschätzte Byte, laufend, fertig).
+    Ein Auftrag kann mehrere Werke derselben Folge decken (deutsche Fassung und OmU als eigene Werke)."""
+    jobs = {}
     for item in c.execute('''SELECT i.work_id,i.job_id,i.estimate,j.state,j.payload FROM series_autoload_items i
                              JOIN jobs j ON j.id=i.job_id WHERE i.show_key=?''', (show,)).fetchall():
         if item['state'] not in (*ACTIVE_STATES, 'done'):
             continue
-        if _seen(done, item['work_id'], _offers(c, item['work_id']), item['job_id']):
+        entry = jobs.setdefault(item['job_id'], {'row': item, 'works': [], 'estimate': 0})
+        entry['works'].append(item['work_id'])
+        entry['estimate'] = max(entry['estimate'], item['estimate'])
+    count = size = running = finished = 0
+    for job_id, entry in jobs.items():
+        if any(_seen(done, w, _offers(c, w), job_id) for w in entry['works']):
             continue
+        item = entry['row']
         count += 1
         real = 0
         if item['state'] == 'done':
@@ -268,7 +281,7 @@ def held(c, show, done):
                 real = 0
         else:
             running += 1
-        size += real or item['estimate']
+        size += real or entry['estimate']
     return count, size, running, finished
 
 
@@ -311,17 +324,31 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
     import series_download
     show = show_row['show_key']
     try:
-        result = series_download.plan(c, show, download_dir)
+        result = series_download.plan(c, show, download_dir, around=(show_row['last_season'], show_row['last_episode']))
     except ValueError as exc:
         return [], {}, str(exc)
     tried = {r[0] for r in c.execute('SELECT work_id FROM series_autoload_items WHERE show_key=?', (show,))}
+    twins = _twins(c, show)
+    kids_block = None
+    if show_row['kids']:
+        kids_block = _kids_blocked(c, show)
+        if kids_block is True:
+            return [], {}, ('Aus der Kinderecke angestoßen, aber keine Kinderreihe nach den Regeln der Kinderecke: '
+                            'es wird nichts nachgeladen')
     after, before = [], []
     last = (show_row['last_season'], show_row['last_episode'])
     for item in result['eligible']:
         found = c.execute('SELECT work_id FROM offers WHERE id=?', (item['id'],)).fetchone()
         work_id = found[0] if found else ''
-        if not work_id or work_id in tried or _seen(done, work_id, _offers(c, work_id)):
+        m = item['metadata']
+        group = twins.get((m.get('season'), m.get('episode'))) or [work_id]
+        if work_id not in group:
+            group = [work_id, *group]
+        if not work_id or tried & set(group) or any(_seen(done, w, _offers(c, w)) for w in group):
             continue
+        if kids_block is not None and not _kids_ok(c, group, kids_block):
+            continue
+        item = {**item, '_group': group}
         m = item['metadata']
         pos = (m.get('season'), m.get('episode'))
         (after if last[0] is None or pos > (last[0], last[1] or 0) else before).append((work_id, item))
@@ -345,11 +372,14 @@ def topup(c, root, download_dir, show_row, cfg, done, now):
             note = room
             break
         job_id = secrets.token_hex(8)
-        source = _with_offer(c, work_id, item, now)
-        j = {**item, 'source': source, 'id': job_id, 'state': 'queued', 'received': 0, 'total': 0,
-             'autoload_show': show, 'autoload_title': show_row['title'] or item['metadata'].get('title') or '',
-             'autoload_at': now}
-        jobs.append((work_id, j, size_guess))
+        source, version = _with_offer(c, item['_group'], item, now)
+        group = item['_group']
+        j = {**{k: v for k, v in item.items() if k != '_group'}, 'source': source, 'id': job_id, 'state': 'queued',
+             'received': 0, 'total': 0, 'autoload_show': show,
+             'autoload_title': show_row['title'] or item['metadata'].get('title') or '', 'autoload_at': now}
+        if version:
+            j['autoload_version'] = version
+        jobs.append((work_id, j, size_guess, group))
         count += 1
         size += size_guess
         pending += size_guess
@@ -377,11 +407,15 @@ def _store(c, show, jobs, counts, note, now):
         row = c.execute('SELECT state FROM series_autoload WHERE show_key=?', (show,)).fetchone()
         if not row or row[0] != 'active':
             jobs = []                      # inzwischen beendet oder entfernt
-        for work_id, j, size_guess in jobs:
+        for work_id, j, size_guess, *rest in jobs:
             if c.execute('INSERT OR IGNORE INTO series_autoload_items VALUES(?,?,?,?,?)',
                          (show, work_id, j['id'], now, size_guess)).rowcount:
                 c.execute('INSERT INTO jobs(id,payload,state) VALUES(?,?,?)', (j['id'], json.dumps(j), 'queued'))
                 queued += 1
+                # dieselbe Folge als weiteres Werk (z. B. OmU-Fassung): nie zusätzlich laden, Schätzung zählt einmal
+                for twin in (rest[0] if rest else []):
+                    if twin != work_id:
+                        c.execute('INSERT OR IGNORE INTO series_autoload_items VALUES(?,?,?,?,0)', (show, twin, j['id'], now))
         if show.startswith('film:') and (queued or note.startswith(('Liegt schon', 'Kein direkter', 'Beim Sender', 'Film nicht'))):
             c.execute("UPDATE series_autoload SET state='done' WHERE show_key=?", (show,))
         c.execute('UPDATE series_autoload SET next_check=?,queued_total=queued_total+?,note=?,updated=?,'
@@ -440,14 +474,32 @@ def _version_penalty(row):
     return penalty
 
 
+def version_label(row):
+    """Sichtbarer Hinweis, wenn nur eine Sonderfassung ladbar ist (sonst '')."""
+    import languages
+    info = languages.from_title(row.get('title'), row.get('topic'))
+    channel = str(row.get('channel') or '').upper()
+    if info.get('original') or [a for a in info.get('audio') or [] if a != 'de'] or (channel.startswith('ARTE.') and channel != 'ARTE.DE'):
+        return 'Nur als Originalfassung mit Untertiteln ladbar' if 'de' in (info.get('subtitles') or []) or info.get('original') \
+            else 'Nur in einer anderen Sprache ladbar'
+    if info.get('accessibility'):
+        return 'Nur als Fassung mit Hörbeschreibung oder Gebärdensprache ladbar'
+    return ''
+
+
 def preferred_offer(c, work_id, now=None):
-    """Beste ladbare Fassung eines Werks für das automatische Laden: (Angebots-ID, Quelle, Adresse) oder None."""
+    """Beste ladbare Fassung eines Werks (oder mehrerer Werke derselben Folge) für das automatische Laden:
+    (Angebots-ID, Quelle, Adresse) oder None."""
     import catalog
     import subscriptions
     now = time.time() if now is None else now
     best = None
-    for o in c.execute('SELECT id,payload,rank FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC,seen DESC LIMIT 40',
-                       (work_id,)).fetchall():
+    works = [work_id] if isinstance(work_id, str) else list(work_id)
+    rows = []
+    for w in works[:10]:
+        rows += c.execute('SELECT id,payload,rank FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC,seen DESC LIMIT 40',
+                          (w,)).fetchall()
+    for o in rows:
         try:
             row = json.loads(o['payload'])
         except ValueError:
@@ -465,12 +517,51 @@ def preferred_offer(c, work_id, now=None):
 
 
 def _with_offer(c, work_id, item, now):
-    """Quelle des Auftrags auf die bevorzugte Fassung umstellen (sonst die vom Katalog gewählte)."""
+    """Quelle des Auftrags auf die bevorzugte Fassung umstellen (sonst die vom Katalog gewählte).
+    Ergebnis: (Quelle, Hinweis zur Fassung oder '')."""
     found = preferred_offer(c, work_id, now)
     if not found:
-        return {**item['source'], '_id': item['id'], '_download_url': (item.get('best') or {}).get('url') or item['source'].get('_download_url')}
+        src = {**item['source'], '_id': item['id'], '_download_url': (item.get('best') or {}).get('url') or item['source'].get('_download_url')}
+        return src, version_label(src)
     offer_id, row, url = found
-    return {**row, '_id': offer_id, '_download_url': url}
+    return {**row, '_id': offer_id, '_download_url': url}, version_label(row)
+
+
+def _twins(c, show):
+    """(Staffel, Folge) -> alle Werke der Reihe mit dieser Folge (deutsche Fassung und OmU können eigene Werke sein)."""
+    out = {}
+    for wid, season, episode in c.execute("SELECT id,json_extract(meta,'$.season'),json_extract(meta,'$.episode') FROM works "
+                                          "WHERE show_key=? AND kind='series'", (show,)):
+        if isinstance(season, int) and isinstance(episode, int):
+            out.setdefault((season, episode), []).append(wid)
+    return out
+
+
+def _kids_blocked(c, show):
+    """Aus der Kinderecke angestoßen: True, wenn die Reihe keine Kinderreihe ist, sonst die gesperrten Werke
+    (gleiche Regel wie die Folgenliste der Kinderecke, kids_catalog)."""
+    import kids_catalog
+    try:
+        if not kids_catalog.show_is_kids(c, show, kids_catalog._show_title(c, show)):
+            return True
+        return set(kids_catalog.excluded_works(c, show))
+    except Exception:
+        return True                       # im Zweifel aus der Kinderecke nichts laden
+
+
+def _kids_ok(c, group, blocked):
+    """Folge selbst für die Kinderecke zulässig: kein gesperrtes Werk, Folgentitel ohne heikle Wörter
+    (außer vom Kindersender)."""
+    import kids_catalog
+    if set(group) & blocked:
+        return False
+    chans = kids_catalog._kids_channels()
+    for w in group:
+        for title, channel in c.execute("SELECT json_extract(payload,'$.title'),json_extract(payload,'$.channel') FROM offers "
+                                        "WHERE work_id=? AND active=1 LIMIT 10", (w,)):
+            if kids_catalog.word_blocked(title) and str(channel or '').strip().lower() not in chans:
+                return False
+    return True
 
 
 def film_plan(c, root, download_dir, row, done):
@@ -509,7 +600,8 @@ def film_plan(c, root, download_dir, row, done):
     room = _space_note(c, root, download_dir, pending_bytes(c) + size_guess)
     if room:
         return [], room.replace('Serien-Downloads', 'Film-Downloads')
-    j = {'id': secrets.token_hex(8), 'source': _with_offer(c, w['id'], item, time.time()),
+    source, version = _with_offer(c, w['id'], item, time.time())
+    j = {'id': secrets.token_hex(8), 'source': source, 'autoload_version': version,
          'metadata': meta, 'root': str(download_dir), 'quality': 'best', 'target': target, 'state': 'queued',
          'received': 0, 'total': 0, 'autoload_show': row['show_key'], 'autoload_title': row['title'] or meta.get('title') or '',
          'autoload_kind': 'movie', 'autoload_at': time.time()}
@@ -545,12 +637,15 @@ def status(root, c, settings):
     rows = []
     for r in c.execute('SELECT * FROM series_autoload ORDER BY state, last_watched DESC LIMIT 100').fetchall():
         count, size, running, finished = held(c, r['show_key'], done)
-        states = dict(c.execute('''SELECT j.state,COUNT(*) FROM series_autoload_items i JOIN jobs j ON j.id=i.job_id
+        states = dict(c.execute('''SELECT j.state,COUNT(DISTINCT j.id) FROM series_autoload_items i JOIN jobs j ON j.id=i.job_id
                                    WHERE i.show_key=? GROUP BY j.state''', (r['show_key'],)).fetchall())
+        versions = c.execute('''SELECT COUNT(DISTINCT j.id) FROM series_autoload_items i JOIN jobs j ON j.id=i.job_id
+                                WHERE i.show_key=? AND j.state<>'cancelled' AND json_extract(j.payload,'$.autoload_version')<>'' ''',
+                             (r['show_key'],)).fetchone()[0]
         rows.append({'show': r['show_key'], 'title': r['title'] or 'Serie', 'state': r['state'], 'note': r['note'], 'kind': r['kind'],
                      'ready': finished, 'waiting': running, 'unseen': count, 'bytes': size,
                      'loaded': states.get('done', 0), 'failed': states.get('error', 0) + states.get('cancelled', 0),
-                     'more': r['eligible'], 'unconfirmed': r['unconfirmed'], 'last_watched': r['last_watched'],
+                     'versions': versions, 'more': r['eligible'], 'unconfirmed': r['unconfirmed'], 'last_watched': r['last_watched'],
                      'last': ('S%02dE%02d' % (r['last_season'], r['last_episode'] or 0)) if r['last_season'] is not None else ''})
     return {'settings': cfg, 'series': rows}
 
@@ -562,7 +657,7 @@ def summary(root, c, settings):
     out = {'enabled': cfg['enabled'], 'max': cfg['max'], 'gb': cfg['gb']}
     for state, n in c.execute('SELECT state,COUNT(*) FROM series_autoload GROUP BY state'):
         out['series_' + state] = n
-    out['jobs'] = dict(c.execute('''SELECT j.state,COUNT(*) FROM series_autoload_items i JOIN jobs j ON j.id=i.job_id
+    out['jobs'] = dict(c.execute('''SELECT j.state,COUNT(DISTINCT j.id) FROM series_autoload_items i JOIN jobs j ON j.id=i.job_id
                                     GROUP BY j.state''').fetchall())
     out['pending_gb'] = round(pending_bytes(c) / GB, 1)
     import catalog

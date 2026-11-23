@@ -2,10 +2,24 @@
 import json,hashlib,secrets,time
 import core,catalog
 
-def plan(c,show,root):
+MAX_ROWS=1000;WINDOW_AFTER=300;WINDOW_BEFORE=100
+
+def plan(c,show,root,around=None):
+    """``around`` (Staffel, Folge): automatisches Nachladen (series_autoload) bei sehr langen Serien. Statt der
+    1.000er-Sperre nur ein Ausschnitt: bis WINDOW_AFTER Folgen danach und WINDOW_BEFORE davor (Mac-Prüfung 23.11.2026:
+    „Sturm der Liebe“, „In aller Freundschaft“ bekamen sonst nie einen Auftrag)."""
     if not show:raise ValueError('Serie fehlt')
     rows=c.execute("SELECT * FROM works WHERE show_key=? AND kind='series'",(show,)).fetchall()
-    if len(rows)>1000:raise ValueError('Mehr als 1.000 Folgen: bitte einzelne Folgen auswählen')
+    if len(rows)>MAX_ROWS:
+        if around is None:raise ValueError('Mehr als 1.000 Folgen: bitte einzelne Folgen auswählen')
+        def pos(w):
+            try:m=json.loads(w['meta'])
+            except ValueError:return None
+            s,e=m.get('season'),m.get('episode')
+            return (s,e) if isinstance(s,int) and isinstance(e,int) else None
+        last=(around[0] if around[0] is not None else -1,around[1] or 0)
+        numbered=sorted(((pos(w),w) for w in rows if pos(w)),key=lambda x:x[0])
+        rows=[w for p,w in numbered if p>last][:WINDOW_AFTER]+[w for p,w in numbered if p<=last][-WINDOW_BEFORE:]
     existing=set()
     for j in c.execute("SELECT payload FROM jobs WHERE state IN ('queued','downloading','tagging','done')"):
         existing.add(json.loads(j[0]).get('target'))
