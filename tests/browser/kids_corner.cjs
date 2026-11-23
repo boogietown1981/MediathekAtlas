@@ -184,7 +184,38 @@ async function kidsCorner(browser, url, clip, problems) {
     return (await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json()).catalog;
   });
   check('Liste ohne Fehler', !marks.error);
+  await visibleBlock(page, url, check);
   await page.close();
+}
+
+// 0.6.113: sichtbaren Titel in der Elternansicht sperren und zurücknehmen
+async function visibleBlock(page, url, check) {
+  const kidsTitles = () => page.evaluate(async () => {
+    const token = document.querySelector('meta[name=atlas-token]').content;
+    const cat = (await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json()).catalog;
+    return [...cat.movies, ...cat.series].map(t => t.title);
+  });
+  const admin = await page.context().browser().newPage({ viewport: { width: 1280, height: 900 } });
+  await admin.goto(url);
+  await admin.waitForFunction(() => typeof window.atlasShowView === 'function');
+  await admin.evaluate(() => window.atlasShowView('settings'));
+  await admin.locator('#kids-parents-panel > summary').click();
+  await admin.waitForFunction(() => /Titel in der Kinderecke/.test(document.getElementById('kids-visible').textContent), null, { timeout: 20000 })
+    .catch(() => check('Sichtbare Titel werden gezählt', false));
+  await admin.locator('#kids-visible-filter').fill('Frau Holle');
+  const row = admin.locator('#kids-visible .kids-parents-row', { hasText: 'Frau Holle' });
+  await row.waitFor({ timeout: 10000 }).catch(() => check('„Frau Holle“ in der Suche', false));
+  if (SHOTS) await admin.screenshot({ path: path.join(SHOTS, '0.6.113-eltern-sperren.png'), fullPage: false });
+  await row.locator('button', { hasText: 'Sperren' }).click();
+  const choice = admin.locator('#kids-choices .kids-parents-row', { hasText: 'Frau Holle' });
+  await choice.waitFor({ timeout: 10000 }).catch(() => check('Sperre erscheint unter „Deine Entscheidungen“', false));
+  check('Sperre als „gesperrt“', (await choice.textContent()).includes('gesperrt'));
+  check('gesperrter Titel fehlt in der Kinderecke', !(await kidsTitles()).includes('Frau Holle'));
+  await choice.locator('button', { hasText: 'Zurücknehmen' }).click();
+  await admin.waitForFunction(() => ![...document.querySelectorAll('#kids-choices .kids-parents-row')].some(r => r.textContent.includes('Frau Holle')), null, { timeout: 10000 })
+    .catch(() => check('Zurücknehmen entfernt die Sperre', false));
+  check('nach Zurücknehmen wieder da', (await kidsTitles()).includes('Frau Holle'));
+  await admin.close();
 }
 
 // 0.6.91 (Björn: „kann nicht weiter nach rechts scrollen“): Pfeilknöpfe, „Alle …“-Kachel, ganze Liste

@@ -192,6 +192,7 @@ def build(root, db, modules=None, merge=True, page=None):
     out['series'] = _kids_shows(db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     out['movies'] = _prefer_kids_offers(db, out['movies'])
+    out['movies'], out['series'] = _parent_blocks(db, out['movies']), _parent_blocks(db, out['series'])
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
@@ -570,6 +571,29 @@ def _from_kids_channel(c, tile):
     return False
 
 
+def block_target(tile):
+    """0.6.113: was „Sperren“ in der Elternansicht für eine sichtbare Kachel sperrt – Mediatheken-Film: das Werk,
+    Mediatheken-Reihe: die ganze Reihe (wirkt auch auf Abspielen und Nachladen), Plattform: die Kachel."""
+    if tile.get('source') == 'mediatheken':
+        if (tile.get('series') or {}).get('show'):
+            return {'kind': 'show', 'id': tile['series']['show']}
+        if tile.get('work'):
+            return {'kind': 'work', 'id': tile['work']}
+    return {'kind': 'tile', 'id': tile.get('id')}
+
+
+def _parent_blocks(db, tiles):
+    """0.6.113: von den Eltern gesperrte Plattform-Kacheln heraus; jede Kachel trägt ihr Sperrziel (``block``)."""
+    for t in tiles:
+        t['block'] = block_target(t)
+    if db is None:
+        return tiles
+    import kids_rules
+    with db() as c:
+        blocked = kids_rules.blocked_tiles(c)
+    return [t for t in tiles if t.get('id') not in blocked] if blocked else tiles
+
+
 def _prefer_kids_offers(db, tiles):
     """0.6.113: Mediatheken-Filme mit KiKA-Zwilling zeigen und spielen das Kindersender-Angebot; jede Kachel nennt den
     Sender ihres Angebots (Prüfung). Ohne Datenbank unverändert."""
@@ -581,6 +605,7 @@ def _prefer_kids_offers(db, tiles):
             row = c.execute("SELECT work_id, json_extract(payload,'$.channel') FROM offers WHERE id=?", (t['ref']['offer'],)).fetchone()
             if not row:
                 continue
+            t['work'] = row[0]                                       # 0.6.113: Sperrziel der Elternansicht
             t['channel'] = str(row[1] or '')[:60]
             try:
                 import kids_rules
