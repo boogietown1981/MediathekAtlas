@@ -134,6 +134,14 @@ TEMPLATE_GENERIC={'sport','sports','masterclass','kultur','wissen','geschichte',
     'gesundheit','wirtschaft','religion','sendungen','videos','clips','highlights','extras','bonus','trailer','shorts',
     'wissenschaft','technik','digital','umwelt','klima','literatur','theater','oper','tanz','kunst','architektur','essen',
     'kochen','garten','reisen','dokumentarfilm','dokumentarfilme','kurzfilm','kurzfilme','spielfilme','fernsehfilme','europa'}
+import metadata as _metadata
+TEMPLATE_GENERIC|=_metadata.SPORT_WORDS   # 0.6.117: „Schwimmen“ (Air 23.11.2026, 1.144 Werke)
+
+def wikidata_only(m):
+    """0.6.117: a series identity only Wikidata knows (no IMDb ID). It may name the work itself, but it is never learned
+    as template or carried to every work of a topic – Wikidata also lists sports and subjects as „series“."""
+    return (m or {}).get('provider')=='Wikidata' and not str((m or {}).get('imdb_id') or '').startswith('tt')
+WIKIDATA_SPREAD_MIN=20
 
 def generic_identity_works(c,after='',limit=500):
     """0.6.86: identified works whose series identity is a subject word taken from their topic (template „Sport“).
@@ -144,13 +152,23 @@ def generic_identity_works(c,after='',limit=500):
           AND lower(w.topic)=lower(w.title) ORDER BY w.id LIMIT ?"""%marks,(after,*sorted(TEMPLATE_GENERIC),limit)).fetchall()
     return rows,(rows[-1]['id'] if rows else None)
 
+def wikidata_spread_works(c,after='',limit=500):
+    """0.6.117: identified works carrying a Wikidata-only identity named like their topic that was spread over at least
+    WIKIDATA_SPREAD_MIN works (the „Schwimmen“ pattern). Read only; (rows with payload, last id or None)."""
+    rows=c.execute("""SELECT w.*,(SELECT o.payload FROM offers o WHERE o.work_id=w.id AND o.active=1 ORDER BY o.rank DESC LIMIT 1) payload
+        FROM works w WHERE w.id>? AND w.state='identified' AND w.kind='series' AND json_extract(w.meta,'$.provider')='Wikidata'
+          AND COALESCE(json_extract(w.meta,'$.imdb_id'),'') NOT LIKE 'tt%' AND lower(w.topic)=lower(w.title)
+          AND (SELECT COUNT(*) FROM works x WHERE x.show_key=w.show_key AND x.state='identified')>=?
+        ORDER BY w.id LIMIT ?""",(after,WIKIDATA_SPREAD_MIN,limit)).fetchall()
+    return rows,(rows[-1]['id'] if rows else None)
+
 def drop_portal_templates(c):
     """0.6.84: forget templates learned for a portal/section topic or with a portal identity (returns count)."""
     gone=0
     for topic,provider,ref,meta in c.execute('SELECT topic,provider,reference,meta FROM series_templates').fetchall():
         try:m=json.loads(meta or '{}')
         except (TypeError,ValueError):m={}
-        if not template_topic(topic) or portal_identity(m,topic):
+        if not template_topic(topic) or portal_identity(m,topic) or wikidata_only(m):
             gone+=c.execute('DELETE FROM series_templates WHERE topic=? AND provider=? AND reference=?',(topic,provider,ref)).rowcount
     return gone
 
@@ -320,7 +338,7 @@ def series_template_candidate(c,row,source):
     templates=c.execute('SELECT meta FROM series_templates WHERE topic=? LIMIT 2',(key(topic),)).fetchall()
     if len(templates)!=1:return None
     known=json.loads(templates[0][0])
-    if known.get('kind')!='series' or key(known.get('title'))!=key(topic):return None
+    if known.get('kind')!='series' or key(known.get('title'))!=key(topic) or wikidata_only(known):return None
     if not known.get('reference_id') or not known.get('provider'):return None
     own=json.loads(row['meta'])
     if own.get('year') and known.get('year') and own['year']!=known['year']:return None

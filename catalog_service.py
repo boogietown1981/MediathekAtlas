@@ -86,20 +86,22 @@ class Service:
         """0.6.86, once: subject templates („Sport“, „Masterclass“) are forgotten; works that took such an identity
         from their topic are recognised again from the sender data. Matches, user decisions and confirmed episodes stay."""
         with self.db() as c:
-            if catalog.get_state(c,'generic_templates_v0692',False):return
+            # 0.6.117: again with the sports words and Wikidata-only spreads („Schwimmen“, Air 23.11.2026)
+            if catalog.get_state(c,'generic_templates_v06117',False):return
             dropped=catalog.drop_portal_templates(c)
         after='';done=0;shows={}
-        while not self.stop.is_set():
+        passes=[catalog.generic_identity_works,catalog.wikidata_spread_works]
+        while not self.stop.is_set() and passes:
             try:
                 with self.db() as c:
-                    rows,after=catalog.generic_identity_works(c,after)
+                    rows,after=passes[0](c,after)
                     for row in rows:
                         # 0.6.92 (Mac-Prüfung 0.6.87: 2 „Doku“ works without active offer kept the identity)
                         payload=row['payload'] or (c.execute('SELECT payload FROM offers WHERE work_id=? ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone() or [None])[0]
                         if not payload:continue
                         if catalog.reset_identity(c,row,json.loads(payload),'Thema ist keine Serie (%s); neu erkennen (0.6.87)'%row['title']):
                             done+=1;shows[row['title']]=shows.get(row['title'],0)+1
-                if after is None:break
+                if after is None:passes.pop(0);after=''
                 if self.stop.wait(.05):return
             except sqlite3.OperationalError as e:
                 if not sqlite_busy(e):raise
@@ -108,7 +110,9 @@ class Service:
         if self.stop.is_set():return
         if done or dropped:
             diagnostics.event('catalog_generic_templates_reset',templates_dropped=dropped,works=done,shows=shows);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'generic_templates_v0692',{'templates_dropped':dropped,'works':done,'shows':shows,'at':time.time()})
+        with self.db() as c:
+            state={'templates_dropped':dropped,'works':done,'shows':shows,'at':time.time()}
+            catalog.set_state(c,'generic_templates_v0692',state);catalog.set_state(c,'generic_templates_v06117',state)
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
@@ -770,10 +774,10 @@ class Service:
             dest=catalog.save_metadata(c,wid,recognized,outcome) or wid
             if recognized['kind']=='series' and not recognized.get('video_role_needs_review'):
                 if (metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title'])
-                        and catalog.template_topic(entry['source'].get('topic'))):
+                        and catalog.template_topic(entry['source'].get('topic')) and not catalog.wikidata_only(recognized)):
                     c.execute('INSERT OR REPLACE INTO series_templates VALUES(?,?,?,?)',(catalog.key(entry['source']['topic']),recognized['provider'],recognized['reference_id'],json.dumps(recognized)))
                 if row['show_key']:catalog.propagate_series(c,row['show_key'],recognized)
-                elif metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']):
+                elif metadata.norm(entry['source'].get('topic'))==metadata.norm(recognized['title']) and not catalog.wikidata_only(recognized):
                     peers=c.execute("SELECT * FROM works WHERE topic=? AND kind='unknown' AND state NOT IN ('manual','matched')",(entry['source']['topic'],)).fetchall()
                     for peer in peers:
                         own=json.loads(peer['meta']);own.update(kind='series',episode_title=own['title'])

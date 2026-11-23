@@ -151,10 +151,23 @@ def record(i):
 
 def put_job(j):
     if j['state']=='done':netzkino_downloads.stamp(j)
-    with db() as c:
-        c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
-        if j['state']=='queued':job_queue.supersede(c,j)
-        if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
+    # 0.6.117 (Mac-Prüfung 0.6.116: 2× background_worker_failed „database is locked“ im Download-Worker während der
+    # Start-Heilungen): a busy database delays the write instead of ending the download. A progress update is
+    # dropped after the first busy wait (the next one follows within seconds); a final state is written in any case.
+    progress=j.get('state')=='downloading'
+    for attempt in range(1 if progress else 10):
+        try:
+            with db() as c:
+                c.execute('INSERT OR REPLACE INTO jobs VALUES(?,?,?)',(j['id'],json.dumps(j),j['state']))
+                if j['state']=='queued':job_queue.supersede(c,j)
+                if j['state']=='done' and not netzkino_downloads.is_portal(j):catalog.mark_downloaded(c,j)
+            break
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):raise
+            SERVICE.sqlite_busy_count+=1
+            if progress:return
+            if attempt==9:raise
+            STOP.wait(2)
     # 0.5.61: subtitle files listed in the Archive.org manifest go next to the finished video.
     if j['state']=='done' and j.get('origin')==archive_downloads.ORIGIN and j.get('sidecars') and not j.get('sidecars_fetched'):
         def subtitles(job=dict(j)):
@@ -342,33 +355,39 @@ def worker():
         # 0.5.55: Verwaltung → Aufgaben can hold the queue; a running download is finished first.
         if task_control.paused('downloads'):continue
         if storage_locations.downloads_held():continue   # 0.6.20: Umzug von Downloads/Zwischenspeicher läuft
-        with db() as c:
-            j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
-            if not j:continue
-            # 0.6.20: Ziel auf einem abgezogenen Laufwerk: warten statt einen leeren Ordner neu anzulegen.
-            missing=storage_locations.root_problem(j.get('root'),settings())
-            if missing:
-                if time.time()-STORAGE_WARNED[0]>3600:
-                    STORAGE_WARNED[0]=time.time();diagnostics.event('download_target_unavailable',root=j.get('root'))
-                continue
-            if j.get('night'):
-                # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
-                later=justwatch.night_start()
-                if later>time.time() and not justwatch_downloads.released(j):   # 0.5.76: released already (22/23 h) -> start now
-                    j['not_before']=later;c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
-            # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
-            local_only=netzkino_downloads.is_portal(j)
-            o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
-            blocked=None if local_only else SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
-            if blocked:
-                # Queued before the other instance's claim arrived (e.g. series packages).
-                j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
-            # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
-            # 0.6.14: subscription videos start at most N per hour, evenly spaced (single clicks are not paced).
-            forced=bool(j.get('force_now'))
-            if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced,c=c):
-                c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
-            c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
+        # 0.6.117 (Mac-Prüfung 0.6.116: 2× background_worker_failed „database is locked“ während der Start-Heilungen):
+        # a busy database postpones the claim instead of restarting the worker.
+        try:
+            with db() as c:
+                j=job_queue.next_job(c)   # skips jobs reserved for later (not_before)
+                if not j:continue
+                # 0.6.20: Ziel auf einem abgezogenen Laufwerk: warten statt einen leeren Ordner neu anzulegen.
+                missing=storage_locations.root_problem(j.get('root'),settings())
+                if missing:
+                    if time.time()-STORAGE_WARNED[0]>3600:
+                        STORAGE_WARNED[0]=time.time();diagnostics.event('download_target_unavailable',root=j.get('root'))
+                    continue
+                if j.get('night'):
+                    # Night-only JustWatch title started outside 0-6 h (retry, Mac asleep at night): wait for the next window.
+                    later=justwatch.night_start()
+                    if later>time.time() and not justwatch_downloads.released(j):   # 0.5.76: released already (22/23 h) -> start now
+                        j['not_before']=later;c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
+                # Netzkino/Pluto offline copies are per device (time-limited licence): no Verbund claim/sharing.
+                local_only=netzkino_downloads.is_portal(j)
+                o=None if local_only else c.execute('SELECT work_id FROM offers WHERE id=?',(j.get('source',{}).get('_id'),)).fetchone()
+                blocked=None if local_only else SERVICE.mesh_download_block(c,j['metadata'],o and o[0])
+                if blocked:
+                    # Queued before the other instance's claim arrived (e.g. series packages).
+                    j.update(state='remote',note=blocked);c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?',(json.dumps(j),'remote',j['id']));continue
+                # 0.6.13: while the provider pauses us (YouTube bot check), its jobs wait instead of extending the block.
+                # 0.6.14: subscription videos start at most N per hour, evenly spaced (single clicks are not paced).
+                forced=bool(j.get('force_now'))
+                if download_retry.hold(j) or youtube_abos.pace(ROOT,j,force=forced,c=c):
+                    c.execute('UPDATE jobs SET payload=? WHERE id=?',(json.dumps(j),j['id']));continue
+                c.execute("UPDATE jobs SET state='downloading',payload=? WHERE id=?",(json.dumps(j),j['id']))
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):raise
+            SERVICE.sqlite_busy_count+=1;continue
         def cancelled():
             with db() as c:x=c.execute('SELECT state FROM jobs WHERE id=?',(j['id'],)).fetchone()
             return not x or x[0]=='cancelled'

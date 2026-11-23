@@ -200,8 +200,19 @@ class DailyPlatformTests(unittest.TestCase):
             pluto.set_auto(root, False)
             self.assertEqual(platform_registry.enable_daily_once(root), [])
             self.assertFalse(pluto.state(root)['auto'])
-            import dmax                                       # not part of Björn's yes
+            import dmax                                       # 0.6.117: own switch (DAILY_V06117)
             self.assertFalse(dmax.state(root)['auto'])
+
+    def test_v06117_filmfriend_dmax_redbull_dailyme_once(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            root = Path(tmp)
+            import filmfriend, dmax, redbulltv, dailyme
+            switched = platform_registry.enable_daily_once(root, platform_registry.DAILY_V06117, platform_registry.DAILY_MARK_V06117)
+            self.assertEqual(sorted(switched), sorted(platform_registry.DAILY_V06117))
+            for m in (filmfriend, dmax, redbulltv, dailyme):self.assertTrue(m.state(root)['auto'], m.__name__)
+            filmfriend.set_auto(root, False)
+            self.assertEqual(platform_registry.enable_daily_once(root, platform_registry.DAILY_V06117, platform_registry.DAILY_MARK_V06117), [])
+            self.assertFalse(filmfriend.state(root)['auto'])   # a later „aus“ stays
 
 
 if __name__ == '__main__':

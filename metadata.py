@@ -457,6 +457,17 @@ GENERIC|={'sport','sports','masterclass','doku','dokus','dokumentation','dokumen
           'kurzfilm','kurzfilme','spielfilme','fernsehfilme','dokumentarfilm','dokumentarfilme','gesundheit',
           'wirtschaft','religion','essen','kochen','garten','reisen','digital',
           'europa'}   # 0.6.92 (Zwischendiagnose Pro 0.6.91: DW „Europa“ ↔ IMDb-Serie „Europa“ tt14808162)
+# 0.6.117 (Langzeitdiagnose Air 23.11.2026: Wikidata kannte „Schwimmen“ als Serie, 1.144 Werke): sports name a subject,
+# never a Sendung. One list for the series search, the topic rules and catalog.TEMPLATE_GENERIC.
+SPORT_WORDS={'schwimmen','wasserspringen','biathlon','skispringen','ski alpin','ski nordisch','langlauf','skilanglauf',
+             'nordische kombination','rodeln','bob','skeleton','eiskunstlauf','eisschnelllauf','shorttrack','snowboard',
+             'freestyle','leichtathletik','fußball','fussball','frauenfußball','handball','basketball','volleyball',
+             'beachvolleyball','eishockey','hockey','radsport','rad','bahnrad','mountainbike','tennis','tischtennis',
+             'badminton','turnen','gerätturnen','formel 1','formel e','motorsport','motorrad','boxen','golf','reiten',
+             'pferdesport','segeln','rudern','kanu','triathlon','ringen','judo','fechten','darts','snooker','schach',
+             'klettern','sportklettern','wintersport','sommersport','sportschießen','gewichtheben','rugby','american football',
+             'baseball','curling','squash','surfen','e-sport','esport'}
+GENERIC|=SPORT_WORDS
 # arte files its programmes under a section ("Politics and society - Insights", "Kultur - Pop-Kultur").
 # Such a topic names no Sendung; diagnosis 0.5.15 queried "Politics and society - Insights" 232 times.
 # 0.6.49 (Diagnose 20.11.2026 abends): the French, Italian, Spanish and Polish ARTE sections

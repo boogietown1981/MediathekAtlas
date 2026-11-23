@@ -14,6 +14,9 @@ def compatible(m,h):
     title=h.get('title') or h.get('name') or ''
     date=str(h.get('release_date') or h.get('first_air_date') or h.get('year') or '')
     return bool(m.get('year') and date[:4]==str(m['year']) and core.title_similarity(m['title'],title)>=.985)
+NOT_FOUND=re.compile(r'(?i)\bHTTP 404\b|\b404\b.*not found|nicht gefunden')
+NOT_FOUND_RETRY=7*86400   # 0.6.117: a provider without the entry is asked again after a week
+
 def lookup(m,s):
     found={};errors=[];tmdb_id=tvdb_id=None;imdb_id=m.get('reference_id') if m.get('provider') in ('OMDb','IMDb Offline') else m.get('imdb_id')
     if s.get('tvdb') and m['kind']=='series':
@@ -153,7 +156,7 @@ def apply(m,found):
 def share_series(c,row,m,found):
     """Apply one series lookup to all episodes of the same series instead of repeating it per episode."""
     if m.get('kind')!='series' or not row['show_key'] or not m.get('reference_id'):return 0
-    count=0;until=time.time()+86400
+    count=0;until=time.time()+(NOT_FOUND_RETRY if found.get('not_found') else 86400)
     for peer in c.execute("SELECT id,meta FROM works WHERE show_key=? AND id!=? AND state IN ('manual','matched','identified')",(row['show_key'],row['id'])).fetchall():
         own=json.loads(peer['meta'])
         if own.get('kind')!='series' or own.get('provider')!=m.get('provider') or own.get('reference_id')!=m.get('reference_id'):continue
@@ -176,10 +179,17 @@ def run_once(service):
         with service.db() as c:c.execute('UPDATE artwork_checks SET next_try=? WHERE work_id=?',(time.time()+86400,row['id']))
         return True
     key=core.hashlib.sha256(json.dumps([m.get('provider'),m.get('reference_id'),m['kind'],m['title'],m.get('year'),bool(config.get('tmdb')),bool(config.get('tvdb')),bool(config.get('omdb')),fanart_keys(config),'v0556'],sort_keys=True).encode()).hexdigest()
-    with service.db() as c:cache=c.execute('SELECT payload FROM artwork_cache WHERE id=? AND checked>?',(key,time.time()-86400)).fetchone()
+    with service.db() as c:cache=c.execute('SELECT payload,checked FROM artwork_cache WHERE id=? AND checked>?',(key,time.time()-NOT_FOUND_RETRY)).fetchone()
+    if cache and not json.loads(cache[0]).get('not_found') and cache[1]<=time.time()-86400:cache=None
+    missing=[]
     if cache:found,errors=json.loads(cache[0]),[]
     else:
         found,errors=lookup(m,config)
+        # 0.6.117 (Langzeitdiagnose Air 23.11.2026: „The True Story of…“ 1.002× in 22 h bei TVDB mit HTTP 404, 7 Krimi-
+        # Reihen je 22×): „gibt es dort nicht“ is an answer, not a failure. It is cached for NOT_FOUND_RETRY and shared
+        # by every work with the same lookup key, instead of a new request for each of them every hour.
+        missing=[e for e in errors if NOT_FOUND.search(str(e))];errors=[e for e in errors if not NOT_FOUND.search(str(e))]
+        if missing and not errors:found['not_found']=missing[:3]
         if not errors and found:found['discovery_enriched']=True
         if not errors:
             with service.db() as c:c.execute('INSERT OR REPLACE INTO artwork_cache VALUES(?,?,?)',(key,json.dumps(found),time.time()))
@@ -192,8 +202,8 @@ def run_once(service):
             if not errors:shared=share_series(c,row,m,found)
     with service.db() as c:
         c.execute('UPDATE artwork_checks SET next_try=? WHERE work_id=?',
-                  (time.time()+(3600 if errors else 86400),row['id']))
+                  (time.time()+(3600 if errors else NOT_FOUND_RETRY if found.get('not_found') else 86400),row['id']))
     service.artwork_checked+=1+shared
     # Cache hits repeat a known result; logging each of them crowded real events out of the rotating log.
-    if not cache or errors:diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors,shared=shared)
+    if not cache or errors:diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors,shared=shared,not_found=missing)
     return True
