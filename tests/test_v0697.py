@@ -80,7 +80,8 @@ CREATE TABLE title_episode(tconst TEXT,parentTconst TEXT,seasonNumber INTEGER,ep
         self.assertTrue(matching.verified({'kind': 'movie', 'title': '8 Mile', 'year': 2002}, film[0]))
 
     def test_one_year_apart_with_agreeing_runtime(self):
-        c = {'kind': 'movie', 'year': 2016, 'similarity': 1.0, 'runtime_agrees': True, 'year_mismatch': True}
+        c = {'kind': 'movie', 'year': 2016, 'similarity': 1.0, 'runtime_agrees': True, 'year_mismatch': True,
+             'source_duration_seconds': 5189}   # 0.6.108: Laufzeit des Videos gehört dazu (ab 40 min)
         self.assertEqual(matching.issues({'kind': 'movie', 'year': 2015}, c), [])
         self.assertTrue(matching.issues({'kind': 'movie', 'year': 2015}, dict(c, runtime_agrees=False)))
         self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, c))

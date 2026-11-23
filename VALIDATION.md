@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.108 – Korrektur Erkennung (23. November 2026)
+- Automatisch: tests/test_v06108.py (6, u. a. 8 Mile über den Arbeiter vor dem Rückstau), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.108).
+
 ## 0.6.106 – Reihennamen (22. November 2026)
 - Automatisch: tests/test_v06106.py (10), tests/test_v06106_kinder_zulassung.py (10, auf 0.6.105 rot), gesamte Suite, Node-Tests, Klicktests click_all/kids_corner/unknown_reasons. Zahlen am echten Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.106).
 

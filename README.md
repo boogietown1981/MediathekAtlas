@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.106
+# MediathekAtlas · 0.6.108
+
+## Neu in 0.6.108: Filme von 3sat werden wirklich gesucht
+- Filme mit dem 3sat-Zusatz im Titel („8 Mile - Spielfilm, USA 2002“) werden jetzt als Erstes neu gesucht. In 0.6.97 standen sie auf „prüfen“ und kamen nie an die Reihe.
+- Ein Film mit um ein Jahr abweichendem Jahr gilt nur noch ab 40 Minuten Laufzeit; zwei Kurzclips von SRF („Sport“, „Moda“), die so fälschlich Filme wurden, werden neu erkannt.
+- Sendungen, für die IMDb keine Einzelfolgen kennt, stehen jetzt im Protokoll, und die Regeln für Werke ohne Art laufen einmal neu über den Bestand.
 
 ## Neu in 0.6.106: Kinderecke strenger, Reihen unter ihrem bekannten Namen
 - Eine Reihe heißt so, wie der Sender sie schreibt: „KiKA LIVE“ statt „KIKA LIVE“ aus TMDB.

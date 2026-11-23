@@ -96,6 +96,9 @@ def evaluate(source,candidate=None):
 def annotate(source,candidate):
     """Annotate a candidate before any auto-match/early provider exit."""
     if not isinstance(candidate,dict):return candidate
+    # 0.6.108: the offer's running time travels with every candidate (matching.year_close needs it)
+    actual=seconds((source or {}).get('duration'))
+    if actual and not candidate.get('source_duration_seconds'):candidate['source_duration_seconds']=actual
     result=evaluate(source,candidate)
     if result and candidate.get('kind') in ('series','movie'):
         candidate.update(result)

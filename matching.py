@@ -25,8 +25,14 @@ def year_close(meta,c):
     apart with an exact title and an agreeing running time is the same film."""
     try:a=int(meta.get('year'));b=int(c.get('year'))
     except (TypeError,ValueError):return False
-    return (c.get('kind')=='movie' and abs(a-b)==1 and float(c.get('similarity') or 0)>=.985
+    # 0.6.108 (Mac-Prüfung 0.6.97 B5: „Sport“ 9 min und „Moda“ 10 min aus SRF „Dai, domanda!“ wurden TMDB-Filme von
+    # 1999/1996): only a feature-length video, with its running time known, is a film one year apart.
+    try:duration=float(c.get('source_duration_seconds') or 0)
+    except (TypeError,ValueError):duration=0
+    return (c.get('kind')=='movie' and abs(a-b)==1 and float(c.get('similarity') or 0)>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS
             and bool(c.get('runtime_agrees')) and not c.get('runtime_mismatch'))
+
+YEAR_CLOSE_MIN_SECONDS=40*60
 
 def verified(meta,c):
     if issues(meta,c):return False

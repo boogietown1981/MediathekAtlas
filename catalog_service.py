@@ -152,12 +152,17 @@ class Service:
         if done:diagnostics.event('catalog_sendung_suggestions_undone',works=done,shows=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]));catalog.invalidate_listings()
         with self.db() as c:catalog.set_state(c,'sendung_suggestion_fix_v0697',{'works':done,'shows':shows,'at':time.time()})
     def film_heals(self):
-        """0.6.97, once: films with 3sat's title suffix are searched again (spread over 2 h), films „prüfen“ whose
-        suggestions the year rule now accepts are matched."""
+        """0.6.97/0.6.108, once: films with 3sat's title suffix are searched again, films „prüfen“ whose suggestions the
+        year rule accepts are matched, clips the year rule took for films (0.6.97) are undone.
+
+        0.6.108 (Mac-Prüfung 0.6.97 B3/B4: 730 films requeued, none recognised): 0.6.97 only moved next_try, but the
+        worker never picks state 'review'. Now they become first passes (pending, attempts 0) with the oldest
+        next_try, so each film turn of the worker takes them before the ~5,000 other new works."""
         with self.db() as c:
-            if catalog.get_state(c,'film_rules_v0697',False):return
-            ids=catalog.film_suffix_works(c);now=time.time()
-            c.executemany('UPDATE works SET next_try=? WHERE id=?',[(now+i*7200/max(1,len(ids)),w) for i,w in enumerate(ids)])
+            if catalog.get_state(c,'film_rules_v06108',False):return
+            ids=catalog.film_suffix_works(c)
+            c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
+            undone=catalog.undo_short_year_close(c)
         after='';matched=0
         while not self.stop.is_set():
             try:
@@ -170,9 +175,11 @@ class Service:
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return
         if self.stop.is_set():return
-        diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched)
-        if matched:catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'film_rules_v0697',{'suffix_requeued':len(ids),'year_matched':matched,'at':time.time()})
+        diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched,
+                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.108')
+        if matched or undone:catalog.invalidate_listings()
+        state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
+        with self.db() as c:catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1159,6 +1166,9 @@ class Service:
                     # (Sportpanorama, Euromaxx …): the whole Sendung becomes contributions instead of „ungeklärt“.
                     outcome='sendung'
                     delay=0
+                    # 0.6.108 (Mac-Prüfung 0.6.97 B2 nicht messbar): every such refiling is visible in the protocol
+                    refiled=dict(show=m.get('title',''),provider=m.get('provider'),reference=m.get('reference_id'))
+                    self.after_commit(lambda:diagnostics.event('episode_sendung_without_episodes',**refiled))
                 elif sender_deferred or sender_error or imdb_error or not (archive and archive.updated):
                     outcome='retry'
                     delay=3600

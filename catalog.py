@@ -1831,7 +1831,7 @@ def unknown_hard_reason(row,m):
 # this title) keeps the work open. Einzelsendungen and films are never decided against a suggestion.
 # 0.6.78 (Mac-Prüfung 0.6.77): rev 6 for the Wikidata rule of 0.6.77; without the raise the sweep waited up to
 # UNKNOWN_SWEEP_INTERVAL (6 h) after the update, so the check saw no effect within 30 minutes.
-UNKNOWN_RULES_REV=7              # 0.6.88: Sendungsvorschlag → Folge; raise when the rules change: the next sweep then runs at once
+UNKNOWN_RULES_REV=8              # 0.6.108: re-pass for 0.6.97 rules (Mac-Prüfung B2: never ran on existing works); 0.6.88: Sendungsvorschlag → Folge; raise when the rules change: the next sweep then runs at once
 SENDUNG_GROUPINGS=('edition','segment','part','contribution')
 UNKNOWN_SUGGESTION_MIN_WORKS=3   # a Sendung with at least this many works outweighs weak suggestions
 UNKNOWN_WARNING_ATTEMPTS=3       # a provider error that came back on this many checks no longer blocks
@@ -1994,6 +1994,25 @@ def sendung_suggestion(m,source,sendung):
     rank={p:i for i,p in enumerate(SENDUNG_SUGGESTION_ORDER)}
     return sorted(usable,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
 
+YEAR_CLOSE_REASON='Film: Titel und Laufzeit stimmen, Jahr ein Jahr versetzt (Produktions-/Erscheinungsjahr)'
+def undo_short_year_close(c):
+    """0.6.108, once: films matched by the 0.6.97 year rule from a clip (< matching.YEAR_CLOSE_MIN_SECONDS: SRF „Dai,
+    domanda!“ „Sport“ 9 min, „Moda“ 10 min) are recognised again from the sender data. Returns [(id,title)]."""
+    import matching
+    out=[]
+    for row in c.execute("SELECT * FROM works WHERE kind='movie' AND state='matched' AND json_extract(meta,'$.reason')=?",(YEAR_CLOSE_REASON,)).fetchall():
+        offer=c.execute('SELECT payload FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1',(row['id'],)).fetchone()
+        if not offer:continue
+        source=json.loads(offer[0] or '{}')
+        try:duration=float(source.get('duration') or 0)
+        except (TypeError,ValueError):duration=0
+        if duration>=matching.YEAR_CLOSE_MIN_SECONDS:continue
+        fresh=seed(source);fresh['reason']='0.6.108: Kurzclip, kein Film (Jahr-±1-Regel zurückgenommen)';fresh['year_close_undone_v06108']=True
+        c.execute("UPDATE works SET title=?,kind=?,year=?,show_key=?,meta=?,state='pending',next_try=0 WHERE id=?",
+                  (fresh['title'],fresh['kind'],fresh.get('year'),showkey(fresh),json.dumps(fresh),row['id']))
+        out.append((row['id'],row['title']))
+    return out
+
 def rematch_movie_suggestions(c,after='',limit=500):
     """0.6.97, once: films „prüfen“ whose stored suggestions the year rule (matching.year_close) now accepts are
     matched. Returns (matched, last id or None)."""
@@ -2003,10 +2022,14 @@ def rematch_movie_suggestions(c,after='',limit=500):
     for row in rows:
         m=json.loads(row['meta'] or '{}')
         if m.get('scan_requested'):continue
-        usable=[x for x in m.get('suggestions') or [] if isinstance(x,dict) and x.get('kind')=='movie']
+        offer=c.execute("SELECT json_extract(payload,'$.duration') FROM offers WHERE work_id=? AND active=1 ORDER BY rank DESC LIMIT 1",(row['id'],)).fetchone()
+        try:duration=float(offer[0]) if offer and offer[0] else 0
+        except (TypeError,ValueError):duration=0
+        usable=[dict(x,source_duration_seconds=x.get('source_duration_seconds') or duration) for x in m.get('suggestions') or []
+                if isinstance(x,dict) and x.get('kind')=='movie']
         chosen=auto_choice(m,usable)
         if not chosen or chosen.get('kind')!='movie':continue
-        chosen.update(state='auto_matched',reason='Film: Titel und Laufzeit stimmen, Jahr ein Jahr versetzt (Produktions-/Erscheinungsjahr)')
+        chosen.update(state='auto_matched',year_close=True,reason=YEAR_CLOSE_REASON)
         save_metadata(c,row['id'],chosen,'matched');done+=1
     return done,(rows[-1]['id'] if rows else None)
 
