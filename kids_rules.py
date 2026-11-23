@@ -58,6 +58,7 @@ HINT_GENRES = ('Kinder', 'Familie', 'Animation', 'Fantasy', 'Abenteuer')   # Kan
 
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS kids_choices(key TEXT PRIMARY KEY, choice TEXT NOT NULL, title TEXT, kind TEXT, updated REAL);
+CREATE TABLE IF NOT EXISTS kids_empty_series(source TEXT NOT NULL, id TEXT NOT NULL, checked REAL, PRIMARY KEY(source,id));
 CREATE TABLE IF NOT EXISTS reference_ages(ref TEXT PRIMARY KEY, age INTEGER, label TEXT, source TEXT, checked REAL);
 """
 
@@ -176,6 +177,14 @@ def live_clause():
             topics + topics)
 
 
+# 0.6.114: Rohgenre „TV-Film“/„TV Movie“/„Fernsehfilm“ (keine eigene Kategorie) und Märchen (Titel, Rohgenre, Thema)
+TV_FILM = ("EXISTS(SELECT 1 FROM work_genres tv WHERE tv.work_id=w.id AND (lower(tv.genre) LIKE '%tv%movie%' "
+           "OR lower(tv.genre) LIKE '%tv%film%' OR lower(tv.genre) LIKE '%fernsehfilm%'))")
+FAIRY_TALE = ("(w.title LIKE '%ärchen%' OR w.title LIKE '%maerchen%' OR EXISTS(SELECT 1 FROM work_genres mg WHERE "
+              "mg.work_id=w.id AND (mg.genre LIKE '%ärchen%' OR lower(mg.genre) LIKE '%fairy%')) OR EXISTS(SELECT 1 FROM "
+              "offers mo WHERE mo.work_id=w.id AND mo.active=1 AND json_extract(mo.payload,'$.topic') LIKE '%ärchen%'))")
+
+
 def kids_clause(c, signal, signal_args, has):
     """SQL (auf works w) für die Kategorie „Kinder“ (0.6.106, Björn: im Zweifel draußen, KiKA/TOGGO immer, Rest per Freigabe).
 
@@ -204,22 +213,27 @@ def kids_clause(c, signal, signal_args, has):
                % ','.join('?' * len(ALWAYS_CHANNELS)))
     listed = "w.state IN ('matched','manual','identified','format')"
     live, live_args = live_clause()
+    # 0.6.114 (Mac-Prüfung 0.6.113: „Amore mio – Niemand ist wie Du“, „Trauung mit Hindernissen“, „Oma wider Willen“,
+    # „Wintertochter“ kamen über Familie + FSK): Drama oder Fernsehfilm für Erwachsene braucht auf dem Altersweg ein
+    # eigenes Kindersignal (Animation, Märchen, bekannte Kinderreihe); sonst Warteliste
+    drama, drama_args = has(categories.AGE_PATH_ADULT)
+    adult = '(%s OR %s)' % (drama, TV_FILM)
+    own = '(%s OR %s OR %s)' % (ani, FAIRY_TALE, shows)
     sql = ('NOT {live} AND NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
            '({listed} AND {shows}) OR '
            '({ident} AND {ref} AND ({kids} OR ({fam} AND {ani}))) OR '
-           '({ident} AND {age_ok} AND {hint} AND NOT {soft}))))').format(
+           '({ident} AND {age_ok} AND {hint} AND NOT {soft} AND (NOT {adult} OR {own})))))').format(
         live=live, block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
-        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft)
+        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft, adult=adult, own=own)
     args = (list(live_args) + list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
             + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
-            + [limit] + list(hint_args) + list(soft_args))
+            + [limit] + list(hint_args) + list(soft_args) + list(drama_args) + list(ani_args) + list(shows_args))
     return sql, args
 
 
-def explain(c, work_id):
-    """0.6.113: über welchen Weg ein Werk die Kinder-Regel erfüllt – 'freigabe', 'sender', 'reihe' (bekannte Kinderreihe
-    im Thema), 'referenz' (Kinder-Genre bzw. Familie + Animation aus einer Filmdatenbank), 'alter' (Familie + belegte
-    Freigabe bis zur Grenze) – oder None. Für Prüfung und Anzeige; entscheidet dasselbe wie kids_clause."""
+def explain_context(c):
+    """0.6.114: Bausteine für explain einmal je Liste vorbereiten (Mac-Prüfung 0.6.113: explain je Film las die
+    Genre-Etiketten jedes Mal neu – 27–32 s statt 7 s für die Kinderecke)."""
     import catalog
     import categories
     labels = catalog.category_labels(c)
@@ -230,8 +244,6 @@ def explain(c, work_id):
             return '0', []
         return 'EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id AND g.genre IN (%s))' % ','.join('?' * len(raw)), raw
     clause, args = kids_clause(c, '', [], has)
-    if not c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [str(work_id)] + list(args)).fetchone():
-        return None
     limit = max_age(c)
     kids_genre, kids_args = has(['Kinder'])
     fam, fam_args = has(['Familie'])
@@ -248,7 +260,18 @@ def explain(c, work_id):
                list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)),
               ('alter', '%s AND EXISTS(SELECT 1 FROM reference_ages a WHERE a.ref=%s AND a.age IS NOT NULL AND a.age<=?) AND %s'
                % (IDENTIFIED, REF, hint), [limit] + list(hint_args)))
-    for name, sql, a in checks:
+    return {'clause': clause, 'args': list(args), 'checks': checks}
+
+
+def explain(c, work_id, ctx=None):
+    """0.6.113: über welchen Weg ein Werk die Kinder-Regel erfüllt – 'freigabe', 'sender', 'reihe' (bekannte Kinderreihe
+    im Thema), 'referenz' (Kinder-Genre bzw. Familie + Animation aus einer Filmdatenbank), 'alter' (Familie + belegte
+    Freigabe bis zur Grenze) – oder None. Für Prüfung und Anzeige; entscheidet dasselbe wie kids_clause.
+    ``ctx``: explain_context(c), wenn viele Werke nacheinander erklärt werden."""
+    ctx = ctx or explain_context(c)
+    if not c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % ctx['clause'], [str(work_id)] + ctx['args']).fetchone():
+        return None
+    for name, sql, a in ctx['checks']:
         if c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % sql, [str(work_id)] + a).fetchone():
             return name
     return 'unbekannt'
@@ -304,7 +327,8 @@ def waiting(c, limit=3000):   # 0.6.109: Mac-Prüfung 0.6.106 sah genau 300 (abg
         elif r['age'] is not None and r['age'] > lim:
             reason = 'FSK %d (über der Grenze)' % r['age']
         elif r['age'] is not None:
-            reason = 'FSK %d, aber kein Familien- oder Kinderhinweis' % r['age']   # 0.6.105: Fantasy/Abenteuer allein
+            # 0.6.105: Fantasy/Abenteuer allein; 0.6.114: Familie + Drama/Fernsehfilm ohne eigenes Kindersignal
+            reason = 'FSK %d, aber kein eindeutiger Kinderfilm (Familien-, Drama- oder Fernsehfilm)' % r['age']
         elif r['age_checked']:
             reason = 'Keine Altersfreigabe bekannt'
         else:
