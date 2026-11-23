@@ -1,3 +1,10 @@
+## 0.6.127 – Erkennung: Genre-Nachtrag für Werke ohne Genre, Reihen mit Leerzeichen-Varianten; auf 0.6.126
+
+- N-E (Björn 23.11.2026, Werkkatalog „Filme › Unbekannt“ 2.008 / „Serien › Unbekannt“ 4.052; Diagnose Air 0.6.120): „Unbekannt“ = Werk ohne Rohgenre. Neu `catalog.backfill_genres` (beim Start und alle 6 h im Formatdurchlauf, Ereignis `catalog_genres_backfilled`): IMDb-verknüpfte/-erkannte Werke bekommen die Genres aus dem lokalen IMDb-Archiv (`imdb_archive.Archive.genres`), Folgen einer Reihe die Genres, die mindestens die Hälfte der Geschwister mit Genre trägt (höchstens drei). Art, Zustand und Identität bleiben.
+- N-G (Mac-Abfrage 23.11.: „#BR24 Zeitreise“ 150 Werke, „#BR24Zeitreise“ 79): `catalog.merge_spacing_variants` (im 6-h-Schreibweisenlauf, Ereignis `catalog_spacing_variants_merged`): Reihen gleichen Senders und Jahres, deren Titel sich nur in Leerzeichen unterscheiden, kommen unter den Schlüssel mit den meisten Werken; nie bei verschiedenen Datenbank-Kennungen.
+- Bewusst nicht: „Anna, Paula, Pia und die wilden Tiere“ / „Paula, Anna und die wilden Tiere“ (verschieden benannte Nachfolgereihen, keine sichere Regel); Animanimals ist laut Mac-Prüfung bereits eine Kachel.
+- Tests: `tests/test_v06127.py` (5).
+
 ## 0.6.126 – Programmführer (EPG) Stufe 1: Jetzt/Danach im Live-TV; Wunschliste-Link; auf 0.6.125
 
 - Björn (23.11.2026): EPG für die TV-Sender im Live-TV und als Beleg für die Erkennung. Einschätzung: berichte/einschaetzung-epg-2026-11-23.md.

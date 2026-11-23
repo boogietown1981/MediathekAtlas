@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.126
+# MediathekAtlas · 0.6.127
+
+## Neu in 0.6.127: weniger „Unbekannt“, keine doppelten Reihen durch Leerzeichen
+- Werke ohne Genre (im Werkkatalog „Unbekannt“) bekommen es nachgetragen: aus dem IMDb-Archiv, wenn sie mit IMDb verknüpft sind, sonst von den anderen Folgen ihrer Reihe.
+- Reihen desselben Senders, die sich nur in Leerzeichen unterscheiden („#BR24 Zeitreise“/„#BR24Zeitreise“), werden eine Reihe.
 
 ## Neu in 0.6.126: Programmführer im Live-TV
 - Die Sender von ARD (Das Erste, Dritte, ONE, ARD alpha, tagesschau24), ZDF (mit ZDFneo, ZDFinfo, 3sat, KiKA, phoenix) und SRF zeigen im Live-TV, was gerade läuft (mit Fortschritt) und was danach kommt – direkt aus den Programmdaten der Sender, ohne Konto und ohne Schlüssel, alle 6 Stunden aktualisiert (Live-TV → „Programmführer · ARD, ZDF, SRF“, abschaltbar).

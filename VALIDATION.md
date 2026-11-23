@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.127 – Genre-Nachtrag, Leerzeichen-Reihen (23. November 2026)
+- Automatisch: tests/test_v06127.py (5), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.127).
+
 ## 0.6.126 – Programmführer Stufe 1, Wunschliste-Link (23. November 2026)
 - Automatisch: tests/test_epg_programmfuehrer.py (16), gesamte Suite, Node-Tests, Klicktests (click_all, epg_live). Quellen am echten Netz: SRF und ARD am 23.11. im Browser abgefragt, ZDF nicht. Echter Lauf: Mac-Prüfung (PRUEFLISTE in releases/0.6.126).
 
