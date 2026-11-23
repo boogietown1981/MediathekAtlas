@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.110
+# MediathekAtlas · 0.6.111
+
+## Neu in 0.6.111: Angefangene Serien genauer nachladen
+- Gibt es eine Folge in deutscher Fassung und als Originalfassung mit Untertiteln, wird nur eine davon geladen, bevorzugt die deutsche. Ist nur eine Sonderfassung ladbar, steht das am Auftrag in der Downloads-Liste.
+- Wurde die Folge in der Kinderecke zu Ende gesehen, lädt MediathekAtlas nur Folgen und Filme nach, die die Kinderecke auch zeigen würde.
+- Sehr lange Serien (über 1.000 Folgen) laden die Folgen rund um die zuletzt gesehene, statt gar nichts.
 
 ## Neu in 0.6.110: Kanal-Vorschläge mit Namen und Kanalbild
 - Vorschläge unter YouTube → Kanal-Abos → „Neue Kanäle entdecken“ zeigen jetzt Namen und Kanalbild. Für die Kinderecke stehen deutschsprachige Kanäle mit erkennbarem Kinderbezug vorn; englischsprachige und solche ohne Kinderbezug rutschen nach hinten.

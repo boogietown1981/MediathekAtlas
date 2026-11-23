@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.111 – Serien-Nachladen nachgebessert (23. November 2026)
+- Automatisch: tests/test_v0694_serien_nachladen.py (19), gesamte Suite, Klicktests series_autoload.cjs, click_all.cjs. Echte Downloads und Prüfung an Björns Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.111).
+
 ## 0.6.110 – Kanal-Vorschläge nachgebessert (23. November 2026)
 - Automatisch: tests/test_v0690_kanal_vorschlaege.py (20), gesamte Suite, Klicktests youtube_discover.cjs, abo_settings.cjs, click_all.cjs. Echte YouTube-Abfragen und Prüflauf: Mac-Prüfung (PRUEFLISTE in releases/0.6.110).
 
