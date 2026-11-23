@@ -81,7 +81,7 @@ class RefileHealTests(unittest.TestCase):
 
     def test_without_archive_nothing_is_decided(self):
         with patch.object(imdb_archive, 'ACTIVE', None):
-            self.assertIsNone(self.service.refile_suggested_sendungen())
+            self.assertEqual(self.service.refile_suggested_sendungen(), 'waiting')   # 0.6.114: retried soon
         with self.db() as c:
             self.assertFalse(catalog.get_state(c, 'sendung_refile_v06113', False))
             self.assertEqual(c.execute("SELECT COUNT(*) FROM works WHERE state='identified'").fetchone()[0], 5)

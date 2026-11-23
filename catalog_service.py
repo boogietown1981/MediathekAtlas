@@ -49,6 +49,9 @@ def sqlite_busy(exc):
     return isinstance(exc,sqlite3.OperationalError) and any(
         x in str(exc).lower() for x in ('database is locked','database table is locked','database is busy','database snapshot is busy'))
 
+LEASE_BUSY=('busy',None)   # 0.6.114: lease_work found work but could not claim it (busy database/races)
+REFILE_RETRY=120   # 0.6.114: seconds until an undecided B2 refiling (sendung_refile_v06113) is tried again
+
 class _Skip(Exception):
     """Durchlauf auslassen (kein Fehler)."""
 
@@ -362,7 +365,9 @@ class Service:
                 if not sqlite_busy(e):raise
                 self.sqlite_busy_count+=1
                 if self.stop.wait(min(.75,.04*(attempt+1))):return None
-        return None
+        # 0.6.114 (Mac-Prüfung 0.6.113 E5: „waiting“ with 49 selectable works): work exists, but every claim lost
+        # a race or met a busy database – that is no idle queue.
+        return LEASE_BUSY
 
     # 0.6.63 (Code-Review Schritt 1, Befunde A1/A2/B1): one write unit for the episode path.
     def write(self,fn,label='write',attempts=4):
@@ -437,6 +442,9 @@ class Service:
     def metadata_once(self,queue='identity'):
         if not self.settings().get('auto_metadata',True):return False
         claim=self.lease_work('episode') if queue=='episode' else self.lease_work()
+        if claim is LEASE_BUSY:
+            self.lease_busy_count=getattr(self,'lease_busy_count',0)+1
+            return False
         if claim is None:
             with self.worker_lock:active=max(0,self.active_checks-self.episode_active)
             if queue=='identity' and not active and self.metadata_status.get('phase')!='waiting':
@@ -525,20 +533,27 @@ class Service:
         if now-getattr(self,'idle_reported_at',0)<every:return None
         self.idle_reported_at=now
         try:
-            with self.db() as c:blockers=catalog.queue_blockers(c,now)
+            with self.db() as c:
+                # 0.6.114: counts and the selection from one read snapshot; a work picked now means no idle queue
+                c.execute('BEGIN')
+                blockers=catalog.queue_blockers(c,now)
+                picked=self.pick(c,now)
         except sqlite3.OperationalError as e:
             if not sqlite_busy(e):raise
             self.sqlite_busy_count+=1;return None
+        if picked is not None:
+            self.idle_reported_at=0;return None
         selectable=sum(v.get('selectable',0) for v in blockers.values())
-        diagnostics.event('recognition_idle',level='WARNING' if selectable else 'INFO',selectable=selectable,blockers=blockers)
+        diagnostics.event('recognition_idle',level='WARNING' if selectable else 'INFO',selectable=selectable,blockers=blockers,
+                          lease_busy=getattr(self,'lease_busy_count',0))
         return blockers
-    def pick(self,c):
+    def pick(self,c,now=None):
         """User priority, bounded show completion, new work, then due retries.
 
         The selector never resets cooldowns just to finish a show. In movie-first
         mode, film first passes always win over automatic series focus.
         """
-        now=time.time()
+        now=time.time() if now is None else now
         # 0.6.29: CROSS JOIN drives the lookup from the small priority table; SQLite otherwise walked
         # all due works (≈220,000 queued series) through work_retry.
         row=c.execute("""SELECT w.* FROM metadata_priority p CROSS JOIN works w ON w.id=p.work_id
@@ -1393,29 +1408,48 @@ class Service:
         # Contributions of news and magazine formats go under their format instead of into the provider queue.
         assigned=0
         while not self.stop.is_set():
-            with self.db() as c:n,a=catalog.assign_formats(c)
+            try:
+                with self.db() as c:n,a=catalog.assign_formats(c)
+            except sqlite3.OperationalError as e:
+                # 0.6.114 (Mac-Prüfung 0.6.113: 4× background_worker_failed „database is locked“ beim Start): a busy
+                # database postpones the batch instead of restarting the whole reclassification worker.
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+                if self.stop.wait(2):return
+                continue
             assigned+=a
             if n:
                 if self.stop.wait(.05):return
                 continue
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
-            self.refile_suggested_sendungen()
+            waiting=self.refile_suggested_sendungen()=='waiting'
             self.unknown_sweep()
-            self.format_wake.wait(3600);self.format_wake.clear()
+            # 0.6.114: an undecided B2 refiling is tried again after 2 minutes, not after an hour
+            self.format_wake.wait(REFILE_RETRY if waiting else 3600);self.format_wake.clear()
     def refile_suggested_sendungen(self):
         """0.6.113, once when the IMDb archive is ready (catalog.refile_suggested_sendungen): Folgen that 0.6.88 filed
-        under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days."""
+        under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days.
+        0.6.114 (Mac-Prüfung 0.6.113 E3: ended silently, next try an hour later): returns 'waiting' when undecided
+        (archive not ready, busy database) and says why in catalog_sendung_refile_waiting (at most hourly)."""
+        reason=None
         try:
             with self.db() as c:
                 if catalog.get_state(c,'sendung_refile_v06113',False):return None
                 refiled,shows,kept,cursor=catalog.refile_suggested_sendungen(c)
                 if cursor is False:
-                    # archive not ready: nothing decided, the next format pass (hourly) tries again
-                    return None
-                catalog.set_state(c,'sendung_refile_v06113',{'refiled':refiled,'shows':len(shows),'kept':kept,'at':time.time()})
+                    import imdb_archive
+                    archive=imdb_archive.ACTIVE
+                    reason='archive_missing' if not archive else ('archive_not_ready' if not getattr(archive,'updated',0) else 'lookup_failed')
+                else:
+                    catalog.set_state(c,'sendung_refile_v06113',{'refiled':refiled,'shows':len(shows),'kept':kept,'at':time.time()})
         except sqlite3.OperationalError as e:
             if not sqlite_busy(e):raise
-            self.sqlite_busy_count+=1;return None
+            self.sqlite_busy_count+=1;reason='database_busy'
+        if reason:
+            if time.time()-getattr(self,'refile_waiting_reported',0)>3600:
+                self.refile_waiting_reported=time.time()
+                diagnostics.event('catalog_sendung_refile_waiting',level='WARNING',reason=reason,retry_seconds=REFILE_RETRY)
+            return 'waiting'
         diagnostics.event('catalog_sendung_suggestions_refiled',works=refiled,shows=len(shows),kept_with_episodes=kept,
                           samples=dict(sorted(shows.items(),key=lambda x:-x[1])[:20]))
         if refiled:catalog.invalidate_listings()

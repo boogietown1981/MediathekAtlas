@@ -490,7 +490,10 @@ class Archive:
         return c
     def _lookup(self,sql,params,key):
         """Cache raw exact-match rows, never episode-specific final decisions."""
-        cache=self._reader_local.queries
+        cache=getattr(self._reader_local,'queries',None)
+        if cache is None:
+            # 0.6.114: a thread's first lookup opens its reader (before: AttributeError outside the worker threads)
+            self._reader();cache=self._reader_local.queries
         if key in cache:
             self._count('query_hits');return cache[key]
         self._count('query_misses')
@@ -642,6 +645,9 @@ class Archive:
         """True if IMDb lists single episodes for the series ``meta`` names (by IMDb ID, else exact title within one
         year, as episode_evidence locates it); False if not or unknown to IMDb; None while the archive is not ready."""
         if not self.updated:return None
+        # 0.6.114 (Mac-Prüfung 0.6.113 E3): the format/sweep thread had no reader; _lookup raised AttributeError
+        # ('queries'), which sendung_has_episodes took for "archive not ready" – B2 never filed anything there.
+        self._reader()
         known=series_reference(meta)
         if known:return self.has_episodes(known)
         title=meta.get('title') or ''

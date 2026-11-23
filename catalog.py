@@ -1818,6 +1818,8 @@ def assign_formats(c,limit=500):
             m.update(state='format',reason='Ausgabe der Sendung „'+m['title']+'“ ('+m['provider']+'); wird nicht einzeln abgeglichen.')
             c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
             assigned+=1;continue
+        if row['kind']=='other' and programme_extra(c,row,m,source):
+            assigned+=1;continue
         if not format_contribution(m,source,counts[topic]):
             if row['kind']=='other' and file_open_clip(c,row,m,source):assigned+=1
             continue
@@ -1825,6 +1827,24 @@ def assign_formats(c,limit=500):
         assigned+=1
     if not dirty_mode:set_state(c,'format_cursor',cursor if rows else 'complete')
     return len(rows),assigned
+
+def programme_extra(c,row,m,source):
+    """0.6.114 (Mac-Prüfung 0.6.113 E2: „Extra: Interview mit Lucia Chiarla“ wurde Beitrag einer Sendung „Es geht um
+    Luis“ – so heißt ein Film): a clip whose topic is the topic of a recognised film or series (not a Sendung) is an
+    extra of that programme, never a new Sendung of the same name."""
+    if row['kind']!='other' or row['state']!='pending' or m.get('scan_requested'):return False
+    topic=row['topic'] or source.get('topic') or ''
+    # news/magazine clips keep joining their Sendung (0.5.80), even when a database knows the Sendung as series
+    if not topic or FORMAT_WORDS.search(cleaned(topic)) or key(topic) in FORMAT_GENERIC:return False
+    real=c.execute("""SELECT 1 FROM works WHERE topic=? AND id!=? AND state IN ('matched','manual')
+        AND (kind='movie' OR (kind='series' AND json_extract(meta,'$.provider') IN ('TMDB','TVDB','IMDb Offline','OMDb'))) LIMIT 1""",
+        (topic,row['id'])).fetchone()
+    if not real:return False
+    name=cleaned(source.get('topic')) or topic
+    m.update(kind='other',state='format',episode_verified=False,related_series_title=name,
+             reason='Extra zu „'+name+'“ (Interview, Ausschnitt, Trailer); keine vollständige Sendung, wird nicht abgeglichen.')
+    c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+    return True
 
 def file_open_clip(c,row,m,source):
     """0.6.113 (Mac-Prüfung 0.6.108, Rückstau-Abfrage: 2.414 Werke der Art 'other' pending mit 0 Versuchen – Trailer,
@@ -2199,7 +2219,15 @@ def sendung_has_episodes(suggestion):
     if not archive or not getattr(archive,'updated',0):return None
     if suggestion.get('provider')=='Wikidata' and not imdb_archive.series_reference(suggestion):return False
     try:return bool(archive.series_has_episodes({**suggestion,'kind':'series'}))
-    except Exception:return None
+    except Exception as exc:
+        # 0.6.114: never silent – a failing lookup looked like "archive not ready" (Mac-Prüfung 0.6.113 E3)
+        global _HAS_EPISODES_LOGGED
+        if time.time()-_HAS_EPISODES_LOGGED>600:
+            _HAS_EPISODES_LOGGED=time.time()
+            import diagnostics
+            diagnostics.error('sendung_has_episodes_failed',exc,title=str(suggestion.get('title') or '')[:80])
+        return None
+_HAS_EPISODES_LOGGED=0
 
 def file_sendung_without_episodes(c,row,m,source,suggestion,sendung,grouping):
     """File ``row`` under the Sendung (state 'format') and keep the Sendung's database identity as a note."""
