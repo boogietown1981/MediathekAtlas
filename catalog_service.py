@@ -139,10 +139,23 @@ class Service:
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return None
         return None
+    def requeue_truncated_notes(self):
+        """0.6.121, once: works with a cut version note in the title are searched again with the cleaned title."""
+        try:
+            with self.db() as c:
+                if catalog.get_state(c,'truncated_notes_v06121',False):return 0
+                ids=catalog.truncated_note_works(c)
+                c.executemany("UPDATE works SET state='pending',attempts=0,next_try=0 WHERE id=?",[(w,) for w in ids])
+                catalog.set_state(c,'truncated_notes_v06121',{'requeued':len(ids),'at':time.time()})
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.busy('truncated_notes');return 0
+        if ids:diagnostics.event('catalog_truncated_notes_requeued',works=len(ids))
+        return len(ids)
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
+            self.requeue_truncated_notes();self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():

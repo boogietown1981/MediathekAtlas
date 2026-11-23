@@ -500,6 +500,12 @@ QUERY_NOISE=(
 FILM_SUFFIX=re.compile(r'(?i)\s+[-–]\s+(?:spielfilm|fernsehfilm|dokumentarfilm|kurzfilm|animationsfilm|trickfilm|fernsehspiel|stummfilm|musikfilm|kinofilm)'
                        r'(?:\s+von\s+[^,]{2,80})?,\s*[^,]{2,80}?\s+((?:18|19|20)\d{2})\s*$')
 QUERY_NOISE=(FILM_SUFFIX,)+QUERY_NOISE
+# 0.6.121 (Langzeitdiagnose Air 23.11.2026, N-D): the broadcaster cuts long titles after 80 characters, so a version
+# note loses its closing bracket („… Simone de Beauvoir (Originalversion“) and stayed in the search title (TMDB
+# similarity 0.88, no kind). An unclosed bracket at the end that starts like a version/accessibility note goes, also
+# cut inside the word („(Originalvers“, „(mit Untert“). Search title only – work identities are unchanged.
+TRUNCATED_NOTE=re.compile(r'(?i)\s*[([]\s*(?:mit\s+)?(?:orig\w*|untert\w*|hörf\w*|hörfilm|audio\w*|gebärd\w*|omu\b|ov\b|vost\w*|dgs\b|ad\b)[^)\]]*$')
+QUERY_NOISE=QUERY_NOISE+(TRUNCATED_NOTE,)
 def film_suffix_year(title):
     """Year of a 3sat film title „… - Spielfilm, USA 1993“, else None."""
     m=FILM_SUFFIX.search(str(title or ''))

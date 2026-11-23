@@ -1,3 +1,10 @@
+## 0.6.121 – Langzeitdiagnose Air N-D/N-F; auf main 0.6.120
+
+- N-D: `metadata.TRUNCATED_NOTE` – eine offene Klammer am Titelende, die wie ein Fassungs-/Barrierefreiheitshinweis beginnt („(Originalversion“, „(mit Untert“, „(OmU“), fällt aus dem Suchtitel; Werkkennungen bleiben unverändert. Offene Werke damit einmal neu eingereiht (Merker `truncated_notes_v06121`, Ereignis `catalog_truncated_notes_requeued`).
+- N-F: `artwork.log_due` – `artwork_checked` mit Fehler einmal je Titel und Tag, Erfolge jede 25. Prüfung (vorher 73 % des Protokolls, Diagnosefenster 44 h).
+- Abfragen Runde 7 für die restlichen Werke ohne Art: `berichte/abfragen/ohne-art-0721-runde7.sql` (Projektablage).
+- Tests: `tests/test_v06121.py` (6).
+
 ## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (E6); auf 0.6.119
 
 - E6: `catalog.unify_show_spelling` benennt nur Werke eines Senders um, der die Markenschreibweise selbst in Titel oder Thema führt (ARD/MDR „Mittagsmagazin“ 289 Werke bekamen SRFs „MittagsMagazin“, weil ein show_key über Sender reicht). Auch Werke anderer Art unter der Reihe (3 „Kikaninchen“-Ausschnitte blieben).

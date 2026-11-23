@@ -2289,6 +2289,13 @@ def rematch_movie_suggestions(c,after='',limit=500):
         save_metadata(c,row['id'],chosen,'matched');done+=1
     return done,(rows[-1]['id'] if rows else None)
 
+def truncated_note_works(c):
+    """0.6.121: ids of open works whose title ends in a cut version note („… (Originalversion“), searched again once."""
+    import metadata
+    rows=c.execute("""SELECT id,title FROM works WHERE kind IN ('movie','unknown','series') AND state IN ('review','retry','pending')
+        AND (title LIKE '%(%' OR title LIKE '%[%')""").fetchall()
+    return [r[0] for r in rows if metadata.TRUNCATED_NOTE.search(str(r[1] or ''))]
+
 def film_suffix_works(c):
     """0.6.97: ids of open films/unknown works whose title carries 3sat's „- Spielfilm, Land Jahr“ (searched again)."""
     import metadata

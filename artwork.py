@@ -205,5 +205,20 @@ def run_once(service):
                   (time.time()+(3600 if errors else NOT_FOUND_RETRY if found.get('not_found') else 86400),row['id']))
     service.artwork_checked+=1+shared
     # Cache hits repeat a known result; logging each of them crowded real events out of the rotating log.
-    if not cache or errors:diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors,shared=shared,not_found=missing)
+    if (not cache or errors) and (shared or log_due(m['title'],errors)):
+        diagnostics.event('artwork_checked',title=m['title'],poster=bool(m.get('poster')),fanart=bool(m.get('fanart')),errors=errors,shared=shared,not_found=missing)
     return True
+
+# 0.6.121 (Langzeitdiagnose Air 23.11.2026, N-F): artwork_checked filled 73 % of the protocol, so 8 × 4 MB covered only
+# 44 hours. A failing title is logged once a day, a success that shared images always, other successes as every
+# LOG_EVERY-th sample; counts stay in status.json.
+LOG_EVERY=25
+_LOGGED={};_SUCCESSES=[0]
+def log_due(title,errors):
+    if errors:
+        mark=(str(title),time.strftime('%Y-%m-%d'))
+        if mark in _LOGGED:return False
+        if len(_LOGGED)>20000:_LOGGED.clear()
+        _LOGGED[mark]=1;return True
+    _SUCCESSES[0]+=1
+    return _SUCCESSES[0]%LOG_EVERY==1

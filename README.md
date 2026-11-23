@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.120
+# MediathekAtlas · 0.6.121
+
+## Neu in 0.6.121: abgeschnittene Titel, längere Diagnosen
+- Titel, die der Sender nach 80 Zeichen abschneidet („… (Originalversion“), werden ohne den Rest des Hinweises gesucht und einmal neu geprüft.
+- Der Bilder-Abgleich schreibt Fehler je Titel nur noch einmal am Tag und Erfolge als Stichprobe ins Protokoll – eine Diagnose reicht dadurch deutlich länger.
+
 
 ## Neu in 0.6.120: Schreibweise je Sender
 - Markenschreibweisen (KiKANiNCHEN) gelten nur für den Sender, der sie selbst so schreibt: ARD und MDR behalten „Mittagsmagazin“, SRF „MittagsMagazin“. Auch Ausschnitte und Extras einer Reihe werden angeglichen.
