@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.114
+# MediathekAtlas · 0.6.115
+
+## Neu in 0.6.115: Kinderecke – Familienfilme nur mit eigenem Kindersignal
+- Ein Familienfilm mit Altersfreigabe kommt nur noch automatisch in die Kinderecke, wenn er erkennbar für Kinder ist (Zeichentrick, Märchen, bekannte Kinderbuch-Vorlage oder Kinderreihe). Alle anderen warten im Elternbereich auf deine Freigabe.
+- Die Diagnose nennt, welche Titel bei einem Neuaufbau der Kinderecke hinzukommen oder wegfallen.
 
 ## Neu in 0.6.114: Nachbesserungen an Erkennung, Kanal-Vorschlägen und Kinderecke
 - Sendungen, die IMDb ohne Einzelfolgen kennt, werden jetzt wirklich als Beiträge abgelegt (in 0.6.113 blieb das aus).

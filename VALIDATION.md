@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.115 – Kinderecke: Altersweg nur mit eigenem Kindersignal, Listen-Stempel (23. November 2026)
+- Automatisch: tests/test_v06115_kinder_altersweg.py (3), angepasst test_v0699, test_v06114_kinder_nachbesserung; gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.115, Teil K; pruefe_kinderecke.py mit --stabil).
+
 ## 0.6.114 – Sammelstand Erkennung/YouTube/Kinderecke (23. November 2026)
 - Automatisch: tests/test_v06114.py (10), tests/test_v06114_kinder_nachbesserung.py (6), tests/test_v0690_kanal_vorschlaege.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.114, Teile E, Y, K).
 

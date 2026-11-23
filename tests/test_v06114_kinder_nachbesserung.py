@@ -42,7 +42,7 @@ class AgePath(Mixed):
             for title in ('Amore mio – Niemand ist wie Du', 'Trauung mit Hindernissen', 'Oma wider Willen', 'Wintertochter',
                           'Wer hat eigentlich die Liebe erfunden?'):
                 self.assertIn(title, waiting)
-                self.assertIn('kein eindeutiger Kinderfilm', waiting[title])
+                self.assertIn('kein eigenes Kindersignal', waiting[title])
             kids_rules.choose(c, 'work', 'amore', 'allow', 'Amore mio')       # Eltern entscheiden selbst
         self.assertIn('Amore mio – Niemand ist wie Du', [t['title'] for t in self.data()['movies']])
 

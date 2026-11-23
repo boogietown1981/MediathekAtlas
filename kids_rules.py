@@ -177,9 +177,7 @@ def live_clause():
             topics + topics)
 
 
-# 0.6.114: Rohgenre „TV-Film“/„TV Movie“/„Fernsehfilm“ (keine eigene Kategorie) und Märchen (Titel, Rohgenre, Thema)
-TV_FILM = ("EXISTS(SELECT 1 FROM work_genres tv WHERE tv.work_id=w.id AND (lower(tv.genre) LIKE '%tv%movie%' "
-           "OR lower(tv.genre) LIKE '%tv%film%' OR lower(tv.genre) LIKE '%fernsehfilm%'))")
+# 0.6.114: Märchen (Titel, Rohgenre, Thema) als eigenes Kindersignal auf dem Altersweg
 FAIRY_TALE = ("(w.title LIKE '%ärchen%' OR w.title LIKE '%maerchen%' OR EXISTS(SELECT 1 FROM work_genres mg WHERE "
               "mg.work_id=w.id AND (mg.genre LIKE '%ärchen%' OR lower(mg.genre) LIKE '%fairy%')) OR EXISTS(SELECT 1 FROM "
               "offers mo WHERE mo.work_id=w.id AND mo.active=1 AND json_extract(mo.payload,'$.topic') LIKE '%ärchen%'))")
@@ -213,21 +211,22 @@ def kids_clause(c, signal, signal_args, has):
                % ','.join('?' * len(ALWAYS_CHANNELS)))
     listed = "w.state IN ('matched','manual','identified','format')"
     live, live_args = live_clause()
-    # 0.6.114 (Mac-Prüfung 0.6.113: „Amore mio – Niemand ist wie Du“, „Trauung mit Hindernissen“, „Oma wider Willen“,
-    # „Wintertochter“ kamen über Familie + FSK): Drama oder Fernsehfilm für Erwachsene braucht auf dem Altersweg ein
-    # eigenes Kindersignal (Animation, Märchen, bekannte Kinderreihe); sonst Warteliste
-    drama, drama_args = has(categories.AGE_PATH_ADULT)
-    adult = '(%s OR %s)' % (drama, TV_FILM)
-    own = '(%s OR %s OR %s)' % (ani, FAIRY_TALE, shows)
+    # 0.6.114/0.6.115 (Mac-Prüfungen 0.6.113/0.6.114: „Amore mio“, „Wintertochter“, „Trauung mit Hindernissen“ – nur
+    # Familie + FSK 6): auf dem Altersweg reicht Familie + Freigabe nie allein; nötig ist ein eigenes Kindersignal –
+    # Animation, Märchen (Titel/Rohgenre/Thema), Märchen-/Kinderbuch-Titel (categories.KIDS_CLASSICS) oder bekannte
+    # Kinderreihe. Sonst Warteliste (Björn: „im Zweifel nicht, ich gebe manuell frei“)
+    classics = '(%s)' % ' OR '.join(['lower(w.title) LIKE ?'] * len(categories.KIDS_CLASSICS))
+    classics_args = ['%%%s%%' % t for t in categories.KIDS_CLASSICS]
+    own = '(%s OR %s OR %s OR %s)' % (ani, FAIRY_TALE, classics, shows)
     sql = ('NOT {live} AND NOT {block} AND ({allow} OR ({channel} AND NOT {high}) OR (NOT {bad} AND NOT {high} AND ('
            '({listed} AND {shows}) OR '
            '({ident} AND {ref} AND ({kids} OR ({fam} AND {ani}))) OR '
-           '({ident} AND {age_ok} AND {hint} AND NOT {soft} AND (NOT {adult} OR {own})))))').format(
+           '({ident} AND {age_ok} AND {hint} AND NOT {soft} AND {own}))))').format(
         live=live, block=_chosen('block'), allow=_chosen('allow'), channel=channel, high=age_high, bad=bad, listed=listed, shows=shows,
-        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft, adult=adult, own=own)
+        ident=IDENTIFIED, ref=reference, kids=kids_genre, fam=fam, ani=ani, age_ok=age_ok, hint=hint, soft=soft, own=own)
     args = (list(live_args) + list(ALWAYS_CHANNELS) + [limit] + list(bad_args) + [limit] + list(shows_args)
             + list(DERIVED_SOURCES) + list(kids_args) + list(fam_args) + list(ani_args)
-            + [limit] + list(hint_args) + list(soft_args) + list(drama_args) + list(ani_args) + list(shows_args))
+            + [limit] + list(hint_args) + list(soft_args) + list(ani_args) + classics_args + list(shows_args))
     return sql, args
 
 
@@ -327,8 +326,8 @@ def waiting(c, limit=3000):   # 0.6.109: Mac-Prüfung 0.6.106 sah genau 300 (abg
         elif r['age'] is not None and r['age'] > lim:
             reason = 'FSK %d (über der Grenze)' % r['age']
         elif r['age'] is not None:
-            # 0.6.105: Fantasy/Abenteuer allein; 0.6.114: Familie + Drama/Fernsehfilm ohne eigenes Kindersignal
-            reason = 'FSK %d, aber kein eindeutiger Kinderfilm (Familien-, Drama- oder Fernsehfilm)' % r['age']
+            # 0.6.105: Fantasy/Abenteuer allein; 0.6.115: Familie ohne eigenes Kindersignal
+            reason = 'FSK %d, aber kein eigenes Kindersignal (Familienfilm ohne Animation, Märchen oder Kinderreihe)' % r['age']
         elif r['age_checked']:
             reason = 'Keine Altersfreigabe bekannt'
         else:

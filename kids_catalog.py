@@ -198,6 +198,12 @@ def build(root, db, modules=None, merge=True, page=None):
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
     out['pending'] = pending
+    # 0.6.115 (Mac-Prüfung 0.6.114: zwei Skriptläufe direkt nacheinander 548/629 → 553/614): Stempel der Liste, damit
+    # eine Prüfung erkennt, ob sich die Liste während des Laufs neu aufgebaut hat (Erkennung/Altersfreigaben im Hintergrund)
+    import hashlib
+    ids = sorted(t['id'] for v in ('movies', 'series') for t in out[v])
+    out['stamp'] = hashlib.sha1('\n'.join(ids).encode('utf-8')).hexdigest()[:12]
+    out['built'] = round(time.time())
     return out
 
 
@@ -374,9 +380,32 @@ def _build_store(root, db, modules, merge, page):
     gen = _GEN[0]
     value = build(root, db, modules, merge, page)
     with _LOCK:
+        old = (_LAST.get(str(root)) if not value.get('pending') else None)
+        if not value.get('pending'):
+            _LAST[str(root)] = value
         if gen == _GEN[0]:
             _CACHE[str(root)] = (time.monotonic(), value)
+    if old is not None and old.get('stamp') != value.get('stamp'):
+        _log_change(old, value)
     return value
+
+
+_LAST = {}   # 0.6.115: zuletzt fertige Liste je Datenordner (für kids_list_changed)
+
+
+def _log_change(old, new):
+    """0.6.115: welche Titel bei einem Neuaufbau hinzukamen bzw. wegfielen (Diagnose; je Seite bis 15 Titel)."""
+    try:
+        import diagnostics
+        before = {t['id']: t for v in ('movies', 'series') for t in old.get(v) or []}
+        after = {t['id']: t for v in ('movies', 'series') for t in new.get(v) or []}
+        label = lambda t: '%s [%s%s]' % (t.get('title'), t.get('source'), ', ' + str(t.get('weg') or t.get('basis')) if (t.get('weg') or t.get('basis')) else '')
+        added = [label(after[k]) for k in sorted(set(after) - set(before))]
+        removed = [label(before[k]) for k in sorted(set(before) - set(after))]
+        diagnostics.event('kids_list_changed', movies=len(new.get('movies') or []), series=len(new.get('series') or []),
+                          added=len(added), removed=len(removed), added_titles=added[:15], removed_titles=removed[:15])
+    except Exception:
+        pass
 
 
 def _refresh(root, db, modules, merge, page):
@@ -961,7 +990,8 @@ def _episode(source, ref, title, season, episode, poster, duration):
 
 def with_progress(data, marks):
     """Kopie der Liste mit Abspielstand (Weiterschauen) je Film."""
-    out = {'pending': data.get('pending', False), 'groups': data.get('groups') or []}
+    out = {'pending': data.get('pending', False), 'groups': data.get('groups') or [],
+           'stamp': data.get('stamp'), 'built': data.get('built')}          # 0.6.115: Stempel für die Prüfung
     for view in ('movies', 'series'):
         rows = []
         for t in data.get(view) or []:

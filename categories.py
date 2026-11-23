@@ -173,8 +173,24 @@ NOT_FOR_FAMILY = ('Horror', 'Erotik')
 # Romantik schließen den Altersweg zusätzlich zum Sicherheitsnetz aus.
 KIDS_AGE_HINTS = ('Familie',)
 AGE_PATH_EXCLUDED = ('Romantik', 'Science-Fiction', 'Action', 'Mystery')
-# 0.6.114 (Mac-Prüfung 0.6.113): auf dem Altersweg der Mediatheken nur mit eigenem Kindersignal (kids_rules.kids_clause)
-AGE_PATH_ADULT = ('Drama',)
+# 0.6.115 (Mac-Prüfung 0.6.114: „Trauung mit Hindernissen“, 3sat, nur Familie + FSK 6): der Altersweg der Mediatheken
+# braucht immer ein eigenes Kindersignal. Belegbar über den Titel: klassische Märchen und bekannte Kinderbuch-Vorlagen
+# (Kleinbuchstaben, Teil des Titels). Alles andere wartet auf die Eltern.
+KIDS_CLASSICS = (
+    'hänsel und gretel', 'zwerg nase', 'rotkäppchen', 'schneewittchen', 'aschenputtel', 'dornröschen', 'frau holle',
+    'rumpelstilzchen', 'froschkönig', 'rapunzel', 'bremer stadtmusikanten', 'gestiefelte kater', 'tapfere schneiderlein',
+    'tischlein deck dich', 'schneeweißchen', 'könig drosselbart', 'gänsemagd', 'sterntaler', 'des kaisers neue kleider',
+    'schneekönigin', 'hässliche entlein', 'kleine meerjungfrau', 'die zwölf brüder', 'die sechs schwäne', 'die sieben raben',
+    'die goldene gans', 'brüderchen und schwesterchen', 'jorinde und joringel', 'hans im glück', 'das blaue licht',
+    'prinzessin auf der erbse', 'räuber hotzenplotz', 'das kleine gespenst', 'die kleine hexe', 'der kleine wassermann',
+    'das sams', 'jim knopf', 'pippi langstrumpf', 'ronja räubertochter', 'michel aus lönneberga', 'bullerbü',
+    'das fliegende klassenzimmer', 'emil und die detektive', 'pünktchen und anton', 'das doppelte lottchen', 'pinocchio',
+    'peter pan', 'die unendliche geschichte', 'der kleine prinz', 'urmel', 'die wilden kerle', 'die wilden hühner',
+    'drache kokosnuss', 'rennschwein rudi rüssel', 'das kleine ich bin ich', 'grüffelo', 'schule der magischen tiere',
+    'hexe lilli', 'mein name ist eugen', 'bibi & tina', 'bibi und tina', 'bibi blocksberg', 'benjamin blümchen',
+    'sams im glück', 'der zauberer von oz', 'alice im wunderland', 'nils holgersson',
+    'die biene maja', 'wickie', 'pumuckl', 'pettersson und findus', 'die schöne und das biest', 'aladin',
+)
 KIDS_MAX_AGE = 12       # 0.6.99: Standard FSK 12 (Björn), einstellbar im Elternbereich (kids_rules)
 FAMILY_MAX_AGE = 12     # FSK 0/6/12
 

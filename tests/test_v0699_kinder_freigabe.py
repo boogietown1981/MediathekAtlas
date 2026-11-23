@@ -83,7 +83,8 @@ class RuleTests(Base):
         self.ages(tt1000001=0, tt1000002=6, tt1000003=None, tt1000004=12, tt1000005=0, tt1000006=6, tt1000008=12, tt1000009=0)
         with self.db() as c:
             self.assertEqual(kids_rules.max_age(c), 12)                                     # Björns Standard
-        self.assertEqual(self.titles(), ['Abenteuer ab 12', 'Bibi & Tina', 'Das Märchen von den zwölf Monaten', 'KiKA-Film', 'KiKA-Film ab 12', 'Pfefferkörner'])
+        # 0.6.115: „Abenteuer ab 12“ (Familie + Abenteuer, kein eigenes Kindersignal) wartet auf die Eltern
+        self.assertEqual(self.titles(), ['Bibi & Tina', 'Das Märchen von den zwölf Monaten', 'KiKA-Film', 'KiKA-Film ab 12', 'Pfefferkörner'])
         with self.db() as c:
             kids_rules.set_max_age(c, 6)
         self.assertEqual(self.titles(), ['Bibi & Tina', 'Das Märchen von den zwölf Monaten', 'KiKA-Film', 'Pfefferkörner'])
@@ -134,7 +135,7 @@ class RuleTests(Base):
             reasons = {w['title']: w['reason'] for w in kids_rules.waiting(c)}
         self.assertEqual(reasons, {'Fantasy ohne FSK': 'Keine Altersfreigabe bekannt', 'Abenteuer ab 12': 'FSK 12 (über der Grenze)',
                                    'Familienfilm noch nicht gesucht': 'Altersfreigabe wird noch gesucht',
-                                   'Fantasy ab 6': 'FSK 6, aber kein eindeutiger Kinderfilm (Familien-, Drama- oder Fernsehfilm)'})
+                                   'Fantasy ab 6': 'FSK 6, aber kein eigenes Kindersignal (Familienfilm ohne Animation, Märchen oder Kinderreihe)'})
 
 
 class FetchTests(Base):
