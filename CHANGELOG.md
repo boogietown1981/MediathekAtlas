@@ -1,3 +1,11 @@
+## 0.6.119 – Korrektur Mac-Urteil 0.6.118 (E4, E6) und Air-Diagnose 0.6.116 (3sat-Filme, Altersrunde); auf 0.6.118
+
+- 3sat-Filme (Air 23.11.: 18/18 „prüfen“): das Jahr aus „- Spielfilm, Land Jahr“ galt seit 0.6.97 nur für die Suche. `catalog.match_meta` gibt es auch der Entscheidung (Erkennungsarbeiter, `rematch_movie_suggestions`): exakter Titel + gleiches Jahr = Film verknüpft; ±1 braucht weiter die Laufzeit. Einmalig neu eingereiht (Merker `film_rules_suffix_year`).
+- E4: `catalog.merge_open_year_editions` (im Formatdurchlauf): Werke „<Reihe> <Jahr>“ auf „prüfen“/retry werden Beiträge der bekannten Reihe (≥ 10 Werke, beliebige Kennung), ohne bekannte Reihe ab zwei Jahren mit mehr als 2 Werken; nie Ereignisse oder Filme.
+- E6: `catalog.unify_show_spelling` nur noch zu genau einer Markenschreibweise (Großbuchstabe nach Kleinbuchstaben im Wort, aus Titel oder Thema: „KiKANiNCHEN“, „kulturMATINEE“); keine Mehrheitsregel mehr („reporter“, „forum wirtschaft“, „Trailer: SAARTHEMA“ aus 0.6.118 entstehen nicht mehr). Die 0.6.118-Änderungen auf Prüfkopien lassen sich nicht exakt zurücknehmen (alte Titel nicht gespeichert); 0.6.118 wurde nicht ausgegeben.
+- Altersrunde (`kids_rules.loop`): erste Runde wartet auf die Start-Heilungen (höchstens 15 min), belegte Datenbank = Warnung `kids_ages_busy`, neuer Versuch nach 1 min.
+- Tests: `tests/test_v06119.py` (6), `tests/test_film_suffix_year.py` (6), `tests/test_v06118.py` angepasst.
+
 ## 0.6.118 – Korrektur Mac-Urteil 0.6.117 (Erkennung E1/E4/E6, Sperren im Import); auf 0.6.117
 
 - E1: `catalog.portal_identity` – ein Themenwort (`TEMPLATE_GENERIC`, mit Sportarten) ist unter jedem Thema keine Serienidentität, außer IMDb/TVDB kennen es (`catalog.database_series`: tt-ID oder TVDB-/IMDb-Referenz, „Formel 1“ TVDB 387219). Damit fällt die ZDF-Seite „Schwimmen“ (1.045 Fußball-/Skibeiträge) als Kandidat, Vorlage und Weitergabe weg. Die Wikidata-only-Sperre aus 0.6.117 ist zurückgenommen (Tell-Star, Cinema Strikes Back, Berichte vom Tage … sind echte Sendungen). Heilung `generic_templates_v06118`: Themenwort-Identitäten unter jedem Thema neu erkennen (nie IMDb/TVDB-Serien); auf Prüfkopien mit 0.6.117-Lauf werden die zurückgesetzten echten Reihen (Rücknahme aus `generic_templates_v06117.shows`) mit frischem Versuchszähler neu erkannt (`undone_v06117`).

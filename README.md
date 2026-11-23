@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.118
+# MediathekAtlas · 0.6.119
+
+## Neu in 0.6.119: 3sat-Filme, Jahrgänge, Schreibweisen
+- 3sat-Filme mit Titelzusatz („… - Spielfilm, USA 1993“) werden verknüpft, wenn Titel und Jahr stimmen – vorher blieben sie auf „prüfen“, sobald die Laufzeit nicht passte.
+- Jahrgänge („Dein Song 2022“ … „2026“) kommen auch aus „prüfen“ unter die bekannte Reihe.
+- Schreibweisen werden nur noch zu einer belegten Markenschreibweise angeglichen (KiKANiNCHEN); sonst bleibt alles, wie der Sender es schreibt.
+- Altersrunde der Kinderecke wartet auf die Start-Heilungen; eine belegte Datenbank ist kein Fehler mehr.
+
 
 ## Neu in 0.6.118: Korrektur der Erkennung aus 0.6.117
 - Sportarten und Themenwörter („Schwimmen“, „Sport“) werden nie mehr zur Serie – unter jedem Thema. Echte Sendungen (Tell-Star, Cinema Strikes Back, Sonntagsmärchen) und Reihen, die IMDb oder TVDB kennen (Formel 1), bleiben unangetastet.

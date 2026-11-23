@@ -1933,35 +1933,36 @@ def restore_sendung_spelling(c):
         out[row['title']]=topic
     return out
 
-def _shouting(t):
-    letters=[ch for ch in str(t or '') if ch.isalpha()]
-    return len(letters)>3 and all(ch.isupper() for ch in letters)
+BRAND_CASE=re.compile(r'[a-zäöüß][A-ZÄÖÜ]')
+def brand_spelling(t):
+    """0.6.119: a deliberate brand spelling – a capital after a small letter inside a word („KiKANiNCHEN“, „kulturMATINEE“)."""
+    return bool(BRAND_CASE.search(str(t or '')))
 
 def unify_show_spelling(c):
-    """0.6.118 (Mac-Prüfung 0.6.117: „KiKANiNCHEN“ 50 and „Kikaninchen“ 368 works under one show_key): spellings of one
-    Reihe that differ only in case become one – the broadcaster's topic spelling most works carry, never an all-caps
-    one when another spelling exists („PRESSECLUB“, A1 0.6.106). User decisions stay. Idempotent; returns {old: new}."""
+    """0.6.118 (Mac-Prüfung 0.6.117: „KiKANiNCHEN“ 50 and „Kikaninchen“ 368 works under one show_key).
+    0.6.119 (Mac-Prüfung 0.6.118: the majority rule turned it the wrong way round – „Kikaninchen“ 418, „Reporter“ →
+    „reporter“, „FORUM WIRTSCHAFT“ → „forum wirtschaft“, „Trailer: SAARTHEMA“): only towards a deliberate brand spelling.
+    A Reihe whose titles or topics carry exactly one brand spelling (brand_spelling) gets it for its plainly written
+    variants; every other case difference stays as it is. User decisions stay. Idempotent; returns {old: new}."""
     shows={}
     for show,title,n in c.execute("""SELECT show_key,title,COUNT(*) FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
             AND state!='manual' GROUP BY show_key,title"""):
         shows.setdefault(show,[]).append((title,n))
+    topic_brands={}
+    for show,topic in c.execute("""SELECT show_key,topic FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
+            AND COALESCE(topic,'')!='' GROUP BY show_key,topic"""):
+        if brand_spelling(topic):topic_brands.setdefault(show,[]).append(cleaned(topic))
     out={}
     for show,titles in shows.items():
-        if len(titles)<2:continue
         by_key={}
-        for title,n in titles:by_key.setdefault(key(title),[]).append((title,n))
+        for title,n in titles:by_key.setdefault(key(title),[]).append(title)
         for k,variants in by_key.items():
-            if len(variants)<2:continue
-            votes={}
-            for topic,n in c.execute("SELECT topic,COUNT(*) FROM works WHERE show_key=? GROUP BY topic",(show,)):
-                t=cleaned(topic)
-                if t and key(t)==k:votes[t]=votes.get(t,0)+n
-            for title,n in variants:votes.setdefault(title,0)
-            calm=[t for t in votes if not _shouting(t)]
-            pool=calm or list(votes)
-            target=max(pool,key=lambda t:(votes[t],sum(n for v,n in variants if v==t),t))
-            for title,n in variants:
-                if title==target:continue
+            plain=[t for t in variants if not brand_spelling(t)]
+            if not plain:continue
+            brands={t for t in variants+[t for t in topic_brands.get(show,()) if key(t)==k] if brand_spelling(t)}
+            if len(brands)!=1:continue
+            target=brands.pop()
+            for title in plain:
                 for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
                     try:m=json.loads(w['meta'] or '{}')
                     except (TypeError,ValueError):continue
@@ -2391,7 +2392,46 @@ def merge_year_editions(c):
                 m.update(title=stem,episode_title=ep,sendung_name=title,year_edition_v06117=year)
                 c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(stem,target,json.dumps(m),w['id']));moved+=1
         merged[stem]=sorted({y for *_,y in items})
+    n,opened=merge_open_year_editions(c)
+    moved+=n
+    for stem,years in opened.items():merged[stem]=sorted(set(merged.get(stem,[]))|set(years))
     return moved,merged
+
+YEAR_EDITION_REIHE_MIN=10
+def merge_open_year_editions(c):
+    """0.6.119 (Mac-Prüfung 0.6.118: „Dein Song 2022“–„2026“, 17 works, all „prüfen“ – merge_year_editions only saw
+    filed Sendungen): open works („prüfen“/retry) named „<Reihe> <Jahr>“ are filed as contributions of that Reihe when
+    it is known with at least YEAR_EDITION_REIHE_MIN works (any identity), or – without such a Reihe – when they span
+    two years with more than YEAR_EDITION_MIN_WORKS works. Returns (moved, {Reihe: [years]})."""
+    groups={}
+    for row in c.execute("""SELECT * FROM works WHERE state IN ('review','retry') AND kind IN ('series','unknown')
+            AND title GLOB '*20[0-9][0-9]*'""").fetchall():
+        hit=year_edition(row['title'])
+        if hit:groups.setdefault(key(hit[0]),[]).append((row,hit[0],hit[1]))
+    moved=0;merged={}
+    for stem_key,items in groups.items():
+        stem=sorted((x[1] for x in items),key=len)[0]
+        known=[r for r in c.execute("""SELECT show_key,title,COUNT(*) n FROM works WHERE kind='series' AND state IN ('identified','matched','format')
+                AND title=? COLLATE NOCASE AND COALESCE(show_key,'')!='' GROUP BY show_key ORDER BY n DESC""",(stem,)).fetchall()
+               if key(r['title'])==stem_key]
+        target=known[0] if known and known[0]['n']>=YEAR_EDITION_REIHE_MIN else None
+        if not target and (len({y for *_,y in items})<2 or len(items)<=YEAR_EDITION_MIN_WORKS):continue
+        name=target['title'] if target else stem
+        for row,_,year in items:
+            try:m=json.loads(row['meta'] or '{}')
+            except (TypeError,ValueError):continue
+            if m.get('scan_requested'):continue
+            source=best_source(c,row['id'])
+            if not source:continue
+            filed=file_under_sendung(c,row,m,source,name,'contribution',
+                                     reason='Jahrgang %d der Sendung „%s“; wird nicht mit Filmdatenbanken abgeglichen.'%(year,name))
+            ep=str(filed.get('episode_title') or '')
+            if not key(ep).startswith(key(row['title'])):ep=row['title']+': '+ep if ep else row['title']
+            filed.update(episode_title=ep,sendung_name=row['title'],year_edition_v06119=year)
+            show=target['show_key'] if target else showkey({'kind':'series','title':name})
+            c.execute("UPDATE works SET title=?,show_key=?,meta=? WHERE id=?",(name,show,json.dumps(filed),row['id']));moved+=1
+            merged.setdefault(name,set()).add(year)
+    return moved,{k:sorted(v) for k,v in merged.items()}
 
 def heal_kids_spinoffs(c):
     """Once (0.6.106): Sendung filings of kids-channel spin-offs („KiKA LIVE fordert heraus“) move under the main Reihe."""

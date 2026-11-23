@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.119 – Korrektur Mac-Urteil 0.6.118 (23. November 2026)
+- Automatisch: tests/test_v06119.py, tests/test_film_suffix_year.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.119).
+
 ## 0.6.118 – Korrektur Mac-Urteil 0.6.117 (23. November 2026)
 - Automatisch: tests/test_v06118.py, tests/test_v06117_air.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.118).
 

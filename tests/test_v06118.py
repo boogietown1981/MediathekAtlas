@@ -156,7 +156,7 @@ class ShowSpelling(Base):
             for i, title in enumerate(('Presseclub', 'Presseclub', 'PRESSECLUB')):
                 w = self.add(c, 'PRESSECLUB', 'Ausgabe %d' % i, 'ARD')
                 c.execute("UPDATE works SET kind='series',state='format',title=?,show_key=? WHERE id=?", (title, key, w))
-            self.assertEqual(catalog.unify_show_spelling(c), {'PRESSECLUB': 'Presseclub'})
+            self.assertEqual(catalog.unify_show_spelling(c), {})   # 0.6.119: no brand spelling, nothing changes
 
 
 class SyncBusy(Base):
