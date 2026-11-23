@@ -48,6 +48,8 @@ STATES = ('new', 'approved', 'rejected')
 START_COUNT = 3                # 0.6.98 (Mac-Prüfung 0.6.90: 5 × 26 Min. ≈ 2 GB): freigegebener Kanal lädt zum Start 3 Videos
 # Nachbesserung nach Mac-Prüfung 0.6.106 (23.11.2026): Vorschläge waren nur Handles ohne Namen, eine als Handle gelesene
 # Kanal-Kennung, vorn englische Kanäle aus den Beschreibungen eines einzigen Abos, ohne Kindersignal.
+SEARCH_PER_RUN = 6             # Suchen je Lauf, eigenes Budget (Mac-Prüfung 0.6.112: Empfehlungen verbrauchten alles)
+BACKFILL_API = 200             # mit Schlüssel: so viele Videos je Lauf über videos.list (4 Einheiten)
 RESOLVE_PER_RUN = 15           # so viele Vorschläge ohne Namen/Kanalbild werden je Lauf aufgelöst (je ein Listenabruf)
 RESOLVE_VIDEOS = 12            # Videotitel je aufgelöstem Kanal (Kindersignal, Sprache)
 MENTIONS_PER_ABO = 5           # aus den Beschreibungen eines Abos zählen höchstens so viele erwähnte Kanäle
@@ -142,19 +144,34 @@ def record_mentions(root, video, text):
     return len(refs)
 
 
-def _api_mentions(db, videos):
-    """Beschreibungen aus dem Data-API-Speicher (youtube_videos) für noch nicht erfasste Videos übernehmen."""
+def _api_mentions(db, videos, request=None, now=None, limit=BACKFILL_API):
+    """Beschreibungen und Schlagwörter aus dem Data-API-Speicher (youtube_videos) übernehmen. Mit ``request`` werden
+    fehlende Videos vorher über videos.list geholt (1 Einheit je 50 Videos) – mit Schlüssel statt des langsamen
+    yt-dlp-Nachholens (Mac-Prüfung 0.6.112: Lauf 8 Minuten)."""
     known = {r[0] for r in db.execute('SELECT video FROM youtube_described')}
-    missing = [v for v in videos if v not in known]
+    tagged = {r[0] for r in db.execute('SELECT video FROM youtube_tagged')}
+    if request is not None:
+        todo = [v for v in videos if (v not in known or v not in tagged) and youtube.VALID_VIDEO.fullmatch(v)][:limit]
+        if todo:
+            try:
+                youtube.load_facts(request, db, todo, time.time() if now is None else now)
+            except Exception as exc:          # noqa: BLE001 – Schlüssel ungültig/Kontingent: yt-dlp holt nach
+                _RUNNING['last_error'] = ('YouTube-API: ' + (str(exc) or type(exc).__name__))[:200]
+    missing = [v for v in videos if v not in known or v not in tagged]
     for start in range(0, len(missing), 400):
         chunk = missing[start:start + 400]
         for vid, payload in db.execute('SELECT id,payload FROM youtube_videos WHERE id IN (%s)' % ','.join('?' * len(chunk)), chunk):
             try:
-                text = json.loads(payload).get('description') or ''
+                facts = json.loads(payload)
+                text = facts.get('description') or ''
             except (TypeError, ValueError, AttributeError):
                 continue
-            db.executemany('INSERT OR IGNORE INTO youtube_mentions(video,ref) VALUES(?,?)', [(vid, r) for r in mentions(text)])
-            db.execute('INSERT OR REPLACE INTO youtube_described(video,at) VALUES(?,?)', (vid, time.time()))
+            if vid not in known:
+                db.executemany('INSERT OR IGNORE INTO youtube_mentions(video,ref) VALUES(?,?)', [(vid, r) for r in mentions(text)])
+                db.execute('INSERT OR REPLACE INTO youtube_described(video,at) VALUES(?,?)', (vid, time.time()))
+            if vid not in tagged and isinstance(facts.get('tags'), list):    # ältere Speicherstände ohne Schlagwörter: yt-dlp
+                db.execute('INSERT OR REPLACE INTO youtube_tagged(video,tags,at) VALUES(?,?,?)',
+                           (vid, json.dumps(facts['tags'][:30], ensure_ascii=False), time.time()))
 
 
 # ---------------------------------------------------------------- Empfohlene Kanäle eines Abos
@@ -253,6 +270,20 @@ def _cached(db, key, now, budget, fetch, fresh=False):
     return refs
 
 
+def _api_or_ytdlp(api, ytdlp):
+    """Erst die Data API (mit Schlüssel), bei Fehler (Kontingent, Schlüssel, Endpunkt) yt-dlp; ohne yt-dlp bleibt der Fehler."""
+    def fetch():
+        if api is not None:
+            try:
+                return api()
+            except Exception as exc:          # noqa: BLE001
+                _RUNNING['last_error'] = ('YouTube-API: ' + (str(exc) or type(exc).__name__))[:200]
+                if ytdlp is None:
+                    raise
+        return ytdlp()
+    return fetch
+
+
 def _featured(root, db, abo, now, request, runner, budget, fresh=False):
     """Empfohlene Kanäle eines Abos. 0.6.98: nur noch mit API-Schlüssel (``channelSections``); den Reiter „Kanäle“
     liefert YouTube nicht mehr aus (Mac-Prüfung 0.6.90: yt-dlp „does not have a channels tab“ bei allen Kanälen)."""
@@ -340,7 +371,8 @@ def _count_foreign(own, groups):
 def _playlists(root, db, abo, now, request, runner, budget, fresh=False):
     if abo['kind'] != 'channel':
         return []
-    fetch = (lambda: playlist_channels_api(request, abo)) if request is not None else (lambda: playlist_channels_ytdlp(root, abo, runner))
+    fetch = _api_or_ytdlp((lambda: playlist_channels_api(request, abo)) if request is not None else None,
+                          lambda: playlist_channels_ytdlp(root, abo, runner))
     return _cached(db, 'playlists:%d' % abo['id'], now, budget, fetch, fresh)
 
 
@@ -553,6 +585,7 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
     ``probe`` (Prüflauf, POST /api/youtube-discover {"action": "search", "probe": true}): auch pausierte Abos und
     ohne den Wochenspeicher, damit Playlist- und Suchquelle in einer Prüfinstanz mit abgeschalteten Abos laufen."""
     import youtube_abos
+    started = time.time()
     now = time.time() if now is None else float(now)
     if request is None:
         request = youtube_abos._request_for_key()
@@ -578,7 +611,7 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
         paused = bool(download_retry.blocked_until('youtube', now)[0]) and request is None
         order = sorted(rows, key=lambda r: not (seen.get('job:' + (r['job_id'] or '')) or {}).get('done'))
         if request is not None:
-            _api_mentions(db, [r['video'] for r in rows])
+            _api_mentions(db, [r['video'] for r in order], request=request if not paused else None, now=now)
             db.commit()
         if not paused:
             # 0.6.98: Beschreibungen schon geladener Videos nachholen (gesehene zuerst); mit Schlüssel nur, was die API nicht hatte
@@ -616,6 +649,7 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
                 titles[ref] = title
 
         budget = [FEATURED_PER_RUN]
+        search_budget = [SEARCH_PER_RUN]
         _RUNNING['progress'] = 'Playlists der Abos werden gelesen …'
         for a in sorted(abos, key=lambda a: -sum(1 for _, d in by_abo.get(a['id'], []) if d)):
             name = a['label'] or a['title'] or a['ref']
@@ -654,9 +688,9 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
                 terms, source, label = search_terms(db, every, names), 'search_fallback', 'Thema der Abo-Videos'
             for term in terms:
                 query = term + (' für Kinder' if profile == 'kinder' and 'kind' not in term.lower() else '')
-                fetch = (lambda t=query: search_channels_api(request, t)) if request is not None else \
-                    (lambda t=query: search_channels_ytdlp(root, t, runner))
-                for ref, title, hits in _cached(db, 'search:%s:%s' % (profile, term.lower()), now, budget if not paused else [0], fetch, probe):
+                fetch = _api_or_ytdlp((lambda t=query: search_channels_api(request, t)) if request is not None else None,
+                                      lambda t=query: search_channels_ytdlp(root, t, runner))
+                for ref, title, hits in _cached(db, 'search:%s:%s' % (profile, term.lower()), now, search_budget if not paused else [0], fetch, probe):
                     add(ref, (1.0 if source == 'search' else 0.8) + 0.3 * min(hits - 1, 3), 'YouTube-Suche nach „%s“ (%s)' % (term, label),
                         profile, title, source)
         for ref, abos_seen in mention_abos.items():
@@ -724,7 +758,8 @@ def discover(root, c=None, now=None, request=None, runner=None, seen=None, probe
             count = db.execute("SELECT COUNT(*) FROM youtube_suggestions WHERE state='new'").fetchone()[0]
     finally:
         db.close()
-    _notify('youtube_discover_done', open=count, network_reads=FEATURED_PER_RUN - budget[0], paused=paused,
+    _notify('youtube_discover_done', open=count, network_reads=FEATURED_PER_RUN - budget[0] + SEARCH_PER_RUN - search_budget[0],
+            api=request is not None, seconds=round(time.time() - started, 1), paused=paused,
             described=len(mention_rows), probe=bool(probe), resolved=sum(1 for i in infos.values() if i.get('title')), **sources)
     _RUNNING['sources'] = dict(sources)
     return count
