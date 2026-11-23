@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.112 – Kinderecke Wege je Folge (23. November 2026)
+- Automatisch: tests/test_v06112_kinder_wege.py (7, auf 0.6.111 rot), gesamte Suite, Klicktests kids_corner/click_all/unknown_reasons. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.112, Skript pruefe_kinderecke.py mit Weg je Folge).
+
 ## 0.6.111 – Serien-Nachladen nachgebessert (23. November 2026)
 - Automatisch: tests/test_v0694_serien_nachladen.py (19), gesamte Suite, Klicktests series_autoload.cjs, click_all.cjs. Echte Downloads und Prüfung an Björns Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.111).
 

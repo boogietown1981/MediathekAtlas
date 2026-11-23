@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.111
+# MediathekAtlas · 0.6.112
+
+## Neu in 0.6.112: Kinderecke genauer
+- Jugend- und Reportageformate wie „Young Crime“ oder „POV“ zeigen in der Kinderecke nur Folgen von KiKA; andere Folgen warten auf Ihre Freigabe.
+- Reihen ohne abspielbare Folge erscheinen nicht mehr. TOGGO-Serien fehlen deshalb, solange TOGGO sie nur mit Kopierschutz anbietet.
+- Eine geänderte Altersgrenze wirkt in beide Richtungen sofort auch für Netzkino, Plex und Pluto TV.
 
 ## Neu in 0.6.111: Angefangene Serien genauer nachladen
 - Gibt es eine Folge in deutscher Fassung und als Originalfassung mit Untertiteln, wird nur eine davon geladen, bevorzugt die deutsche. Ist nur eine Sonderfassung ladbar, steht das am Auftrag in der Downloads-Liste.
