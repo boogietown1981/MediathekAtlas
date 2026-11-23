@@ -699,6 +699,11 @@ class Archive:
             if self.version>=2:m.update(self._credits(c,fields['episode_reference_id']))
             result['candidates'].append(m)
         return result
+    def genres(self,tconst):
+        """0.6.127: IMDb genres of one title (genre backfill for matched works without genre)."""
+        if not self.updated or not str(tconst or '').startswith('tt'):return []
+        rows=self._lookup('SELECT genres FROM title_basics WHERE tconst=?',(tconst,),('genres',tconst))
+        return [g for g in (rows[0]['genres'] or '').split(',') if g and g!='\\N'] if rows else []
     def candidates(self,row,meta):
         if not self.updated:return []
         c=self._reader()

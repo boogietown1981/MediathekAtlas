@@ -2974,6 +2974,42 @@ def reclassify_batch(c,limit=500):
     set_state(c,'reclassify_cursor_v030',cursor if rows else 'complete')
     return len(rows)
 
+GENRE_REFERENCE_PROVIDERS=('IMDb Offline','OMDb','TMDB','TVDB')
+def backfill_genres(c,imdb_genres=None,after='',limit=500):
+    """0.6.127 (Björn 23.11.2026: Werkkatalog „Unbekannt“ 2.008 Filme / 4.052 Reihen; Diagnose Air 0.6.120 N-E – das
+    sind Werke ganz ohne Rohgenre, z. B. verknüpfte „50 Jahre Roland Kaiser“, „Accept – Hellfest“): Werke mit aktivem
+    Angebot und ohne Genre bekommen es nachgetragen – aus dem lokalen IMDb-Archiv, wenn sie mit einer IMDb-Kennung
+    verknüpft/erkannt sind, sonst als Folge einer Reihe die Genres, die mindestens die Hälfte der Geschwister mit Genre
+    trägt (höchstens drei). Art, Zustand und Identität bleiben. Returns (changed, samples, last id)."""
+    rows=c.execute("""SELECT w.id,w.kind,w.show_key,w.meta,w.title FROM works w WHERE w.id>? AND w.state!='manual'
+        AND NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)
+        AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) ORDER BY w.id LIMIT ?""",(after,limit)).fetchall()
+    changed=0;samples=[];siblings={}
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        found=[];source=''
+        ref=str(m.get('episode_reference_id') or m.get('reference_id') or '')
+        if imdb_genres and ref.startswith('tt') and m.get('provider') in GENRE_REFERENCE_PROVIDERS:
+            try:found=normalized_genres(imdb_genres(ref))
+            except Exception:found=[]
+            source='IMDb Offline (nachgetragen)'
+        if not found and row['kind']=='series' and row['show_key']:
+            if row['show_key'] not in siblings:
+                with_genre=c.execute("""SELECT COUNT(DISTINCT g.work_id) FROM work_genres g JOIN works w ON w.id=g.work_id
+                    WHERE w.show_key=?""",(row['show_key'],)).fetchone()[0]
+                common=c.execute("""SELECT g.genre,COUNT(*) n FROM work_genres g JOIN works w ON w.id=g.work_id WHERE w.show_key=?
+                    GROUP BY g.genre ORDER BY n DESC,g.genre LIMIT 3""",(row['show_key'],)).fetchall()
+                siblings[row['show_key']]=[g for g,n in common if with_genre and n*2>=with_genre]
+            found=siblings[row['show_key']];source='Reihe (nachgetragen)'
+        if not found:continue
+        m['genres']=found;m['genre_source']=source
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
+        for g in found:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+        changed+=1
+        if len(samples)<20:samples.append({'title':str(row['title'] or '')[:80],'genres':found,'source':source})
+    return changed,samples,(rows[-1]['id'] if rows else None)
+
 def normalized_genres(values):
     from metadata import genres
     return genres(values or [])

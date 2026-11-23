@@ -55,3 +55,50 @@ class SpacingVariants(unittest.TestCase):
 
 if __name__ == '__main__':
     unittest.main()
+
+
+class GenreBackfill(unittest.TestCase):
+    """0.6.127: Werkkatalog „Unbekannt“ = Werke ohne Rohgenre."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        self.c = sqlite3.connect(Path(tmp.name) / 'catalog.db');self.c.row_factory = sqlite3.Row
+        self.addCleanup(self.c.close)
+        catalog.initialize(self.c)
+        rows = [offer('50 Jahre Roland Kaiser', 'Musik', 'MDR', 1)] + [offer('F%d' % i, 'Quarks', 'WDR', 10 + i) for i in range(4)]
+        catalog.ingest(self.c, rows)
+        self.c.execute('DELETE FROM work_genres')
+        for w in self.c.execute('SELECT id,meta,title,topic FROM works').fetchall():
+            m = json.loads(w['meta']);m['genres'] = []
+            if w['title'] == '50 Jahre Roland Kaiser':
+                m.update(kind='movie', provider='IMDb Offline', reference_id='tt42')
+                self.c.execute("UPDATE works SET kind='movie',state='matched',meta=? WHERE id=?", (json.dumps(m), w['id']))
+            else:
+                m.update(kind='series', title='Quarks', year=None)
+                self.c.execute("UPDATE works SET kind='series',title='Quarks',show_key=?,meta=?,state='identified' WHERE id=?",
+                               (catalog.showkey(m), json.dumps(m), w['id']))
+        sib = self.c.execute("SELECT id FROM works WHERE kind='series' ORDER BY id").fetchall()
+        for w in sib[:2]:
+            self.c.execute("INSERT INTO work_genres VALUES(?,?)", (w['id'], 'Wissen'))
+        self.c.execute("INSERT INTO work_genres VALUES(?,?)", (sib[0]['id'], 'Natur'))
+
+    def genres(self):
+        out = {}
+        for r in self.c.execute('SELECT w.id,w.title,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id'):
+            out.setdefault(r['id'], (r['title'], set()))[1].add(r['genre'])
+        return out
+
+    def test_imdb_and_series_genres(self):
+        n, samples, last = catalog.backfill_genres(self.c, lambda ref: ['Music', 'Documentary'] if ref == 'tt42' else [])
+        self.assertEqual(n, 3)
+        g = self.genres()
+        kaiser = [v for v in g.values() if v[0] == '50 Jahre Roland Kaiser'][0][1]
+        self.assertTrue(kaiser and None not in kaiser)
+        for title, genres in g.values():
+            if title == 'Quarks':
+                self.assertIn('Wissen', genres)   # half of the siblings with genre carry it
+        self.assertEqual(catalog.backfill_genres(self.c, lambda ref: [])[0], 0)   # idempotent
+
+    def test_without_archive_only_series(self):
+        n, _, _ = catalog.backfill_genres(self.c, None)
+        self.assertEqual(n, 2)

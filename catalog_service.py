@@ -1577,6 +1577,7 @@ class Service:
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
             self.merge_year_editions()
             self.unify_show_spelling()
+            self.backfill_genres()
             gate=getattr(self,'first_format_pass',None)
             if gate is not None:gate.set()
             waiting=self.refile_suggested_sendungen()=='waiting'
@@ -1613,6 +1614,19 @@ class Service:
             diagnostics.event('catalog_show_spelling_unified',titles=len(changed),samples=dict(list(changed.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
         return changed
+    GENRES_EVERY=6*3600
+    def backfill_genres(self,force=False):
+        """0.6.127, at start and then every 6 h in the format pass: genres for works without any (catalog.backfill_genres)."""
+        if not force and time.monotonic()-getattr(self,'genres_at',-1e9)<self.GENRES_EVERY:return None
+        self.genres_at=time.monotonic()
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        lookup=archive.genres if archive is not None and getattr(archive,'updated',None) and hasattr(archive,'genres') else None
+        done=self.batched(lambda c,after:catalog.backfill_genres(c,lookup,after),'genre_backfill')
+        if done and done[0]:
+            diagnostics.event('catalog_genres_backfilled',works=done[0],samples=done[1][:10])
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        return done
     def refile_suggested_sendungen(self):
         """0.6.113, once when the IMDb archive is ready (catalog.refile_suggested_sendungen): Folgen that 0.6.88 filed
         under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days.
