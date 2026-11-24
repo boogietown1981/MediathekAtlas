@@ -2083,17 +2083,31 @@ def unify_show_spelling(c):
     return out
 
 INVISIBLE=re.compile('[\u00ad\u200b\u200c\u200d\u2060\ufeff]')
-def spelling_score(title):
-    """0.6.128: how readable a spelling is – word breaks (space, hyphen, dot) and capital letters count."""
-    title=str(title or '')
-    return (len(re.findall(r'[\s\-–.]',title)),sum(1 for ch in title if ch.isupper()))
+def _breaks(title):
+    return len(re.findall(r'(?<=\w)[\s\-–.]+(?=\w)',str(title or '')))
+def _shouting(title):
+    letters=[ch for ch in str(title or '') if ch.isalpha()]
+    return len(letters)>1 and all(ch.isupper() for ch in letters)
+def spelling_score(title,others=()):
+    """0.6.128/0.6.130: how acceptable a spelling is next to the other variants – 0 is fine, below is worse.
+    Mac-Prüfung 0.6.129 (Nachtcafé → NACHTCAFÉ, but also „Nacht café“ must not beat „Nachtcafé“): capitals only are
+    worse; a run-together lower-case spelling („eishockeyaktuell“, „sportarena“) is worse than a variant with word
+    breaks or capitals. Otherwise the number of works decides."""
+    title=str(title or '');penalty=0
+    if _shouting(title):penalty-=1
+    if not any(ch.isupper() for ch in title) and any(o!=title and (_breaks(o)>_breaks(title) or any(ch.isupper() for ch in o) and not _shouting(o)) for o in others):penalty-=1
+    return penalty
+def spacing_differs(old,new):
+    """0.6.130: only a different word break or an invisible character is a spacing change – a case-only change
+    (same key) is left to unify_show_spelling."""
+    return key(old)!=key(new) or bool(INVISIBLE.search(str(old or '')))
 def best_spelling(counts):
     """{title: works} -> the most readable spelling, ties by number of works; invisible characters removed."""
     clean={}
     for title,n in counts.items():
         k=INVISIBLE.sub('',str(title or '')).strip()
         if k:clean[k]=clean.get(k,0)+n
-    return max(clean.items(),key=lambda x:(spelling_score(x[0]),x[1],x[0]))[0]
+    return max(clean.items(),key=lambda x:(spelling_score(x[0],clean),x[1],x[0]))[0]
 
 def respace_show_titles(c):
     """0.6.128, in the spelling pass: a Reihe whose title lost its word breaks („eishockeyaktuell“ from 0.6.127) or
@@ -2109,8 +2123,8 @@ def respace_show_titles(c):
         for topic,n in topics.items():
             if topic and key(INVISIBLE.sub('',topic)).replace(' ','')==k:options[topic]=n
         better=best_spelling(options)
-        if better==title or spelling_score(better)<spelling_score(INVISIBLE.sub('',title)):continue
-        if better==INVISIBLE.sub('',title) and better==title:continue
+        if better==title or not spacing_differs(title,better):continue
+        if spelling_score(better,options)<spelling_score(INVISIBLE.sub('',title),options):continue
         for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
             try:m=json.loads(w['meta'] or '{}')
             except (TypeError,ValueError):continue
@@ -2159,7 +2173,7 @@ def merge_spacing_variants(c):
                 try:m=json.loads(w['meta'] or '{}')
                 except (TypeError,ValueError):continue
                 old=w['title']
-                if old==target_title and show==target:continue
+                if show==target and not spacing_differs(old,target_title):continue
                 m['title']=target_title
                 reason=str(m.get('reason') or '')
                 if reason and old:m['reason']=reason.replace('„'+str(old)+'“','„'+target_title+'“')
