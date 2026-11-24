@@ -58,7 +58,8 @@
 
   function episodeText(b) {
     const parts = [];
-    if (b.season || b.episode) parts.push((b.season ? 'S' + b.season : '') + (b.episode ? (b.season ? ' ' : '') + 'F' + b.episode : ''));
+    if (b.season) parts.push('S' + b.season + (b.episode ? ' F' + b.episode : ''));
+    else if (b.episode) parts.push('Folge ' + b.episode);
     if (b.genre) parts.push(b.genre);
     if (b.repeat) parts.push('Wdh.');
     return parts.join(' · ');
@@ -85,7 +86,7 @@
     }
     if (next) {
       const p = make('p', undefined, 'livetv-next');
-      p.append(make('span', (now ? 'Danach ' : 'Ab ') + clock(next.start) + ' ', 'muted'), make('span', next.title + (next.subtitle ? ' – ' + next.subtitle : '')));
+      p.append(make('span', (next.inside ? 'Ab ' : now ? 'Danach ' : 'Ab ') + clock(next.start) + ' ', 'muted'), make('span', next.title + (next.subtitle ? ' – ' + next.subtitle : '')));
       box.append(p);
     }
     return box;
@@ -117,14 +118,14 @@
       if (!src.play) {
         if (!safeImage(src.link)) return;
         // 0.6.47: a station straight from its broadcaster (n-tv) names the station, not "Direkt vom Sender"
-        const where = src.provider === 'sender' ? station.name : src.provider_name;
+        const where = src.label || (src.provider === 'sender' ? station.name : src.provider_name);
         const a = make('a', '↗ ' + (many ? where : 'Bei ' + where + ' ansehen'), 'button');
         a.href = window.AtlasDirect ? window.AtlasDirect.href(src.provider, src.link) : src.link; a.target = '_blank'; a.rel = 'noopener noreferrer';
         a.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
         actions.append(a);
         return;
       }
-      const b = make('button', '▶ ' + (many ? src.provider_name : 'Live ansehen'), i === 0 ? 'primary' : '');
+      const b = make('button', '▶ ' + (many ? src.label || src.provider_name : 'Live ansehen'), i === 0 ? 'primary' : '');
       b.type = 'button';
       b.title = [src.title, src.provider_name, src.quality].filter(Boolean).join(' · ');
       b.onclick = () => {
