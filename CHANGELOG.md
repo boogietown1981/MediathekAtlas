@@ -1,3 +1,12 @@
+## 0.6.129 – Live-TV-Befunde L1–L5 aus dem ersten Echtlauf des Programmführers; auf 0.6.128
+
+- Grundlage: berichte/diagnose-2026-11-24-vormittag-06127-pro.md, Abschnitt 11 (Björns Bildschirmfoto Live-TV).
+- L3 phoenix („Jetzt 08:30–19:15 PHOENIX – vor ort“, „Danach 13:00 …“): `epg.now_next` nimmt je Sender nur eine Quelle (`SOURCE_RANK`: SRF, ARD, ZDF – ARD und ZDF liefern phoenix/KiKA/3sat beide), als „Jetzt“ die kürzeste laufende Sendung, als „Danach“ die nächste beginnende; beginnt sie innerhalb der laufenden, trägt sie `inside` und heißt „Ab …“.
+- L5 ONE „Rote Rosen (2019)/(2020)“: `epg.parse_ard` liest eine Zahl in Klammern hinter dem Titel als Folgennummer (die ARD-Quelle hat kein Jahresfeld); Anzeige „Folge 2019“.
+- L2/L4 „ARD Tagessc…“ ohne Programm, tagesschau24 ohne Mediathek-Knopf: Schreibweisen `ardtagesschau`/`ardtagesschau24` gehören zu `tagesschau24` (`live_tv.STATIONS`). Am Mac zu bestätigen.
+- L1 arte mit zwei Knöpfen „ARD, ZDF & Co.“: zwei Streams eines Anbieters in einer Kachel bekommen `label` aus ihrem Titel („ARTE.DE“, „ARTE.FR“).
+- Tests: `tests/test_epg_programmfuehrer.py` (+5).
+
 ## 0.6.128 – Korrektur aus Diagnose Pro 0.6.127 (erster Echtlauf); auf 0.6.127
 
 - Grundlage: berichte/diagnose-2026-11-24-vormittag-06127-pro.md und Björns Rückmeldung („Kurzer Prozess“ weder in Listen noch in der Suche).

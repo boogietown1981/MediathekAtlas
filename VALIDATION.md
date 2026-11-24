@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.129 – Live-TV-Befunde L1–L5 (24. November 2026)
+- Automatisch: tests/test_epg_programmfuehrer.py (21), gesamte Suite, Node-Tests, Klicktests (click_all, epg_live). Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.129, enthält 0.6.128).
+
 ## 0.6.128 – Korrektur Diagnose Pro 0.6.127 (24. November 2026)
 - Automatisch: tests/test_v06128.py (11), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.128).
 

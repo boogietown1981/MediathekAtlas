@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.128
+# MediathekAtlas · 0.6.129
+
+## Neu in 0.6.129: Programmführer im Live-TV nachgebessert
+- phoenix, KiKA und 3sat zeigen das Programm nur noch aus einer Quelle; „Jetzt“ ist die tatsächlich laufende Sendung statt eines langen Sendeblocks, und was mitten im Block beginnt, steht als „Ab 13:00“ da.
+- Tägliche ARD-Serien zeigen ihre Folgennummer („Rote Rosen · Folge 2019“) statt einer scheinbaren Jahreszahl.
+- „ARD Tagesschau“ gehört zu tagesschau24 (Programm und Mediathek-Knopf in einer Kachel); arte zeigt seine zwei Livestreams als „ARTE.DE“ und „ARTE.FR“.
 
 ## Neu in 0.6.128: aussortierte Filme zurück, bessere Reihennamen
 - Filme mit einem kurzen Ausschnitt als erstem Angebot („Kurzer Prozess – Righteous Kill“) bleiben Filme; maßgeblich ist das längste Angebot. Von 0.6.123/0.6.125 aussortierte Filme kommen zurück.
