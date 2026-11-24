@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.130 – Korrektur Mac-Urteil 0.6.129 (S, L5, L3) und Trailer (24. November 2026)
+- Automatisch: tests/test_v06130.py (13), tests/test_epg_programmfuehrer.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.130).
+
 ## 0.6.129 – Live-TV-Befunde L1–L5 (24. November 2026)
 - Automatisch: tests/test_epg_programmfuehrer.py (21), gesamte Suite, Node-Tests, Klicktests (click_all, epg_live). Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.129, enthält 0.6.128).
 

@@ -2114,7 +2114,7 @@ def respace_show_titles(c):
     carries an invisible character gets the readable spelling from its own works' topics (same letters). Returns {old: new}."""
     out={}
     rows=c.execute("""SELECT show_key,title,topic,COUNT(*) n FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
-        AND state!='manual' AND (title NOT LIKE '% %' OR title LIKE ?) GROUP BY show_key,title,topic""",('%\u00ad%',)).fetchall()
+        AND state!='manual' AND (title NOT LIKE '% %' OR title LIKE ? OR title=upper(title)) GROUP BY show_key,title,topic""",('%\u00ad%',)).fetchall()
     by_show={}
     for r in rows:by_show.setdefault((r['show_key'],r['title']),{})[cleaned(r['topic'] or '')]=r['n']
     for (show,title),topics in by_show.items():
@@ -2123,7 +2123,10 @@ def respace_show_titles(c):
         for topic,n in topics.items():
             if topic and key(INVISIBLE.sub('',topic)).replace(' ','')==k:options[topic]=n
         better=best_spelling(options)
-        if better==title or not spacing_differs(title,better):continue
+        # 0.6.130: a title in capitals only (NACHTCAFÉ from the 0.6.128 pass on test copies) gets the spelling of its
+        # own works' topics back when the sender writes it otherwise
+        undo_shout=_shouting(title) and not _shouting(better) and key(title)==key(better)
+        if better==title or not (spacing_differs(title,better) or undo_shout):continue
         if spelling_score(better,options)<spelling_score(INVISIBLE.sub('',title),options):continue
         for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
             try:m=json.loads(w['meta'] or '{}')
@@ -2235,6 +2238,41 @@ def file_open_clip(c,row,m,source):
              reason='Clip (Podcast, Pressekonferenz, Ausschnitt); keine vollständige Sendung, wird nicht abgeglichen.')
     c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
     return True
+
+FILM_TRAILER_LONGEST=600
+FILM_SUFFIX_SQL=("""(title LIKE '% - Spielfilm,%' OR title LIKE '% - Fernsehfilm,%' OR title LIKE '% - Dokumentarfilm%'
+             OR title LIKE '% - Animationsfilm,%' OR title LIKE '% - Fernsehspiel,%' OR title LIKE '% - Stummfilm,%' OR title LIKE '% - Musikfilm,%'
+             OR title LIKE '% – Spielfilm,%' OR title LIKE '% – Fernsehfilm,%' OR title LIKE '% – Dokumentarfilm%')""")
+def file_film_trailers(c):
+    """0.6.130 (Mac-Prüfung 0.6.129: „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ hat nur ein 3sat-Angebot von
+    162 s, ebenso Fight Club, Hamilton): a work named like a 3sat film whose longest offer runs under 10 minutes is the
+    trailer of that film – filed as Trailer (kind other, state format) instead of „prüfen“. If a long offer arrives
+    later, the work is opened again as film. User decisions, matches and requested checks stay. Returns (filed, reopened, samples)."""
+    import metadata
+    filed=reopened=0;samples=[]
+    for row in c.execute("""SELECT * FROM works WHERE state IN ('pending','retry','review','format') AND kind IN ('movie','unknown','other')
+            AND """+FILM_SUFFIX_SQL).fetchall():
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested'):continue
+        source=film_source(c,row['id'])
+        if not source or not metadata.film_suffix_year(source.get('title') or row['title']):continue
+        longest=int(source.get('duration') or 0)
+        if m.get('film_trailer'):
+            if longest>=FILM_SHORTEST and row['state']=='format':
+                fresh=seed(source);fresh['reason']='Vollständiger Film eingetroffen; neu prüfen (0.6.130)'
+                c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0 WHERE id=?",
+                          (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id']));reopened+=1
+            continue
+        if row['state']=='format' or not 0<longest<FILM_TRAILER_LONGEST:continue
+        if SHORT_FILM.search(' '.join((str(source.get('title') or ''),str(source.get('topic') or ''),str(source.get('description') or '')[:200]))):continue
+        film=metadata.FILM_SUFFIX.sub('',cleaned(source.get('title') or row['title'])).strip(' -–')
+        m.update(kind='other',state='format',film_trailer=True,episode_verified=False,related_film_title=film,
+                 reason='Trailer zum Film „'+film+'“ (nur ein kurzes Angebot); kein vollständiger Film, wird nicht abgeglichen.')
+        c.execute("UPDATE works SET kind='other',meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+        filed+=1
+        if len(samples)<20:samples.append(str(row['title'])[:80])
+    return filed,reopened,samples
 
 def restart_formats(c):set_state(c,'format_cursor',0)
 

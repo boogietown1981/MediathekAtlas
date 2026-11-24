@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.129
+# MediathekAtlas · 0.6.130
+
+## Neu in 0.6.130: Reihennamen ohne Großschreibung, Trailer als Trailer, sauberer Programmführer
+- Zusammengeführte Reihen behalten ihre normale Schreibweise („Nachtcafé“ statt „NACHTCAFÉ“).
+- 3sat-Filmtitel, zu denen nur ein kurzer Trailer vorliegt („Kurzer Prozess – Righteous Kill“), stehen als Trailer da statt auf „prüfen“; kommt der ganze Film, wird er wieder als Film geprüft.
+- Programmführer: keine Unterzeile „Deutschland 2015“ mehr bei täglichen Serien, keine doppelten 3sat-Einträge und keine überlappenden Blöcke bei phoenix.
 
 ## Neu in 0.6.129: Programmführer im Live-TV nachgebessert
 - phoenix, KiKA und 3sat zeigen das Programm nur noch aus einer Quelle; „Jetzt“ ist die tatsächlich laufende Sendung statt eines langen Sendeblocks, und was mitten im Block beginnt, steht als „Ab 13:00“ da.

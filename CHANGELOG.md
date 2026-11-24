@@ -1,4 +1,11 @@
-## Vorbereitung (EPG) für die nächste Version – Mac-Prüfung 0.6.129, Live-TV
+## 0.6.130 – Korrektur Mac-Urteil 0.6.129 (S Großschreibung, L5/L3 Programmführer) und 3sat-Trailer; auf 0.6.129
+
+### Erkennung
+- S (Mac-Prüfung 0.6.129: `catalog_spacing_variants_merged` schrieb Nachtcafé → NACHTCAFÉ, Presseclub → PRESSECLUB, Respekt, Makro, Unkraut, Druck, super.markt … und „Betrifft“ → „betrifft: ...“): `catalog.spelling_score` zählt keine Großbuchstaben mehr; Großbuchstaben-only ist die schwächere Schreibweise, zusammengeschriebenes Kleingeschriebenes („eishockeyaktuell“) verliert gegen eine Variante mit Wortgrenze oder Großbuchstaben, sonst entscheidet die Werkzahl. Wortgrenzen zählen nur zwischen Buchstaben (Satzzeichen am Ende nicht). Innerhalb einer Reihe werden reine Groß-/Kleinvarianten nicht mehr umbenannt (`catalog.spacing_differs`; das bleibt bei `unify_show_spelling`). `respace_show_titles` gibt einer Reihe in Großbuchstaben die Schreibweise aus den Themen ihrer Werke zurück, wenn der Sender sie anders schreibt (Prüfkopien mit 0.6.128/0.6.129; echte Sender-Großschreibung wie „PRESSECLUB“ im Thema bleibt).
+- Trailer (Mac-Prüfung 0.6.129: „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ einziges Angebot 162 s, ebenso Fight Club, Hamilton): `catalog.file_film_trailers` (jeder Formatdurchlauf, Ereignis `catalog_film_trailers_filed`): ein Werk mit 3sat-Filmtitel, dessen längstes Angebot unter 10 min läuft, wird als Trailer abgelegt (Art other, Zustand format, `film_trailer`, „Trailer zum Film …“); Kurz-, Animations-, Trickfilme ausgenommen. Kommt später ein langes Angebot, wird es wieder als Film geprüft.
+- Tests: `tests/test_v06130.py` (13, davon 5 geerbt).
+
+### Programmführer (EPG-Thread, 31fd0260)
 
 - L5 (ONE „Rote Rosen – Deutschland 2015 · Folge 2019“): eine ARD-Unterzeile aus Land und Jahr („Deutschland 2015“, „USA/Kanada 1999“) ist Produktionsland/-jahr, kein Folgentitel (`epg.PRODUCTION`, nur echte Ländernamen – „Hochwasser 2026“ bleibt Titel).
 - Überlappungen in epg.sqlite3 (3sat: 19 in 6 h, jede Sendung von ARD und ZDF mit 1 min Versatz; phoenix: Dachblock „PHOENIX | vor ort“ 08:30–19:15 über der Übertragung): `epg.dedupe` nach jedem Lauf (Sendungen ab vorgestern) – zweite Quelle bei Überlappung mit der besser eingestuften (`SOURCE_RANK`), gleicher Titel innerhalb 5 min, Dachblöcke ab 3 h mit mindestens zwei Sendungen darin. Bestehende Dateien heilen beim nächsten Lauf. Ereignis `epg_loaded` mit `removed_overlaps`. Ohne Alias im DELETE (ältere SQLite auf NAS).

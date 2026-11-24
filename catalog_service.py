@@ -1582,6 +1582,7 @@ class Service:
             self.merge_year_editions()
             self.unify_show_spelling()
             self.backfill_genres()
+            self.file_film_trailers()
             gate=getattr(self,'first_format_pass',None)
             if gate is not None:gate.set()
             waiting=self.refile_suggested_sendungen()=='waiting'
@@ -1619,6 +1620,17 @@ class Service:
             diagnostics.event('catalog_show_spelling_unified',titles=len(changed),samples=dict(list(changed.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
         return changed
+    def file_film_trailers(self):
+        """0.6.130, every format pass: 3sat film titles with only a trailer (catalog.file_film_trailers)."""
+        try:
+            with self.db() as c:filed,reopened,samples=catalog.file_film_trailers(c)
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.busy('film_trailers');return None
+        if filed or reopened:
+            diagnostics.event('catalog_film_trailers_filed',filed=filed,reopened=reopened,samples=samples)
+            catalog.invalidate_listings()
+        return filed,reopened
     GENRES_EVERY=6*3600
     def backfill_genres(self,force=False):
         """0.6.127, at start and then every 6 h in the format pass: genres for works without any (catalog.backfill_genres)."""
