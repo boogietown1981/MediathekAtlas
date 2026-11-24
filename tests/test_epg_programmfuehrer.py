@@ -249,5 +249,59 @@ class Evidence(unittest.TestCase):
         self.assertEqual(epg.kind_hint({'genre': ''}), '')
 
 
+class LiveFindings0129(unittest.TestCase):
+    """0.6.129: Befunde L1–L5 aus Björns erstem Echtlauf (Diagnose 24.11.2026, Abschnitt 11)."""
+    def setUp(self):
+        t = tempfile.TemporaryDirectory(); self.addCleanup(t.cleanup)
+        self.root = Path(t.name)
+        self.c = sqlite3.connect(':memory:'); self.c.row_factory = sqlite3.Row
+        self.addCleanup(self.c.close)
+        catalog.initialize(self.c)
+
+    def put(self, source, channel, start, stop, title, **extra):
+        db = epg.connect(self.root)
+        with db:
+            epg.store(db, [epg._row(source, channel, int(start), int(stop), title, **extra)])
+        db.close()
+
+    def test_l3_shortest_running_and_one_source(self):
+        now = time.time()
+        self.put('zdf', 'phoenix', now - 3600, now + 8 * 3600, 'PHOENIX', subtitle='vor ort')
+        self.put('ard', 'phoenix', now - 3600, now + 8 * 3600, 'phoenix vor ort')
+        self.put('ard', 'phoenix', now - 600, now + 900, 'Bundestag', subtitle='110. Sitzung')
+        self.put('ard', 'phoenix', now + 900, now + 2000, 'phoenix der tag')
+        slot = epg.now_next(self.root, now=now)['phoenix']
+        self.assertEqual((slot['now']['title'], slot['now']['source']), ('Bundestag', 'ard'))
+        self.assertEqual(slot['next']['title'], 'phoenix der tag')
+        self.assertNotIn('inside', slot['next'])
+
+    def test_l3_next_inside_umbrella_says_ab(self):
+        now = time.time()
+        self.put('zdf', 'phoenix', now - 3600, now + 8 * 3600, 'PHOENIX', subtitle='vor ort')
+        self.put('zdf', 'phoenix', now + 3600, now + 5400, 'phoenix vor ort', subtitle='110. Sitzung')
+        slot = epg.now_next(self.root, now=now)['phoenix']
+        self.assertTrue(slot['next']['inside'])
+        self.assertIn(' · ab ', epg.line(slot))
+
+    def test_l5_running_number_is_episode(self):
+        data = {'channels': [{'id': 'one', 'timeSlots': [[
+            {'type': 'epg', 'title': 'Rote Rosen (2019)', 'coreTitle': 'Rote Rosen (2019)', 'duration': 2880,
+             'channel': {'name': 'ONE'}, 'broadcastedOn': '2026-11-24T09:00:00+01:00'}]]}]}
+        row = epg.parse_ard(data)[0]
+        self.assertEqual((row['station'], row['title'], row['episode'], row['subtitle']), ('one', 'Rote Rosen', 2019, ''))
+
+    def test_l2_l4_ard_tagesschau_is_tagesschau24(self):
+        self.assertEqual(live_tv.station_key(live_tv.station_name('ARD Tagesschau Livestream')), 'tagesschau24')
+        self.assertEqual(live_tv.station_key('ARD-Tagesschau24'), 'tagesschau24')
+
+    def test_l1_two_streams_of_one_provider_are_named(self):
+        rows = [{'channel': 'ARTE.DE', 'topic': 'Livestream', 'title': t, 'description': '', 'timestamp': 0, 'duration': 0, 'size': 0,
+                 'url_video': 'https://live.example/%d.m3u8' % i, 'url_video_hd': '', 'url_video_low': '', 'url_subtitle': '',
+                 'url_website': '', 'geo': ''} for i, t in enumerate(('ARTE.DE Livestream', 'ARTE.FR Livestream'))]
+        catalog.ingest(self.c, rows, seen=1)
+        st = next(s for s in live_tv.overview(self.c, self.root)['stations'] if s['key'] == 'arte')
+        self.assertEqual(sorted(x.get('label') for x in st['sources']), ['ARTE.DE', 'ARTE.FR'])
+
+
 if __name__ == '__main__':
     unittest.main()

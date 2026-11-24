@@ -55,6 +55,7 @@ ZDF_PAGE = 'https://www.zdf.de/live-tv'
 ZDF_SERVICES = ('zdf', 'ZDFneo', 'zdfinfo', '3sat', 'ki.ka', 'phoenix')
 SOURCES = ('srf', 'ard', 'zdf')
 SOURCE_NAMES = {'srf': 'SRF', 'ard': 'ARD', 'zdf': 'ZDF'}
+SOURCE_RANK = {'srf': 0, 'ard': 1, 'zdf': 2}     # one source per station where two deliver it (phoenix, KiKA, 3sat)
 
 # Genre words that make a broadcast a feature film or a news/magazine programme (recognition evidence).
 FILM_GENRES = re.compile(r'(?i)\b(?:spielfilm|fernsehfilm|tv-?film|kinofilm|film|drama|komödie|thriller|krimi(?:nalfilm)?|western|'
@@ -225,9 +226,17 @@ def parse_ard(data):
                 subtitle = ''
             if show and full.lower().startswith(show.lower()) and len(full) > len(show):
                 subtitle = full[len(show):].strip(' -–:(),') or subtitle      # „Tatort: Tod im Park“ -> edition title
+            # 0.6.129 (Diagnose 24.11., L5: ONE „Rote Rosen (2019)“, danach „(2020)“): ARD writes the running number of
+            # daily series in brackets behind the title; it is the episode, not a year (no year field in this source).
+            number = re.fullmatch(r'(.+?)\s*\((\d{1,5})\)', show)
+            episode = _int(p.get('episodeNumber'), 0, 100000)
+            if number:
+                show, episode = number[1], episode if episode is not None else int(number[2])
+                if subtitle.strip('() ') == number[2]:
+                    subtitle = ''
             row = _row('ard', channel, start, stop, show, subtitle=subtitle,
                        genre=_text(p.get('genre'), 60),
-                       season=_int(p.get('seasonNumber'), 0, 500), episode=_int(p.get('episodeNumber'), 0, 100000),
+                       season=_int(p.get('seasonNumber'), 0, 500), episode=episode,
                        live=1 if p.get('isLive') is True else 0, repeat=1 if p.get('isRepeat') is True else 0,
                        description=_text(p.get('synopsis'), TEXT))
             if row:
@@ -506,15 +515,27 @@ def now_next(root, stations=None, now=None):
     finally:
         db.close()
     wanted = set(stations) if stations else None
-    out = {}
+    by_station = {}
     for row in rows:
-        if wanted is not None and row['station'] not in wanted:
-            continue
-        slot = out.setdefault(row['station'], {'now': None, 'next': None})
-        if row['start'] <= now < row['stop'] and slot['now'] is None:
-            slot['now'] = _public(row)
-        elif row['start'] > now and slot['next'] is None:
-            slot['next'] = _public(row)
+        if wanted is None or row['station'] in wanted:
+            by_station.setdefault(row['station'], []).append(row)
+    out = {}
+    for station, items in by_station.items():
+        # 0.6.129 (Diagnose 24.11., L3 phoenix): ARD and ZDF both deliver phoenix, KiKA, 3sat with different slots;
+        # mixing them gives overlapping broadcasts. One source per station, the one with the finer plan.
+        sources = {r['source'] for r in items}
+        if len(sources) > 1:
+            best = min(sources, key=lambda s: (SOURCE_RANK.get(s, 9), s))
+            items = [r for r in items if r['source'] == best]
+        running = [r for r in items if r['start'] <= now < r['stop']]
+        # an umbrella block („PHOENIX – vor ort“ 08:30–19:15) loses against the shorter broadcast running inside it
+        cur = min(running, key=lambda r: (r['stop'] - r['start'], r['start'])) if running else None
+        later = [r for r in items if r['start'] > now]
+        nxt = min(later, key=lambda r: r['start']) if later else None
+        slot = {'now': _public(cur) if cur else None, 'next': _public(nxt) if nxt else None}
+        if cur and nxt and nxt['start'] < cur['stop']:
+            slot['next']['inside'] = True     # starts within the running block: „ab 13:00“, not „danach“
+        out[station] = slot
     return out
 
 
@@ -528,7 +549,7 @@ def line(entry):
         parts.append('Jetzt: ' + cur['title'] + (' – ' + cur['subtitle'] if cur.get('subtitle') else ''))
     if nxt:
         clock = datetime.datetime.fromtimestamp(nxt['start']).strftime('%H:%M')
-        parts.append(('danach ' if cur else 'Ab ') + clock + ' ' + nxt['title'])
+        parts.append(('ab ' if nxt.get('inside') else 'danach ' if cur else 'Ab ') + clock + ' ' + nxt['title'])
     return ' · '.join(parts)
 
 

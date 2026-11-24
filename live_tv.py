@@ -52,7 +52,7 @@ STATIONS = [
     ('zdfinfo', 'ZDFinfo', PUBLIC, ('zdfinfo',)),
     ('kika', 'KiKA', PUBLIC, ('kika', 'kikahd')),
     ('one', 'ONE', PUBLIC, ('one', 'ardone', 'einsfestival')),
-    ('tagesschau24', 'tagesschau24', PUBLIC, ('tagesschau24', 'tagesschau', 'einsplus')),
+    ('tagesschau24', 'tagesschau24', PUBLIC, ('tagesschau24', 'tagesschau', 'einsplus', 'ardtagesschau', 'ardtagesschau24')),  # 0.6.129 L2/L4
     ('ardalpha', 'ARD alpha', PUBLIC, ('ardalpha', 'bralpha', 'alpha')),
     ('dw', 'DW', PUBLIC, ('dw', 'deutschewelle', 'dwdeutsch')),
     ('orf1', 'ORF 1', PUBLIC, ('orf1', 'orfeins')),
@@ -343,6 +343,14 @@ def overview(c, root, query='', provider='', group=''):
         s['sources'].sort(key=lambda x: [k for k, _ in PROVIDERS].index(x['provider'])
                           if x['provider'] in counts else 99)
         s.pop('position', None)
+        # 0.6.129 (Diagnose 24.11., L1: arte zeigte zweimal „▶ ARD, ZDF & Co.“): two streams of one provider (ARTE.DE
+        # and ARTE.FR from the film list) are named by their own title, so the buttons can be told apart.
+        seen = {}
+        for x in s['sources']:
+            seen[x['provider']] = seen.get(x['provider'], 0) + 1
+        for x in s['sources']:
+            if seen[x['provider']] > 1:
+                x['label'] = station_name(x['title'])[:40] or x['provider_name']
     return {'stations': items, 'total': len(items),
             'groups': [{'name': g, 'count': n} for g, n in sorted(groups.items(), key=lambda kv: _group_rank(kv[0]))],
             'providers': [{'key': k, 'name': n, 'channels': counts.get(k, 0), 'error': errors.get(k, '')}
