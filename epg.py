@@ -63,6 +63,13 @@ FILM_GENRES = re.compile(r'(?i)\b(?:spielfilm|fernsehfilm|tv-?film|kinofilm|film
 SHOW_GENRES = re.compile(r'(?i)\b(?:news|nachrichten|magazin|info|dok|doku\w*|reportage|talk|unterhaltung|show|sport|'
                          r'ratgeber|service|kultur|wissen|quiz|musik|religion|politik|wetter|kinder|jugend)\b')
 
+# „Deutschland 2015“, „USA/Kanada 1999“, „Frankreich, Belgien 2021“ – only country names, so „Hochwasser 2026“ stays a title
+_COUNTRY = (r'(?:Deutschland|BRD|DDR|Österreich|Schweiz|USA|Kanada|Großbritannien|Grossbritannien|GB|UK|England|Irland|Frankreich|'
+            r'Belgien|Niederlande|Luxemburg|Italien|Spanien|Portugal|Dänemark|Schweden|Norwegen|Finnland|Island|Polen|Tschechien|'
+            r'Ungarn|Griechenland|Türkei|Israel|Russland|Australien|Neuseeland|Japan|China|Südkorea|Indien|Mexiko|Brasilien|Argentinien|'
+            r'Südafrika|Kroatien|Slowenien|Rumänien|Bulgarien|Litauen|Lettland|Estland|Iran|Ägypten)')
+PRODUCTION = re.compile(r'(%s(?:\s*(?:/|,|und|u\.)\s*%s)*)\s+((?:18|19|20)\d\d)' % (_COUNTRY, _COUNTRY))
+
 _LOCK = threading.Lock()
 _SYNC_LOCK = threading.Lock()
 _REQUEST_LOCK = threading.Lock()
@@ -234,7 +241,13 @@ def parse_ard(data):
                 show, episode = number[1], episode if episode is not None else int(number[2])
                 if subtitle.strip('() ') == number[2]:
                     subtitle = ''
-            row = _row('ard', channel, start, stop, show, subtitle=subtitle,
+            # 0.6.130 (Mac-Prüfung 0.6.129, L5: ONE „Rote Rosen – Deutschland 2015“): a subline of only country and
+            # year is the production, not the edition title.
+            made = PRODUCTION.fullmatch(subtitle)
+            country, year = (made[1], int(made[2])) if made else ('', None)
+            if made:
+                subtitle = ''
+            row = _row('ard', channel, start, stop, show, subtitle=subtitle, country=country, year=year,
                        genre=_text(p.get('genre'), 60),
                        season=_int(p.get('seasonNumber'), 0, 500), episode=episode,
                        live=1 if p.get('isLive') is True else 0, repeat=1 if p.get('isRepeat') is True else 0,
@@ -415,18 +428,48 @@ def sync(root, fetch=None, now=None):
             total += got
             failures += 1 if error else 0
         with db:
+            removed = dedupe(db, int(now - 2 * 86400))
             db.execute('DELETE FROM broadcasts WHERE stop<?', (int(now - KEEP_DAYS * 86400),))
             db.execute('DELETE FROM days WHERE day<?', ((_day(now) - datetime.timedelta(days=KEEP_DAYS)).isoformat(),))
             result = 'ok' if not failures else ('partial' if failures < len(SOURCES) else 'error')
             _set(db, last_result=result, last_error='; '.join('%s: %s' % (SOURCE_NAMES[k], v['error']) for k, v in report.items() if v['error']),
                  sources=report, next_attempt=now + (REFRESH if result != 'error' else RETRY),
                  **({'last_success': now} if result != 'error' else {}))
-        _notify('epg_loaded', result=result, broadcasts=total,
+        _notify('epg_loaded', result=result, broadcasts=total, removed_overlaps=removed,
                 **{k + '_broadcasts': v['broadcasts'] for k, v in report.items()},
                 **{k + '_error': v['error'] for k, v in report.items() if v['error']})
         return {'ok': result != 'error', 'result': result, 'broadcasts': total, 'sources': report}
     finally:
         db.close()
+
+
+_RANK_SQL = 'CASE %s.source ' + ' '.join("WHEN '%s' THEN %d" % kv for kv in SOURCE_RANK.items()) + ' ELSE 9 END'
+
+
+def dedupe(db, since=0):
+    """One plan per station (0.6.130, Mac-Prüfung 0.6.129): remove what overlaps from a second source or repeats.
+
+    - ARD and ZDF both deliver phoenix, KiKA and 3sat, with start times a minute apart („Sara Nuru (1/2)“ 10:25 and
+      10:26): a broadcast of the lower ranked source goes when the station has a broadcast of a better ranked source
+      overlapping it.
+    - The same title on the same station starting within 5 minutes is one broadcast (kept: better source, then earlier).
+    - An umbrella block („PHOENIX | vor ort“ 08:30–19:15) of three hours or more that contains two or more broadcasts
+      of the same station goes; a long broadcast without anything inside (a 10:00–18:45 transmission) stays.
+    Only broadcasts ending after ``since`` are looked at (older days are final). Returns the number removed."""
+    before = db.total_changes
+    # no alias on the outer table: DELETE … AS needs SQLite 3.24+, older NAS ship older versions
+    rank_b, rank_p = _RANK_SQL % 'broadcasts', _RANK_SQL % 'p'
+    db.execute('DELETE FROM broadcasts WHERE stop>? AND EXISTS(SELECT 1 FROM broadcasts AS p WHERE p.station=broadcasts.station '
+               'AND p.source<>broadcasts.source AND %s<%s AND p.start<broadcasts.stop AND p.stop>broadcasts.start)'
+               % (rank_p, rank_b), (since,))
+    db.execute('DELETE FROM broadcasts WHERE stop>? AND EXISTS(SELECT 1 FROM broadcasts AS p WHERE p.station=broadcasts.station '
+               'AND p.rowid<>broadcasts.rowid AND lower(p.title)=lower(broadcasts.title) AND abs(p.start-broadcasts.start)<=300 '
+               'AND (%s<%s OR (%s=%s AND (p.start<broadcasts.start OR (p.start=broadcasts.start AND p.rowid<broadcasts.rowid)))))'
+               % (rank_p, rank_b, rank_p, rank_b), (since,))
+    db.execute('DELETE FROM broadcasts WHERE stop>? AND stop-start>=3*3600 AND (SELECT COUNT(*) FROM broadcasts AS i '
+               'WHERE i.station=broadcasts.station AND i.rowid<>broadcasts.rowid AND i.start>=broadcasts.start '
+               'AND i.stop<=broadcasts.stop)>=2', (since,))
+    return db.total_changes - before
 
 
 def state(root):

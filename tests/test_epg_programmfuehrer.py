@@ -303,5 +303,54 @@ class LiveFindings0129(unittest.TestCase):
         self.assertEqual(sorted(x.get('label') for x in st['sources']), ['ARTE.DE', 'ARTE.FR'])
 
 
+class Overlaps0130(unittest.TestCase):
+    """0.6.130: Mac-Prüfung 0.6.129 – 3sat doppelt mit 1 min Versatz, phoenix-Dachblock, „Deutschland 2015“."""
+    def setUp(self):
+        t = tempfile.TemporaryDirectory(); self.addCleanup(t.cleanup)
+        self.db = epg.connect(Path(t.name)); self.addCleanup(self.db.close)
+
+    def put(self, source, channel, start, stop, title):
+        with self.db:
+            epg.store(self.db, [epg._row(source, channel, int(start), int(stop), title)])
+
+    def titles(self, station):
+        return [(r['source'], r['title'], r['start']) for r in self.db.execute('SELECT * FROM broadcasts WHERE station=? ORDER BY start', (station,))]
+
+    def test_second_source_and_minute_offset(self):
+        t = 1_800_000_000
+        self.put('ard', '3sat', t, t + 2700, 'Sara Nuru (1/2)')
+        self.put('zdf', '3sat', t + 60, t + 2760, 'Sara Nuru (1/2)')
+        self.put('zdf', '3sat', t + 2760, t + 4000, 'Kulturzeit')       # no ARD broadcast there: kept
+        self.put('zdf', 'zdf', t, t + 1800, 'heute')
+        self.put('zdf', 'zdf', t + 120, t + 1900, 'heute')               # same title, two minutes later
+        with self.db:
+            self.assertEqual(epg.dedupe(self.db), 2)
+        self.assertEqual([x[:2] for x in self.titles('3sat')], [('ard', 'Sara Nuru (1/2)'), ('zdf', 'Kulturzeit')])
+        self.assertEqual([x[2] for x in self.titles('zdf')], [t])
+
+    def test_umbrella_block_goes_long_transmission_stays(self):
+        t = 1_800_000_000
+        self.put('ard', 'phoenix', t, t + 39000, 'PHOENIX | vor ort')
+        self.put('ard', 'phoenix', t + 5400, t + 37000, 'phoenix vor ort – Bundestag')
+        self.put('ard', 'phoenix', t + 37000, t + 38000, 'phoenix der tag')
+        with self.db:
+            epg.dedupe(self.db)
+        self.assertEqual([x[1] for x in self.titles('phoenix')], ['phoenix vor ort – Bundestag', 'phoenix der tag'])
+
+    def test_country_year_subline(self):
+        data = {'channels': [{'id': 'one', 'timeSlots': [[
+            {'type': 'epg', 'title': 'Rote Rosen (2019)', 'coreTitle': 'Rote Rosen (2019)', 'subline': 'Deutschland 2015',
+             'duration': 2880, 'channel': {'name': 'ONE'}, 'broadcastedOn': '2026-11-24T09:00:00+01:00'},
+            {'type': 'epg', 'title': 'Der Film', 'subline': 'USA/Kanada 1999', 'duration': 5400,
+             'channel': {'name': 'Das Erste'}, 'broadcastedOn': '2026-11-24T20:15:00+01:00'},
+            {'type': 'epg', 'title': 'Brennpunkt', 'subline': 'Hochwasser 2026', 'duration': 900,
+             'channel': {'name': 'Das Erste'}, 'broadcastedOn': '2026-11-24T21:45:00+01:00'}]]}]}
+        rows = {r['title']: r for r in epg.parse_ard(data)}
+        self.assertEqual((rows['Rote Rosen']['subtitle'], rows['Rote Rosen']['country'], rows['Rote Rosen']['year'], rows['Rote Rosen']['episode']),
+                         ('', 'Deutschland', 2015, 2019))
+        self.assertEqual((rows['Der Film']['country'], rows['Der Film']['year']), ('USA/Kanada', 1999))
+        self.assertEqual((rows['Brennpunkt']['subtitle'], rows['Brennpunkt']['year']), ('Hochwasser 2026', None))
+
+
 if __name__ == '__main__':
     unittest.main()

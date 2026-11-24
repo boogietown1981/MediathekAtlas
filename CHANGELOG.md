@@ -1,3 +1,9 @@
+## Vorbereitung (EPG) für die nächste Version – Mac-Prüfung 0.6.129, Live-TV
+
+- L5 (ONE „Rote Rosen – Deutschland 2015 · Folge 2019“): eine ARD-Unterzeile aus Land und Jahr („Deutschland 2015“, „USA/Kanada 1999“) ist Produktionsland/-jahr, kein Folgentitel (`epg.PRODUCTION`, nur echte Ländernamen – „Hochwasser 2026“ bleibt Titel).
+- Überlappungen in epg.sqlite3 (3sat: 19 in 6 h, jede Sendung von ARD und ZDF mit 1 min Versatz; phoenix: Dachblock „PHOENIX | vor ort“ 08:30–19:15 über der Übertragung): `epg.dedupe` nach jedem Lauf (Sendungen ab vorgestern) – zweite Quelle bei Überlappung mit der besser eingestuften (`SOURCE_RANK`), gleicher Titel innerhalb 5 min, Dachblöcke ab 3 h mit mindestens zwei Sendungen darin. Bestehende Dateien heilen beim nächsten Lauf. Ereignis `epg_loaded` mit `removed_overlaps`. Ohne Alias im DELETE (ältere SQLite auf NAS).
+- Tests: `tests/test_epg_programmfuehrer.py` (+3).
+
 ## 0.6.129 – Live-TV-Befunde L1–L5 aus dem ersten Echtlauf des Programmführers; auf 0.6.128
 
 - Grundlage: berichte/diagnose-2026-11-24-vormittag-06127-pro.md, Abschnitt 11 (Björns Bildschirmfoto Live-TV).
