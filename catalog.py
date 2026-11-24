@@ -1681,7 +1681,7 @@ def reseed_non_films(c,after='',limit=500):
         try:m=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):continue
         if m.get('scan_requested'):continue
-        source=best_source(c,row['id'])
+        source=film_source(c,row['id'])   # 0.6.128: running time of the longest offer
         # 0.6.125 (Mac-Prüfung 0.6.123): only works that film_shaped itself rejects – 0.6.123 took every work whose
         # sender seed is not „movie“, also films the recognition had made films (Löwenzahn, Bullerbü, „It Follows“).
         if not source or film_shaped(source,str(source.get('title') or ''),str(source.get('topic') or ''),str(source.get('description') or '')):continue
@@ -1691,20 +1691,41 @@ def reseed_non_films(c,after='',limit=500):
     return changed,samples,(rows[-1]['id'] if rows else None)
 NON_FILM_REASON='Kein Film (Ausgabe, nummerierter Teil oder Kurzbeitrag); neu einordnen (0.6.123)'
 
+def film_source(c,wid):
+    """0.6.128 (Diagnose Pro 0.6.127: „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ fiel aus den Filmen,
+    weil das beste Angebot ein kurzer Ausschnitt mit vollem Titel war): the best offer, with the running time of the
+    longest offer of the work (active ones first) – a film with a trailer stays a film."""
+    source=best_source(c,wid)
+    if not source:return None
+    longest=0
+    for active in (1,0):
+        for (payload,) in c.execute('SELECT payload FROM offers WHERE work_id=? AND active=?',(wid,active)):
+            try:longest=max(longest,int(json.loads(payload).get('duration') or 0))
+            except (TypeError,ValueError):continue
+        if longest:break
+    try:own=int(source.get('duration') or 0)
+    except (TypeError,ValueError):own=0
+    return dict(source,duration=max(longest,own))
+
 def restore_reseeded_films(c,after='',limit=500):
     """0.6.125, only where the 0.6.123 heal ran (Prüfkopien; Björns Geräte hatten 0.6.123 nie): open works of unknown
     or series kind whose sender offer names a film (seed) and that film_shaped accepts become films again, as before
     0.6.123. Matches, user decisions and filed works stay. Returns (restored, samples, last id)."""
-    rows=c.execute("""SELECT * FROM works WHERE id>? AND kind IN ('unknown','series') AND state IN ('pending','retry','review')
-        ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    # 0.6.128 (Diagnose Pro 0.6.127, „Kurzer Prozess“ unsichtbar): also works the sweep filed meanwhile as Beitrag
+    # (state 'format' with unknown_before – such a work came from kind unknown, a seed film only through the reseed),
+    # judged by the longest offer; a filed work only from feature length on.
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND (kind IN ('unknown','series') AND state IN ('pending','retry','review')
+        OR state='format' AND json_extract(meta,'$.unknown_before') IS NOT NULL) ORDER BY id LIMIT ?""",(after,limit)).fetchall()
     restored=0;samples=[]
     for row in rows:
         try:m=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):continue
         if m.get('scan_requested') or m.get('episode_verified'):continue
-        source=best_source(c,row['id'])
+        source=film_source(c,row['id'])
         if not source:continue
         title=str(source.get('title') or '')
+        filed=row['state']=='format'
+        if filed and (int(source.get('duration') or 0)<FILM_FEATURE or not _film_seed_ignoring_shape(source)):continue
         if m.get('reason')!=NON_FILM_REASON and not _film_seed_ignoring_shape(source):continue
         if not film_shaped(source,title,str(source.get('topic') or ''),str(source.get('description') or '')):continue
         fresh=seed(source)
@@ -1712,9 +1733,11 @@ def restore_reseeded_films(c,after='',limit=500):
             # a work still carrying the 0.6.123 reason was a film before (often by recognition, not by the seed)
             fresh=_film_seed_ignoring_shape(source) or (dict(fresh,kind='movie') if m.get('reason')==NON_FILM_REASON else None)
             if not fresh:continue
-        fresh['reason']='Film wiederhergestellt (0.6.125, Rücknahme 0.6.123)'
+        fresh['reason']='Film wiederhergestellt (0.6.128, Rücknahme der Filmregel 0.6.123/0.6.125)'
         if c.execute("""UPDATE works SET title=?,kind='movie',show_key=?,meta=?,state='pending',attempts=0,next_try=0
-            WHERE id=? AND state IN ('pending','retry','review')""",(fresh['title'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount:
+            WHERE id=? AND state IN ('pending','retry','review','format')""",(fresh['title'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount:
+            c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+            for g in fresh.get('genres') or []:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
             restored+=1
             if len(samples)<20:samples.append(title[:80])
     return restored,samples,(rows[-1]['id'] if rows else None)
@@ -2059,6 +2082,45 @@ def unify_show_spelling(c):
                 if changed:out[title]=target
     return out
 
+INVISIBLE=re.compile('[\u00ad\u200b\u200c\u200d\u2060\ufeff]')
+def spelling_score(title):
+    """0.6.128: how readable a spelling is – word breaks (space, hyphen, dot) and capital letters count."""
+    title=str(title or '')
+    return (len(re.findall(r'[\s\-–.]',title)),sum(1 for ch in title if ch.isupper()))
+def best_spelling(counts):
+    """{title: works} -> the most readable spelling, ties by number of works; invisible characters removed."""
+    clean={}
+    for title,n in counts.items():
+        k=INVISIBLE.sub('',str(title or '')).strip()
+        if k:clean[k]=clean.get(k,0)+n
+    return max(clean.items(),key=lambda x:(spelling_score(x[0]),x[1],x[0]))[0]
+
+def respace_show_titles(c):
+    """0.6.128, in the spelling pass: a Reihe whose title lost its word breaks („eishockeyaktuell“ from 0.6.127) or
+    carries an invisible character gets the readable spelling from its own works' topics (same letters). Returns {old: new}."""
+    out={}
+    rows=c.execute("""SELECT show_key,title,topic,COUNT(*) n FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
+        AND state!='manual' AND (title NOT LIKE '% %' OR title LIKE ?) GROUP BY show_key,title,topic""",('%\u00ad%',)).fetchall()
+    by_show={}
+    for r in rows:by_show.setdefault((r['show_key'],r['title']),{})[cleaned(r['topic'] or '')]=r['n']
+    for (show,title),topics in by_show.items():
+        k=key(INVISIBLE.sub('',title)).replace(' ','')
+        options={title:1}
+        for topic,n in topics.items():
+            if topic and key(INVISIBLE.sub('',topic)).replace(' ','')==k:options[topic]=n
+        better=best_spelling(options)
+        if better==title or spelling_score(better)<spelling_score(INVISIBLE.sub('',title)):continue
+        if better==INVISIBLE.sub('',title) and better==title:continue
+        for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
+            try:m=json.loads(w['meta'] or '{}')
+            except (TypeError,ValueError):continue
+            m['title']=better
+            reason=str(m.get('reason') or '')
+            if reason:m['reason']=reason.replace('„'+title+'“','„'+better+'“')
+            c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(better,json.dumps(m),w['id']))
+        out[title]=better
+    return out
+
 def merge_spacing_variants(c):
     """0.6.127 (Björn 23.11.2026, Mac-Abfrage: „#BR24 Zeitreise“ 150 Werke f07074db… und „#BR24Zeitreise“ 79 Werke
     17964125… als zwei Reihen): Reihen desselben Senders, deren Titel sich nur in Leerzeichen unterscheiden (gleiches
@@ -2087,13 +2149,18 @@ def merge_spacing_variants(c):
         all_refs=set().union(*(v[0] for v in info.values()))
         if len(all_refs)>1:continue
         target=max(info,key=lambda s:(bool(info[s][0]),info[s][2],s))
-        target_title=max(shows[target].items(),key=lambda x:(x[1],x[0]))[0]
+        # 0.6.128 (Diagnose Pro 0.6.127: „eishockeyaktuell“, „sportarena“, weicher Trennstrich in „Son­ne“): the better
+        # spelling wins, not the larger group – word breaks and capitals first, invisible characters removed.
+        merged={s for s in info if s==target or (info[s][1] and info[s][1]&info[target][1])}
+        target_title=best_spelling({tt:n for s in merged for tt,n in shows[s].items()})
         for show,(refs,channels,_) in info.items():
-            if show==target or not channels or not (channels & info[target][1]):continue
+            if show!=target and (not channels or not (channels & info[target][1])):continue
             for w in c.execute("SELECT id,title,meta FROM works WHERE show_key=? AND state!='manual'",(show,)).fetchall():
                 try:m=json.loads(w['meta'] or '{}')
                 except (TypeError,ValueError):continue
-                old=w['title'];m['title']=target_title
+                old=w['title']
+                if old==target_title and show==target:continue
+                m['title']=target_title
                 reason=str(m.get('reason') or '')
                 if reason and old:m['reason']=reason.replace('„'+str(old)+'“','„'+target_title+'“')
                 c.execute('UPDATE works SET title=?,show_key=?,meta=? WHERE id=?',(target_title,target,json.dumps(m),w['id']))

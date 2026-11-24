@@ -1,3 +1,12 @@
+## 0.6.128 – Korrektur aus Diagnose Pro 0.6.127 (erster Echtlauf); auf 0.6.127
+
+- Grundlage: berichte/diagnose-2026-11-24-vormittag-06127-pro.md und Björns Rückmeldung („Kurzer Prozess“ weder in Listen noch in der Suche).
+- Filmregel: `film_shaped` beurteilt jetzt die Laufzeit des längsten Angebots (`catalog.film_source`), nicht das bestplatzierte – „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ fiel wegen eines kurzen Ausschnitts mit vollem Titel heraus. Neuer Merker `film_seed_v06128`; wo 0.6.123 oder 0.6.125 lief, nimmt `restore_reseeded_films` zuerst zurück – jetzt auch Werke, die die Einordnung „ohne Art“ inzwischen als Beitrag abgelegt hat (state format mit unknown_before, ab Spielfilmlänge und mit Filmhinweis des Senders), Genres werden mitgesetzt.
+- 3sat-Filme: Fortsetzungen in allen Schreibweisen (`metadata.film_number_variants`: „Der Pate II“ → „Der Pate 2“, „Der Pate – Teil II“, „Der Pate – Teil 2“), wie Titelteile nur mit Jahr aus dem Titelzusatz. `matching.choose`: widersprechen sich Filmkandidaten, entscheiden die mit Titeljahr und passender Laufzeit, wenn sie sich einig sind (Terrified 2017: 8 Kandidaten „prüfen“). `SEARCH_REV` v06128, Filmheilung einmal erneut (Merker `film_rules_v06128`).
+- Leerzeichen-Reihen: die lesbarste Schreibweise gewinnt (Wortgrenzen, Großbuchstaben, dann Werkzahl) statt der Mehrheit; unsichtbare Zeichen (weicher Trennstrich) entfernt (`catalog.best_spelling`). `catalog.respace_show_titles` gibt 0.6.127-Reihen („eishockeyaktuell“, „sportarena“) die Schreibweise aus den Themen ihrer Werke zurück.
+- Bekannt, nicht geändert: Genre-Nachtrag über die Reihe ist so gut wie die Genres der Geschwister („buten un binnen“ → Dokumentation).
+- Tests: `tests/test_v06128.py` (11, davon 5 geerbt), `tests/test_v06124.py` angepasst.
+
 ## 0.6.127 – Erkennung: Genre-Nachtrag für Werke ohne Genre, Reihen mit Leerzeichen-Varianten; auf 0.6.126
 
 - N-E (Björn 23.11.2026, Werkkatalog „Filme › Unbekannt“ 2.008 / „Serien › Unbekannt“ 4.052; Diagnose Air 0.6.120): „Unbekannt“ = Werk ohne Rohgenre. Neu `catalog.backfill_genres` (beim Start und alle 6 h im Formatdurchlauf, Ereignis `catalog_genres_backfilled`): IMDb-verknüpfte/-erkannte Werke bekommen die Genres aus dem lokalen IMDb-Archiv (`imdb_archive.Archive.genres`), Folgen einer Reihe die Genres, die mindestens die Hälfte der Geschwister mit Genre trägt (höchstens drei). Art, Zustand und Identität bleiben.

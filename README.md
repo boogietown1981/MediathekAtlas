@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.127
+# MediathekAtlas · 0.6.128
+
+## Neu in 0.6.128: aussortierte Filme zurück, bessere Reihennamen
+- Filme mit einem kurzen Ausschnitt als erstem Angebot („Kurzer Prozess – Righteous Kill“) bleiben Filme; maßgeblich ist das längste Angebot. Von 0.6.123/0.6.125 aussortierte Filme kommen zurück.
+- Fortsetzungen werden in allen üblichen Schreibweisen gesucht („Der Pate II“ = „Der Pate – Teil II“); bei mehreren gleichnamigen Filmen entscheiden Jahr und Laufzeit.
+- Zusammengeführte Reihen tragen die lesbare Schreibweise („Eishockey aktuell“ statt „eishockeyaktuell“), unsichtbare Trennzeichen fallen weg.
 
 ## Neu in 0.6.127: weniger „Unbekannt“, keine doppelten Reihen durch Leerzeichen
 - Werke ohne Genre (im Werkkatalog „Unbekannt“) bekommen es nachgetragen: aus dem IMDb-Archiv, wenn sie mit IMDb verknüpft sind, sonst von den anderen Folgen ihrer Reihe.

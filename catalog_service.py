@@ -158,8 +158,10 @@ class Service:
         0.6.125 (Mac-Prüfung 0.6.123: 489 echte Filme umgestuft): where the 0.6.123 pass ran, its films come back first
         (catalog.restore_reseeded_films); the corrected pass runs once under film_seed_v06125."""
         with self.db() as c:
-            if catalog.get_state(c,'film_seed_v06125',False):return None
-            old_ran=bool(catalog.get_state(c,'film_seed_v06123',False))
+            # 0.6.128 (Diagnose Pro 0.6.127: „Kurzer Prozess“ mit kurzem Ausschnitt aussortiert): once more with the
+            # longest offer; where an earlier pass ran (0.6.123 or 0.6.125), its films come back first.
+            if catalog.get_state(c,'film_seed_v06128',False):return None
+            old_ran=bool(catalog.get_state(c,'film_seed_v06123',False) or catalog.get_state(c,'film_seed_v06125',False))
         if old_ran:
             restored=self.batched(catalog.restore_reseeded_films,'film_seed_restore')
             if restored is None:return None
@@ -167,7 +169,8 @@ class Service:
         done=self.batched(catalog.reseed_non_films,'film_seed')
         if done is None:return None
         if done[0]:diagnostics.event('catalog_non_films_reseeded',works=done[0],samples=done[1]);catalog.invalidate_listings()
-        with self.db() as c:catalog.set_state(c,'film_seed_v06125',{'works':done[0],'restored':restored[0] if old_ran else 0,'at':time.time()})
+        state={'works':done[0],'restored':restored[0] if old_ran else 0,'at':time.time()}
+        with self.db() as c:catalog.set_state(c,'film_seed_v06125',state);catalog.set_state(c,'film_seed_v06128',state)
         return done[0]
     def batched(self,fn,label):
         """Runs fn(c,after) -> (n, samples, last id) in short transactions until done; (total, samples) or None on stop."""
@@ -279,7 +282,8 @@ class Service:
             # Diagnose Air 23.11.2026: once more with the title year in matching (catalog.match_meta)
             # 0.6.124 (Diagnose Air 0.6.120): once more with title parts (metadata.film_part_candidates) and the new
             # cache key – the 0.6.119/0.6.120 pass got the old search results from the 24-h cache.
-            if catalog.get_state(c,'film_rules_parts_v06124',False):return
+            # 0.6.128: once more with sequel spellings (Der Pate II) and the year+runtime tie-break (Terrified)
+            if catalog.get_state(c,'film_rules_v06128',False):return
             ids=catalog.film_suffix_works(c)
             c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
             undone=catalog.undo_short_year_close(c)
@@ -296,12 +300,12 @@ class Service:
                 if self.stop.wait(2):return
         if self.stop.is_set():return
         diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched,
-                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.124')
+                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.128')
         if matched or undone:catalog.invalidate_listings()
         state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
         with self.db() as c:
             catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
-            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state)
+            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state);catalog.set_state(c,'film_rules_v06128',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1604,6 +1608,7 @@ class Service:
             with self.db() as c:changed=catalog.unify_show_spelling(c)
             # 0.6.127: „#BR24 Zeitreise“/„#BR24Zeitreise“ – Reihen, die sich nur in Leerzeichen unterscheiden
             with self.db() as c:spaced=catalog.merge_spacing_variants(c)
+            with self.db() as c:spaced.update(catalog.respace_show_titles(c))   # 0.6.128
         except sqlite3.OperationalError as e:
             if not sqlite_busy(e):raise
             self.sqlite_busy_count+=1;self.spelling_at=time.monotonic()-self.SPELLING_EVERY+300;return None

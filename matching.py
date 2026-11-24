@@ -50,7 +50,13 @@ def conflict(a,b):
 
 def choose(meta,rows,work_only=False):
     good=[c for c in rows if not issues(meta,c,work_only=work_only) and ((work_only and (c.get('provider') in ORDER[:-1] or c.get('confidence')=='high')) or verified(meta,c))]
-    if not good or any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):return None
+    if good and any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):
+        # 0.6.128 (Diagnose Pro 0.6.127: „Terrified – Spielfilm, Argentinien 2017“ mit 8 Kandidaten „prüfen“): among
+        # films that disagree, those with the title year and an agreeing running time decide – if they agree.
+        good=[c for c in good if c.get('kind')=='movie' and meta.get('year') and str(c.get('year'))==str(meta['year'])
+              and c.get('runtime_agrees') and not c.get('runtime_mismatch')]
+        if any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):return None
+    if not good:return None
     good.sort(key=lambda c:ORDER.index(c.get('provider')) if c.get('provider') in ORDER else 99)
     chosen=dict(good[0]);sources=dict(chosen.get('field_sources') or {})
     # Never mix provider IDs or episode evidence. Supplement only compatible titles.

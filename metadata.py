@@ -509,7 +509,7 @@ QUERY_NOISE=QUERY_NOISE+(TRUNCATED_NOTE,)
 # 0.6.124 (Diagnose Air 0.6.120, N-D): the result cache (catalog_service, 24 h) was keyed by the stored title only, so
 # requeued works got the answer of the old search („from_cache“) after a change of the search. The revision and the
 # search title are part of the key now; raise SEARCH_REV whenever the queries change.
-SEARCH_REV='v06124'
+SEARCH_REV='v06128'
 def film_title_parts(title):
     """0.6.124 (Diagnose Air 0.6.120, 3sat-Filme „prüfen“ ohne IMDb-Treffer): 3sat joins series/author and film
     title or original and German title – „The Pledge - Das Versprechen“, „Jussi Adler-Olsen: Erlösung“. The local
@@ -523,6 +523,21 @@ def film_title_parts(title):
         for v in (x,rest):
             if v and v!=text and len(v)>=4 and not generic_topic(v) and v not in out:out.append(v)
     return out[:6]
+ROMAN={'I':1,'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
+FILM_NUMBER=re.compile(r'^(.{2,}?)\s*(?:[-–:]\s*)?(?:Teil\s+)?(X|IX|VIII|VII|VI|V|IV|III|II|\d{1,2})\s*$')
+def film_number_variants(title):
+    """0.6.128 (Diagnose Pro 0.6.127: „Der Pate II – Spielfilm, USA 1974“ ohne Kandidaten; IMDb führt „Der Pate –
+    Teil II“): the numbered sequel in the other usual spellings – arabic/roman, with and without „Teil“."""
+    m=FILM_NUMBER.match(str(title or '').strip())
+    if not m:return []
+    base,num=m.group(1).strip(' -–:'),m.group(2)
+    n=ROMAN.get(num) or (int(num) if num.isdigit() else 0)
+    if not 2<=n<=10 or len(base)<2:return []
+    roman=[k for k,v in ROMAN.items() if v==n][0]
+    out=[]
+    for v in (f'{base} {n}',f'{base} {roman}',f'{base} - Teil {roman}',f'{base} - Teil {n}'):
+        if norm(v)!=norm(title) and v not in out:out.append(v)
+    return out
 def film_suffix_year(title):
     """Year of a 3sat film title „… - Spielfilm, USA 1993“, else None."""
     m=FILM_SUFFIX.search(str(title or ''))
@@ -557,7 +572,7 @@ def film_part_candidates(row,meta,year):
     is no exact title, so the hit is only verified with an agreeing running time, else it stays a suggestion."""
     import imdb_archive
     found={}
-    for part in film_title_parts(meta['title']):
+    for part in film_title_parts(meta['title'])+film_number_variants(meta['title']):
         for h in imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'movie','title':part}):
             if not h.get('year') or abs(int(h['year'])-int(year))>1:continue
             h=dict(h,reason=f'Titelteil „{part}“ im lokalen IMDb-Archiv, Jahr aus dem Titelzusatz',title_part=part)

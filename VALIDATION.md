@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.128 – Korrektur Diagnose Pro 0.6.127 (24. November 2026)
+- Automatisch: tests/test_v06128.py (11), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.128).
+
 ## 0.6.127 – Genre-Nachtrag, Leerzeichen-Reihen (23. November 2026)
 - Automatisch: tests/test_v06127.py (5), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.127).
 
