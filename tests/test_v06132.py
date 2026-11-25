@@ -16,6 +16,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 import catalog  # noqa: E402
 import catalog_service  # noqa: E402
+import kids_catalog  # noqa: E402
 import matching  # noqa: E402
 import metadata  # noqa: E402
 import system_monitor  # noqa: E402
@@ -151,6 +152,44 @@ class GenreBackfill(unittest.TestCase):
             self.assertEqual(c.execute('SELECT COUNT(*) FROM work_genres').fetchone()[0], 1)
             self.assertTrue(catalog.get_state(c, 'genre_backfill_v06132', False))
         self.assertEqual(svc.undo_genre_backfill(), 0)
+
+
+class KidsFilmsPlayable(unittest.TestCase):
+    """Björn 25.11.2026: Märchen in der Kinderecke-Übersicht, aber nicht abspielbar."""
+
+    def setUp(self):
+        tmp = tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        self.root = Path(tmp.name);self.db = database(self.root)
+        with self.db() as c:
+            catalog.initialize(c)
+            catalog.ingest(c, [row('Die Gänsemagd', 'Märchen', 3600, 'Märchenfilm', 'KiKA'),
+                               row('Frau Holle', 'Märchen', 3600, 'Märchenfilm', 'KiKA'),
+                               row('Rumpelstilzchen', 'Märchen', 3600, 'Märchenfilm', 'KiKA')])
+            self.offers = {r[1]: r[0] for r in c.execute("SELECT id,json_extract(payload,'$.title') FROM offers")}
+            c.execute("UPDATE offers SET active=0 WHERE id=?", (self.offers['Frau Holle'],))
+
+    def tile(self, title, **extra):
+        return dict({'id': 'm-' + title, 'source': 'mediatheken', 'title': title,
+                     'ref': {'offer': self.offers.get(title, 'weg')}}, **extra)
+
+    def test_inactive_missing_or_refused_films_leave_the_list(self):
+        tiles = [self.tile('Die Gänsemagd'), self.tile('Frau Holle'), self.tile('Rumpelstilzchen'), self.tile('Weg')]
+        refused = self.offers['Rumpelstilzchen']
+        with mock.patch.object(kids_catalog, 'offer_allowed', lambda c, o, clause=None: o != refused), \
+             mock.patch('diagnostics.event') as event:
+            kept = kids_catalog._playable_films(self.db, tiles)
+        self.assertEqual([t['title'] for t in kept], ['Die Gänsemagd'])
+        self.assertEqual(event.call_args.kwargs['reasons'],
+                         {'Angebot nicht mehr aktiv': 1, 'nicht mehr zugelassen': 1, 'Angebot fehlt': 1})
+
+    def test_downloaded_copy_stays(self):
+        with mock.patch.object(kids_catalog, 'offer_allowed', lambda c, o, clause=None: True):
+            kept = kids_catalog._playable_films(self.db, [self.tile('Frau Holle', downloaded=True)])
+        self.assertEqual(len(kept), 1)
+
+    def test_check_failure_keeps_list(self):
+        with mock.patch.object(kids_catalog, 'offer_allowed', side_effect=sqlite3.OperationalError('locked')):
+            self.assertEqual(len(kids_catalog._playable_films(self.db, [self.tile('Die Gänsemagd')])), 1)
 
 
 class ImportantFreeSpace(unittest.TestCase):

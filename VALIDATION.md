@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.133 – Kinderecke-Filme nur mit abspielbarem Angebot (25. November 2026)
+- Automatisch: tests/test_v06132.py (14), alle Kinderecke-Tests (134), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.133, deckt 0.6.132 mit ab).
+
 ## 0.6.132 – Krimireihen, 3sat, Genre-Nachtrag, freier Speicher (25. November 2026)
 - Automatisch: tests/test_v06132.py (11), angepasst test_v06125/test_v06127, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.132); Speicherwert über osascript nur am Mac prüfbar.
 

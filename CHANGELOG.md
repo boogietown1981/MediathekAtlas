@@ -1,3 +1,9 @@
+## 0.6.133 – Kinderecke: Filme nur mit abspielbarem Angebot; auf 0.6.132
+
+- Björn 25.11.2026: „in der Kinderecke waren gestern einige Märchen nicht mehr abspielbar, auch wenn sie noch in der Übersicht waren“ (Titel und Gerät noch offen). Ursache am Code: die Filmkacheln kommen aus dem gemeinsamen Index (`unified_index.page`), Reihen wurden schon gegen die Datenbank geprüft (`_kids_shows`), Filme nicht. Abgespielt wird nach dem aktuellen Stand (`/api/kids-play` → `offer_allowed`, `streaming.resolve` prüft nicht, ob das Angebot noch aktiv ist). Ein depubliziertes Angebot oder ein inzwischen umgestuftes Werk (Filmregel, Genre-Heilung, Sperrwort) blieb als Kachel stehen.
+- `kids_catalog._playable_films` (nach `_prefer_kids_offers`): Mediatheken-Filme nur mit vorhandenem, aktivem Angebot (lokale Kopie zählt) und `offer_allowed`; die Kategorieregel wird je Liste einmal gelesen (`work_allowed(..., clause)`). Ereignis `kids_tiles_unplayable` mit Gründen und bis zu 20 Titeln. Scheitert die Prüfung, bleibt die Liste unverändert.
+- Tests: `tests/test_v06132.py` (+3).
+
 ## 0.6.132 – Korrekturen aus der Air-Diagnose 0.6.131 (Krimireihen, 3sat, Genre-Nachtrag, freier Speicher); auf 0.6.131
 
 - Grundlage: berichte/diagnose-2026-11-25-vormittag-06131-air.md.

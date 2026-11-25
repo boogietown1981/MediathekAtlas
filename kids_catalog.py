@@ -130,8 +130,11 @@ def _from_offer(offer, view, limit=None):
             return _tile(source, 'series', title, meta.get('year'), meta.get('poster'), series={'show': show})
         if not item.get('available') and not item.get('downloaded'):
             return None
-        return _tile(source, 'movie', title, meta.get('year'), meta.get('poster'), ref={'offer': str(item.get('id') or '')},
+        tile = _tile(source, 'movie', title, meta.get('year'), meta.get('poster'), ref={'offer': str(item.get('id') or '')},
                      duration=src.get('duration'))
+        if item.get('downloaded'):
+            tile['downloaded'] = True      # 0.6.132: lokale Kopie spielt auch ohne aktives Angebot
+        return tile
     item_id = str(item.get('id') or '')
     if source == 'netzkino':
         if item.get('kind') == 'series' or view == 'series':
@@ -271,6 +274,7 @@ def _finish(db, root, out, pending):
     out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     out['movies'] = _prefer_kids_offers(db, out['movies'])
+    out['movies'] = _playable_films(db, out['movies'])
     out['movies'], out['series'] = _parent_blocks(db, out['movies']), _parent_blocks(db, out['series'])
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
@@ -537,13 +541,13 @@ def allowed_ref(data, ref, c=None):
     return True
 
 
-def offer_allowed(c, offer_id):
+def offer_allowed(c, offer_id, clause=None):
     """Ein Mediatheken-Angebot ist in der Kinderecke zulässig (siehe work_allowed)."""
     row = c.execute('SELECT work_id FROM offers WHERE id=?', (str(offer_id),)).fetchone()
-    return bool(row) and work_allowed(c, row[0], str(offer_id))
+    return bool(row) and work_allowed(c, row[0], str(offer_id), clause)
 
 
-def work_allowed(c, work_id, offer_id=None):
+def work_allowed(c, work_id, offer_id=None, clause=None):
     """EINE Entscheidung je Werk/Angebot für Liste, Folgenliste, /api/kids-play und Nachladen (0.6.109).
 
     ``work_id``: works.id (Film oder Folge der Mediatheken); ``offer_id``: optional das konkrete Angebot (dann zählen
@@ -578,7 +582,7 @@ def work_allowed(c, work_id, offer_id=None):
         return False
     if kind == 'series' and show:
         return episode_paths(c, show).get(wid) is not None
-    clause, args = catalog.category_clause(c, CATEGORY)
+    clause, args = clause or catalog.category_clause(c, CATEGORY)   # 0.6.132: für eine ganze Liste einmal gelesen
     return bool(c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [wid] + list(args)).fetchone())
 
 
@@ -788,6 +792,45 @@ def _prefer_kids_offers(db, tiles):
                 t['key'] = watch_key(t['ref'])
                 t['channel'] = twin[1][:60]
     return tiles
+
+
+def _playable_films(db, tiles):
+    """0.6.132 (Björn 25.11.2026: „in der Kinderecke waren gestern einige Märchen nicht mehr abspielbar, auch wenn sie
+    noch in der Übersicht waren“): die Filmkacheln kommen aus dem gemeinsamen Index, abgespielt wird nach dem
+    aktuellen Stand der Datenbank (/api/kids-play → offer_allowed, streaming.resolve). Ein Mediatheken-Film, dessen
+    Angebot nicht mehr aktiv ist (ohne lokale Kopie) oder den work_allowed inzwischen ablehnt (Werk umgestuft, Genre
+    geheilt, Sperrwort, Angebot gelöscht), erscheint nicht mehr. Ereignis kids_tiles_unplayable nennt Titel und Grund."""
+    films = [t for t in tiles if t.get('source') == 'mediatheken' and _dict(t.get('ref')).get('offer')]
+    if not films or db is None:
+        return tiles
+    drop = {}
+    try:
+        import catalog
+        with db() as c:
+            clause = catalog.category_clause(c, CATEGORY)
+            for t in films:
+                offer = str(t['ref']['offer'])
+                row = c.execute('SELECT active FROM offers WHERE id=?', (offer,)).fetchone()
+                if not row:
+                    drop[t['id']] = (t, 'Angebot fehlt')
+                elif not row[0] and not t.get('downloaded'):
+                    drop[t['id']] = (t, 'Angebot nicht mehr aktiv')
+                elif not offer_allowed(c, offer, clause):
+                    drop[t['id']] = (t, 'nicht mehr zugelassen')
+    except Exception:
+        return tiles                   # Prüfung gescheitert: Liste unverändert, nie leer
+    if not drop:
+        return tiles
+    try:
+        import diagnostics
+        reasons = {}
+        for _, why in drop.values():
+            reasons[why] = reasons.get(why, 0) + 1
+        diagnostics.event('kids_tiles_unplayable', movies=len(drop), reasons=reasons,
+                          titles=['%s [%s]' % (t.get('title'), why) for t, why in list(drop.values())[:20]])
+    except Exception:
+        pass
+    return [t for t in tiles if t['id'] not in drop]
 
 
 def _word_safe(db, tiles):

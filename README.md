@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.132
+# MediathekAtlas · 0.6.133
+
+## Neu in 0.6.133: Kinderecke zeigt nur abspielbare Filme
+- Filme der Mediatheken erscheinen in der Kinderecke nur noch, wenn ihr Angebot aktiv ist (oder lokal gespeichert) und sie nach aktuellem Stand zugelassen sind. Vorher konnten Märchen in der Übersicht stehen, die sich nicht mehr abspielen ließen.
 
 ## Neu in 0.6.132: Krimireihen bleiben Serien, 3sat-Filme, Genres, freier Speicher am Mac
 - Nummerierte Folgen einer Reihe („Brokenwood (7/20)“, „Rebecka Martinsson (02/08)“) werden nicht mehr als Filme zurückgeholt; Zweiteiler und einzelne Spielfilme bleiben Filme.
