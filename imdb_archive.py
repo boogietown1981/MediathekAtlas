@@ -228,8 +228,9 @@ def update_space(archive_bytes):
     return int(archive_bytes)+UPDATE_MARGIN if archive_bytes else 0
 
 def _free_bytes(folder):
-    try:return shutil.disk_usage(folder).free
-    except OSError:return None
+    # 0.6.132: the space estimate uses the Finder value (macOS frees purgeable space for the download on demand)
+    import system_monitor
+    return system_monitor.free_bytes(folder)
 
 def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
     seed_file(path)

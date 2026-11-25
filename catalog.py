@@ -236,6 +236,7 @@ def portal_reseed(c,limit=500,after=''):
 SHORT_FILM=re.compile(r'(?i)\b(?:kurzfilm\w*|short|animationsfilm\w*|trickfilm\w*)\b')
 FILM_SHORTEST=1200
 FILM_FEATURE=60*60   # 0.6.125: Spielfilmlänge
+SERIES_PARTS=re.compile(r'\(\s*(\d{1,3})\s*/\s*(\d{1,3})\s*\)')
 def film_shaped(row,title,topic,desc):
     """0.6.123 (Björn 23.11.2026, Bildschirmfoto „Filme > Unbekannt“): a film word in the broadcaster's text made
     „10 vor 10 vom 02.06.2022“ (25 min), „18.00 Uhr (22.01.2019)“, „67. Nordische Filmtage starten in Lübeck“ (4 min)
@@ -248,6 +249,11 @@ def film_shaped(row,title,topic,desc):
     # 0.6.125 (Mac-Prüfung 0.6.123: 489 Werke umgestuft, 244 davon ab 80 min – „Der Amsterdam-Krimi (2)“,
     # „Wo ist Anne Frank – Teil 1/2“, Löwenzahn- und Bullerbü-Filme): from feature length on a numbered part is a
     # film of a film series; only a dated edition is no film.
+    # 0.6.132 (Diagnose Air 0.6.131: 56 zurückgeholte „Filme“ waren alle Folgen von Krimireihen – „Brokenwood (7/20)“,
+    # „Rebecka Martinsson (02/08)“, „Inspector Mathias (3/9)“ – und blieben als Film ohne Kandidat „prüfen“): a part
+    # n of m with m ≥ 3 is an episode of a series at any length; two-parters („Teil 1/2“, „(2)“) may still be films.
+    parts=SERIES_PARTS.search(title)
+    if parts and int(parts.group(2))>=3:return False
     if duration>=FILM_FEATURE:return True
     if EDITION_NUMBERING.search(title) or metadata.PART.search(title):return False
     if 0<duration<FILM_SHORTEST and not SHORT_FILM.search(' '.join((title,topic,desc[:200]))):return False
@@ -3095,6 +3101,21 @@ def reclassify_batch(c,limit=500):
     return len(rows)
 
 GENRE_REFERENCE_PROVIDERS=('IMDb Offline','OMDb','TMDB','TVDB')
+BACKFILL_SOURCE='Reihe (nachgetragen)'
+BACKFILL_MIN_SIBLINGS=3
+
+def undo_series_genre_backfill(c,limit=500):
+    """0.6.132: nimmt alle bis 0.6.131 aus der Reihe nachgetragenen Genres zurück (Werke werden danach von backfill_genres
+    mit der strengeren Regel neu bewertet). Returns Anzahl."""
+    ids=[r[0] for r in c.execute("""SELECT id FROM works WHERE json_valid(meta)
+        AND json_extract(meta,'$.genre_source')=? LIMIT ?""",(BACKFILL_SOURCE,limit))]
+    for wid in ids:
+        m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0])
+        m.pop('genres',None);m.pop('genre_source',None)
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,))
+    return len(ids)
+
 def backfill_genres(c,imdb_genres=None,after='',limit=500):
     """0.6.127 (Björn 23.11.2026: Werkkatalog „Unbekannt“ 2.008 Filme / 4.052 Reihen; Diagnose Air 0.6.120 N-E – das
     sind Werke ganz ohne Rohgenre, z. B. verknüpfte „50 Jahre Roland Kaiser“, „Accept – Hellfest“): Werke mit aktivem
@@ -3116,12 +3137,17 @@ def backfill_genres(c,imdb_genres=None,after='',limit=500):
             source='IMDb Offline (nachgetragen)'
         if not found and row['kind']=='series' and row['show_key']:
             if row['show_key'] not in siblings:
-                with_genre=c.execute("""SELECT COUNT(DISTINCT g.work_id) FROM work_genres g JOIN works w ON w.id=g.work_id
-                    WHERE w.show_key=?""",(row['show_key'],)).fetchone()[0]
-                common=c.execute("""SELECT g.genre,COUNT(*) n FROM work_genres g JOIN works w ON w.id=g.work_id WHERE w.show_key=?
-                    GROUP BY g.genre ORDER BY n DESC,g.genre LIMIT 3""",(row['show_key'],)).fetchall()
-                siblings[row['show_key']]=[g for g,n in common if with_genre and n*2>=with_genre]
-            found=siblings[row['show_key']];source='Reihe (nachgetragen)'
+                # 0.6.132 (Diagnose Air 0.6.131: „Rudis Rasselbande“, „Kunst + Krempel“ als Nachrichten): nur Geschwister
+                # mit eigenem Genre zählen – nachgetragene Genres früherer Stapel schaukelten sich sonst auf –, mindestens
+                # BACKFILL_MIN_SIBLINGS davon und ein Genre muss zwei Drittel von ihnen tragen.
+                own="""FROM work_genres g JOIN works w ON w.id=g.work_id WHERE w.show_key=?
+                    AND COALESCE(json_extract(CASE WHEN json_valid(w.meta) THEN w.meta END,'$.genre_source'),'')!=?"""
+                with_genre=c.execute('SELECT COUNT(DISTINCT g.work_id) '+own,(row['show_key'],BACKFILL_SOURCE)).fetchone()[0]
+                common=c.execute('SELECT g.genre,COUNT(*) n '+own+' GROUP BY g.genre ORDER BY n DESC,g.genre LIMIT 3',
+                    (row['show_key'],BACKFILL_SOURCE)).fetchall()
+                siblings[row['show_key']]=([g for g,n in common if n*3>=with_genre*2]
+                    if with_genre>=BACKFILL_MIN_SIBLINGS else [])
+            found=siblings[row['show_key']];source=BACKFILL_SOURCE
         if not found:continue
         m['genres']=found;m['genre_source']=source
         c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))

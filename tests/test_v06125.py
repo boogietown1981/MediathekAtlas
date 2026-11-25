@@ -28,8 +28,9 @@ def database(root):
 
 class Shape(unittest.TestCase):
     def test_feature_length_numbered_films_stay(self):
+        # 0.6.132 (Diagnose Air 0.6.131): „Mammon: Opfer (1/3)“ is the episode of a series – (n/m) with m ≥ 3 is no film
         for title, minutes in (('Der Amsterdam-Krimi (2)', 86), ('Wo ist Anne Frank – Die Hintergründe, Teil 1', 90),
-                               ('Mammon: Opfer (1/3)', 111)):
+                               ('Mordkommission Istanbul (1/2)', 89)):
             r = row(title, 'Spielfilm', minutes * 60, 'Spielfilm, Deutschland 2020', 'ARD')
             self.assertTrue(catalog.film_shaped(r, title, r['topic'], r['description']), title)
             self.assertEqual(catalog.seed(r)['kind'], 'movie', title)

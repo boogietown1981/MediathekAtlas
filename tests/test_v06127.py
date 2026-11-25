@@ -65,7 +65,7 @@ class GenreBackfill(unittest.TestCase):
         self.c = sqlite3.connect(Path(tmp.name) / 'catalog.db');self.c.row_factory = sqlite3.Row
         self.addCleanup(self.c.close)
         catalog.initialize(self.c)
-        rows = [offer('50 Jahre Roland Kaiser', 'Musik', 'MDR', 1)] + [offer('F%d' % i, 'Quarks', 'WDR', 10 + i) for i in range(4)]
+        rows = [offer('50 Jahre Roland Kaiser', 'Musik', 'MDR', 1)] + [offer('F%d' % i, 'Quarks', 'WDR', 10 + i) for i in range(5)]
         catalog.ingest(self.c, rows)
         self.c.execute('DELETE FROM work_genres')
         for w in self.c.execute('SELECT id,meta,title,topic FROM works').fetchall():
@@ -78,7 +78,7 @@ class GenreBackfill(unittest.TestCase):
                 self.c.execute("UPDATE works SET kind='series',title='Quarks',show_key=?,meta=?,state='identified' WHERE id=?",
                                (catalog.showkey(m), json.dumps(m), w['id']))
         sib = self.c.execute("SELECT id FROM works WHERE kind='series' ORDER BY id").fetchall()
-        for w in sib[:2]:
+        for w in sib[:3]:   # 0.6.132: at least three siblings with an own genre
             self.c.execute("INSERT INTO work_genres VALUES(?,?)", (w['id'], 'Wissen'))
         self.c.execute("INSERT INTO work_genres VALUES(?,?)", (sib[0]['id'], 'Natur'))
 
@@ -96,7 +96,7 @@ class GenreBackfill(unittest.TestCase):
         self.assertTrue(kaiser and None not in kaiser)
         for title, genres in g.values():
             if title == 'Quarks':
-                self.assertIn('Wissen', genres)   # half of the siblings with genre carry it
+                self.assertIn('Wissen', genres)   # two thirds of the siblings with genre carry it
         self.assertEqual(catalog.backfill_genres(self.c, lambda ref: [])[0], 0)   # idempotent
 
     def test_without_archive_only_series(self):

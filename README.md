@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.131
+# MediathekAtlas · 0.6.132
+
+## Neu in 0.6.132: Krimireihen bleiben Serien, 3sat-Filme, Genres, freier Speicher am Mac
+- Nummerierte Folgen einer Reihe („Brokenwood (7/20)“, „Rebecka Martinsson (02/08)“) werden nicht mehr als Filme zurückgeholt; Zweiteiler und einzelne Spielfilme bleiben Filme.
+- 3sat-Filme: ein Autorenname vor dem Titel („Mankells Wallander – …“) stört die Suche nicht mehr; bei Filmen auf „prüfen“ steht im Protokoll, warum der Kandidat nicht genommen wurde.
+- Genres aus der Reihe nur noch, wenn mindestens drei Folgen ein eigenes Genre tragen und zwei Drittel davon dasselbe; bisher so nachgetragene Genres werden einmal neu bewertet.
+- Am Mac zeigt die App den freien Speicher wie der Finder (einschließlich löschbarem Platz).
 
 ## Neu in 0.6.131: verschiedene Sendungen gleichen Namens bleiben getrennt
 - Reihen werden nur noch bei echten Leerzeichen-Unterschieden zusammengeführt („#BR24 Zeitreise“/„#BR24Zeitreise“); Sendungen, die sich nur in Groß-/Kleinschreibung oder Satzzeichen unterscheiden (KiKA „ECHT“, WDR „Echt?“, MDR „Echt“), bleiben getrennt und behalten ihren Namen.

@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.132 – Krimireihen, 3sat, Genre-Nachtrag, freier Speicher (25. November 2026)
+- Automatisch: tests/test_v06132.py (11), angepasst test_v06125/test_v06127, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.132); Speicherwert über osascript nur am Mac prüfbar.
+
 ## 0.6.131 – Korrektur Mac-Urteil 0.6.130 (ECHT, Rückweg nach 0.6.129) (25. November 2026)
 - Automatisch: tests/test_v06130.py (20, angepasst), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.131).
 

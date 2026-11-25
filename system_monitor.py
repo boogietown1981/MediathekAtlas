@@ -119,10 +119,66 @@ def load():
         return None
 
 
+# 0.6.132 (Diagnose Air 0.6.131: Speicheranzeige 5 GB frei, der Finder meldete deutlich mehr): on macOS APFS keeps
+# purgeable space (local snapshots, iCloud caches) that statvfs counts as used. The Finder shows the
+# "available for important usage" capacity – macOS frees purgeable space for it on demand. Displays, warnings and
+# space estimates use that value; hard write checks (512 MiB margins) keep the strict free space.
+_IMPORTANT_JS = ("ObjC.import('Foundation');function run(argv){var k='NSURLVolumeAvailableCapacityForImportantUsageKey';"
+                 "var u=$.NSURL.fileURLWithPath(argv[0]);var r=u.resourceValuesForKeysError($([k]),null);"
+                 "if(!r||r.isNil())return '';var v=r.objectForKey(k);return (v&&!v.isNil())?String(v.longLongValue):'';}")
+_IMPORTANT = {}
+_IMPORTANT_LOCK = threading.Lock()
+IMPORTANT_TTL = 120.0
+
+
+def _important_capacity(path):
+    """Bytes macOS makes available for important usage on the volume of ``path`` (cached per volume), else None."""
+    if sys.platform != 'darwin':
+        return None
+    try:
+        dev = os.stat(path).st_dev
+    except OSError:
+        return None
+    now = time.monotonic()
+    with _IMPORTANT_LOCK:
+        hit = _IMPORTANT.get(dev)
+        if hit and now - hit[0] < IMPORTANT_TTL:
+            return hit[1]
+    value = None
+    try:
+        out = subprocess.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', _IMPORTANT_JS, str(path)],
+                             capture_output=True, text=True, timeout=5)
+        text = (out.stdout or '').strip()
+        value = int(text) if out.returncode == 0 and text.isdigit() and int(text) > 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        value = None
+    with _IMPORTANT_LOCK:
+        _IMPORTANT[dev] = (now, value)
+    return value
+
+
+def usage(path):
+    """shutil.disk_usage with ``free`` as the user sees it: on macOS including purgeable space. ``strict_free`` is the
+    plain statvfs value. Raises OSError like shutil.disk_usage."""
+    plain = shutil.disk_usage(path)
+    total = getattr(plain, 'total', 0) or 0
+    important = _important_capacity(path)
+    free = max(plain.free, min(important, total) if total else important) if important else plain.free
+    return {'total': total, 'used': max(0, total - free), 'free': free, 'strict_free': plain.free}
+
+
+def free_bytes(path):
+    """Free bytes as shown to the user (see ``usage``), None if the path cannot be read."""
+    try:
+        return usage(path)['free']
+    except OSError:
+        return None
+
+
 def drive(path):
     try:
-        usage = shutil.disk_usage(path)
-        return {'path': str(path), 'total_bytes': usage.total, 'free_bytes': usage.free}
+        u = usage(path)
+        return {'path': str(path), 'total_bytes': u['total'], 'free_bytes': u['free'], 'strict_free_bytes': u['strict_free']}
     except OSError:
         return {'path': str(path), 'total_bytes': None, 'free_bytes': None}
 

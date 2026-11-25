@@ -798,8 +798,8 @@ def free_bytes(path):
     for candidate in (p, *p.parents):
         try:
             if candidate.exists():
-                import shutil
-                return shutil.disk_usage(candidate).free
+                import system_monitor   # 0.6.132: including purgeable space on macOS
+                return system_monitor.usage(candidate)['free']
         except OSError:
             return None
     return None
