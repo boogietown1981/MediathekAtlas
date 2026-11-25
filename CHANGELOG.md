@@ -1,3 +1,11 @@
+## 0.6.131 – Korrektur Mac-Urteil 0.6.130 (ECHT → „Echt?“, Rückweg nach 0.6.129); auf 0.6.130
+
+- Mac-Prüfung 0.6.130: für frische Kopien von Björns Geräten alles erfüllt (S, X Trailer, L5/L3, R/T, Regression), aber zwei Funde.
+- ECHT: KiKA/ZDF „ECHT“ (Jugendserie, 174), WDR „Echt?“ (13) und MDR „Echt“ (13) wurden alle „Echt?“. `catalog.merge_spacing_variants` bewegt und benennt jetzt nur noch Werke um, deren Titel sich wirklich in Wortgrenzen oder unsichtbaren Zeichen vom Zieltitel unterscheidet (`spacing_differs`); reine Groß-/Klein- oder Satzzeichen-Varianten bleiben in ihrer Reihe und unter ihrem Namen (das bleibt Sache von `unify_show_spelling`). Damit entfallen auch reine Groß→Klein-Angleichungen wie „CAVE PAINTER“ → „Cave Painter“.
+- Rückweg nach 0.6.129 (nur Prüfkopien; Björns Geräte liefen nie mit 0.6.129): die 0.6.130-Rücknahme von Großschreibung schrieb „MAKRO“ → „makro“ und „NACHTCAFÉ“ → „NACHTCAFé“, weil die frühere Schreibweise nicht gespeichert ist. Sie ist entfernt; Prüfungen nur ab frischen Kopien von Björns Geräten.
+- Tests: `tests/test_v06130.py` angepasst (+ECHT, Rücknahme entfällt).
+- Programmführer (EPG-Thread, 35bb3cb0): weitere Ländernamen in der Land/Jahr-Unterzeile („Andorra/Deutschland 2013“, Sturm der Liebe); einmalige Bereinigung aller Überlappungen in epg.sqlite3 (Merker `dedupe_all_v06131`, ältere Tage 10.–22.11.: 3sat 494, phoenix 22).
+
 ## 0.6.130 – Korrektur Mac-Urteil 0.6.129 (S Großschreibung, L5/L3 Programmführer) und 3sat-Trailer; auf 0.6.129
 
 ### Erkennung

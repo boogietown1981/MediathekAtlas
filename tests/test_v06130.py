@@ -78,11 +78,22 @@ class FilmTrailers(unittest.TestCase):
 
 
 class ShoutUndo(SpacingVariants):
-    def test_capitals_from_0_6_128_come_back_from_topics(self):
+    def test_capitals_are_not_undone_any_more(self):
+        """0.6.131: the 0.6.130 undo of capitals wrote „makro“ and „NACHTCAFé“ – it is gone."""
         self.series([offer('A%d' % i, 'Nachtcafé', 'SWR', i) for i in range(3)])
         self.c.execute("UPDATE works SET title='NACHTCAFÉ'")
-        self.assertEqual(catalog.respace_show_titles(self.c), {'NACHTCAFÉ': 'Nachtcafé'})
+        self.assertEqual(catalog.respace_show_titles(self.c), {})
 
     def test_sender_capitals_stay(self):
         self.series([offer('A%d' % i, 'PRESSECLUB', 'WDR', i) for i in range(2)])
         self.assertEqual(catalog.respace_show_titles(self.c), {})
+
+
+class EchtStays(SpacingVariants):
+    def test_case_and_punctuation_variants_of_different_senders_stay(self):
+        self.series([offer('K%d' % i, 'ECHT', 'KiKA', i) for i in range(4)] + [offer('W1', 'Echt?', 'KiKA', 20), offer('W2', 'Echt?', 'WDR', 21)] +
+                    [offer('M1', 'Echt', 'MDR', 30)])
+        self.c.execute("UPDATE works SET show_key='k-'||title")   # as on the Mac copy: separate keys
+        before = self.shows()
+        self.assertEqual(catalog.merge_spacing_variants(self.c), {})
+        self.assertEqual(self.shows(), before)

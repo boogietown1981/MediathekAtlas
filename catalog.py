@@ -2114,7 +2114,7 @@ def respace_show_titles(c):
     carries an invisible character gets the readable spelling from its own works' topics (same letters). Returns {old: new}."""
     out={}
     rows=c.execute("""SELECT show_key,title,topic,COUNT(*) n FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
-        AND state!='manual' AND (title NOT LIKE '% %' OR title LIKE ? OR title=upper(title)) GROUP BY show_key,title,topic""",('%\u00ad%',)).fetchall()
+        AND state!='manual' AND (title NOT LIKE '% %' OR title LIKE ?) GROUP BY show_key,title,topic""",('%\u00ad%',)).fetchall()
     by_show={}
     for r in rows:by_show.setdefault((r['show_key'],r['title']),{})[cleaned(r['topic'] or '')]=r['n']
     for (show,title),topics in by_show.items():
@@ -2123,10 +2123,9 @@ def respace_show_titles(c):
         for topic,n in topics.items():
             if topic and key(INVISIBLE.sub('',topic)).replace(' ','')==k:options[topic]=n
         better=best_spelling(options)
-        # 0.6.130: a title in capitals only (NACHTCAFÉ from the 0.6.128 pass on test copies) gets the spelling of its
-        # own works' topics back when the sender writes it otherwise
-        undo_shout=_shouting(title) and not _shouting(better) and key(title)==key(better)
-        if better==title or not (spacing_differs(title,better) or undo_shout):continue
+        # 0.6.131 (Mac-Prüfung 0.6.130, Rückweg nach 0.6.129: MAKRO → „makro“, NACHTCAFÉ → „NACHTCAFé“): the 0.6.130
+        # undo of capitals is gone – it could not know the former spelling. Only spacing and invisible characters.
+        if better==title or not spacing_differs(title,better):continue
         if spelling_score(better,options)<spelling_score(INVISIBLE.sub('',title),options):continue
         for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
             try:m=json.loads(w['meta'] or '{}')
@@ -2176,7 +2175,9 @@ def merge_spacing_variants(c):
                 try:m=json.loads(w['meta'] or '{}')
                 except (TypeError,ValueError):continue
                 old=w['title']
-                if show==target and not spacing_differs(old,target_title):continue
+                # 0.6.131 (Mac-Prüfung 0.6.130: KiKA „ECHT“ 174, WDR „Echt?“ 13 und MDR „Echt“ 13 wurden alle „Echt?“):
+                # only a real spacing variant moves – a case or punctuation variant (same key) stays where and as it is.
+                if not spacing_differs(old,target_title):continue
                 m['title']=target_title
                 reason=str(m.get('reason') or '')
                 if reason and old:m['reason']=reason.replace('„'+str(old)+'“','„'+target_title+'“')

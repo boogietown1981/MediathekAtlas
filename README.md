@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.130
+# MediathekAtlas · 0.6.131
+
+## Neu in 0.6.131: verschiedene Sendungen gleichen Namens bleiben getrennt
+- Reihen werden nur noch bei echten Leerzeichen-Unterschieden zusammengeführt („#BR24 Zeitreise“/„#BR24Zeitreise“); Sendungen, die sich nur in Groß-/Kleinschreibung oder Satzzeichen unterscheiden (KiKA „ECHT“, WDR „Echt?“, MDR „Echt“), bleiben getrennt und behalten ihren Namen.
 
 ## Neu in 0.6.130: Reihennamen ohne Großschreibung, Trailer als Trailer, sauberer Programmführer
 - Zusammengeführte Reihen behalten ihre normale Schreibweise („Nachtcafé“ statt „NACHTCAFÉ“).
