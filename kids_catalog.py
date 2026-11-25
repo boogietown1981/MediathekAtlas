@@ -575,9 +575,14 @@ def work_allowed(c, work_id, offer_id=None, clause=None):
     # 0.6.113 (Mac-Prüfung 0.6.112: Young Crime/POV/#Ukraine spielten das ZDF-/WDR-/rbtv-Angebot eines Werks, das über
     # seinen KiKA-Zwilling zugelassen war): hat das Werk ein aktives Kindersender-Angebot, ist nur dieses zulässig
     twin = kids_offer(c, wid)
-    if offer_id and twin and twin[0] != str(offer_id) and not allowed:
+    own_kids = any(ch in _kids_channels() for ch, _ in offers)
+    # 0.6.134 (Mac-Prüfung 0.6.132, Björns Märchen: Regentrude, Schweinehirt, Sechs Schwäne … 32 Filme mit 404 „Dieses
+    # Video gibt es in der Kinderecke nicht“): ein Werk mit mehreren KiKA-Angeboten ließ nur das mit der kleinsten id zu,
+    # die Liste zeigte aber ein anderes. Ein Angebot vom Kindersender ist immer zulässig; abgelehnt wird nur ein
+    # Angebot eines anderen Senders, wenn es einen Kindersender-Zwilling gibt.
+    if offer_id and twin and twin[0] != str(offer_id) and not allowed and not own_kids:
         return False
-    kids_channel = allowed or any(ch in _kids_channels() for ch, _ in offers)
+    kids_channel = allowed or own_kids
     if not kids_channel and (word_blocked(title) or any(word_blocked(t) for _, t in offers)):
         return False
     if kind == 'series' and show:

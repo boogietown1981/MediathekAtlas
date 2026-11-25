@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.134 – Kinderecke-Zwilling (25. November 2026)
+- Automatisch: neuer Test in tests/test_v06113_kinder_zwilling.py (gegen 0.6.133 rot, jetzt grün), alle Kinderecke-Tests, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung der 32 Titel (PRUEFLISTE in releases/0.6.134).
+
 ## 0.6.133 – Kinderecke-Filme nur mit abspielbarem Angebot (25. November 2026)
 - Automatisch: tests/test_v06132.py (14), alle Kinderecke-Tests (134), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.133, deckt 0.6.132 mit ab).
 

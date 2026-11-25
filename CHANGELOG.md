@@ -1,3 +1,9 @@
+## 0.6.134 – Kinderecke: Märchen mit mehreren KiKA-Angeboten spielen wieder; auf 0.6.133
+
+- Mac-Prüfung 0.6.132 (frische Pro-Kopie, alle 555 Filmkacheln per `/api/kids-play`): 510 abspielbar, 45 nicht. 32 davon Mediatheken-Filme mit Weg „sender“ und 404 „Dieses Video gibt es in der Kinderecke nicht“ – Björns Märchen (Das Märchen von der Regentrude, Der Schweinehirt, Die sechs Schwäne, Die drei Federn, Die Salzprinzessin …, dazu Bibi & Tina, Löwenzahn, Juli tanzt, Weihnachten in Sommerby). Die Angebote waren aktiv. Ursache: `work_allowed` ließ bei einem Werk mit mehreren Kindersender-Angeboten nur das von `kids_offer` (kleinste id) zu (Regel 0.6.113), die Liste zeigte ein anderes. Jetzt ist ein Angebot vom Kindersender immer zulässig; abgelehnt wird nur ein Angebot eines anderen Senders, wenn ein Kindersender-Zwilling existiert. Die Ausblendung aus 0.6.133 hätte diese Märchen versteckt; mit dem Fix bleiben sie und spielen.
+- Offen (eigener Schritt): 12 Netzkino-/Plex-Filme mit Kopierschutz und 1 nicht mehr verfügbarer Netzkino-Film stehen als Kachel, der Kopierschutz zeigt sich erst beim Abspielen.
+- Tests: `tests/test_v06113_kinder_zwilling.py` (+1, scheitert mit 0.6.133).
+
 ## 0.6.133 – Kinderecke: Filme nur mit abspielbarem Angebot; auf 0.6.132
 
 - Björn 25.11.2026: „in der Kinderecke waren gestern einige Märchen nicht mehr abspielbar, auch wenn sie noch in der Übersicht waren“ (Titel und Gerät noch offen). Ursache am Code: die Filmkacheln kommen aus dem gemeinsamen Index (`unified_index.page`), Reihen wurden schon gegen die Datenbank geprüft (`_kids_shows`), Filme nicht. Abgespielt wird nach dem aktuellen Stand (`/api/kids-play` → `offer_allowed`, `streaming.resolve` prüft nicht, ob das Angebot noch aktiv ist). Ein depubliziertes Angebot oder ein inzwischen umgestuftes Werk (Filmregel, Genre-Heilung, Sperrwort) blieb als Kachel stehen.

@@ -1,7 +1,8 @@
-# MediathekAtlas · 0.6.133
+# MediathekAtlas · 0.6.134
 
-## Neu in 0.6.133: Kinderecke zeigt nur abspielbare Filme
-- Filme der Mediatheken erscheinen in der Kinderecke nur noch, wenn ihr Angebot aktiv ist (oder lokal gespeichert) und sie nach aktuellem Stand zugelassen sind. Vorher konnten Märchen in der Übersicht stehen, die sich nicht mehr abspielen ließen.
+## Neu in 0.6.134: Märchen in der Kinderecke spielen wieder
+- Filme mit mehreren KiKA-Angeboten (Das Märchen von der Regentrude, Der Schweinehirt, Die sechs Schwäne …) ließen sich in der Kinderecke nicht abspielen („Dieses Video gibt es in der Kinderecke nicht“). Jedes Angebot vom Kindersender ist jetzt zulässig.
+- Filme der Mediatheken erscheinen in der Kinderecke nur noch, wenn ihr Angebot aktiv ist (oder lokal gespeichert) und sie nach aktuellem Stand zugelassen sind.
 
 ## Neu in 0.6.132: Krimireihen bleiben Serien, 3sat-Filme, Genres, freier Speicher am Mac
 - Nummerierte Folgen einer Reihe („Brokenwood (7/20)“, „Rebecka Martinsson (02/08)“) werden nicht mehr als Filme zurückgeholt; Zweiteiler und einzelne Spielfilme bleiben Filme.
