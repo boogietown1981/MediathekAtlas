@@ -279,6 +279,13 @@ def lookup(row):
 
 KIDS_HINT=next(p for p,g in GENRE_HINTS if g=='Kinder')
 
+# 0.6.135 (Prüfvermerk 0.6.134: „Sport-Clip“ 41.000 Werke, „Sport-Arena“, „Paris 2024“ als Nachrichten, „Sportschau
+# Wintersport“ als Talk – „aktuell“ oder „Interview“ in einem Beitragstitel bzw. einer Beschreibung): Sport kommt aus
+# dem Namen der Sendung; Nachrichten und Talk nur noch aus dem Namen, nicht aus Beschreibung oder Beitragstitel.
+SPORT_HINT=re.compile(r'(?i)\b(?:sport\w*|\w*(?:winter|motor|kampf|rad|wasser|schnee|extrem|frauen|behinderten|para)sport\w*|'
+                      r'olympi\w*|paris 2024|fußball\w*|bundesliga|eishockey|handball|biathlon|formel 1|leichtathletik|tennis)\b')
+NAME_ONLY=('Kinder','Nachrichten','Talk')
+
 def genres(*texts,names=None):
     """Genre hints from programme texts. 0.6.98 (Mac-Prüfung 0.6.91: NACHTCAFÉ, Politik, heute, Abendschau in der
     Kinderecke): „Kinder“ only from the programme's own name (Sendereihe, Thema, Sendung) given as ``names``, never
@@ -287,8 +294,11 @@ def genres(*texts,names=None):
     text=' '.join(t for t in texts if t)
     own=' '.join(t for t in (texts if names is None else names) if t)
     out=[]
+    sport=names is not None and bool(SPORT_HINT.search(own))
+    if sport:out.append('Sport')
     for pattern,genre in GENRE_HINTS:
-        if pattern.search(own if genre=='Kinder' else text):out.append(genre)
+        if sport and genre in ('Nachrichten','Talk'):continue
+        if pattern.search(own if genre=='Kinder' or names is not None and genre in NAME_ONLY else text):out.append(genre)
     if 'Kinder' in out and len(out)>1:
         # the name says children's programme: that is the label the Kinderecke needs, keep it within the two
         out=['Kinder']+[g for g in out if g!='Kinder']

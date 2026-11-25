@@ -29,10 +29,14 @@ def year_close(meta,c):
     # 1999/1996): only a feature-length video, with its running time known, is a film one year apart.
     try:duration=float(c.get('source_duration_seconds') or 0)
     except (TypeError,ValueError):duration=0
-    return (c.get('kind')=='movie' and abs(a-b)==1 and float(c.get('similarity') or 0)>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS
-            and bool(c.get('runtime_agrees')) and not c.get('runtime_mismatch'))
+    # 0.6.135 (Prüfvermerk 0.6.134: „More than Honey – Dokumentarfilm …, Schweiz 2010“, IMDb 2012, Titel exakt,
+    # Laufzeit passt): two years apart only with the exact title and a feature-length video.
+    gap=abs(a-b);similarity=float(c.get('similarity') or 0)
+    near=gap==1 and similarity>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS or gap==2 and similarity>=.999 and duration>=YEAR_TWO_MIN_SECONDS
+    return bool(c.get('kind')=='movie' and near and c.get('runtime_agrees') and not c.get('runtime_mismatch'))
 
 YEAR_CLOSE_MIN_SECONDS=40*60
+YEAR_TWO_MIN_SECONDS=60*60
 
 def verified(meta,c):
     if issues(meta,c):return False

@@ -275,6 +275,7 @@ def _finish(db, root, out, pending):
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     out['movies'] = _prefer_kids_offers(db, out['movies'])
     out['movies'] = _playable_films(db, out['movies'])
+    out['movies'] = _drop_unplayable_platform_films(db, out['movies'])
     out['movies'], out['series'] = _parent_blocks(db, out['movies']), _parent_blocks(db, out['series'])
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
@@ -319,6 +320,53 @@ def _drop_empty_platform_series(root, db, tiles):
         except Exception:
             pass
     return [t for t in tiles if t['id'] not in drop] if drop else tiles
+
+
+UNPLAYABLE = re.compile(r'(?i)\bdrm\b|drm-|kopierschutz|widevine|nicht mehr verfügbar')
+
+
+def note_unplayable(c, ref, error):
+    """0.6.135 (Mac-Prüfung 0.6.134: 12 Netzkino-/Plex-Filme mit Kopierschutz und einer „nicht mehr verfügbar“ standen
+    als Kachel, der Kopierschutz zeigt sich erst beim Abspielen): ein Plattform-Film, dessen Abspielen am Kopierschutz
+    oder an fehlender Verfügbarkeit scheitert, wird EMPTY_TTL lang aus der Liste genommen (wie leere Plattform-Serien).
+    Netzfehler zählen nicht. Kopierschutz wird nicht umgangen. Returns True, wenn vermerkt."""
+    if not isinstance(ref, dict) or len(ref) != 1:
+        return False
+    (name, value), = ref.items()
+    if name in ('offer', 'job') or name not in SOURCES:
+        return False
+    import hls_guard
+    if not (isinstance(error, hls_guard.DrmProtected) or UNPLAYABLE.search(str(error))):
+        return False
+    import kids_rules
+    kids_rules.ensure(c)
+    c.execute('INSERT OR REPLACE INTO kids_unplayable VALUES(?,?,?,?)', (name, str(value), time.time(), str(error)[:200]))
+    invalidate()
+    try:
+        import diagnostics
+        diagnostics.event('kids_tile_hidden', source=name, id=str(value)[:80], reason=str(error)[:160])
+    except Exception:
+        pass
+    return True
+
+
+def _drop_unplayable_platform_films(db, tiles):
+    """0.6.135: Plattform-Filme ohne Wiedergabe (note_unplayable) für EMPTY_TTL aus der Liste."""
+    plat = [t for t in tiles if t.get('source') not in ('mediatheken', None) and isinstance(t.get('ref'), dict)]
+    if not plat or db is None:
+        return tiles
+    try:
+        import kids_rules
+        with db() as c:
+            kids_rules.ensure(c)
+            gone = {(r[0], r[1]) for r in c.execute('SELECT source, id FROM kids_unplayable WHERE checked>?',
+                                                     (time.time() - EMPTY_TTL,))}
+    except Exception:
+        return tiles
+    if not gone:
+        return tiles
+    drop = {t['id'] for t in plat for (n, v) in t['ref'].items() if (n, str(v)) in gone}
+    return [t for t in tiles if t['id'] not in drop]
 
 
 def _note_empty_series(c, source, series_id, empty):

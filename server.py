@@ -1293,7 +1293,7 @@ def get_kids_play(self,path):
         shelf=_kids_shelf()
         with db() as c:ok=kids_catalog.allowed_ref(shelf,ref,c)   # 0.6.109: je Werk serverseitig geprüft
     if not ok:return self.send({'error':'Dieses Video gibt es in der Kinderecke nicht'},404)
-    return get_play(self,path)
+    return get_play(self,path,kids_ref=ref)
 
 # 0.6.27: abonnierte Videos im Dashboard, je Kanal (web/abo_shelf.js)
 @ROUTES.get('/api/youtube-abo-videos')
@@ -1385,7 +1385,7 @@ def get_download_options(self,path):
     return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
 
 @ROUTES.get('/api/play')
-def get_play(self,path,v1=False):
+def get_play(self,path,v1=False,kids_ref=None):
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender')}
     direct_youtube=q.get('direct',[''])[0]=='1'
     yt_id=q.get('youtube',[''])[0]
@@ -1404,7 +1404,12 @@ def get_play(self,path,v1=False):
     try:
         with db() as c:source=streaming.resolve(c,root=ROOT,quality=quality,**ref)
         info=streaming.plan(source,levels=q.get('levels',[''])[0]!='0')
-    except ValueError as e:return self.send({'error':str(e)},404)
+    except ValueError as e:
+        if kids_ref:   # 0.6.135: Kopierschutz/nicht verfügbar → Kachel 7 Tage aus der Kinderecke
+            try:
+                with db() as c:kids_catalog.note_unplayable(c,kids_ref,e)
+            except Exception:pass
+        return self.send({'error':str(e)},404)
     if q.get('probe',[''])[0]=='1':return self.send({'levels':info.get('levels') or []})  # 0.5.72: levels only, for the ffmpeg fallback
     base=('/api/v1/stream?' if v1 else '/api/stream?')+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
     if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')

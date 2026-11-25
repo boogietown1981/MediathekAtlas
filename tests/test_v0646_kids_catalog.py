@@ -208,7 +208,7 @@ class WiringTests(unittest.TestCase):
         body = SERVER[SERVER.index("@ROUTES.get('/api/kids-play')"):]
         body = body[:body.index('@ROUTES', 10)]
         self.assertIn('allowed_ref', body)
-        self.assertIn("return get_play(self,path)", body)
+        self.assertIn("return get_play(self,path,kids_ref=ref)", body)   # 0.6.135: Kopierschutz-Kacheln vermerken
         self.assertIn('kids_catalog.with_progress', SERVER)
 
     def test_page_plays_through_guarded_route_only(self):

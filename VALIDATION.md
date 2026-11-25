@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.135 – 3sat-Filme, Sport-Genres, Kopierschutz-Kacheln (25. November 2026)
+- Automatisch: tests/test_v06135.py (7), tests/test_v0697.py angepasst, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.135).
+
 ## 0.6.134 – Kinderecke-Zwilling (25. November 2026)
 - Automatisch: neuer Test in tests/test_v06113_kinder_zwilling.py (gegen 0.6.133 rot, jetzt grün), alle Kinderecke-Tests, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung der 32 Titel (PRUEFLISTE in releases/0.6.134).
 

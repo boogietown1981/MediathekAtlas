@@ -59,6 +59,7 @@ HINT_GENRES = ('Kinder', 'Familie', 'Animation', 'Fantasy', 'Abenteuer')   # Kan
 SCHEMA = """
 CREATE TABLE IF NOT EXISTS kids_choices(key TEXT PRIMARY KEY, choice TEXT NOT NULL, title TEXT, kind TEXT, updated REAL);
 CREATE TABLE IF NOT EXISTS kids_empty_series(source TEXT NOT NULL, id TEXT NOT NULL, checked REAL, PRIMARY KEY(source,id));
+CREATE TABLE IF NOT EXISTS kids_unplayable(source TEXT NOT NULL, id TEXT NOT NULL, checked REAL, reason TEXT, PRIMARY KEY(source,id));
 CREATE TABLE IF NOT EXISTS reference_ages(ref TEXT PRIMARY KEY, age INTEGER, label TEXT, source TEXT, checked REAL);
 """
 

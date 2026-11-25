@@ -288,7 +288,8 @@ class Service:
             # cache key – the 0.6.119/0.6.120 pass got the old search results from the 24-h cache.
             # 0.6.128: once more with sequel spellings (Der Pate II) and the year+runtime tie-break (Terrified)
             # 0.6.132: once more with the possessive-free title part and the part similarity (Wallander, Air 0.6.131)
-            if catalog.get_state(c,'film_rules_v06132',False):return
+            # 0.6.135: once more – film series index (Wallander 01) and two years apart with exact title (More than Honey)
+            if catalog.get_state(c,'film_rules_v06135',False):return
             ids=catalog.film_suffix_works(c)
             c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
             undone=catalog.undo_short_year_close(c)
@@ -305,12 +306,12 @@ class Service:
                 if self.stop.wait(2):return
         if self.stop.is_set():return
         diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched,
-                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.132')
+                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.135')
         if matched or undone:catalog.invalidate_listings()
         state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
         with self.db() as c:
             catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
-            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state);catalog.set_state(c,'film_rules_v06128',state);catalog.set_state(c,'film_rules_v06132',state)
+            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state);catalog.set_state(c,'film_rules_v06128',state);catalog.set_state(c,'film_rules_v06132',state);catalog.set_state(c,'film_rules_v06135',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1659,22 +1660,39 @@ class Service:
         import imdb_archive
         archive=imdb_archive.ACTIVE
         lookup=archive.genres if archive is not None and getattr(archive,'updated',None) and hasattr(archive,'genres') else None
+        if self.heal_derived_genres() is None:return None
         if self.undo_genre_backfill() is None:return None
-        done=self.batched(lambda c,after:catalog.backfill_genres(c,lookup,after),'genre_backfill')
+        cache={}
+        done=self.batched(lambda c,after:catalog.backfill_genres(c,lookup,after,cache=cache),'genre_backfill')
         if done and done[0]:
             diagnostics.event('catalog_genres_backfilled',works=done[0],samples=done[1][:10])
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
         return done
+    def heal_derived_genres(self):
+        """0.6.135, once (Merker derived_genres_v06135): catalog.heal_derived_genres in short batches; afterwards the
+        series genres taken from the Reihe are judged again (undo_genre_backfill with its own Merker)."""
+        with self.db() as c:
+            if catalog.get_state(c,'derived_genres_v06135',False):return 0
+        done=self.batched(catalog.heal_derived_genres,'derived_genres')
+        if done is None:return None
+        if done[0]:
+            diagnostics.event('catalog_derived_genres_healed',works=done[0],samples=done[1][:15])
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        with self.db() as c:catalog.set_state(c,'derived_genres_v06135',{'works':done[0],'at':time.time()})
+        return done[0]
     def undo_genre_backfill(self):
         """0.6.132, once (Merker genre_backfill_v06132): series genres taken from the Reihe up to 0.6.131 are removed in
-        short batches and judged again by the stricter catalog.backfill_genres. Returns the count or None if postponed."""
+        short batches and judged again by the stricter catalog.backfill_genres. Returns the count or None if postponed.
+        0.6.135: once more (Merker genre_backfill_v06135) after heal_derived_genres – the siblings' own genres changed."""
         total=0
         while not self.stop.is_set():
             try:
                 with self.db() as c:
-                    if catalog.get_state(c,'genre_backfill_v06132',False):return total
+                    if catalog.get_state(c,'genre_backfill_v06135',False):return total
                     n=catalog.undo_series_genre_backfill(c)
-                    if not n:catalog.set_state(c,'genre_backfill_v06132',{'removed':total,'at':time.time()})
+                    if not n:
+                        state={'removed':total,'at':time.time()}
+                        catalog.set_state(c,'genre_backfill_v06132',state);catalog.set_state(c,'genre_backfill_v06135',state)
             except sqlite3.OperationalError as e:
                 if not sqlite_busy(e):raise
                 self.busy('genre_backfill_undo')

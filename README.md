@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.134
+# MediathekAtlas · 0.6.135
+
+## Neu in 0.6.135: 3sat-Filme, Sport-Genres, Kinderecke ohne Kopierschutz-Kacheln
+- 3sat-Filme werden auch erkannt, wenn die Datenbank eine Reihennummer im Titel führt („Mankells Wallander 01 – …“) oder das Jahr zwei Jahre abweicht, solange Titel exakt und Laufzeit passend sind („More than Honey“ 2010/2012).
+- Sport-Sendungen („Sport-Clip“, „Sport-Arena“, „Paris 2024“, „Sportschau Wintersport“) tragen das Genre Sport statt Nachrichten oder Talk; Nachrichten und Talk kommen nur noch aus dem Namen der Sendung.
+- Kinderecke: ein Netzkino-/Plex-Film, der wegen Kopierschutz oder fehlender Verfügbarkeit nicht spielt, verschwindet für 7 Tage aus der Liste.
 
 ## Neu in 0.6.134: Märchen in der Kinderecke spielen wieder
 - Filme mit mehreren KiKA-Angeboten (Das Märchen von der Regentrude, Der Schweinehirt, Die sechs Schwäne …) ließen sich in der Kinderecke nicht abspielen („Dieses Video gibt es in der Kinderecke nicht“). Jedes Angebot vom Kindersender ist jetzt zulässig.

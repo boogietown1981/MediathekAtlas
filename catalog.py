@@ -2490,6 +2490,7 @@ def sendung_suggestion(m,source,sendung):
     return sorted(usable,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
 
 YEAR_CLOSE_REASON='Film: Titel und Laufzeit stimmen, Jahr ein Jahr versetzt (Produktions-/Erscheinungsjahr)'
+YEAR_TWO_REASON='Film: Titel exakt und Laufzeit stimmen, Jahr zwei Jahre versetzt (Produktions-/Erscheinungsjahr, 0.6.135)'
 def undo_short_year_close(c):
     """0.6.108, once: films matched by the 0.6.97 year rule from a clip (< matching.YEAR_CLOSE_MIN_SECONDS: SRF „Dai,
     domanda!“ „Sport“ 9 min, „Moda“ 10 min) are recognised again from the sender data. Returns [(id,title)]."""
@@ -2523,10 +2524,18 @@ def rematch_movie_suggestions(c,after='',limit=500):
         usable=[dict(x,source_duration_seconds=x.get('source_duration_seconds') or duration) for x in m.get('suggestions') or []
                 if isinstance(x,dict) and x.get('kind')=='movie']
         judged=match_meta(m,{'title':row['title']})
+        # 0.6.135: stored suggestions get the title-part comparison too (Wallander „… 01 - …“)
+        import metadata
+        parts=metadata.film_title_parts(metadata.query_title(judged.get('title') or row['title']))
+        qmeta=dict(judged,title=metadata.query_title(judged.get('title') or row['title']))
+        usable=[metadata.raise_part_similarity(qmeta,x,parts) for x in usable]
         chosen=auto_choice(judged,usable)
         if not chosen or chosen.get('kind')!='movie':continue
         if str(chosen.get('year'))==str(judged.get('year')):chosen.update(state='auto_matched',reason='Titel und Jahr aus dem Sendertitel stimmen überein')
-        else:chosen.update(state='auto_matched',year_close=True,reason=YEAR_CLOSE_REASON)
+        else:
+            try:two=abs(int(chosen.get('year'))-int(judged.get('year')))==2
+            except (TypeError,ValueError):two=False
+            chosen.update(state='auto_matched',year_close=True,reason=YEAR_TWO_REASON if two else YEAR_CLOSE_REASON)
         save_metadata(c,row['id'],chosen,'matched');done+=1
     return done,(rows[-1]['id'] if rows else None)
 
@@ -3101,6 +3110,36 @@ def reclassify_batch(c,limit=500):
     return len(rows)
 
 GENRE_REFERENCE_PROVIDERS=('IMDb Offline','OMDb','TMDB','TVDB')
+def heal_derived_genres(c,after='',limit=500):
+    """0.6.135 (Prüfvermerk 0.6.134: Sport-Clip, Sport-Arena, Paris 2024 als Nachrichten, Sportschau Wintersport als
+    Talk): sender-derived genres (genre_source „Sender (abgeleitet)“) follow the narrowed broadcaster rule – Nachrichten
+    and Talk only from the programme's own name, Sport from the name. Names: work title, Sendung name, topics of its
+    active offers. Other derived genres (Dokumentation, Magazin, Kultur, Kinder) stay. Returns (changed, samples, last id)."""
+    import broadcaster
+    rows=c.execute("""SELECT id,title,meta FROM works WHERE id>? AND json_valid(meta)
+        AND json_extract(meta,'$.genre_source')='Sender (abgeleitet)' ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    changed=0;samples=[]
+    for row in rows:
+        m=json.loads(row['meta'])
+        old=list(m.get('genres') or [])
+        names=[str(row['title'] or ''),str(m.get('sendung_name') or '')]
+        names+=[str(t or '') for (t,) in c.execute("SELECT json_extract(payload,'$.topic') FROM offers WHERE work_id=? AND active=1",(row['id'],))]
+        names=[n for n in dict.fromkeys(names) if n]
+        hits=broadcaster.genres(*names,names=names)
+        new=[g for g in old if g not in ('Nachrichten','Talk','Sport')]
+        for g in hits:
+            if g in ('Nachrichten','Talk','Sport') and g not in new:new.append(g)
+        if 'Sport' in new:new=[g for g in new if g not in ('Nachrichten','Talk')]
+        if new==old:continue
+        m['genres']=new
+        if not new:m['genre_source']='Unbekannt'
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+        for g in new:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+        changed+=1
+        if len(samples)<20:samples.append({'title':str(row['title'] or '')[:80],'before':old,'after':new})
+    return changed,samples,(rows[-1]['id'] if rows else None)
+
 BACKFILL_SOURCE='Reihe (nachgetragen)'
 BACKFILL_MIN_SIBLINGS=3
 
@@ -3116,7 +3155,7 @@ def undo_series_genre_backfill(c,limit=500):
         c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,))
     return len(ids)
 
-def backfill_genres(c,imdb_genres=None,after='',limit=500):
+def backfill_genres(c,imdb_genres=None,after='',limit=500,cache=None):
     """0.6.127 (Björn 23.11.2026: Werkkatalog „Unbekannt“ 2.008 Filme / 4.052 Reihen; Diagnose Air 0.6.120 N-E – das
     sind Werke ganz ohne Rohgenre, z. B. verknüpfte „50 Jahre Roland Kaiser“, „Accept – Hellfest“): Werke mit aktivem
     Angebot und ohne Genre bekommen es nachgetragen – aus dem lokalen IMDb-Archiv, wenn sie mit einer IMDb-Kennung
@@ -3125,7 +3164,9 @@ def backfill_genres(c,imdb_genres=None,after='',limit=500):
     rows=c.execute("""SELECT w.id,w.kind,w.show_key,w.meta,w.title FROM works w WHERE w.id>? AND w.state!='manual'
         AND NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)
         AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) ORDER BY w.id LIMIT ?""",(after,limit)).fetchall()
-    changed=0;samples=[];siblings={}
+    # 0.6.135 (Prüfvermerk 0.6.134: Nachtrag auf dem Air-Weg 43 min): the siblings' own genres do not change during a
+    # run (backfilled ones never count), so the caller may keep one cache across all batches of a run.
+    changed=0;samples=[];siblings={} if cache is None else cache
     for row in rows:
         try:m=json.loads(row['meta'] or '{}')
         except (TypeError,ValueError):continue
