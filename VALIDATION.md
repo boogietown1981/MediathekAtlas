@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.136 – Korrektur Mac-Urteil 0.6.135 (25. November 2026)
+- Automatisch: tests/test_v06135.py (8), tests/test_v0697.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.136).
+
 ## 0.6.135 – 3sat-Filme, Sport-Genres, Kopierschutz-Kacheln (25. November 2026)
 - Automatisch: tests/test_v06135.py (7), tests/test_v0697.py angepasst, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.135).
 

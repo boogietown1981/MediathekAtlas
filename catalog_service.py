@@ -289,7 +289,13 @@ class Service:
             # 0.6.128: once more with sequel spellings (Der Pate II) and the year+runtime tie-break (Terrified)
             # 0.6.132: once more with the possessive-free title part and the part similarity (Wallander, Air 0.6.131)
             # 0.6.135: once more – film series index (Wallander 01) and two years apart with exact title (More than Honey)
-            if catalog.get_state(c,'film_rules_v06135',False):return
+            if catalog.get_state(c,'film_rules_v06135',False):
+                # 0.6.136: copies that ran 0.6.135 – the two-year matches the narrowed rule rejects go back, once
+                if not catalog.get_state(c,'year_two_v06136',False):
+                    back=catalog.undo_year_two(c)
+                    catalog.set_state(c,'year_two_v06136',{'works':len(back),'at':time.time()})
+                    if back:diagnostics.event('catalog_year_two_undone',works=len(back),titles=[t for _,t in back[:20]])
+                return
             ids=catalog.film_suffix_works(c)
             c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
             undone=catalog.undo_short_year_close(c)
@@ -311,7 +317,7 @@ class Service:
         state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
         with self.db() as c:
             catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
-            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state);catalog.set_state(c,'film_rules_v06128',state);catalog.set_state(c,'film_rules_v06132',state);catalog.set_state(c,'film_rules_v06135',state)
+            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state);catalog.set_state(c,'film_rules_v06128',state);catalog.set_state(c,'film_rules_v06132',state);catalog.set_state(c,'film_rules_v06135',state);catalog.set_state(c,'year_two_v06136',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -1672,13 +1678,15 @@ class Service:
         """0.6.135, once (Merker derived_genres_v06135): catalog.heal_derived_genres in short batches; afterwards the
         series genres taken from the Reihe are judged again (undo_genre_backfill with its own Merker)."""
         with self.db() as c:
-            if catalog.get_state(c,'derived_genres_v06135',False):return 0
+            if catalog.get_state(c,'derived_genres_v06136',False):return 0
         done=self.batched(catalog.heal_derived_genres,'derived_genres')
         if done is None:return None
         if done[0]:
             diagnostics.event('catalog_derived_genres_healed',works=done[0],samples=done[1][:15])
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
-        with self.db() as c:catalog.set_state(c,'derived_genres_v06135',{'works':done[0],'at':time.time()})
+        with self.db() as c:
+            state={'works':done[0],'at':time.time()}
+            catalog.set_state(c,'derived_genres_v06135',state);catalog.set_state(c,'derived_genres_v06136',state)
         return done[0]
     def undo_genre_backfill(self):
         """0.6.132, once (Merker genre_backfill_v06132): series genres taken from the Reihe up to 0.6.131 are removed in

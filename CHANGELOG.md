@@ -1,3 +1,10 @@
+## 0.6.136 – Korrektur Mac-Urteil 0.6.135 (Black Box, Nachrichtensendungen als Kultur); auf 0.6.135
+
+- Befund 0.6.135 (BEFUND-06135.txt): Wallander, More than Honey, Sport, Kinderecke, Export bestanden; zwei Funde.
+- D „Black Box - Spielfilm, Deutschland 2022“ (115 min) wurde TMDB „Black Box“ USA 2020 (100 min) über die Zwei-Jahres-Regel – TMDBs eigene Laufzeittoleranz (15 %) ließ die Laufzeit „passen“. `matching.year_close` verlangt bei zwei Jahren jetzt zusätzlich einen Treffer aus dem lokalen IMDb-Archiv und eine Laufzeit innerhalb 8 % der IMDb-Laufzeit (`year_two_runtime`, More than Honey 95/88 min passt). Einmalig auf Kopien, die 0.6.135 liefen: `catalog.undo_year_two` (Merker `year_two_v06136`, Ereignis `catalog_year_two_undone`). Björns Geräte hatten 0.6.135 nie.
+- G tagesschau24 (7.252), hessenschau (3.265), DER TAG (2.239), „Politik“ (1.703) wurden Kultur, phoenix vor ort und ZDFheute live verloren Talk: 0.6.135 nahm Nachrichten/Talk nur noch aus dem Namen, „tagesschau24“ traf das Wort nicht, ein zweites Genre rückte auf. Nachrichten und Talk kommen wieder wie bis 0.6.134 auch aus Beitragstitel und Beschreibung; nur Sport aus dem Namen verdrängt sie. Nachrichten-Muster erkennt „tagesschau24“ und „ZDFheute“. Die einmalige Heilung ändert nur Werke mit Sport-Namen (Merker `derived_genres_v06136`). Prüfkopien mit 0.6.135 behalten den Verlust (nicht genau umkehrbar); Prüfung nur ab frischen Kopien.
+- Tests: `tests/test_v06135.py` (8, angepasst), `tests/test_v0697.py`.
+
 ## 0.6.135 – Hinweise aus dem Prüfvermerk 0.6.134 (3sat-Filme, Sport-Genres, Kopierschutz-Kacheln, Speicher im Export); auf 0.6.134
 
 - Grundlage: PRUEFVERMERK-06134.txt (Mac-Prüfung bestanden, Hinweise für die nächste Version).

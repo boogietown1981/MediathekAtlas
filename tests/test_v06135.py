@@ -52,8 +52,12 @@ class Films(unittest.TestCase):
         meta = {'title': 'More than Honey', 'kind': 'unknown', 'year': 2010}
         c = {'kind': 'movie', 'title': 'More Than Honey', 'year': 2012, 'similarity': 1.0, 'runtime_agrees': True,
              'year_mismatch': True, 'source_duration_seconds': 5400, 'provider': 'IMDb Offline', 'reference_id': 'tt1'}
+        c['reference_runtime_seconds'] = 95 * 60          # IMDb 95 min, Angebot 90 min
         self.assertEqual(matching.issues(meta, c), [])
         self.assertTrue(matching.issues(meta, dict(c, year=2013)))
+        # 0.6.136 (Mac-Prüfung 0.6.135): Black Box 2022/115 min ≠ US-Film 2020/100 min; TMDB allein reicht nicht
+        self.assertTrue(matching.issues(meta, dict(c, reference_runtime_seconds=100 * 60, source_duration_seconds=115 * 60)))
+        self.assertTrue(matching.issues(meta, dict(c, provider='TMDB')))
         self.assertTrue(matching.issues(meta, dict(c, runtime_agrees=False)))
 
     def test_stored_suggestion_rematched(self):
@@ -66,7 +70,7 @@ class Films(unittest.TestCase):
         w = c.execute('SELECT id,meta FROM works').fetchone()
         m = json.loads(w['meta']);m.update(kind='movie', suggestions=[{'kind': 'movie', 'title': 'More than Honey',
             'year': 2012, 'similarity': 1.0, 'runtime_agrees': True, 'year_mismatch': True, 'provider': 'IMDb Offline',
-            'reference_id': 'tt2'}])
+            'reference_id': 'tt2', 'reference_runtime_seconds': 95 * 60}])
         c.execute("UPDATE works SET kind='movie',state='review',meta=? WHERE id=?", (json.dumps(m), w['id']))
         self.assertEqual(catalog.rematch_movie_suggestions(c)[0], 1)
         meta = json.loads(c.execute('SELECT meta FROM works').fetchone()[0])
@@ -78,8 +82,11 @@ class Genres(unittest.TestCase):
         self.assertEqual(broadcaster.genres('Sport-Clip', 'Eishockey aktuell', names=('Sport-Clip',)), ['Sport'])
         self.assertEqual(broadcaster.genres('Sportschau Wintersport', 'Interview', names=('Sportschau Wintersport',)), ['Sport'])
         self.assertEqual(broadcaster.genres('Paris 2024', 'Nachrichten', names=('Paris 2024',)), ['Sport'])
-        self.assertEqual(broadcaster.genres('Kunst + Krempel', 'Journal', names=('Kunst + Krempel',)), [])
+        # 0.6.136: Nachrichten/Talk wieder auch aus Beitragstitel/Beschreibung (nur Sport verdrängt sie)
+        self.assertEqual(broadcaster.genres('Kunst + Krempel', 'Journal', names=('Kunst + Krempel',)), ['Nachrichten'])
         self.assertEqual(broadcaster.genres('tagesschau', 'x', names=('tagesschau',)), ['Nachrichten'])
+        self.assertEqual(broadcaster.genres('tagesschau24', 'Kultur kompakt', names=('tagesschau24',))[0], 'Nachrichten')
+        self.assertEqual(broadcaster.genres('phoenix vor ort', 'Interview mit …', names=('phoenix vor ort',)), ['Talk'])
         self.assertEqual(broadcaster.genres('Transport-Doku', names=('Transport-Doku',)), ['Dokumentation'])
         self.assertIn('Nachrichten', broadcaster.genres('Eishockey aktuell'))   # ohne names wie bisher
 
@@ -99,9 +106,28 @@ class Genres(unittest.TestCase):
         n, samples, _ = catalog.heal_derived_genres(c)
         got = {r['title']: sorted(json.loads(r['meta'])['genres']) for r in c.execute('SELECT title,meta FROM works')}
         self.assertEqual(got['Tor des Monats'], ['Dokumentation', 'Sport'])
-        self.assertEqual(got['Kochen'], [])
+        self.assertEqual(got['Kochen'], ['Nachrichten'])          # 0.6.136: nur Sport-Namen ändern etwas
         self.assertEqual(got['heute 19 Uhr'], ['Nachrichten'])
-        self.assertEqual(n, 2)
+        self.assertEqual(n, 1)
+
+
+class UndoYearTwo(unittest.TestCase):
+    def test_black_box_goes_back_honey_stays(self):
+        tmp = tempfile.TemporaryDirectory();self.addCleanup(tmp.cleanup)
+        c = sqlite3.connect(Path(tmp.name) / 'catalog.db');c.row_factory = sqlite3.Row;self.addCleanup(c.close)
+        catalog.initialize(c)
+        rows = [('Black Box - Spielfilm, Deutschland 2022', 115, 2020, 100, 'TMDB'),
+                ('More than Honey - Dokumentarfilm, Schweiz 2010', 90, 2012, 95, 'IMDb Offline')]
+        catalog.ingest(c, [{'title': t, 'topic': 'Spielfilm', 'channel': '3sat', 'duration': d * 60, 'description': 'Spielfilm',
+                            'url_video': 'https://example.org/%d.mp4' % i} for i, (t, d, _, _, _) in enumerate(rows)])
+        for (t, d, y, r, p), w in zip(rows, c.execute('SELECT id FROM works ORDER BY rowid').fetchall()):
+            m = {'kind': 'movie', 'title': t.split(' - ')[0], 'year': y, 'similarity': 1.0, 'runtime_agrees': True,
+                 'provider': p, 'reference_id': 'x', 'reference_runtime_seconds': r * 60, 'reason': catalog.YEAR_TWO_REASON}
+            c.execute("UPDATE works SET kind='movie',state='matched',meta=? WHERE id=?", (json.dumps(m), w[0]))
+        back = catalog.undo_year_two(c)
+        self.assertEqual([t for _, t in back], ['Black Box - Spielfilm, Deutschland 2022'])
+        states = {r['title']: r['state'] for r in c.execute('SELECT title,state FROM works')}
+        self.assertEqual(sorted(states.values()), ['matched', 'pending'])
 
 
 class KidsDrm(unittest.TestCase):

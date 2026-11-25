@@ -85,9 +85,12 @@ CREATE TABLE title_episode(tconst TEXT,parentTconst TEXT,seasonNumber INTEGER,ep
         self.assertEqual(matching.issues({'kind': 'movie', 'year': 2015}, c), [])
         self.assertTrue(matching.issues({'kind': 'movie', 'year': 2015}, dict(c, runtime_agrees=False)))
         # 0.6.135: two years apart only with the exact title and at least 60 min (More than Honey)
-        self.assertEqual(matching.issues({'kind': 'movie', 'year': 2014}, c), [])
-        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, dict(c, similarity=.99)))
-        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, dict(c, source_duration_seconds=3000)))
+        # 0.6.136: zwei Jahre nur mit IMDb-Archiv und IMDb-Laufzeit innerhalb 8 %
+        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, c))
+        c2 = dict(c, provider='IMDb Offline', reference_runtime_seconds=5300)
+        self.assertEqual(matching.issues({'kind': 'movie', 'year': 2014}, c2), [])
+        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, dict(c2, similarity=.99)))
+        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, dict(c2, source_duration_seconds=3000)))
         self.assertTrue(matching.issues({'kind': 'movie', 'year': 2013}, c))
 
 

@@ -1,8 +1,8 @@
-# MediathekAtlas · 0.6.135
+# MediathekAtlas · 0.6.136
 
-## Neu in 0.6.135: 3sat-Filme, Sport-Genres, Kinderecke ohne Kopierschutz-Kacheln
-- 3sat-Filme werden auch erkannt, wenn die Datenbank eine Reihennummer im Titel führt („Mankells Wallander 01 – …“) oder das Jahr zwei Jahre abweicht, solange Titel exakt und Laufzeit passend sind („More than Honey“ 2010/2012).
-- Sport-Sendungen („Sport-Clip“, „Sport-Arena“, „Paris 2024“, „Sportschau Wintersport“) tragen das Genre Sport statt Nachrichten oder Talk; Nachrichten und Talk kommen nur noch aus dem Namen der Sendung.
+## Neu in 0.6.136: 3sat-Filme, Sport-Genres, Kinderecke ohne Kopierschutz-Kacheln
+- 3sat-Filme werden auch erkannt, wenn die Datenbank eine Reihennummer im Titel führt („Mankells Wallander 01 – …“) oder das Jahr zwei Jahre abweicht – nur mit exaktem Titel und einer Laufzeit, die zur IMDb-Angabe passt („More than Honey“ 2010/2012; „Black Box“ 2022 wird nicht mit dem US-Film von 2020 verwechselt).
+- Sport-Sendungen („Sport-Clip“, „Sport-Arena“, „Paris 2024“, „Sportschau Wintersport“) tragen das Genre Sport statt Nachrichten oder Talk; Nachrichtensendungen (tagesschau24, hessenschau) bleiben Nachrichten.
 - Kinderecke: ein Netzkino-/Plex-Film, der wegen Kopierschutz oder fehlender Verfügbarkeit nicht spielt, verschwindet für 7 Tage aus der Liste.
 
 ## Neu in 0.6.134: Märchen in der Kinderecke spielen wieder

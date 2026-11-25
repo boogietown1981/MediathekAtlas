@@ -23,7 +23,7 @@ ZDF_QUERY='''query VideoByCanonical($canonical: String!) {
 }'''
 # Containers of unrelated films are no Sendereihe ("Filme im MDR", "Spielfilme", "Dokus").
 CONTAINER=re.compile(r'(?i)^(?:(?:spiel)?filme?|dokus?|dokumentation(?:en)?|serien?|reportagen?|kino|mediathek)\b|\bfilme im\b|\bfilm-?highlights?\b')
-GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau|tagesthemen|nachrichten|aktuell|heute(?:[- ]journal)?|journal|wetter)\b'),'Nachrichten'),
+GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau\w*|tagesthemen|nachrichten|aktuell|heute(?:[- ]journal)?|zdfheute\w*|journal|wetter)\b'),'Nachrichten'),
              (re.compile(r'(?i)\b(?:doku\w*|dokumentation\w*|reportage\w*|terra x|planet e)\b'),'Dokumentation'),
              (re.compile(r'(?i)\b(?:magazin\w*|servicezeit|ratgeber|verbraucher\w*|markt)\b'),'Magazin'),
              (re.compile(r'(?i)\b(?:talk\w*|gespräch\w*|interview\w*|stöckl|lanz|maischberger|illner)\b'),'Talk'),
@@ -281,10 +281,13 @@ KIDS_HINT=next(p for p,g in GENRE_HINTS if g=='Kinder')
 
 # 0.6.135 (Prüfvermerk 0.6.134: „Sport-Clip“ 41.000 Werke, „Sport-Arena“, „Paris 2024“ als Nachrichten, „Sportschau
 # Wintersport“ als Talk – „aktuell“ oder „Interview“ in einem Beitragstitel bzw. einer Beschreibung): Sport kommt aus
-# dem Namen der Sendung; Nachrichten und Talk nur noch aus dem Namen, nicht aus Beschreibung oder Beitragstitel.
+# dem Namen der Sendung und verdrängt dann Nachrichten und Talk.
+# 0.6.136 (Mac-Prüfung 0.6.135: tagesschau24, hessenschau, DER TAG, „Politik“ → Kultur, phoenix vor ort ohne Genre):
+# Nachrichten und Talk kommen wieder wie bis 0.6.134 auch aus Beitragstitel und Beschreibung; nur Sport aus dem
+# Namen verdrängt sie.
 SPORT_HINT=re.compile(r'(?i)\b(?:sport\w*|\w*(?:winter|motor|kampf|rad|wasser|schnee|extrem|frauen|behinderten|para)sport\w*|'
                       r'olympi\w*|paris 2024|fußball\w*|bundesliga|eishockey|handball|biathlon|formel 1|leichtathletik|tennis)\b')
-NAME_ONLY=('Kinder','Nachrichten','Talk')
+NAME_ONLY=('Kinder',)
 
 def genres(*texts,names=None):
     """Genre hints from programme texts. 0.6.98 (Mac-Prüfung 0.6.91: NACHTCAFÉ, Politik, heute, Abendschau in der
@@ -298,7 +301,7 @@ def genres(*texts,names=None):
     if sport:out.append('Sport')
     for pattern,genre in GENRE_HINTS:
         if sport and genre in ('Nachrichten','Talk'):continue
-        if pattern.search(own if genre=='Kinder' or names is not None and genre in NAME_ONLY else text):out.append(genre)
+        if pattern.search(own if genre in NAME_ONLY else text):out.append(genre)
     if 'Kinder' in out and len(out)>1:
         # the name says children's programme: that is the label the Kinderecke needs, keep it within the two
         out=['Kinder']+[g for g in out if g!='Kinder']

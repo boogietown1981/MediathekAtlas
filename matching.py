@@ -31,12 +31,22 @@ def year_close(meta,c):
     except (TypeError,ValueError):duration=0
     # 0.6.135 (Prüfvermerk 0.6.134: „More than Honey – Dokumentarfilm …, Schweiz 2010“, IMDb 2012, Titel exakt,
     # Laufzeit passt): two years apart only with the exact title and a feature-length video.
+    # 0.6.136 (Mac-Prüfung 0.6.135: „Black Box - Spielfilm, Deutschland 2022“, 115 min, wurde TMDB „Black Box“ USA
+    # 2020, 100 min – TMDB's own runtime tolerance of 15 % let it agree): two years apart also need the local IMDb
+    # archive and a running time within YEAR_TWO_RUNTIME of the IMDb runtime (More than Honey 95/88 min).
     gap=abs(a-b);similarity=float(c.get('similarity') or 0)
-    near=gap==1 and similarity>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS or gap==2 and similarity>=.999 and duration>=YEAR_TWO_MIN_SECONDS
+    near=gap==1 and similarity>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS or gap==2 and similarity>=.999 and duration>=YEAR_TWO_MIN_SECONDS and year_two_runtime(c,duration)
     return bool(c.get('kind')=='movie' and near and c.get('runtime_agrees') and not c.get('runtime_mismatch'))
 
 YEAR_CLOSE_MIN_SECONDS=40*60
 YEAR_TWO_MIN_SECONDS=60*60
+YEAR_TWO_RUNTIME=.08
+
+def year_two_runtime(c,duration):
+    if c.get('provider')!='IMDb Offline':return False
+    try:ref=float(c.get('reference_runtime_seconds') or 0)
+    except (TypeError,ValueError):return False
+    return bool(ref and abs(ref-duration)<=max(300,ref*YEAR_TWO_RUNTIME))
 
 def verified(meta,c):
     if issues(meta,c):return False

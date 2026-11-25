@@ -2539,6 +2539,26 @@ def rematch_movie_suggestions(c,after='',limit=500):
         save_metadata(c,row['id'],chosen,'matched');done+=1
     return done,(rows[-1]['id'] if rows else None)
 
+def undo_year_two(c):
+    """0.6.136, once (only copies that ran 0.6.135; Björn never had it): films matched by the 0.6.135 two-year rule
+    that the narrowed rule (IMDb archive, running time within 8 %) no longer accepts – „Black Box“ 2022 → US-Film 2020 –
+    are recognised again from the sender data. Returns [(id, title)]."""
+    import matching
+    out=[]
+    for row in c.execute("SELECT * FROM works WHERE kind='movie' AND state='matched' AND json_extract(meta,'$.reason')=?",(YEAR_TWO_REASON,)).fetchall():
+        m=json.loads(row['meta'] or '{}')
+        source=film_source(c,row['id'])
+        if not source:continue
+        judged=match_meta({'title':source.get('title'),'kind':'movie'},source)
+        cand=dict(m,source_duration_seconds=m.get('source_duration_seconds') or source.get('duration'))
+        if matching.year_close(judged,cand):continue
+        fresh=seed(source);fresh['reason']='0.6.136: Jahr zwei Jahre versetzt ohne passende IMDb-Laufzeit, neu prüfen'
+        c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0 WHERE id=?",
+                  (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id']))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+        out.append((row['id'],str(source.get('title') or '')[:80]))
+    return out
+
 def truncated_note_works(c):
     """0.6.121: ids of open works whose title ends in a cut version note („… (Originalversion“), searched again once."""
     import metadata
@@ -3125,11 +3145,10 @@ def heal_derived_genres(c,after='',limit=500):
         names=[str(row['title'] or ''),str(m.get('sendung_name') or '')]
         names+=[str(t or '') for (t,) in c.execute("SELECT json_extract(payload,'$.topic') FROM offers WHERE work_id=? AND active=1",(row['id'],))]
         names=[n for n in dict.fromkeys(names) if n]
-        hits=broadcaster.genres(*names,names=names)
-        new=[g for g in old if g not in ('Nachrichten','Talk','Sport')]
-        for g in hits:
-            if g in ('Nachrichten','Talk','Sport') and g not in new:new.append(g)
-        if 'Sport' in new:new=[g for g in new if g not in ('Nachrichten','Talk')]
+        # 0.6.136 (Mac-Prüfung 0.6.135): only a Sport name changes anything – Nachrichten/Talk stay as they were
+        # (tagesschau24, hessenschau, phoenix vor ort lost them to Kultur or to nothing).
+        if not broadcaster.SPORT_HINT.search(' '.join(names)):continue
+        new=['Sport']+[g for g in old if g not in ('Nachrichten','Talk','Sport')]
         if new==old:continue
         m['genres']=new
         if not new:m['genre_source']='Unbekannt'
