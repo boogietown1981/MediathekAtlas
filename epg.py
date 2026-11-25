@@ -67,7 +67,12 @@ SHOW_GENRES = re.compile(r'(?i)\b(?:news|nachrichten|magazin|info|dok|doku\w*|re
 _COUNTRY = (r'(?:Deutschland|BRD|DDR|Österreich|Schweiz|USA|Kanada|Großbritannien|Grossbritannien|GB|UK|England|Irland|Frankreich|'
             r'Belgien|Niederlande|Luxemburg|Italien|Spanien|Portugal|Dänemark|Schweden|Norwegen|Finnland|Island|Polen|Tschechien|'
             r'Ungarn|Griechenland|Türkei|Israel|Russland|Australien|Neuseeland|Japan|China|Südkorea|Indien|Mexiko|Brasilien|Argentinien|'
-            r'Südafrika|Kroatien|Slowenien|Rumänien|Bulgarien|Litauen|Lettland|Estland|Iran|Ägypten)')
+            r'Südafrika|Kroatien|Slowenien|Rumänien|Bulgarien|Litauen|Lettland|Estland|Iran|Ägypten|'
+            # 0.6.131 (Mac-Urteil 0.6.130: Sturm der Liebe „Andorra/Deutschland 2013“)
+            r'Andorra|Monaco|Liechtenstein|Malta|Zypern|Serbien|Slowakei|Ukraine|Belarus|Weißrussland|Bosnien(?:-Herzegowina| und Herzegowina)?|'
+            r'Montenegro|(?:Nord)?mazedonien|Albanien|Kosovo|Georgien|Armenien|Kasachstan|Schottland|Wales|Nordirland|Sowjetunion|UdSSR|'
+            r'Jugoslawien|Tschechoslowakei|Marokko|Tunesien|Algerien|Libanon|Jordanien|Katar|Vereinigte Arabische Emirate|Nigeria|Kenia|Senegal|'
+            r'Chile|Kolumbien|Kuba|Peru|Venezuela|Uruguay|Thailand|Vietnam|Taiwan|Hongkong|Singapur|Philippinen|Indonesien|Malaysia|Mongolei)')
 PRODUCTION = re.compile(r'(%s(?:\s*(?:/|,|und|u\.)\s*%s)*)\s+((?:18|19|20)\d\d)' % (_COUNTRY, _COUNTRY))
 
 _LOCK = threading.Lock()
@@ -428,7 +433,12 @@ def sync(root, fetch=None, now=None):
             total += got
             failures += 1 if error else 0
         with db:
-            removed = dedupe(db, int(now - 2 * 86400))
+            # 0.6.131 (Mac-Urteil 0.6.130: 494 Überlappungen bei 3sat, 22 bei phoenix in den Tagen vor 0.6.130): the whole
+            # file is cleaned once, afterwards only the days of the run
+            full = not _value(db, 'dedupe_all_v06131', False)
+            removed = dedupe(db, 0 if full else int(now - 2 * 86400))
+            if full:
+                _set(db, dedupe_all_v06131=True)
             db.execute('DELETE FROM broadcasts WHERE stop<?', (int(now - KEEP_DAYS * 86400),))
             db.execute('DELETE FROM days WHERE day<?', ((_day(now) - datetime.timedelta(days=KEEP_DAYS)).isoformat(),))
             result = 'ok' if not failures else ('partial' if failures < len(SOURCES) else 'error')

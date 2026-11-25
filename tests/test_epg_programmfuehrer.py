@@ -350,6 +350,16 @@ class Overlaps0130(unittest.TestCase):
                          ('', 'Deutschland', 2015, 2019))
         self.assertEqual((rows['Der Film']['country'], rows['Der Film']['year']), ('USA/Kanada', 1999))
         self.assertEqual((rows['Brennpunkt']['subtitle'], rows['Brennpunkt']['year']), ('Hochwasser 2026', None))
+        self.assertEqual(epg.PRODUCTION.fullmatch('Andorra/Deutschland 2013')[1], 'Andorra/Deutschland')
+
+    def test_old_days_are_cleaned_once(self):
+        t = int(time.time()) - 10 * 86400
+        self.put('ard', '3sat', t, t + 2700, 'Kulturzeit')
+        self.put('zdf', '3sat', t + 180, t + 2880, 'Kulturzeit')
+        root = Path(self.db.execute('PRAGMA database_list').fetchone()[2]).parent
+        epg.sync(root, fetch=lambda url, headers: None, now=time.time())
+        self.assertEqual([x[0] for x in self.titles('3sat')], ['ard'])
+        self.assertTrue(epg._value(self.db, 'dedupe_all_v06131', False))
 
 
 if __name__ == '__main__':
