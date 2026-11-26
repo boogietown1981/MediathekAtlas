@@ -74,7 +74,7 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus='',redbulltv='',sender='',dmax='',filmfriend='',dailyme=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus='',redbulltv='',sender='',dmax='',filmfriend='',dailyme='',lokal=''):
     """Best playable source: a finished local download wins over the online stream."""
     if samsung:
         # 0.5.97: Samsung TV Plus live channel (HLS without copy protection, see samsung_tvplus.py)
@@ -104,6 +104,11 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         # 0.6.62: dailyme plays only in its own player (session and key per video): never a source (dailyme.py)
         import dailyme as dailyme_tv
         return dailyme_tv.play_source(root,dailyme)
+    if lokal:
+        # 0.6.151: Datei aus einem lokalen Filmarchiv (Ordner/Freigabe), nur innerhalb der eingetragenen Ordner
+        if root is None:raise ValueError('Lokales Archiv nicht verfügbar')
+        import lokal as local_archive
+        return local_archive.play_source(root,lokal)
     if servustv:
         # 0.5.101: ServusTV video or live channel (plain HLS, checked by hls_guard, see servustv.py)
         if root is None:raise ValueError('ServusTV-Katalog nicht verfügbar')

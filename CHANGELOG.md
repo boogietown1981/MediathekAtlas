@@ -1,3 +1,13 @@
+## 0.6.151 – Lokale Filmarchive auf Ordnern/Freigaben (NFO zuerst, sonst Dateinamen + Erkennung); auf 0.6.150
+
+- Björn 26.11.2026: „Erkennung bzw. Einbindung von lokalen Filmarchiven auf Shares; wenn dort schon NFO-Dateien sind, können diese gleich genutzt werden, wenn noch keine sind, werden sie eben gescannt und zugeordnet.“
+- Neues Modul `lokal.py` (eigene Datenbank `lokal.sqlite3`, Tabellen `lokal_items`/`lokal_state`): Ordnerliste (absolut, keine Laufwerkswurzel, höchstens 20), `scan` inkrementell (unveränderte Größe/Änderungszeit → nur `seen`), überspringt Papierkörbe, `@eaDir`, Beispiele/Trailer, `._*` und Dateien unter 20 MB, folgt keinen Ordner-Verknüpfungen. Fehlende Freigabe oder leerer Einhängepunkt → Titel `offline` (nie gelöscht); fehlende Einzeldatei → `gone`; entfernter Ordner → seine Titel raus (Dateien unberührt).
+- NFO (`read_nfo`): movie/tvshow/episodedetails, uniqueid imdb/tmdb, nur https-Bilder, Laufzeit; DOCTYPE/ENTITY werden nicht ausgewertet; reine URL-NFO liefert die IMDb-Nummer. Ohne NFO `parse_name` (Release-Tags, Jahr, SxxEyy/1x02, Staffelordner).
+- Abgleich `lokal_enrichment.py` über `portal_enrichment` (wie Plattformen, Planer-Aufgabe `enrich:lokal`); eine IMDb-/TMDB-Nummer aus der NFO filtert abweichende Kandidaten (`nfo_lookup`), fehlt der Treffer, kommt er über die Nummer aus dem IMDb-Archiv. Genres einer NFO mit IMDb-Nummer zählen als eingeordnet.
+- Katalog: Quelle `lokal` im gemeinsamen Index (Rang vor ARD/ZDF), `local_titles` zählt sie als geladen; Knopf „Lokales Archiv“ (nur über den Index, `only=lokal`), Titelseite (`portal_title`, ohne Offline-Kopie/Anbieter-Link, Hinweis bei offline), Player `playLokal` → `streaming.resolve(lokal=…)` → Datei, nur innerhalb der eingetragenen Ordner (realpath).
+- Server: `GET /api/lokal`, `POST /api/lokal-dirs`, `/api/lokal-scan`, `/api/lokal-enrich`; Planer-Katalogaufgabe `lokal` (alle 6 h). Web: `web/lokal_archive.js`, Einstellungskarte „Lokale Filmarchive“.
+- Tests: `tests/test_v06151.py` (17), `tests/browser/lokal_archive.cjs` (neu).
+
 ## 0.6.150 – Filme: Filmreihen (Tatort, Polizeiruf …) und Mehrteiler als eine Kachel; auf 0.6.149
 
 - Björn 26.11.2026 zu „Tatort/Polizeiruf einzeln unter Filme?“: „wenn es Filme sind, dann ja, aber man kann sie auch als Reihe zusammenfassen, z. B. alle Tatort-Filme, bzw. wenn ein Film 1–n Teile hat“; Koproduktionen mit Deutschland (Van der Valk, Irene Huss, Maria Wern) bleiben unter Filme.

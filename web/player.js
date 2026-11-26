@@ -304,6 +304,8 @@ window.playRakuten=function(id,label){S.list=[];S.index=-1;return open({rakuten:
 window.playToggo=function(id,label){S.list=[];S.index=-1;return open({toggo:id},label||'TOGGO','toggo:'+id);};
 // 0.5.98: Plex film, episode or channel (only streams Plex delivers without copy protection)
 window.playPlex=function(id,label){S.list=[];S.index=-1;return open({plex:id},label||'Plex','plex:'+id);};
+// 0.6.151: Datei eines lokalen Filmarchivs (Ordner/Freigabe), über den vorhandenen Datei-Weg mit Umwandlung
+window.playLokal=function(id,label){S.list=[];S.index=-1;return open({lokal:id},label||'Lokales Archiv','lokal:'+id);};
 // 0.5.101: ServusTV video or live channel (plain HLS)
 window.playServusTV=function(id,label){S.list=[];S.index=-1;return open({servustv:id},label||'ServusTV','servustv:'+id);};
 // 0.6.47: Red Bull TV video or live channel (same platform as ServusTV)

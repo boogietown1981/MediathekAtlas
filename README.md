@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.150
+# MediathekAtlas · 0.6.151
+
+## Neu in 0.6.151: Lokale Filmarchive auf Ordnern und Freigaben
+- Einstellungen → „Lokale Filmarchive“: eigene Film- und Serienordner eintragen, z. B. eine eingebundene NAS-Freigabe (/Volumes/Filme). MediathekAtlas liest dort nur, verändert und löscht nichts.
+- Liegen NFO-Dateien (Kodi, Jellyfin, Emby) daneben, werden Titel, Jahr, Beschreibung, Genres, Bild und IMDb-/TMDB-Nummer direkt übernommen; die IMDb-Nummer entscheidet dann den Abgleich. Ohne NFO werden Datei- und Ordnernamen gedeutet (Titel, Jahr, S01E02, Staffelordner) und wie die Plattform-Titel über IMDb, TVDB und TMDB zugeordnet.
+- Neue Quelle „Lokales Archiv“ im Katalog; gleiche Titel anderer Anbieter landen in derselben Kachel. Archivtitel gelten als „⬇ Geladen“ und laufen im eingebauten Player (MKV & Co. über ffmpeg).
+- Neu eingelesen wird alle 6 Stunden und auf Knopfdruck, nur Neues und Geändertes. Ist eine Freigabe nicht eingebunden, bleiben die Titel erhalten und sind als offline markiert.
 
 ## Neu in 0.6.150: Filmreihen und Mehrteiler unter Filme zusammengefasst
 - Unter „Filme“ stehen Reihenfilme einer Mediatheken-Reihe (Tatort, Polizeiruf 110, Der Usedom-Krimi …) ab drei Filmen als EINE Kachel „Filmreihe · n Filme“; sie öffnet die Filme der Reihe. Sendeplätze wie „FilmMittwoch im Ersten“ oder „Herzkino“ sind keine Reihe und bleiben einzeln.

@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.151 – Lokale Filmarchive (26. November 2026)
+- Automatisch: tests/test_v06151.py (17), tests/browser/lokal_archive.cjs (neu, Einstellungen → Einlesen → Katalog → Titelseite → Abspielquelle), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.151 (echte SMB-Freigabe, NFO-Bestand, Abmelden der Freigabe).
+
 ## 0.6.150 – Filmreihen und Mehrteiler unter Filme (26. November 2026)
 - Automatisch: tests/test_v06150.py (4), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.150 (echter Katalog: welche Reihen werden zusammengefasst, Sendeplätze einzeln, Laufzeit).
 

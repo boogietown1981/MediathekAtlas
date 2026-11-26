@@ -20,7 +20,7 @@ import re
 
 import categories
 
-PROVIDERS = {'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'dailyme': 'dailyme TV', 'rtlplus': 'RTL+'}
+PROVIDERS = {'lokal': 'Lokales Archiv', 'netzkino': 'Netzkino', 'pluto': 'Pluto TV', 'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'dailyme': 'dailyme TV', 'rtlplus': 'RTL+'}
 OFFLINE_DAYS = 30
 KIND_LABEL = {'movie': 'Film', 'series': 'Serie', 'episode': 'Folge', 'channel': 'Live-Sender'}
 
@@ -127,6 +127,12 @@ def _portal(root, source, item_id):
             # 0.5.53: offline only after Björn's opt-in switch (YouTube terms), independent of embedding.
             m['offline'] = {'allowed': bool(it.get('offline')), 'days': OFFLINE_DAYS, 'night': False}
     m['web_url'] = _https(it.get('web_url'))
+    if source == 'lokal':
+        # 0.6.151: die Datei liegt schon vor – kein Offline-Laden; Freigabe offline → Hinweis statt Abspielen
+        m['offline'] = {'allowed': False, 'days': 0, 'night': False}
+        m['notes'] += [_text(n, 300) for n in it.get('notes') or []]
+        if it.get('nfo'):
+            m['provider_facts'].append(['Angaben', 'NFO-Datei im Archiv'])
     facts = m['provider_facts']
     if it.get('genre'):
         facts.append([PROVIDERS[source] + '-Genre', _text(it['genre'], 200)])

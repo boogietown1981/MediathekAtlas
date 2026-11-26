@@ -1349,3 +1349,6 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .kids-parents-reason{color:#e0a040}.kids-parents-ok{color:#45b36b}
 @media (max-width:700px){.kids-parents-row{grid-template-columns:1fr 1fr}}
 .linklike{background:none;border:0;padding:0;color:#7cb8ff;cursor:pointer;font:inherit;text-decoration:underline}
+.lokal-folders{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
+.lokal-folder strong{word-break:break-all}
+.lokal-folder-offline strong{color:var(--warn,#b26a00)}

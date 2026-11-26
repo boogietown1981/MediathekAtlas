@@ -87,6 +87,8 @@ def mark_entries(c, entries, series=False):
         for o in e['offers']:
             if o.get('source') == 'mediatheken':
                 hit = str(o.get('id')) in works
+            elif o.get('source') == 'lokal':
+                hit = True                  # 0.6.151: Titel eines lokalen Filmarchivs liegen immer als Datei vor
             else:
                 hit = (o.get('source'), str((o.get('item') or {}).get('id') or '')) in portal
             if hit:

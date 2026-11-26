@@ -14,7 +14,7 @@
     return n;
   };
   const KEY = /^[A-Za-z0-9_.:\-]{1,200}$/;
-  const SOURCE_LABEL = {mediatheken: 'ARD, ZDF & Co.', netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV',
+  const SOURCE_LABEL = {mediatheken: 'ARD, ZDF & Co.', lokal: 'Lokales Archiv', netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV',
     rakuten: 'Rakuten TV', youtube: 'YouTube', joyn: 'Joyn', toggo: 'TOGGO', crunchyroll: 'Crunchyroll', plex: 'Plex', servustv: 'ServusTV', redbulltv: 'Red Bull TV', dmax: 'DMAX & TLC', filmfriend: 'filmfriend', dailyme: 'dailyme TV', rtlplus: 'RTL+', download: 'Download'};
   const KIND_LABEL = {movie: 'Film', series: 'Serie', episode: 'Folge', music: 'Musik'};
   let state = {continue: [], marked: [], progress: {}, marks: {}};

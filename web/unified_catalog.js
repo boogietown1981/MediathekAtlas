@@ -8,10 +8,10 @@
     if (cls) n.className=cls;
     return n;
   };
-  const VALID_SOURCES = ['all','mediatheken','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','redbulltv','dmax','filmfriend','dailyme','rtlplus'];
-  const PORTALS = {pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',dailyme:'dailyme TV',rtlplus:'RTL+'};
+  const VALID_SOURCES = ['all','mediatheken','lokal','netzkino','pluto','justwatch','rakuten','youtube','joyn','toggo','crunchyroll','plex','servustv','redbulltv','dmax','filmfriend','dailyme','rtlplus'];
+  const PORTALS = {lokal:'Lokales Archiv',pluto:'Pluto TV',justwatch:'JustWatch TV',rakuten:'Rakuten TV',youtube:'YouTube',joyn:'Joyn',toggo:'TOGGO',crunchyroll:'Crunchyroll',plex:'Plex',servustv:'ServusTV',redbulltv:'Red Bull TV',dmax:'DMAX & TLC',filmfriend:'filmfriend',dailyme:'dailyme TV',rtlplus:'RTL+'};
   // Player and official-page label per portal (0.5.51: one table instead of per-source branches).
-  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,servustv:()=>window.playServusTV,redbulltv:()=>window.playRedBullTV,dmax:()=>window.playDmax,filmfriend:()=>null,dailyme:()=>null,rtlplus:()=>null};
+  const PLAY = {pluto:()=>window.playPluto,justwatch:()=>window.playJustWatch,rakuten:()=>window.playRakuten,youtube:()=>window.playYouTube,joyn:()=>null,toggo:()=>window.playToggo,crunchyroll:()=>null,plex:()=>window.playPlex,lokal:()=>window.playLokal,servustv:()=>window.playServusTV,redbulltv:()=>window.playRedBullTV,dmax:()=>window.playDmax,filmfriend:()=>null,dailyme:()=>null,rtlplus:()=>null};
   const EXTERNAL = {pluto:'Bei Pluto TV ansehen',justwatch:'Bei JustWatch ansehen',rakuten:'Bei Rakuten TV ansehen',youtube:'Bei YouTube ansehen',joyn:'Bei Joyn ansehen',toggo:'Bei TOGGO ansehen',crunchyroll:'Bei Crunchyroll ansehen',plex:'Bei Plex ansehen',servustv:'Bei ServusTV ansehen',redbulltv:'Bei Red Bull TV ansehen',dmax:'Beim Sender ansehen',filmfriend:'Bei filmfriend ansehen',dailyme:'Bei dailyme ansehen',rtlplus:'Bei RTL+ ansehen'};
   const TYPES = ['movies','series'];
   let source='all',kind='movies',genre='',sort='title',search='',offset=0,sequence=0,lang='';
@@ -251,10 +251,10 @@
     // 0.5.55: the boards live under Verwaltung → Status & Abgleich and show every platform there;
     // they are only fetched while that view is open.
     // 0.6.27: „YouTube-Abos“ zeigt nur die Abo-Videos je Kanal (web/abo_shelf.js), keine Katalogkarten.
-    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
+    if (inStatus ? $('status')?.hidden : (source==='mediatheken' || source==='lokal' || $('discover')?.hidden)) {if(!inStatus)board.hidden=true;return;}
     const seq=++portalSeq;let data;
     try {data=await window.api('film-platforms');}catch(e){if(seq===portalSeq){board.hidden=false;board.replaceChildren(el('p','Katalog-Übersicht nicht verfügbar: '+e.message,'muted'));}return;}
-    if (seq!==portalSeq||(!inStatus&&source==='mediatheken')) return;
+    if (seq!==portalSeq||(!inStatus&&(source==='mediatheken'||source==='lokal'))) return;
     const list=(data.film_platforms||[]).filter(p=>inStatus||source==='all'||p.source===source);
     board.replaceChildren(el('h2',inStatus||source==='all'?'Weitere Kataloge · Bestand & Werkzuordnung':(list[0]?.name||'Katalog')+' · Bestand & Werkzuordnung','atlas-dashboard-heading'));
     if (list.length>1) board.append(portalTable(list));
@@ -275,7 +275,7 @@
     $('atlas-source-content').classList?.toggle('is-abos',kind==='abos');
     $('atlas-cross-title').textContent=kind==='abos'?'YouTube · Abos':kind==='music'?'YouTube · Musikvideos':seriesKey?seriesTitle:heading()+' · '+(kind==='movies'?'Filme':'Serien');
     $('atlas-cross-back-series').hidden=!seriesKey;
-    $('atlas-cross-open-portal').hidden=source==='all';
+    $('atlas-cross-open-portal').hidden=source==='all'||source==='lokal';
   }
   function activate(name) {
     if (!VALID_SOURCES.includes(name)) return;
@@ -344,7 +344,7 @@
   // title that several providers offer gets the same buttons per provider inside one tile.
   function canOffline(item) {
     const night=item.source==='justwatch'&&!item.playable&&!!item.night;
-    return item.kind!=='series' && !!(item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.source==='youtube'?item.offline:(item.playable||night)));
+    return item.kind!=='series' && item.source!=='lokal' && !!(item.source==='netzkino'?/^[a-f0-9]{32}$/.test(item.id||''):PORTALS[item.source]&&(item.source==='youtube'?item.offline:(item.playable||night)));
   }
   function actionNodes(item, withDetails=true, siblings=null) {
     const nodes=[];
@@ -623,7 +623,8 @@
     $('atlas-cross-status').textContent=kind==='music'?'Musikvideos werden geladen …':'Filme und Serien werden geladen …';
     if (kind==='music') return refreshMusic(seq);
     // 0.6.5: the language filter is evaluated on the server for every source (unified index)
-    if ((source==='all'||lang) && !seriesKey) return refreshAll(seq);
+    // 0.6.151: das lokale Archiv kommt nur über den gemeinsamen Index (only=lokal)
+    if ((source==='all'||source==='lokal'||lang) && !seriesKey) return refreshAll(seq);
     const nkNeeded=(source==='all'||source==='netzkino');
     const medNeeded=(source==='all'||source==='mediatheken') && !seriesKey;
     const plNeeded=(source==='all'||source==='pluto') && !seriesKey;

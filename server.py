@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover, epg
-import series_autoload,local_titles,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import series_autoload,local_titles,lokal,lokal_enrichment,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -524,6 +524,7 @@ IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated,folder=_IMDB_DIR,available=_IMD
 IMDB.locate=lambda:storage_locations.imdb_location(HOME,ROOT)
 imdb_archive.ACTIVE=IMDB
 _UNIFIED_SOURCES={k:_SnapshotSource(k,m[0]) for k,m in _PORTAL_MODULES.items()}
+_UNIFIED_SOURCES['lokal']=lokal   # 0.6.151: lokale Filmarchive (eigene Abfrage, schnell; der Index speichert zwischen)
 _STATUS_CACHE=(0,{})
 _TREE_CACHE=(float('-inf'),[],[])
 _TREE_TTL=60
@@ -752,7 +753,7 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],dmax=q.get('dmax',[''])[0],filmfriend=q.get('filmfriend',[''])[0],dailyme=q.get('dailyme',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],dmax=q.get('dmax',[''])[0],filmfriend=q.get('filmfriend',[''])[0],dailyme=q.get('dailyme',[''])[0],lokal=q.get('lokal',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
                                                   youtube=q.get('youtube',[''])[0])
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
@@ -1282,6 +1283,31 @@ def get_kids_live(self,path):
         if not kids_rules.live_enabled(c):return self.send({'enabled':False,'stations':[]})
         return self.send({'enabled':True,'stations':kids_catalog.live(c,ROOT)})
 
+# 0.6.151 (Björn 26.11.2026): lokale Filmarchive auf Ordnern/Freigaben – Ordner, Stand, Einlesen (lokal.py)
+@ROUTES.get('/api/lokal')
+def get_lokal(self,path):
+    return self.send(lokal.state(ROOT))
+
+@ROUTES.post('/api/lokal-dirs')
+def post_lokal_dirs(self,path,d):
+    folders=lokal.set_dirs(ROOT,d.get('dirs') or '')
+    local_titles.invalidate();unified_index.invalidate(soft=True)
+    started=lokal.start_sync(ROOT) if folders else False
+    diagnostics.event('lokal_dirs_saved',folders=len(folders))
+    return self.send({**lokal.state(ROOT),'started':started})
+
+@ROUTES.post('/api/lokal-scan')
+def post_lokal_scan(self,path,d):
+    if not lokal.dirs(ROOT):raise ValueError('Noch kein Archivordner eingetragen')
+    return self.send({**lokal.state(ROOT),'started':lokal.start_sync(ROOT)})
+
+@ROUTES.post('/api/lokal-enrich')
+def post_lokal_enrich(self,path,d):
+    with SERVICE.provider_slots:result=lokal_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+    diagnostics.event('lokal_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+    unified_index.invalidate(soft=True)
+    return self.send(result)
+
 @ROUTES.get('/api/kids-episodes')
 def get_kids_episodes(self,path):
     import watch_state
@@ -1395,7 +1421,7 @@ def get_download_options(self,path):
 
 @ROUTES.get('/api/play')
 def get_play(self,path,v1=False,kids_ref=None):
-    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender')}
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender','lokal')}
     direct_youtube=q.get('direct',[''])[0]=='1'
     yt_id=q.get('youtube',[''])[0]
     if yt_id:
@@ -2509,7 +2535,7 @@ def post_languages_observe(self,path,d):
 
 # 0.6.6: audio tracks and subtitles the player can offer for a source played through ffmpeg or as a file
 def _track_source(q):
-    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender')}
+    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender','lokal')}
     if q.get('direct',[''])[0]=='1':ref['youtube']=q.get('youtube',[''])[0]   # own player only; the embedded player has its own subtitles
     with db() as c:return ref,streaming.resolve(c,root=ROOT,quality=_play_quality(q),**ref)
 
@@ -2691,7 +2717,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/lokal_archive.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2738,8 +2764,9 @@ if __name__=='__main__':
         # 0.6.0: one planner (planner.py) instead of two threads per platform; Samsung TV Plus and
         # the Archive.org recognition join it (formerly samsung_tvplus.loop, archive_recognition.loop).
         PLANNER[0]=platform_registry.start_background(platform_context(),STOP,
-            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos),planner.CatalogJob('epg',epg)],
-            extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
+            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos),planner.CatalogJob('epg',epg),planner.CatalogJob('lokal',lokal)],
+            extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich),
+                              planner.EnrichJob('lokal',lokal_enrichment.pending,lokal_enrichment.enrich)])   # 0.6.151
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
         # 0.6.35: Die Erkennung (viele Schreibzugriffe) startet erst, wenn der einmalige Index steht.
