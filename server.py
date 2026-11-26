@@ -600,9 +600,14 @@ def recognition_for_export(wait=20.0):
     """0.6.9: the diagnosis of 16.11.2026 had an empty table "Erkennung je Sender" (still loading,
     because nobody had opened it). The export waits a little for the background count."""
     result=recognition();deadline=time.monotonic()+wait
-    while result.get('loading') and not result.get('channels') and time.monotonic()<deadline:
+    # 0.6.145 (Pro-Diagnose 26.11.2026: Stand 37 h alt, loading): also wait while only an old count from an earlier
+    # run is there (restored at start, nobody opened the view since); the export says how old the count is.
+    def stale(r):return not r.get('channels') or time.time()-float(r.get('computed_at') or 0)>RECOGNITION_STALE
+    while result.get('loading') and stale(result) and time.monotonic()<deadline:
         time.sleep(.25);result=recognition()
-    return result
+    computed=float(result.get('computed_at') or 0)
+    return {**result,'age_hours':round((time.time()-computed)/3600,1) if computed else None}
+RECOGNITION_STALE=6*3600
 def catalog_status():
     global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
@@ -1451,7 +1456,7 @@ def _bounded_parts(parts,budget=20.0):
 def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
     def overview_parts():
-        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(15.0),'runtime':runtime_tools.cached_report()}
+        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(30.0),'runtime':runtime_tools.cached_report()}
     parts={'overview':overview_parts,'storage':_storage_for_export,'imdb':IMDB.status,'provider_statistics':provider_stats.snapshot,
            'providers':lambda:[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],
            'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),

@@ -1,3 +1,12 @@
+## 0.6.145 – filmfriend nach Seitenfehler vollständig, Senderstatistik in der Diagnose aktuell; auf 0.6.144
+
+- Grundlage: berichte/diagnose-2026-11-26-abend-06139-pro.md (B1, B2).
+- B1 `filmfriend.Crawl.collect`: eine fehlgeschlagene Suchseite wird nach `PAGE_RETRY` (10 s) einmal wiederholt, danach geht es mit der nächsten Seite weiter (nach `PAGE_SKIP_LIMIT` = 3 Fehlseiten in Folge Ende dieser Suche); vorher `break` nach dem ersten Fehler (26.11.: 107 statt 173 Seiten, 2.275 statt 3.629 Filme, „complete“).
+- B1 `filmfriend.sync`: fehlende Suchseite (`missed_pages`) = teilweise; weniger als `PLAUSIBLE_SHARE` (90 %) der Titel des letzten vollständigen Laufs (`complete_titles`, beim ersten Lauf: in 7 Tagen gesehene Titel) = teilweise, bis `SHRUNK_ACCEPT` (3) fehlerfreie Läufe in Folge den kleineren Katalog bestätigen. Teilweise Läufe lassen die bisherigen Titel sichtbar. Ereignis mit `missed_pages`, `shrunk`, `titles_before`.
+- B2 `server.recognition_for_export`: wartet (Diagnose 30 s) auch, wenn nur ein mehr als 6 h alter Stand vorliegt; Ausgabe mit `age_hours`.
+- Nicht geändert: B3 (Filme −46, wohl abgelaufene Angebote) und B4 („Rote Rosen“ Genre) beobachten.
+- Tests: `tests/test_v06145.py` (5); `tests/test_v06143.py` schließt seine Verbindung.
+
 ## 0.6.144 – Filmliste wartet nicht hinter anderen Aufbauten; auf 0.6.143
 
 - Befund 0.6.142 (BEFUND-06142.txt): Funktion bestanden; Air direkt nach `catalog_series_films_marked` /api/catalog movie 54,4 s (build_seconds 0,16 s), parallel unified_index_built 8,3 s und kids_shelf_prewarmed 47,4 s; erste Suche 6,5–10,1 s.

@@ -59,6 +59,10 @@ DETAIL_TTL = 30 * 86400
 MAX_ITEMS = 20000
 REQUEST_GAP = 1.0             # gentle: one request per second
 RETRY_WAITS = (5, 20)         # seconds before the 2nd and 3rd try after 429/5xx
+PAGE_RETRY = 10               # 0.6.145: seconds before a failed search page is asked once more
+PAGE_SKIP_LIMIT = 3           # 0.6.145: failed pages in a row before a search is given up
+PLAUSIBLE_SHARE = 0.9         # 0.6.145: fewer titles than this share of the last complete run = partial
+SHRUNK_ACCEPT = 3             # 0.6.145: … unless that many error-free runs in a row agree
 UUID = re.compile(r'[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}')
 VALID_ID = re.compile(r'[ms]\.' + UUID.pattern)
 URI_ID = re.compile(r'[a-z0-9][a-z0-9\-]{0,200}')
@@ -332,6 +336,9 @@ class Crawl:
         # 0.6.143 (M1-Air-Diagnose 26.11.2026: 544 Fehler nach Netzverlust): wie dailyme nach NET_FAILURE_BUDGET
         # Verbindungsfehlern anhalten; der Lauf zählt als teilweise, der nächste Versuch folgt nach NET_RETRY.
         self.net_failures, self.stopped = 0, False
+        # 0.6.145 (Pro-Diagnose 26.11.2026: 1 Fehler → 107 statt 173 Seiten, 2.275 statt 3.629 Filme, Lauf „complete“):
+        # search pages that stayed missing after one more try; any of them makes the run partial.
+        self.missed_pages, self.page_retry = 0, (PAGE_RETRY if gap else 0)
         self.search_pages, self.details, self.detail_404 = 0, 0, 0
         self.entries = {}                     # row id -> row (search data, then details)
         self.tenant = ''
@@ -381,16 +388,33 @@ class Crawl:
 
     def collect(self):
         for search in self.searches():
-            skip = 0
+            skip, failed_in_row = 0, 0
             while not self.stopped:
                 if self.search_pages >= MAX_SEARCH_PAGES or len(self.entries) >= MAX_ITEMS:
                     self.truncated = True
                     return
+                path = search_path(self.tenant, search, skip)
                 try:
-                    answer = self.get(search_path(self.tenant, search, skip))
+                    answer = self.get(path)
                 except Exception as exc:
-                    self.errors.append(_error(exc))
-                    break
+                    if self.stopped:
+                        self.errors.append(_error(exc))
+                        break
+                    # 0.6.145: einmal nach kurzer Pause wiederholen, dann mit der nächsten Seite weitermachen
+                    # (vorher brach ein einzelner Fehler die restlichen Seiten der Suche ab)
+                    if self.page_retry:
+                        time.sleep(self.page_retry)
+                    try:
+                        answer = self.get(path)
+                    except Exception as again:
+                        self.errors.append(_error(again))
+                        self.missed_pages += 1
+                        failed_in_row += 1
+                        if failed_in_row >= PAGE_SKIP_LIMIT or self.stopped:
+                            break
+                        skip += PAGE_SIZE
+                        continue
+                failed_in_row = 0
                 self.search_pages += 1
                 entries = search_entries(answer)
                 for kind, node in entries:
@@ -477,8 +501,24 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
         crawl.add_details(known, now)
         rows = list(crawl.entries.values())
         waiting = sum(1 for r in rows if not (r.get('detailed') or r.get('detail_checked') or known.get(r['id'])))
-        # a few failed pages leave the run complete; many make it partial (old titles stay visible)
-        partial = crawl.truncated or len(crawl.errors) > max(3, 0.03 * crawl.requests)
+        # a few failed detail pages leave the run complete; many make it partial (old titles stay visible).
+        # 0.6.145: a missing search page always makes it partial, and so do clearly fewer titles than last time.
+        db = _connect(root)
+        try:
+            before = int(float(_get(db, 'complete_titles', '0') or 0))
+            shrunk_runs = int(float(_get(db, 'shrunk_runs', '0') or 0))
+            if not before:
+                # erster Lauf mit 0.6.145: Bezug = Titel, die in den letzten 7 Tagen gesehen wurden
+                before = db.execute('SELECT COUNT(*) FROM filmfriend_items WHERE seen>=?', (now - 7 * 86400,)).fetchone()[0]
+        finally:
+            db.close()
+        shrunk = bool(before and len(rows) < PLAUSIBLE_SHARE * before)
+        clean = not (crawl.truncated or crawl.missed_pages or len(crawl.errors) > max(3, 0.03 * crawl.requests))
+        if shrunk and clean and shrunk_runs + 1 >= SHRUNK_ACCEPT:
+            shrunk = False            # dreimal fehlerfrei kleiner: filmfriend hat den Katalog wirklich verkleinert
+        shrunk_runs = shrunk_runs + 1 if shrunk and clean else 0
+        partial = (crawl.truncated or bool(crawl.missed_pages) or shrunk
+                   or len(crawl.errors) > max(3, 0.03 * crawl.requests))
         message = ('Katalog nur teilweise geladen: %s (%d Fehler)' % (crawl.errors[0], len(crawl.errors))
                    if crawl.errors and partial else 'Katalog nur teilweise geladen' if partial else '')
         counts = {'movies': sum(1 for r in rows if r['kind'] == 'movie'),
@@ -495,11 +535,15 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                                    ('requests', crawl.requests), ('pages', crawl.search_pages),
                                    ('details_waiting', waiting), *counts.items()]:
                     _set(db, key, value)
+                _set(db, 'shrunk_runs', shrunk_runs)
+                if not partial:
+                    _set(db, 'complete_titles', len(rows))
         finally:
             db.close()
         _notify('filmfriend_sync_completed', partial=partial, requests=crawl.requests, pages=crawl.search_pages,
                 errors=len(crawl.errors), truncated=crawl.truncated, details=crawl.details, detail_404=crawl.detail_404,
-                details_waiting=waiting, net_failures=crawl.net_failures, stopped=crawl.stopped, imdb=sum(1 for r in rows if r['imdb_id']), **counts)
+                details_waiting=waiting, net_failures=crawl.net_failures, stopped=crawl.stopped,
+                missed_pages=crawl.missed_pages, shrunk=shrunk, titles_before=before, imdb=sum(1 for r in rows if r['imdb_id']), **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)

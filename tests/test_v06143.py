@@ -36,8 +36,10 @@ class Temp(unittest.TestCase):
 class ImdbSpaceGate(Temp):
     def archive(self):
         a = imdb_archive.Archive(self.root, threading.Event())
-        with sqlite3.connect(a.path) as c:
+        c = sqlite3.connect(a.path)
+        with c:
             c.execute('CREATE TABLE snapshot(updated)');c.execute('INSERT INTO snapshot VALUES(1)')
+        c.close()
         a.updated, a.version = 1, imdb_archive.VERSION
         return a
 

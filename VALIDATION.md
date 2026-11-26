@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.145 – filmfriend, Senderstatistik (26. November 2026)
+- Automatisch: tests/test_v06145.py (5), gesamte Suite, Node-Tests, Klicktests. Am Mac: filmfriend-Abgleich am echten Netz, Diagnose-Export (PRUEFLISTE in releases/0.6.145).
+
 ## 0.6.144 – Filmliste ohne Wartezeit nach Markierlauf (26. November 2026)
 - Automatisch: tests/test_v06144.py (7), gesamte Suite, Node-Tests, Klicktests. Am Mac: Laufzeit Air direkt nach catalog_series_films_marked (PRUEFLISTE in releases/0.6.144).
 

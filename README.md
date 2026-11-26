@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.144
+# MediathekAtlas · 0.6.145
+
+## Neu in 0.6.145: filmfriend vollständig
+- Liefert filmfriend eine Seite des Katalogs nicht, fragt MediathekAtlas sie nach kurzer Pause noch einmal ab und liest danach die übrigen Seiten weiter. Fehlt eine Seite trotzdem oder kommen deutlich weniger Titel als beim letzten vollständigen Abgleich, gilt der Abgleich als teilweise und die bisherigen Titel bleiben sichtbar (vorher fehlte nach einem einzigen Fehler gut ein Drittel des Katalogs für einen Tag).
+- Die Diagnose wartet auf eine aktuelle Senderstatistik, wenn nur ein alter Stand vorliegt, und nennt dessen Alter.
 
 ## Neu in 0.6.144: Filmliste ohne Wartezeit nach Katalogänderungen
 - Ändert sich der Katalog im Hintergrund (zum Beispiel neue Reihenfilme), zeigt die Filmliste sofort den bisherigen Stand und aktualisiert sich im Hintergrund, statt hinter dem Aufbau der Kinderecke zu warten. Suchen warten ebenfalls nicht mehr darauf.
