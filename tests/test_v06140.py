@@ -77,6 +77,30 @@ class SeriesFilmFixes(test_v06137.SeriesFilms):
         self.c.execute("UPDATE works SET meta=json_set(meta,'$.series_film',1) WHERE id=(SELECT MIN(id) FROM works)")
         self.assertEqual(self.run_mark(), 1)   # ein altes Kennzeichen wird entfernt
 
+    def test_0_6_141_foreign_series_with_imdb_numbers_stay_episodes(self):
+        # Mac-Prüfung 0.6.140: Maria Wern/Rebecka Martinsson nur mit „(Sxx/Eyy)“, 85–88 min
+        self.series([offer('Maria Wern, Kripo Gotland – Mittsommer (S09/E01)', 'Maria Wern, Kripo Gotland', 1, duration=5200,
+                           description='Fernsehfilm Schweden 2023 Maria Wern ermittelt.'),
+                     offer('Rebecka Martinsson – Weiße Nacht (S01/E01)', 'Rebecka Martinsson', 2,
+                           description='Spielfilm Schweden 2017 Rebecka kehrt zurück.'),
+                     offer('Brokenwood - Mord in Neuseeland – Die Familienfehde – Brokenwood – Mord in Neuseeland',
+                           'Brokenwood - Mord in Neuseeland', 3, description='Spielfilm Neuseeland 2022 Mike Shepherd.'),
+                     offer('Die Kämpferin · Praxis mit Meerblick (20) (S04/E02)', 'Praxis mit Meerblick', 4)])
+        self.run_mark()
+        self.assertEqual(self.titles(), [('Praxis mit Meerblick – Die Kämpferin', 2024)])
+        self.assertEqual(catalog.series_film_part(
+            'Brokenwood - Mord in Neuseeland – Die Familienfehde – Brokenwood – Mord in Neuseeland',
+            'Brokenwood - Mord in Neuseeland'), 'Die Familienfehde')
+
+    def test_0_6_141_one_film_across_show_keys_and_year_from_title(self):
+        self.series([offer('Die Kämpferin · Praxis mit Meerblick (20) (S04/E02)', 'Praxis mit Meerblick', 1),
+                     offer('Die Kämpferin (S01/E20)', 'Praxis mit Meerblick', 2),
+                     offer('Tatort – Abbruchkante (2023)', 'Tatort', 3, description='Fernsehfilm Deutschland Kommissarin Lindholm.')])
+        # zweite Kopie unter anderem Reihenschlüssel (wie auf der Pro-Kopie)
+        self.c.execute("UPDATE works SET show_key='praxis-alt' WHERE title='Praxis mit Meerblick' AND id=(SELECT MAX(id) FROM works WHERE title='Praxis mit Meerblick')")
+        self.run_mark()
+        self.assertEqual(self.titles(), [('Praxis mit Meerblick – Die Kämpferin', 2024), ('Tatort – Abbruchkante', 2023)])
+
     # die Grundfälle aus 0.6.137 laufen mit (geerbt)
 
 

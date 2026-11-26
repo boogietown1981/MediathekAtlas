@@ -91,7 +91,7 @@ class SeriesFilms(unittest.TestCase):
         self.assertEqual(catalog.listing(self.c, kind='movie')['total'], 0)
 
     def test_3sat_film_suffix_counts(self):
-        self.series([offer('Gefallene Engel - Spielfilm, Norwegen 2008', 'Der Wolf', 1, description='Varg Veum ermittelt.')])
+        self.series([offer('Gefallene Engel - Spielfilm, Norwegen/Deutschland 2008', 'Der Wolf', 1, description='Varg Veum ermittelt.')])
         self.assertEqual(self.mark(), 1)
         groups = catalog.listing(self.c, kind='movie', index_only=True)
         self.assertEqual([(g[2], g[3]) for g in groups], [('Der Wolf – Gefallene Engel', 2008)])

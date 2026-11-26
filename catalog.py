@@ -823,6 +823,12 @@ SERIES_FILM_INDEX_SQL="CREATE INDEX IF NOT EXISTS work_series_film ON works(kind
 SERIES_FILM_TEXT=re.compile(r'(?i)^\W*(?:zweiteilige[rs]?\s+)?(?:spielfilm|fernsehfilm)\b')
 SERIES_FILM_TITLE=re.compile(r'(?i)\s[-–]\s(?:spielfilm|fernsehfilm),')
 SERIES_FILM_MIN=80*60
+# 0.6.141 (Mac-Prüfung 0.6.140: Rebecka Martinsson, Maria Wern, Brokenwood blieben unter Filme – ihre Angebote tragen nur
+# IMDbs „(Sxx/Eyy)“ wie Praxis mit Meerblick): a Reihenfilm is a German-language TV film – the broadcaster's film
+# label names Germany, Austria or Switzerland among the production countries („Spielfilm Deutschland 2023“, „Spielfilm
+# Dänemark/Norwegen/Deutschland 2008“). Foreign crime series shown as films („Fernsehfilm Schweden 2018“) stay episodes.
+SERIES_FILM_COUNTRY=re.compile(r'(?i)(?:spielfilm|fernsehfilm)[,\s]+(?:[^\d.,;:]{0,80}?)\b(?:deutschland|brd|ddr|österreich|schweiz)\b')
+SERIES_FILM_TITLE_YEAR=re.compile(r'\(((?:19|20)\d\d)\)')
 SERIES_FILM_STATES=('identified','matched','manual')
 
 SERIES_FILM_YEAR=re.compile(r'(?i)(?:spielfilm|fernsehfilm)\b[^.]{0,80}?\b((?:19|20)\d\d)\b')
@@ -858,6 +864,10 @@ def series_film_part(title,reihe):
     if SERIES_FILM_TITLE.search(t):t=SERIES_FILM_TITLE.split(t)[0]
     t=SERIES_FILM_NEW.sub(' ',t)
     t=re.sub(r'\([^)]*\)|\[[^\]]*\]',' ',t)
+    # 0.6.141 (Brokenwood „… – Die Familienfehde – Brokenwood – Mord in Neuseeland“): the Reihe in any dash spelling
+    if reihe.strip():
+        words=[re.escape(w) for w in re.split(r'[\s\-–—]+',reihe.strip()) if w]
+        if words:t=re.sub(r'(?i)(?<!\w)'+r'[\s\-–—,]+'.join(words)+r'(?!\w)',' – ',t)
     reihe_key=key(reihe)
     pieces=[p.strip(' -–') for p in SERIES_FILM_SPLIT.split(t)]
     pieces=[p for p in pieces if p and key(p)!=reihe_key]
@@ -880,6 +890,7 @@ def series_film(c,wid,meta=None,cache=None):
     if duration<SERIES_FILM_MIN:return None
     title=str(source.get('title') or '');topic=str(source.get('topic') or '');desc=core.clean(source.get('description',''))
     if not (SERIES_FILM_TEXT.search(desc) or SERIES_FILM_TITLE.search(title)):return None
+    if not (SERIES_FILM_COUNTRY.search(desc[:200]) if SERIES_FILM_TEXT.search(desc) else SERIES_FILM_COUNTRY.search(title)):return None
     if not film_shaped(source,title,topic,desc):return None
     if EPISODIC_MARK.search(title):return None
     meta=meta or {}
@@ -899,7 +910,7 @@ def series_film(c,wid,meta=None,cache=None):
             AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""") if t]
     padded=' '+key(film)+' '
     if key(film)!=key(reihe) and len(key(film))>=4 and any(padded in m for m in cache['movies']):return None   # „Kassensturz“ is a film work of its own
-    found=SERIES_FILM_YEAR.search(desc) or SERIES_FILM_YEAR.search(title)
+    found=SERIES_FILM_YEAR.search(desc) or SERIES_FILM_YEAR.search(title) or SERIES_FILM_TITLE_YEAR.search(title)   # 0.6.141: „Abbruchkante (2023)“
     name=(film if key(film)==key(reihe) else reihe+' – '+film)+part
     return {'title':name[:200],'year':int(found.group(1)) if found else None,'key':film_key}
 
@@ -923,7 +934,9 @@ def mark_series_films(c,after='',limit=500,cache=None):
         was=(m.get('series_film_title'),m.get('series_film_year')) if m.get('series_film') else None
         info=series_film(c,row['id'],m,cache) if row['state'] in SERIES_FILM_STATES else None
         if info:
-            unit=(row['show_key'],info['key'])
+            # 0.6.141 (Mac-Prüfung 0.6.140: Praxis mit Meerblick „Die Kämpferin (20) (S04/E02)“ und „(S01/E20)“ in zwei
+            # Serienwerken verschiedener Reihenschlüssel): one film per Reihe name and film name (with part), not per show_key
+            unit=(key(info['title']),)
             if unit in seen and seen[unit]!=row['id']:info=None
             else:seen[unit]=row['id']
         now=(info['title'],info['year']) if info else None

@@ -1,3 +1,12 @@
+## 0.6.141 – Reihenfilme: Korrektur Mac-Urteil 0.6.140; auf 0.6.140
+
+- Befund 0.6.140 (BEFUND-06140.txt): Markierlauf 60/69 s, Filmtitel/-jahr, Dubletten Air, Zweiteiler, Filmwerke, Suche, Reihen, Kinderecke, Serien-Kacheln (−4, kein −138), Regression bestanden.
+- Rebecka Martinsson 5, Maria Wern 9, Brokenwood 1 noch unter Filme (Angebote nur mit IMDbs „(Sxx/Eyy)“ wie Praxis mit Meerblick): Reihenfilm nur mit deutschsprachigem Produktionsland in der Filmangabe (`SERIES_FILM_COUNTRY`: Deutschland, BRD, DDR, Österreich, Schweiz, auch als Koproduktion „Dänemark/Norwegen/Deutschland“); „Fernsehfilm Schweden“, „Spielfilm Neuseeland“ bleiben Folgen.
+- Brokenwood-Titel doppelt („… – Die Familienfehde – Brokenwood – Mord in Neuseeland“): `series_film_part` entfernt die Reihe in jeder Strich-Schreibweise.
+- 10 Praxis-mit-Meerblick-Dubletten (Pro, zwei Serienwerke unter verschiedenen Reihenschlüsseln): ein Film je Reihenname und Filmname statt je show_key.
+- Tatort ohne Jahr: Jahr auch aus „(2023)“ im Angebotstitel.
+- Tests: `tests/test_v06140.py` (+2), `tests/test_v06137.py` (3sat-Fall mit Koproduktion).
+
 ## 0.6.140 – Reihenfilme in der Reihe und unter Filme, neu nach Mac-Urteil 0.6.138; auf 0.6.139
 
 - Björn 26.11.2026: „In der Reihe und unter Filme“. 0.6.137 wieder eingespielt (Cherry-pick f488a1ab) und nach BEFUND-06138.txt korrigiert:
