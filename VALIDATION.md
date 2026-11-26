@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.148 – Nummerierte Folgen als Serie, geladene Titel zuerst (26. November 2026)
+- Automatisch: tests/test_v06148.py (12), tests/browser/kids_corner.cjs (+6), gesamte Suite, Node-Tests, Klicktests; Bildschirmfoto der Testkopie in releases/0.6.148. Am Mac: echte Kinderecke „Die verwegenen Vier“ (PRUEFLISTE in releases/0.6.148).
+
 ## 0.6.147 – Kinderecke Vorschläge nach dem Video (26. November 2026)
 - Automatisch: tests/test_v06147.py (4), tests/browser/kids_corner.cjs (+3), gesamte Suite, Node-Tests, Klicktests; Bildschirmfoto der Testkopie in releases/0.6.147. Am Mac: echte Kinderecke (PRUEFLISTE in releases/0.6.147).
 

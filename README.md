@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.147
+# MediathekAtlas · 0.6.148
+
+## Neu in 0.6.148: Nummerierte Folgen als eine Serie, geladene Titel zuerst
+- Anbieter führen Folgen einer Reihe oft als einzelne Filme mit vorangestellter Nummer („10. Die verwegenen Vier auf heißer Spur“, „2. Die verwegenen Vier reißen aus“). Ab drei solchen Filmen desselben Anbieters mit gemeinsamem Titelanfang zeigt die Kinderecke EINE Serienkachel („Die verwegenen Vier“), die Folgen darin nach Nummer sortiert. Abspielen, Weiterschauen und Sperren funktionieren wie vorher.
+- Geladene Filme und Serien zuerst: Titel mit lokaler Kopie (ARD/ZDF-Downloads; Plattform-Kopien von Netzkino, Pluto, Plex, ServusTV, Red Bull TV …) stehen in der Kinderecke in jeder Reihe vorn, tragen „⬇ Geladen“ und werden unter „Mehr davon“ bevorzugt. Im normalen Katalog (Filme/Serien, Ansehen-Modus) stehen sie ebenfalls vorn und sind markiert; eine Serie gilt als geladen, sobald eine Folge geladen ist.
 
 ## Neu in 0.6.147: Kinderecke schlägt nach dem Video Passendes vor
 - Am Ende eines Videos, Films oder einer Folge zeigt die Kinderecke wie YouTube eine Reihe „Mehr davon“: weitere Videos desselben Kanals, Titel aus demselben Thema (Tiere, Wissen, Märchen …) und Titel mit gemeinsamen Wörtern, Ungesehenes und Neues zuerst. Vorgeschlagen wird nur, was die Kinderecke ohnehin zeigt (Freigaben, Sperren und Altersgrenze gelten weiter). Feste Regeln, keine KI.

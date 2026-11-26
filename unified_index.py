@@ -300,6 +300,15 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
         entries.sort(key=lambda e: (-(e['year'] or 0), _sort_title(e['title'])))
     else:
         entries.sort(key=lambda e: _sort_title(e['title']))
+    # 0.6.148 (Björn 26.11.2026: „geladene Filme und Serien bevorzugen“, auch im normalen Katalog): Titel mit lokaler
+    # Kopie stehen vorn, innerhalb beider Teile bleibt die gewählte Sortierung
+    try:
+        import local_titles
+        with db() as c:
+            if local_titles.mark_entries(c, entries, series=view == 'series'):
+                entries = local_titles.local_first(entries)
+    except Exception:
+        pass
     seconds['merge'] = round(time.monotonic() - started, 2)
     return {'entries': entries, 'counts': counts, 'errors': errors, 'pending': pending, 'seconds': seconds,
             'genre_counts': [{'genre': g, 'n': n} for g, n in sorted(genre_counts.items())],
@@ -449,6 +458,8 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                     out.append({'source': offer['source'], 'item': item})
             if out:
                 items.append({'title': entry['title'], 'year': entry['year'], 'offers': out})
+                if entry.get('local'):
+                    items[-1]['local'] = True        # 0.6.148: geladen (lokale Kopie)
     return {'items': items, 'total': len(index['entries']), 'offset': offset, 'page': PAGE,
             'counts': index['counts'], 'errors': index['errors'], 'genre_counts': index['genre_counts'],
             'merged': index['merged'], 'names': NAMES, 'pending': index.get('pending') or [],

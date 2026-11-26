@@ -103,6 +103,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-more .kids-thumb{background:linear-gradient(160deg,#6c5ce7,#20194f)}
 @media (hover:none){.kids-arrow{width:44px;height:44px;font-size:30px;opacity:.85}}
 .kids-new.kids-live{background:#ff3b5c;color:#fff;animation:none}
+/* 0.6.148: geladen (lokale Kopie, spielt ohne Internet) */
+.kids-local{position:absolute;top:10px;right:10px;background:#2fd47a;color:#06301a;font-weight:900;font-size:15px;padding:4px 10px;border-radius:999px;box-shadow:0 4px 10px rgba(0,0,0,.35)}
 
 /* 0.6.103: Hinweis, solange der Katalog nach dem Start noch zusammengestellt wird */
 .kids-loading{margin:8px 0 0;font-size:16px;color:var(--soft);text-align:center}

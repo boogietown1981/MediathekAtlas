@@ -84,13 +84,19 @@
     const b = make('button', 'kids-tile' + (tall ? ' is-poster' : '') + (v.done ? ' is-done' : '')); b.type = 'button';
     b.style.setProperty('--chip', color(v.type === 'abo' ? v.abo : v.id || v.title));
     const where = v.type === 'abo' ? channelOf(v).name || '' : v.type === 'series' ? 'Serie' : v.type === 'movie' ? 'Film' : '';
-    b.setAttribute('aria-label', (v.new ? 'Neu: ' : '') + v.title + (where ? ', ' + where : ''));
+    b.setAttribute('aria-label', (v.new ? 'Neu: ' : '') + v.title + (where ? ', ' + where : '') + (v.local && v.type !== 'abo' ? ', geladen' : ''));
+    if (v.local && v.type !== 'abo') b.classList.add('is-local');
     b.dataset.kind = v.type;
     const th = thumb(v, tall);
     th.append(make('span', 'kids-play', v.type === 'series' ? '☰' : '▶'));
     if (v.type === 'live') th.append(make('span', 'kids-new kids-live', 'LIVE'));
     if (v.new) th.append(make('span', 'kids-new', 'NEU'));
     else if (v.done) th.append(make('span', 'kids-seen', '✓'));
+    if (v.local && v.type !== 'abo') {   // 0.6.148: geladen – spielt auch ohne Internet
+      const tag = make('span', 'kids-local', '⬇ Geladen');
+      tag.title = v.type === 'series' ? 'Folgen geladen – spielen auch ohne Internet' : 'Geladen – spielt auch ohne Internet';
+      th.append(tag);
+    }
     if (v.duration && v.type !== 'series') th.append(make('span', 'kids-time', clock(v.duration)));
     if (v.progress > 0) { const p = make('span', 'kids-progress'); const f = make('span'); f.style.width = Math.round(v.progress * 100) + '%'; p.append(f); th.append(p); }
     let label = v.title;
@@ -143,7 +149,8 @@
   const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
   // 0.6.93: Filme und Serien in wenigen Gruppen statt einer langen Reihe (kids_catalog.GROUPS). Ohne Gruppen
   // (ältere Server) bleibt es bei einer Reihe „Filme“ bzw. „Serien“.
-  const byTitle = list => list.sort((a, b) => String(a.title).localeCompare(String(b.title), 'de', {sensitivity: 'base'}));
+  // 0.6.148 (Björn: „geladene Filme und Serien bevorzugen“): Titel mit lokaler Kopie stehen in jeder Reihe vorn
+  const byTitle = list => list.sort((a, b) => (!a.local - !b.local) || String(a.title).localeCompare(String(b.title), 'de', {sensitivity: 'base'}));
   const inGroup = (list, id) => list.filter(v => (v.theme || 'mehr') === id);
   function grouped(main, list, what) {
     const cut = (n, filter) => (n > STRIP ? {n, filter, name: 'Titel'} : null);
@@ -374,6 +381,7 @@
       // schwacher Rückfall, damit nach jedem Video etwas kommt: dieselbe Art (Abo-Video bzw. Film/Serie)
       if (!score) { if ((x.type === 'abo') !== (v.type === 'abo')) continue; score = .25; }
       if (x.done) score -= 2; else { score += 1; if (x.new) score += .5; if (x.progress > 0) score += .5; }
+      if (x.local && x.type !== 'abo') score += 1;     // 0.6.148: Geladenes bevorzugen (spielt ohne Netz)
       if (x.type === v.type) score += .5;
       scored.push([score, hash(String(v.key || v.id || v.title) + '|' + String(x.key || x.id || x.title)) % 1000, x]);
     }

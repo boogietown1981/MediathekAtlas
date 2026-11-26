@@ -423,6 +423,8 @@
       main.kind==='episode'&&main.episode?'S'+(main.season??'?')+' E'+main.episode:null,
       ...genres.slice(0,2),offers.length===1?main.badge:null].filter(Boolean).join(' · ');
     text.append(el('small',facts,'atlas-uc-meta'));
+    // 0.6.148 (Björn: geladene Filme und Serien bevorzugen): geladene Titel stehen vorn und sind markiert
+    if (item.local) {const tag=el('span','⬇ Geladen','atlas-uc-local');tag.title='Lokale Kopie vorhanden – spielt auch ohne Internet';text.append(tag);card.classList.add('atlas-uc-is-local');}
     // 0.6.5: languages (OmU, DE · EN, UT DE …) when they say more than "German"; the tooltip names the evidence
     const langOffer=offers.find(o=>o.lang);
     if (langOffer) {const chip=el('span','🗣 '+langOffer.lang,'atlas-uc-lang');chip.title=(langOffer.langText||'')+(offers.length>1?' ('+labelSource(langOffer)+')':'');text.append(chip);}
@@ -529,7 +531,7 @@
     const rows=[];
     for (const entry of data.items||[]) {
       const offers=(entry.offers||[]).map(o=>rowOf(o.source,o.item));
-      if (offers.length) rows.push({...offers[0],offers});
+      if (offers.length) rows.push({...offers[0],offers,local:!!entry.local});
     }
     const names=data.names||{};
     const notes=Object.entries(data.counts||{}).filter(([,n])=>n).map(([src,n])=>(names[src]||src)+': '+num(n));

@@ -209,6 +209,8 @@ def _collect_once(root, db, page, view, merge, modules, limit):
                 tile = None
             if tile and tile['id'] not in seen:
                 seen.add(tile['id'])
+                if _dict(entry).get('local'):
+                    tile['local'] = True            # 0.6.148: geladen (unified_index/local_titles)
                 if not tile.get('poster'):          # 0.6.121: Bild eines anderen Angebots desselben Titels
                     tile['poster'] = _entry_poster(entry)
                 try:
@@ -375,7 +377,10 @@ def _finish(db, root, out, pending):
     out['movies'] = _prefer_kids_offers(db, out['movies'])
     out['movies'] = _playable_films(db, out['movies'])
     out['movies'] = _drop_unplayable_platform_films(db, out['movies'])
-    out['movies'], out['series'] = _parent_blocks(db, out['movies']), _parent_blocks(db, out['series'])
+    out['movies'] = _parent_blocks(db, out['movies'])
+    out['movies'], numbered = numbered_series(out['movies'])       # 0.6.148: „NN. Reihenname …“ als eine Serie
+    out['series'] = _parent_blocks(db, out['series'] + numbered)
+    _mark_local(db, out)
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
@@ -572,6 +577,19 @@ def group_of(entry):
     return 'mehr'
 
 
+def _mark_local(db, out):
+    """0.6.148 (Björn 26.11.2026: „bitte auch geladene Videos bei der Anzeige bevorzugen, also geladene Filme und
+    Serien“; M1 Air mobil im Auto, oft ohne Netz): Kacheln mit lokaler Kopie tragen ``local`` (aus dem gemeinsamen
+    Index, local_titles). Die Kinderecke stellt sie in jeder Reihe nach vorn, markiert sie und bevorzugt sie in
+    „Mehr davon“. Nummern-Serie: geladen, sobald einer ihrer Filme geladen ist."""
+    for t in out.get('movies') or []:
+        if t.get('downloaded'):
+            t['local'] = True
+    for t in out.get('series') or []:
+        if any(f.get('local') or f.get('downloaded') for f in t.get('films') or ()):
+            t['local'] = True
+
+
 def _fold_small_groups(out):
     counts = {}
     for view in ('movies', 'series'):
@@ -581,6 +599,71 @@ def _fold_small_groups(out):
         for t in out.get(view) or []:
             if counts.get(t.get('group'), 0) < MIN_GROUP:
                 t['group'] = 'mehr'
+
+
+# 0.6.148 (Björn 26.11.2026, Bild „Abenteuer“: „die verwegene sollten als serie zusammengefasst werden“): Anbieter
+# führen Folgen einer Reihe oft als einzelne Filme mit vorangestellter Nummer („10. Die verwegenen Vier auf heißer
+# Spur“, „2. Die verwegenen Vier reißen aus“). Mindestens NUMBERED_MIN solche Filme desselben Anbieters mit
+# gemeinsamem Titelanfang (mindestens zwei Wörter) werden zu EINER Serienkachel; ihre Folgen sind genau diese Filme,
+# nach Nummer sortiert. Abspielen, Weiterschauen und Prüfung bleiben je Film wie vorher (gleiche ref/key).
+NUMBERED = re.compile(r'^\s*(\d{1,3})\s*[.):]\s+(\S.*)$')
+NUMBERED_MIN = 3
+NUMBERED_PREFIX = 'nummern-'
+
+
+def _word(w):
+    return re.sub(r'[^\w]+', '', w.casefold().replace('ß', 'ss'))
+
+
+def numbered_series(movies):
+    """(übrige Filme, neue Serienkacheln) – siehe NUMBERED."""
+    import hashlib
+    clusters = {}
+    for t in movies:
+        m = NUMBERED.match(str(t.get('title') or ''))
+        if not m or not isinstance(t.get('ref'), dict):
+            continue
+        words = m.group(2).split()
+        norm = [_word(w) for w in words]
+        if len(norm) < 2 or not norm[0] or not norm[1]:
+            continue
+        clusters.setdefault((t['source'], norm[0], norm[1]), []).append((int(m.group(1)), words, norm, t))
+    used, series = set(), []
+    for (source, _a, _b), members in clusters.items():
+        if len({n for n, *_ in members}) < NUMBERED_MIN:
+            continue
+        members.sort(key=lambda m: (m[0], m[3].get('title') or ''))
+        size = min(len(m[2]) for m in members)
+        common = 0
+        while common < size and all(m[2][common] == members[0][2][common] for m in members):
+            common += 1
+        name = ' '.join(members[0][1][:common]).rstrip(' -–—:,;.')
+        if common < 2 or len(name) < 8:
+            continue
+        key = NUMBERED_PREFIX + hashlib.sha1(('%s|%s' % (source, ' '.join(members[0][2][:common]))).encode('utf-8')).hexdigest()[:16]
+        films = []
+        for number, words, _norm, t in members:
+            ep = _episode(source, t['ref'], ' '.join(words), None, number, t.get('poster'), t.get('duration'))
+            for extra in ('channel', 'weg', 'downloaded', 'local'):
+                if t.get(extra):
+                    ep[extra] = t[extra]
+            films.append(ep)
+            used.add(t['id'])
+        groups = [m[3].get('group') or 'mehr' for m in members]
+        tile = _tile(source, 'series', name, min((m[3].get('year') or 9999) for m in members),
+                     next((m[3].get('poster') for m in members if m[3].get('poster')), ''), series={'id': key})
+        tile['group'] = max(groups, key=groups.count)
+        tile['films'] = films
+        tile['numbered'] = len(films)
+        series.append(tile)
+    if series:
+        try:
+            import diagnostics
+            diagnostics.event('kids_numbered_series', series=len(series), films=len(used),
+                              names=['%s (%d)' % (t['title'], t['numbered']) for t in series[:10]])
+        except Exception:
+            pass
+    return [t for t in movies if t['id'] not in used], series
 
 
 def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
@@ -666,8 +749,12 @@ def invalidate():
 
 
 def _listed(data, source, kind, field, value):
-    return any(t['source'] == source and (t.get(kind) or {}).get(field) == value
-               for t in data.get('movies', []) + data.get('series', []))
+    tiles = data.get('movies', []) + data.get('series', [])
+    if any(t['source'] == source and (t.get(kind) or {}).get(field) == value for t in tiles):
+        return True
+    # 0.6.148: Filme, die zu einer Nummern-Serie zusammengefasst sind, bleiben abspielbar
+    return kind == 'ref' and any(t['source'] == source and (f.get('ref') or {}).get(field) == value
+                                 for t in data.get('series', []) for f in t.get('films') or ())
 
 
 def allowed_ref(data, ref, c=None):
@@ -774,11 +861,25 @@ def _remember(source, episodes):
 def episodes(root, c, data, source, series_id, marks=None):
     """Folgen einer Kinderserie aus der Liste, sortiert; nur abspielbare und (ARD/ZDF) einzeln geprüfte."""
     marks = marks or {}
-    field = 'show' if source == 'mediatheken' else 'id'
+    field = 'show' if source == 'mediatheken' and not str(series_id).startswith(NUMBERED_PREFIX) else 'id'
     if source not in SOURCES or not _listed(data, source, 'series', field, series_id):
         raise ValueError('Diese Serie gibt es in der Kinderecke nicht')
     out = []
-    if source == 'mediatheken':
+    if str(series_id).startswith(NUMBERED_PREFIX):
+        # 0.6.148: Nummern-Serie aus Filmkacheln – die Folgen sind die (schon geprüften) Filme der Liste
+        tile = next(t for t in data.get('series', []) if t['source'] == source and t['series'].get('id') == series_id)
+        out = [dict(f) for f in tile.get('films') or []]
+        if c is not None and any(_dict(f.get('ref')).get('offer') for f in out):
+            try:
+                ids = [str(f['ref']['offer']) for f in out if _dict(f.get('ref')).get('offer')]
+                here = {r[0] for r in c.execute('SELECT o.id FROM offers o JOIN downloaded_items d ON d.identity=o.work_id '
+                                                'WHERE o.id IN (%s)' % ','.join('?' * len(ids)), ids)}
+            except Exception:
+                here = set()
+            for f in out:
+                if f.get('downloaded') or str(_dict(f.get('ref')).get('offer')) in here:
+                    f['local'] = True
+    elif source == 'mediatheken':
         import catalog
         paths = episode_paths(c, series_id)
         show = catalog.show_detail(c, series_id, limit=MAX_EPISODES)
@@ -799,6 +900,8 @@ def episodes(root, c, data, source, series_id, marks=None):
                 offer_id, channel = twin
             ep = _episode('mediatheken', {'offer': offer_id}, title, meta.get('season'), meta.get('episode'),
                           meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration'))
+            if e.get('downloaded'):
+                ep['local'] = True                                  # 0.6.148: geladene Folge markieren
             ep['channel'] = channel[:60]                            # 0.6.109: für die Prüfung je Folge sichtbar
             ep['weg'] = path                                        # 0.6.112: Zulassungsweg (episode_paths)
             out.append(ep)
@@ -1274,6 +1377,7 @@ def with_progress(data, marks):
         rows = []
         for t in data.get(view) or []:
             t = dict(t)
+            t.pop('films', None)          # 0.6.148: Folgen der Nummern-Serie liefert /api/kids-episodes
             mark = marks.get(t.get('key') or '') or {}
             t['done'] = bool(mark.get('done'))
             t['pos'] = 0 if t['done'] else (mark.get('pos') or 0)

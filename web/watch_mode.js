@@ -89,7 +89,7 @@
       const img = make('img'); img.alt = ''; img.loading = 'lazy'; img.decoding = 'async'; img.referrerPolicy = 'no-referrer'; img.src = o.image;
       img.onload = () => fallback.remove(); img.onerror = () => img.remove(); art.append(img);
     }
-    if (o.badge) art.append(make('span', 'wm-badge' + (o.badge === 'NEU' ? ' wm-new' : o.badge === 'LIVE' ? ' wm-live' : ''), o.badge));
+    if (o.badge) art.append(make('span', 'wm-badge' + (o.badge === 'NEU' ? ' wm-new' : o.badge === 'LIVE' ? ' wm-live' : o.badge === '⬇ GELADEN' ? ' wm-local' : ''), o.badge));
     if (o.time) art.append(make('span', 'wm-time', o.time));
     if (o.progress > 0) { const bar = make('span', 'wm-progress'); const f = make('i'); f.style.width = Math.round(Math.min(1, o.progress) * 100) + '%'; bar.append(f); art.append(bar); }
     art.append(make('span', 'wm-hover', o.hover || '▶'));
@@ -99,7 +99,7 @@
     return b;
   }
   const fromCatalog = item => tile({
-    title: item.title, image: posterOkay(item.poster) ? item.poster : '', shape: 'poster', hover: 'ℹ',
+    title: item.title, image: posterOkay(item.poster) ? item.poster : '', shape: 'poster', hover: 'ℹ', badge: item.local ? '⬇ GELADEN' : '',
     sub: [NAMES[item.source] || item.source, item.year, item.kind === 'series' || item.series_parent ? 'Serie' : null].filter(Boolean).join(' · '),
     action: () => openCatalog(item)});
   const fromContinue = e => tile({
@@ -158,7 +158,7 @@
     const rows = [];
     for (const entry of data.items || []) {
       const offers = (entry.offers || []).map(o => window.AtlasCards.rowOf(o.source, o.item));
-      if (offers.length) rows.push({...offers[0], offers});
+      if (offers.length) rows.push({...offers[0], offers, local: !!entry.local});
     }
     return {rows, data};
   }
