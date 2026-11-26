@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.144 – Filmliste ohne Wartezeit nach Markierlauf (26. November 2026)
+- Automatisch: tests/test_v06144.py (7), gesamte Suite, Node-Tests, Klicktests. Am Mac: Laufzeit Air direkt nach catalog_series_films_marked (PRUEFLISTE in releases/0.6.144).
+
 ## 0.6.143 – M1-Air-Diagnose (26. November 2026)
 - Automatisch: tests/test_v06143.py (14), gesamte Suite, Node-Tests, Klicktests. Am Mac: Startprotokoll (arm64-Auswahl), IMDb-Platzsperre an einer Kopie, Filmlisten-Fortsetzung (PRUEFLISTE in releases/0.6.143).
 

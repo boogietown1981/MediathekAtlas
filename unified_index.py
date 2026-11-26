@@ -376,11 +376,23 @@ def _cached(key, builder):
         return _build_into(key, builder)
 
 
-def invalidate():
+def invalidate(soft=False):
+    """Forget every index. ``soft`` (0.6.144, Mac-Prüfung 0.6.142: Filme 54 s direkt nach dem Reihenfilm-Markierlauf auf
+    dem Air, weil die Anfrage nach dem Leeren des Speichers hinter dem Kinderecke-Aufbau auf _BUILD wartete): the
+    indexes stay readable and count as outdated – the next reader gets the previous answer at once and the renewal
+    runs in the background. For content changes only; settings that must never show the old answer (Kinder-
+    Altersgrenze, Anzeige) keep the hard variant."""
     with _LOCK:
         _GEN[0] += 1
-        _CACHE.clear()
         _BUSY.clear()
+        if not soft:
+            _CACHE.clear()
+            return
+        for key, (_, value) in list(_CACHE.items()):
+            if value.get('pending'):
+                _CACHE.pop(key)
+            else:
+                _CACHE[key] = (float('-inf'), value)
 
 
 def page(root, db, kind='movies', query='', genre='', sort='title', collection='', offset=0,

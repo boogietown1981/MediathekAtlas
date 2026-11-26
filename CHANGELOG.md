@@ -1,3 +1,11 @@
+## 0.6.144 – Filmliste wartet nicht hinter anderen Aufbauten; auf 0.6.143
+
+- Befund 0.6.142 (BEFUND-06142.txt): Funktion bestanden; Air direkt nach `catalog_series_films_marked` /api/catalog movie 54,4 s (build_seconds 0,16 s), parallel unified_index_built 8,3 s und kids_shelf_prewarmed 47,4 s; erste Suche 6,5–10,1 s.
+- Ursache: `invalidate_listings` macht alle Listen veraltet; eine schnelle Liste (< LISTING_SLOW) wurde danach im Anfrage-Thread neu gebaut und wartete dafür auf `_LISTING_BUILD`, das Kinderecke und zusammengeführter Index belegten. Suchen warteten ebenso.
+- `catalog._listing_groups`: veraltete Liste wird auch dann sofort aus dem Speicher beantwortet und im Hintergrund erneuert, wenn `_LISTING_BUILD` belegt ist; Suchen bauen ohne `_LISTING_BUILD` auf der Verbindung der Anfrage.
+- `unified_index.invalidate(soft=True)` (alte Indizes bleiben lesbar, Erneuerung im Hintergrund) für den Reihenfilm-Markierlauf; harte Variante bleibt für Einstellungen (Kinder-Altersgrenze, Anzeige).
+- Tests: `tests/test_v06144.py` (7).
+
 ## 0.6.143 – M1-Air-Diagnose: IMDb-Platz, Filmliste mobil, filmfriend, Rosetta, Diagnose; auf 0.6.142
 
 - Grundlage: berichte/diagnose-2026-11-26-abend-06139-m1air.md (MacBook Air M1 8 GB, mobil, 0.6.139).

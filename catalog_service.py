@@ -1705,7 +1705,7 @@ class Service:
             diagnostics.event('catalog_series_films_marked',works=done[0],samples=done[1][:15])
             catalog.invalidate_listings()
             try:
-                import unified_index;unified_index.invalidate()
+                import unified_index;unified_index.invalidate(soft=True)   # 0.6.144: alte Liste sofort, Erneuerung im Hintergrund
             except Exception:pass
         return done
     def heal_derived_genres(self):

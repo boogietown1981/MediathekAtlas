@@ -765,8 +765,10 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             if age<=(LISTING_SEARCH_TTL if search else LISTING_TTL):
                 _LISTING_STATS['hits']+=1;return entry['rows']
             # Outdated: quick aggregations are simply repeated, slow ones answer from memory
-            # at once and are renewed in the background.
-            if entry['seconds']>=LISTING_SLOW:
+            # at once and are renewed in the background. 0.6.144 (Mac-Prüfung 0.6.142, Air: Filme 54 s direkt nach dem
+            # Reihenfilm-Markierlauf): a quick one too while another aggregation holds _LISTING_BUILD (Kinderecke,
+            # zusammengeführter Index) – before, the request queued behind them for the whole time.
+            if entry['seconds']>=LISTING_SLOW or _LISTING_BUILD.locked():
                 if not entry['busy']:
                     entry['busy']=True
                     threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()
@@ -789,6 +791,12 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
         if failed and failed[0]>=now:raise failed[1]
         _LISTING_STATS['pending']+=1
         raise ListingPending()
+    if search:
+        # 0.6.144 (Mac-Prüfung 0.6.142, Air: erste Suche 6,5–10 s): a search is a small, selective aggregation on the
+        # caller's connection; it no longer waits for a heavy one (Kinderecke, ganze Filmliste) to finish.
+        rows,seconds=_listing_build(c,where,args,grouping,order)
+        _listing_store(key,rows,seconds,search)
+        return rows
     with _LISTING_BUILD:
         with _LISTING_LOCK:
             entry=_LISTING.get(key)

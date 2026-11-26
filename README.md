@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.143
+# MediathekAtlas · 0.6.144
+
+## Neu in 0.6.144: Filmliste ohne Wartezeit nach Katalogänderungen
+- Ändert sich der Katalog im Hintergrund (zum Beispiel neue Reihenfilme), zeigt die Filmliste sofort den bisherigen Stand und aktualisiert sich im Hintergrund, statt hinter dem Aufbau der Kinderecke zu warten. Suchen warten ebenfalls nicht mehr darauf.
 
 ## Neu in 0.6.143: unterwegs und auf kleinen Macs
 - Das IMDb-Update startet nur, wenn neben dem Archiv genug Platz ist. Sonst steht „Wartet auf Speicherplatz“ da, nichts wird geladen, und alle 15 Minuten wird neu geprüft. Bereits geladene Dateien bleiben erhalten.
