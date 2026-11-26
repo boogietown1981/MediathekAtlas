@@ -1609,6 +1609,7 @@ class Service:
             self.merge_year_editions()
             self.unify_show_spelling()
             self.backfill_genres()
+            self.mark_series_films()
             self.file_film_trailers()
             gate=getattr(self,'first_format_pass',None)
             if gate is not None:gate.set()
@@ -1673,6 +1674,19 @@ class Service:
         if done and done[0]:
             diagnostics.event('catalog_genres_backfilled',works=done[0],samples=done[1][:10])
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        return done
+    SERIES_FILMS_EVERY=6*3600
+    def mark_series_films(self,force=False):
+        """0.6.137, at start and then every 6 h in the format pass: Reihenfilme also under Filme (catalog.mark_series_films)."""
+        if not force and time.monotonic()-getattr(self,'series_films_at',-1e9)<self.SERIES_FILMS_EVERY:return None
+        self.series_films_at=time.monotonic()
+        done=self.batched(catalog.mark_series_films,'series_films')
+        if done and done[0]:
+            diagnostics.event('catalog_series_films_marked',works=done[0],samples=done[1][:15])
+            catalog.invalidate_listings()
+            try:
+                import unified_index;unified_index.invalidate()
+            except Exception:pass
         return done
     def heal_derived_genres(self):
         """0.6.135, once (Merker derived_genres_v06135): catalog.heal_derived_genres in short batches; afterwards the

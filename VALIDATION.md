@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.137 – Reihenfilme auch unter Filme (26. November 2026)
+- Automatisch: tests/test_v06137.py (6), gesamte Suite, Node-Tests, Klicktests; Laufzeitmessung an der synthetischen 686k-Werke-DB. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.137).
+
 ## 0.6.136 – Korrektur Mac-Urteil 0.6.135 (25. November 2026)
 - Automatisch: tests/test_v06135.py (8), tests/test_v0697.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.136).
 

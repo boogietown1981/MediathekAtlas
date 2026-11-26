@@ -413,7 +413,7 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                     row = catalog.item(c, work)
                     if not row:
                         continue   # merged or removed since the index was built
-                    row.update(episodes=offer['episodes'], series_parent=work['kind'] == 'series')
+                    row.update(episodes=offer['episodes'], series_parent=work['kind'] == 'series' and kind == 'series')   # 0.6.137: Reihenfilm under Filme
                     lang = row.get('languages') or {}
                     row.update(lang=lang.get('short', ''), lang_text=lang.get('text', ''))
                     out.append({'source': 'mediatheken', 'item': row})

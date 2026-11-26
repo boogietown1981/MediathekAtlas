@@ -1,3 +1,11 @@
+## 0.6.137 – Reihenfilme in der Reihe und unter Filme; auf 0.6.136
+
+- Björn 26.11.2026 (Entscheidung „In der Reihe und unter Filme“): Reihenfilme sind Serienwerke (IMDb führt „Der Usedom-Krimi“ als Serie) und standen bisher nur in ihrer Reihe. Auswertung Air 0.6.136 (`filme-als-folge-06136.tsv`): 172 erkannte Serienwerke ab 80 min, davon 131 mit Sendertext „Spielfilm …“/„Fernsehfilm …“.
+- `catalog.series_film`: erkanntes Serienwerk (identified/matched/manual), längstes Angebot ≥ 80 min, Sendertext beginnt mit „(Zweiteiliger) Spielfilm/Fernsehfilm“ oder 3sat-Titel „- Spielfilm, Land Jahr“, `film_shaped` (kein Teil n/m mit m ≥ 3, keine datierte Ausgabe). Mehrteiler ohne Filmangabe (Das Adlon, Bodyguard (n/3), Oktoberfest 1900) bleiben nur Folgen.
+- `catalog.mark_series_films` setzt/entfernt `meta.series_film` mit `series_film_title` („Reihe – Filmtitel“) und `series_film_year` (aus dem Sendertext); läuft beim Start und alle 6 h im Formatdurchlauf (Ereignis `catalog_series_films_marked`). Werke werden nicht umgestuft, Folgensuche und Reihe bleiben unverändert.
+- `catalog.listing(kind='movie')` nimmt Reihenfilme mit auf (`MOVIE_VIEW_SQL`), je Werk eine Kachel ohne „Serie öffnen“; Titel und Jahr der Filmliste aus den neuen Feldern; `category_tree` zählt Reihenfilme zusätzlich je Film; `unified_index` zeigt sie unter Filme als Einzelfilm. Teilindex `work_series_film` wird nach dem Start angelegt (`build_deferred_indexes`); `GROUP BY +w.id` hält die Abfrage auf den Art-Indizes (synthetische 686k-DB: Filmliste 0,57 → 0,78 s, ohne Index 1,6 s).
+- Tests: `tests/test_v06137.py` (6).
+
 ## 0.6.136 – Korrektur Mac-Urteil 0.6.135 (Black Box, Nachrichtensendungen als Kultur); auf 0.6.135
 
 - Befund 0.6.135 (BEFUND-06135.txt): Wallander, More than Honey, Sport, Kinderecke, Export bestanden; zwei Funde.
