@@ -44,7 +44,8 @@ YEAR_TWO_RUNTIME=.08
 
 def year_two_runtime(c,duration):
     if c.get('provider')!='IMDb Offline':return False
-    try:ref=float(c.get('reference_runtime_seconds') or 0)
+    # 0.6.138 (Mac-Prüfung 0.6.136): IMDb Offline film candidates carry imdb_runtime_seconds, not reference_runtime_seconds
+    try:ref=float(c.get('imdb_runtime_seconds') or c.get('reference_runtime_seconds') or 0)
     except (TypeError,ValueError):return False
     return bool(ref and abs(ref-duration)<=max(300,ref*YEAR_TWO_RUNTIME))
 

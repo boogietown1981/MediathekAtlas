@@ -288,6 +288,11 @@ KIDS_HINT=next(p for p,g in GENRE_HINTS if g=='Kinder')
 SPORT_HINT=re.compile(r'(?i)\b(?:sport\w*|\w*(?:winter|motor|kampf|rad|wasser|schnee|extrem|frauen|behinderten|para)sport\w*|'
                       r'olympi\w*|paris 2024|fußball\w*|bundesliga|eishockey|handball|biathlon|formel 1|leichtathletik|tennis)\b')
 NAME_ONLY=('Kinder',)
+# 0.6.138 (Mac-Prüfung 0.6.136: „DER TAG in Berlin & Brandenburg“ Kultur, hessenschau ohne Genre): regionale
+# Nachrichtensendungen, deren Name kein Nachrichtenwort trägt; nur aus dem Namen. Sie sind Nachrichten, ein „Kultur“
+# aus der Beschreibung („Politik, Wirtschaft, Kultur“) entfällt. BR24 nicht (#BR24 Zeitreise ist Geschichte).
+NEWS_NAMES=re.compile(r'(?i)\b(?:hessenschau|abendschau|rbb24|lokalzeit|sachsenspiegel|nordmagazin|buten un binnen|'
+                      r'der tag in berlin|brandenburg aktuell|regionalzeit|landesschau aktuell)\b')
 
 def genres(*texts,names=None):
     """Genre hints from programme texts. 0.6.98 (Mac-Prüfung 0.6.91: NACHTCAFÉ, Politik, heute, Abendschau in der
@@ -298,9 +303,12 @@ def genres(*texts,names=None):
     own=' '.join(t for t in (texts if names is None else names) if t)
     out=[]
     sport=names is not None and bool(SPORT_HINT.search(own))
+    news=names is not None and not sport and bool(NEWS_NAMES.search(own))
     if sport:out.append('Sport')
+    if news:out.append('Nachrichten')
     for pattern,genre in GENRE_HINTS:
         if sport and genre in ('Nachrichten','Talk'):continue
+        if news and genre in ('Nachrichten','Kultur'):continue
         if pattern.search(own if genre in NAME_ONLY else text):out.append(genre)
     if 'Kinder' in out and len(out)>1:
         # the name says children's programme: that is the label the Kinderecke needs, keep it within the two

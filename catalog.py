@@ -2572,6 +2572,13 @@ def undo_short_year_close(c):
         out.append((row['id'],row['title']))
     return out
 
+def imdb_runtime(tconst):
+    try:
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        return archive.movie_runtime(tconst) if archive is not None and hasattr(archive,'movie_runtime') else None
+    except Exception:return None
+
 def rematch_movie_suggestions(c,after='',limit=500):
     """0.6.97, once: films „prüfen“ whose stored suggestions the year rule (matching.year_close) now accepts are
     matched. Returns (matched, last id or None)."""
@@ -2586,6 +2593,11 @@ def rematch_movie_suggestions(c,after='',limit=500):
         except (TypeError,ValueError):duration=0
         usable=[dict(x,source_duration_seconds=x.get('source_duration_seconds') or duration) for x in m.get('suggestions') or []
                 if isinstance(x,dict) and x.get('kind')=='movie']
+        # 0.6.138: suggestions stored before 0.6.138 lack the IMDb runtime of the two-year rule (More than Honey)
+        for x in usable:
+            if x.get('provider')=='IMDb Offline' and not x.get('imdb_runtime_seconds'):
+                runtime=imdb_runtime(x.get('reference_id'))
+                if runtime:x['imdb_runtime_seconds']=runtime
         judged=match_meta(m,{'title':row['title']})
         # 0.6.135: stored suggestions get the title-part comparison too (Wallander „… 01 - …“)
         import metadata
@@ -3210,8 +3222,11 @@ def heal_derived_genres(c,after='',limit=500):
         names=[n for n in dict.fromkeys(names) if n]
         # 0.6.136 (Mac-Prüfung 0.6.135): only a Sport name changes anything – Nachrichten/Talk stay as they were
         # (tagesschau24, hessenschau, phoenix vor ort lost them to Kultur or to nothing).
-        if not broadcaster.SPORT_HINT.search(' '.join(names)):continue
-        new=['Sport']+[g for g in old if g not in ('Nachrichten','Talk','Sport')]
+        # 0.6.138 (Mac-Prüfung 0.6.136): a regional news name (broadcaster.NEWS_NAMES) makes Nachrichten instead of Kultur.
+        joined=' '.join(names)
+        if broadcaster.SPORT_HINT.search(joined):new=['Sport']+[g for g in old if g not in ('Nachrichten','Talk','Sport')]
+        elif broadcaster.NEWS_NAMES.search(joined):new=(['Nachrichten']+[g for g in old if g not in ('Nachrichten','Kultur')])[:2]
+        else:continue
         if new==old:continue
         m['genres']=new
         if not new:m['genre_source']='Unbekannt'
@@ -3258,6 +3273,11 @@ def backfill_genres(c,imdb_genres=None,after='',limit=500,cache=None):
             try:found=normalized_genres(imdb_genres(ref))
             except Exception:found=[]
             source='IMDb Offline (nachgetragen)'
+        if not found and row['kind']=='series' and row['show_key']:
+            # 0.6.138 (Mac-Prüfung 0.6.136: hessenschau 3.442 ohne Genre): a regional news name is Nachrichten itself
+            import broadcaster
+            if broadcaster.NEWS_NAMES.search(' '.join(str(x or '') for x in (row['title'],m.get('title'),m.get('sendung_name')))):
+                found=['Nachrichten'];source='Sender (abgeleitet)'
         if not found and row['kind']=='series' and row['show_key']:
             if row['show_key'] not in siblings:
                 # 0.6.132 (Diagnose Air 0.6.131: „Rudis Rasselbande“, „Kunst + Krempel“ als Nachrichten): nur Geschwister

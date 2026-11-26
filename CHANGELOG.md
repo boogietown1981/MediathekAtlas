@@ -1,3 +1,10 @@
+## 0.6.138 – Korrektur Mac-Urteil 0.6.136 (More than Honey, DER TAG/hessenschau); auf 0.6.137
+
+- Befund 0.6.136 (BEFUND-06136.txt): Black Box, Wallander, tagesschau24 (Pro), phoenix vor ort, Sport, Regression bestanden.
+- D More than Honey blieb „prüfen“ (IMDb Offline 2012, Ähnlichkeit 1,0, 88,4 gegen 95 min): IMDb-Offline-Filmkandidaten trugen keine IMDb-Laufzeit (`reference_runtime_seconds` nur bei Serien), `matching.year_two_runtime` lehnte daher jeden Zwei-Jahres-Fall ab. Der Unit-Test 0.6.136 setzte die Laufzeit von Hand. Jetzt `imdb_runtime_seconds` am Kandidaten (eigenes Feld, die Kurzformat-Prüfung über `reference_runtime_seconds` bleibt unberührt), `Archive.movie_runtime` für gespeicherte Vorschläge älterer Versionen; Merker `film_rules_v06138` bewertet auf Kopien mit 0.6.135/0.6.136 die gespeicherten Vorschläge einmal neu, sobald das IMDb-Archiv bereit ist (Formatdurchlauf fragt erneut). Ereignis `catalog_film_rules_applied` meldet jetzt version 0.6.138.
+- G „DER TAG in Berlin & Brandenburg“ (Pro Kultur, Reihe nachgetragen) und hessenschau/„Unbekannt“: `broadcaster.NEWS_NAMES` (hessenschau, Abendschau, rbb24, Lokalzeit, Sachsenspiegel, Nordmagazin, buten un binnen, DER TAG in Berlin, Brandenburg aktuell, Regionalzeit, Landesschau aktuell; nur aus dem Namen, nicht BR24) ergibt Nachrichten, „Kultur“ aus der Beschreibung entfällt. Heilung `heal_derived_genres` (Merker `derived_genres_v06138`), danach Reihen-Nachtrag neu (`genre_backfill_v06138`); Werke ohne Genre mit solchem Namen bekommen Nachrichten direkt. „Politik“ bleibt ohne Genre (allgemeiner Rubrikname).
+- Tests: `tests/test_v06138.py` (4, End-to-End mit IMDb-Archiv).
+
 ## 0.6.137 – Reihenfilme in der Reihe und unter Filme; auf 0.6.136
 
 - Björn 26.11.2026 (Entscheidung „In der Reihe und unter Filme“): Reihenfilme sind Serienwerke (IMDb führt „Der Usedom-Krimi“ als Serie) und standen bisher nur in ihrer Reihe. Auswertung Air 0.6.136 (`filme-als-folge-06136.tsv`): 172 erkannte Serienwerke ab 80 min, davon 131 mit Sendertext „Spielfilm …“/„Fernsehfilm …“.

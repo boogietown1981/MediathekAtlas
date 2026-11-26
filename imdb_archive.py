@@ -700,6 +700,13 @@ class Archive:
             if self.version>=2:m.update(self._credits(c,fields['episode_reference_id']))
             result['candidates'].append(m)
         return result
+    def movie_runtime(self,tconst):
+        """0.6.138: IMDb runtime of one film in seconds, or None (stored suggestions of older versions lack it)."""
+        if not self.updated or not str(tconst or '').startswith('tt'):return None
+        rows=self._lookup('SELECT runtimeMinutes FROM title_basics WHERE tconst=?',(tconst,),('runtime',tconst))
+        try:minutes=int(rows[0]['runtimeMinutes']) if rows and rows[0]['runtimeMinutes'] else 0
+        except (TypeError,ValueError):minutes=0
+        return minutes*60 if 1<=minutes<=600 else None
     def genres(self,tconst):
         """0.6.127: IMDb genres of one title (genre backfill for matched works without genre)."""
         if not self.updated or not str(tconst or '').startswith('tt'):return []
@@ -719,6 +726,10 @@ class Archive:
                 # A separately catalogued series runtime is informative, but
                 # never proves an individual video is a full episode.
                 m['reference_runtime_seconds']=h['runtimeMinutes']*60
+            if kind=='movie' and h['runtimeMinutes'] and 1<=h['runtimeMinutes']<=600:
+                # 0.6.138 (Mac-Prüfung 0.6.136: More than Honey blieb „prüfen“): the two-year rule compares with the
+                # IMDb runtime (matching.year_two_runtime); a separate field, reference_runtime_seconds stays series-only
+                m['imdb_runtime_seconds']=h['runtimeMinutes']*60
             if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
                 delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
             if kind=='series':m.update(self._episode(row,meta,h['tconst'],title))

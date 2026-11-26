@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.137
+# MediathekAtlas · 0.6.138
+
+## Neu in 0.6.138: More than Honey, regionale Nachrichtensendungen
+- Filme, deren Jahr in der IMDb zwei Jahre abweicht, werden mit passender IMDb-Laufzeit jetzt tatsächlich verknüpft („More than Honey“ 2010/2012); „Black Box“ 2022 bleibt getrennt vom US-Film.
+- Regionale Nachrichtensendungen ohne Nachrichtenwort im Namen (hessenschau, DER TAG in Berlin & Brandenburg, Abendschau, Lokalzeit …) tragen das Genre Nachrichten statt Kultur oder keinem Genre.
 
 ## Neu in 0.6.137: Reihenfilme auch unter Filme
 - Filme einer Reihe („Der Usedom-Krimi“, „Die Füchsin“, „Die drei von der Müllabfuhr“, „Der Amsterdam-Krimi“) bleiben in ihrer Reihe und stehen zusätzlich einzeln unter Filme, mit Filmtitel und Jahr („Der Usedom-Krimi – Mörderische Brandung“, 2024).
