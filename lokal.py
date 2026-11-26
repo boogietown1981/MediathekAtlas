@@ -37,7 +37,9 @@ NAME = 'Lokales Archiv'
 VIDEO = frozenset({'.mkv', '.mp4', '.m4v', '.webm', '.mov', '.avi', '.ts', '.m2ts', '.mpg', '.mpeg', '.wmv', '.flv', '.divx'})
 SKIP_DIR = re.compile(r'(?i)^(?:\..*|@eadir|#recycle|#snapshot|\$recycle\.bin|system volume information|lost\+found|'
                       r'extras?|featurettes?|behind the scenes|deleted scenes|trailers?|samples?)$')
-SKIP_FILE = re.compile(r'(?i)(?:^\._|[-._ ](?:sample|trailer)(?:[-._ ]|$))')
+# 0.6.153 (Mac-Prüfung 0.6.151: „Metropolis (1927)/sample.mkv“ als zweiter Film): auch am Namensanfang
+# (nur der ganze Name „sample.mkv“, „trailer-2.mp4“ – „Trailer Park Boys S01E01“ bleibt)
+SKIP_FILE = re.compile(r'(?i)(?:^\._|[-._ ](?:sample|trailer)(?:[-._ ]|$)|^(?:sample|trailer)s?(?:[-._ ]?\d+)?\.[a-z0-9]+$)')
 MIN_SIZE = 20 * 1000 * 1000            # kleinere Dateien sind Vorschauen/Beispiele
 NFO_MAX = 1024 * 1024
 VALID_ID = re.compile(r'^[fes][0-9a-f]{20}$')
@@ -297,9 +299,10 @@ def describe(path, single_in_folder=True):
 
 # ------------------------------------------------------------------ Einlesen
 
-def walk(folder, deadline=None):
+def walk(folder, deadline=None, stats=None):
     """Videodateien unterhalb des Ordners: [(Pfad, Größe, Änderungszeit, Videos im selben Ordner)].
-    Folgt keinen symbolisch verknüpften Ordnern, überspringt Papierkörbe, Extras und Beispiele."""
+    Folgt keinen symbolisch verknüpften Ordnern, überspringt Papierkörbe, Extras und Beispiele.
+    ``stats['small']``: übergangene Videos unter MIN_SIZE (0.6.153: in der Oberfläche genannt)."""
     out, stack = [], [folder]
     while stack:
         if deadline and time.monotonic() > deadline:
@@ -320,6 +323,8 @@ def walk(folder, deadline=None):
                     st = entry.stat(follow_symlinks=False)
                     if st.st_size >= MIN_SIZE:
                         videos.append((entry.path, st.st_size, st.st_mtime))
+                    elif stats is not None:
+                        stats['small'] = stats.get('small', 0) + 1
             except OSError:
                 continue
         out += [(p, s, m, len(videos)) for p, s, m in videos]
@@ -339,7 +344,8 @@ def scan(root, now=None, seconds=1800.0, describe_fn=None):
     """Alle Ordner einlesen (inkrementell). Gibt eine Zusammenfassung je Ordner zurück."""
     now = time.time() if now is None else now
     describe_fn = describe_fn or describe
-    deadline = time.monotonic() + seconds
+    started = time.monotonic()
+    deadline = started + seconds
     summary = []
     for folder in dirs(root):
         entry = {'folder': folder, 'reachable': _reachable(folder), 'new': 0, 'changed': 0, 'gone': 0, 'files': 0}
@@ -352,7 +358,9 @@ def scan(root, now=None, seconds=1800.0, describe_fn=None):
                 summary.append(entry)
                 continue
             try:
-                files = walk(folder, deadline)
+                small = {}
+                files = walk(folder, deadline, small)
+                entry['small'] = small.get('small', 0)
             except TimeoutError:
                 entry['incomplete'] = True
                 summary.append(entry)
@@ -414,7 +422,8 @@ def scan(root, now=None, seconds=1800.0, describe_fn=None):
         diagnostics.event('lokal_scan', folders=len(summary), files=sum(e['files'] for e in summary),
                           new=sum(e['new'] for e in summary), changed=sum(e['changed'] for e in summary),
                           gone=sum(e['gone'] for e in summary), offline=sum(1 for e in summary if not e['reachable']),
-                          incomplete=sum(1 for e in summary if e.get('incomplete')))
+                          incomplete=sum(1 for e in summary if e.get('incomplete')),
+                          small=sum(e.get('small', 0) for e in summary), seconds=round(time.monotonic() - started, 2))
     except Exception:
         pass
     return summary

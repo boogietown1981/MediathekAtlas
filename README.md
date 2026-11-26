@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.152
+# MediathekAtlas · 0.6.153
+
+## Neu in 0.6.153: Filmreihen-Kacheln vorerst aus
+- Die Sammelkacheln „Filmreihe“ und „Mehrteiler“ aus 0.6.150 sind ab Werk ausgeschaltet, bis ihre Korrektur geprüft ist (Prüfung 0.6.150: eine Reihe doppelt, einzelne Tatort-Filme nicht erfasst, Fortsetzungen als Mehrteiler). Unter „Filme“ steht wieder jeder Film einzeln wie in 0.6.149. Alles andere aus 0.6.150–0.6.152 bleibt.
+- Lokale Filmarchive (Prüfung 0.6.151): „sample.mkv“ im Filmordner erscheint nicht mehr als zweiter Film; übergangene kleine Videos (unter 20 MB) werden je Ordner genannt; Tippfehler beim Ordner erscheinen nur als Hinweis, nicht als Fehler im Protokoll.
+- MKV-Dateien (lokales Archiv und eigene Downloads) brechen im eingebauten Player nicht mehr kurz nach dem Start ab bzw. springen nicht mehr zurück.
 
 ## Neu in 0.6.152: Korrekturen aus der Prüfung von 0.6.147
 - Kinderecke: Mit der Maus über „Mehr davon“ fahren hält den Countdown zur nächsten Folge an. „Mehr davon“ zeigt die laufende Reihe nicht mehr selbst an.

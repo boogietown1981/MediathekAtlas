@@ -22,7 +22,7 @@ function render(d){
   const li=el('li',undefined,'lokal-folder'+(f.reachable?'':' lokal-folder-offline'));
   li.append(el('strong',f.folder));
   li.append(el('span',' · '+(f.reachable?[num(f.files)+' Videos',f.new?num(f.new)+' neu':'',f.changed?num(f.changed)+' geändert':'',
-   f.gone?num(f.gone)+' entfernt':'',f.incomplete?'nicht fertig (Zeitbudget), wird fortgesetzt':''].filter(Boolean).join(' · '):
+   f.gone?num(f.gone)+' entfernt':'',f.small?num(f.small)+' kleine Videos unter 20 MB übergangen (Vorschauen/Beispiele)':'',f.incomplete?'nicht fertig (Zeitbudget), wird fortgesetzt':''].filter(Boolean).join(' · '):
    'nicht erreichbar – Titel bleiben erhalten und sind als offline markiert'),'muted'));
   list.append(li);}
  clearTimeout(timer);if(d.running&&card.open)timer=setTimeout(load,3000);}

@@ -332,16 +332,27 @@ def audio_copy(source,info=None):
     audio=next((s.get('codec_name') for s in info.get('streams',[]) if s.get('codec_type')=='audio'),None)
     return 'aac' if audio=='aac' else not audio or audio in BROWSER_AUDIO
 
-def start(args,session='',cleanup=None):
-    """Start ffmpeg; a new request of the same player session replaces its previous stream (seeking)."""
+MAX_RANGE_HELPERS=4   # 0.6.153: Hilfsströme für Byte-Anfragen des Browsers (server.stream), kurzlebig
+
+def start(args,session='',cleanup=None,helper=False):
+    """Start ffmpeg; a new request of the same player session replaces its previous stream (seeking).
+    helper=True (0.6.153): zusätzlicher Strom für eine Byte-Anfrage derselben Wiedergabe; er ersetzt nichts
+    und zählt nicht gegen MAX_STREAMS (eigene Grenze MAX_RANGE_HELPERS)."""
     with _LOCK:
-        old=_RUNNING.pop(session,None) if session else None
-        if old:_stop(old)
         for key,proc in list(_RUNNING.items()):
             if proc.poll() is not None:_RUNNING.pop(key,None)
-        if len(_RUNNING)>=MAX_STREAMS:raise RuntimeError('Es laufen bereits %d Wiedergaben. Bitte eine beenden und erneut versuchen.'%MAX_STREAMS)
+        if helper:
+            if sum(1 for p in _RUNNING.values() if getattr(p,'atlas_helper',False))>=MAX_RANGE_HELPERS:
+                raise RuntimeError('Zu viele gleichzeitige Teilanfragen. Bitte die Wiedergabe neu starten.')
+            session='%s#%x'%(session,id(args))
+        else:
+            old=_RUNNING.pop(session,None) if session else None
+            if old:_stop(old)
+            if sum(1 for p in _RUNNING.values() if not getattr(p,'atlas_helper',False))>=MAX_STREAMS:
+                raise RuntimeError('Es laufen bereits %d Wiedergaben. Bitte eine beenden und erneut versuchen.'%MAX_STREAMS)
         proc=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,stdin=subprocess.DEVNULL)
         proc.atlas_cleanup=cleanup   # one-level playlist of this stream
+        proc.atlas_helper=helper
         _RUNNING[session or str(id(proc))]=proc
     return proc
 

@@ -1,3 +1,13 @@
+## 0.6.153 – Filmreihen-/Mehrteiler-Kacheln ab Werk aus, MKV-Wiedergabe bricht nicht mehr ab; auf 0.6.152
+
+- Mac-Prüfung 0.6.150 NICHT BESTANDEN (BEFUND-06150.txt): „Praxis mit Meerblick“ als zwei Reihenkacheln (zwei show_keys), 35 Tatort-/Polizeiruf-Filme als eigene Filmwerke einzeln, „Zärtliche Chaoten – Teil 1/2“ (Fortsetzungen) als Mehrteiler, „Fremde Verwandte Teil“ falsch abgeschnitten, Teilzahl zählt Fassungen (AD) mit.
+- Damit lokale Archive (0.6.151) und die Prüfkorrekturen (0.6.152) ausgabefähig sind: `server.UNIFIED_REIHEN=False` – `/api/unified` fasst nur noch mit `?reihen=1` zusammen (zur Prüfung der Korrektur). Code und Tests von `collapse_reihen` bleiben; die Korrektur folgt als eigene Nummer.
+- Mac-Prüfung 0.6.151 BESTANDEN mit zwei Befunden (BEFUND-06151.txt):
+  - (1) `lokal.SKIP_FILE` erkennt „sample“/„trailer“ auch als ganzen Dateinamen („sample.mkv“, „trailer-2.mp4“); „Trailer Park Boys S01E01“ bleibt.
+  - (2) „MKV spult nicht, Dauer 10 s“: Zwei Ursachen. a) Echter Fehler, im Klicktest wiederholt nachgestellt (etwa jeder dritte Start): Chromium fragt den umgewandelten Strom einer lokalen Datei kurz nach dem Start zusätzlich ab einer Byte-Stelle an (`Range: bytes=1015808-`, `bytes=4194304-`). Der Server behandelte das als neue Wiedergabe derselben Sitzung, beendete den laufenden ffmpeg und lieferte wieder ab Byte 0 – die Wiedergabe brach ab („data source error“) bzw. sprang zurück. Jetzt: `server.stream` beantwortet `bytes=N-` (N > 0) bei Dateien mit 206 aus einem eigenen Hilfsstrom (`streaming.start(..., helper=True)`, ersetzt nichts, eigene Grenze `MAX_RANGE_HELPERS=4`), der die ersten N Bytes überspringt; die Umwandlung mit `-c copy` ist bytegleich wiederholbar (geprüft: `cmp` gleich). Danach 10 von 10 Starts und 4 von 4 Klicktests ohne Abbruch. b) Messmethode: im umgewandelten Strom kennt das Video-Element nur das gelieferte Stück (`duration` ≈ 10 s, `seekable` leer); direktes Setzen von `video.currentTime` fällt auf 0 zurück. Der Player selbst meldet die Gesamtdauer und spult über seine Leiste (0:00 → 1:04).
+  - Hinweise: je Ordner `small` (übergangene Videos unter 20 MB) in Stand und Oberfläche; `lokal_scan` mit `seconds` und `small`; `/api/lokal-dirs` und `/api/lokal-scan` antworten bei Eingabefehlern mit 400 statt eines ERROR-Eintrags.
+- Tests: `tests/test_v06153.py` (5), `tests/browser/lokal_archive.cjs` (+ sample.mkv, echte MKV mit ffmpeg: Start, Gesamtdauer, Spulen über die Leiste).
+
 ## 0.6.152 – Korrekturen Mac-Prüfung 0.6.147 (Countdown, eigene Reihe, Kinderecke-Bilder, Export, gealterte Liste); auf 0.6.151
 
 - Prüfvermerk 0.6.147 (BESTANDEN mit Hinweisen):

@@ -72,7 +72,9 @@ class Reihen(base.UnifiedPageTests):
         js = (ROOT / 'web' / 'unified_catalog.js').read_text(encoding='utf-8')
         self.assertIn("function showParts(query)", js);self.assertIn("'Filmreihe'", js);self.assertIn("' Teile'", js)
         self.assertIn("reihen: '0'", (ROOT / 'web' / 'watch_mode.js').read_text(encoding='utf-8'))
-        self.assertIn("reihen=q.get('reihen',['1'])[0]=='1'", (ROOT / 'server.py').read_text(encoding='utf-8'))
+        server = (ROOT / 'server.py').read_text(encoding='utf-8')
+        self.assertIn("reihen=q.get('reihen',['1' if UNIFIED_REIHEN else '0'])[0]=='1'", server)
+        self.assertIn('UNIFIED_REIHEN=False', server)      # 0.6.153: ab Werk aus, bis die Korrektur geprüft ist
 
 
 if __name__ == '__main__':

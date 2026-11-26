@@ -1,5 +1,5 @@
 import subprocess,sys,tempfile,types,platform
-import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib, re
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
@@ -617,6 +617,10 @@ RECOGNITION_STALE=6*3600
 # bis 30 s auf die frische Zählung, der Export gibt jedem Teil aber nur 20 s – dann fehlte die ganze Übersicht. Jetzt
 # höchstens 15 s warten, danach die alte Zählung mit age_hours/loading ausgeben (frisch beim nächsten Export).
 EXPORT_RECOGNITION_WAIT=15.0
+# 0.6.153 (Mac-Prüfung 0.6.150 nicht bestanden: Praxis mit Meerblick doppelt, 35 Tatort/Polizeiruf-Filme einzeln, Fortsetzungen
+# und Fassungen als „Mehrteiler“): Filmreihen-/Mehrteiler-Kacheln ab Werk aus, bis die Korrektur geprüft ist. Mit ?reihen=1
+# weiter abrufbar (Prüfung); lokale Archive (0.6.151) und Korrekturen (0.6.152) hängen nicht daran.
+UNIFIED_REIHEN=False
 def catalog_status():
     global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
@@ -764,6 +768,16 @@ class Handler(BaseHTTPRequestHandler):
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
             return self.send_file(Path(source['path']).resolve(),True)
         if self.command=='HEAD':return self.send(b'',ctype='video/mp4')
+        # 0.6.153 (Mac-Prüfung 0.6.151, MKV springt zurück): Chromium fragt den umgewandelten Strom einer lokalen
+        # Datei manchmal zusätzlich ab einer Byte-Stelle an („bytes=1015808-“), während die erste Anfrage noch läuft.
+        # Bisher ersetzte das den laufenden Strom derselben Sitzung und lieferte wieder ab Byte 0 – die Wiedergabe
+        # brach ab („data source error“) oder sprang. Die Umwandlung einer Datei ist bytegleich wiederholbar
+        # (-c copy, gleiche Befehlszeile): ein eigener Hilfsstrom überspringt die ersten Bytes und antwortet mit 206;
+        # der Hauptstrom bleibt unberührt.
+        skip=0
+        if source.get('kind')=='file':
+            m=re.fullmatch(r'bytes=(\d+)-',(self.headers.get('Range') or '').strip())
+            if m:skip=int(m.group(1))
         try:start=max(0.0,float(q.get('t',['0'])[0] or 0))
         except ValueError:start=0.0
         # 0.5.63: ffmpeg gets one quality level instead of the whole master playlist (starts sooner,
@@ -779,7 +793,7 @@ class Handler(BaseHTTPRequestHandler):
             if q.get('audio',[''])[0]:
                 try:track=tracks.audio_index(source,q.get('audio',[''])[0])
                 except Exception:track=None
-            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist,audio_track=track),q.get('session',[''])[0][:64],cleanup=playlist)
+            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist,audio_track=track),q.get('session',[''])[0][:64],cleanup=playlist,helper=bool(skip))
         except RuntimeError as e:
             _unlink(playlist);return self.send({'error':str(e)},429)
         except (ValueError,OSError) as e:
@@ -787,12 +801,23 @@ class Handler(BaseHTTPRequestHandler):
         sent=0;first_after=None
         try:
             first=proc.stdout.read1(65536) if hasattr(proc.stdout,'read1') else proc.stdout.read(65536)
+            left=skip
+            while first and left>=len(first):
+                left-=len(first);first=proc.stdout.read1(1048576) if hasattr(proc.stdout,'read1') else proc.stdout.read(1048576)
+            if first and left:first=first[left:]
+            if not first and skip:
+                code,err=streaming.finish(proc)
+                if code==0:   # hinter dem Ende der Umwandlung
+                    self.send_response(416);self.send_header('Content-Range','bytes */*');self.send_header('Content-Length','0');self.end_headers();return
+                diagnostics.event('playback_range_failed',level='WARNING',origin=source['kind'],code=code,skip=skip,detail=err)
+                return self.send({'error':'Teilanfrage abgebrochen'},502)
             if not first:
                 code,err=streaming.finish(proc)
                 diagnostics.event('playback_failed',level='ERROR',origin=source['kind'],code=code,detail=err)
                 return self.send({'error':'Wiedergabe konnte nicht gestartet werden. Details im Live-Protokoll.'},502)
             first_after=round(time.monotonic()-began,2)
-            self.send_response(200);self.send_header('Content-Type','video/mp4');self.send_header('Cache-Control','no-store')
+            self.send_response(206 if skip else 200);self.send_header('Content-Type','video/mp4');self.send_header('Cache-Control','no-store')
+            if skip:self.send_header('Content-Range','bytes %d-%d/*'%(skip,skip+STREAM_RANGE_SPAN-1))
             self.send_header('X-Content-Type-Options','nosniff');self.send_header('Connection','close');self.end_headers()
             chunk=first
             while chunk:
@@ -1294,7 +1319,9 @@ def get_lokal(self,path):
 
 @ROUTES.post('/api/lokal-dirs')
 def post_lokal_dirs(self,path,d):
-    folders=lokal.set_dirs(ROOT,d.get('dirs') or '')
+    # 0.6.153: Eingabefehler (relativer Pfad, Laufwerkswurzel) als Antwort, nicht als ERROR im Protokoll
+    try:folders=lokal.set_dirs(ROOT,d.get('dirs') or '')
+    except ValueError as e:return self.send({'error':str(e)},400)
     local_titles.invalidate();unified_index.invalidate(soft=True)
     started=lokal.start_sync(ROOT) if folders else False
     diagnostics.event('lokal_dirs_saved',folders=len(folders))
@@ -1302,7 +1329,7 @@ def post_lokal_dirs(self,path,d):
 
 @ROUTES.post('/api/lokal-scan')
 def post_lokal_scan(self,path,d):
-    if not lokal.dirs(ROOT):raise ValueError('Noch kein Archivordner eingetragen')
+    if not lokal.dirs(ROOT):return self.send({'error':'Noch kein Archivordner eingetragen'},400)
     return self.send({**lokal.state(ROOT),'started':lokal.start_sync(ROOT)})
 
 @ROUTES.post('/api/lokal-enrich')
@@ -1687,7 +1714,7 @@ def get_unified(self,path):
     return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
         genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
         offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES,
-        language=q.get('lang',[''])[0],only=q.get('only',[''])[0],reihen=q.get('reihen',['1'])[0]=='1'))   # 0.6.150: Filmreihen zusammengefasst
+        language=q.get('lang',[''])[0],only=q.get('only',[''])[0],reihen=q.get('reihen',['1' if UNIFIED_REIHEN else '0'])[0]=='1'))   # 0.6.150: Filmreihen zusammengefasst
 
 @ROUTES.get('/api/display')
 def get_display(self,path):
@@ -2721,6 +2748,7 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
+STREAM_RANGE_SPAN=1<<40   # Länge des umgewandelten Stroms ist vorab unbekannt (206 nach einer Byte-Anfrage, s. stream)
 SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/lokal_archive.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
