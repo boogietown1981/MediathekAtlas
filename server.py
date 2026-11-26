@@ -2762,6 +2762,11 @@ if __name__=='__main__':
                 started=time.monotonic();_kids_shelf()
                 diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2),after_heals=settled)
             except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
+            # 0.6.146: Bilder für Kinderecke-Reihen ohne Bild von der ARD-/ZDF-Mediathek, danach stündlich
+            while not STOP.is_set():
+                try:kids_catalog.fetch_missing_pictures(ROOT,db)
+                except Exception as e:diagnostics.error('kids_pictures_failed',e)
+                if STOP.wait(3600):return
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke
         threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),

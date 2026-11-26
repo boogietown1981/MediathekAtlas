@@ -23,6 +23,7 @@ im Profil „Kinder“. Dieses Modul ergänzt Filme und Serien aus dem gemeinsam
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -258,14 +259,112 @@ def _fill_pictures(db, out):
                         t['poster'] = _https(row[0])
         except Exception:
             pass
-    for view in ('movies', 'series'):
-        known = {}
+        stored = _stored_pictures(db)      # 0.6.146: Bild der Sendung von der ARD-/ZDF-Mediathek
+        for t in shows:
+            if not t.get('poster'):
+                t['poster'] = _https((stored.get(t['series']['show']) or {}).get('url'))
+    # 0.6.146: gleichnamige Kachel auch über Filme und Serien hinweg (zuerst dieselbe Art)
+    known = {view: {} for view in ('movies', 'series')}
+    for view in known:
         for t in out.get(view) or []:
             if t.get('poster'):
-                known.setdefault(_title_key(t.get('title')), t['poster'])
+                known[view].setdefault(_title_key(t.get('title')), t['poster'])
+    for view, other in (('movies', 'series'), ('series', 'movies')):
         for t in out.get(view) or []:
             if not t.get('poster'):
-                t['poster'] = known.get(_title_key(t.get('title')), '')
+                key = _title_key(t.get('title'))
+                t['poster'] = known[view].get(key) or known[other].get(key, '')
+
+
+# 0.6.146 (Björn 26.11.2026, Bild „Tiere & Natur“/„Wissen“: „Checker Reportagen“, „Carolin testet“, „Die wilde Natur“ …
+# weiter nur mit Anfangsbuchstaben): Mediatheken-Reihen, die nirgends im Bestand ein Bild haben (kein Werk der Reihe
+# mit Bild, TMDB/TVDB ohne Eintrag), bekommen das Bild der Sendung bzw. einer Folge von der ARD- oder ZDF-Mediathek
+# (broadcaster.lookup_limited: dieselbe gedrosselte, pausierbare Abfrage wie die Erkennung). KiKA, arte und 3sat
+# bleiben ohne Abfrage (keine freigegebene Schnittstelle). Ergebnis und Fehlschlag merkt sich catalog_state.
+PICTURES_KEY = 'kids_pictures'
+PICTURE_RETRY = 7 * 86400     # eine Reihe ohne Bild wird nach einer Woche wieder gefragt
+PICTURE_BATCH = 20            # Abfragen je Durchgang (das Stundenlimit teilt sie sich mit der Erkennung)
+PICTURE_OFFERS = 6            # Angebote je Reihe, die höchstens versucht werden
+
+
+def _stored_pictures(db):
+    if db is None:
+        return {}
+    try:
+        import catalog
+        with db() as c:
+            value = catalog.get_state(c, PICTURES_KEY, {}) or {}
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _missing_shows(shelf):
+    """Mediatheken-Reihen der zuletzt gebauten Liste ohne Bild: [(show_key, Titel)]."""
+    seen, out = set(), []
+    for t in (shelf or {}).get('series') or []:
+        show = str((t.get('series') or {}).get('show') or '')
+        if t.get('source') == 'mediatheken' and show and not t.get('poster') and show not in seen:
+            seen.add(show);out.append((show, str(t.get('title') or '')))
+    return out
+
+
+def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None):
+    """Bilder für Reihen ohne Bild holen (Hintergrund, stündlich). Gibt (gefunden, gefragt, ohne Sender-Seite) zurück."""
+    import catalog
+    import broadcaster
+    now = time.time() if now is None else now
+    lookup = lookup or broadcaster.lookup_limited
+    with _LOCK:
+        shelf = _LAST.get(str(root))
+    stored = _stored_pictures(db)
+    found = asked = no_page = 0
+    names = []
+    for show, title in _missing_shows(shelf):
+        entry = stored.get(show) or {}
+        if entry.get('url') or now - float(entry.get('at') or 0) < PICTURE_RETRY:
+            continue
+        if asked >= limit:
+            break
+        try:
+            with db() as c:
+                rows = [json.loads(r[0]) for r in c.execute(
+                    "SELECT o.payload FROM offers o JOIN works w ON w.id=o.work_id WHERE w.show_key=? AND o.active=1 "
+                    "ORDER BY o.seen DESC LIMIT 40", (show,))]
+        except Exception:
+            continue
+        rows = [r for r in rows if isinstance(r, dict) and broadcaster.reference(r)][:PICTURE_OFFERS]
+        url, stopped = '', False
+        if not rows:
+            no_page += 1;names.append(title[:60])
+        for row in rows:
+            asked += 1
+            try:
+                info = lookup(row) or {}
+            except broadcaster.Unavailable:
+                stopped = True;break          # pausiert oder Stundenlimit: später weiter, nichts merken
+            except Exception:
+                continue
+            url = _https(info.get('series_image')) or _https(info.get('image'))
+            if url:
+                break
+        if stopped:
+            break
+        stored[show] = {'url': url, 'at': now}
+        found += bool(url)
+    if found or no_page or asked:
+        try:
+            with db() as c:
+                catalog.set_state(c, PICTURES_KEY, stored)
+        except Exception:
+            pass
+        try:
+            import diagnostics
+            diagnostics.event('kids_pictures_fetched', found=found, asked=asked, without_sender_page=no_page,
+                              examples_without_page=names[:10], known=sum(1 for v in stored.values() if v.get('url')))
+        except Exception:
+            pass
+    return found, asked, no_page
 
 
 def _finish(db, root, out, pending):

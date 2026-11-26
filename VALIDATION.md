@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.146 – Kinderecke Kachelhöhe, Bilder (26. November 2026)
+- Automatisch: tests/test_v06146.py (5), gesamte Suite, Node-Tests, Klicktests. Am Mac: Kinderecke ansehen, kids_pictures_fetched (PRUEFLISTE in releases/0.6.146).
+
 ## 0.6.145 – filmfriend, Senderstatistik (26. November 2026)
 - Automatisch: tests/test_v06145.py (5), gesamte Suite, Node-Tests, Klicktests. Am Mac: filmfriend-Abgleich am echten Netz, Diagnose-Export (PRUEFLISTE in releases/0.6.145).
 

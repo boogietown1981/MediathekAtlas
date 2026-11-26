@@ -120,8 +120,10 @@
     requestAnimationFrame(update); box.kidsUpdate = update;
     wrap.append(prev, box, next); return wrap;
   }
-  function moreTile(n, filter, name) {
-    const b = make('button', 'kids-tile kids-more is-poster'); b.type = 'button';
+  // 0.6.146 (Björn 26.11.2026, Bild „CHECKER WELT“/„Jordan Matter“: halbe Kachel leer): die „Alle …“-Kachel hat die Form
+  // ihrer Reihe; als Hochkant-Kachel in einer Videoreihe machte sie die ganze Reihe so hoch wie ein Filmplakat.
+  function moreTile(n, filter, name, tall) {
+    const b = make('button', 'kids-tile kids-more' + (tall ? ' is-poster' : '')); b.type = 'button';
     b.setAttribute('aria-label', 'Alle ' + n + ' ' + name + ' anzeigen');
     const th = make('span', 'kids-thumb no-picture'); th.append(make('span', 'kids-letter', '→'));
     b.append(th, make('span', 'kids-title', 'Alle ' + n + ' ' + name));
@@ -134,7 +136,7 @@
     const box = make('div', grid ? 'kids-grid' : 'kids-strip');
     if (list.some(v => v.type === 'movie' || v.type === 'series')) box.classList.add('is-posters');
     for (const v of list) box.append(tile(v, all || list));
-    if (more) box.append(moreTile(more.n, more.filter, more.name));
+    if (more) box.append(moreTile(more.n, more.filter, more.name, box.classList.contains('is-posters')));
     sec.append(h, grid ? box : scroller(box)); return sec;
   }
   const STRIP = 40;          // Kacheln je Reihe in „Alle“; der Rest über „Alle …“ bzw. die Auswahl oben

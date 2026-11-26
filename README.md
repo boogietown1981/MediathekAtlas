@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.145
+# MediathekAtlas · 0.6.146
+
+## Neu in 0.6.146: Kinderecke kompakter und mit mehr Bildern
+- Die Reihen der YouTube-Kanäle sind nur noch so hoch wie ihre Kacheln (die „Alle …“-Kachel am Ende hat jetzt die Form der Reihe).
+- Reihen aus den Mediatheken, für die es nirgends ein Bild gab, bekommen das Bild der Sendung von der ARD- bzw. ZDF-Mediathek (im Hintergrund, stündlich, mit derselben Drosselung wie die Erkennung). Gleichnamige Filme und Serien teilen sich ein Bild.
 
 ## Neu in 0.6.145: filmfriend vollständig
 - Liefert filmfriend eine Seite des Katalogs nicht, fragt MediathekAtlas sie nach kurzer Pause noch einmal ab und liest danach die übrigen Seiten weiter. Fehlt eine Seite trotzdem oder kommen deutlich weniger Titel als beim letzten vollständigen Abgleich, gilt der Abgleich als teilweise und die bisherigen Titel bleiben sichtbar (vorher fehlte nach einem einzigen Fehler gut ein Drittel des Katalogs für einen Tag).

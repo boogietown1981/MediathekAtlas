@@ -1,3 +1,11 @@
+## 0.6.146 – Kinderecke: Kachelhöhe der Kanalreihen, Bilder für Reihen ohne Bild; auf 0.6.145
+
+- Björn 26.11.2026 (zwei Bildschirmfotos): „CHECKER WELT“/„Jordan Matter“ mit halb leeren Kacheln; „Checker Reportagen“, „Carolin testet“, „#WIR – Freundschaft grenzenlos“, „Die wilde Natur“ u. a. nur mit Anfangsbuchstaben.
+- Ursache Kachelhöhe: `moreTile` („Alle 51 Videos“) war immer eine Hochkant-Kachel (2:3); in einer 16:9-Videoreihe zog sie alle Kacheln der Reihe auf Plakathöhe. Jetzt hat sie die Form ihrer Reihe.
+- Ursache Bilder: `_fill_pictures` (0.6.121) findet nur Bilder, die schon im Bestand sind; Mediatheken-Reihen ohne TMDB/TVDB-Eintrag und ohne Folge mit Bild blieben leer. Neu `kids_catalog.fetch_missing_pictures` (Server, nach dem Vorabbau der Kinderecke, dann stündlich): je Reihe ohne Bild höchstens 6 Angebote mit ARD-/ZDF-Mediathek-Seite, `broadcaster.lookup_limited` (Stundenlimit, Pause), Sendungsbild vor Folgenbild, gemerkt in `catalog_state.kids_pictures` (ohne Bild: neuer Versuch nach 7 Tagen; pausiert: nichts gemerkt). KiKA-, arte- und 3sat-Seiten werden nicht abgefragt (keine freigegebene Schnittstelle) und im Ereignis `kids_pictures_fetched` als `examples_without_page` genannt.
+- `_fill_pictures`: gleichnamige Kachel auch über Filme und Serien hinweg.
+- Tests: `tests/test_v06146.py` (5).
+
 ## 0.6.145 – filmfriend nach Seitenfehler vollständig, Senderstatistik in der Diagnose aktuell; auf 0.6.144
 
 - Grundlage: berichte/diagnose-2026-11-26-abend-06139-pro.md (B1, B2).
