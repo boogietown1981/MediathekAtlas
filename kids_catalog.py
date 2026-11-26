@@ -135,6 +135,8 @@ def _from_offer(offer, view, limit=None):
                      duration=src.get('duration'))
         if item.get('downloaded'):
             tile['downloaded'] = True      # 0.6.132: lokale Kopie spielt auch ohne aktives Angebot
+            if item.get('file_state') == 'missing':
+                tile['file_missing'] = True    # 0.6.152: Datei verschoben/gelöscht – nicht „geladen“
         return tile
     item_id = str(item.get('id') or '')
     if source == 'netzkino':
@@ -287,6 +289,7 @@ PICTURES_KEY = 'kids_pictures'
 PICTURE_RETRY = 7 * 86400     # eine Reihe ohne Bild wird nach einer Woche wieder gefragt
 PICTURE_BATCH = 20            # Abfragen je Durchgang (das Stundenlimit teilt sie sich mit der Erkennung)
 PICTURE_OFFERS = 6            # Angebote je Reihe, die höchstens versucht werden
+LAST_FETCH = {'stopped': False}
 
 
 def _stored_pictures(db):
@@ -311,12 +314,50 @@ def _missing_shows(shelf):
     return out
 
 
-def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None):
-    """Bilder für Reihen ohne Bild holen (Hintergrund, stündlich). Gibt (gefunden, gefragt, ohne Sender-Seite) zurück."""
+_PHRASE = lambda t: re.sub(r'\s+', ' ', re.sub(r'[^0-9a-zäöüß]+', ' ', str(t or '').casefold())).strip()
+
+
+def youtube_picture(root, title):
+    """0.6.152 (Mac-Prüfung 0.6.147: KiKA-Reihen wie „Checker Tobi“, „Anna, Paula, Pia …“ bleiben ohne Bild, KiKA wird
+    nicht abgefragt): Vorschaubild eines YouTube-Videos aus dem eigenen Bestand (Kinder-Abos, YouTube-Katalog), dessen
+    Titel den Reihennamen als ganze Wortfolge enthält. Kein Netz; Bilder nur von i.ytimg.com. '' ohne Treffer."""
+    phrase = _PHRASE(title)
+    if len(phrase) < 6 or ' ' not in phrase and len(phrase) < 10:
+        return ''       # zu kurz/zu allgemein („Anna“, „Wissen“)
+    first = phrase.split(' ')[0]
+    try:
+        import youtube
+        ydb = youtube._connect(root)
+    except Exception:
+        return ''
+    try:
+        rows = []
+        if ydb.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='youtube_abo_videos'").fetchone():
+            rows += ydb.execute("SELECT title, poster FROM youtube_abo_videos WHERE title LIKE ? ORDER BY found DESC LIMIT 60",
+                                ('%' + first + '%',)).fetchall()
+        rows += ydb.execute("SELECT title, poster FROM youtube_items WHERE title LIKE ? AND poster LIKE 'https://i.ytimg.com/%' "
+                            "ORDER BY seen DESC LIMIT 60", ('%' + first + '%',)).fetchall()
+    except Exception:
+        return ''
+    finally:
+        ydb.close()
+    for video_title, poster in rows:
+        url = _https(poster)
+        if url.startswith('https://i.ytimg.com/') and (' ' + phrase + ' ') in (' ' + _PHRASE(video_title) + ' '):
+            return url
+    return ''
+
+
+def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None, youtube=None):
+    """Bilder für Reihen ohne Bild holen (Hintergrund, stündlich). Gibt (gefunden, gefragt, ohne Sender-Seite) zurück;
+    ``LAST_FETCH['stopped']``: Sender-Abfrage pausiert/Stundenlimit, dann früher erneut versuchen."""
     import catalog
     import broadcaster
     now = time.time() if now is None else now
-    lookup = lookup or broadcaster.lookup_limited
+    lookup = lookup or (lambda row: broadcaster.lookup_limited(row, purpose='pictures'))
+    youtube = youtube or (lambda title: youtube_picture(root, title))
+    LAST_FETCH['stopped'] = False
+    via_youtube = 0
     with _LOCK:
         shelf = _LAST.get(str(root))
     stored = _stored_pictures(db)
@@ -324,7 +365,8 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None)
     names = []
     for show, title in _missing_shows(shelf):
         entry = stored.get(show) or {}
-        if entry.get('url') or now - float(entry.get('at') or 0) < PICTURE_RETRY:
+        # 0.6.152: Fehlschläge älterer Versionen (ohne YouTube-Rückfall, ohne 'v') gleich erneut versuchen
+        if entry.get('url') or (entry.get('v') == 2 and now - float(entry.get('at') or 0) < PICTURE_RETRY):
             continue
         if asked >= limit:
             break
@@ -338,7 +380,7 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None)
         rows = [r for r in rows if isinstance(r, dict) and broadcaster.reference(r)][:PICTURE_OFFERS]
         url, stopped = '', False
         if not rows:
-            no_page += 1;names.append(title[:60])
+            no_page += 1
         for row in rows:
             asked += 1
             try:
@@ -351,8 +393,14 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None)
             if url:
                 break
         if stopped:
+            LAST_FETCH['stopped'] = True
             break
-        stored[show] = {'url': url, 'at': now}
+        if not url:          # ohne Senderseite oder ohne Sendungsbild: Vorschaubild aus dem eigenen YouTube-Bestand
+            url = youtube(title)
+            via_youtube += bool(url)
+        if not rows and not url:
+            names.append(title[:60])
+        stored[show] = {'url': url, 'at': now, 'v': 2}
         found += bool(url)
     if found or no_page or asked:
         try:
@@ -363,6 +411,7 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None)
         try:
             import diagnostics
             diagnostics.event('kids_pictures_fetched', found=found, asked=asked, without_sender_page=no_page,
+                              from_youtube=via_youtube, stopped=LAST_FETCH['stopped'],
                               examples_without_page=names[:10], known=sum(1 for v in stored.values() if v.get('url')))
         except Exception:
             pass
@@ -583,11 +632,16 @@ def _mark_local(db, out):
     Index, local_titles). Die Kinderecke stellt sie in jeder Reihe nach vorn, markiert sie und bevorzugt sie in
     „Mehr davon“. Nummern-Serie: geladen, sobald einer ihrer Filme geladen ist."""
     for t in out.get('movies') or []:
-        if t.get('downloaded'):
+        if _has_file(t):
             t['local'] = True
     for t in out.get('series') or []:
-        if any(f.get('local') or f.get('downloaded') for f in t.get('films') or ()):
+        if any(f.get('local') or _has_file(f) for f in t.get('films') or ()):
             t['local'] = True
+
+
+def _has_file(t):
+    """0.6.152 (Mac-Prüfung 0.6.149: Downloads galten auch ohne Datei als geladen): nur mit vorhandener Datei."""
+    return bool(t.get('downloaded')) and not t.get('file_missing')
 
 
 def _fold_small_groups(out):
@@ -644,7 +698,7 @@ def numbered_series(movies):
         films = []
         for number, words, _norm, t in members:
             ep = _episode(source, t['ref'], ' '.join(words), None, number, t.get('poster'), t.get('duration'))
-            for extra in ('channel', 'weg', 'downloaded', 'local'):
+            for extra in ('channel', 'weg', 'downloaded', 'file_missing', 'local'):
                 if t.get(extra):
                     ep[extra] = t[extra]
             films.append(ep)
@@ -872,12 +926,14 @@ def episodes(root, c, data, source, series_id, marks=None):
         if c is not None and any(_dict(f.get('ref')).get('offer') for f in out):
             try:
                 ids = [str(f['ref']['offer']) for f in out if _dict(f.get('ref')).get('offer')]
-                here = {r[0] for r in c.execute('SELECT o.id FROM offers o JOIN downloaded_items d ON d.identity=o.work_id '
-                                                'WHERE o.id IN (%s)' % ','.join('?' * len(ids)), ids)}
+                import local_titles
+                present = local_titles.present_downloads(c)
+                here = {r[0] for r in c.execute('SELECT o.id, o.work_id FROM offers o JOIN downloaded_items d ON d.identity=o.work_id '
+                                                'WHERE o.id IN (%s)' % ','.join('?' * len(ids)), ids) if r[1] in present}
             except Exception:
                 here = set()
             for f in out:
-                if f.get('downloaded') or str(_dict(f.get('ref')).get('offer')) in here:
+                if _has_file(f) or str(_dict(f.get('ref')).get('offer')) in here:
                     f['local'] = True
     elif source == 'mediatheken':
         import catalog
@@ -900,8 +956,8 @@ def episodes(root, c, data, source, series_id, marks=None):
                 offer_id, channel = twin
             ep = _episode('mediatheken', {'offer': offer_id}, title, meta.get('season'), meta.get('episode'),
                           meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration'))
-            if e.get('downloaded'):
-                ep['local'] = True                                  # 0.6.148: geladene Folge markieren
+            if e.get('downloaded') and e.get('file_state') != 'missing':
+                ep['local'] = True                                  # 0.6.148: geladene Folge markieren (0.6.152: mit Datei)
             ep['channel'] = channel[:60]                            # 0.6.109: für die Prüfung je Folge sichtbar
             ep['weg'] = path                                        # 0.6.112: Zulassungsweg (episode_paths)
             out.append(ep)

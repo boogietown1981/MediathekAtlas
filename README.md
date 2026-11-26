@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.151
+# MediathekAtlas · 0.6.152
+
+## Neu in 0.6.152: Korrekturen aus der Prüfung von 0.6.147
+- Kinderecke: Mit der Maus über „Mehr davon“ fahren hält den Countdown zur nächsten Folge an. „Mehr davon“ zeigt die laufende Reihe nicht mehr selbst an.
+- Kinderecke-Bilder: Die Bildsuche bei ARD/ZDF behält einen Teil des Stundenlimits (20 von 120) und versucht es nach 10 statt 60 Minuten erneut, wenn das Limit erreicht war. Reihen ohne Senderseite (viele KiKA-Reihen) bekommen das Vorschaubild eines passenden YouTube-Videos aus dem eigenen Bestand.
+- „⬇ Geladen“ nur noch, wenn die Datei wirklich da ist (verschobene oder gelöschte Downloads zählen nicht mehr).
+- Diagnose-Export enthält die Senderstatistik auch beim ersten Abruf mit altem Stand. Film- und Serienliste kommen nach 10 Minuten sofort aus dem Speicher und werden im Hintergrund erneuert.
 
 ## Neu in 0.6.151: Lokale Filmarchive auf Ordnern und Freigaben
 - Einstellungen → „Lokale Filmarchive“: eigene Film- und Serienordner eintragen, z. B. eine eingebundene NAS-Freigabe (/Volumes/Filme). MediathekAtlas liest dort nur, verändert und löscht nichts.

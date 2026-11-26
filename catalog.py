@@ -769,7 +769,11 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             # at once and are renewed in the background. 0.6.144 (Mac-Prüfung 0.6.142, Air: Filme 54 s direkt nach dem
             # Reihenfilm-Markierlauf): a quick one too while another aggregation holds _LISTING_BUILD (Kinderecke,
             # zusammengeführter Index) – before, the request queued behind them for the whole time.
-            if entry['seconds']>=LISTING_SLOW or (_LISTING_BUILD.locked() and not search):
+            # 0.6.152 (Mac-Prüfung 0.6.147, Air: Serien nach 10 min einmal 7,1 s): nur gealtert (TTL, nichts geändert) →
+            # ebenfalls sofort aus dem Speicher und im Hintergrund erneuern; nach einer Änderung (invalidate_listings)
+            # wird eine schnelle Liste weiter gleich neu gebaut.
+            aged=entry['built']!=float('-inf')
+            if entry['seconds']>=LISTING_SLOW or (not search and (aged or _LISTING_BUILD.locked())):
                 if not entry['busy']:
                     entry['busy']=True
                     threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()

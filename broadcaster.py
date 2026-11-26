@@ -110,7 +110,13 @@ def automated_retry_at(provider):
                    _PAUSED.get(provider,0))
 
 
-def lookup_limited(row):
+# 0.6.152 (Mac-Prüfung 0.6.147, Pro: Kinderecke-Bilder „asked 1, found 0“ – die Erkennung hatte das Stundenlimit schon
+# verbraucht): solange die Kinderecke Bilder sucht (letzte Anfrage < 2 h), bleiben ihr PICTURE_RESERVE der 120 Abfragen je
+# Stunde; die Erkennung nutzt dann höchstens 100. Gesamtgrenze unverändert 120 je Stunde und Anbieter.
+PICTURE_RESERVE=20
+_PICTURE_DEMAND={}
+
+def lookup_limited(row,purpose='recognition'):
     """Capped opt-in unattended lookup; user-initiated lookups stay separate."""
     ref=reference(row)
     if not ref:return None
@@ -122,9 +128,12 @@ def lookup_limited(row):
     if status(provider)['paused']:raise Unavailable(provider+' pausiert')
     with _LOCK:
         now=time.time()
+        if purpose=='pictures':_PICTURE_DEMAND[provider]=now
         start,used=_AUTOMATED_BUDGET.get(provider,(now,0))
         if now-start>=3600:start,used=now,0
-        if used>=AUTOMATED_HOURLY_LIMIT:
+        limit=AUTOMATED_HOURLY_LIMIT
+        if purpose!='pictures' and now-_PICTURE_DEMAND.get(provider,0)<7200:limit-=PICTURE_RESERVE
+        if used>=limit:
             raise BudgetExhausted(provider+': automatisches Stundenlimit erreicht')
         _AUTOMATED_BUDGET[provider]=(start,used+1)
     return lookup(row)

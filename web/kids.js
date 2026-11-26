@@ -367,6 +367,9 @@
     'neu', 'kinder', 'kids', 'br', 'kika', 'ard', 'zdf', 'wdr', 'ndr', 'swr', 'shorts']);
   const words = text => new Set(String(text || '').toLowerCase().normalize('NFC').split(/[^0-9a-zäöüß]+/)
     .filter(w => w.length >= 4 && !STOP.has(w)));
+  const plain = t => String(t || '').toLowerCase().normalize('NFC').replace(/[^0-9a-zäöüß]+/g, ' ').trim();
+  // gleiche Reihe: gleicher Titel oder einer ist der Anfang des anderen („Löwenzahn“ / „Löwenzahn mit Peter Lustig“)
+  const sameShow = (a, b) => { a = plain(a); b = plain(b); return !!a && !!b && (a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')); };
   function suggest(v, skip, n) {
     // eine Folge zählt mit ihrer Serie (Titel, Thema); die Serie selbst wird nicht vorgeschlagen
     const show = v.type === 'episode' ? state.show : null;
@@ -375,6 +378,9 @@
     const pool = [...state.videos, ...state.movies, ...state.series];
     const scored = [];
     for (const x of pool) {
+      // 0.6.152 (Mac-Prüfung 0.6.147: „Löwenzahn mit Peter Lustig“ als erste Kachel nach einer Löwenzahn-Folge): die eigene
+      // Serie auch dann auslassen, wenn die Liste inzwischen neu geladen wurde (anderes Objekt, gleiche Kennung/gleicher Titel)
+      if (show && x.type === 'series' && ((x.id && x.id === show.id) || sameShow(x.title, show.title))) continue;
       if (x === v || x === show || (x.key && x.key === v.key) || (x.id && x.id === v.id && x.type === v.type) || x === skip) continue;
       let score = 0;
       if (v.type === 'abo' && x.type === 'abo' && x.abo === v.abo) score += 3;
@@ -417,6 +423,8 @@
     for (const id of ['kids-next-head', 'kids-next-play', 'kids-next-bar']) $(id).hidden = !n;
     $('kids-next').hidden = false;
     if (!n) {   // nach einem Film: nur die Vorschläge, ohne Countdown; nach einer Minute ohne Wahl zurück
+      $('kids-suggest').onpointerdown = $('kids-suggest').onfocusin = $('kids-suggest').onpointerover = $('kids-suggest').onpointermove = null;
+      $('kids-suggest-list').onscroll = null;
       $('kids-next-stop').focus();
       state.nextTimer = setTimeout(close, 60000);
       return;
@@ -430,6 +438,10 @@
     // wer in den Vorschlägen blättert oder darauf zeigt, möchte selbst wählen: Countdown anhalten
     const hold = () => { clearTimeout(state.nextTimer); fill.classList.remove('run'); };
     $('kids-suggest').onpointerdown = hold; $('kids-suggest').onfocusin = hold; $('kids-suggest-list').onscroll = hold;
+    // 0.6.152 (Mac-Prüfung 0.6.147: Darüberfahren hielt nicht an): Maus über den Vorschlägen hält an – auch wenn sie
+    // schon dort stand, als der Endbildschirm erschien (dann kommt kein pointerover, aber die erste Bewegung)
+    const hover = e => { if (e.pointerType === 'mouse') hold(); };
+    $('kids-suggest').onpointerover = hover; $('kids-suggest').onpointermove = hover;
   }
   video.addEventListener('playing', () => say(''));
   video.addEventListener('waiting', () => say('Lädt …'));

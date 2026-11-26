@@ -58,15 +58,37 @@ def portal_copies(c):
     return out
 
 
+def present_downloads(c):
+    """0.6.152 (Mac-Prüfung 0.6.149: Mediathek-Downloads galten auch ohne Datei als geladen, Abspielen meldete
+    „Datei wurde verschoben“): nur Einträge, deren Datei noch da ist – wie bei den Plattform-Kopien. Höchstens TTL alt."""
+    import time
+    hit = _CACHE.get('downloads')
+    if hit and time.monotonic() - hit[0] < TTL:
+        return hit[1]
+    out = set()
+    for identity, path in c.execute('SELECT identity, path FROM downloaded_items'):
+        try:
+            if path and Path(path).is_file():
+                out.add(identity)
+        except (OSError, ValueError):
+            continue
+    _CACHE['downloads'] = (time.monotonic(), out)
+    return out
+
+
 def local_works(c, series=False):
-    """works.id mit lokaler Kopie; ``series``: dazu alle Werke einer Reihe, von der eine Folge geladen ist.
-    Wenige Abfragen über die (kleine) Tabelle downloaded_items, nie je Katalogeintrag."""
+    """works.id mit lokaler Kopie (Datei vorhanden); ``series``: dazu alle Werke einer Reihe, von der eine Folge geladen
+    ist. Wenige Abfragen über die (kleine) Tabelle downloaded_items, nie je Katalogeintrag."""
     try:
-        done = {r[0] for r in c.execute('SELECT identity FROM downloaded_items')}
+        done = present_downloads(c)
         if not done or not series:
-            return done
-        shows = {r[0] for r in c.execute('SELECT DISTINCT w.show_key FROM works w JOIN downloaded_items d ON d.identity=w.id '
-                                         'WHERE w.show_key IS NOT NULL')}
+            return set(done)
+        found = list(done)
+        shows = set()
+        for i in range(0, len(found), CHUNK):
+            part = found[i:i + CHUNK]
+            shows |= {r[0] for r in c.execute('SELECT DISTINCT show_key FROM works WHERE show_key IS NOT NULL AND id IN (%s)'
+                                              % ','.join('?' * len(part)), part)}
         out = set(done)
         shows = list(shows)
         for i in range(0, len(shows), CHUNK):

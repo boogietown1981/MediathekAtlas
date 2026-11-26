@@ -133,11 +133,13 @@ class LocalFirst(base.UnifiedPageTests):
                           (wid, 'Die Maus', 'series', 2020, 'maus', json.dumps({'title': 'Die Maus', 'kind': 'series', 'episode': ep}), 'matched', 1.0))
                 c.execute("INSERT INTO offers(id,work_id,payload,special,rank,seen,active) VALUES(?,?,?,?,?,?,1)",
                           ('o' + wid, wid, json.dumps({'title': 'Die Maus', 'channel': 'KiKA', 'url_video': 'https://example.org/m.mp4'}), '', 1, 1.0))
-            c.execute('INSERT INTO downloaded_items VALUES(?,?,?)', ('s2', '/x/s2.mkv', 1.0))
+            folge = Path(self.dir.name) / 's2.mkv';folge.write_bytes(b'x')
+            c.execute('INSERT INTO downloaded_items VALUES(?,?,?)', ('s2', str(folge), 1.0))
+            c.execute('INSERT INTO downloaded_items VALUES(?,?,?)', ('w2', '/weg/verschoben.mkv', 1.0))   # 0.6.152: Datei fehlt
         self.assertEqual(self.titles(kind='series')[0], ('Die Maus', True))
         with self.db() as c:
             self.assertLessEqual({'s1', 's2'}, local_titles.local_works(c, series=True))
-            self.assertEqual(local_titles.local_works(c), {'s2'})
+            self.assertEqual(local_titles.local_works(c), {'s2'})              # w2 ohne Datei zählt nicht
 
     def test_kids_tiles_carry_local_and_ui_sorts_it_first(self):
         movies = [film(nid(1), 'Anton'), film(nid(2), 'Zora')]

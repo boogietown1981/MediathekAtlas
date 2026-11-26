@@ -62,7 +62,11 @@ add('m6', 'Die Maus im Regen', ['Kinder'], 'series', 'Die Maus', 1, 6)
 for i in range(12): add('pol%02d' % i, 'Politik heute %d' % i, ['Kinder'] if i < 2 else ['Talk'], 'series', 'Politik', 1, i + 1)
 for i in range(260): add('kf%03d' % i, 'Kinderfilm %03d' % i, ['Kinder'])
 # 0.6.148: geladener Film steht vorn und trägt das Zeichen „geladen“
-c.execute("INSERT INTO downloaded_items VALUES('kf259','/nicht/vorhanden/kf259.mkv',1)")
+# 0.6.152: „geladen“ nur mit vorhandener Datei (kf258: Eintrag ohne Datei zählt nicht)
+import os
+kf259 = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), 'kf259.mkv'); open(kf259, 'wb').write(b'x')
+c.execute("INSERT INTO downloaded_items VALUES('kf259',?,1)", (kf259,))
+c.execute("INSERT INTO downloaded_items VALUES('kf258','/nicht/vorhanden/kf258.mkv',1)")
 # 0.6.93: Gruppen – drei Märchen, drei Zeichentrickfilme (kleinere Gruppen gehen in „Noch mehr“)
 add('schnee', 'Schneewittchen', ['Fantasy'], channel='ZDF', topic='Märchenperlen')
 add('holle', 'Frau Holle', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
@@ -212,6 +216,15 @@ async function kidsCorner(browser, url, clip, problems) {
   // 0.6.147: „Mehr davon“ zeigt nie die laufende Folge oder die nächste doppelt
   const more = await page.locator('#kids-suggest-list .kids-title').allTextContents();
   check('Vorschläge ohne laufende/nächste Folge: ' + more.join(' | '), !more.some(t => t.includes('Die Maus im Zoo') || t.includes('Die Maus am Meer')));
+  // 0.6.152 (Mac-Prüfung 0.6.147): die eigene Serie nie in „Mehr davon“; Maus über den Vorschlägen hält den Countdown an
+  check('Vorschläge ohne die eigene Serie: ' + more.join(' | '), !more.some(t => t === 'Die Maus'));
+  if (more.length) {
+    await page.locator('#kids-suggest-list .kids-tile').first().hover();
+    await page.mouse.move(5, 5).catch(() => {});
+    await page.locator('#kids-suggest-list .kids-tile').first().hover();
+    await page.waitForTimeout(7500);
+    check('Darüberfahren hält den Countdown an', await page.evaluate(() => !document.getElementById('kids-next').hidden && !document.getElementById('kids-next-fill').classList.contains('run')));
+  }
   await page.locator('#kids-next-stop').click();
   await page.locator('.kids-back').click();
   check('zurück zur Übersicht', await page.locator('.kids-tile[data-kind=series]').count() >= 1);
@@ -282,6 +295,8 @@ async function scrolling(page, check) {
   const strip = page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Noch mehr' }) }).first();
   const firstMore = await strip.locator('.kids-tile').first().evaluate(t => ({ title: t.querySelector('.kids-title').textContent, local: !!t.querySelector('.kids-local'), label: t.getAttribute('aria-label') }));
   check('geladener Film vorn und markiert: ' + JSON.stringify(firstMore), firstMore.title === 'Kinderfilm 259' && firstMore.local && firstMore.label.includes('geladen'));
+  const local258 = await page.evaluate(async () => { const token = document.querySelector('meta[name=atlas-token]').content; const r = await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json(); return ((r.catalog || {}).movies || []).filter(t => /Kinderfilm 25[89]/.test(t.title)).map(t => t.title + ':' + !!t.local).sort().join(','); });
+  check('Download-Eintrag ohne Datei gilt nicht als geladen: ' + local258, local258 === 'Kinderfilm 258:false,Kinderfilm 259:true');
   if (SHOTS) await strip.screenshot({ path: path.join(SHOTS, '0.6.148-kinderecke-geladen.png') });
   const box = strip.locator('.kids-strip');
   const before = await box.evaluate(b => ({ left: b.scrollLeft, wide: b.scrollWidth > b.clientWidth + 50 }));

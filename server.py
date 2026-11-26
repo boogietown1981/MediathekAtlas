@@ -613,6 +613,10 @@ def recognition_for_export(wait=20.0):
     computed=float(result.get('computed_at') or 0)
     return {**result,'age_hours':round((time.time()-computed)/3600,1) if computed else None}
 RECOGNITION_STALE=6*3600
+# 0.6.152 (Mac-Prüfung 0.6.147, Air mit Stand > 6 h: erster Export 20,7 s OHNE Senderstatistik): die Übersicht wartete
+# bis 30 s auf die frische Zählung, der Export gibt jedem Teil aber nur 20 s – dann fehlte die ganze Übersicht. Jetzt
+# höchstens 15 s warten, danach die alte Zählung mit age_hours/loading ausgeben (frisch beim nächsten Export).
+EXPORT_RECOGNITION_WAIT=15.0
 def catalog_status():
     global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
@@ -1486,7 +1490,7 @@ def _bounded_parts(parts,budget=20.0):
 def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
     def overview_parts():
-        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(30.0),'runtime':runtime_tools.cached_report()}
+        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(EXPORT_RECOGNITION_WAIT),'runtime':runtime_tools.cached_report()}
     parts={'overview':overview_parts,'storage':_storage_for_export,'imdb':IMDB.status,'provider_statistics':provider_stats.snapshot,
            'providers':lambda:[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],
            'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),
@@ -2797,7 +2801,8 @@ if __name__=='__main__':
             while not STOP.is_set():
                 try:kids_catalog.fetch_missing_pictures(ROOT,db)
                 except Exception as e:diagnostics.error('kids_pictures_failed',e)
-                if STOP.wait(3600):return
+                # 0.6.152: Sender pausiert/Stundenlimit erreicht → nach 10 min erneut statt erst nach einer Stunde
+                if STOP.wait(600 if kids_catalog.LAST_FETCH.get('stopped') else 3600):return
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke
         threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),

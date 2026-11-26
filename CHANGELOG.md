@@ -1,3 +1,14 @@
+## 0.6.152 – Korrekturen Mac-Prüfung 0.6.147 (Countdown, eigene Reihe, Kinderecke-Bilder, Export, gealterte Liste); auf 0.6.151
+
+- Prüfvermerk 0.6.147 (BESTANDEN mit Hinweisen):
+  - (a) `kids.js`: `pointerover`/`pointermove` (nur Maus) über `#kids-suggest` halten den Countdown an; nach einem Film werden die Halte-Handler gelöst.
+  - (b) `suggest`: die eigene Serie fällt auch nach einem Neuladen der Liste heraus (gleiche Kennung bzw. gleicher Titel/Titelanfang, `sameShow`).
+  - (c) `broadcaster.lookup_limited(purpose=…)`: solange die Kinderecke Bilder sucht (< 2 h), nutzt die Erkennung höchstens 100 der 120 Abfragen je Stunde (Gesamtgrenze unverändert). `kids_catalog.fetch_missing_pictures` meldet einen Stopp (`LAST_FETCH`), der Server versucht dann nach 10 statt 60 min erneut. Neu `youtube_picture`: Vorschaubild (nur i.ytimg.com) eines Kinder-Abo- oder YouTube-Katalogvideos, dessen Titel den Reihennamen als ganze Wortfolge enthält (mind. 6 Zeichen, ein Wort mind. 10), kein Netz. Fehlschläge aus 0.6.146/0.6.147 (ohne `v`) werden sofort neu versucht. Ereignis `kids_pictures_fetched` mit `from_youtube`, `stopped`.
+  - (d) Diagnose: die Übersicht wartet höchstens 15 s (`EXPORT_RECOGNITION_WAIT`) auf die frische Senderzählung, statt 30 s bei 20 s Frist je Teil, und liefert sonst die alte Zählung mit `age_hours`.
+  - (e) `catalog._listing_groups`: Eine nur gealterte Liste (TTL 10 min, ohne Änderung) wird sofort aus dem Speicher beantwortet und im Hintergrund erneuert. Nach `invalidate_listings` baut eine schnelle Liste weiter gleich neu.
+- Prüfbericht 0.6.149 (Hinweis): Mediathek-Downloads galten auch ohne Datei als „geladen“. Jetzt zählt wie bei den Plattform-Kopien nur eine vorhandene Datei: `local_titles.present_downloads` (Katalog, 30 s zwischengespeichert), Kinderecke über `file_state` (`file_missing`, `_has_file`), Folgen und Nummern-Serien ebenso. Abspielen ohne Datei läuft wie bisher über das Angebot.
+- Tests: `tests/test_v06152.py` (13), `tests/test_v06148.py` (Eintrag ohne Datei), `tests/browser/kids_corner.cjs` (+3; Darüberfahren und Eintrag ohne Datei scheitern gegen 0.6.151).
+
 ## 0.6.151 – Lokale Filmarchive auf Ordnern/Freigaben (NFO zuerst, sonst Dateinamen + Erkennung); auf 0.6.150
 
 - Björn 26.11.2026: „Erkennung bzw. Einbindung von lokalen Filmarchiven auf Shares; wenn dort schon NFO-Dateien sind, können diese gleich genutzt werden, wenn noch keine sind, werden sie eben gescannt und zugeordnet.“
