@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.154 – Filmreihen-/Mehrteiler-Kacheln korrigiert (26. November 2026)
+- Automatisch: tests/test_v06154.py (3: eine Kachel je Reihenname, eigene Filmwerke mit Trenner, zusammengeführte Titel, Fortsetzungen, Fassungen, „Teil 1/ 2“), tests/test_v06150.py, gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge (Pro/Air-Kopie) – Am Mac: PRUEFLISTE in releases/0.6.154.
+
 ## 0.6.153 – Filmreihen-Kacheln ab Werk aus (26. November 2026)
 - Automatisch: tests/test_v06150.py (angepasst), tests/test_v06153.py (5), tests/browser/lokal_archive.cjs (echte MKV: Start, Spulen; sample.mkv; 4 Läufe in Folge grün), Chromium gegen eigenen Server 10 Starts ohne Abbruch (vorher etwa jeder dritte mit „data source error“), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.153.
 

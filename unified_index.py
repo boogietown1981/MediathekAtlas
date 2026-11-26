@@ -329,11 +329,21 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
 #   Anbieter stehen (zusammengeführt), bleiben einzeln, damit kein Angebot verschwindet.
 # * Mehrteiler: Titel „… Teil 1“, „… (2/3)“, „…, Teil zwei“ desselben Grundtitels ab zwei verschiedenen Teilen werden
 #   EINE Kachel „Grundtitel“ (Mehrteiler · n Teile); sie zeigt die Teile über die Suche.
+# 0.6.154 (Mac-Prüfung 0.6.150, BEFUND-06150.txt):
+# * Eine Reihe ist ihr NAME, nicht ein show_key („Praxis mit Meerblick“ stand unter zwei show_keys als zwei Kacheln).
+# * Eigene Filmwerke „Reihe: Titel“ / „Reihe – Titel“ (ORF-Schreibweise „Tatort: Azra“, „Polizeiruf 110: Paranoia“)
+#   gehören zu ihrer Reihe, wenn es die Reihe gibt. „Tatort Matterhorn“ ohne Trenner bleibt einzeln (nicht sicher).
+# * Die Kachel öffnet die Suche nach dem Reihennamen (wie ein Mehrteiler): dort steht jeder Film einzeln mit allen
+#   Anbietern. Deshalb dürfen jetzt auch zusammengeführte Titel (Maria Wern bei zwei Anbietern) in die Reihe.
+# * Mehrteiler: „Teil 1/ 2“ wird als Teil erkannt (Grundtitel nicht mehr „… Teil“); Teile mit verschiedenen Jahren sind
+#   Fortsetzungen („Zärtliche Chaoten – Teil 1“ 1986, „Teil 2“ 1987) und bleiben einzeln; gezählt werden verschiedene
+#   Teilnummern, nicht Fassungen (Audiodeskription, Varianten).
 REIHE_MIN = 3
 REIHE_SLOT = re.compile(r'(?i)film|kino|movie|cinema|sendeplatz|premiere|sommer|highlights?\b|mediathek')
-PART = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:\(?\s*(?P<n>\d{1,2})\s*/\s*\d{1,2}\s*\)?|\(?(?:teil|part)\s+(?P<m>\d{1,2}|eins|zwei|drei|vier|fünf|one|two|three)\)?)\s*$')
+PART = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:\(?\s*(?:(?:teil|part)\s*)?(?P<n>\d{1,2})\s*/\s*\d{1,2}\s*\)?|\(?(?:teil|part)\s+(?P<m>\d{1,2}|eins|zwei|drei|vier|fünf|one|two|three)\)?)\s*$')
 PART_HINT = re.compile(r'(?i)\d\s*/\s*\d|teil|part')
 PART_WORDS = {'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'one': 1, 'two': 2, 'three': 3}
+REIHE_PREFIX = re.compile(r'^(?P<name>[^:–—]{3,60}?)\s*(?::|\s[-–—])\s+\S')
 
 
 def _part(title):
@@ -342,29 +352,38 @@ def _part(title):
         return None
     raw = (m.group('n') or m.group('m') or '').casefold()
     number = int(raw) if raw.isdigit() else PART_WORDS.get(raw)
-    return (m.group('base').rstrip(' -–—:,('), number) if number else None
+    base = m.group('base').rstrip(' -–—:,(')
+    return (base, number) if number and len(base) >= 3 else None
 
 
 def collapse_reihen(db, entries):
     """Filmreihen und Mehrteiler der Filmliste zusammenfassen (siehe REIHE_MIN)."""
     ids = [o['id'] for e in entries for o in e['offers'] if o['source'] == 'mediatheken']
-    shows, titles = {}, {}
+    shows, names = {}, {}
     if ids:
         with db() as c:
             for wid, show, title in c.execute(
                     "SELECT w.id, w.show_key, w.title FROM works w WHERE w.kind='series' AND json_valid(w.meta) "
                     "AND json_extract(w.meta,'$.series_film')=1"):
-                if show:
-                    shows[wid] = show
-                    titles.setdefault(show, title)
+                name = str(title or show or '').strip()
+                key = title_key(name)
+                if show and key:
+                    shows[wid] = key
+                    names.setdefault(key, name)
     groups = {}
     for i, e in enumerate(entries):
-        if len(e['offers']) != 1 or e['offers'][0]['source'] != 'mediatheken':
-            continue
-        show = shows.get(e['offers'][0]['id'])
-        if show and not REIHE_SLOT.search(titles.get(show) or show):
-            groups.setdefault(('reihe', show), []).append(i)
+        mediathek = [o for o in e['offers'] if o['source'] == 'mediatheken']
+        key = next((shows[o['id']] for o in mediathek if o['id'] in shows), None)
+        if key and not REIHE_SLOT.search(names[key]):
+            groups.setdefault(('reihe', key), []).append(i)
     in_reihe = {i for k, v in groups.items() for i in v}
+    for i, e in enumerate(entries):     # eigene Filmwerke „Tatort: Azra“ zu einer vorhandenen Reihe
+        if i in in_reihe or not any(o['source'] == 'mediatheken' for o in e['offers']):
+            continue
+        m = REIHE_PREFIX.match(str(e['title'] or ''))
+        key = m and title_key(m.group('name'))
+        if key and ('reihe', key) in groups:
+            groups[('reihe', key)].append(i);in_reihe.add(i)
     for i, e in enumerate(entries):
         t = str(e['title'] or '')
         if i in in_reihe or not (PART_HINT.search(t)):
@@ -374,25 +393,26 @@ def collapse_reihen(db, entries):
             groups.setdefault(('teile', title_key(part[0])), []).append(i)
     replace, drop = {}, set()
     for (what, key), members in groups.items():
+        members.sort()
+        years = [entries[i]['year'] for i in members if entries[i]['year']]
         if what == 'reihe':
             if len(members) < REIHE_MIN:
                 continue
-            first = entries[members[0]]
-            years = [entries[i]['year'] for i in members if entries[i]['year']]
-            offer = dict(first['offers'][0], episodes=len(members), reihe=key)
-            replace[members[0]] = {'title': titles.get(key) or first['title'], 'year': max(years) if years else None,
-                                   'offers': [offer], 'reihe': key}
+            offer = next(o for i in members for o in entries[i]['offers'] if o['source'] == 'mediatheken' and o['id'] in shows)
+            offer = dict(offer, episodes=len(members), reihe=key)
+            name = names[key]
+            replace[members[0]] = {'title': name, 'year': max(years) if years else None, 'offers': [offer], 'reihe': key,
+                                   'mehrteiler': {'query': name, 'parts': len(members), 'reihe': True}}
         else:
             numbers = {_part(entries[i]['title'])[1] for i in members}
-            if len(numbers) < 2:
+            if len(numbers) < 2 or len(set(years)) > 1:    # ein Teil allein bzw. Fortsetzungen aus verschiedenen Jahren
                 continue
-            members.sort(key=lambda i: _part(entries[i]['title'])[1])
-            first = entries[members[0]]
+            first = entries[min(members, key=lambda i: (_part(entries[i]['title'])[1], i))]
             base = _part(first['title'])[0]
-            years = [entries[i]['year'] for i in members if entries[i]['year']]
             replace[members[0]] = dict(first, title=base, year=min(years) if years else first['year'],
-                                       mehrteiler={'query': base, 'parts': len(members)})
-        drop.update(members[1:])
+                                       mehrteiler={'query': base, 'parts': len(numbers)})
+        keep = members[0]
+        drop.update(i for i in members if i != keep)
     if not replace:
         return entries
     return [replace.get(i, e) for i, e in enumerate(entries) if i not in drop]

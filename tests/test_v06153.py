@@ -46,7 +46,7 @@ class Wiring(unittest.TestCase):
         server = (ROOT / 'server.py').read_text(encoding='utf-8')
         self.assertIn("except ValueError as e:return self.send({'error':str(e)},400)", server)
         self.assertIn("return self.send({'error':'Noch kein Archivordner eingetragen'},400)", server)
-        self.assertIn('UNIFIED_REIHEN=False', server)
+        self.assertIn('UNIFIED_REIHEN=', server)   # 0.6.154: wieder an (test_v06154)
         self.assertIn("kleine Videos unter 20 MB übergangen", (ROOT / 'web' / 'lokal_archive.js').read_text(encoding='utf-8'))
 
 

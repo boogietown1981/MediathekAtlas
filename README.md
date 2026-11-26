@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.153
+# MediathekAtlas · 0.6.154
+
+## Neu in 0.6.154: Filmreihen und Mehrteiler wieder zusammengefasst, korrigiert
+- Unter „Filme“ stehen Filmreihen (Tatort, Polizeiruf 110, Nord bei Nordwest …) und Mehrteiler (Teil 1–n) wieder als je eine Kachel. Die Kachel öffnet alle Filme der Reihe bzw. alle Teile einzeln, Reihen mit den neuesten zuerst.
+- Korrigiert nach der Prüfung von 0.6.150: eine Reihe erscheint nur noch einmal (Praxis mit Meerblick), Filme wie „Tatort: Azra“ gehören mit in die Tatort-Reihe, auch Titel mit einem zweiten Anbieter (Maria Wern). Fortsetzungen aus verschiedenen Jahren (Zärtliche Chaoten Teil 1 und 2) gelten nicht als Mehrteiler, Fassungen (Audiodeskription) zählen nicht als eigene Teile, „Teil 1/ 2“ wird richtig gelesen.
+- Eine Suche zeigt weiter jeden Film einzeln.
 
 ## Neu in 0.6.153: Filmreihen-Kacheln vorerst aus
 - Die Sammelkacheln „Filmreihe“ und „Mehrteiler“ aus 0.6.150 sind ab Werk ausgeschaltet, bis ihre Korrektur geprüft ist (Prüfung 0.6.150: eine Reihe doppelt, einzelne Tatort-Filme nicht erfasst, Fortsetzungen als Mehrteiler). Unter „Filme“ steht wieder jeder Film einzeln wie in 0.6.149. Alles andere aus 0.6.150–0.6.152 bleibt.

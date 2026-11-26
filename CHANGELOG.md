@@ -1,3 +1,13 @@
+## 0.6.154 – Filmreihen-/Mehrteiler-Kacheln korrigiert und wieder an; auf 0.6.153
+
+- Befunde Mac-Prüfung 0.6.150 (BEFUND-06150.txt, filmreihen-mehrteiler-06150.tsv), `unified_index.collapse_reihen`:
+  - Reihe = `title_key(Reihenname)` statt show_key: „Praxis mit Meerblick“ (11 + 8 unter zwei show_keys) wird eine Kachel.
+  - Eigene Filmwerke „Reihe: Titel“ / „Reihe – Titel“ (`REIHE_PREFIX`) gehören zu einer vorhandenen Reihe („Tatort: Azra“, „Polizeiruf 110: Paranoia“, ORF-Schreibweise). Ohne Trenner („Tatort Matterhorn“) bleibt der Titel einzeln.
+  - Die Reihenkachel öffnet die Suche nach dem Reihennamen (neueste zuerst, `showParts(query,'year')`) statt einer show_key-Serienseite: dort steht jeder Film einzeln mit allen Anbietern. Damit dürfen zusammengeführte Titel (Maria Wern mit zweitem Anbieter) in die Reihe, ohne dass ein Angebot verschwindet.
+  - Mehrteiler: `PART` liest „Teil 1/ 2“ (Grundtitel „Fremde Verwandte“ statt „Fremde Verwandte Teil“); Teile mit verschiedenen Jahren gelten als Fortsetzungen und bleiben einzeln („Zärtliche Chaoten – Teil 1“ 1986 / „Teil 2“ 1987); Teilzahl = verschiedene Teilnummern, nicht Fassungen (Audiodeskription, Varianten).
+- `server.UNIFIED_REIHEN=True` (abschaltbar; `?reihen=0` wie im Ansehen-Modus).
+- Tests: `tests/test_v06154.py` (3), `tests/test_v06150.py` angepasst.
+
 ## 0.6.153 – Filmreihen-/Mehrteiler-Kacheln ab Werk aus, MKV-Wiedergabe bricht nicht mehr ab; auf 0.6.152
 
 - Mac-Prüfung 0.6.150 NICHT BESTANDEN (BEFUND-06150.txt): „Praxis mit Meerblick“ als zwei Reihenkacheln (zwei show_keys), 35 Tatort-/Polizeiruf-Filme als eigene Filmwerke einzeln, „Zärtliche Chaoten – Teil 1/2“ (Fortsetzungen) als Mehrteiler, „Fremde Verwandte Teil“ falsch abgeschnitten, Teilzahl zählt Fassungen (AD) mit.

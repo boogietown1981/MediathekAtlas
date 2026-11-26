@@ -620,7 +620,8 @@ EXPORT_RECOGNITION_WAIT=15.0
 # 0.6.153 (Mac-Prüfung 0.6.150 nicht bestanden: Praxis mit Meerblick doppelt, 35 Tatort/Polizeiruf-Filme einzeln, Fortsetzungen
 # und Fassungen als „Mehrteiler“): Filmreihen-/Mehrteiler-Kacheln ab Werk aus, bis die Korrektur geprüft ist. Mit ?reihen=1
 # weiter abrufbar (Prüfung); lokale Archive (0.6.151) und Korrekturen (0.6.152) hängen nicht daran.
-UNIFIED_REIHEN=False
+# 0.6.154: Korrektur (unified_index.collapse_reihen) – wieder an; mit ?reihen=0 bzw. hier False jederzeit abschaltbar.
+UNIFIED_REIHEN=True
 def catalog_status():
     global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
