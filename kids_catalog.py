@@ -1378,7 +1378,8 @@ def with_progress(data, marks):
         for t in data.get(view) or []:
             t = dict(t)
             t.pop('films', None)          # 0.6.148: Folgen der Nummern-Serie liefert /api/kids-episodes
-            mark = marks.get(t.get('key') or '') or {}
+            # 0.6.149: der große Player merkt ARD/ZDF-Filme unter der Werk-Kennung – dort Angefangenes zählt hier auch
+            mark = marks.get(t.get('key') or '') or (marks.get(str(t['work'])) if t.get('work') else None) or {}
             t['done'] = bool(mark.get('done'))
             t['pos'] = 0 if t['done'] else (mark.get('pos') or 0)
             t['progress'] = round(min(1, t['pos'] / t['duration']), 3) if t.get('duration') and t['pos'] else 0

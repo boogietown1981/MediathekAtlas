@@ -32,7 +32,9 @@
     return h ? h + ':' + String(m).padStart(2, '0') + ':' + x : m + ':' + x; };
   const channelOf = v => state.channels.find(c => c.id === v.abo) || {};
   // Ein Abo-Video wird zu einem abspielbaren Eintrag wie Filme und Folgen (ref, key, Bild).
-  const fromAbo = v => Object.assign(v, {type: 'abo', ref: {job: v.job}, key: 'job:' + v.job, picture: v.poster ? image('job', v.job) : '', group: v.abo});
+  // 0.6.149 (Björn: Kanal oben angetippt → keine Videos): Abo-Kennungen sind Zahlen; der Filter state.filter wird als Text
+  // verglichen (startsWith 'g:' warf bei einer Zahl einen Fehler, die Ansicht blieb leer). Kennungen immer als Text.
+  const fromAbo = v => Object.assign(v, {abo: String(v.abo), type: 'abo', ref: {job: v.job}, key: 'job:' + v.job, picture: v.poster ? image('job', v.job) : '', group: String(v.abo)});
   // 0.6.93: die Gruppe des Servers (Märchen …) heißt hier theme; group bleibt die Abspielreihe (nextOf)
   const fromCatalog = (t, type) => Object.assign(t, {type, picture: t.poster || '', theme: t.group || 'mehr', group: type});
 
@@ -189,7 +191,7 @@
     if (state.filter === 'live') { renderLive(main); return; }
     if (state.filter === 'movies') { grouped(main, state.movies, 'Filme'); return; }
     if (state.filter === 'series') { grouped(main, state.series, 'Serien'); return; }
-    if (state.filter.startsWith('g:')) {
+    if (String(state.filter).startsWith('g:')) {
       const g = state.groups.find(x => 'g:' + x.id === state.filter) || {name: '', icon: ''};
       const list = inGroup(byTitle([...state.movies, ...state.series]), g.id);
       main.append(row(g.icon + ' ' + g.name, count(list.length, 'Titel', 'Titel'), list, true)); return;
@@ -203,11 +205,13 @@
     const started = [...state.videos, ...state.movies].filter(v => v.progress > 0);
     if (started.length) main.append(row('Weiterschauen', '', started.slice(0, 20)));
     const cut = (n, filter, name) => (n > STRIP ? {n, filter, name} : null);
-    grouped(main, byTitle([...state.movies, ...state.series]), '');
+    // 0.6.149 (Björn: neue Kanäle „nur oben, nicht in der Gesamtansicht“): die Kanalreihen standen hinter allen Film- und
+    // Seriengruppen (mehrere Hundert Titel) – jetzt direkt nach „Neu“/„Weiterschauen“, vor den Gruppen
     for (const c of state.channels) {
       const own = state.videos.filter(v => v.abo === c.id);
       if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, STRIP), false, own, cut(own.length, c.id, 'Videos')));
     }
+    grouped(main, byTitle([...state.movies, ...state.series]), '');
   }
 
   // ------------------------------------------------------------ Serie: Folgen in der Kinderecke
@@ -238,7 +242,7 @@
   async function load() {
     try {
       const d = await api('kids');
-      state.channels = d.channels || []; state.videos = (d.videos || []).map(fromAbo);
+      state.channels = (d.channels || []).map(c => Object.assign(c, {id: String(c.id)})); state.videos = (d.videos || []).map(fromAbo);
       state.liveEnabled = !!d.live_enabled;
       const cat = d.catalog || {};
       state.movies = (cat.movies || []).map(t => fromCatalog(t, 'movie'));

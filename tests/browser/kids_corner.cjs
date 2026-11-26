@@ -72,7 +72,18 @@ add('trick3', 'Comic-Abenteuer', ['Kinder', 'Animation'])
 add('wartet', 'Wartender Kinderfilm', [], topic='Kinderfilme', state='retry')
 c.execute("INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts,topic) VALUES('kikalive','KiKA Livestream','other',NULL,'kikalive','{}','format',0,'Livestream')")
 c.execute("INSERT INTO offers(id,work_id,payload,active) VALUES('o-kikalive','kikalive',?,1)", (json.dumps({'title': 'KiKA Livestream', 'channel': 'KiKA', 'topic': 'Livestream', 'duration': 0, 'url_video': 'https://media.example.org/kikalive.mp4'}),))
+# 0.6.149: neu abonnierter Kanal mit einem fertig geladenen Video (Abo-Kennung ist eine Zahl)
+import os, time
+from pathlib import Path
+c.execute('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT)')
+c.execute("INSERT INTO jobs VALUES('abojob1',?,'done')", (json.dumps({'id': 'abojob1', 'origin': 'youtube', 'state': 'done', 'path': '/nicht/vorhanden/abo.mkv', 'source': {'title': 'Testvideo Eins'}}),))
 c.commit()
+import youtube_abos
+y = youtube_abos._connect(Path(os.path.dirname(sys.argv[1])))
+with y:
+    y.execute("INSERT INTO youtube_abos(ref,label,title,added,profile) VALUES('https://www.youtube.com/@testkanal','Testkanal','Testkanal',?,'kinder')", (time.time(),))
+    y.execute("INSERT INTO youtube_abo_videos(abo_id,video,title,published,duration,state,job_id,found,done_at) VALUES(1,'vid1','Testvideo Eins','2026-11-26',3,'done','abojob1',?,?)", (time.time(), time.time()))
+y.close()
 `;
 
 function freePort() {
@@ -147,6 +158,16 @@ async function kidsCorner(browser, url, clip, problems) {
   const chips = await page.locator('.kids-chip-name').allTextContents();
   check('Auswahl Filme/Serien oben: ' + chips.join(','), chips.includes('Filme') && chips.includes('Serien'));
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.46-kinderecke.png') });
+  // 0.6.149 (Björn: neuer Kanal nur oben, Antippen zeigt keine Videos): Kanalreihe vor den Gruppen, Kanalfilter zeigt das Video
+  const order = await page.locator('#kids-main .kids-row h2').allTextContents();
+  const at = name => order.findIndex(t => t.includes(name));
+  check('Kanalreihe vor den Film-/Seriengruppen: ' + order.join(' | '), at('Testkanal') >= 0 && at('Testkanal') < at('Märchen'));
+  await page.locator('.kids-chip', { hasText: 'Testkanal' }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('#kids-main .kids-title')].some(t => t.textContent === 'Testvideo Eins'), null, { timeout: 10000 })
+    .catch(() => check('Kanalfilter zeigt das geladene Video', false));
+  check('Kanalfilter nur mit Videos dieses Kanals', (await page.locator('#kids-main .kids-tile').count()) === 1);
+  await page.locator('.kids-chip', { hasText: 'Alle' }).first().click();
+  await page.waitForSelector('#kids-main .kids-strip');
   await scrolling(page, check);
   await liveAndParents(page, url, check, asked);
 

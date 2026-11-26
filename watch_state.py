@@ -209,11 +209,13 @@ def overview(root):
         started = c.execute('SELECT * FROM entries WHERE done=0 AND pos>? ORDER BY watched_at DESC LIMIT ?',
                             (MIN_POSITION, MAX_CONTINUE)).fetchall()
         marked = c.execute('SELECT * FROM entries WHERE favorite=1 ORDER BY marked_at DESC LIMIT ?', (MAX_MARKED,)).fetchall()
-        recent = c.execute('SELECT key,pos,done,watched_at FROM entries WHERE watched_at>0 ORDER BY watched_at DESC LIMIT ?',
+        recent = c.execute('SELECT key,pos,duration,done,watched_at FROM entries WHERE watched_at>0 ORDER BY watched_at DESC LIMIT ?',
                            (MAX_PROGRESS,)).fetchall()
         flags = c.execute('SELECT key,favorite,pinned FROM entries WHERE favorite=1 OR pinned=1').fetchall()
     return {'continue': [_public(r) for r in started], 'marked': [_public(r) for r in marked],
-            'progress': {r['key']: {'pos': round(r['pos'], 1), 'done': bool(r['done']), 'at': int(r['watched_at'] * 1000)} for r in recent},
+            # 0.6.149: mit Länge, damit Katalogkarten den Fortschrittsbalken zeigen können
+            'progress': {r['key']: {'pos': round(r['pos'], 1), 'duration': round(r['duration'] or 0, 1), 'done': bool(r['done']),
+                                    'at': int(r['watched_at'] * 1000)} for r in recent},
             'marks': {r['key']: {'favorite': bool(r['favorite']), 'pinned': bool(r['pinned'])} for r in flags}}
 
 

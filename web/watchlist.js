@@ -173,12 +173,41 @@
     catch (e) { console.warn('MediathekAtlas: Merkliste nicht geladen', e); return; }
     state = {continue: data.continue || [], marked: data.marked || [], progress: data.progress || {}, marks: data.marks || {}};
     try { window.AtlasPlayerSync?.(state.progress); } catch (e) { console.warn(e); }
-    render(); repaintButtons();
+    render(); repaintButtons(); repaintProgress();
   }
   // The player reports every ten seconds; one reload shortly after the last report is enough.
   function changed() { clearTimeout(timer); timer = setTimeout(() => load(), 1500); }
 
-  window.AtlasWatch = {button, changed, reload: load, keyOf, marks: () => state.marks,
+  // 0.6.149 (Björn: Fortschritt bzw. „schon geschaut“ wie bei YouTube): Balken und „✓ Gesehen“ auf Katalogkarten.
+  // Die Karte legt ein Element mit data-progress-key an; nach jedem Laden der Stände wird es gefüllt.
+  function progressOf(key) {
+    const p = (state.progress || {})[key];
+    if (!p) return null;
+    return {done: !!p.done, share: p.done ? 1 : (p.duration > 0 ? Math.min(1, (p.pos || 0) / p.duration) : 0), pos: p.pos || 0};
+  }
+  function paintProgress(node) {
+    const p = progressOf(node.dataset.progressKey);
+    node.replaceChildren();
+    node.hidden = !p || (!p.done && p.share <= 0);
+    if (node.hidden) return;
+    node.classList.toggle('is-done', p.done);
+    if (p.done) { node.append(el('span', '✓ Gesehen', 'atlas-seen')); return; }
+    const bar = el('span', '', 'atlas-progress-bar'), fill = el('i');
+    fill.style.width = Math.max(2, Math.round(p.share * 100)) + '%'; bar.append(fill);
+    bar.title = 'Weiter bei ' + fmt(p.pos); node.append(bar);
+  }
+  const progressNodes = new Set();
+  function progressNode(item) {
+    const key = keyOf(item);
+    if (!key) return null;
+    const node = el('div', '', 'atlas-progress'); node.dataset.progressKey = key;
+    progressNodes.add(node); paintProgress(node);
+    return node;
+  }
+  function repaintProgress() {
+    for (const n of [...progressNodes]) { if (!n.isConnected) progressNodes.delete(n); else paintProgress(n); }
+  }
+  window.AtlasWatch = {button, changed, reload: load, keyOf, progressNode, progressOf, marks: () => state.marks,
     setPinned: (key, pinned, info) => setMark(key, {pinned}, info)};
   document.addEventListener('atlas-view', e => { if (e.detail && e.detail.view === 'discover') load(); });
   load();

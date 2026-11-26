@@ -31,7 +31,7 @@ class WatchStateTests(unittest.TestCase):
         data = watch_state.overview(self.root)
         self.assertEqual([e['key'] for e in data['continue']], ['pluto:abc'])
         self.assertEqual(data['continue'][0]['ref'], {'pluto': 'abc'})
-        self.assertEqual(data['progress']['pluto:abc'], {'pos': 600.0, 'done': False, 'at': int(NOW * 1000)})
+        self.assertEqual(data['progress']['pluto:abc'], {'pos': 600.0, 'duration': 5400.0, 'done': False, 'at': int(NOW * 1000)})   # 0.6.149: mit Länge
 
     def test_a_few_seconds_do_not_count_as_started(self):
         self.assertFalse(watch_state.progress(self.root, 'pluto:abc', 12, 5400)['stored'])

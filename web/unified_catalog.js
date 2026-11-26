@@ -412,6 +412,12 @@
       art.append(img);
     } else art.append(el('span','Kein Cover','atlas-uc-empty-art'));
     art.classList.add('clickable');art.onclick=()=>openItem(main);
+    // 0.6.149 (Björn: Fortschritt wie bei YouTube): Balken bzw. „✓ Gesehen“ aus den Abspielständen (web/watchlist.js)
+    if (main.kind!=='series'&&!main.series_parent) {
+      const W=window.AtlasWatch;
+      const seen=W?.progressOf?offers.find(o=>{const k=W.keyOf(o);return k&&W.progressOf(k);}):null;
+      const node=W?.progressNode?.(seen||main);if(node)art.append(node);
+    }
     const text=el('div',undefined,'atlas-uc-body');
     text.append(el('small',offers.map(labelSource).join(' · '),'atlas-uc-source'));
     const title=el('h3',main.title);title.classList.add('clickable');title.onclick=()=>openItem(main);

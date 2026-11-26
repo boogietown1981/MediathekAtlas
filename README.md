@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.148
+# MediathekAtlas · 0.6.149
+
+## Neu in 0.6.149: Kinderecke-Kanäle repariert, Fortschritt überall sichtbar
+- Kinderecke: Ein neu abonnierter Kanal zeigt beim Antippen oben seine Videos (vorher blieb die Ansicht leer). In „Alle“ stehen die Kanalreihen jetzt direkt nach „Neu“ und „Weiterschauen“, vor den Film- und Seriengruppen.
+- Fortschritt wie bei YouTube: Katalogkarten zeigen einen roten Balken für Angefangenes und „✓ Gesehen“ für Fertiges; Starten setzt an der gemerkten Stelle fort (wie bisher im Player). Die Kinderecke übernimmt auch Stände, die im großen Player entstanden sind.
 
 ## Neu in 0.6.148: Nummerierte Folgen als eine Serie, geladene Titel zuerst
 - Anbieter führen Folgen einer Reihe oft als einzelne Filme mit vorangestellter Nummer („10. Die verwegenen Vier auf heißer Spur“, „2. Die verwegenen Vier reißen aus“). Ab drei solchen Filmen desselben Anbieters mit gemeinsamem Titelanfang zeigt die Kinderecke EINE Serienkachel („Die verwegenen Vier“), die Folgen darin nach Nummer sortiert. Abspielen, Weiterschauen und Sperren funktionieren wie vorher.

@@ -34,6 +34,11 @@ main,.cataloglayout,.catalogcontent,.card,.cardbody{min-width:0}
 .cardbody h3{display:block;-webkit-line-clamp:unset;line-clamp:unset;overflow:visible;overflow-wrap:anywhere}
 .cardbody button,.source-link a,.catalogtree button{white-space:normal;overflow-wrap:anywhere}
 .catalog-filters label{min-width:0;flex-wrap:wrap}.catalog-filters select{max-width:100%}
+.atlas-uc-poster{position:relative}
+.atlas-progress{position:absolute;left:0;right:0;bottom:0;pointer-events:none}
+.atlas-progress-bar{display:block;height:5px;background:rgba(255,255,255,.28)}
+.atlas-progress-bar i{display:block;height:100%;background:#e5484d}
+.atlas-seen{position:absolute;left:6px;bottom:6px;background:#2fd47ae6;color:#06301a;font-size:11px;font-weight:800;padding:2px 7px;border-radius:6px}
 .atlas-uc-local{display:inline-block;margin:4px 6px 0 0;padding:2px 8px;border-radius:999px;background:#163d2a;border:1px solid #2fa866;color:#9ff0c2;font-size:12px;font-weight:700}
 .pick-badge{color:#ffdfa0;background:#3a3020;border:1px solid #66502d;border-radius:6px;padding:7px 9px;font-size:12px;line-height:1.5}
 .rating-chips{display:flex;flex-wrap:wrap;gap:8px}.rating-chip{padding:8px 10px;background:#202d3a;border-radius:6px;font-size:12px;line-height:1.5}

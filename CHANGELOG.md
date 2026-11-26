@@ -1,3 +1,13 @@
+## 0.6.149 – Kinderecke: Kanalfilter und Kanalreihen; Fortschrittsbalken und „Gesehen“ im Katalog; auf 0.6.148
+
+- Björn 26.11.2026: „in der Kinderecke tauchen die neu hinzugefügten Kanäle nur oben auf, aber nicht in der Gesamtansicht, auch werden nicht die Videos eines Kanals angezeigt, wenn ich darauf drücke, obwohl schon welche runtergeladen wurden“.
+  - Ursache (2): `youtube_abos.id` ist INTEGER; der Kanal-Chip setzte `state.filter` auf eine Zahl, `render()` rief `state.filter.startsWith('g:')` (seit 0.6.93) → TypeError, die Ansicht blieb leer. Im Klicktest gegen 0.6.148 nachgestellt („Skriptfehler: TypeError: state.filter.startsWith is not a function“). Jetzt sind Kanal- und Abo-Kennungen in `web/kids.js` immer Text.
+  - Ursache (1): in „Alle“ standen die Kanalreihen hinter allen Film-/Seriengruppen (Testkopie: hinter „Noch mehr“ mit 264 Titeln, beim Mac mehrere Hundert). Jetzt direkt nach „Neu für dich“/„Weiterschauen“.
+- Björn 26.11.2026: „Fortschritt bzw. schon geschaut Anzeige wie bei YouTube, und wenn ich das Video das nächste Mal starte, geht es an der Stelle weiter“. Bestand geprüft: Kinderecke (Balken, ✓, Fortsetzen ab 20 s) und großer Player (Fortsetzen, Weiterschauen) hatten es schon. Lücken geschlossen:
+  - Katalogkarten (Filme): Balken bzw. „✓ Gesehen“ aus `watch_state` (`AtlasWatch.progressNode`, nach jedem Laden der Stände neu gemalt); `watch_state.overview` liefert dafür je Stand die Länge.
+  - Kinderecke: ARD/ZDF-Filme übernehmen den Stand des großen Players (Werk-Kennung), wenn die Kinderecke selbst keinen hat.
+- Tests: `tests/test_v06149.py` (4), `tests/browser/kids_corner.cjs` (+3 Prüfungen: Kanalreihe vor den Gruppen, Kanalfilter zeigt das geladene Video, nur Videos dieses Kanals; scheitern gegen 0.6.148).
+
 ## 0.6.148 – Kinderecke: nummerierte Einzelfilme als eine Serie; geladene Filme/Serien zuerst (Kinderecke und Katalog); auf 0.6.147
 
 - Björn 26.11.2026 (Bild Kinderecke „Abenteuer“: „10. Die verwegenen Vier auf heißer Spur“, „11. …“, „2. … reißen aus“ … je als eigene Kachel, 26 min): „die verwegene sollten als serie zusammengefasst werden“.
