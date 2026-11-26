@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.146
+# MediathekAtlas · 0.6.147
+
+## Neu in 0.6.147: Kinderecke schlägt nach dem Video Passendes vor
+- Am Ende eines Videos, Films oder einer Folge zeigt die Kinderecke wie YouTube eine Reihe „Mehr davon“: weitere Videos desselben Kanals, Titel aus demselben Thema (Tiere, Wissen, Märchen …) und Titel mit gemeinsamen Wörtern, Ungesehenes und Neues zuerst. Vorgeschlagen wird nur, was die Kinderecke ohnehin zeigt (Freigaben, Sperren und Altersgrenze gelten weiter). Feste Regeln, keine KI.
+- Die Suche findet neue Reihenfilme sofort nach dem Markierlauf (in 0.6.144–0.6.146 blieb eine vorher gestellte Suche bis zum Neustart veraltet).
+- Die nächste Folge startet weiterhin nach 6 Sekunden; wer in den Vorschlägen blättert oder tippt, hält den Countdown an. Nach einem Film bleiben die Vorschläge stehen, bis ein Kind wählt oder „Zurück“ drückt (nach einer Minute automatisch zurück).
 
 ## Neu in 0.6.146: Kinderecke kompakter und mit mehr Bildern
 - Die Reihen der YouTube-Kanäle sind nur noch so hoch wie ihre Kacheln (die „Alle …“-Kachel am Ende hat jetzt die Form der Reihe).

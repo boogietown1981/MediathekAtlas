@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.147 – Kinderecke Vorschläge nach dem Video (26. November 2026)
+- Automatisch: tests/test_v06147.py (4), tests/browser/kids_corner.cjs (+3), gesamte Suite, Node-Tests, Klicktests; Bildschirmfoto der Testkopie in releases/0.6.147. Am Mac: echte Kinderecke (PRUEFLISTE in releases/0.6.147).
+
 ## 0.6.146 – Kinderecke Kachelhöhe, Bilder (26. November 2026)
 - Automatisch: tests/test_v06146.py (5), gesamte Suite, Node-Tests, Klicktests. Am Mac: Kinderecke ansehen, kids_pictures_fetched (PRUEFLISTE in releases/0.6.146).
 

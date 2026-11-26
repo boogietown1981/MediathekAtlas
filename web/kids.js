@@ -347,16 +347,77 @@
     return list.slice(i + 1).find(x => !x.done) || list.slice(0, i).find(x => !x.done && x.new) || list[i + 1] || null;
   }
   function clearNext() { clearTimeout(state.nextTimer); $('kids-next').hidden = true; $('kids-next-fill').classList.remove('run'); }
+  // 0.6.147 (Björn 26.11.2026: „wie bei YouTube … unten neue Videos aus dem verfügbaren Katalog, die dazu passen“):
+  // Vorschläge nur aus dem, was die Kinderecke ohnehin zeigt (Abo-Videos, freigegebene Filme und Serien; der Server
+  // prüft jede Wiedergabe erneut). Feste Regeln, keine KI: gleicher Kanal bzw. gleiche Reihe, gleiches Thema,
+  // gemeinsame Wörter im Titel; Ungesehenes und Neues zuerst; Gesehenes nur, wenn sonst nichts passt.
+  const STOP = new Set(['der', 'die', 'das', 'und', 'mit', 'für', 'von', 'den', 'dem', 'des', 'ein', 'eine', 'einer', 'im', 'in', 'am',
+    'an', 'auf', 'zu', 'zum', 'zur', 'ist', 'wie', 'was', 'wer', 'the', 'and', 'of', 'to', 'my', 'a', 'folge', 'staffel', 'teil', 'video',
+    'neu', 'kinder', 'kids', 'br', 'kika', 'ard', 'zdf', 'wdr', 'ndr', 'swr', 'shorts']);
+  const words = text => new Set(String(text || '').toLowerCase().normalize('NFC').split(/[^0-9a-zäöüß]+/)
+    .filter(w => w.length >= 4 && !STOP.has(w)));
+  function suggest(v, skip, n) {
+    // eine Folge zählt mit ihrer Serie (Titel, Thema); die Serie selbst wird nicht vorgeschlagen
+    const show = v.type === 'episode' ? state.show : null;
+    const theme = show ? show.theme : v.theme;
+    const own = words(v.title + ' ' + (v.type === 'abo' ? channelOf(v).name || '' : '') + ' ' + (show ? show.title : ''));
+    const pool = [...state.videos, ...state.movies, ...state.series];
+    const scored = [];
+    for (const x of pool) {
+      if (x === v || x === show || (x.key && x.key === v.key) || (x.id && x.id === v.id && x.type === v.type) || x === skip) continue;
+      let score = 0;
+      if (v.type === 'abo' && x.type === 'abo' && x.abo === v.abo) score += 3;
+      if (v.type !== 'abo' && x.type !== 'abo' && x.theme && x.theme === theme && x.theme !== 'mehr') score += 2;
+      let shared = 0;
+      for (const w of words(x.title + ' ' + (x.type === 'abo' ? channelOf(x).name || '' : ''))) if (own.has(w)) shared++;
+      score += Math.min(3, shared) * 1.5;
+      // schwacher Rückfall, damit nach jedem Video etwas kommt: dieselbe Art (Abo-Video bzw. Film/Serie)
+      if (!score) { if ((x.type === 'abo') !== (v.type === 'abo')) continue; score = .25; }
+      if (x.done) score -= 2; else { score += 1; if (x.new) score += .5; if (x.progress > 0) score += .5; }
+      if (x.type === v.type) score += .5;
+      scored.push([score, hash(String(v.key || v.id || v.title) + '|' + String(x.key || x.id || x.title)) % 1000, x]);
+    }
+    scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+    return scored.slice(0, n || 8).map(e => e[2]);
+  }
+  window.__kidsSuggest = (title, n) => { const v = [...state.videos, ...state.movies, ...state.series].find(x => x.title === title);
+    return v ? suggest(v, null, n).map(x => x.title) : null; };   // Klicktest
+  const listOf = x => x.type === 'abo' ? state.videos.filter(y => y.abo === x.abo) : x.type === 'movie' ? state.movies : state.series;
+  function showSuggestions(v, skip) {
+    const list = suggest(v, skip, 8), host = $('kids-suggest-list');
+    host.replaceChildren(...list.map(x => {
+      const b = tile(x, listOf(x));
+      b.onclick = () => {
+        if (x.type === 'series') { close(); openSeries(x); }
+        else play(x, listOf(x));
+      };
+      return b;
+    }));
+    $('kids-suggest').hidden = !list.length;
+    $('kids-next').classList.toggle('has-suggest', list.length > 0);
+    host.scrollLeft = 0;
+    return list.length;
+  }
   function offerNext() {
-    const n = state.current && nextOf(state.current);
-    if (!n) { setTimeout(close, 1500); return; }
+    const v = state.current, n = v && nextOf(v);
+    const many = v ? showSuggestions(v, n) : 0;
+    if (!n && !many) { setTimeout(close, 1500); return; }
+    for (const id of ['kids-next-head', 'kids-next-play', 'kids-next-bar']) $(id).hidden = !n;
+    $('kids-next').hidden = false;
+    if (!n) {   // nach einem Film: nur die Vorschläge, ohne Countdown; nach einer Minute ohne Wahl zurück
+      $('kids-next-stop').focus();
+      state.nextTimer = setTimeout(close, 60000);
+      return;
+    }
     $('kids-next-title').textContent = n.title;
     const img = $('kids-next-img'); if (n.picture) img.src = n.picture; else img.removeAttribute('src');
-    $('kids-next').hidden = false;
     const fill = $('kids-next-fill'); fill.classList.remove('run'); void fill.offsetWidth; fill.classList.add('run');
     $('kids-next-play').onclick = () => play(n, state.list);
     $('kids-next-play').focus();
     state.nextTimer = setTimeout(() => play(n, state.list), 6000);
+    // wer in den Vorschlägen blättert oder darauf zeigt, möchte selbst wählen: Countdown anhalten
+    const hold = () => { clearTimeout(state.nextTimer); fill.classList.remove('run'); };
+    $('kids-suggest').onpointerdown = hold; $('kids-suggest').onfocusin = hold; $('kids-suggest-list').onscroll = hold;
   }
   video.addEventListener('playing', () => say(''));
   video.addEventListener('waiting', () => say('Lädt …'));

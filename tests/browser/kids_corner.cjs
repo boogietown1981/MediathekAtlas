@@ -151,7 +151,15 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.waitForFunction(() => { const v = document.getElementById('kids-video'); return !document.getElementById('kids-stage').hidden && v.currentTime > 0.3; }, null, { timeout: 20000 })
     .catch(() => problems.push('Film spielt nicht: ' + refused.join(',')));
   check('Film kommt von der Adresse des Senders', asked.some(u => u.endsWith('/rabe.mp4')));
-  await page.locator('#kids-close').click();
+  // 0.6.147: am Ende eines Films „Mehr davon“ statt sofort zurück, ohne Countdown
+  await page.evaluate(() => { const v = document.getElementById('kids-video'); v.currentTime = Math.max(0, (v.duration || 1) - 0.2); });
+  await page.waitForFunction(() => !document.getElementById('kids-next').hidden, null, { timeout: 20000 })
+    .catch(() => problems.push('Nach dem Film erscheinen keine Vorschläge'));
+  const after = await page.evaluate(() => ({ head: document.getElementById('kids-next-head').hidden, bar: document.getElementById('kids-next-bar').hidden,
+    tips: [...document.querySelectorAll('#kids-suggest-list .kids-title')].map(t => t.textContent) }));
+  check('nach dem Film: Vorschläge ohne Countdown: ' + after.tips.join(' | '), after.head && after.bar && after.tips.length > 0 && !after.tips.includes('Der kleine Rabe Socke'));
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.147-kinderecke-vorschlaege.png') });
+  await page.locator('#kids-next-stop').click();
   await page.waitForFunction(() => document.getElementById('kids-stage').hidden);
 
   // Schutz: nichts außerhalb der Liste, auch nicht mit gültiger Sitzung
@@ -176,6 +184,9 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.waitForFunction(() => !document.getElementById('kids-next').hidden, null, { timeout: 30000 })
     .catch(() => problems.push('Nach der Folge wird keine nächste angeboten'));
   check('nächste Folge wird angeboten', (await page.locator('#kids-next-title').textContent()) === 'Die Maus am Meer');
+  // 0.6.147: „Mehr davon“ zeigt nie die laufende Folge oder die nächste doppelt
+  const more = await page.locator('#kids-suggest-list .kids-title').allTextContents();
+  check('Vorschläge ohne laufende/nächste Folge: ' + more.join(' | '), !more.some(t => t.includes('Die Maus im Zoo') || t.includes('Die Maus am Meer')));
   await page.locator('#kids-next-stop').click();
   await page.locator('.kids-back').click();
   check('zurück zur Übersicht', await page.locator('.kids-tile[data-kind=series]').count() >= 1);
@@ -225,6 +236,9 @@ async function scrolling(page, check) {
   check('Gruppenreihen Märchen, Zeichentrick, Noch mehr: ' + rows.join(' | '), rows.some(r => r.startsWith('🏰 Märchen')) && rows.some(r => r.startsWith('🎨 Zeichentrick')) && rows.some(r => r.startsWith('⭐ Noch mehr')));
   const fairy = await page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Märchen' }) }).locator('.kids-title').allTextContents();
   check('Märchen-Reihe: ' + fairy.join(' | '), fairy.length === 3 && fairy.includes('Frau Holle') && fairy.includes('Schneewittchen') && fairy.includes('Zz Die Gänsemagd'));
+  // 0.6.147: Vorschläge nach dem Video – gleiches Thema zuerst, nie der Titel selbst
+  const tips = await page.evaluate(() => window.__kidsSuggest('Frau Holle', 6));
+  check('Vorschläge zu „Frau Holle“: ' + (tips || []).join(' | '), Array.isArray(tips) && tips.slice(0, 2).sort().join('|') === 'Schneewittchen|Zz Die Gänsemagd' && !tips.includes('Frau Holle'));
   const strip = page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Noch mehr' }) }).first();
   const box = strip.locator('.kids-strip');
   const before = await box.evaluate(b => ({ left: b.scrollLeft, wide: b.scrollWidth > b.clientWidth + 50 }));

@@ -1,3 +1,13 @@
+## 0.6.147 – Kinderecke: Vorschläge nach dem Video; Suche nach Katalogänderung aktuell; auf 0.6.146
+
+- Befund 0.6.144 (BEFUND-06144.txt): Laufzeit und M1-Air-Punkte bestanden; neu: Suche „Geisternetze“ vor dem Markierlauf 0 Treffer, 10 min danach weiter 0 (0.6.142: 1), nach Neustart 1. Ursache: seit 0.6.144 werden veraltete Listen bei belegter Build-Sperre aus dem Speicher beantwortet und im Hintergrund hinter `_LISTING_BUILD`/`unified_index._BUILD` erneuert – auch Suchen, deren Erneuerung hinter den langen Aufbauten (Kinderecke) hing.
+- `catalog.invalidate_listings` (weich) verwirft Such-Einträge; Suchen werden nie veraltet beantwortet, auch mit `wait=False` sofort und ohne `_LISTING_BUILD` gebaut (`_listing_refresh` für Suchen ohne Sperre). `unified_index.invalidate(soft=True)` verwirft Such-Indizes; Such-Indizes bauen ohne `_BUILD`. Ganze Listen bleiben wie in 0.6.144 (veraltet sofort, Erneuerung im Hintergrund).
+- Tests: `tests/test_v06147.py` (4; zwei davon scheitern gegen 0.6.146).
+- Björn 26.11.2026: „wie bei YouTube … wenn ich ein Video abgespielt habe … unten neue Videos aus dem verfügbaren Katalog, die dazu passen könnten“.
+- `web/kids.js` `suggest`: Pool = Abo-Videos, Filme und Serien der Kinderecke (vom Server bereits gefiltert; `/api/kids-play` prüft jede Wiedergabe erneut). Punkte: gleicher Kanal +3, gleiches Thema (außer „Noch mehr“) +2, gemeinsame Titelwörter (≥ 4 Buchstaben, ohne Füllwörter/Sendernamen) je +1,5 bis 3; ungesehen +1, neu/angefangen +0,5, gleiche Art +0,5, gesehen −2; Rückfall gleiche Art 0,25. Eine Folge zählt mit Titel und Thema ihrer Serie; laufender Titel, nächste Folge und die eigene Serie werden nie vorgeschlagen. Gleichstand stabil nach Prüfsumme.
+- `offerNext`: Reihe „Mehr davon“ (bis 8 Kacheln) unter „Gleich geht's weiter mit“; Zeigen/Blättern/Fokus hält den Countdown an. Ohne nächste Folge (Film, letzte Folge) nur die Vorschläge, ohne Countdown, nach 60 s zurück; ohne Vorschläge wie bisher nach 1,5 s zurück. Serie als Vorschlag öffnet ihre Folgenseite.
+- Tests: `tests/browser/kids_corner.cjs` (+3 Prüfungen: Themenvorschläge, keine laufende/nächste Folge, Vorschläge nach einem Film ohne Countdown).
+
 ## 0.6.146 – Kinderecke: Kachelhöhe der Kanalreihen, Bilder für Reihen ohne Bild; auf 0.6.145
 
 - Björn 26.11.2026 (zwei Bildschirmfotos): „CHECKER WELT“/„Jordan Matter“ mit halb leeren Kacheln; „Checker Reportagen“, „Carolin testet“, „#WIR – Freundschaft grenzenlos“, „Die wilde Natur“ u. a. nur mit Anfangsbuchstaben.

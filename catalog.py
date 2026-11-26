@@ -742,7 +742,8 @@ def _listing_store(key,rows,seconds,search=False):
 
 def _listing_refresh(key,where,args,grouping,order,search=False):
     try:
-        with _LISTING_BUILD:
+        import contextlib
+        with (contextlib.nullcontext() if search else _LISTING_BUILD):   # 0.6.148: Suchen ohne Build-Sperre
             with LISTING_DB() as c:rows,seconds=_listing_build(c,where,args,grouping,order)
         _listing_store(key,rows,seconds,search);_LISTING_STATS['background']+=1
     except Exception as exc:
@@ -768,12 +769,12 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             # at once and are renewed in the background. 0.6.144 (Mac-Prüfung 0.6.142, Air: Filme 54 s direkt nach dem
             # Reihenfilm-Markierlauf): a quick one too while another aggregation holds _LISTING_BUILD (Kinderecke,
             # zusammengeführter Index) – before, the request queued behind them for the whole time.
-            if entry['seconds']>=LISTING_SLOW or _LISTING_BUILD.locked():
+            if entry['seconds']>=LISTING_SLOW or (_LISTING_BUILD.locked() and not search):
                 if not entry['busy']:
                     entry['busy']=True
                     threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()
                 _LISTING_STATS['hits']+=1;return entry['rows']
-        if not wait:
+        if not wait and not search:   # 0.6.148: eine Suche wird gleich gebaut (klein, ohne _LISTING_BUILD)
             failed=_LISTING_FAILED.get(key)
             if failed and now-failed[0]<=30:raise failed[1]   # do not repeat a failing aggregation at once
             # The caller (merged dashboard) shows the other sources first: compute in the
@@ -782,7 +783,7 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             if done is None:
                 done=_LISTING_QUEUED[key]=threading.Event()
                 threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_first').start()
-    if not wait:
+    if not wait and not search:
         done.wait(LISTING_WAIT)
         with _LISTING_LOCK:
             entry=_LISTING.get(key)
@@ -815,7 +816,11 @@ def invalidate_listings(drop=False):
         _LISTING_FAILED.clear()
         if drop:_LISTING.clear()
         else:
-            for entry in _LISTING.values():entry['built']=float('-inf')
+            for key,entry in list(_LISTING.items()):
+                # 0.6.148 (Mac-Prüfung 0.6.144: Suche nach dem Markierlauf veraltet): Suchen sind klein und werden neu
+                # gebaut (ohne _LISTING_BUILD), statt veraltet aus dem Speicher zu kommen
+                if entry.get('search'):_LISTING.pop(key)
+                else:entry['built']=float('-inf')
 
 def listing_cache_stats():
     with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}

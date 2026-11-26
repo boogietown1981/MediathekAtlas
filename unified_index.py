@@ -368,12 +368,20 @@ def _cached(key, builder):
                     threading.Thread(target=_renew, args=(key, builder), daemon=True,
                                      name='unified_index_renew').start()
                 return hit[1]
+    if _is_search(key):
+        # 0.6.148 (Mac-Prüfung 0.6.144: „Geisternetze“ blieb nach dem Markierlauf 0 Treffer): eine Suche ist klein und
+        # wartet nicht hinter dem Aufbau ganzer Listen (Kinderecke) auf _BUILD
+        return _build_into(key, builder)
     with _BUILD:
         with _LOCK:
             hit = _CACHE.get(key)
             if hit and time.monotonic() - hit[0] <= (PENDING_TTL if hit[1].get('pending') else TTL):
                 return hit[1]
         return _build_into(key, builder)
+
+
+def _is_search(key):
+    return isinstance(key, tuple) and len(key) > 2 and bool(key[2])
 
 
 def invalidate(soft=False):
@@ -389,7 +397,7 @@ def invalidate(soft=False):
             _CACHE.clear()
             return
         for key, (_, value) in list(_CACHE.items()):
-            if value.get('pending'):
+            if value.get('pending') or _is_search(key):   # 0.6.148: Suchen neu, nicht veraltet beantworten
                 _CACHE.pop(key)
             else:
                 _CACHE[key] = (float('-inf'), value)

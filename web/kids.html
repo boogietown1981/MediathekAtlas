@@ -10,10 +10,12 @@
   <video id="kids-video" playsinline controls preload="auto"></video>
   <button type="button" id="kids-close" class="kids-close" aria-label="Schließen">✕</button>
   <div id="kids-next" class="kids-next" hidden>
-    <p>Gleich geht's weiter mit</p>
+    <p id="kids-next-head">Gleich geht's weiter mit</p>
     <button type="button" id="kids-next-play" class="kids-next-card"><img id="kids-next-img" alt=""><strong id="kids-next-title"></strong></button>
+    <div id="kids-next-bar" class="kids-next-bar"><span id="kids-next-fill"></span></div>
+    <!-- 0.6.147 (Björn 26.11.2026: „wie bei YouTube … passende Videos vorschlagen“): nur aus der Kinderecke selbst -->
+    <section id="kids-suggest" class="kids-suggest" hidden><h3>Mehr davon</h3><div id="kids-suggest-list" class="kids-suggest-list"></div></section>
     <div class="kids-next-actions"><button type="button" id="kids-next-stop" class="kids-round">Zurück</button></div>
-    <div class="kids-next-bar"><span id="kids-next-fill"></span></div>
   </div>
   <p id="kids-stage-msg" class="kids-stage-msg" hidden></p>
 </div>
