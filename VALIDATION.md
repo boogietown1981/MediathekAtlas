@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.143 – M1-Air-Diagnose (26. November 2026)
+- Automatisch: tests/test_v06143.py (14), gesamte Suite, Node-Tests, Klicktests. Am Mac: Startprotokoll (arm64-Auswahl), IMDb-Platzsperre an einer Kopie, Filmlisten-Fortsetzung (PRUEFLISTE in releases/0.6.143).
+
 ## 0.6.142 – Reihenfilme, Tatort ohne Landangabe (26. November 2026)
 - Automatisch: tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.142).
 

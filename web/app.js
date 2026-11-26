@@ -516,7 +516,7 @@ function renderImdb(s={}){
  imdbReady=!!s.ready;
  const phases={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',
    importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',retrying:'Wiederhole unterbrochenen Download',ready:'Archiv bereit',
-   error:'Aktualisierung fehlgeschlagen'};
+   error:'Aktualisierung fehlgeschlagen',waiting_space:'Wartet auf Speicherplatz (kein Download, das bisherige Archiv bleibt nutzbar)'};
  const phase=phases[s.phase]||'Nicht gestartet',last=imdbDate(s.updated),next=imdbDate(s.next_update);
  const busy=['downloading','retrying','importing','indexing'].includes(s.phase);
  const size=s.archive_bytes>0?(s.archive_bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:2})+' GiB':'–';

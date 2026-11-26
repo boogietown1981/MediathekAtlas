@@ -420,6 +420,14 @@ class Service:
         self.format_wake.set();self.subscription_wake.set()
         diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
         self.status(phase='complete',processed=count,changes=changes);return count
+    FEED_NET_BACKOFF=(600,1800,3600)
+    def feed_retry_delay(self,error):
+        """0.6.143 (M1-Air-Diagnose 26.11.2026: ohne Netz alle ~5–10 min ein neuer Zyklus mit 3 Versuchen): bei
+        Netzfehlern wachsende Wartezeit 10 → 30 → 60 min (ein Klick auf „Jetzt starten“ geht immer sofort), sonst 5 min."""
+        if not filmlist.network_error(error):
+            self.feed_net_failures=0;return 300
+        self.feed_net_failures=getattr(self,'feed_net_failures',0)+1
+        return self.FEED_NET_BACKOFF[min(self.feed_net_failures,len(self.FEED_NET_BACKOFF))-1]
     def sync_loop(self):
         retry_after=0
         while not self.stop.wait(2):
@@ -448,7 +456,7 @@ class Service:
             self.wake.clear();self.restart.clear();started=time.time()
             def cancelled():return self.stop.is_set() or self.restart.is_set() or task_control.paused('filmlist') or (not requested and not self.settings().get('auto_catalog',True))
             try:
-                path=filmlist.download(self.root,self.status,cancelled)
+                path=filmlist.download(self.root,self.status,cancelled);self.feed_net_failures=0
                 self.import_snapshot(path,started,cancelled)
             except InterruptedError:self.status(phase='paused')
             except sqlite3.OperationalError as e:
@@ -457,8 +465,9 @@ class Service:
                 self.busy('sync');diagnostics.event('catalog_sync_busy',level='WARNING',error=core.safe_error(e))
                 self.status(phase='waiting',error='Datenbank belegt, neuer Versuch in 1 min');retry_after=time.time()+60
             except Exception as e:
-                diagnostics.error('catalog_sync_failed',e)
-                self.status(phase='error',error=core.safe_error(e));retry_after=time.time()+300
+                delay=self.feed_retry_delay(e)
+                diagnostics.error('catalog_sync_failed',e,retry_seconds=delay)
+                self.status(phase='error',error=core.safe_error(e),retry_at=time.time()+delay);retry_after=time.time()+delay
     FILM_REVIEW_LOG=300
     def log_film_review(self,meta,source,judged,candidates):
         """0.6.132 (Diagnose Air 0.6.131: „More than Honey“, Wallander „prüfen“ mit Kandidat, Grund nicht im Export): for

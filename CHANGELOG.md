@@ -1,3 +1,15 @@
+## 0.6.143 – M1-Air-Diagnose: IMDb-Platz, Filmliste mobil, filmfriend, Rosetta, Diagnose; auf 0.6.142
+
+- Grundlage: berichte/diagnose-2026-11-26-abend-06139-m1air.md (MacBook Air M1 8 GB, mobil, 0.6.139).
+- B2 `imdb_archive.Archive.space_gate`/`update`: kein Update, wenn frei (Finder-Wert) + bereits geladene Zwischendateien kleiner als Archiv + 2 GB; Phase `waiting_space`, Prüfung alle 15 min (`SPACE_RECHECK`), kein Fehlerzähler/Back-off, Ereignis `imdb_archive_waiting_space` einmal je Übergang. Fertige Downloads werden bei Platzfehlern nicht mehr gelöscht.
+- B1 `filmlist._download`: Teil-Download bleibt (filmliste.part + .part.tag mit ETag/Last-Modified) und wird mit `Range`/`If-Range` fortgesetzt; 200 statt 206 = neu beginnen; HTTP-Fehler (z. B. 416) verwerfen den Teil. Abbruch vor Content-Length = `filmlist.Truncated` (Netzfehler). Antwort ohne xz-Kennung = „Anmeldeseite eines WLAN/Hotspots?“. `feed_download_failed` mit `network` und `kept_bytes`.
+- B1 `catalog_service.feed_retry_delay`: bei Netzfehlern 10 → 30 → 60 min statt 5 min, Rücksetzen nach erfolgreichem Download; „Jetzt starten“ unverändert sofort.
+- B4 `filmfriend.Crawl`: nach `provider_base.NET_FAILURE_BUDGET` (3) Verbindungsfehlern keine weiteren Anfragen, Lauf teilweise, nächster Versuch nach `NET_RETRY` (2 h); `filmfriend_sync_completed` mit `net_failures`/`stopped`.
+- B6 `system_monitor.machine_details` (RAM, Swap, `kern.memorystatus_level`, Prozessspeicher, `sysctl.proc_translated`, `hw.optional.arm64`, Hinweise) und `databases` in status.json der Diagnose.
+- B3 `launcher.sh`: auf Apple Silicon zuerst ein Python, das mit `arch -arm64` startet; alle Aufrufe über `PYCMD`; nur ohne arm64-Python Intel-Python unter Rosetta mit Hinweis im Startprotokoll.
+- B7 (Ruhezustand) nicht geändert: der hängende Download endete eine Minute nach dem Aufwachen durch die Lese-Zeitgrenze; mit B1 geht der Teil nicht mehr verloren.
+- Tests: `tests/test_v06143.py` (14).
+
 ## 0.6.142 – Reihenfilme: Tatort ohne Landangabe; auf 0.6.141
 
 - Befund 0.6.141 (BEFUND-06141.txt): Rebecka Martinsson, Brokenwood, Maria Wern (ohne Koproduktion) richtig weg, keine Dubletten, Regression bestanden; drei deutsche Tatorte fielen heraus: BR „Spielfilm | Krimi 2021 … Tatort-Fall“ (ohne Land), WDR „Fernsehfilm Deutschand 2024“ (Tippfehler).

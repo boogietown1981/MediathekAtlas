@@ -52,6 +52,13 @@ def export(snapshot):
         snapshot={**snapshot,**collect(_root)}
     except (OSError,ValueError,RuntimeError) as exc:
         snapshot={**snapshot,'platform_diagnostics':{'error_type':type(exc).__name__}}
+    try:
+        # 0.6.143: Arbeitsspeicher, Auslagerung, Rosetta und Datenbankgrößen (vorher nur in der Oberfläche sichtbar)
+        import system_monitor
+        snapshot={**snapshot,'machine_details':system_monitor.machine_details()}
+        if _root:snapshot['databases']=system_monitor.databases(_root)
+    except Exception as exc:
+        snapshot={**snapshot,'machine_details':{'error_type':type(exc).__name__}}
     out=io.BytesIO()
     with _lock,zipfile.ZipFile(out,'w',zipfile.ZIP_DEFLATED) as z:
         z.writestr('status.json',json.dumps(clean({'version':VERSION,'system':platform.system(),'machine':platform.machine(),'python':platform.python_version(),**snapshot}),ensure_ascii=False,indent=2))

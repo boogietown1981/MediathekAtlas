@@ -329,12 +329,25 @@ class Crawl:
                     time.sleep(self.waits[attempt])
         self.opener = patient
         self.requests, self.errors, self.truncated = 0, [], False
+        # 0.6.143 (M1-Air-Diagnose 26.11.2026: 544 Fehler nach Netzverlust): wie dailyme nach NET_FAILURE_BUDGET
+        # Verbindungsfehlern anhalten; der Lauf zählt als teilweise, der nächste Versuch folgt nach NET_RETRY.
+        self.net_failures, self.stopped = 0, False
         self.search_pages, self.details, self.detail_404 = 0, 0, 0
         self.entries = {}                     # row id -> row (search data, then details)
         self.tenant = ''
 
     def get(self, path):
-        answer = json.loads(self.opener(API + path, _headers()).decode('utf-8'))
+        if self.stopped:
+            raise ConnectionError('filmfriend: Lauf nach Netzfehlern angehalten')
+        try:
+            raw = self.opener(API + path, _headers())
+        except Exception as exc:
+            if provider_base.network_failure(exc):
+                self.net_failures += 1
+                if self.net_failures >= provider_base.NET_FAILURE_BUDGET:
+                    self.stopped = self.truncated = True
+            raise
+        answer = json.loads(raw.decode('utf-8'))
         self.requests += 1
         if self.requests % 100 == 0:
             _notify('filmfriend_sync_progress', requests=self.requests, titles=len(self.entries), errors=len(self.errors))
@@ -356,6 +369,8 @@ class Crawl:
             self.errors.append('Menü: ' + _error(exc))
             pages = []
         for page, _title in pages:
+            if self.stopped:
+                break
             try:
                 for search in page_searches(self.get('%s/pages/%s' % (self.tenant, page))):
                     if search not in found:
@@ -367,7 +382,7 @@ class Crawl:
     def collect(self):
         for search in self.searches():
             skip = 0
-            while True:
+            while not self.stopped:
                 if self.search_pages >= MAX_SEARCH_PAGES or len(self.entries) >= MAX_ITEMS:
                     self.truncated = True
                     return
@@ -394,6 +409,8 @@ class Crawl:
         if len(due) > MAX_DETAILS:
             due = due[:MAX_DETAILS]
         for rid in due:
+            if self.stopped:
+                break
             row = self.entries[rid]
             kind = 'movie' if row['kind'] == 'movie' else 'series'
             try:
@@ -474,7 +491,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
                 visible_since = previous if partial and previous else now
                 for key, value in [('last_success', visible_since), ('last_loaded', now),
                                    ('last_result', 'partial' if partial else 'complete'), ('last_error', message),
-                                   ('last_http_status', 0), ('next_attempt', now + 24 * 3600),
+                                   ('last_http_status', 0), ('next_attempt', now + (provider_base.NET_RETRY if crawl.stopped else 24 * 3600)),
                                    ('requests', crawl.requests), ('pages', crawl.search_pages),
                                    ('details_waiting', waiting), *counts.items()]:
                     _set(db, key, value)
@@ -482,7 +499,7 @@ def sync(root, opener=None, now=None, gap=None, waits=None):
             db.close()
         _notify('filmfriend_sync_completed', partial=partial, requests=crawl.requests, pages=crawl.search_pages,
                 errors=len(crawl.errors), truncated=crawl.truncated, details=crawl.details, detail_404=crawl.detail_404,
-                details_waiting=waiting, imdb=sum(1 for r in rows if r['imdb_id']), **counts)
+                details_waiting=waiting, net_failures=crawl.net_failures, stopped=crawl.stopped, imdb=sum(1 for r in rows if r['imdb_id']), **counts)
         return {'ok': True, 'partial': partial, **counts}
     except Exception as exc:
         message = _error(exc)

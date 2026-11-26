@@ -23,18 +23,34 @@ printf 'MediathekAtlas %s Startprüfung\n' "${APP_VERSION:-?}" >> "$LOG"
 OSASCRIPT=/usr/bin/osascript
 if [ "${MEDIATHEKATLAS_NO_DIALOG:-}" = "1" ]; then OSASCRIPT=/nonexistent/osascript; fi
 FOUND_PYTHON=""
+# 0.6.143 (M1-Air-Diagnose 26.11.2026: machine x86_64, Python aus /usr/local): auf Apple Silicon zuerst ein Python
+# suchen, das nativ als arm64 läuft, und es mit „arch -arm64“ starten (wirkt auch, wenn die App mit „Mit Rosetta
+# öffnen“ gestartet wurde). Nur wenn keines da ist, läuft ein Intel-Python unter Rosetta 2 weiter (mit Hinweis).
+PYCMD=()
+ARM_PREFIX=()
+if [ "$(/usr/sbin/sysctl -n hw.optional.arm64 2>/dev/null)" = "1" ] && [ -x /usr/bin/arch ]; then
+  ARM_PREFIX=(/usr/bin/arch -arm64)
+fi
+PY_CHECK='import sys, platform, sqlite3, ssl, pathlib, urllib.request; print(sys.version, platform.machine()); sys.exit(0 if sys.version_info >= (3,9) else 1)'
 try_python() {
   local candidate="$1"
   [ -n "$candidate" ] && [ -x "$candidate" ] || return 1
   printf 'Python prüfen: %s\n' "$candidate" >> "$LOG"
-  if "$candidate" -c 'import sys, sqlite3, ssl, pathlib, urllib.request; print(sys.version); sys.exit(0 if sys.version_info >= (3,9) else 1)' >> "$LOG" 2>&1; then
-    FOUND_PYTHON="$candidate"
+  if [ "${#ARM_PREFIX[@]}" -gt 0 ] && [ "${2:-}" = "arm64" ]; then
+    if "${ARM_PREFIX[@]}" "$candidate" -c "$PY_CHECK" >> "$LOG" 2>&1; then
+      FOUND_PYTHON="$candidate";PYCMD=("${ARM_PREFIX[@]}" "$candidate")
+      return 0
+    fi
+    return 1
+  fi
+  if "$candidate" -c "$PY_CHECK" >> "$LOG" 2>&1; then
+    FOUND_PYTHON="$candidate";PYCMD=("$candidate")
     return 0
   fi
   return 1
 }
 shopt -s nullglob
-for candidate in "${MEDIATHEKATLAS_PYTHON:-}" \
+CANDIDATES=("${MEDIATHEKATLAS_PYTHON:-}" \
   /opt/homebrew/bin/python3 /usr/local/bin/python3 \
   /Library/Frameworks/Python.framework/Versions/Current/bin/python3 \
   /Library/Frameworks/Python.framework/Versions/3.*/bin/python3 \
@@ -43,9 +59,21 @@ for candidate in "${MEDIATHEKATLAS_PYTHON:-}" \
   /opt/homebrew/opt/python@3.*/bin/python3.* \
   /usr/local/opt/python@3.*/bin/python3.* \
   /opt/local/bin/python3 /opt/local/bin/python3.* \
-  "$(command -v python3 || true)" /usr/bin/python3; do
-  if try_python "$candidate"; then break; fi
-done
+  "$(command -v python3 || true)" /usr/bin/python3)
+if [ "${#ARM_PREFIX[@]}" -gt 0 ]; then
+  printf 'Apple Silicon: suche zuerst ein natives arm64-Python.\n' >> "$LOG"
+  for candidate in "${CANDIDATES[@]}"; do
+    if try_python "$candidate" arm64; then break; fi
+  done
+fi
+if [ -z "$FOUND_PYTHON" ]; then
+  for candidate in "${CANDIDATES[@]}"; do
+    if try_python "$candidate"; then break; fi
+  done
+  if [ -n "$FOUND_PYTHON" ] && [ "${#ARM_PREFIX[@]}" -gt 0 ]; then
+    printf 'Hinweis: kein arm64-Python gefunden, %s läuft unter Rosetta 2 (langsamer, mehr Arbeitsspeicher). Abhilfe: Python von python.org (Universal) oder Homebrew unter /opt/homebrew installieren.\n' "$FOUND_PYTHON" >> "$LOG"
+  fi
+fi
 if [ -z "$FOUND_PYTHON" ]; then
   MESSAGE="MediathekAtlas konnte kein startbares Python ab 3.9 finden. Eine vorhandene Installation wurde möglicherweise nicht erkannt. Details stehen im Startprotokoll. FFmpeg wurde noch nicht geprüft."
   printf '%s\n' "$MESSAGE" >> "$LOG"
@@ -63,11 +91,11 @@ APPLESCRIPT
   fi
   exit 1
 fi
-printf 'Ausgewähltes Python: %s\n' "$FOUND_PYTHON" >> "$LOG"
-RUNTIME_DIR="$("$FOUND_PYTHON" "$APP_DIR/stable_runtime.py" "$APP_DIR" "$STATE_DIR" 2>> "$LOG")" || exit 1
+printf 'Ausgewähltes Python: %s\n' "${PYCMD[*]}" >> "$LOG"
+RUNTIME_DIR="$("${PYCMD[@]}" "$APP_DIR/stable_runtime.py" "$APP_DIR" "$STATE_DIR" 2>> "$LOG")" || exit 1
 cd "$RUNTIME_DIR" || exit 1
 if [ "${1:-}" = "--diagnose" ]; then
-  exec "$FOUND_PYTHON" diagnostics_cli.py
+  exec "${PYCMD[@]}" diagnostics_cli.py
 fi
 # 0.6.47 (found on Björn's MacBook Pro M4, 20.11.2026): this script is the executable of the macOS app. While it
 # waited here for a hanging Python process, macOS still counted the app as running and a double click did nothing
@@ -79,7 +107,7 @@ fi
 # Start from Terminal (Start.command, launcher.sh) keeps running in the foreground as before.
 if [ "$APP_DIR" != "$LAUNCH_DIR" ] && [ -z "${MEDIATHEKATLAS_SUPERVISED:-}" ] && [ "${MEDIATHEKATLAS_FOREGROUND:-}" != "1" ]; then
   printf 'Startskript übergibt an einen eigenständigen Prozess (App gilt danach nicht mehr als „läuft noch“).\n' >> "$LOG"
-  if MEDIATHEKATLAS_SUPERVISED=1 MEDIATHEKATLAS_PYTHON="$FOUND_PYTHON" "$FOUND_PYTHON" -c '
+  if MEDIATHEKATLAS_SUPERVISED=1 MEDIATHEKATLAS_PYTHON="$FOUND_PYTHON" "${PYCMD[@]}" -c '
 import subprocess, sys
 log = open(sys.argv[1], "ab")
 subprocess.Popen(sys.argv[2:], start_new_session=True, stdin=subprocess.DEVNULL, stdout=log, stderr=log, close_fds=True)
@@ -89,14 +117,14 @@ subprocess.Popen(sys.argv[2:], start_new_session=True, stdin=subprocess.DEVNULL,
   printf 'Übergabe fehlgeschlagen, Start im Vordergrund.\n' >> "$LOG"
 fi
 while :; do
-  "$FOUND_PYTHON" server.py >> "$LOG" 2>&1
+  "${PYCMD[@]}" server.py >> "$LOG" 2>&1
   STATUS=$?
   # 0.6.20: Speicherort für System und Datenbank nicht erreichbar (z. B. externes Laufwerk abgezogen).
   if [ "$STATUS" -eq 3 ] && [ -x "$OSASCRIPT" ] && [ -f "$STATE_DIR/storage-problem.txt" ]; then
     # 0.6.25: dritter Knopf „Bisherigen Ort verwenden“ stellt nur den Zeiger zurück (nichts wird kopiert oder gelöscht).
     REVERT="no"
     # 0.6.86: Status 4 = der bisherige Datenstand liegt im Standardordner; der Knopf heißt dann so.
-    "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert-info >> "$LOG" 2>&1
+    "${PYCMD[@]}" storage_locations.py --home "$STATE_DIR" --revert-info >> "$LOG" 2>&1
     case $? in 0) REVERT="Bisherigen Ort verwenden";; 4) REVERT="Standardordner verwenden";; esac
     ANSWER="$("$OSASCRIPT" - "$STATE_DIR/storage-problem.txt" "$REVERT" <<'APPLESCRIPT'
 on run argv
@@ -112,7 +140,7 @@ APPLESCRIPT
 )"
     if [ "$ANSWER" = "Erneut versuchen" ]; then continue; fi
     if [ "$ANSWER" = "Bisherigen Ort verwenden" ] || [ "$ANSWER" = "Standardordner verwenden" ]; then
-      if "$FOUND_PYTHON" storage_locations.py --home "$STATE_DIR" --revert >> "$LOG" 2>&1; then continue; fi
+      if "${PYCMD[@]}" storage_locations.py --home "$STATE_DIR" --revert >> "$LOG" 2>&1; then continue; fi
     fi
     exit 3
   fi

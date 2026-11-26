@@ -81,6 +81,71 @@ def memory():
     return None, None
 
 
+def _sysctl(name):
+    try:
+        out = subprocess.run(['/usr/sbin/sysctl', '-n', name], capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _swapusage(text):
+    """(total, used) bytes from macOS ``sysctl -n vm.swapusage`` (``total = 2048.00M  used = 1024.50M  free = …``)."""
+    import re
+    units = {'K': 1024, 'M': 1024 ** 2, 'G': 1024 ** 3}
+    found = {k: float(v) * units.get(u, 1) for k, v, u in re.findall(r'(total|used)\s*=\s*([\d.,]+)([KMG]?)', text.replace(',', '.'))}
+    if 'total' not in found:
+        return None, None
+    return int(found['total']), int(found.get('used', 0))
+
+
+def swap():
+    """(total, used) bytes of swap, None where unknown."""
+    try:
+        if sys.platform.startswith('linux'):
+            values = {}
+            for line in Path('/proc/meminfo').read_text().splitlines():
+                name, _, rest = line.partition(':')
+                parts = rest.split()
+                if parts and parts[0].isdigit():
+                    values[name.strip()] = int(parts[0]) * 1024
+            if 'SwapTotal' in values:
+                return values['SwapTotal'], values['SwapTotal'] - values.get('SwapFree', 0)
+        elif sys.platform == 'darwin':
+            text = _sysctl('vm.swapusage')
+            if text:
+                return _swapusage(text)
+    except (OSError, ValueError):
+        pass
+    return None, None
+
+
+def machine_details():
+    """0.6.143 (M1-Air-Diagnose 26.11.2026: Arbeitsspeicher, Auslagerung und Rosetta fehlten in der Diagnose): RAM,
+    Swap, Speicherdruck (macOS: freier Anteil laut kern.memorystatus_level), Prozessspeicher und ob Python unter
+    Rosetta 2 läuft. Nur lokale Abfragen mit kurzen Zeitgrenzen; unbekannte Werte bleiben None."""
+    total, available = memory()
+    swap_total, swap_used = swap()
+    details = {'memory_total': total, 'memory_available': available, 'swap_total': swap_total, 'swap_used': swap_used,
+               'process_memory': process_memory(), 'memory_free_percent': None, 'rosetta': None, 'apple_silicon': None,
+               'cores': os.cpu_count() or 1, 'load': load()}
+    if sys.platform == 'darwin':
+        level = _sysctl('kern.memorystatus_level')
+        details['memory_free_percent'] = int(level) if level and level.isdigit() else None
+        translated = _sysctl('sysctl.proc_translated')
+        details['rosetta'] = translated == '1' if translated in ('0', '1') else False if translated is None and platform.machine() == 'arm64' else None
+        arm = _sysctl('hw.optional.arm64')
+        details['apple_silicon'] = arm == '1' if arm in ('0', '1') else None
+    hints = []
+    if details['rosetta']:
+        hints.append('Python läuft unter Rosetta 2 (Intel-Code auf Apple Silicon): langsamer und mit mehr Arbeitsspeicher. '
+                     'Im Finder unter „Informationen“ den Haken „Mit Rosetta öffnen“ entfernen oder ein arm64-Python installieren.')
+    if swap_used and total and swap_used > total / 4:
+        hints.append('Viel ausgelagerter Arbeitsspeicher (%.1f GB).' % (swap_used / GB))
+    details['hints'] = hints
+    return details
+
+
 def process_memory():
     """Memory of this MediathekAtlas process in bytes, or None."""
     try:

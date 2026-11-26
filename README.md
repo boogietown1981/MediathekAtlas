@@ -1,4 +1,11 @@
-# MediathekAtlas · 0.6.142
+# MediathekAtlas · 0.6.143
+
+## Neu in 0.6.143: unterwegs und auf kleinen Macs
+- Das IMDb-Update startet nur, wenn neben dem Archiv genug Platz ist. Sonst steht „Wartet auf Speicherplatz“ da, nichts wird geladen, und alle 15 Minuten wird neu geprüft. Bereits geladene Dateien bleiben erhalten.
+- Bricht der Download der Filmliste ab (Mobilfunk, Hotspot), setzt der nächste Versuch an derselben Stelle fort. Ohne Netz wartet MediathekAtlas länger zwischen den Versuchen (10, 30, dann 60 Minuten); „Jetzt starten“ geht immer sofort. Eine Anmeldeseite eines WLANs wird als solche gemeldet.
+- filmfriend hält nach drei Verbindungsfehlern an und versucht es später erneut, statt Hunderte Fehler zu sammeln.
+- Auf Macs mit Apple-Chip startet MediathekAtlas ein natives Python (arm64) bevorzugt; läuft nur ein Intel-Python unter Rosetta, steht ein Hinweis im Startprotokoll und in der Diagnose.
+- Die Diagnose enthält Arbeitsspeicher, Auslagerung, Speicherdruck, Rosetta und die Größe der Datenbanken.
 
 ## Neu in 0.6.142: Reihenfilme auch unter Filme
 - Filme einer Reihe (Der Usedom-Krimi, Die Füchsin, Die drei von der Müllabfuhr, Tatort, Polizeiruf 110 …) bleiben in ihrer Reihe und stehen zusätzlich einzeln unter Filme, mit eigenem Filmtitel und Filmjahr („Die drei von der Müllabfuhr – Altlasten“, 2023). Die Suche findet sie auch über den Filmtitel.

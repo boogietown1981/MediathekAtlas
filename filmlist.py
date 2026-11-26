@@ -4,24 +4,65 @@ from pathlib import Path
 import core,diagnostics
 URL='https://liste.mediathekview.de/Filmliste-akt.xz'
 
+XZ_MAGIC=b'\xfd7zXZ\x00'
+LIMIT=512*1024*1024
+
+class Truncated(ConnectionError):
+    """0.6.143: Verbindung endet vor Content-Length (M1-Air-Diagnose 26.11.2026: 9× nach 7.881 Byte über Mobilfunk) –
+    ein Netzfehler, kein Datenfehler; der Teil-Download bleibt für die Fortsetzung liegen."""
+
+def _validator(response):
+    return response.headers.get('ETag') or response.headers.get('Last-Modified') or ''
+
 def _download(root,progress,cancelled):
-    dest=Path(root)/'filmliste.xz';part=dest.with_suffix('.part');received=0;last=0
+    """Lädt die Filmliste; 0.6.143: ein Teil-Download wird mit Range/If-Range fortgesetzt, solange der Server dieselbe
+    Datei liefert (ETag/Last-Modified in filmliste.part.tag). Liefert er 200 statt 206, beginnt der Download neu."""
+    dest=Path(root)/'filmliste.xz';part=dest.with_suffix('.part');tag=dest.with_suffix('.part.tag')
+    have=part.stat().st_size if part.exists() else 0
+    old=tag.read_text(encoding='utf-8').strip() if have and tag.exists() else ''
+    if have and not old:have=0
+    headers={'Range':'bytes=%d-'%have,'If-Range':old} if have else {}
+    keep=False
     try:
-        with core.open_url(URL) as response,part.open('wb') as f:
-            total=int(response.headers.get('Content-Length') or 0)
-            progress(phase='downloading',received=0,total=total)
-            while True:
-                if cancelled():raise InterruptedError('Import pausiert')
-                chunk=response.read1(64*1024) if hasattr(response,'read1') else response.read(64*1024)
-                if not chunk:break
-                received+=len(chunk)
-                if received>512*1024*1024:raise ValueError('Filmliste über 512 MiB')
-                f.write(chunk)
-                if time.monotonic()-last>=1:
-                    progress(phase='downloading',received=received,total=total);last=time.monotonic()
-            if total and received!=total:raise ValueError('Unvollständige Filmliste')
-        os.replace(part,dest);return dest
-    finally:part.unlink(missing_ok=True)
+        with core.open_url(URL,headers=headers) as response:
+            resumed=bool(have and getattr(response,'status',200)==206)
+            if not resumed:have=0
+            length=int(response.headers.get('Content-Length') or 0)
+            total=have+length if length else 0
+            validator=_validator(response)
+            if validator:tag.write_text(validator,encoding='utf-8')
+            else:tag.unlink(missing_ok=True)
+            received=have;last=0;head=b''
+            if resumed:diagnostics.event('feed_download_resumed',offset=have,total=total)
+            progress(phase='downloading',received=received,total=total,resumed=resumed)
+            with part.open('ab' if resumed else 'wb') as f:
+                while True:
+                    if cancelled():
+                        keep=bool(validator);raise InterruptedError('Import pausiert')
+                    chunk=response.read1(64*1024) if hasattr(response,'read1') else response.read(64*1024)
+                    if not chunk:break
+                    if not resumed and len(head)<6:
+                        head+=chunk[:6-len(head)]
+                        if len(head)>=6 and head!=XZ_MAGIC:
+                            raise ValueError('Antwort ist keine Filmliste (%s) – Anmeldeseite eines WLAN/Hotspots?'%
+                                             (response.headers.get('Content-Type') or 'unbekannter Typ')[:60])
+                    received+=len(chunk)
+                    if received>LIMIT:raise ValueError('Filmliste über 512 MiB')
+                    f.write(chunk)
+                    if time.monotonic()-last>=1:
+                        progress(phase='downloading',received=received,total=total);last=time.monotonic()
+            if total and received!=total:
+                keep=bool(validator)
+                raise Truncated('Unvollständige Filmliste (%d von %d Byte, Verbindung abgebrochen; wird fortgesetzt)'%(received,total))
+        os.replace(part,dest);tag.unlink(missing_ok=True);return dest
+    except (OSError,TimeoutError) as e:
+        # Netzabbruch mitten im Lesen: Teil behalten, wenn der Server ihn wiedererkennt (HTTP-Fehler wie 416: neu beginnen)
+        import urllib.error
+        if not isinstance(e,(FileNotFoundError,urllib.error.HTTPError)) and part.exists() and tag.exists():keep=True
+        raise
+    finally:
+        if not keep:
+            part.unlink(missing_ok=True);tag.unlink(missing_ok=True)
 
 def download(root,progress,cancelled):
     for attempt in range(1,4):
@@ -30,12 +71,20 @@ def download(root,progress,cancelled):
             return _download(root,progress,cancelled)
         except InterruptedError:raise
         except Exception as e:
-            diagnostics.error('feed_download_failed',e,attempt=attempt)
+            part=Path(root)/'filmliste.part'
+            diagnostics.error('feed_download_failed',e,attempt=attempt,network=network_error(e),
+                              kept_bytes=part.stat().st_size if part.exists() else 0)
             if attempt==3:raise
             progress(phase='retrying',attempt=attempt,error=core.safe_error(e))
             for _ in range(attempt*20):
                 if cancelled():raise InterruptedError('Import pausiert')
                 time.sleep(.1)
+
+def network_error(e):
+    """Verbindungsfehler (DNS, Abbruch, Zeitüberschreitung, Teil-Download) – für die wachsende Wartezeit."""
+    import urllib.error,provider_base
+    if isinstance(e,urllib.error.HTTPError):return e.code in (408,429,500,502,503,504)
+    return isinstance(e,EOFError) or provider_base.network_failure(e)
 
 def pairs(stream):
     buf='';pos=0;eof=False;decoder=json.JSONDecoder();total=0
