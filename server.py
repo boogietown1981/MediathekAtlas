@@ -1657,7 +1657,7 @@ def get_unified(self,path):
     return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
         genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
         offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES,
-        language=q.get('lang',[''])[0],only=q.get('only',[''])[0]))
+        language=q.get('lang',[''])[0],only=q.get('only',[''])[0],reihen=q.get('reihen',['1'])[0]=='1'))   # 0.6.150: Filmreihen zusammengefasst
 
 @ROUTES.get('/api/display')
 def get_display(self,path):

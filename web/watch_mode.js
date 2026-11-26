@@ -153,7 +153,7 @@
 
   // ------------------------------------------------------------------ Daten
   async function unified(kind, extra) {
-    const q = new URLSearchParams({kind, sort: 'year', offset: '0', ...(extra || {})});
+    const q = new URLSearchParams({kind, sort: 'year', offset: '0', reihen: '0', ...(extra || {})});   // 0.6.150: einzeln
     const data = await call('unified?' + q);
     const rows = [];
     for (const entry of data.items || []) {

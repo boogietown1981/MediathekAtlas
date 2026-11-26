@@ -1,3 +1,10 @@
+## 0.6.150 – Filme: Filmreihen (Tatort, Polizeiruf …) und Mehrteiler als eine Kachel; auf 0.6.149
+
+- Björn 26.11.2026 zu „Tatort/Polizeiruf einzeln unter Filme?“: „wenn es Filme sind, dann ja, aber man kann sie auch als Reihe zusammenfassen, z. B. alle Tatort-Filme, bzw. wenn ein Film 1–n Teile hat“; Koproduktionen mit Deutschland (Van der Valk, Irene Huss, Maria Wern) bleiben unter Filme.
+- `unified_index.collapse_reihen` (nur Filmliste ohne Suche, Parameter `reihen`; `/api/unified` Standard an, Ansehen-Modus `reihen=0`, Kinderecke ohne): Reihenfilme (`series_film`) derselben `show_key` ab `REIHE_MIN`=3 → eine Kachel mit dem Reihennamen (Jahr = neuester Film, `reihe`/`show_key`/`film_count`, `series_parent` → öffnet die Reihe). Sendeplatz-Namen (`REIHE_SLOT`: film/kino/movie/…) bleiben einzeln; mit anderem Anbieter zusammengeführte Titel bleiben einzeln (kein Angebot verschwindet). Mehrteiler (`PART`: „Teil n“, „(n/m)“, „Teil zwei“) ab zwei verschiedenen Teilen → Kachel „Grundtitel“ mit `mehrteiler` {query, parts}; Klick sucht den Grundtitel (Teile einzeln, nach Titel).
+- Web: Katalogkarte „Filmreihe · n Filme“ bzw. „Mehrteiler · n Teile“ (`showParts`).
+- Tests: `tests/test_v06150.py` (4).
+
 ## 0.6.149 – Kinderecke: Kanalfilter und Kanalreihen; Fortschrittsbalken und „Gesehen“ im Katalog; auf 0.6.148
 
 - Björn 26.11.2026: „in der Kinderecke tauchen die neu hinzugefügten Kanäle nur oben auf, aber nicht in der Gesamtansicht, auch werden nicht die Videos eines Kanals angezeigt, wenn ich darauf drücke, obwohl schon welche runtergeladen wurden“.

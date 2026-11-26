@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.149
+# MediathekAtlas · 0.6.150
+
+## Neu in 0.6.150: Filmreihen und Mehrteiler unter Filme zusammengefasst
+- Unter „Filme“ stehen Reihenfilme einer Mediatheken-Reihe (Tatort, Polizeiruf 110, Der Usedom-Krimi …) ab drei Filmen als EINE Kachel „Filmreihe · n Filme“; sie öffnet die Filme der Reihe. Sendeplätze wie „FilmMittwoch im Ersten“ oder „Herzkino“ sind keine Reihe und bleiben einzeln.
+- Mehrteiler („… Teil 1“, „… (2/3)“) stehen als eine Kachel „Mehrteiler · n Teile“; sie zeigt die Teile in Reihenfolge.
+- Eine Suche zeigt weiterhin jeden Film einzeln; Kinderecke und Ansehen-Modus bleiben unverändert.
 
 ## Neu in 0.6.149: Kinderecke-Kanäle repariert, Fortschritt überall sichtbar
 - Kinderecke: Ein neu abonnierter Kanal zeigt beim Antippen oben seine Videos (vorher blieb die Ansicht leer). In „Alle“ stehen die Kanalreihen jetzt direkt nach „Neu“ und „Weiterschauen“, vor den Film- und Seriengruppen.

@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.150 – Filmreihen und Mehrteiler unter Filme (26. November 2026)
+- Automatisch: tests/test_v06150.py (4), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.150 (echter Katalog: welche Reihen werden zusammengefasst, Sendeplätze einzeln, Laufzeit).
+
 ## 0.6.149 – Kinderecke-Kanäle, Fortschritt im Katalog (26. November 2026)
 - Automatisch: tests/test_v06149.py (4), tests/browser/kids_corner.cjs (+3), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.149 (u. a. Kanal neu abonnieren, erstes Video geladen → Reihe und Kanalfilter ohne Neustart).
 

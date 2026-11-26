@@ -296,7 +296,7 @@
       poster:m.poster||'',description:m.description||m.show_description||r.description||'',
       genres:Array.isArray(item.categories)?item.categories.filter(c=>!SPECIAL.includes(c)):m.genres||[],duration:m.source_duration_seconds||r.duration||null,
       score:medScore(m),pick:['matched','manual','identified'].includes(item.state),
-      state:item.state,series_parent:!!item.series_parent,
+      state:item.state,series_parent:!!item.series_parent,reihe:!!item.reihe,film_count:item.film_count||0,
       episode_count:item.episodes||0,available:!!item.available,
       lang:item.lang||item.languages?.short||'',langText:item.lang_text||item.languages?.text||''};
   }
@@ -411,7 +411,10 @@
       const img=el('img');img.src=poster;img.loading='lazy';img.alt='';img.referrerPolicy='no-referrer';
       art.append(img);
     } else art.append(el('span','Kein Cover','atlas-uc-empty-art'));
-    art.classList.add('clickable');art.onclick=()=>openItem(main);
+    // 0.6.150: Mehrteiler öffnet seine Teile (Suche nach dem Grundtitel), Filmreihe ihre Filme (wie eine Serie)
+    const parts=item.mehrteiler&&item.mehrteiler.query?item.mehrteiler:null;
+    const open=parts?()=>showParts(parts.query):()=>openItem(main);
+    art.classList.add('clickable');art.onclick=open;
     // 0.6.149 (Björn: Fortschritt wie bei YouTube): Balken bzw. „✓ Gesehen“ aus den Abspielständen (web/watchlist.js)
     if (main.kind!=='series'&&!main.series_parent) {
       const W=window.AtlasWatch;
@@ -420,12 +423,12 @@
     }
     const text=el('div',undefined,'atlas-uc-body');
     text.append(el('small',offers.map(labelSource).join(' · '),'atlas-uc-source'));
-    const title=el('h3',main.title);title.classList.add('clickable');title.onclick=()=>openItem(main);
+    const title=el('h3',parts?parts.query:main.title);title.classList.add('clickable');title.onclick=open;
     text.append(title);
     const genres=genreList(pickFrom('genres',g=>genreList(g).length));
     const year=main.year||pickFrom('year',y=>!!y&&true);
-    const facts=[main.kind==='series'||main.series_parent?'Serie':main.kind==='episode'?'Episode':'Film',
-      year,(main.kind==='series'||main.series_parent)&&main.episode_count?main.episode_count+' Folgen':null,
+    const facts=[parts?'Mehrteiler':main.reihe?'Filmreihe':main.kind==='series'||main.series_parent?'Serie':main.kind==='episode'?'Episode':'Film',
+      year,parts?parts.parts+' Teile':main.reihe?(main.film_count||main.episode_count)+' Filme':(main.kind==='series'||main.series_parent)&&main.episode_count?main.episode_count+' Folgen':null,
       main.kind==='episode'&&main.episode?'S'+(main.season??'?')+' E'+main.episode:null,
       ...genres.slice(0,2),offers.length===1?main.badge:null].filter(Boolean).join(' · ');
     text.append(el('small',facts,'atlas-uc-meta'));
@@ -460,6 +463,14 @@
     }
     card.append(art,text);
     return card;
+  }
+  function showParts(query) {
+    // 0.6.150: Teile eines Mehrteilers – die Suche zeigt jeden Teil einzeln, nach Titel (Teil 1, 2, …)
+    const box=$('atlas-cross-query');
+    if (!box) return;
+    box.value=query;search=query.slice(0,180);offset=0;sort='title';
+    if ($('atlas-cross-sort')) $('atlas-cross-sort').value='title';
+    refresh();
   }
   function openItem(item) {
     // 0.5.42: every film portal opens the same title page as the Mediathek works.
@@ -537,7 +548,7 @@
     const rows=[];
     for (const entry of data.items||[]) {
       const offers=(entry.offers||[]).map(o=>rowOf(o.source,o.item));
-      if (offers.length) rows.push({...offers[0],offers,local:!!entry.local});
+      if (offers.length) rows.push({...offers[0],offers,local:!!entry.local,mehrteiler:entry.mehrteiler||null});
     }
     const names=data.names||{};
     const notes=Object.entries(data.counts||{}).filter(([,n])=>n).map(([src,n])=>(names[src]||src)+': '+num(n));
