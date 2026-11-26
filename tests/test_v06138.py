@@ -124,6 +124,11 @@ class NewsNames(unittest.TestCase):
         self.assertEqual(n, 1);self.assertEqual(self.genres(hessen), ['Nachrichten'])
         self.assertEqual(catalog.heal_derived_genres(self.c)[0], 0)   # zweiter Lauf ändert nichts
 
+    def test_sport_name_wins_in_backfill(self):
+        blitz = self.add('Ausgabe 9', 'buten un binnen | sportblitz', [], 9)
+        catalog.backfill_genres(self.c)
+        self.assertNotIn('Nachrichten', self.genres(blitz))
+
 
 if __name__ == '__main__':
     unittest.main()

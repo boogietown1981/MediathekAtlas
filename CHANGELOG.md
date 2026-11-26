@@ -1,3 +1,10 @@
+## 0.6.139 – 0.6.138 ohne Reihenfilme; auf 0.6.138
+
+- Mac-Prüfung 0.6.138 (BEFUND-06138.txt): Korrekturen D (More than Honey verknüpft, tt2263058; Black Box review; Zwei-Jahres-Fälle ohne Fehlverknüpfung) und G (DER TAG, hessenschau, Abendschau, Lokalzeit, Sachsenspiegel, Nordmagazin Nachrichten) bestanden, Regression bestanden; Reihenfilme aus 0.6.137 NICHT bestanden (669 statt 130–200 markiert, Reihenjahr statt Filmjahr, doppelte Kacheln, nummerierte Krimifolgen, Suche nach Filmtitel ohne Treffer).
+- Damit die bestandenen Korrekturen ohne Warten an Björn gehen können: 0.6.137 zurückgenommen (git revert f488a1ab: `series_film`, `mark_series_films`, Filmliste/Kategorienbaum/unified_index wie 0.6.136). Kopien mit 0.6.137/0.6.138 behalten ungenutzte `meta.series_film`-Felder und den Teilindex `work_series_film` (wirkungslos). Reihenfilme folgen korrigiert als eigene Version.
+- Hinweis 0.6.138: „buten un binnen | sportblitz“ bekam zusätzlich Nachrichten – im Genre-Nachtrag geht ein Sportname jetzt vor.
+- Tests: `tests/test_v06138.py` (+1).
+
 ## 0.6.138 – Korrektur Mac-Urteil 0.6.136 (More than Honey, DER TAG/hessenschau); auf 0.6.137
 
 - Befund 0.6.136 (BEFUND-06136.txt): Black Box, Wallander, tagesschau24 (Pro), phoenix vor ort, Sport, Regression bestanden.

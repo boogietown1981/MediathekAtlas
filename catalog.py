@@ -696,9 +696,7 @@ class ListingPending(Exception):
 def _listing_build(c,where,args,grouping,order):
     started=time.monotonic()
     base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
-    # 0.6.137: in the Filme list a Reihenfilm carries its film title and year („Der Usedom-Krimi – Mörderische Brandung“)
-    shown=MOVIE_TITLE_SQL+','+MOVIE_YEAR_SQL if grouping==MOVIE_GROUPING else 'w.title,w.year'
-    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,'+shown+' FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
+    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,w.title,w.year FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
     seconds=time.monotonic()-started
     _LISTING_STATS['builds']+=1;_LISTING_STATS['last_seconds']=round(seconds,2)
     return rows,seconds
@@ -813,63 +811,6 @@ def listing_cache_stats():
     with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}
 
 
-# 0.6.137 (Björn 26.11.2026, Entscheidung „In der Reihe und unter Filme“): Reihenfilme – „Der Usedom-Krimi“, „Die Füchsin“,
-# „Die drei von der Müllabfuhr“ – are series works (each film one entry of its Reihe, IMDb lists them as TV series).
-# They stay in their Reihe and are listed one by one under Filme as well (meta.series_film, mark_series_films).
-MOVIE_VIEW_SQL="(w.kind='movie' OR (w.kind='series' AND json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1))"
-# Partial index for the second half (built after start, build_deferred_indexes); „GROUP BY +w.id“ keeps the plan on the
-# kind indexes (multi-index OR) – a plain w.id made SQLite scan all works by primary key (0.5 → 2.2 s on 686k works).
-SERIES_FILM_INDEX_SQL="CREATE INDEX IF NOT EXISTS work_series_film ON works(kind,id) WHERE kind='series' AND json_valid(meta) AND json_extract(meta,'$.series_film')=1"
-SERIES_FILM_TEXT=re.compile(r'(?i)^\W*(?:zweiteilige[rs]?\s+)?(?:spielfilm|fernsehfilm)\b')
-SERIES_FILM_TITLE=re.compile(r'(?i)\s[-–]\s(?:spielfilm|fernsehfilm),')
-SERIES_FILM_MIN=80*60
-SERIES_FILM_STATES=('identified','matched','manual')
-
-SERIES_FILM_YEAR=re.compile(r'(?i)(?:spielfilm|fernsehfilm)\b[^.]{0,80}?\b((?:19|20)\d\d)\b')
-MOVIE_GROUPING='+w.id'
-MOVIE_TITLE_SQL="CASE WHEN w.kind='series' THEN COALESCE(json_extract(w.meta,'$.series_film_title'),w.title) ELSE w.title END"
-MOVIE_YEAR_SQL="CASE WHEN w.kind='series' THEN json_extract(w.meta,'$.series_film_year') ELSE w.year END"
-
-def series_film(c,wid,meta=None):
-    """0.6.137: a recognized series work is a Reihenfilm when the broadcaster calls it a (zweiteiliger) Spiel- or
-    Fernsehfilm (start of its text, or 3sat's „- Spielfilm, Land Jahr“), its longest offer runs ≥ 80 min and film_shaped
-    accepts it (no part n of m ≥ 3, no dated edition). Mehrteiler without that text („Das Adlon“, „Bodyguard (2/3)“) stay
-    episodes only. Returns {'title','year'} for the Filme list („Der Usedom-Krimi – Mörderische Brandung“) or None."""
-    source=film_source(c,wid)
-    if not source:return None
-    try:duration=int(source.get('duration') or 0)
-    except (TypeError,ValueError):return None
-    if duration<SERIES_FILM_MIN:return None
-    title=str(source.get('title') or '');topic=str(source.get('topic') or '');desc=core.clean(source.get('description',''))
-    if not (SERIES_FILM_TEXT.search(desc) or SERIES_FILM_TITLE.search(title)):return None
-    if not film_shaped(source,title,topic,desc):return None
-    meta=meta or {}
-    reihe=str(meta.get('title') or topic).strip();film=str(meta.get('episode_title') or cleaned(title)).strip()
-    film=SERIES_FILM_TITLE.split(film)[0].strip(' -–') if SERIES_FILM_TITLE.search(film) else film
-    if not film or key(reihe) in key(film):name=film or reihe
-    else:name=reihe+' – '+film
-    found=SERIES_FILM_YEAR.search(desc) or SERIES_FILM_YEAR.search(title)
-    return {'title':name[:200],'year':int(found.group(1)) if found else None}
-
-def mark_series_films(c,after='',limit=500):
-    """0.6.137, every format pass with the genre backfill: sets or clears meta.series_film (with series_film_title and
-    series_film_year for the Filme list) on series works. Returns (changed, samples, last id)."""
-    rows=c.execute("""SELECT id,state,meta FROM works WHERE id>? AND kind='series' ORDER BY id LIMIT ?""",(after,limit)).fetchall()
-    changed=0;samples=[]
-    for row in rows:
-        try:m=json.loads(row['meta'] or '{}')
-        except (TypeError,ValueError):continue
-        was=(m.get('series_film_title'),m.get('series_film_year')) if m.get('series_film') else None
-        info=series_film(c,row['id'],m) if row['state'] in SERIES_FILM_STATES else None
-        now=(info['title'],info['year']) if info else None
-        if now==was:continue
-        for k in ('series_film','series_film_title','series_film_year'):m.pop(k,None)
-        if info:m.update(series_film=1,series_film_title=info['title'],series_film_year=info['year'])
-        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
-        changed+=1
-        if len(samples)<20:samples.append({'title':now[0] if now else str(m.get('title') or '')[:80],'year':now[1] if now else None,'film':bool(info)})
-    return changed,samples,(rows[-1]['id'] if rows else None)
-
 def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False,wait=True):
     clauses=[];args=[]
     if downloaded=='hide':clauses.append('NOT EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
@@ -878,8 +819,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     if collection in ('cinema','series'):
         clauses.append("w.kind=? AND w.state IN ('matched','manual','identified') AND CAST(json_extract(w.meta,'$.rating') AS REAL)>=7.5 AND CAST(json_extract(w.meta,'$.rating') AS REAL)<=10 AND ((COALESCE(json_extract(w.meta,'$.rating_source'),json_extract(w.meta,'$.provider')) IN ('IMDb','IMDb Offline','OMDb') AND CAST(json_extract(w.meta,'$.votes') AS INTEGER)>=10000) OR (json_extract(w.meta,'$.rating_source')='TMDB' AND CAST(json_extract(w.meta,'$.votes') AS INTEGER)>=1000))")
         args.append('movie' if collection=='cinema' else 'series')
-    if kind=='movie':clauses.append(MOVIE_VIEW_SQL)   # 0.6.137: Reihenfilme also under Filme
-    elif kind:clauses.append('w.kind=?');args.append(kind)
+    if kind:clauses.append('w.kind=?');args.append(kind)
     elif not query and not state:clauses.append("w.kind IN ('movie','series')")
     if state=='recognized':clauses.append("w.state IN ('matched','manual','identified')")
     elif state=='pending':clauses.append("w.state IN ('pending','retry')")
@@ -890,7 +830,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
         clause,values=category_clause(c,genre)
         clauses.append(clause);args.extend(values)
     if show:clauses.append('w.show_key=?');args.append(show)
-    where=' AND '.join(clauses);offset=max(0,int(offset));grouping='w.id' if show else MOVIE_GROUPING if kind=='movie' else "CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END"
+    where=' AND '.join(clauses);offset=max(0,int(offset));grouping="CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END" if not show else 'w.id'
     if show:
         rows=c.execute('SELECT w.* FROM works w WHERE '+where,args).fetchall()
         def episode_order(w):
@@ -901,7 +841,6 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
             if entry:entry.update(episodes=1,series_parent=False);out.append(entry)
         return {'items':out,'total':len(rows),'offset':offset}
     order={'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE')
-    if kind=='movie':order=order.replace('w.year',MOVIE_YEAR_SQL).replace('w.title',MOVIE_TITLE_SQL)   # 0.6.137: Reihenfilm by its film title
     groups=_listing_groups(c,where,args,grouping,order,bool(query),wait)
     if index_only:return groups   # (id, episodes, title, year) of every group, for unified_index
     total=len(groups);rows=[{'id':r[0],'episodes':r[1]} for r in groups[offset:offset+48]];out=[]
@@ -909,7 +848,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
         w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone()
         if w is None:continue  # merged by another worker after the paged query
         entry=item(c,w)
-        if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show and kind!='movie');out.append(entry)
+        if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show);out.append(entry)
     return {'items':out,'total':total,'offset':offset}
 
 # 0.5.83: a work counts as classified once the reference check ran (attempts) or produced a state.
@@ -1023,16 +962,14 @@ def category_tree(c):
     apply to the union of all labels of a film or show."""
     import categories
     rows=c.execute("SELECT w.kind,CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END unit,"+CLASSIFIED_SQL+
-                   " classified,g.genre,CASE WHEN w.kind='series' AND json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1 THEN w.id END film"
-                   " FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
+                   " classified,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
                    " WHERE w.kind IN ('movie','series') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)")
     found={}
-    for kind,unit,classified,genre,film in rows:
-        # 0.6.137: a Reihenfilm counts once in its Reihe and once as a film (like listing(kind='movie'))
-        for entry in [found.setdefault((kind,unit),[False,set()])]+([found.setdefault(('movie',film),[False,set()])] if film else []):
-            if classified:
-                entry[0]=True
-                if genre:entry[1].update(categories.of_label(genre))
+    for kind,unit,classified,genre in rows:
+        entry=found.setdefault((kind,unit),[False,set()])
+        if classified:
+            entry[0]=True
+            if genre:entry[1].update(categories.of_label(genre))
     counts={}
     for (kind,unit),(checked,names) in found.items():
         names=categories.refine(names) if checked else [categories.UNCLASSIFIED]
@@ -3276,7 +3213,9 @@ def backfill_genres(c,imdb_genres=None,after='',limit=500,cache=None):
         if not found and row['kind']=='series' and row['show_key']:
             # 0.6.138 (Mac-Prüfung 0.6.136: hessenschau 3.442 ohne Genre): a regional news name is Nachrichten itself
             import broadcaster
-            if broadcaster.NEWS_NAMES.search(' '.join(str(x or '') for x in (row['title'],m.get('title'),m.get('sendung_name')))):
+            names=' '.join(str(x or '') for x in (row['title'],m.get('title'),m.get('sendung_name')))
+            # 0.6.139 (Prüfvermerk 0.6.138: „buten un binnen | sportblitz“ bekam Nachrichten): ein Sportname geht vor
+            if broadcaster.NEWS_NAMES.search(names) and not broadcaster.SPORT_HINT.search(names):
                 found=['Nachrichten'];source='Sender (abgeleitet)'
         if not found and row['kind']=='series' and row['show_key']:
             if row['show_key'] not in siblings:
@@ -3481,10 +3420,6 @@ def build_deferred_indexes(connect,event=None,error=None):
                 import kids_catalog,unified_index;invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
     except Exception as e:
         if error:error('kids_genre_heal_failed',e)
-    try:
-        with connect() as c:c.execute(SERIES_FILM_INDEX_SQL)   # 0.6.137, < 1 s on 686k works
-    except Exception as e:
-        if error:error('catalog_series_film_index_failed',e,index='work_series_film')   # the list also works without it
     with connect() as c:
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
