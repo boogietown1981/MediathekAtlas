@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.140 – Reihenfilme neu (26. November 2026)
+- Automatisch: tests/test_v06137.py, tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests; synthetische 686k-DB (Filmliste 0,68 s, Markierlauf 3,6 s, Suche 0,2 s). Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.140).
+
 ## 0.6.139 – 0.6.138 ohne Reihenfilme (26. November 2026)
 - Automatisch: gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.139).
 

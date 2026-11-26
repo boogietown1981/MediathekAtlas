@@ -1,0 +1,84 @@
+"""0.6.140 (Mac-Prüfung 0.6.138, BEFUND-06138.txt): Reihenfilme unter Filme – Jahr der Reihe statt des Films, doppelte
+Kacheln (Fassungen, „· NEU“), Folgen episodischer Reihen (Rebecka Martinsson „Del 1“, Brokenwood, Mord auf Shetland),
+Reihenfilme, die schon eigene Filmwerke sind, Suche nach dem Filmtitel ohne Treffer."""
+import json
+import sys
+import unittest
+from pathlib import Path
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+import catalog  # noqa: E402
+import test_v06137  # noqa: E402
+from test_v06137 import offer  # noqa: E402
+
+
+class SeriesFilmFixes(test_v06137.SeriesFilms):
+    def run_mark(self):
+        after, cache, total = '', {}, 0
+        while after is not None:
+            n, _, after = catalog.mark_series_films(self.c, after, cache=cache);total += n
+        return total
+
+    def titles(self, **kw):
+        return sorted((i['metadata']['title'], i['metadata']['year']) for i in catalog.listing(self.c, kind='movie', **kw)['items'])
+
+    def test_versions_and_new_marks_are_one_film_two_parters_two(self):
+        self.series([offer('Altlasten (9) – Die Drei von der Müllabfuhr', 'Die drei von der Müllabfuhr', 1,
+                           description='Spielfilm Deutschland 2023 Werner Träsch räumt auf.'),
+                     offer('Altlasten – Die Drei von der Müllabfuhr (9) (Originalversion)', 'Die drei von der Müllabfuhr', 2,
+                           description='Spielfilm Deutschland 2023 Werner Träsch räumt auf.'),
+                     offer('Geisternetze (26) · NEU', 'Der Usedom-Krimi', 3),
+                     offer('Geisternetze (26)', 'Der Usedom-Krimi', 4),
+                     offer('Tatort – Unvergänglich (1/2)', 'Tatort', 5, description='Fernsehfilm Deutschland 2024 Teil eins.'),
+                     offer('Tatort – Unvergänglich (2/2)', 'Tatort', 6, description='Fernsehfilm Deutschland 2024 Teil zwei.')])
+        self.run_mark()
+        self.assertEqual(self.titles(), [('Der Usedom-Krimi – Geisternetze', 2024),
+                                         ('Die drei von der Müllabfuhr – Altlasten', 2023),
+                                         ('Tatort – Unvergänglich (1/2)', 2024), ('Tatort – Unvergänglich (2/2)', 2024)])
+        # API: Filmjahr statt Startjahr der Reihe, Reihe bleibt erkennbar
+        item = catalog.listing(self.c, kind='movie')['items'][0]
+        self.assertTrue(item['series_film']);self.assertEqual(item['metadata']['series_title'], 'Der Usedom-Krimi')
+        self.assertEqual(self.run_mark(), 0)
+
+    def test_episodic_reihe_is_never_a_film(self):
+        martinsson = 'Spielfilm Schweden 2017 Rebecka Martinsson kehrt zurück.'
+        self.series([offer('Rebecka Martinsson – Det blod som spillts: Del 1', 'Rebecka Martinsson', 1, description=martinsson),
+                     offer('Rebecka Martinsson – Husgrunden: Del 2', 'Rebecka Martinsson', 2, description=martinsson),
+                     offer('Weiße Nacht (S01/E01)', 'Rebecka Martinsson', 3, description=martinsson),
+                     offer('Die Familienfehde', 'Brokenwood - Mord in Neuseeland', 4),
+                     offer('Tote im Weinberg (7/20)', 'Brokenwood - Mord in Neuseeland', 5, duration=5300),
+                     offer('Folge 3: Tote Wasser – Mord auf Shetland (S01/E03)', 'Mord auf Shetland', 6),
+                     # IMDbs eigene Nummer „(S05/E06)“ macht keine Folge aus einem Reihenfilm
+                     offer('Aus heiterem Himmel · Praxis mit Meerblick (32) (S05/E06)', 'Praxis mit Meerblick', 7)])
+        self.run_mark()
+        self.assertEqual(self.titles(), [('Praxis mit Meerblick – Aus heiterem Himmel', 2024)])
+
+    def test_film_work_of_its_own_and_edition_without_name(self):
+        self.series([offer('Kassensturz (4) – Die Drei von der Müllabfuhr', 'Die drei von der Müllabfuhr', 1),
+                     offer('Der Usedom-Krimi (12)', 'Der Usedom-Krimi', 2)])
+        catalog.ingest(self.c, [offer('Die Drei von der Müllabfuhr – Kassensturz', 'Spielfilm', 9)])
+        self.c.execute("UPDATE works SET kind='movie' WHERE kind!='series'")
+        self.run_mark()
+        self.assertEqual([t for t, _ in self.titles()], ['Die Drei von der Müllabfuhr – Kassensturz'])
+
+    def test_search_by_film_title(self):
+        self.series([offer('Altlasten (9) – Die Drei von der Müllabfuhr', 'Die drei von der Müllabfuhr', 1)])
+        self.run_mark()
+        self.assertEqual(catalog.listing(self.c, kind='movie', query='Altlasten')['total'], 1)
+        self.assertEqual(catalog.listing(self.c, query='Altlasten')['total'], 1)
+        self.assertEqual(catalog.listing(self.c, kind='movie', query='Geisternetze')['total'], 0)
+
+    def test_only_candidates_are_read(self):
+        self.series([offer('Kurz %d' % i, 'Kurzreihe', i, duration=1500) for i in range(5)])
+        rows = self.c.execute("SELECT COUNT(*) FROM works w WHERE w.kind='series' AND " + catalog.SERIES_FILM_CANDIDATES,
+                              (catalog.SERIES_FILM_MIN,)).fetchone()[0]
+        self.assertEqual(rows, 0)
+        self.c.execute("UPDATE works SET meta=json_set(meta,'$.series_film',1) WHERE id=(SELECT MIN(id) FROM works)")
+        self.assertEqual(self.run_mark(), 1)   # ein altes Kennzeichen wird entfernt
+
+    # die Grundfälle aus 0.6.137 laufen mit (geerbt)
+
+
+if __name__ == '__main__':
+    unittest.main()

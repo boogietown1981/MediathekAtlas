@@ -696,7 +696,9 @@ class ListingPending(Exception):
 def _listing_build(c,where,args,grouping,order):
     started=time.monotonic()
     base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
-    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,w.title,w.year FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
+    # 0.6.137: in the Filme list a Reihenfilm carries its film title and year („Der Usedom-Krimi – Mörderische Brandung“)
+    shown=MOVIE_TITLE_SQL+','+MOVIE_YEAR_SQL if grouping==MOVIE_GROUPING else 'w.title,w.year'
+    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,'+shown+' FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
     seconds=time.monotonic()-started
     _LISTING_STATS['builds']+=1;_LISTING_STATS['last_seconds']=round(seconds,2)
     return rows,seconds
@@ -811,6 +813,138 @@ def listing_cache_stats():
     with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}
 
 
+# 0.6.137 (Björn 26.11.2026, Entscheidung „In der Reihe und unter Filme“): Reihenfilme – „Der Usedom-Krimi“, „Die Füchsin“,
+# „Die drei von der Müllabfuhr“ – are series works (each film one entry of its Reihe, IMDb lists them as TV series).
+# They stay in their Reihe and are listed one by one under Filme as well (meta.series_film, mark_series_films).
+MOVIE_VIEW_SQL="(w.kind='movie' OR (w.kind='series' AND json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1))"
+# Partial index for the second half (built after start, build_deferred_indexes); „GROUP BY +w.id“ keeps the plan on the
+# kind indexes (multi-index OR) – a plain w.id made SQLite scan all works by primary key (0.5 → 2.2 s on 686k works).
+SERIES_FILM_INDEX_SQL="CREATE INDEX IF NOT EXISTS work_series_film ON works(kind,id) WHERE kind='series' AND json_valid(meta) AND json_extract(meta,'$.series_film')=1"
+SERIES_FILM_TEXT=re.compile(r'(?i)^\W*(?:zweiteilige[rs]?\s+)?(?:spielfilm|fernsehfilm)\b')
+SERIES_FILM_TITLE=re.compile(r'(?i)\s[-–]\s(?:spielfilm|fernsehfilm),')
+SERIES_FILM_MIN=80*60
+SERIES_FILM_STATES=('identified','matched','manual')
+
+SERIES_FILM_YEAR=re.compile(r'(?i)(?:spielfilm|fernsehfilm)\b[^.]{0,80}?\b((?:19|20)\d\d)\b')
+MOVIE_GROUPING='+w.id'
+MOVIE_TITLE_SQL="CASE WHEN w.kind='series' THEN COALESCE(json_extract(w.meta,'$.series_film_title'),w.title) ELSE w.title END"
+MOVIE_YEAR_SQL="CASE WHEN w.kind='series' THEN json_extract(w.meta,'$.series_film_year') ELSE w.year END"
+
+# 0.6.140 (Mac-Prüfung 0.6.138: Rebecka Martinsson „Del 1“, Maria Wern, Brokenwood, Mord auf Shetland „Folge 3“ unter
+# Filme): a Reihe whose offers count parts („(02/08)“, „Del 1“, „Folge 3“) is an episodic series – none of its works is
+# a Reihenfilm. A two-parter („(1/2)“) stays possible; IMDb's own „(S05/E06)“ says nothing (Praxis mit Meerblick).
+EPISODIC_MARK=re.compile(r'(?i)\bdel\s+\d|\bfolge\s+\d')
+SERIES_FILM_NEW=re.compile(r'(?i)\s*·\s*neu\b')
+SERIES_FILM_SPLIT=re.compile(r'\s+[|·–—-]\s+|\s*[|·–—]\s*|:\s+')
+
+def episodic_show(c,show_key,cache=None):
+    if cache is not None and show_key in cache:return cache[show_key]
+    marks=0;out=False
+    for (title,) in c.execute("""SELECT json_extract(o.payload,'$.title') FROM works w JOIN offers o ON o.work_id=w.id
+        WHERE w.show_key=? LIMIT 5000""",(show_key,)):
+        title=str(title or '')
+        parts=SERIES_PARTS.search(title)
+        if parts and int(parts.group(2))>=3:out=True;break
+        if EPISODIC_MARK.search(title):
+            marks+=1
+            if marks>=2:out=True;break
+    if cache is not None:cache[show_key]=out
+    return out
+
+def series_film_part(title,reihe):
+    """0.6.140: the film's own name from the offer title – Reihe, parentheses („(9)“, „(S01/E02)“, „(Originalversion)“,
+    „(klare Sprache)“), „· NEU“ and 3sat's „- Spielfilm, …“ removed. „Altlasten (9) – Die Drei von der Müllabfuhr“ → „Altlasten“."""
+    t=cleaned(title)
+    if SERIES_FILM_TITLE.search(t):t=SERIES_FILM_TITLE.split(t)[0]
+    t=SERIES_FILM_NEW.sub(' ',t)
+    t=re.sub(r'\([^)]*\)|\[[^\]]*\]',' ',t)
+    reihe_key=key(reihe)
+    pieces=[p.strip(' -–') for p in SERIES_FILM_SPLIT.split(t)]
+    pieces=[p for p in pieces if p and key(p)!=reihe_key]
+    film=' – '.join(pieces).strip()
+    if reihe_key and key(film).startswith(reihe_key+' '):film=film[len(reihe):].strip(' -–:')
+    return re.sub(r'\s+',' ',film).strip()
+
+def series_film(c,wid,meta=None,cache=None):
+    """0.6.137: a recognized series work is a Reihenfilm when the broadcaster calls it a (zweiteiliger) Spiel- or
+    Fernsehfilm (start of its text, or 3sat's „- Spielfilm, Land Jahr“), its longest offer runs ≥ 80 min and film_shaped
+    accepts it (no part n of m ≥ 3, no dated edition). Mehrteiler without that text („Das Adlon“, „Bodyguard (2/3)“) stay
+    episodes only. Returns {'title','year','key'} for the Filme list („Der Usedom-Krimi – Mörderische Brandung“) or None.
+    0.6.140: not in an episodic Reihe (episodic_show), film name from the offer title (series_film_part; IMDb's episode
+    title may be another one – Rebecka Martinsson), no film that is a film work of its own (cache['movies'])."""
+    cache={} if cache is None else cache
+    source=film_source(c,wid)
+    if not source:return None
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):return None
+    if duration<SERIES_FILM_MIN:return None
+    title=str(source.get('title') or '');topic=str(source.get('topic') or '');desc=core.clean(source.get('description',''))
+    if not (SERIES_FILM_TEXT.search(desc) or SERIES_FILM_TITLE.search(title)):return None
+    if not film_shaped(source,title,topic,desc):return None
+    if EPISODIC_MARK.search(title):return None
+    meta=meta or {}
+    row=c.execute('SELECT show_key FROM works WHERE id=?',(wid,)).fetchone()
+    if row and row[0] and episodic_show(c,row[0],cache.setdefault('episodic',{})):return None
+    reihe=str(meta.get('title') or topic).strip()
+    film=series_film_part(title,reihe) or series_film_part(str(meta.get('episode_title') or ''),reihe)
+    # a two-parter keeps its part („Tatort – Unvergänglich (1/2)“, „Lost in Fuseta (2/2)“)
+    two=SERIES_PARTS.search(title) or re.search(r'(?i)\bteil\s+(\d)\b',title) or (
+        re.match(r'(?i)\W*zweiteilig',desc) and re.search(r'\((\d)\)\s*$',cleaned(title)))
+    part=' ('+two.group(1)+'/2)' if two else ''
+    if not key(film) and part:film=reihe   # the two-parter is named like its Reihe
+    film_key=key(film+part)
+    if not key(film) or key(film)==key(reihe) and not part:return None   # no own film name: an edition, not a film
+    if 'movies' not in cache:
+        cache['movies']=[' '+key(t)+' ' for (t,) in c.execute("""SELECT w.title FROM works w WHERE w.kind='movie'
+            AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""") if t]
+    padded=' '+key(film)+' '
+    if key(film)!=key(reihe) and len(key(film))>=4 and any(padded in m for m in cache['movies']):return None   # „Kassensturz“ is a film work of its own
+    found=SERIES_FILM_YEAR.search(desc) or SERIES_FILM_YEAR.search(title)
+    name=(film if key(film)==key(reihe) else reihe+' – '+film)+part
+    return {'title':name[:200],'year':int(found.group(1)) if found else None,'key':film_key}
+
+SERIES_FILM_CANDIDATES="""(w.state IN ('identified','matched','manual') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id
+    AND CAST(json_extract(o.payload,'$.duration') AS INTEGER)>=?) OR json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1)"""
+
+def mark_series_films(c,after='',limit=500,cache=None):
+    """0.6.137, every format pass with the genre backfill: sets or clears meta.series_film (with series_film_title and
+    series_film_year for the Filme list) on series works. Returns (changed, samples, last id).
+    0.6.140: only works with a feature-length offer or the flag are read (Air 78 → few min); one Reihenfilm per Reihe and
+    film name – „Geisternetze (26)“ and „… · NEU“, Fassungen („Originalversion“, „klare Sprache“) are one film; the first
+    work (smallest id) of a run keeps the flag. Pass one cache to all batches of a run."""
+    cache={} if cache is None else cache
+    seen=cache.setdefault('seen',{})
+    rows=c.execute("SELECT w.id,w.state,w.meta,w.show_key FROM works w WHERE w.id>? AND w.kind='series' AND "+SERIES_FILM_CANDIDATES+
+                   " ORDER BY w.id LIMIT ?",(after,SERIES_FILM_MIN,limit)).fetchall()
+    changed=0;samples=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        was=(m.get('series_film_title'),m.get('series_film_year')) if m.get('series_film') else None
+        info=series_film(c,row['id'],m,cache) if row['state'] in SERIES_FILM_STATES else None
+        if info:
+            unit=(row['show_key'],info['key'])
+            if unit in seen and seen[unit]!=row['id']:info=None
+            else:seen[unit]=row['id']
+        now=(info['title'],info['year']) if info else None
+        if now==was:continue
+        for k in ('series_film','series_film_title','series_film_year'):m.pop(k,None)
+        if info:m.update(series_film=1,series_film_title=info['title'],series_film_year=info['year'])
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
+        changed+=1
+        if len(samples)<20:samples.append({'title':now[0] if now else str(m.get('title') or '')[:80],'year':now[1] if now else None,'film':bool(info)})
+    return changed,samples,(rows[-1]['id'] if rows else None)
+
+def as_series_film(entry):
+    """0.6.140 (Mac-Prüfung 0.6.138: API-Jahr Tatort 1970, Usedom 2014): in the Filme list a Reihenfilm carries the film's
+    title and year in its metadata, the Reihe stays in series_title."""
+    m=entry.get('metadata') or {}
+    if m.get('kind')!='series' or not m.get('series_film'):return entry
+    entry['metadata']=dict(m,series_title=m.get('title'),title=m.get('series_film_title') or m.get('title'),
+                           year=m.get('series_film_year'))
+    entry['series_film']=True
+    return entry
+
 def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False,wait=True):
     clauses=[];args=[]
     if downloaded=='hide':clauses.append('NOT EXISTS(SELECT 1 FROM downloaded_items di WHERE di.identity=w.id)')
@@ -819,18 +953,23 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     if collection in ('cinema','series'):
         clauses.append("w.kind=? AND w.state IN ('matched','manual','identified') AND CAST(json_extract(w.meta,'$.rating') AS REAL)>=7.5 AND CAST(json_extract(w.meta,'$.rating') AS REAL)<=10 AND ((COALESCE(json_extract(w.meta,'$.rating_source'),json_extract(w.meta,'$.provider')) IN ('IMDb','IMDb Offline','OMDb') AND CAST(json_extract(w.meta,'$.votes') AS INTEGER)>=10000) OR (json_extract(w.meta,'$.rating_source')='TMDB' AND CAST(json_extract(w.meta,'$.votes') AS INTEGER)>=1000))")
         args.append('movie' if collection=='cinema' else 'series')
-    if kind:clauses.append('w.kind=?');args.append(kind)
+    if kind=='movie':clauses.append(MOVIE_VIEW_SQL)   # 0.6.137: Reihenfilme also under Filme
+    elif kind:clauses.append('w.kind=?');args.append(kind)
     elif not query and not state:clauses.append("w.kind IN ('movie','series')")
     if state=='recognized':clauses.append("w.state IN ('matched','manual','identified')")
     elif state=='pending':clauses.append("w.state IN ('pending','retry')")
     elif state=='review':clauses.append("w.state='review'")
     elif state=='format':clauses.append("w.state='format'")
-    if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
+    if query:
+        # 0.6.140 (Mac-Prüfung 0.6.138: Suche „Altlasten“ 0 Treffer): also the film name of a Reihenfilm (partial index)
+        clauses.append("(w.title LIKE ? OR w.topic LIKE ? OR w.id IN (SELECT id FROM works WHERE kind='series' AND json_valid(meta)"
+                       " AND json_extract(meta,'$.series_film')=1 AND json_extract(meta,'$.series_film_title') LIKE ?))")
+        args.extend(['%'+query[:150]+'%']*3)
     if genre:
         clause,values=category_clause(c,genre)
         clauses.append(clause);args.extend(values)
     if show:clauses.append('w.show_key=?');args.append(show)
-    where=' AND '.join(clauses);offset=max(0,int(offset));grouping="CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END" if not show else 'w.id'
+    where=' AND '.join(clauses);offset=max(0,int(offset));grouping='w.id' if show else MOVIE_GROUPING if kind=='movie' else "CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END"
     if show:
         rows=c.execute('SELECT w.* FROM works w WHERE '+where,args).fetchall()
         def episode_order(w):
@@ -841,6 +980,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
             if entry:entry.update(episodes=1,series_parent=False);out.append(entry)
         return {'items':out,'total':len(rows),'offset':offset}
     order={'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE')
+    if kind=='movie':order=order.replace('w.year',MOVIE_YEAR_SQL).replace('w.title',MOVIE_TITLE_SQL)   # 0.6.137: Reihenfilm by its film title
     groups=_listing_groups(c,where,args,grouping,order,bool(query),wait)
     if index_only:return groups   # (id, episodes, title, year) of every group, for unified_index
     total=len(groups);rows=[{'id':r[0],'episodes':r[1]} for r in groups[offset:offset+48]];out=[]
@@ -848,7 +988,10 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
         w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone()
         if w is None:continue  # merged by another worker after the paged query
         entry=item(c,w)
-        if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show);out.append(entry)
+        if entry:
+            entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show and kind!='movie')
+            if kind=='movie':as_series_film(entry)
+            out.append(entry)
     return {'items':out,'total':total,'offset':offset}
 
 # 0.5.83: a work counts as classified once the reference check ran (attempts) or produced a state.
@@ -962,14 +1105,16 @@ def category_tree(c):
     apply to the union of all labels of a film or show."""
     import categories
     rows=c.execute("SELECT w.kind,CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END unit,"+CLASSIFIED_SQL+
-                   " classified,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
+                   " classified,g.genre,CASE WHEN w.kind='series' AND json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1 THEN w.id END film"
+                   " FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
                    " WHERE w.kind IN ('movie','series') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)")
     found={}
-    for kind,unit,classified,genre in rows:
-        entry=found.setdefault((kind,unit),[False,set()])
-        if classified:
-            entry[0]=True
-            if genre:entry[1].update(categories.of_label(genre))
+    for kind,unit,classified,genre,film in rows:
+        # 0.6.137: a Reihenfilm counts once in its Reihe and once as a film (like listing(kind='movie'))
+        for entry in [found.setdefault((kind,unit),[False,set()])]+([found.setdefault(('movie',film),[False,set()])] if film else []):
+            if classified:
+                entry[0]=True
+                if genre:entry[1].update(categories.of_label(genre))
     counts={}
     for (kind,unit),(checked,names) in found.items():
         names=categories.refine(names) if checked else [categories.UNCLASSIFIED]
@@ -3420,6 +3565,10 @@ def build_deferred_indexes(connect,event=None,error=None):
                 import kids_catalog,unified_index;invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
     except Exception as e:
         if error:error('kids_genre_heal_failed',e)
+    try:
+        with connect() as c:c.execute(SERIES_FILM_INDEX_SQL)   # 0.6.137, < 1 s on 686k works
+    except Exception as e:
+        if error:error('catalog_series_film_index_failed',e,index='work_series_film')   # the list also works without it
     with connect() as c:
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
@@ -3495,7 +3644,11 @@ def review_listing(c,query='',state='open',offset=0):
     clauses=['EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)'];args=[]
     if state=='open':clauses.append("w.state IN ('pending','retry','review','identified')")
     elif state in ('pending','retry','review','identified','manual','matched','format'):clauses.append('w.state=?');args.append(state)
-    if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
+    if query:
+        # 0.6.140 (Mac-Prüfung 0.6.138: Suche „Altlasten“ 0 Treffer): also the film name of a Reihenfilm (partial index)
+        clauses.append("(w.title LIKE ? OR w.topic LIKE ? OR w.id IN (SELECT id FROM works WHERE kind='series' AND json_valid(meta)"
+                       " AND json_extract(meta,'$.series_film')=1 AND json_extract(meta,'$.series_film_title') LIKE ?))")
+        args.extend(['%'+query[:150]+'%']*3)
     where=' AND '.join(clauses);offset=max(0,int(offset))
     total=c.execute('SELECT COUNT(*) FROM works w WHERE '+where,args).fetchone()[0]
     rows=c.execute('SELECT w.* FROM works w WHERE '+where+' ORDER BY w.title COLLATE NOCASE,w.id LIMIT 48 OFFSET ?',args+[offset]).fetchall()

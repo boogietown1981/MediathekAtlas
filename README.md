@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.139
+# MediathekAtlas · 0.6.140
+
+## Neu in 0.6.140: Reihenfilme auch unter Filme
+- Filme einer Reihe (Der Usedom-Krimi, Die Füchsin, Die drei von der Müllabfuhr, Tatort, Polizeiruf 110 …) bleiben in ihrer Reihe und stehen zusätzlich einzeln unter Filme, mit eigenem Filmtitel und Filmjahr („Die drei von der Müllabfuhr – Altlasten“, 2023). Die Suche findet sie auch über den Filmtitel.
+- Als Reihenfilm gilt eine erkannte Folge ab 80 Minuten, die der Sender als Spielfilm oder Fernsehfilm ankündigt. Folgen von Serien mit gezählten Teilen (Rebecka Martinsson „Del 1“, Brokenwood, Mord auf Shetland), Fassungen desselben Films und Filme, die es schon als eigenen Film gibt, erscheinen nicht zusätzlich.
 
 ## Neu in 0.6.139 (enthält 0.6.138): More than Honey, regionale Nachrichtensendungen
 - Filme, deren Jahr in der IMDb zwei Jahre abweicht, werden mit passender IMDb-Laufzeit jetzt tatsächlich verknüpft („More than Honey“ 2010/2012); „Black Box“ 2022 bleibt getrennt vom US-Film.

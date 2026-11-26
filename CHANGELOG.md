@@ -1,3 +1,15 @@
+## 0.6.140 – Reihenfilme in der Reihe und unter Filme, neu nach Mac-Urteil 0.6.138; auf 0.6.139
+
+- Björn 26.11.2026: „In der Reihe und unter Filme“. 0.6.137 wieder eingespielt (Cherry-pick f488a1ab) und nach BEFUND-06138.txt korrigiert:
+- Jahr/Titel in der API: `catalog.as_series_film` setzt in der Filmliste (`listing(kind='movie')`, `unified_index.page`) `metadata.title`/`year` auf Filmtitel und Filmjahr, die Reihe steht in `series_title`, Kachel trägt `series_film` (vorher Tatort 1970, Usedom 2014).
+- Episodische Reihen: `catalog.episodic_show` – trägt ein Angebot der Reihe „(n/m)“ mit m ≥ 3 oder zwei Angebote „Del n“/„Folge n“, ist kein Werk der Reihe ein Reihenfilm (Rebecka Martinsson, Maria Wern, Brokenwood, Sophie Cross); ein Werk mit „Del n“/„Folge n“ im Titel nie (Mord auf Shetland „Folge 3“). IMDbs „(S05/E06)“ zählt nicht (Praxis mit Meerblick bleibt Reihenfilm).
+- Filmname aus dem Angebotstitel (`series_film_part`: Reihe, Klammern wie „(9)“, „(S01/E02)“, „(Originalversion)“, „(klare Sprache)“ und „· NEU“ entfernt), nicht aus dem IMDb-Folgentitel. Ohne eigenen Namen kein Reihenfilm, außer Zweiteiler („Lost in Fuseta (1/2)“, „Der Seerosenteich (1/2)“ bei „Zweiteiliger Spielfilm“).
+- Dubletten: je Reihe und Filmname (mit Teil) nur ein Werk (kleinste Kennung des Laufs) – „Geisternetze (26)“/„· NEU“, „Altlasten (9)“ und „Altlasten – … (9)“, Fassungen. Existiert der Filmname schon als eigenes Filmwerk mit aktivem Angebot („Die Drei von der Müllabfuhr – Kassensturz“, „Mankells Wallander 17 – Diebe“), kein zusätzlicher Reihenfilm.
+- Suche: `listing(query=…)` findet auch `series_film_title` (über den Teilindex).
+- Markierlauf liest nur Kandidaten (erkannt und Angebot ≥ 80 min, oder schon gekennzeichnet) – Air 0.6.138: 78 min für alle Serienwerke.
+- Bewusst: Tatort und Polizeiruf 110 sind Reihenfilme (je Film ein Fernsehfilm) und stehen unter Filme.
+- Tests: `tests/test_v06137.py` (6, angepasst), `tests/test_v06140.py` (5 + 6 geerbt).
+
 ## 0.6.139 – 0.6.138 ohne Reihenfilme; auf 0.6.138
 
 - Mac-Prüfung 0.6.138 (BEFUND-06138.txt): Korrekturen D (More than Honey verknüpft, tt2263058; Black Box review; Zwei-Jahres-Fälle ohne Fehlverknüpfung) und G (DER TAG, hessenschau, Abendschau, Lokalzeit, Sachsenspiegel, Nordmagazin Nachrichten) bestanden, Regression bestanden; Reihenfilme aus 0.6.137 NICHT bestanden (669 statt 130–200 markiert, Reihenjahr statt Filmjahr, doppelte Kacheln, nummerierte Krimifolgen, Suche nach Filmtitel ohne Treffer).
