@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.142 – Reihenfilme, Tatort ohne Landangabe (26. November 2026)
+- Automatisch: tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.142).
+
 ## 0.6.141 – Reihenfilme, Korrektur Mac-Urteil 0.6.140 (26. November 2026)
 - Automatisch: tests/test_v06137.py, tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.141).
 

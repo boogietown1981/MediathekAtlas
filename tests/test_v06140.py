@@ -101,6 +101,20 @@ class SeriesFilmFixes(test_v06137.SeriesFilms):
         self.run_mark()
         self.assertEqual(self.titles(), [('Praxis mit Meerblick – Die Kämpferin', 2024), ('Tatort – Abbruchkante', 2023)])
 
+    def test_0_6_142_tatort_without_country_or_with_typo_stays(self):
+        # Mac-Prüfung 0.6.141: BR „Spielfilm | Krimi 2021 … Tatort-Fall“, WDR „Fernsehfilm Deutschand 2024“
+        self.series([offer('Flash (Audiodeskription)', 'Tatort', 1,
+                           description='Spielfilm | Krimi 2021 Der Film „Flash“ ist der 1205. Tatort-Fall.'),
+                     offer('Man stirbt nur zweimal (2024) (klare Sprache)', 'Tatort', 2,
+                           description='Fernsehfilm Deutschand 2024 +++ Die Leiche des Anwalts'),
+                     offer('Sturmfront (S08/E01)', 'Maria Wern, Kripo Gotland', 3, description='Spielfilm Schweden/Deutschland 2020 Sturm.'),
+                     offer('Bedrohung (S07/E03)', 'Maria Wern, Kripo Gotland', 4, description='Spielfilm Schweden 2018 Maskenmann.')])
+        self.run_mark()
+        self.assertEqual(self.titles(), [('Maria Wern, Kripo Gotland – Sturmfront', 2020),   # Koproduktion: bis Björns Antwort drin
+                                         ('Tatort – Flash', 2021), ('Tatort – Man stirbt nur zweimal', 2024)])
+        self.assertFalse(catalog.series_film_german('Spielfilm Frankreich 2019 Kommissar'))
+        self.assertTrue(catalog.series_film_german('Spielfilm Österreich 2020 Wien'))
+
     # die Grundfälle aus 0.6.137 laufen mit (geerbt)
 
 

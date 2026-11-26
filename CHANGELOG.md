@@ -1,3 +1,10 @@
+## 0.6.142 – Reihenfilme: Tatort ohne Landangabe; auf 0.6.141
+
+- Befund 0.6.141 (BEFUND-06141.txt): Rebecka Martinsson, Brokenwood, Maria Wern (ohne Koproduktion) richtig weg, keine Dubletten, Regression bestanden; drei deutsche Tatorte fielen heraus: BR „Spielfilm | Krimi 2021 … Tatort-Fall“ (ohne Land), WDR „Fernsehfilm Deutschand 2024“ (Tippfehler).
+- `catalog.series_film_german`: ausgeschlossen nur, wenn die Filmangabe eine Länderliste vor dem Jahr nennt und kein Land davon deutschsprachig ist; ohne Landangabe deutschsprachig; ein Landname mit Ähnlichkeit ≥ 0,85 zu Deutschland/Österreich/Schweiz/Bundesrepublik zählt als dieses Land.
+- Unverändert bis Björns Entscheidung: Koproduktionen mit Deutschland (Maria Wern „Schweden/Deutschland 2020“, Van der Valk, Irene Huss) bleiben unter Filme; Tatort/Polizeiruf unter Filme.
+- Tests: `tests/test_v06140.py` (+1).
+
 ## 0.6.141 – Reihenfilme: Korrektur Mac-Urteil 0.6.140; auf 0.6.140
 
 - Befund 0.6.140 (BEFUND-06140.txt): Markierlauf 60/69 s, Filmtitel/-jahr, Dubletten Air, Zweiteiler, Filmwerke, Suche, Reihen, Kinderecke, Serien-Kacheln (−4, kein −138), Regression bestanden.

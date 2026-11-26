@@ -828,6 +828,22 @@ SERIES_FILM_MIN=80*60
 # label names Germany, Austria or Switzerland among the production countries („Spielfilm Deutschland 2023“, „Spielfilm
 # Dänemark/Norwegen/Deutschland 2008“). Foreign crime series shown as films („Fernsehfilm Schweden 2018“) stay episodes.
 SERIES_FILM_COUNTRY=re.compile(r'(?i)(?:spielfilm|fernsehfilm)[,\s]+(?:[^\d.,;:]{0,80}?)\b(?:deutschland|brd|ddr|österreich|schweiz)\b')
+# 0.6.142 (Mac-Prüfung 0.6.141: Tatort „Flash“/„Hochamt für Toni“ – BR „Spielfilm | Krimi 2021“ ohne Land –, WDR
+# „Fernsehfilm Deutschand 2024“ fielen heraus): only a named country list without a German-language country excludes;
+# no country at all counts as German-language, a country name one or two letters off counts as that country.
+SERIES_FILM_COUNTRIES=re.compile(r'(?i)(?:spielfilm|fernsehfilm)[,\s]+((?:[^\W\d_]+[ /,-]+){0,5}?[^\W\d_]+)\s*,?\s+(?:19|20)\d\d\b')
+DACH=('deutschland','brd','ddr','österreich','schweiz','bundesrepublik')
+
+def series_film_german(text):
+    """True unless the film label names production countries and none of them is German-language."""
+    if SERIES_FILM_COUNTRY.search(text):return True
+    m=SERIES_FILM_COUNTRIES.search(text)
+    if not m:return True
+    import difflib
+    for name in re.split(r'[ /,-]+',m.group(1).casefold()):
+        if len(name)>=6 and any(difflib.SequenceMatcher(None,name,d).ratio()>=.85 for d in DACH if len(d)>=6):return True
+    return False
+
 SERIES_FILM_TITLE_YEAR=re.compile(r'\(((?:19|20)\d\d)\)')
 SERIES_FILM_STATES=('identified','matched','manual')
 
@@ -890,7 +906,7 @@ def series_film(c,wid,meta=None,cache=None):
     if duration<SERIES_FILM_MIN:return None
     title=str(source.get('title') or '');topic=str(source.get('topic') or '');desc=core.clean(source.get('description',''))
     if not (SERIES_FILM_TEXT.search(desc) or SERIES_FILM_TITLE.search(title)):return None
-    if not (SERIES_FILM_COUNTRY.search(desc[:200]) if SERIES_FILM_TEXT.search(desc) else SERIES_FILM_COUNTRY.search(title)):return None
+    if not series_film_german(desc[:200] if SERIES_FILM_TEXT.search(desc) else title):return None
     if not film_shaped(source,title,topic,desc):return None
     if EPISODIC_MARK.search(title):return None
     meta=meta or {}
