@@ -1932,6 +1932,27 @@ def post_youtube_ytdlp_install(self,path,d):
     except Exception as e:diagnostics.error('youtube_requeue_failed',e)
     return self.send(st)
 
+@ROUTES.post('/api/youtube-access-check')
+def post_youtube_access_check(self,path,d):
+    # 0.6.161: "YouTube-Zugang prüfen" – one video simulated (nothing downloaded); yt-dlp renewed if its
+    # challenge solver is too old; on success the given-up/waiting "not available" jobs get another try.
+    video=str(d.get('video') or '').strip()
+    with db() as c:
+        if not video:video=youtube_abos.not_available_video(c)
+        if not video:return self.send({'error':'Kein gescheitertes YouTube-Video vorhanden; bitte eine Video-ID oder Videoadresse angeben'},400)
+    try:r=youtube_downloads.check_access(ROOT,video)
+    except ValueError as e:return self.send({'error':str(e)},400)
+    except OSError as e:return self.send({'error':'Prüfung nicht möglich: '+core.safe_error(e)},502)
+    r['requeued']=0
+    if r['ok']:
+        try:
+            with db() as c:r['requeued']=youtube_abos.requeue_not_available(c,tool=r['tool_version'])
+            if r['requeued']:diagnostics.event('youtube_jobs_requeued',count=r['requeued'],ytdlp=r['tool_version'],check=True)
+        except Exception as e:diagnostics.error('youtube_requeue_failed',e)
+    youtube_downloads.take_refreshed()
+    r['offline']=youtube_downloads.status(ROOT)
+    return self.send(r)
+
 @ROUTES.post('/api/youtube-download-add')
 def post_youtube_download_add(self,path,d):
     if d.get('album') or isinstance(d.get('ids'),list):

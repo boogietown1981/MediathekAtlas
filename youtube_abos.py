@@ -1327,6 +1327,21 @@ def requeue_not_available(c, now=None, tool=''):
     return moved
 
 
+def not_available_video(c):
+    """0.6.161: video id of the most recent YouTube job that failed with "This video is not available"."""
+    for (payload,) in c.execute("SELECT payload FROM jobs WHERE state IN ('error','queued') "
+                                "AND json_extract(payload,'$.origin')='youtube' ORDER BY rowid DESC LIMIT 2000"):
+        try:
+            job = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        if NOT_AVAILABLE in str(job.get('error') or '') + str(job.get('last_error') or ''):
+            video = str((job.get('source') or {}).get('_video_id') or '')
+            if video:
+                return video
+    return ''
+
+
 def requeue_on_start(c, now=None, js_ready=False):
     """0.6.13, einmal beim Start: YouTube-Aufträge, die vor 0.6.13 an einem vorübergehenden Fehler
     (Bot-Prüfung) gescheitert sind, und Abo-Downloads, die ein Neustart unterbrochen hat, wieder

@@ -294,12 +294,12 @@ def challenge_failed(text):
     return any(x in low for x in CHALLENGE)
 
 
-def refresh_for_challenge(root, tool=None, fetch=None, now=None):
+def refresh_for_challenge(root, tool=None, fetch=None, now=None, force=False):
     """0.6.160: after a challenge failure update the app's own yt-dlp (stable, else nightly), at most every
     REFRESH_GAP. Returns the new version as text, '' if nothing was done or nothing newer was found."""
     now = time.time() if now is None else float(now)
     state = _refresh_state(root)
-    if 'at' in state and now - float(state.get('at') or 0) < REFRESH_GAP:
+    if not force and 'at' in state and now - float(state.get('at') or 0) < REFRESH_GAP:
         return ''
     before = tool_version(tool[0]) if tool else ()
     state['at'] = now                    # recorded first: a failing download never loops into updates
@@ -335,6 +335,79 @@ def refresh_for_challenge(root, tool=None, fetch=None, now=None):
 
 
 _REFRESHED = {'version': ''}
+
+
+def _video_of(text):
+    """Video id from a bare id or any YouTube video address ('' if none)."""
+    import youtube
+    value = str(text or '').strip()
+    if youtube.VALID_VIDEO.fullmatch(value):
+        return value
+    try:
+        ref = youtube.parse_ref(value)
+    except ValueError:
+        return ''
+    return ref[2:] if ref.startswith('v:') else ''
+
+
+def _simulate(root, tool, video, runner=None):
+    """yt-dlp -s (no download) for one video: (returncode, challenge failed, clients, last ERROR line)."""
+    import youtube
+    args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser', '-s',
+            *js_args(root, tool), youtube.video_url(video)]
+    try:
+        done = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=120, stdin=subprocess.DEVNULL,
+                                          env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
+    except subprocess.TimeoutExpired:
+        return None, False, [], 'YouTube hat nicht rechtzeitig geantwortet'
+    out, err = str(done.stdout or ''), str(done.stderr or '')
+    clients = []
+    for line in (out + '\n' + err).splitlines():
+        c = _client(line)
+        if c and c not in clients:
+            clients.append(c)
+    errors = [URL.sub('<url>', l.strip())[:240] for l in err.splitlines() if l.startswith('ERROR:')]
+    return done.returncode, challenge_failed(err), clients, errors[-1] if errors else ''
+
+
+def check_access(root, video, fetch=None, runner=None):
+    """0.6.161 ("YouTube-Zugang prüfen", Mac-Prüfung 0.6.160): simulate one video with the yt-dlp in use;
+    if YouTube's player challenge fails, renew yt-dlp at once (button = explicit, no 12-hour pause) and
+    simulate again. Downloads nothing. The caller re-queues "not available" jobs when it ends well."""
+    video = _video_of(video)
+    if not video:
+        raise ValueError('Bitte eine YouTube-Video-ID oder Videoadresse angeben')
+    tool = find_tool(root)
+    if not tool:
+        raise ValueError('yt-dlp fehlt; im YouTube-Bereich „yt-dlp einrichten“ wählen')
+    js = find_js_runtime(root)
+    before = '.'.join(map(str, tool_version(tool[0])))
+    code, challenge, clients, error = _simulate(root, tool, video, runner)
+    result = {'video': video, 'tool_version': before, 'js_runtime': js[0] if js else '', 'js_args': bool(js_args(root, tool)),
+              'challenge_failed': challenge, 'clients': clients, 'ok': code == 0, 'error': error, 'refreshed': ''}
+    if challenge and result['js_args']:
+        result['refreshed'] = refresh_for_challenge(root, tool, fetch=fetch, force=True)
+        if result['refreshed']:
+            tool = find_tool(root)
+            code, challenge, clients, error = _simulate(root, tool, video, runner)
+            result.update(tool_version='.'.join(map(str, tool_version(tool[0]))), challenge_failed=challenge,
+                          clients=clients, ok=code == 0, error=error)
+    if result['ok']:
+        result['message'] = 'YouTube liefert das Video mit yt-dlp %s%s' % (result['tool_version'],
+                             ' (eben aktualisiert von %s)' % before if result['refreshed'] else '')
+    elif not js:
+        result['message'] = 'Deno fehlt: im YouTube-Bereich „Deno einrichten“ (%s)' % (error or 'kein Ergebnis')
+    elif result['challenge_failed']:
+        result['message'] = ('yt-dlp %s kann YouTubes Player noch nicht entschlüsseln; es gibt noch keine neuere '
+                             'Ausgabe, MediathekAtlas versucht es automatisch wieder' % result['tool_version'])
+    else:
+        result['message'] = 'YouTube liefert das Video nicht: ' + (_reason(error) if error else 'kein Ergebnis')
+    try:
+        import diagnostics
+        diagnostics.event('youtube_access_check', **{k: v for k, v in result.items() if k != 'message'})
+    except Exception:
+        pass
+    return result
 
 
 def take_refreshed():

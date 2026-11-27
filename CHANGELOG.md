@@ -1,3 +1,11 @@
+## 0.6.161 – Prüfbarer Weg für die yt-dlp-Erneuerung (Mac-Prüfung 0.6.159/0.6.160); auf 0.6.160
+
+- Mac-Prüfung (BEFUND-06159-06160.txt): Ursache bestätigt; stable 2026.11.23 und nightly 2026.11.24.232653 lösen Player b485e332 (tv-Variante, Formate 308+251). App-Teil nicht prüfbar: alte Abo-Aufträge in der Testkopie „abgelaufen“, /api/youtube-download-add nur für katalogisierte Videos.
+- Neu `POST /api/youtube-access-check` {video} und Knopf „YouTube-Zugang prüfen“ (Feld: Video-ID/-Adresse, leer = zuletzt gescheitertes „not available“-Video, `youtube_abos.not_available_video`). `youtube_downloads.check_access`: `yt-dlp -s` (kein Download) mit JS-Laufzeit; bei Challenge-Fehler sofort `refresh_for_challenge(force=True)` und zweite Simulation; Ergebnis mit Version vorher/nachher, Clients, Meldung; Ereignis `youtube_access_check`. Bei Erfolg `requeue_not_available(tool=Version)`.
+- Test: macOS-Runner-Aufräumschritt in `test_nas_packages` (terminate → 30 s → kill), CI 0.6.160 war nur dort rot.
+- 0.6.158 am Mac BESTANDEN (PRUEFVERMERK-06158.txt), an Björn ausgegeben.
+- Tests: `tests/test_v06161.py` (7).
+
 ## 0.6.160 – Ursache B1: yt-dlp-Lösungsskript zu alt für YouTubes Player; auf 0.6.159
 
 - Mac-Prüfung (Pro, nur Simulation; ytdlp-kindervideo-bFJHcm_GVlc.txt, ytdlp-normalvideo-ts50v5vV7D4.txt): yt-dlp stable 2026.10.26 (Air: 2026.11.06), yt-dlp-ejs 0.8.0, Deno 2.9.8, Player b485e332. Deno wird übergeben, „Error solving n challenge … TypeError: a.addOnDisposeCallback is not a function“ → „n challenge solving failed“; Kindervideo nur über web_embedded/web (Formate ohne URL) → „This video is not available“. Normales Video läuft über tv/m3u8. Im Browser spielt das Kindervideo. Auch der Pro hat 10 solche Abo-Videos.

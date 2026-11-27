@@ -143,7 +143,8 @@ class WiringTests(unittest.TestCase):
         self.assertIn('youtube_abos.requeue_not_available(c)', server)
         src = (ROOT / 'youtube_downloads.py').read_text(encoding='utf-8')
         # 0.6.159: the download keeps the arguments in a variable (also reported in its failure event)
-        self.assertEqual(src.count('*js_args(root, tool)') + src.count('jsargs = js_args(root, tool)'), 2)
+        # 0.6.161: third call = simulation of "YouTube-Zugang prüfen"
+        self.assertEqual(src.count('*js_args(root, tool)') + src.count('jsargs = js_args(root, tool)'), 3)
         js = (ROOT / 'web' / 'youtube.js').read_text(encoding='utf-8')
         self.assertIn("'Deno einrichten'", js)
         self.assertIn('o.js_runtime', js)

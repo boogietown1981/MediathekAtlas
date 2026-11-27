@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.160
+# MediathekAtlas · 0.6.161
+
+## Neu in 0.6.161: „YouTube-Zugang prüfen“
+- Im YouTube-Bereich (Offline-Speichern) prüft ein Knopf ein Video, ohne es herunterzuladen: das zuletzt gescheiterte oder eine eingegebene Video-ID/-Adresse. Kann yt-dlp YouTubes Player nicht mehr entschlüsseln, wird es sofort aktualisiert und noch einmal geprüft; klappt es, werden die gescheiterten Videos erneut versucht.
 
 ## Neu in 0.6.160: YouTube-Kindervideos laden wieder (yt-dlp hält sich selbst aktuell)
 - YouTube hat seinen Player geändert; das mitgelieferte yt-dlp konnte ihn nicht mehr entschlüsseln. Normale Videos liefen über einen Umweg weiter, Kindervideos scheiterten mit „This video is not available“. MediathekAtlas erkennt das jetzt, holt selbst eine neuere yt-dlp-Version (offizielle Ausgabe, Prüfsumme geprüft, höchstens zweimal am Tag) und versucht die betroffenen Downloads erneut.
