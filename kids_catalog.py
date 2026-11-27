@@ -887,7 +887,7 @@ def _log_change(old, new):
         after = {t['id']: t for v in ('movies', 'series') for t in new.get(v) or []}
         label = lambda t: '%s [%s%s]' % (t.get('title'), t.get('source'), ', ' + str(t.get('weg') or t.get('basis')) if (t.get('weg') or t.get('basis')) else '')
         added = [label(after[k]) for k in sorted(set(after) - set(before))]
-        removed = [label(before[k]) for k in sorted(set(before) - set(after))]
+        removed = [label(before[k]) + ' – ' + DROPPED.get(k, 'nicht_im_katalog') for k in sorted(set(before) - set(after))]
         diagnostics.event('kids_list_changed', movies=len(new.get('movies') or []), series=len(new.get('series') or []),
                           added=len(added), removed=len(removed), added_titles=added[:15], removed_titles=removed[:15])
     except Exception:
@@ -1037,10 +1037,18 @@ def episodes(root, c, data, source, series_id, marks=None):
     out = _episodes_of(root, c, data, source, series_id)
     # 0.6.162: Folgen gleichnamiger Reihen (merge_twin_series) dazu, jede Folge nur einmal
     tile = next((t for t in data.get('series', []) if t['source'] == source and (t.get('series') or {}).get(field) == series_id), None)
-    seen = {_episode_identity(e) for e in out}
-    by_title = {}
+    generic = _title_key((tile or {}).get('title'))
+    # 0.6.166 (Mac-Prüfung 0.6.165: TMNT bei Pluto „Ein Dino kommt selten allein…“ S3E1/S3E324, je 1350 s): dieselbe Folge
+    # doppelt auch innerhalb EINER Reihe – gleiche Regel wie zwischen Zwillingen
+    seen, by_title, own = set(), {}, []
     for e in out:
+        ident = _episode_identity(e)
+        if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or (), generic):
+            continue
+        seen.add(ident)
+        own.append(e)
         by_title.setdefault(_title_key(e.get('title')), []).append(e)
+    out = own
     for twin in (tile or {}).get('twins') or []:
         tsrc, tser = twin.get('source'), twin.get('series') or {}
         tid = tser.get('show') if tsrc == 'mediatheken' else tser.get('id')
@@ -1052,7 +1060,7 @@ def episodes(root, c, data, source, series_id, marks=None):
             continue
         for e in more:
             ident = _episode_identity(e)
-            if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or (), _title_key((tile or {}).get('title'))):
+            if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or (), generic):
                 continue
             seen.add(ident)
             out.append(e)
@@ -1507,9 +1515,15 @@ def _kids_shows(db, tiles):
             # abspielbare Folge keine Kachel
             if basis is None or not _has_episode(c, t['series']['show'], basis, query):
                 drop.add(t['id'])
+                # 0.6.166 (Mac-Prüfung 0.6.165: Heidi nach Zurücknehmen weg): Grund je weggelassener Reihe für die Diagnose
+                DROPPED[t['id']] = 'keine_zulassung' if basis is None else 'keine_folge:' + basis
             else:
                 t['basis'] = basis
+                DROPPED.pop(t['id'], None)
     return [t for t in tiles if t['id'] not in drop]
+
+
+DROPPED = {}   # 0.6.166: Kachel-Kennung -> Grund, aus dem letzten Aufbau (kids_list_changed)
 
 
 # 0.6.112 (Mac-Prüfung 0.6.109: Young Crime zeigte 5 ZDF-Folgen, POV eine WDR-Folge „Rechtsextremismus unter
