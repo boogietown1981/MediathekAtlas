@@ -34,7 +34,8 @@ class Sequels(test_v06154.Collapse):
 
     def test_same_imdb_mini_series_stays_together(self):
         self.movie('e1', 'tt0447987');self.movie('e2', 'tt0447987')
-        got = self.run_on([entry('Elvis: Teil 1', 'e1', 2005), entry('Elvis: Teil 2', 'e2', 2013)])
+        got = self.run_on([entry('Elvis: Teil 1', 'e1', 2005), entry('Elvis: Teil 2', 'e2', 2005),   # 0.6.156: wie im Katalog,
+                           entry('Elvis: Teil 1', 'e3', 2013), entry('Elvis: Teil 2', 'e4', 2013)])  # zweite Fassung 2013
         self.assertEqual(got['Elvis']['mehrteiler']['parts'], 2)
 
 

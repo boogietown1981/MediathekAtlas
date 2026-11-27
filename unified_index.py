@@ -19,6 +19,7 @@ Merging never changes stored data and never asserts an identity: it is a present
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -346,6 +347,10 @@ REIHE_MIN = 3
 REIHE_SLOT = re.compile(r'(?i)film|kino|movie|cinema|sendeplatz|premiere|sommer|highlights?\b|mediathek')
 PART = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:\(?\s*(?:(?:teil|part)\s*)?(?P<n>\d{1,2})\s*/\s*\d{1,2}\s*\)?|\(?(?:teil|part)\s+(?P<m>\d{1,2}|eins|zwei|drei|vier|fünf|one|two|three)\)?)\s*$')
 PART_HINT = re.compile(r'(?i)\d\s*/\s*\d|teil|part')
+# 0.6.156 (Mac-Prüfung 0.6.155: „Kolbenfresser Teil 1 Maisernte hautnah“ fiel aus dem Mehrteiler): „Teil n“ mit Zusatz
+# dahinter zählt nur, wenn derselbe Grundtitel schon streng erkannte Teile hat
+PART_LOOSE = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:teil|part)\s+(?P<n>\d{1,2})\b\s*[-–—:,.)]?\s*\S.*$')
+DOKU = {'dokumentation', 'doku', 'dokumentarfilm', 'reportage', 'documentary', 'wissen', 'natur', 'technik'}
 PART_WORDS = {'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'one': 1, 'two': 2, 'three': 3}
 REIHE_PREFIX = re.compile(r'^(?P<name>[^:–—]{3,60}?)\s*(?::|\s[-–—])\s+\S')
 
@@ -360,19 +365,38 @@ def _part(title):
     return (base, number) if number and len(base) >= 3 else None
 
 
-def _sequels(db, members):
-    """0.6.155 (Mac-Prüfung 0.6.154: die Jahresregel trennte echte Mehrteiler wie „Traktorgiganten Teil 1–4“ 2010/2011):
-    verschiedene Jahre allein machen noch keine Fortsetzung. Fortsetzungen sind eigene Filme – mindestens zwei Teile mit
-    verschiedenen IMDb-Nummern („Zärtliche Chaoten“ 1986/1987). Teile ohne IMDb-Nummer oder mit derselben (Mini-Serie)
-    bleiben ein Mehrteiler."""
+def _sequels(db, members, numbers=None):
+    """Teile desselben Grundtitels aus verschiedenen Jahren: Fortsetzung (einzeln lassen) oder Mehrteiler?
+    0.6.155: Fortsetzung, wenn mindestens zwei Teile verschiedene IMDb-Nummern tragen (eigene Filme).
+    0.6.156 (Mac-Prüfung 0.6.155: „Zärtliche Chaoten – Teil 1/2“, 1986/1987, ohne IMDb-Nummer wieder zusammengefasst):
+    ohne IMDb auch Fortsetzung, wenn jeder Teil sein eigenes Jahr hat (kein Jahr bei zwei Teilen, Jahr steigt mit dem Teil)
+    und kein Teil eine Doku/Reportage ist. „Traktorgiganten Teil 1–4“ (2010/2011, Jahre geteilt), „Elvis Teil 1/2“ (2005,
+    zweite Fassung 2013) und Doku-Reihen wie „Kolbenfresser“ bleiben Mehrteiler."""
     ids = [o['id'] for e in members for o in e['offers'] if o['source'] == 'mediatheken']
     imdb = {str((o.get('item') or {}).get('imdb_id') or '') for e in members for o in e['offers'] if o['source'] != 'mediatheken'}
+    genres = set()
     if ids:
         with db() as c:
             marks = ','.join('?' * len(ids))
-            imdb |= {str(r[0] or '') for r in c.execute(
-                "SELECT json_extract(meta,'$.imdb_id') FROM works WHERE id IN (%s) AND json_valid(meta)" % marks, ids)}
-    return len({i for i in imdb if i.startswith('tt')}) >= 2
+            for tt, gs in c.execute("SELECT json_extract(meta,'$.imdb_id'), json_extract(meta,'$.genres') FROM works "
+                                    "WHERE id IN (%s) AND json_valid(meta)" % marks, ids):
+                imdb.add(str(tt or ''))
+                try:
+                    genres |= {str(g).casefold() for g in (json.loads(gs) if gs else []) or []}
+                except (TypeError, ValueError):
+                    pass
+    if len({i for i in imdb if i.startswith('tt')}) >= 2:
+        return True
+    if not numbers or genres & DOKU:
+        return False
+    by_part = {}
+    for e, n in zip(members, numbers):
+        if e.get('year'):
+            by_part.setdefault(n, set()).add(e['year'])
+    if len(by_part) < 2 or any(len(y) != 1 for y in by_part.values()):
+        return False
+    order = [next(iter(by_part[n])) for n in sorted(by_part)]
+    return len(set(order)) == len(order) and order == sorted(order)
 
 
 def collapse_reihen(db, entries):
@@ -403,13 +427,23 @@ def collapse_reihen(db, entries):
         key = m and title_key(m.group('name'))
         if key and ('reihe', key) in groups:
             groups[('reihe', key)].append(i);in_reihe.add(i)
+    parts_of = {}
     for i, e in enumerate(entries):
         t = str(e['title'] or '')
         if i in in_reihe or not (PART_HINT.search(t)):
             continue
         part = _part(t)
         if part:
+            parts_of[i] = part
             groups.setdefault(('teile', title_key(part[0])), []).append(i)
+    for i, e in enumerate(entries):      # 0.6.156: „Teil 1 Maisernte hautnah“ zu vorhandenen Teilen desselben Grundtitels
+        if i in in_reihe or i in parts_of:
+            continue
+        m = PART_LOOSE.match(str(e['title'] or '').strip())
+        base = m and m.group('base').rstrip(' -–—:,(')
+        if base and len(base) >= 3 and ('teile', title_key(base)) in groups:
+            parts_of[i] = (base, int(m.group('n')))
+            groups[('teile', title_key(base))].append(i)
     replace, drop = {}, set()
     for (what, key), members in groups.items():
         members.sort()
@@ -423,11 +457,12 @@ def collapse_reihen(db, entries):
             replace[members[0]] = {'title': name, 'year': max(years) if years else None, 'offers': [offer], 'reihe': key,
                                    'mehrteiler': {'query': name, 'parts': len(members), 'reihe': True}}
         else:
-            numbers = {_part(entries[i]['title'])[1] for i in members}
-            if len(numbers) < 2 or (len(set(years)) > 1 and _sequels(db, [entries[i] for i in members])):
-                continue    # ein Teil allein bzw. Fortsetzungen (verschiedene Jahre UND eigene IMDb-Filme)
-            first = entries[min(members, key=lambda i: (_part(entries[i]['title'])[1], i))]
-            base = _part(first['title'])[0]
+            numbers = {parts_of[i][1] for i in members}
+            if len(numbers) < 2 or (len(set(years)) > 1 and _sequels(db, [entries[i] for i in members],
+                                                                      [parts_of[i][1] for i in members])):
+                continue    # ein Teil allein bzw. Fortsetzungen (siehe _sequels)
+            first = entries[min(members, key=lambda i: (parts_of[i][1], i))]
+            base = parts_of[min(members, key=lambda i: (parts_of[i][1], i))][0]
             replace[members[0]] = dict(first, title=base, year=min(years) if years else first['year'],
                                        mehrteiler={'query': base, 'parts': len(numbers)})
         keep = members[0]
@@ -568,7 +603,7 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                     row.update(episodes=offer['episodes'], series_parent=work['kind'] == 'series' and kind == 'series')   # 0.6.137: Reihenfilm under Filme
                     if offer.get('reihe'):
                         # 0.6.150: Filmreihe unter Filme (Tatort, Polizeiruf …) öffnet wie eine Serie ihre Filme
-                        row.update(series_parent=True, reihe=True, show_key=offer['reihe'], film_count=offer['episodes'])
+                        row.update(series_parent=True, reihe=True, reihe_key=offer['reihe'], film_count=offer['episodes'])   # 0.6.156: show_key bleibt echt (Mac-Prüfung 0.6.155: „Serie nicht gefunden“)
                     elif kind != 'series':
                         catalog.as_series_film(row)   # 0.6.140: film title and year
                     lang = row.get('languages') or {}

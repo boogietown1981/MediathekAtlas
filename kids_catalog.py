@@ -317,35 +317,47 @@ def _missing_shows(shelf):
 _PHRASE = lambda t: re.sub(r'\s+', ' ', re.sub(r'[^0-9a-zäöüß]+', ' ', str(t or '').casefold())).strip()
 
 
-def youtube_picture(root, title):
-    """0.6.152 (Mac-Prüfung 0.6.147: KiKA-Reihen wie „Checker Tobi“, „Anna, Paula, Pia …“ bleiben ohne Bild, KiKA wird
-    nicht abgefragt): Vorschaubild eines YouTube-Videos aus dem eigenen Bestand (Kinder-Abos, YouTube-Katalog), dessen
-    Titel den Reihennamen als ganze Wortfolge enthält. Kein Netz; Bilder nur von i.ytimg.com. '' ohne Treffer."""
-    phrase = _PHRASE(title)
-    if len(phrase) < 6 or ' ' not in phrase and len(phrase) < 10:
-        return ''       # zu kurz/zu allgemein („Anna“, „Wissen“)
-    first = phrase.split(' ')[0]
+YOUTUBE_INDEX_ROWS = 20000   # 0.6.156: neueste Videos je Tabelle, einmal je Lauf gelesen
+
+
+def youtube_index(root, rows=YOUTUBE_INDEX_ROWS):
+    """0.6.156 (Mac-Prüfung 0.6.155, Air: Bildabruf lief über 8 h nicht durch): Titel und Vorschaubilder des eigenen
+    YouTube-Bestands EINMAL je Lauf lesen statt je Reihe eine Verbindung und zwei LIKE-Suchen. [(Wortfolge, Bild)]."""
     try:
         import youtube
         ydb = youtube._connect(root)
     except Exception:
-        return ''
+        return []
+    out = []
     try:
-        rows = []
         if ydb.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='youtube_abo_videos'").fetchone():
-            rows += ydb.execute("SELECT title, poster FROM youtube_abo_videos WHERE title LIKE ? ORDER BY found DESC LIMIT 60",
-                                ('%' + first + '%',)).fetchall()
-        rows += ydb.execute("SELECT title, poster FROM youtube_items WHERE title LIKE ? AND poster LIKE 'https://i.ytimg.com/%' "
-                            "ORDER BY seen DESC LIMIT 60", ('%' + first + '%',)).fetchall()
+            out += ydb.execute("SELECT title, poster FROM youtube_abo_videos WHERE poster LIKE 'https://i.ytimg.com/%' "
+                               "ORDER BY found DESC LIMIT ?", (rows,)).fetchall()
+        out += ydb.execute("SELECT title, poster FROM youtube_items WHERE poster LIKE 'https://i.ytimg.com/%' "
+                           "ORDER BY seen DESC LIMIT ?", (rows,)).fetchall()
     except Exception:
-        return ''
+        pass
     finally:
         ydb.close()
-    for video_title, poster in rows:
-        url = _https(poster)
-        if url.startswith('https://i.ytimg.com/') and (' ' + phrase + ' ') in (' ' + _PHRASE(video_title) + ' '):
+    return [(' ' + _PHRASE(t) + ' ', _https(p)) for t, p in out if _https(p).startswith('https://i.ytimg.com/')]
+
+
+def youtube_picture(root, title, index=None):
+    """0.6.152 (Mac-Prüfung 0.6.147: KiKA-Reihen wie „Checker Tobi“, „Anna, Paula, Pia …“ bleiben ohne Bild, KiKA wird
+    nicht abgefragt): Vorschaubild eines YouTube-Videos aus dem eigenen Bestand (Kinder-Abos, YouTube-Katalog), dessen
+    Titel den Reihennamen als ganze Wortfolge enthält. Kein Netz; Bilder nur von i.ytimg.com. '' ohne Treffer.
+    0.6.156: ``index`` aus youtube_index (einmal je Lauf)."""
+    phrase = _PHRASE(title)
+    if len(phrase) < 6 or ' ' not in phrase and len(phrase) < 10:
+        return ''       # zu kurz/zu allgemein („Anna“, „Wissen“)
+    needle = ' ' + phrase + ' '
+    for text, url in (youtube_index(root) if index is None else index):
+        if needle in text:
             return url
     return ''
+
+
+PICTURE_SECONDS = 120   # 0.6.156: ein Lauf endet spätestens nach 2 min (Rest beim nächsten Lauf)
 
 
 def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None, youtube=None):
@@ -355,7 +367,14 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
     import broadcaster
     now = time.time() if now is None else now
     lookup = lookup or (lambda row: broadcaster.lookup_limited(row, purpose='pictures'))
-    youtube = youtube or (lambda title: youtube_picture(root, title))
+    if youtube is None:
+        cache = []
+
+        def youtube(title):
+            if not cache:
+                cache.append(youtube_index(root))
+            return youtube_picture(root, title, cache[0])
+    began = time.monotonic()
     LAST_FETCH['stopped'] = False
     via_youtube = 0
     with _LOCK:
@@ -368,7 +387,7 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
         # 0.6.152: Fehlschläge älterer Versionen (ohne YouTube-Rückfall, ohne 'v') gleich erneut versuchen
         if entry.get('url') or (entry.get('v') == 2 and now - float(entry.get('at') or 0) < PICTURE_RETRY):
             continue
-        if asked >= limit:
+        if asked >= limit or time.monotonic() - began > PICTURE_SECONDS:
             break
         try:
             with db() as c:
@@ -418,13 +437,13 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
                 catalog.set_state(c, PICTURES_KEY, stored)
         except Exception:
             pass
-        try:
-            import diagnostics
-            diagnostics.event('kids_pictures_fetched', found=found, asked=asked, without_sender_page=no_page,
-                              from_youtube=via_youtube, stopped=LAST_FETCH['stopped'],
-                              examples_without_page=names[:10], known=sum(1 for v in stored.values() if v.get('url')))
-        except Exception:
-            pass
+    try:   # 0.6.156: das Ereignis kommt bei jedem Lauf (auch ohne fehlende Bilder), mit Dauer
+        import diagnostics
+        diagnostics.event('kids_pictures_fetched', found=found, asked=asked, without_sender_page=no_page,
+                          from_youtube=via_youtube, stopped=LAST_FETCH['stopped'], seconds=round(time.monotonic() - began, 2),
+                          examples_without_page=names[:10], known=sum(1 for v in stored.values() if v.get('url')))
+    except Exception:
+        pass
     return found, asked, no_page
 
 

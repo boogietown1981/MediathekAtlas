@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.155
+# MediathekAtlas · 0.6.156
+
+## Neu in 0.6.156: Filmreihen öffnen sich richtig
+- Der Knopf einer Filmreihen-Kachel heißt „Alle Filme“ und zeigt alle Filme der Reihe (vorher Fehlermeldung „Serie nicht gefunden“). Die Kachel nennt das Jahr des neuesten Films.
+- Mehrteiler: Teile mit Zusatz im Titel („Kolbenfresser Teil 1 Maisernte hautnah“) gehören dazu; Fortsetzungen wie „Zärtliche Chaoten“ bleiben einzeln, auch ohne IMDb-Nummer.
+- Kinderecke: Die Bildersuche liest den YouTube-Bestand nur noch einmal je Lauf und endet spätestens nach 2 Minuten.
 
 ## Neu in 0.6.155: Feinschliff nach den Prüfungen 0.6.152–0.6.154
 - Mehrteiler mit Teilen aus verschiedenen Jahren (z. B. „Traktorgiganten Teil 1–4“) stehen wieder in einer Kachel; Fortsetzungen, die eigene Filme sind (z. B. „Zärtliche Chaoten“), bleiben einzeln.

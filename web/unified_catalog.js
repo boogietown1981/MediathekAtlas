@@ -427,7 +427,8 @@
     const title=el('h3',parts?parts.query:main.title);title.classList.add('clickable');title.onclick=open;
     text.append(title);
     const genres=genreList(pickFrom('genres',g=>genreList(g).length));
-    const year=main.year||pickFrom('year',y=>!!y&&true);
+    // 0.6.156 (Mac-Prüfung 0.6.155: Tatort-Kachel zeigte 1970): eine Filmreihe zeigt das Jahr ihres neuesten Films
+    const year=(parts?.reihe&&item.entryYear)||main.year||pickFrom('year',y=>!!y&&true);
     const facts=[parts&&!parts.reihe?'Mehrteiler':main.reihe||parts?.reihe?'Filmreihe':main.kind==='series'||main.series_parent?'Serie':main.kind==='episode'?'Episode':'Film',
       year,parts&&!parts.reihe?parts.parts+' Teile':main.reihe||parts?.reihe?(parts?.parts||main.film_count||main.episode_count)+' Filme':(main.kind==='series'||main.series_parent)&&main.episode_count?main.episode_count+' Folgen':null,
       main.kind==='episode'&&main.episode?'S'+(main.season??'?')+' E'+main.episode:null,
@@ -447,6 +448,9 @@
     if (description) text.append(el('p',description.slice(0,220),'atlas-uc-desc'));
     const actions=el('div',undefined,'atlas-uc-actions');
     actions.append(...actionNodes(main,true,offers));
+    // 0.6.156 (Mac-Prüfung 0.6.155: „Folgen & Details“ einer Reihenkachel meldete „Serie nicht gefunden“): die Reihe öffnet
+    // auch über den Knopf ihre Filme (Suche nach dem Reihennamen) statt der Serienseite eines einzelnen Reihenfilms
+    if (parts?.reihe) {const d=actions.querySelector('.atlas-uc-details');if(d){d.textContent='Alle Filme';d.onclick=open;}}
     // 0.5.81: Merkliste in every tile (web/watchlist.js); a series is marked as a whole.
     const mark=window.AtlasWatch?.button(main);if(mark)actions.append(mark);
     text.append(actions);
@@ -550,7 +554,7 @@
     const rows=[];
     for (const entry of data.items||[]) {
       const offers=(entry.offers||[]).map(o=>rowOf(o.source,o.item));
-      if (offers.length) rows.push({...offers[0],offers,local:!!entry.local,mehrteiler:entry.mehrteiler||null});
+      if (offers.length) rows.push({...offers[0],offers,local:!!entry.local,mehrteiler:entry.mehrteiler||null,entryYear:entry.year||null});
     }
     const names=data.names||{};
     const notes=Object.entries(data.counts||{}).filter(([,n])=>n).map(([src,n])=>(names[src]||src)+': '+num(n));

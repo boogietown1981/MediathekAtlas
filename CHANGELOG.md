@@ -1,3 +1,12 @@
+## 0.6.156 – Befunde Mac-Prüfung 0.6.155 (Reihenkachel, Kinderecke-Bilder, Mehrteiler); auf 0.6.155
+
+- Mac-Prüfung 0.6.155 NICHT BESTANDEN (BEFUND-06155.txt); 0.6.154 hat denselben Reihenkachel-Fehler. Beide NICHT-INSTALLIEREN, ausgegeben bleibt 0.6.153.
+- (1) Reihenkachel „Folgen & Details“ → „Serie nicht gefunden“: `unified_index.page` überschrieb seit 0.6.154 den show_key der Kachel mit dem Reihennamen (`title_key`), die Serienseite fand ihn nicht. Jetzt bleibt der echte show_key (`reihe_key` getrennt), und der Knopf heißt „Alle Filme“ und öffnet wie Bild und Titel die Suche nach dem Reihennamen (neueste zuerst). Jahr der Kachel = neuester Film (`entryYear`, vorher Startjahr der Reihe, Tatort 1970). Neuer Klicktest `tests/browser/film_reihen.cjs` (Reihe unter zwei show_keys + eigenes Filmwerk, Knopf/Titel/Bild, Mehrteiler).
+- (2) Kinderecke-Bilder auf dem Air-Weg: in 8 h kein `kids_pictures_fetched`. Seit 0.6.155 lief nach erreichtem Senderlimit für JEDE fehlende Reihe `youtube_picture` (eigene Verbindung, zwei LIKE-Suchen ohne Index über den ganzen YouTube-Bestand); das Ereignis kam erst am Ende. Jetzt `youtube_index`: Titel/Bilder (neueste 20.000 je Tabelle) einmal je Lauf, Abgleich im Speicher; Lauf endet spätestens nach `PICTURE_SECONDS=120`; `kids_pictures_fetched` bei JEDEM Lauf mit `seconds`.
+- (3) Mehrteiler: `PART_LOOSE` – „Teil n“ mit Zusatz („Kolbenfresser Teil 1 Maisernte hautnah“) gehört zu einem Grundtitel, der schon streng erkannte Teile hat. `_sequels` ohne IMDb: Fortsetzung, wenn jeder Teil sein eigenes Jahr hat (aufsteigend, kein Jahr doppelt) und kein Teil Doku/Reportage ist („Zärtliche Chaoten“ 1986/1987 einzeln; „Traktorgiganten“ Jahre geteilt, „Elvis“ 2005 + Fassung 2013, „Kolbenfresser“ Doku bleiben Mehrteiler).
+- Hinweis Prüfung: 1–2 min nach dem Markierlauf noch die alte Liste ohne Reihen (Neuaufbau im Hintergrund) – unverändert, gewollt (Liste antwortet sofort).
+- Tests: `tests/test_v06156.py` (3), `tests/browser/film_reihen.cjs` (neu), `tests/test_v06155.py` (Elvis wie im Katalog).
+
 ## 0.6.155 – Hinweise aus den Mac-Prüfungen 0.6.152–0.6.154; auf 0.6.154
 
 - Prüfungen: 0.6.152 BESTANDEN mit zwei Hinweisen (BEFUND-06152.txt), 0.6.153 BESTANDEN (PRUEFVERMERK-06153.txt), 0.6.154 BESTANDEN mit Hinweisen (BEFUND-06154.txt).
