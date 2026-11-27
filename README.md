@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.159
+# MediathekAtlas · 0.6.160
+
+## Neu in 0.6.160: YouTube-Kindervideos laden wieder (yt-dlp hält sich selbst aktuell)
+- YouTube hat seinen Player geändert; das mitgelieferte yt-dlp konnte ihn nicht mehr entschlüsseln. Normale Videos liefen über einen Umweg weiter, Kindervideos scheiterten mit „This video is not available“. MediathekAtlas erkennt das jetzt, holt selbst eine neuere yt-dlp-Version (offizielle Ausgabe, Prüfsumme geprüft, höchstens zweimal am Tag) und versucht die betroffenen Downloads erneut.
 
 ## Neu in 0.6.159: YouTube-Fehler ehrlich erklärt
 - Scheitert ein YouTube-Download mit „This video is not available“, obwohl Deno eingerichtet ist, rät MediathekAtlas nicht mehr zu „Deno einrichten“, sondern nennt die wahrscheinlichen Gründe (Sperre der Adresse, Kindervideo, regional gesperrt) und versucht es später erneut. Der Deno-Rat erscheint nur noch, wenn Deno wirklich fehlt; ist yt-dlp zu alt, heißt es „yt-dlp einrichten“.

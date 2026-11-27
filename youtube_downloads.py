@@ -50,6 +50,14 @@ CONSENT = ('Ich weiß, dass die YouTube-Nutzungsbedingungen das Herunterladen oh
            'Gebrauch für höchstens %d Tage.' % OFFLINE_DAYS)
 FORMAT = ('bv*[height<=1080][vcodec^=avc1]+ba[acodec^=mp4a]/bv*[height<=1080]+ba/b[height<=1080]/b')
 RELEASE = 'https://github.com/yt-dlp/yt-dlp/releases/latest/download/'
+# 0.6.160 (Mac-Prüfung B1, 27.11.2026): yt-dlp 2026.10.26/2026.11.06 with its bundled challenge solver
+# (yt-dlp-ejs 0.8.0) failed on YouTube's current player ("n challenge solving failed", Deno: "TypeError:
+# a.addOnDisposeCallback is not a function"); kids videos only have the web/web_embedded way and then
+# end in "This video is not available". When the newest stable release is not newer, the official
+# nightly build (same assets and checksum file) is used until a newer stable one follows.
+NIGHTLY = 'https://github.com/yt-dlp/yt-dlp-nightly-builds/releases/latest/download/'
+CHALLENGE = ('n challenge solving failed', 'error solving n challenge', 'sig function', 'challenge solving failed')
+REFRESH_GAP = 12 * 3600        # at most one automatic yt-dlp update per half day
 TIMEOUT = 6 * 3600
 _LOCK = threading.Lock()
 _ENABLED = {'value': False}
@@ -236,7 +244,9 @@ def find_tool(root):
     found = shutil.which('yt-dlp')
     if found:
         system = ([found], 'installiert (' + found + ')')
-        if own and tool_version(system[0]) and tool_version(system[0]) < JS_MIN_VERSION:
+        version = tool_version(system[0])
+        # 0.6.160: the app's own copy also wins when it is newer (set up after a challenge failure)
+        if own and version and (version < JS_MIN_VERSION or (tool_version(own[0]) or ()) > version):
             return own
         return system
     return own
@@ -263,17 +273,91 @@ def install_tool(root, fetch=None, js_fetch=None):
     return status(root)
 
 
-def _install_ytdlp(root, fetch=None):
-    """Download the official yt-dlp zipapp and verify it against the release checksums."""
+def _refresh_state(root):
+    try:
+        return json.loads((Path(root) / 'tools' / 'yt-dlp-refresh.json').read_text(encoding='utf-8'))
+    except (OSError, ValueError):
+        return {}
+
+
+def _save_refresh_state(root, state):
+    path = Path(root) / 'tools' / 'yt-dlp-refresh.json'
+    path.parent.mkdir(parents=True, exist_ok=True)
+    tmp = path.with_suffix('.partial')
+    tmp.write_text(json.dumps(state), encoding='utf-8')
+    os.replace(tmp, path)
+
+
+def challenge_failed(text):
+    """yt-dlp could not solve YouTube's player challenge (solver script older than the player)."""
+    low = str(text or '').lower()
+    return any(x in low for x in CHALLENGE)
+
+
+def refresh_for_challenge(root, tool=None, fetch=None, now=None):
+    """0.6.160: after a challenge failure update the app's own yt-dlp (stable, else nightly), at most every
+    REFRESH_GAP. Returns the new version as text, '' if nothing was done or nothing newer was found."""
+    now = time.time() if now is None else float(now)
+    state = _refresh_state(root)
+    if 'at' in state and now - float(state.get('at') or 0) < REFRESH_GAP:
+        return ''
+    before = tool_version(tool[0]) if tool else ()
+    state['at'] = now                    # recorded first: a failing download never loops into updates
+    _save_refresh_state(root, state)
+    own = [sys.executable, str(_managed(root))]
+    channel = state.get('channel') or 'stable'
+    try:
+        if channel == 'stable':
+            _install_ytdlp(root, fetch)
+            if (tool_version(own) or ()) <= before:
+                channel = 'nightly'
+        if channel == 'nightly':
+            _install_ytdlp(root, fetch, release=NIGHTLY)
+    except (OSError, ValueError) as e:
+        try:
+            import diagnostics
+            diagnostics.event('youtube_ytdlp_refresh_failed', 'WARNING', channel=channel, error=str(e)[:200])
+        except Exception:
+            pass
+        return ''
+    after = tool_version(own) or ()
+    if after <= before:
+        return ''
+    state.update(channel=channel, version='.'.join(map(str, after)))
+    _save_refresh_state(root, state)
+    _REFRESHED['version'] = state['version']
+    try:
+        import diagnostics
+        diagnostics.event('youtube_ytdlp_refreshed', channel=channel, before='.'.join(map(str, before)), after=state['version'])
+    except Exception:
+        pass
+    return state['version']
+
+
+_REFRESHED = {'version': ''}
+
+
+def take_refreshed():
+    """Version set up by refresh_for_challenge since the last call ('' if none), for re-queueing jobs."""
+    version, _REFRESHED['version'] = _REFRESHED['version'], ''
+    return version
+
+
+def _install_ytdlp(root, fetch=None, release=None):
+    """Download the official yt-dlp zipapp and verify it against the release checksums.
+
+    0.6.160: ``release`` – NIGHTLY once the stable release could not solve YouTube's challenge; the
+    button then stays on that channel (see _refresh_state)."""
+    release = release or (NIGHTLY if _refresh_state(root).get('channel') == 'nightly' else RELEASE)
     fetch = fetch or (lambda url: urllib.request.urlopen(urllib.request.Request(
         url, headers={'User-Agent': 'MediathekAtlas'}), timeout=60).read(64 * 1024 * 1024))
     with _LOCK:
-        sums = fetch(RELEASE + 'SHA2-256SUMS').decode('utf-8', 'replace')
+        sums = fetch(release + 'SHA2-256SUMS').decode('utf-8', 'replace')
         expected = next((line.split()[0] for line in sums.splitlines()
                          if len(line.split()) == 2 and line.split()[1].lstrip('*') == 'yt-dlp'), '')
         if not re.fullmatch(r'[0-9a-f]{64}', expected):
             raise ValueError('Prüfsumme für yt-dlp nicht gefunden')
-        data = fetch(RELEASE + 'yt-dlp')
+        data = fetch(release + 'yt-dlp')
         if hashlib.sha256(data).hexdigest() != expected:
             raise ValueError('yt-dlp-Download beschädigt (Prüfsumme stimmt nicht)')
         target = _managed(root)
@@ -405,7 +489,16 @@ def fetch(row, src, directory, update, cancelled, runner=None):
             # mentioning e.g. a timeout or a geo note cannot change how the failure is judged
             errors = '\n'.join(line for line in text.splitlines() if line.startswith('ERROR:')) or text
             message, retry, block = _failure(errors, js_runtime=bool(js), js_used=bool(jsargs))
-            _report_failure(row, video, tool, js, jsargs, state['clients'], text, retry)
+            challenge = bool(jsargs) and challenge_failed(text)
+            if challenge:
+                newer = refresh_for_challenge(root, tool)
+                message = ('yt-dlp konnte YouTubes aktuellen Player nicht entschlüsseln („n challenge“); ' +
+                           ('MediathekAtlas hat yt-dlp %s eingerichtet, neuer Versuch in Kürze' % newer if newer else
+                            'eine neuere yt-dlp-Version wird automatisch geholt, sobald es eine gibt') +
+                           ' (YouTube: „%s“)' % ('This video is not available' if 'this video is not available'
+                                                 in errors.lower() else _reason(errors)[:80]))
+                retry, block = True, False
+            _report_failure(row, video, tool, js, jsargs, state['clients'], text, retry, challenge)
             if retry:
                 raise download_retry.RetryLater(message, block=block)
             raise ValueError(message)
@@ -466,7 +559,7 @@ def _client(line):
     return m.group(1).strip().lower().replace(' ', '_')[:30] if m else ''
 
 
-def _report_failure(row, video, tool, js, jsargs, clients, text, retry):
+def _report_failure(row, video, tool, js, jsargs, clients, text, retry, challenge=False):
     """0.6.159 (B1): one diagnostic event per failed YouTube download with everything needed to tell a
     refused kids video from a bot block or an unused JavaScript runtime. No addresses (they carry tokens)."""
     try:
@@ -476,7 +569,7 @@ def _report_failure(row, video, tool, js, jsargs, clients, text, retry):
         diagnostics.event('youtube_download_failed', 'WARNING', video=video, abo=row.get('_abo') or None,
                           retry=bool(retry), js_runtime=js[0] if js else '', js_args=bool(jsargs),
                           tool_origin=str(tool[1])[:80], tool_version='.'.join(map(str, tool_version(tool[0]))),
-                          clients=clients[:8], messages=lines)
+                          clients=clients[:8], challenge_failed=bool(challenge), messages=lines)
     except Exception:                    # diagnostics must never turn into a second failure
         pass
 
@@ -588,7 +681,7 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
     if not tool:
         raise ValueError('yt-dlp fehlt; im YouTube-Bereich „yt-dlp einrichten“ wählen')
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
-            '--no-warnings', '-f', FORMAT.format(h=limit), '-S', SORT.format(h=limit), *js_args(root, tool), '-j', youtube.video_url(row['path'])]
+            '-f', FORMAT.format(h=limit), '-S', SORT.format(h=limit), *js_args(root, tool), '-j', youtube.video_url(row['path'])]
     try:
         done = (runner or subprocess.run)(args, capture_output=True, text=True, timeout=60, stdin=subprocess.DEVNULL,
                                           env={**os.environ, 'PYTHONIOENCODING': 'utf-8'})
@@ -598,7 +691,11 @@ def play_source(root, item_id, quality='auto', runner=None, now=None):
         raise ValueError('yt-dlp konnte nicht gestartet werden') from None
     urls, headers, height = _stream_urls(done.stdout)
     if done.returncode != 0 or not urls:
-        raise ValueError(_reason(done.stderr))
+        # 0.6.160: warnings are no longer suppressed (stderr only); the reason comes from the ERROR lines
+        errors = '\n'.join(l for l in str(done.stderr or '').splitlines() if l.startswith('ERROR:')) or done.stderr
+        if challenge_failed(done.stderr) and refresh_for_challenge(root, tool):
+            raise ValueError('yt-dlp wurde für YouTubes neuen Player aktualisiert; bitte noch einmal abspielen')
+        raise ValueError(_reason(errors))
     hls = '.m3u8' in urls[0] or '/manifest/hls' in urls[0]
     # 0.5.86 (Björn, 13.11.2026: stutters, picture and sound out of step; diagnosis: 1.8 Mbit/s, first
     # data after 8 s): YouTube serves one open-ended request only at about playback speed. 'ranged'

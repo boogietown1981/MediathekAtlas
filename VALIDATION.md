@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.160 – Ursache B1 yt-dlp-Lösungsskript (27. November 2026)
+- Automatisch: tests/test_v06160.py (7: Erkennung, stabil→Nightly mit 12-h-Sperre und Kanal, Prüfsummenfehler installiert nichts, eigenes neueres yt-dlp hat Vorrang, fetch-Meldung/Ereignis, Neueinreihen je Version, Verdrahtung), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf, echte Nightly-Ausgabe gegen Player b485e332. Am Mac: PRUEFLISTE in releases/0.6.160.
+
 ## 0.6.159 – B1 Air-Diagnose 0.6.153 (27. November 2026)
 - Automatisch: tests/test_v06159.py (6: Meldetexte je Laufzeitzustand, Client-Erkennung, fetch mit Deno/ohne Deno, Ereignis ohne URLs, Warnung ändert Bewertung nicht), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf (Netz gesperrt). Am Mac: PRUEFLISTE in releases/0.6.159.
 

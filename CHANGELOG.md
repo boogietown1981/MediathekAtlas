@@ -1,3 +1,13 @@
+## 0.6.160 – Ursache B1: yt-dlp-Lösungsskript zu alt für YouTubes Player; auf 0.6.159
+
+- Mac-Prüfung (Pro, nur Simulation; ytdlp-kindervideo-bFJHcm_GVlc.txt, ytdlp-normalvideo-ts50v5vV7D4.txt): yt-dlp stable 2026.10.26 (Air: 2026.11.06), yt-dlp-ejs 0.8.0, Deno 2.9.8, Player b485e332. Deno wird übergeben, „Error solving n challenge … TypeError: a.addOnDisposeCallback is not a function“ → „n challenge solving failed“; Kindervideo nur über web_embedded/web (Formate ohne URL) → „This video is not available“. Normales Video läuft über tv/m3u8. Im Browser spielt das Kindervideo. Auch der Pro hat 10 solche Abo-Videos.
+- `challenge_failed`, `refresh_for_challenge`: bei Challenge-Fehler eigenes yt-dlp erneuern (stabile Ausgabe; ist sie nicht neuer, die offizielle Nightly-Ausgabe yt-dlp/yt-dlp-nightly-builds mit SHA2-256SUMS), höchstens alle 12 h (tools/yt-dlp-refresh.json, Kanal bleibt, auch für „yt-dlp einrichten“). Ereignisse `youtube_ytdlp_refreshed` / `youtube_ytdlp_refresh_failed`.
+- Meldung bei Challenge-Fehler: „yt-dlp konnte YouTubes aktuellen Player nicht entschlüsseln („n challenge“); MediathekAtlas hat yt-dlp X eingerichtet, neuer Versuch in Kürze“ statt „YouTube verweigert“. Marker „This video is not available“ bleibt.
+- Nach der Erneuerung: `requeue_not_available(c, tool=version)` reiht aufgegebene und noch wartende „not available“-Aufträge je yt-dlp-Version einmal neu ein (gestaffelt). `find_tool`: eigenes yt-dlp gewinnt, wenn es neuer ist als ein installiertes.
+- Wiedergabe-Abfrage (-j) ohne --no-warnings, Grund aus den ERROR-Zeilen; bei Challenge-Fehler ebenfalls Erneuerung.
+- Annahme (nicht geprüft, YouTube in der Cloud gesperrt): eine neuere yt-dlp-/ejs-Ausgabe löst den Player; Nightly-Prüfsummendatei mit Eintrag „yt-dlp“ von hier aus abrufbar bestätigt.
+- Tests: `tests/test_v06160.py` (7).
+
 ## 0.6.159 – B1 Air-Diagnose 0.6.153 (YouTube-Kindervideos trotz Deno „not available“); auf 0.6.158
 
 - Befund (diagnose-2026-11-27-mittag-06153-air.md, B1): 4 Abo-Downloads aus drei neuen Kinder-Kanälen scheiterten 8× mit „This video is not available“; Deno eingerichtet (`tool_current` true), yt-dlp 2026.11.06. `_failure` riet trotzdem „Deno einrichten“.

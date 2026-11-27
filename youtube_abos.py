@@ -1297,22 +1297,31 @@ REQUEUE_NO_HARDLINK = ('[Errno 45]', 'Operation not supported', '[Errno 95]')
 NOT_AVAILABLE = 'This video is not available'
 
 
-def requeue_not_available(c, now=None):
-    """Aufgegebene YouTube-Aufträge mit „This video is not available“ einmal neu einreihen (gestaffelt)."""
+def requeue_not_available(c, now=None, tool=''):
+    """Aufgegebene YouTube-Aufträge mit „This video is not available“ einmal neu einreihen (gestaffelt).
+
+    0.6.160: ``tool`` – neu eingerichtete yt-dlp-Version; dann bekommt jeder aufgegebene Auftrag je
+    yt-dlp-Version einen weiteren Versuch (unabhängig vom einmaligen Merker 0.6.36)."""
     now = time.time() if now is None else float(now)
     moved = 0
-    for job_id, payload in c.execute("SELECT id,payload FROM jobs WHERE state='error' "
-                                     "AND json_extract(payload,'$.origin')='youtube'").fetchall():
+    states = "('error','queued')" if tool else "('error')"
+    for job_id, payload, state in c.execute("SELECT id,payload,state FROM jobs WHERE state IN %s "
+                                            "AND json_extract(payload,'$.origin')='youtube'" % states).fetchall():
         try:
             job = json.loads(payload)
         except (TypeError, ValueError):
             continue
-        error = str(job.get('error') or '')
-        if job.get('requeued_0636') or NOT_AVAILABLE not in error:
+        # 0.6.160: a job still waiting in its backoff after "not available" is brought forward too
+        error = str(job.get('error') or '') if state == 'error' else str(job.get('last_error') or '')
+        if NOT_AVAILABLE not in error or (job.get('requeued_tool') == tool if tool else job.get('requeued_0636')):
             continue
+        if state == 'queued' and float(job.get('not_before') or 0) <= now + 60 + moved * 120:
+            continue                             # already due: leave it alone
         job.update(state='queued', not_before=now + 60 + moved * 120, received=0, total=0, speed=0, eta=None,
                    error='', retries=0, last_error=error[:200], requeued_0636=True,
-                   note='Wird mit JavaScript-Laufzeit (Deno) erneut versucht')
+                   note=('Wird mit yt-dlp %s erneut versucht' % tool) if tool else 'Wird mit JavaScript-Laufzeit (Deno) erneut versucht')
+        if tool:
+            job['requeued_tool'] = tool
         c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), 'queued', job_id))
         moved += 1
     return moved

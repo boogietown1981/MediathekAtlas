@@ -417,6 +417,13 @@ def worker():
                     diagnostics.event('download_retry_planned',job_id=j['id'],retries=j['retries'],not_before=int(j['not_before']),source=download_retry.source_of(j))
                 else:j.update(state='error',error=j.get('error') or core.safe_error(e))
                 put_job(j)
+            # 0.6.160: yt-dlp was renewed after a challenge failure: given-up "not available" jobs get another try
+            fresh=youtube_downloads.take_refreshed() if j.get('origin')=='youtube' else ''
+            if fresh:
+                try:
+                    with db() as c:moved=youtube_abos.requeue_not_available(c,tool=fresh)
+                    if moved:diagnostics.event('youtube_jobs_requeued',count=moved,ytdlp=fresh)
+                except Exception as e2:diagnostics.error('youtube_requeue_failed',e2)
         if j.get('state')=='done' and j.get('origin')==archive_downloads.ORIGIN:
             # 0.5.95: signed receipt with checksum for the Verbund; runs beside the queue, a large file takes a while to read.
             threading.Thread(target=archive_receipt,args=(dict(j),),daemon=True,name='archive_receipt').start()
