@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.157
+# MediathekAtlas · 0.6.158
+
+## Neu in 0.6.158: Fortsetzungen bleiben einzeln
+- Filmfortsetzungen wie „Zärtliche Chaoten“ (Pluto TV), „Freitag der 13“ (Rakuten, Joyn) oder „The Lies We Tell …“ (Plex) werden nicht mehr zu einem Mehrteiler zusammengefasst; die Genres der Plattformen zählen jetzt mit. Echte Mehrteiler (Traktorgiganten, Elvis, Kolbenfresser, Vera Brühne …) bleiben eine Kachel.
+- Kinderecke: „Die wilde Natur“ bekommt sein passendes Vorschaubild zurück.
 
 ## Neu in 0.6.157: Bilder und Mehrteiler genauer
 - Kinderecke: Ein YouTube-Vorschaubild wird nur genommen, wenn ein ganzer Teil des Videotitels zur Reihe passt; zu allgemeine Reihennamen („Die Serie“) bekommen keines. Ganze Filme aus dem YouTube-Katalog („Die drei Musketiere der Neuzeit“) werden nicht mehr verwechselt.

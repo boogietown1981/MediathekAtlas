@@ -1,3 +1,11 @@
+## 0.6.158 – Befunde Mac-Prüfung 0.6.157 (Fortsetzungen als Mehrteiler); auf 0.6.157
+
+- Mac-Prüfung 0.6.157: Bilder und Reihenfilme BESTANDEN; Befund Mehrteiler (BEFUND-06157.txt): „Zärtliche Chaoten – Teil 1/2“ (Pluto TV, Komödie, 1986/1987) und neu „Freitag der 13“ (Rakuten/Joyn, Horror, Teil 2/4/5/6/7) als Mehrteiler. 0.6.157 NICHT-INSTALLIEREN.
+- Ursache: `_sequels` las Genres nur aus Mediatheken-Werken, Plattform-Angebote blieben ohne Genre → „kein erzählendes Genre“ → Mehrteiler. Neu `_offer_genres` (categories, source_genres, genres, genre-Text der Plattform-Zeile). Regel ohne IMDb: erzählendes Genre und kein Jahr kommt bei zwei verschiedenen Teilen vor → Fortsetzung (Elvis Teil 1/2 beide 2005, Traktorgiganten 2010/2011 geteilt → Mehrteiler).
+- Gegen echte Daten geprüft: alle 86 Kandidatengruppen der Pro-Kopie (werkzeuge/mehrteiler_dump.py, zwei Läufe am Mac, `tests/data/mehrteiler-kandidaten-06157.tsv`): einzeln nur Freitag der 13, Zärtliche Chaoten, The Lies We Tell (Part 2 2012 / Part 3 2014, eigene Spielfilme 107/120 min); 79 Mehrteiler-Kacheln.
+- Kinderecke (Hinweis 0.6.157): bei Abo-Videos darf der Titelteil auch mit dem Reihennamen enden („Pia und die wilde Natur“ → „Die wilde Natur“).
+- Tests: `tests/test_v06158.py` (4, davon einer gegen alle echten Kandidaten).
+
 ## 0.6.157 – Befunde Mac-Prüfung 0.6.156 (YouTube-Bilder, Mehrteiler) und Hinweise; auf 0.6.156
 
 - Mac-Prüfung 0.6.156: Reihenkachel-Klick und Air-Bilderlauf BESTANDEN, zwei Befunde (BEFUND-06156.txt); 0.6.156 NICHT-INSTALLIEREN.

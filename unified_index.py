@@ -369,16 +369,33 @@ def _part(title):
     return (base, number) if number and len(base) >= 3 else None
 
 
+def _offer_genres(item):
+    """Genres eines Plattform-Angebots (categories, source_genres, genres, genre-Text)."""
+    out = set()
+    for key in ('categories', 'source_genres', 'genres'):
+        value = item.get(key)
+        if isinstance(value, (list, tuple)):
+            out |= {str(g).casefold().strip() for g in value}
+    if isinstance(item.get('genre'), str):
+        out |= {g.casefold().strip() for g in re.split(r'[,/|]', item['genre']) if g.strip()}
+    return out
+
+
 def _sequels(db, members, numbers=None):
     """Teile desselben Grundtitels aus verschiedenen Jahren: Fortsetzung (einzeln lassen) oder Mehrteiler?
     0.6.155: Fortsetzung, wenn mindestens zwei Teile verschiedene IMDb-Nummern tragen (eigene Filme).
-    0.6.156 (Mac-Prüfung 0.6.155: „Zärtliche Chaoten – Teil 1/2“, 1986/1987, ohne IMDb-Nummer wieder zusammengefasst):
-    ohne IMDb auch Fortsetzung, wenn jeder Teil sein eigenes Jahr hat (kein Jahr bei zwei Teilen, Jahr steigt mit dem Teil)
-    und kein Teil eine Doku/Reportage ist; 0.6.157: und mindestens ein Teil ein erzählendes Genre trägt (FICTION). „Traktorgiganten Teil 1–4“ (2010/2011, Jahre geteilt), „Elvis Teil 1/2“ (2005,
-    zweite Fassung 2013) und Doku-Reihen wie „Kolbenfresser“ bleiben Mehrteiler."""
+    0.6.156/0.6.157: ohne IMDb entscheiden Genre und Jahre; Doku/Reportage oder kein erzählendes Genre → Mehrteiler.
+    0.6.158 (Mac-Prüfung 0.6.157: „Zärtliche Chaoten“ bei Pluto TV, „Freitag der 13“ bei Rakuten/Joyn/Netzkino wieder als
+    Mehrteiler): die Genres der Plattform-Angebote zählen mit (vorher nur Mediatheken-Werke), und ein erzählender Film ist
+    eine Fortsetzung, sobald kein Jahr bei zwei verschiedenen Teilen vorkommt (Elvis Teil 1 und 2 beide 2005 → Mehrteiler)."""
     ids = [o['id'] for e in members for o in e['offers'] if o['source'] == 'mediatheken']
-    imdb = {str((o.get('item') or {}).get('imdb_id') or '') for e in members for o in e['offers'] if o['source'] != 'mediatheken'}
-    genres = set()
+    imdb, genres = set(), set()
+    for e in members:
+        for o in e['offers']:
+            if o['source'] != 'mediatheken':
+                item = o.get('item') or {}
+                imdb.add(str(item.get('imdb_id') or item.get('imdb') or ''))
+                genres |= _offer_genres(item)
     if ids:
         with db() as c:
             marks = ','.join('?' * len(ids))
@@ -393,14 +410,11 @@ def _sequels(db, members, numbers=None):
         return True
     if not numbers or genres & DOKU or not genres & FICTION:
         return False
-    by_part = {}
+    parts_of_year = {}
     for e, n in zip(members, numbers):
         if e.get('year'):
-            by_part.setdefault(n, set()).add(e['year'])
-    if len(by_part) < 2 or any(len(y) != 1 for y in by_part.values()):
-        return False
-    order = [next(iter(by_part[n])) for n in sorted(by_part)]
-    return len(set(order)) == len(order) and order == sorted(order)
+            parts_of_year.setdefault(e['year'], set()).add(n)
+    return len(parts_of_year) >= 2 and all(len(p) == 1 for p in parts_of_year.values())
 
 
 def collapse_reihen(db, entries):

@@ -371,7 +371,9 @@ def youtube_picture(root, title, index=None):
         return ''       # zu kurz/zu allgemein („Anna“, „Wissen“, „Die Serie“)
     for parts, url, strict in (youtube_index(root) if index is None else index):
         for part in parts:
-            if part == phrase or (not strict and part.startswith(phrase + ' ')):
+            # 0.6.158 (Mac-Prüfung 0.6.157: „Die wilde Natur“ ← „… | Pia und die wilde Natur | BR“ ging verloren): bei
+            # Abo-Videos darf der Titelteil mit dem Reihennamen beginnen oder enden
+            if part == phrase or (not strict and (part.startswith(phrase + ' ') or part.endswith(' ' + phrase))):
                 return url
     return ''
 
