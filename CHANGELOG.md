@@ -1,3 +1,11 @@
+## 0.6.157 – Befunde Mac-Prüfung 0.6.156 (YouTube-Bilder, Mehrteiler) und Hinweise; auf 0.6.156
+
+- Mac-Prüfung 0.6.156: Reihenkachel-Klick und Air-Bilderlauf BESTANDEN, zwei Befunde (BEFUND-06156.txt); 0.6.156 NICHT-INSTALLIEREN.
+- (1) YouTube-Bilder: 2 von 6 falsch („Die drei Musketiere“ ← „Die drei Musketiere der Neuzeit (ACTION … ganzer Film)“, „Die Serie“ ← TOGGO-Short, fraglich „Lernen mit Spaß“). `kids_catalog.youtube_index` zerlegt Videotitel in Teile (`|`, ` – `, `:`, Klammern, `#`); YouTube-Katalog (ganze Filme): ein Teil muss genau der Reihenname sein; Abo-Videos: ein Teil beginnt mit ihm. `_specific`: Reihennamen ohne eigenes Wort (≥ 4 Buchstaben, kein Allerweltswort wie Serie/Lernen/Spaß) bekommen kein YouTube-Bild.
+- (2) Mehrteiler: „Kolbenfresser“, „Monster High Webisodes“, „The Lies We Tell …“ fielen durch die Jahresregel aus 0.6.156 heraus. `_sequels` ohne IMDb nur noch, wenn ein Teil ein erzählendes Genre trägt (`FICTION`: Komödie, Drama, Krimi …).
+- Hinweise: `catalog.as_series_film` setzt `kind='movie'` (Suche zeigt „Film“ statt „Serie · 1 Folgen“); `streaming._title` für Reihenfilme „Reihe – Film (Filmjahr)“ statt „Tatort (1970)“. Offen: Reihenkacheln erst ca. 3,5 min nach dem Markierlauf (Neuaufbau im Hintergrund).
+- Tests: `tests/test_v06157.py` (3), `tests/test_v06152.py`/`test_v06156.py` angepasst.
+
 ## 0.6.156 – Befunde Mac-Prüfung 0.6.155 (Reihenkachel, Kinderecke-Bilder, Mehrteiler); auf 0.6.155
 
 - Mac-Prüfung 0.6.155 NICHT BESTANDEN (BEFUND-06155.txt); 0.6.154 hat denselben Reihenkachel-Fehler. Beide NICHT-INSTALLIEREN, ausgegeben bleibt 0.6.153.

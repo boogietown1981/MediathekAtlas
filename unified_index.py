@@ -351,6 +351,10 @@ PART_HINT = re.compile(r'(?i)\d\s*/\s*\d|teil|part')
 # dahinter zählt nur, wenn derselbe Grundtitel schon streng erkannte Teile hat
 PART_LOOSE = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:teil|part)\s+(?P<n>\d{1,2})\b\s*[-–—:,.)]?\s*\S.*$')
 DOKU = {'dokumentation', 'doku', 'dokumentarfilm', 'reportage', 'documentary', 'wissen', 'natur', 'technik'}
+# 0.6.157 (Mac-Prüfung 0.6.156: „Kolbenfresser“, „Monster High Webisodes“, „The Lies We Tell …“ fielen aus den Mehrteilern):
+# ohne IMDb gilt die Jahresregel nur für Spielfilme mit erzählendem Genre
+FICTION = {'komödie', 'komoedie', 'drama', 'krimi', 'thriller', 'action', 'abenteuer', 'liebesfilm', 'romanze', 'romantik',
+           'horror', 'science-fiction', 'science fiction', 'western', 'spielfilm', 'kriegsfilm', 'heimatfilm', 'comedy', 'crime'}
 PART_WORDS = {'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'one': 1, 'two': 2, 'three': 3}
 REIHE_PREFIX = re.compile(r'^(?P<name>[^:–—]{3,60}?)\s*(?::|\s[-–—])\s+\S')
 
@@ -370,7 +374,7 @@ def _sequels(db, members, numbers=None):
     0.6.155: Fortsetzung, wenn mindestens zwei Teile verschiedene IMDb-Nummern tragen (eigene Filme).
     0.6.156 (Mac-Prüfung 0.6.155: „Zärtliche Chaoten – Teil 1/2“, 1986/1987, ohne IMDb-Nummer wieder zusammengefasst):
     ohne IMDb auch Fortsetzung, wenn jeder Teil sein eigenes Jahr hat (kein Jahr bei zwei Teilen, Jahr steigt mit dem Teil)
-    und kein Teil eine Doku/Reportage ist. „Traktorgiganten Teil 1–4“ (2010/2011, Jahre geteilt), „Elvis Teil 1/2“ (2005,
+    und kein Teil eine Doku/Reportage ist; 0.6.157: und mindestens ein Teil ein erzählendes Genre trägt (FICTION). „Traktorgiganten Teil 1–4“ (2010/2011, Jahre geteilt), „Elvis Teil 1/2“ (2005,
     zweite Fassung 2013) und Doku-Reihen wie „Kolbenfresser“ bleiben Mehrteiler."""
     ids = [o['id'] for e in members for o in e['offers'] if o['source'] == 'mediatheken']
     imdb = {str((o.get('item') or {}).get('imdb_id') or '') for e in members for o in e['offers'] if o['source'] != 'mediatheken'}
@@ -387,7 +391,7 @@ def _sequels(db, members, numbers=None):
                     pass
     if len({i for i in imdb if i.startswith('tt')}) >= 2:
         return True
-    if not numbers or genres & DOKU:
+    if not numbers or genres & DOKU or not genres & FICTION:
         return False
     by_part = {}
     for e, n in zip(members, numbers):

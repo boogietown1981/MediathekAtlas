@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.157 – Befunde Mac-Prüfung 0.6.156 (27. November 2026)
+- Automatisch: tests/test_v06157.py (3), angepasste Tests 0.6.152/0.6.156, gesamte Suite, Node-Tests, Klicktests (film_reihen.cjs). Nicht hier geprüft: echte Kataloge (Genres von „Zärtliche Chaoten“), Air-Bilder. Am Mac: PRUEFLISTE in releases/0.6.157.
+
 ## 0.6.156 – Befunde Mac-Prüfung 0.6.155 (27. November 2026)
 - Automatisch: tests/test_v06156.py (3), tests/browser/film_reihen.cjs (neu: Reihenkachel per Knopf, Titel, Bild → alle Filme, kein „Serie nicht gefunden“; Mehrteiler öffnet Teile), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge, Air-Bilderlauf. Am Mac: PRUEFLISTE in releases/0.6.156.
 

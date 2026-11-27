@@ -25,6 +25,8 @@ class Parts(test_v06154.Collapse):
     def test_part_with_subtitle_joins_and_sequels_without_imdb_stay_single(self):
         for wid in ('k1', 'k2', 'k3'):
             self.movie(wid, ['Dokumentation'])
+        for wid in ('z1', 'z2'):
+            self.movie(wid, ['Komödie'])      # 0.6.157: Jahresregel nur für erzählende Genres
         got = self.run_on([entry('Kolbenfresser Teil 1 Maisernte hautnah', 'k1', 2012), entry('Kolbenfresser Teil 2', 'k2', 2013),
                            entry('Kolbenfresser Teil 3', 'k3', 2015),
                            entry('Zärtliche Chaoten – Teil 1', 'z1', 1986), entry('Zärtliche Chaoten – Teil 2', 'z2', 1987),

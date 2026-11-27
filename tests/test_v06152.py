@@ -77,10 +77,11 @@ class YoutubePictures(SenderPictures):
         ydb.close()
 
     def test_phrase_match_only(self):
-        self.seed_youtube(abo_titles=['Mein Checker-Tag – Checker Reportagen spezial', 'Checker Tobi im Zoo'],
-                          item_titles=['Carolin testet Schuhe'])
+        self.seed_youtube(abo_titles=['Mein Checker-Tag – Checker Reportagen spezial', 'Checker Tobi im Zoo', 'Carolin testet Schuhe'],
+                          item_titles=['Carolin testet | Folge 3'])   # 0.6.157: Katalog nur mit ganzem Titelteil
         self.assertEqual(kids_catalog.youtube_picture(self.root, 'Checker Reportagen'), 'https://i.ytimg.com/vi/v0000000000/hqdefault.jpg')
-        self.assertEqual(kids_catalog.youtube_picture(self.root, 'Carolin testet'), 'https://i.ytimg.com/vi/y0/hqdefault.jpg')
+        self.assertIn(kids_catalog.youtube_picture(self.root, 'Carolin testet'), ('https://i.ytimg.com/vi/v0000000002/hqdefault.jpg',
+                                                                                  'https://i.ytimg.com/vi/y0/hqdefault.jpg'))
         self.assertEqual(kids_catalog.youtube_picture(self.root, 'Checker Can'), '')          # nur „Checker Tobi“ da
         self.assertEqual(kids_catalog.youtube_picture(self.root, 'Anna'), '')                 # zu kurz/allgemein
         self.assertEqual(kids_catalog.youtube_picture(self.root, 'Reportage'), '')            # ein Wort, < 10 Zeichen

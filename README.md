@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.156
+# MediathekAtlas · 0.6.157
+
+## Neu in 0.6.157: Bilder und Mehrteiler genauer
+- Kinderecke: Ein YouTube-Vorschaubild wird nur genommen, wenn ein ganzer Teil des Videotitels zur Reihe passt; zu allgemeine Reihennamen („Die Serie“) bekommen keines. Ganze Filme aus dem YouTube-Katalog („Die drei Musketiere der Neuzeit“) werden nicht mehr verwechselt.
+- Mehrteiler wie „Kolbenfresser“ stehen wieder in einer Kachel; nur Spielfilme mit eigenem Jahr je Teil gelten als Fortsetzungen.
+- Filme einer Filmreihe erscheinen in der Suche als „Film“ (nicht „Serie · 1 Folgen“), der Player zeigt „Tatort – Filmtitel (Jahr)“.
 
 ## Neu in 0.6.156: Filmreihen öffnen sich richtig
 - Der Knopf einer Filmreihen-Kachel heißt „Alle Filme“ und zeigt alle Filme der Reihe (vorher Fehlermeldung „Serie nicht gefunden“). Die Kachel nennt das Jahr des neuesten Films.

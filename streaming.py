@@ -28,6 +28,11 @@ def _http(url):return isinstance(url,str) and re.match(r'(?i)^https?://',url) is
 def _title(meta,row):
     meta=meta or {};row=row or {}
     name=meta.get('title') or row.get('topic') or row.get('title') or 'Video'
+    if meta.get('series_film') and meta.get('series_film_title'):
+        # 0.6.157 (Mac-Prüfung 0.6.156: Player-Titel „Tatort (1970)“): Reihenfilm mit Filmtitel und Filmjahr
+        film=str(meta['series_film_title']);reihe=str(meta.get('title') or '')
+        name=film if not reihe or film.casefold().startswith(reihe.casefold()) else reihe+' – '+film
+        return name+(' (%s)'%meta['series_film_year'] if meta.get('series_film_year') else '')
     if meta.get('kind')=='series' and meta.get('episode'):
         name+=' · S%02dE%02d'%(int(meta.get('season') or 0),int(meta['episode']))
         if meta.get('episode_title'):name+=' · '+meta['episode_title']

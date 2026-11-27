@@ -986,8 +986,9 @@ def as_series_film(entry):
     title and year in its metadata, the Reihe stays in series_title."""
     m=entry.get('metadata') or {}
     if m.get('kind')!='series' or not m.get('series_film'):return entry
+    # 0.6.157 (Mac-Prüfung 0.6.156: Reihenfilme in der Suche als „Serie · 1 Folgen“): unter Filme ist er ein Film
     entry['metadata']=dict(m,series_title=m.get('title'),title=m.get('series_film_title') or m.get('title'),
-                           year=m.get('series_film_year'))
+                           year=m.get('series_film_year'),kind='movie',season=None,episode=None)
     entry['series_film']=True
     return entry
 

@@ -320,9 +320,22 @@ _PHRASE = lambda t: re.sub(r'\s+', ' ', re.sub(r'[^0-9a-zäöüß]+', ' ', str(t
 YOUTUBE_INDEX_ROWS = 20000   # 0.6.156: neueste Videos je Tabelle, einmal je Lauf gelesen
 
 
+_SEGMENTS = re.compile(r'\s*(?:\||\s[-–—]\s|:|\(|\)|\[|\]|#|/)\s*')
+_ARTICLES = {'der', 'die', 'das', 'den', 'dem', 'ein', 'eine', 'und', 'mit', 'the', 'a'}
+_GENERIC = {'serie', 'serien', 'folge', 'folgen', 'film', 'filme', 'show', 'sendung', 'kinder', 'spass', 'spaß', 'lernen',
+            'wissen', 'video', 'videos', 'clip', 'clips', 'shorts', 'staffel', 'trailer', 'spezial'}
+
+
+def _segments(title):
+    """Teile eines Videotitels zwischen „|“, „ – “, „:“, Klammern, „#“ als Wortfolgen."""
+    return [p for p in (_PHRASE(x) for x in _SEGMENTS.split(str(title or ''))) if p]
+
+
 def youtube_index(root, rows=YOUTUBE_INDEX_ROWS):
     """0.6.156 (Mac-Prüfung 0.6.155, Air: Bildabruf lief über 8 h nicht durch): Titel und Vorschaubilder des eigenen
-    YouTube-Bestands EINMAL je Lauf lesen statt je Reihe eine Verbindung und zwei LIKE-Suchen. [(Wortfolge, Bild)]."""
+    YouTube-Bestands EINMAL je Lauf lesen statt je Reihe eine Verbindung und zwei LIKE-Suchen.
+    0.6.157: [(Titelteile, Bild, streng)] – streng für den YouTube-Katalog (ganze Filme, „Die drei Musketiere der Neuzeit“),
+    dort muss ein Titelteil genau der Reihenname sein; bei Abo-Videos genügt ein Titelteil, der mit ihm beginnt."""
     try:
         import youtube
         ydb = youtube._connect(root)
@@ -331,29 +344,35 @@ def youtube_index(root, rows=YOUTUBE_INDEX_ROWS):
     out = []
     try:
         if ydb.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='youtube_abo_videos'").fetchone():
-            out += ydb.execute("SELECT title, poster FROM youtube_abo_videos WHERE poster LIKE 'https://i.ytimg.com/%' "
-                               "ORDER BY found DESC LIMIT ?", (rows,)).fetchall()
-        out += ydb.execute("SELECT title, poster FROM youtube_items WHERE poster LIKE 'https://i.ytimg.com/%' "
-                           "ORDER BY seen DESC LIMIT ?", (rows,)).fetchall()
+            out += [(t, p, False) for t, p in ydb.execute(
+                "SELECT title, poster FROM youtube_abo_videos WHERE poster LIKE 'https://i.ytimg.com/%' ORDER BY found DESC LIMIT ?", (rows,))]
+        out += [(t, p, True) for t, p in ydb.execute(
+            "SELECT title, poster FROM youtube_items WHERE poster LIKE 'https://i.ytimg.com/%' ORDER BY seen DESC LIMIT ?", (rows,))]
     except Exception:
         pass
     finally:
         ydb.close()
-    return [(' ' + _PHRASE(t) + ' ', _https(p)) for t, p in out if _https(p).startswith('https://i.ytimg.com/')]
+    return [(_segments(t), _https(p), strict) for t, p, strict in out if _https(p).startswith('https://i.ytimg.com/')]
+
+
+def _specific(phrase):
+    """0.6.157 (Mac-Prüfung 0.6.156: „Die Serie“ ← TOGGO-Short, „Lernen mit Spaß“): ohne ein eigenes Wort (≥ 4 Buchstaben,
+    kein Allerweltswort) ist ein Reihenname zu allgemein für die Bildsuche."""
+    return any(len(w) >= 4 and w not in _GENERIC for w in phrase.split(' ') if w not in _ARTICLES)
 
 
 def youtube_picture(root, title, index=None):
     """0.6.152 (Mac-Prüfung 0.6.147: KiKA-Reihen wie „Checker Tobi“, „Anna, Paula, Pia …“ bleiben ohne Bild, KiKA wird
-    nicht abgefragt): Vorschaubild eines YouTube-Videos aus dem eigenen Bestand (Kinder-Abos, YouTube-Katalog), dessen
-    Titel den Reihennamen als ganze Wortfolge enthält. Kein Netz; Bilder nur von i.ytimg.com. '' ohne Treffer.
-    0.6.156: ``index`` aus youtube_index (einmal je Lauf)."""
+    nicht abgefragt): Vorschaubild eines YouTube-Videos aus dem eigenen Bestand (Kinder-Abos, YouTube-Katalog).
+    Kein Netz; Bilder nur von i.ytimg.com. '' ohne Treffer. 0.6.156: ``index`` aus youtube_index (einmal je Lauf).
+    0.6.157: Treffer nur über einen ganzen Titelteil (siehe youtube_index), nicht irgendwo im Titel."""
     phrase = _PHRASE(title)
-    if len(phrase) < 6 or ' ' not in phrase and len(phrase) < 10:
-        return ''       # zu kurz/zu allgemein („Anna“, „Wissen“)
-    needle = ' ' + phrase + ' '
-    for text, url in (youtube_index(root) if index is None else index):
-        if needle in text:
-            return url
+    if len(phrase) < 6 or ' ' not in phrase and len(phrase) < 10 or not _specific(phrase):
+        return ''       # zu kurz/zu allgemein („Anna“, „Wissen“, „Die Serie“)
+    for parts, url, strict in (youtube_index(root) if index is None else index):
+        for part in parts:
+            if part == phrase or (not strict and part.startswith(phrase + ' ')):
+                return url
     return ''
 
 
