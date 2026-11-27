@@ -55,6 +55,8 @@ class Collapse(unittest.TestCase):
         self.assertEqual(len(got), 4)
 
     def test_parts_sequels_versions_and_cut_title(self):
+        for wid, imdb in (('z1', 'tt0091262'), ('z2', 'tt0093258')):   # 0.6.155: Fortsetzung = eigene IMDb-Filme
+            self.con.execute('INSERT INTO works VALUES(?,?,?,?,?)', (wid, '', '', 'movie', json.dumps({'imdb_id': imdb})))
         got = self.run_on([entry('Zärtliche Chaoten – Teil 1', 'z1', 1986), entry('Zärtliche Chaoten – Teil 2', 'z2', 1987),
                            entry('Fremde Verwandte Teil 1/ 2', 'f1'), entry('Fremde Verwandte Teil 2/ 2', 'f2'),
                            entry('Unschuldig (1/2)', 'u1'), entry('Unschuldig (2/2)', 'u2'),

@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.155 – Hinweise Mac-Prüfungen 0.6.152–0.6.154 (27. November 2026)
+- Automatisch: tests/test_v06155.py (4), tests/test_v06154.py (angepasst), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge, Air-Bilderlauf mit erschöpftem Limit, 3,75-s-Serienaufruf (Pro). Am Mac: PRUEFLISTE in releases/0.6.155.
+
 ## 0.6.154 – Filmreihen-/Mehrteiler-Kacheln korrigiert (26. November 2026)
 - Automatisch: tests/test_v06154.py (3: eine Kachel je Reihenname, eigene Filmwerke mit Trenner, zusammengeführte Titel, Fortsetzungen, Fassungen, „Teil 1/ 2“), tests/test_v06150.py, gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge (Pro/Air-Kopie) – Am Mac: PRUEFLISTE in releases/0.6.154.
 

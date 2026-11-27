@@ -15,7 +15,8 @@ const fmt=s=>{s=Math.max(0,Math.floor(s||0));const h=Math.floor(s/3600),m=Math.f
 const store=k=>{try{return JSON.parse(localStorage.getItem('atlas-play:'+k)||'null');}catch{return null;}};
 const remember=(k,v)=>{try{v?localStorage.setItem('atlas-play:'+k,JSON.stringify(v)):localStorage.removeItem('atlas-play:'+k);}catch{}};
 const embed=$('player-embed'),stage=$('player-stage');
-const position=()=>S.mode==='embed'?S.embedPos||0:S.mode==='remux'?S.offset+(video.currentTime||0):video.currentTime||0;
+// 0.6.155 (Mac-Prüfung 0.6.153: Klick ganz rechts zeigte kurz „3:18 / 3:00“): im umgewandelten Strom nie über die Gesamtdauer
+const position=()=>{if(S.mode==='embed')return S.embedPos||0;if(S.mode!=='remux')return video.currentTime||0;const p=S.offset+(video.currentTime||0),d=duration();return d?Math.min(p,d):p;};
 const duration=()=>S.mode==='embed'?S.info?.duration||0:S.mode==='remux'?S.info?.duration||0:(Number.isFinite(video.duration)?video.duration:S.info?.duration||0);
 function episodeKey(item){return item.work_id||item.id;}
 function say(text){status.textContent=text||'';status.hidden=!text;}

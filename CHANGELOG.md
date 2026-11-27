@@ -1,3 +1,12 @@
+## 0.6.155 – Hinweise aus den Mac-Prüfungen 0.6.152–0.6.154; auf 0.6.154
+
+- Prüfungen: 0.6.152 BESTANDEN mit zwei Hinweisen (BEFUND-06152.txt), 0.6.153 BESTANDEN (PRUEFVERMERK-06153.txt), 0.6.154 BESTANDEN mit Hinweisen (BEFUND-06154.txt).
+- Mehrteiler (0.6.154: „Traktorgiganten Teil 1–4“ 2010/2011, „Kolbenfresser Teil 1–3“, „Elvis – Teil 1/2“ getrennt): verschiedene Jahre allein trennen nicht mehr. `unified_index._sequels`: Fortsetzung erst, wenn zusätzlich mindestens zwei Teile verschiedene IMDb-Nummern tragen (eigene Filme wie „Zärtliche Chaoten“ 1986/1987); gleiche Nummer (Mini-Serie) oder keine bleibt Mehrteiler.
+- Kinderecke-Bilder (0.6.152, Air: „asked 1, stopped true“ auch nach 10 min): ist das Sender-Stundenlimit erreicht, wird für diese und alle weiteren Reihen des Laufs nur noch das YouTube-Vorschaubild aus dem eigenen Bestand gesucht (gefunden → gemerkt, sonst nichts gemerkt, später erneut). Die Rücklage der Erkennung bleibt unverändert (Erkennung vorrangig).
+- Player (0.6.153: Klick ganz rechts zeigte „3:18 / 3:00“): Position im umgewandelten Strom höchstens Gesamtdauer (`position()`), gilt auch für den gespeicherten Fortschritt.
+- Laufzeit (0.6.154: merge 0,74 s beim zweiten Aufbau): `unified_index_built.sources` nennt jetzt die Anteile `reihen` und `local`, damit die nächste Diagnose zeigt, welcher Teil Zeit braucht. Pro-Hinweis 0.6.152 (erster Serienaufruf nach 10 min einmal 3,75 s) hier nicht nachstellbar; offen.
+- Tests: `tests/test_v06155.py` (4), `tests/test_v06154.py` angepasst (Fortsetzung mit IMDb-Nummern), `test_v0557_start` (Anteile reihen/local).
+
 ## 0.6.154 – Filmreihen-/Mehrteiler-Kacheln korrigiert und wieder an; auf 0.6.153
 
 - Befunde Mac-Prüfung 0.6.150 (BEFUND-06150.txt, filmreihen-mehrteiler-06150.tsv), `unified_index.collapse_reihen`:

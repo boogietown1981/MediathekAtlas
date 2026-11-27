@@ -381,6 +381,13 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
         url, stopped = '', False
         if not rows:
             no_page += 1
+        if LAST_FETCH['stopped'] and rows:
+            # 0.6.155 (Mac-Prüfung 0.6.152, Air: „asked 1, stopped true“ ohne Ergebnis): Sender heute nicht mehr fragen,
+            # aber das Vorschaubild aus dem eigenen YouTube-Bestand trotzdem nehmen; ohne Bild nichts merken
+            url = youtube(title)
+            if url:
+                via_youtube += 1;stored[show] = {'url': url, 'at': now, 'v': 2};found += 1
+            continue
         for row in rows:
             asked += 1
             try:
@@ -394,7 +401,10 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
                 break
         if stopped:
             LAST_FETCH['stopped'] = True
-            break
+            url = youtube(title)
+            if url:
+                via_youtube += 1;stored[show] = {'url': url, 'at': now, 'v': 2};found += 1
+            continue
         if not url:          # ohne Senderseite oder ohne Sendungsbild: Vorschaubild aus dem eigenen YouTube-Bestand
             url = youtube(title)
             via_youtube += bool(url)

@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.154
+# MediathekAtlas · 0.6.155
+
+## Neu in 0.6.155: Feinschliff nach den Prüfungen 0.6.152–0.6.154
+- Mehrteiler mit Teilen aus verschiedenen Jahren (z. B. „Traktorgiganten Teil 1–4“) stehen wieder in einer Kachel; Fortsetzungen, die eigene Filme sind (z. B. „Zärtliche Chaoten“), bleiben einzeln.
+- Kinderecke: Ist das Stundenlimit der Senderabfragen erreicht, bekommen Reihen trotzdem ein passendes Vorschaubild aus dem eigenen YouTube-Bestand.
+- Die Zeitanzeige des Players geht am Ende der Leiste nicht mehr über die Gesamtdauer hinaus.
 
 ## Neu in 0.6.154: Filmreihen und Mehrteiler wieder zusammengefasst, korrigiert
 - Unter „Filme“ stehen Filmreihen (Tatort, Polizeiruf 110, Nord bei Nordwest …) und Mehrteiler (Teil 1–n) wieder als je eine Kachel. Die Kachel öffnet alle Filme der Reihe bzw. alle Teile einzeln, Reihen mit den neuesten zuerst.

@@ -298,7 +298,9 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     entries = merge(offers, merge_duplicates, subtitles=view == 'movies')   # series: 'Star Trek' is not 'Star Trek: Voyager'
     if reihen and view == 'movies' and not query:
         try:
+            began = time.monotonic()
             entries = collapse_reihen(db, entries)
+            seconds['reihen'] = round(time.monotonic() - began, 2)   # 0.6.155: Anteil am merge (Prüfung 0.6.154: 0,74 s)
         except Exception as exc:     # eine Zusammenfassung kostet nie die Liste
             errors['reihen'] = str(exc)[:160] or exc.__class__.__name__
     if sort == 'year':
@@ -309,9 +311,11 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     # Kopie stehen vorn, innerhalb beider Teile bleibt die gewählte Sortierung
     try:
         import local_titles
+        began = time.monotonic()
         with db() as c:
             if local_titles.mark_entries(c, entries, series=view == 'series'):
                 entries = local_titles.local_first(entries)
+        seconds['local'] = round(time.monotonic() - began, 2)   # 0.6.155: Anteil am merge
     except Exception:
         pass
     seconds['merge'] = round(time.monotonic() - started, 2)
@@ -354,6 +358,21 @@ def _part(title):
     number = int(raw) if raw.isdigit() else PART_WORDS.get(raw)
     base = m.group('base').rstrip(' -–—:,(')
     return (base, number) if number and len(base) >= 3 else None
+
+
+def _sequels(db, members):
+    """0.6.155 (Mac-Prüfung 0.6.154: die Jahresregel trennte echte Mehrteiler wie „Traktorgiganten Teil 1–4“ 2010/2011):
+    verschiedene Jahre allein machen noch keine Fortsetzung. Fortsetzungen sind eigene Filme – mindestens zwei Teile mit
+    verschiedenen IMDb-Nummern („Zärtliche Chaoten“ 1986/1987). Teile ohne IMDb-Nummer oder mit derselben (Mini-Serie)
+    bleiben ein Mehrteiler."""
+    ids = [o['id'] for e in members for o in e['offers'] if o['source'] == 'mediatheken']
+    imdb = {str((o.get('item') or {}).get('imdb_id') or '') for e in members for o in e['offers'] if o['source'] != 'mediatheken'}
+    if ids:
+        with db() as c:
+            marks = ','.join('?' * len(ids))
+            imdb |= {str(r[0] or '') for r in c.execute(
+                "SELECT json_extract(meta,'$.imdb_id') FROM works WHERE id IN (%s) AND json_valid(meta)" % marks, ids)}
+    return len({i for i in imdb if i.startswith('tt')}) >= 2
 
 
 def collapse_reihen(db, entries):
@@ -405,8 +424,8 @@ def collapse_reihen(db, entries):
                                    'mehrteiler': {'query': name, 'parts': len(members), 'reihe': True}}
         else:
             numbers = {_part(entries[i]['title'])[1] for i in members}
-            if len(numbers) < 2 or len(set(years)) > 1:    # ein Teil allein bzw. Fortsetzungen aus verschiedenen Jahren
-                continue
+            if len(numbers) < 2 or (len(set(years)) > 1 and _sequels(db, [entries[i] for i in members])):
+                continue    # ein Teil allein bzw. Fortsetzungen (verschiedene Jahre UND eigene IMDb-Filme)
             first = entries[min(members, key=lambda i: (_part(entries[i]['title'])[1], i))]
             base = _part(first['title'])[0]
             replace[members[0]] = dict(first, title=base, year=min(years) if years else first['year'],
