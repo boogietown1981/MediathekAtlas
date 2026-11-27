@@ -52,12 +52,15 @@ STATIONS = [
     ('zdfinfo', 'ZDFinfo', PUBLIC, ('zdfinfo',)),
     ('kika', 'KiKA', PUBLIC, ('kika', 'kikahd')),
     ('one', 'ONE', PUBLIC, ('one', 'ardone', 'einsfestival')),
-    ('tagesschau24', 'tagesschau24', PUBLIC, ('tagesschau24', 'tagesschau', 'einsplus')),
+    ('tagesschau24', 'tagesschau24', PUBLIC, ('tagesschau24', 'tagesschau', 'einsplus', 'ardtagesschau', 'ardtagesschau24')),  # 0.6.129 L2/L4
     ('ardalpha', 'ARD alpha', PUBLIC, ('ardalpha', 'bralpha', 'alpha')),
     ('dw', 'DW', PUBLIC, ('dw', 'deutschewelle', 'dwdeutsch')),
     ('orf1', 'ORF 1', PUBLIC, ('orf1', 'orfeins')),
     ('orf2', 'ORF 2', PUBLIC, ('orf2',)),
     ('srf1', 'SRF 1', PUBLIC, ('srf1',)),
+    # EPG (Programmführer): SRF zwei/info name their programme; the film list may carry their live streams too
+    ('srfzwei', 'SRF zwei', PUBLIC, ('srfzwei', 'srf2')),
+    ('srfinfo', 'SRF info', PUBLIC, ('srfinfo',)),
     ('br', 'BR Fernsehen', REGIONAL, ('br', 'brfernsehen', 'bayerischesfernsehen')),
     ('hr', 'hr-fernsehen', REGIONAL, ('hr', 'hrfernsehen', 'hessischerrundfunk')),
     ('mdr', 'MDR', REGIONAL, ('mdr', 'mdrfernsehen')),
@@ -322,6 +325,7 @@ def overview(c, root, query='', provider='', group=''):
             st['number'] = ch['number']
         st['sources'].append({k: ch[k] for k in ('provider', 'provider_name', 'id', 'title', 'quality', 'play', 'link')})
     items = list(stations.values())
+    _attach_programme(root, items)
     q = _fold(query).strip()[:100]
     if q:
         items = [s for s in items if q in _fold(s['name']) or q in _fold(s['group'])
@@ -339,10 +343,42 @@ def overview(c, root, query='', provider='', group=''):
         s['sources'].sort(key=lambda x: [k for k, _ in PROVIDERS].index(x['provider'])
                           if x['provider'] in counts else 99)
         s.pop('position', None)
+        # 0.6.129 (Diagnose 24.11., L1: arte zeigte zweimal „▶ ARD, ZDF & Co.“): two streams of one provider (ARTE.DE
+        # and ARTE.FR from the film list) are named by their own title, so the buttons can be told apart.
+        seen = {}
+        for x in s['sources']:
+            seen[x['provider']] = seen.get(x['provider'], 0) + 1
+        for x in s['sources']:
+            if seen[x['provider']] > 1:
+                x['label'] = station_name(x['title'])[:40] or x['provider_name']
     return {'stations': items, 'total': len(items),
             'groups': [{'name': g, 'count': n} for g, n in sorted(groups.items(), key=lambda kv: _group_rank(kv[0]))],
             'providers': [{'key': k, 'name': n, 'channels': counts.get(k, 0), 'error': errors.get(k, '')}
                           for k, n in PROVIDERS]}
+
+
+def _attach_programme(root, items, now=None):
+    """EPG (Programmführer, epg.py): the broadcast running now and the next one per station. The line replaces
+    a provider's own now/next text (Samsung) only where the broadcaster's guide knows the station; a fixed
+    channel description stays behind it. Never blocks the tab: without a guide the stations stay as they are."""
+    try:
+        import epg
+        guide = epg.now_next(root, [s['key'] for s in items], now)
+    except Exception as exc:     # a broken guide file must not hide the stations
+        try:
+            import diagnostics
+            diagnostics.error('epg_now_next_failed', exc)
+        except Exception:
+            pass
+        return
+    for s in items:
+        entry = guide.get(s['key'])
+        text = epg.line(entry) if entry else ''
+        if not text:
+            continue
+        s['programme'] = {k: entry[k] for k in ('now', 'next')}
+        rest = re.sub(r'^(?:Jetzt: .*?(?: — |$)|Ab \d\d:\d\d: .*?(?: — |$))', '', s.get('summary') or '')
+        s['summary'] = text + (' — ' + rest if rest else '')
 
 
 def overview_problem(data, seconds, query='', provider='', group=''):

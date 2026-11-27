@@ -233,7 +233,33 @@ def portal_reseed(c,limit=500,after=''):
                            (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount
     return changed,(rows[-1]['id'] if rows else None)
 
-def seed(row):
+SHORT_FILM=re.compile(r'(?i)\b(?:kurzfilm\w*|short|animationsfilm\w*|trickfilm\w*)\b')
+FILM_SHORTEST=1200
+FILM_FEATURE=60*60   # 0.6.125: Spielfilmlänge
+SERIES_PARTS=re.compile(r'\(\s*(\d{1,3})\s*/\s*(\d{1,3})\s*\)')
+def film_shaped(row,title,topic,desc):
+    """0.6.123 (Björn 23.11.2026, Bildschirmfoto „Filme > Unbekannt“): a film word in the broadcaster's text made
+    „10 vor 10 vom 02.06.2022“ (25 min), „18.00 Uhr (22.01.2019)“, „67. Nordische Filmtage starten in Lübeck“ (4 min)
+    and „11er Haus (4/5)“ films. A dated edition, a numbered part or a video under 20 minutes (unless it is called a
+    short film) is no film; such a work stays of unknown kind and the Sendung rules file it."""
+    import metadata
+    if DATED.search(title) or DATED_DAY.search(title):return False
+    try:duration=int(row.get('duration') or 0)
+    except (TypeError,ValueError):duration=0
+    # 0.6.125 (Mac-Prüfung 0.6.123: 489 Werke umgestuft, 244 davon ab 80 min – „Der Amsterdam-Krimi (2)“,
+    # „Wo ist Anne Frank – Teil 1/2“, Löwenzahn- und Bullerbü-Filme): from feature length on a numbered part is a
+    # film of a film series; only a dated edition is no film.
+    # 0.6.132 (Diagnose Air 0.6.131: 56 zurückgeholte „Filme“ waren alle Folgen von Krimireihen – „Brokenwood (7/20)“,
+    # „Rebecka Martinsson (02/08)“, „Inspector Mathias (3/9)“ – und blieben als Film ohne Kandidat „prüfen“): a part
+    # n of m with m ≥ 3 is an episode of a series at any length; two-parters („Teil 1/2“, „(2)“) may still be films.
+    parts=SERIES_PARTS.search(title)
+    if parts and int(parts.group(2))>=3:return False
+    if duration>=FILM_FEATURE:return True
+    if EDITION_NUMBERING.search(title) or metadata.PART.search(title):return False
+    if 0<duration<FILM_SHORTEST and not SHORT_FILM.search(' '.join((title,topic,desc[:200]))):return False
+    return True
+
+def seed(row,shape=True):
     title=cleaned(row.get('title'));topic=cleaned(row.get('topic'));desc=core.clean(row.get('description',''));m=core.identify({**row,'title':title})
     ep=EP.search(title);reihe=portal_series(topic,title)
     if m['kind']=='series' and topic and not ep and key(m['title'])==key(topic):
@@ -267,6 +293,7 @@ def seed(row):
             else:m.update(kind='series',title=topic or title,episode_title=title)
         elif re.search(r'(?i)\b(?:nachrichten|tagesschau|wetter|sportstudio|trailer|teaser|podcast|pressekonferenz|tagesthemen|gottesdienst|magazin)\b',topic+' '+title):m['kind']='other'
     if re.search(r'(?i)^\s*(?:trailer|teaser|vorschau)\b',title):m.update(kind='other',title=title,year=None,season=None,episode=None)
+    if shape and m['kind']=='movie' and not film_shaped(row,title,topic,desc):m.update(kind='unknown',title=title,year=None)
     if m['kind']=='movie' and not m.get('year'):
         y=re.search(r'\((19\d{2}|20\d{2})\)$',title)
         if y:m.update(year=int(y.group(1)),title=title[:y.start()].strip())
@@ -669,7 +696,9 @@ class ListingPending(Exception):
 def _listing_build(c,where,args,grouping,order):
     started=time.monotonic()
     base='SELECT MIN(w.id) AS id,COUNT(*) AS episodes FROM works w WHERE '+where+' GROUP BY '+grouping
-    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,w.title,w.year FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
+    # 0.6.137: in the Filme list a Reihenfilm carries its film title and year („Der Usedom-Krimi – Mörderische Brandung“)
+    shown=MOVIE_TITLE_SQL+','+MOVIE_YEAR_SQL if grouping==MOVIE_GROUPING else 'w.title,w.year'
+    rows=[(r[0],r[1],r[2],r[3]) for r in c.execute('SELECT g.id,g.episodes,'+shown+' FROM ('+base+') g JOIN works w ON w.id=g.id ORDER BY '+order,args)]
     seconds=time.monotonic()-started
     _LISTING_STATS['builds']+=1;_LISTING_STATS['last_seconds']=round(seconds,2)
     return rows,seconds
@@ -713,7 +742,8 @@ def _listing_store(key,rows,seconds,search=False):
 
 def _listing_refresh(key,where,args,grouping,order,search=False):
     try:
-        with _LISTING_BUILD:
+        import contextlib
+        with (contextlib.nullcontext() if search else _LISTING_BUILD):   # 0.6.148: Suchen ohne Build-Sperre
             with LISTING_DB() as c:rows,seconds=_listing_build(c,where,args,grouping,order)
         _listing_store(key,rows,seconds,search);_LISTING_STATS['background']+=1
     except Exception as exc:
@@ -736,13 +766,19 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             if age<=(LISTING_SEARCH_TTL if search else LISTING_TTL):
                 _LISTING_STATS['hits']+=1;return entry['rows']
             # Outdated: quick aggregations are simply repeated, slow ones answer from memory
-            # at once and are renewed in the background.
-            if entry['seconds']>=LISTING_SLOW:
+            # at once and are renewed in the background. 0.6.144 (Mac-Prüfung 0.6.142, Air: Filme 54 s direkt nach dem
+            # Reihenfilm-Markierlauf): a quick one too while another aggregation holds _LISTING_BUILD (Kinderecke,
+            # zusammengeführter Index) – before, the request queued behind them for the whole time.
+            # 0.6.152 (Mac-Prüfung 0.6.147, Air: Serien nach 10 min einmal 7,1 s): nur gealtert (TTL, nichts geändert) →
+            # ebenfalls sofort aus dem Speicher und im Hintergrund erneuern; nach einer Änderung (invalidate_listings)
+            # wird eine schnelle Liste weiter gleich neu gebaut.
+            aged=entry['built']!=float('-inf')
+            if entry['seconds']>=LISTING_SLOW or (not search and (aged or _LISTING_BUILD.locked())):
                 if not entry['busy']:
                     entry['busy']=True
                     threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()
                 _LISTING_STATS['hits']+=1;return entry['rows']
-        if not wait:
+        if not wait and not search:   # 0.6.148: eine Suche wird gleich gebaut (klein, ohne _LISTING_BUILD)
             failed=_LISTING_FAILED.get(key)
             if failed and now-failed[0]<=30:raise failed[1]   # do not repeat a failing aggregation at once
             # The caller (merged dashboard) shows the other sources first: compute in the
@@ -751,7 +787,7 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             if done is None:
                 done=_LISTING_QUEUED[key]=threading.Event()
                 threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_first').start()
-    if not wait:
+    if not wait and not search:
         done.wait(LISTING_WAIT)
         with _LISTING_LOCK:
             entry=_LISTING.get(key)
@@ -760,6 +796,12 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
         if failed and failed[0]>=now:raise failed[1]
         _LISTING_STATS['pending']+=1
         raise ListingPending()
+    if search:
+        # 0.6.144 (Mac-Prüfung 0.6.142, Air: erste Suche 6,5–10 s): a search is a small, selective aggregation on the
+        # caller's connection; it no longer waits for a heavy one (Kinderecke, ganze Filmliste) to finish.
+        rows,seconds=_listing_build(c,where,args,grouping,order)
+        _listing_store(key,rows,seconds,search)
+        return rows
     with _LISTING_BUILD:
         with _LISTING_LOCK:
             entry=_LISTING.get(key)
@@ -778,11 +820,177 @@ def invalidate_listings(drop=False):
         _LISTING_FAILED.clear()
         if drop:_LISTING.clear()
         else:
-            for entry in _LISTING.values():entry['built']=float('-inf')
+            for key,entry in list(_LISTING.items()):
+                # 0.6.148 (Mac-Prüfung 0.6.144: Suche nach dem Markierlauf veraltet): Suchen sind klein und werden neu
+                # gebaut (ohne _LISTING_BUILD), statt veraltet aus dem Speicher zu kommen
+                if entry.get('search'):_LISTING.pop(key)
+                else:entry['built']=float('-inf')
 
 def listing_cache_stats():
     with _LISTING_LOCK:return {**_LISTING_STATS,'entries':len(_LISTING)}
 
+
+# 0.6.137 (Björn 26.11.2026, Entscheidung „In der Reihe und unter Filme“): Reihenfilme – „Der Usedom-Krimi“, „Die Füchsin“,
+# „Die drei von der Müllabfuhr“ – are series works (each film one entry of its Reihe, IMDb lists them as TV series).
+# They stay in their Reihe and are listed one by one under Filme as well (meta.series_film, mark_series_films).
+MOVIE_VIEW_SQL="(w.kind='movie' OR (w.kind='series' AND json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1))"
+# Partial index for the second half (built after start, build_deferred_indexes); „GROUP BY +w.id“ keeps the plan on the
+# kind indexes (multi-index OR) – a plain w.id made SQLite scan all works by primary key (0.5 → 2.2 s on 686k works).
+SERIES_FILM_INDEX_SQL="CREATE INDEX IF NOT EXISTS work_series_film ON works(kind,id) WHERE kind='series' AND json_valid(meta) AND json_extract(meta,'$.series_film')=1"
+SERIES_FILM_TEXT=re.compile(r'(?i)^\W*(?:zweiteilige[rs]?\s+)?(?:spielfilm|fernsehfilm)\b')
+SERIES_FILM_TITLE=re.compile(r'(?i)\s[-–]\s(?:spielfilm|fernsehfilm),')
+SERIES_FILM_MIN=80*60
+# 0.6.141 (Mac-Prüfung 0.6.140: Rebecka Martinsson, Maria Wern, Brokenwood blieben unter Filme – ihre Angebote tragen nur
+# IMDbs „(Sxx/Eyy)“ wie Praxis mit Meerblick): a Reihenfilm is a German-language TV film – the broadcaster's film
+# label names Germany, Austria or Switzerland among the production countries („Spielfilm Deutschland 2023“, „Spielfilm
+# Dänemark/Norwegen/Deutschland 2008“). Foreign crime series shown as films („Fernsehfilm Schweden 2018“) stay episodes.
+SERIES_FILM_COUNTRY=re.compile(r'(?i)(?:spielfilm|fernsehfilm)[,\s]+(?:[^\d.,;:]{0,80}?)\b(?:deutschland|brd|ddr|österreich|schweiz)\b')
+# 0.6.142 (Mac-Prüfung 0.6.141: Tatort „Flash“/„Hochamt für Toni“ – BR „Spielfilm | Krimi 2021“ ohne Land –, WDR
+# „Fernsehfilm Deutschand 2024“ fielen heraus): only a named country list without a German-language country excludes;
+# no country at all counts as German-language, a country name one or two letters off counts as that country.
+SERIES_FILM_COUNTRIES=re.compile(r'(?i)(?:spielfilm|fernsehfilm)[,\s]+((?:[^\W\d_]+[ /,-]+){0,5}?[^\W\d_]+)\s*,?\s+(?:19|20)\d\d\b')
+DACH=('deutschland','brd','ddr','österreich','schweiz','bundesrepublik')
+
+def series_film_german(text):
+    """True unless the film label names production countries and none of them is German-language."""
+    if SERIES_FILM_COUNTRY.search(text):return True
+    m=SERIES_FILM_COUNTRIES.search(text)
+    if not m:return True
+    import difflib
+    for name in re.split(r'[ /,-]+',m.group(1).casefold()):
+        if len(name)>=6 and any(difflib.SequenceMatcher(None,name,d).ratio()>=.85 for d in DACH if len(d)>=6):return True
+    return False
+
+SERIES_FILM_TITLE_YEAR=re.compile(r'\(((?:19|20)\d\d)\)')
+SERIES_FILM_STATES=('identified','matched','manual')
+
+SERIES_FILM_YEAR=re.compile(r'(?i)(?:spielfilm|fernsehfilm)\b[^.]{0,80}?\b((?:19|20)\d\d)\b')
+MOVIE_GROUPING='+w.id'
+MOVIE_TITLE_SQL="CASE WHEN w.kind='series' THEN COALESCE(json_extract(w.meta,'$.series_film_title'),w.title) ELSE w.title END"
+MOVIE_YEAR_SQL="CASE WHEN w.kind='series' THEN json_extract(w.meta,'$.series_film_year') ELSE w.year END"
+
+# 0.6.140 (Mac-Prüfung 0.6.138: Rebecka Martinsson „Del 1“, Maria Wern, Brokenwood, Mord auf Shetland „Folge 3“ unter
+# Filme): a Reihe whose offers count parts („(02/08)“, „Del 1“, „Folge 3“) is an episodic series – none of its works is
+# a Reihenfilm. A two-parter („(1/2)“) stays possible; IMDb's own „(S05/E06)“ says nothing (Praxis mit Meerblick).
+EPISODIC_MARK=re.compile(r'(?i)\bdel\s+\d|\bfolge\s+\d')
+SERIES_FILM_NEW=re.compile(r'(?i)\s*·\s*neu\b')
+SERIES_FILM_SPLIT=re.compile(r'\s+[|·–—-]\s+|\s*[|·–—]\s*|:\s+')
+
+def episodic_show(c,show_key,cache=None):
+    if cache is not None and show_key in cache:return cache[show_key]
+    marks=0;out=False
+    for (title,) in c.execute("""SELECT json_extract(o.payload,'$.title') FROM works w JOIN offers o ON o.work_id=w.id
+        WHERE w.show_key=? LIMIT 5000""",(show_key,)):
+        title=str(title or '')
+        parts=SERIES_PARTS.search(title)
+        if parts and int(parts.group(2))>=3:out=True;break
+        if EPISODIC_MARK.search(title):
+            marks+=1
+            if marks>=2:out=True;break
+    if cache is not None:cache[show_key]=out
+    return out
+
+def series_film_part(title,reihe):
+    """0.6.140: the film's own name from the offer title – Reihe, parentheses („(9)“, „(S01/E02)“, „(Originalversion)“,
+    „(klare Sprache)“), „· NEU“ and 3sat's „- Spielfilm, …“ removed. „Altlasten (9) – Die Drei von der Müllabfuhr“ → „Altlasten“."""
+    t=cleaned(title)
+    if SERIES_FILM_TITLE.search(t):t=SERIES_FILM_TITLE.split(t)[0]
+    t=SERIES_FILM_NEW.sub(' ',t)
+    t=re.sub(r'\([^)]*\)|\[[^\]]*\]',' ',t)
+    # 0.6.141 (Brokenwood „… – Die Familienfehde – Brokenwood – Mord in Neuseeland“): the Reihe in any dash spelling
+    if reihe.strip():
+        words=[re.escape(w) for w in re.split(r'[\s\-–—]+',reihe.strip()) if w]
+        if words:t=re.sub(r'(?i)(?<!\w)'+r'[\s\-–—,]+'.join(words)+r'(?!\w)',' – ',t)
+    reihe_key=key(reihe)
+    pieces=[p.strip(' -–') for p in SERIES_FILM_SPLIT.split(t)]
+    pieces=[p for p in pieces if p and key(p)!=reihe_key]
+    film=' – '.join(pieces).strip()
+    if reihe_key and key(film).startswith(reihe_key+' '):film=film[len(reihe):].strip(' -–:')
+    return re.sub(r'\s+',' ',film).strip()
+
+def series_film(c,wid,meta=None,cache=None):
+    """0.6.137: a recognized series work is a Reihenfilm when the broadcaster calls it a (zweiteiliger) Spiel- or
+    Fernsehfilm (start of its text, or 3sat's „- Spielfilm, Land Jahr“), its longest offer runs ≥ 80 min and film_shaped
+    accepts it (no part n of m ≥ 3, no dated edition). Mehrteiler without that text („Das Adlon“, „Bodyguard (2/3)“) stay
+    episodes only. Returns {'title','year','key'} for the Filme list („Der Usedom-Krimi – Mörderische Brandung“) or None.
+    0.6.140: not in an episodic Reihe (episodic_show), film name from the offer title (series_film_part; IMDb's episode
+    title may be another one – Rebecka Martinsson), no film that is a film work of its own (cache['movies'])."""
+    cache={} if cache is None else cache
+    source=film_source(c,wid)
+    if not source:return None
+    try:duration=int(source.get('duration') or 0)
+    except (TypeError,ValueError):return None
+    if duration<SERIES_FILM_MIN:return None
+    title=str(source.get('title') or '');topic=str(source.get('topic') or '');desc=core.clean(source.get('description',''))
+    if not (SERIES_FILM_TEXT.search(desc) or SERIES_FILM_TITLE.search(title)):return None
+    if not series_film_german(desc[:200] if SERIES_FILM_TEXT.search(desc) else title):return None
+    if not film_shaped(source,title,topic,desc):return None
+    if EPISODIC_MARK.search(title):return None
+    meta=meta or {}
+    row=c.execute('SELECT show_key FROM works WHERE id=?',(wid,)).fetchone()
+    if row and row[0] and episodic_show(c,row[0],cache.setdefault('episodic',{})):return None
+    reihe=str(meta.get('title') or topic).strip()
+    film=series_film_part(title,reihe) or series_film_part(str(meta.get('episode_title') or ''),reihe)
+    # a two-parter keeps its part („Tatort – Unvergänglich (1/2)“, „Lost in Fuseta (2/2)“)
+    two=SERIES_PARTS.search(title) or re.search(r'(?i)\bteil\s+(\d)\b',title) or (
+        re.match(r'(?i)\W*zweiteilig',desc) and re.search(r'\((\d)\)\s*$',cleaned(title)))
+    part=' ('+two.group(1)+'/2)' if two else ''
+    if not key(film) and part:film=reihe   # the two-parter is named like its Reihe
+    film_key=key(film+part)
+    if not key(film) or key(film)==key(reihe) and not part:return None   # no own film name: an edition, not a film
+    if 'movies' not in cache:
+        cache['movies']=[' '+key(t)+' ' for (t,) in c.execute("""SELECT w.title FROM works w WHERE w.kind='movie'
+            AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)""") if t]
+    padded=' '+key(film)+' '
+    if key(film)!=key(reihe) and len(key(film))>=4 and any(padded in m for m in cache['movies']):return None   # „Kassensturz“ is a film work of its own
+    found=SERIES_FILM_YEAR.search(desc) or SERIES_FILM_YEAR.search(title) or SERIES_FILM_TITLE_YEAR.search(title)   # 0.6.141: „Abbruchkante (2023)“
+    name=(film if key(film)==key(reihe) else reihe+' – '+film)+part
+    return {'title':name[:200],'year':int(found.group(1)) if found else None,'key':film_key}
+
+SERIES_FILM_CANDIDATES="""(w.state IN ('identified','matched','manual') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id
+    AND CAST(json_extract(o.payload,'$.duration') AS INTEGER)>=?) OR json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1)"""
+
+def mark_series_films(c,after='',limit=500,cache=None):
+    """0.6.137, every format pass with the genre backfill: sets or clears meta.series_film (with series_film_title and
+    series_film_year for the Filme list) on series works. Returns (changed, samples, last id).
+    0.6.140: only works with a feature-length offer or the flag are read (Air 78 → few min); one Reihenfilm per Reihe and
+    film name – „Geisternetze (26)“ and „… · NEU“, Fassungen („Originalversion“, „klare Sprache“) are one film; the first
+    work (smallest id) of a run keeps the flag. Pass one cache to all batches of a run."""
+    cache={} if cache is None else cache
+    seen=cache.setdefault('seen',{})
+    rows=c.execute("SELECT w.id,w.state,w.meta,w.show_key FROM works w WHERE w.id>? AND w.kind='series' AND "+SERIES_FILM_CANDIDATES+
+                   " ORDER BY w.id LIMIT ?",(after,SERIES_FILM_MIN,limit)).fetchall()
+    changed=0;samples=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        was=(m.get('series_film_title'),m.get('series_film_year')) if m.get('series_film') else None
+        info=series_film(c,row['id'],m,cache) if row['state'] in SERIES_FILM_STATES else None
+        if info:
+            # 0.6.141 (Mac-Prüfung 0.6.140: Praxis mit Meerblick „Die Kämpferin (20) (S04/E02)“ und „(S01/E20)“ in zwei
+            # Serienwerken verschiedener Reihenschlüssel): one film per Reihe name and film name (with part), not per show_key
+            unit=(key(info['title']),)
+            if unit in seen and seen[unit]!=row['id']:info=None
+            else:seen[unit]=row['id']
+        now=(info['title'],info['year']) if info else None
+        if now==was:continue
+        for k in ('series_film','series_film_title','series_film_year'):m.pop(k,None)
+        if info:m.update(series_film=1,series_film_title=info['title'],series_film_year=info['year'])
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
+        changed+=1
+        if len(samples)<20:samples.append({'title':now[0] if now else str(m.get('title') or '')[:80],'year':now[1] if now else None,'film':bool(info)})
+    return changed,samples,(rows[-1]['id'] if rows else None)
+
+def as_series_film(entry):
+    """0.6.140 (Mac-Prüfung 0.6.138: API-Jahr Tatort 1970, Usedom 2014): in the Filme list a Reihenfilm carries the film's
+    title and year in its metadata, the Reihe stays in series_title."""
+    m=entry.get('metadata') or {}
+    if m.get('kind')!='series' or not m.get('series_film'):return entry
+    # 0.6.157 (Mac-Prüfung 0.6.156: Reihenfilme in der Suche als „Serie · 1 Folgen“): unter Filme ist er ein Film
+    entry['metadata']=dict(m,series_title=m.get('title'),title=m.get('series_film_title') or m.get('title'),
+                           year=m.get('series_film_year'),kind='movie',season=None,episode=None)
+    entry['series_film']=True
+    return entry
 
 def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',sort='title',downloaded='hide',collection='',index_only=False,wait=True):
     clauses=[];args=[]
@@ -792,18 +1000,23 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
     if collection in ('cinema','series'):
         clauses.append("w.kind=? AND w.state IN ('matched','manual','identified') AND CAST(json_extract(w.meta,'$.rating') AS REAL)>=7.5 AND CAST(json_extract(w.meta,'$.rating') AS REAL)<=10 AND ((COALESCE(json_extract(w.meta,'$.rating_source'),json_extract(w.meta,'$.provider')) IN ('IMDb','IMDb Offline','OMDb') AND CAST(json_extract(w.meta,'$.votes') AS INTEGER)>=10000) OR (json_extract(w.meta,'$.rating_source')='TMDB' AND CAST(json_extract(w.meta,'$.votes') AS INTEGER)>=1000))")
         args.append('movie' if collection=='cinema' else 'series')
-    if kind:clauses.append('w.kind=?');args.append(kind)
+    if kind=='movie':clauses.append(MOVIE_VIEW_SQL)   # 0.6.137: Reihenfilme also under Filme
+    elif kind:clauses.append('w.kind=?');args.append(kind)
     elif not query and not state:clauses.append("w.kind IN ('movie','series')")
     if state=='recognized':clauses.append("w.state IN ('matched','manual','identified')")
     elif state=='pending':clauses.append("w.state IN ('pending','retry')")
     elif state=='review':clauses.append("w.state='review'")
     elif state=='format':clauses.append("w.state='format'")
-    if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
+    if query:
+        # 0.6.140 (Mac-Prüfung 0.6.138: Suche „Altlasten“ 0 Treffer): also the film name of a Reihenfilm (partial index)
+        clauses.append("(w.title LIKE ? OR w.topic LIKE ? OR w.id IN (SELECT id FROM works WHERE kind='series' AND json_valid(meta)"
+                       " AND json_extract(meta,'$.series_film')=1 AND json_extract(meta,'$.series_film_title') LIKE ?))")
+        args.extend(['%'+query[:150]+'%']*3)
     if genre:
         clause,values=category_clause(c,genre)
         clauses.append(clause);args.extend(values)
     if show:clauses.append('w.show_key=?');args.append(show)
-    where=' AND '.join(clauses);offset=max(0,int(offset));grouping="CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END" if not show else 'w.id'
+    where=' AND '.join(clauses);offset=max(0,int(offset));grouping='w.id' if show else MOVIE_GROUPING if kind=='movie' else "CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END"
     if show:
         rows=c.execute('SELECT w.* FROM works w WHERE '+where,args).fetchall()
         def episode_order(w):
@@ -814,6 +1027,7 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
             if entry:entry.update(episodes=1,series_parent=False);out.append(entry)
         return {'items':out,'total':len(rows),'offset':offset}
     order={'title':'w.title COLLATE NOCASE','year':'w.year DESC,w.title COLLATE NOCASE','recognized':"CASE WHEN w.state IN ('manual','matched') THEN 0 WHEN w.state='identified' THEN 1 ELSE 2 END,w.title COLLATE NOCASE"}.get(sort,'w.title COLLATE NOCASE')
+    if kind=='movie':order=order.replace('w.year',MOVIE_YEAR_SQL).replace('w.title',MOVIE_TITLE_SQL)   # 0.6.137: Reihenfilm by its film title
     groups=_listing_groups(c,where,args,grouping,order,bool(query),wait)
     if index_only:return groups   # (id, episodes, title, year) of every group, for unified_index
     total=len(groups);rows=[{'id':r[0],'episodes':r[1]} for r in groups[offset:offset+48]];out=[]
@@ -821,7 +1035,10 @@ def listing(c,query='',kind='',genre='',show='',offset=0,archive=False,state='',
         w=c.execute('SELECT * FROM works WHERE id=?',(row['id'],)).fetchone()
         if w is None:continue  # merged by another worker after the paged query
         entry=item(c,w)
-        if entry:entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show);out.append(entry)
+        if entry:
+            entry.update(episodes=row['episodes'],series_parent=w['kind']=='series' and not show and kind!='movie')
+            if kind=='movie':as_series_film(entry)
+            out.append(entry)
     return {'items':out,'total':total,'offset':offset}
 
 # 0.5.83: a work counts as classified once the reference check ran (attempts) or produced a state.
@@ -935,14 +1152,16 @@ def category_tree(c):
     apply to the union of all labels of a film or show."""
     import categories
     rows=c.execute("SELECT w.kind,CASE WHEN w.kind='series' THEN w.show_key ELSE w.id END unit,"+CLASSIFIED_SQL+
-                   " classified,g.genre FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
+                   " classified,g.genre,CASE WHEN w.kind='series' AND json_valid(w.meta) AND json_extract(w.meta,'$.series_film')=1 THEN w.id END film"
+                   " FROM works w LEFT JOIN work_genres g ON g.work_id=w.id"
                    " WHERE w.kind IN ('movie','series') AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)")
     found={}
-    for kind,unit,classified,genre in rows:
-        entry=found.setdefault((kind,unit),[False,set()])
-        if classified:
-            entry[0]=True
-            if genre:entry[1].update(categories.of_label(genre))
+    for kind,unit,classified,genre,film in rows:
+        # 0.6.137: a Reihenfilm counts once in its Reihe and once as a film (like listing(kind='movie'))
+        for entry in [found.setdefault((kind,unit),[False,set()])]+([found.setdefault(('movie',film),[False,set()])] if film else []):
+            if classified:
+                entry[0]=True
+                if genre:entry[1].update(categories.of_label(genre))
     counts={}
     for (kind,unit),(checked,names) in found.items():
         names=categories.refine(names) if checked else [categories.UNCLASSIFIED]
@@ -1650,6 +1869,82 @@ def requeue_from_source(c,row,source,reason):
         WHERE id=? AND state IN ('pending','retry','review','format')""",
                      (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount>0
 
+def reseed_non_films(c,after='',limit=500):
+    """0.6.123, once: open works taken for films although they are dated editions, numbered parts or short videos
+    (film_shaped) get their sender seed again – the Sendung rules then file them. Returns (changed, samples, last id)."""
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND kind='movie' AND state IN ('pending','retry','review') ORDER BY id LIMIT ?""",
+                   (after,limit)).fetchall()
+    changed=0;samples=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested'):continue
+        source=film_source(c,row['id'])   # 0.6.128: running time of the longest offer
+        # 0.6.125 (Mac-Prüfung 0.6.123): only works that film_shaped itself rejects – 0.6.123 took every work whose
+        # sender seed is not „movie“, also films the recognition had made films (Löwenzahn, Bullerbü, „It Follows“).
+        if not source or film_shaped(source,str(source.get('title') or ''),str(source.get('topic') or ''),str(source.get('description') or '')):continue
+        if requeue_from_source(c,row,source,NON_FILM_REASON):
+            changed+=1
+            if len(samples)<20:samples.append(str(source.get('title') or '')[:80])
+    return changed,samples,(rows[-1]['id'] if rows else None)
+NON_FILM_REASON='Kein Film (Ausgabe, nummerierter Teil oder Kurzbeitrag); neu einordnen (0.6.123)'
+
+def film_source(c,wid):
+    """0.6.128 (Diagnose Pro 0.6.127: „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ fiel aus den Filmen,
+    weil das beste Angebot ein kurzer Ausschnitt mit vollem Titel war): the best offer, with the running time of the
+    longest offer of the work (active ones first) – a film with a trailer stays a film."""
+    source=best_source(c,wid)
+    if not source:return None
+    longest=0
+    for active in (1,0):
+        for (payload,) in c.execute('SELECT payload FROM offers WHERE work_id=? AND active=?',(wid,active)):
+            try:longest=max(longest,int(json.loads(payload).get('duration') or 0))
+            except (TypeError,ValueError):continue
+        if longest:break
+    try:own=int(source.get('duration') or 0)
+    except (TypeError,ValueError):own=0
+    return dict(source,duration=max(longest,own))
+
+def restore_reseeded_films(c,after='',limit=500):
+    """0.6.125, only where the 0.6.123 heal ran (Prüfkopien; Björns Geräte hatten 0.6.123 nie): open works of unknown
+    or series kind whose sender offer names a film (seed) and that film_shaped accepts become films again, as before
+    0.6.123. Matches, user decisions and filed works stay. Returns (restored, samples, last id)."""
+    # 0.6.128 (Diagnose Pro 0.6.127, „Kurzer Prozess“ unsichtbar): also works the sweep filed meanwhile as Beitrag
+    # (state 'format' with unknown_before – such a work came from kind unknown, a seed film only through the reseed),
+    # judged by the longest offer; a filed work only from feature length on.
+    rows=c.execute("""SELECT * FROM works WHERE id>? AND (kind IN ('unknown','series') AND state IN ('pending','retry','review')
+        OR state='format' AND json_extract(meta,'$.unknown_before') IS NOT NULL) ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    restored=0;samples=[]
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested') or m.get('episode_verified'):continue
+        source=film_source(c,row['id'])
+        if not source:continue
+        title=str(source.get('title') or '')
+        filed=row['state']=='format'
+        if filed and (int(source.get('duration') or 0)<FILM_FEATURE or not _film_seed_ignoring_shape(source)):continue
+        if m.get('reason')!=NON_FILM_REASON and not _film_seed_ignoring_shape(source):continue
+        if not film_shaped(source,title,str(source.get('topic') or ''),str(source.get('description') or '')):continue
+        fresh=seed(source)
+        if fresh['kind']!='movie':
+            # a work still carrying the 0.6.123 reason was a film before (often by recognition, not by the seed)
+            fresh=_film_seed_ignoring_shape(source) or (dict(fresh,kind='movie') if m.get('reason')==NON_FILM_REASON else None)
+            if not fresh:continue
+        fresh['reason']='Film wiederhergestellt (0.6.128, Rücknahme der Filmregel 0.6.123/0.6.125)'
+        if c.execute("""UPDATE works SET title=?,kind='movie',show_key=?,meta=?,state='pending',attempts=0,next_try=0
+            WHERE id=? AND state IN ('pending','retry','review','format')""",(fresh['title'],showkey(fresh),json.dumps(fresh),row['id'])).rowcount:
+            c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+            for g in fresh.get('genres') or []:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+            restored+=1
+            if len(samples)<20:samples.append(title[:80])
+    return restored,samples,(rows[-1]['id'] if rows else None)
+
+def _film_seed_ignoring_shape(source):
+    """The seed 0.6.122 made: a film by the sender's words alone (film_shaped not applied), else None."""
+    m=seed(source,shape=False)
+    return m if m['kind']=='movie' else None
+
 def refile_reset_editions(c,ids):
     """File the given works again (one short write transaction); returns {'edition': n, 'segment': n}."""
     done={'edition':0,'segment':0}
@@ -1985,6 +2280,109 @@ def unify_show_spelling(c):
                 if changed:out[title]=target
     return out
 
+INVISIBLE=re.compile('[\u00ad\u200b\u200c\u200d\u2060\ufeff]')
+def _breaks(title):
+    return len(re.findall(r'(?<=\w)[\s\-–.]+(?=\w)',str(title or '')))
+def _shouting(title):
+    letters=[ch for ch in str(title or '') if ch.isalpha()]
+    return len(letters)>1 and all(ch.isupper() for ch in letters)
+def spelling_score(title,others=()):
+    """0.6.128/0.6.130: how acceptable a spelling is next to the other variants – 0 is fine, below is worse.
+    Mac-Prüfung 0.6.129 (Nachtcafé → NACHTCAFÉ, but also „Nacht café“ must not beat „Nachtcafé“): capitals only are
+    worse; a run-together lower-case spelling („eishockeyaktuell“, „sportarena“) is worse than a variant with word
+    breaks or capitals. Otherwise the number of works decides."""
+    title=str(title or '');penalty=0
+    if _shouting(title):penalty-=1
+    if not any(ch.isupper() for ch in title) and any(o!=title and (_breaks(o)>_breaks(title) or any(ch.isupper() for ch in o) and not _shouting(o)) for o in others):penalty-=1
+    return penalty
+def spacing_differs(old,new):
+    """0.6.130: only a different word break or an invisible character is a spacing change – a case-only change
+    (same key) is left to unify_show_spelling."""
+    return key(old)!=key(new) or bool(INVISIBLE.search(str(old or '')))
+def best_spelling(counts):
+    """{title: works} -> the most readable spelling, ties by number of works; invisible characters removed."""
+    clean={}
+    for title,n in counts.items():
+        k=INVISIBLE.sub('',str(title or '')).strip()
+        if k:clean[k]=clean.get(k,0)+n
+    return max(clean.items(),key=lambda x:(spelling_score(x[0],clean),x[1],x[0]))[0]
+
+def respace_show_titles(c):
+    """0.6.128, in the spelling pass: a Reihe whose title lost its word breaks („eishockeyaktuell“ from 0.6.127) or
+    carries an invisible character gets the readable spelling from its own works' topics (same letters). Returns {old: new}."""
+    out={}
+    rows=c.execute("""SELECT show_key,title,topic,COUNT(*) n FROM works WHERE kind='series' AND COALESCE(show_key,'')!=''
+        AND state!='manual' AND (title NOT LIKE '% %' OR title LIKE ?) GROUP BY show_key,title,topic""",('%\u00ad%',)).fetchall()
+    by_show={}
+    for r in rows:by_show.setdefault((r['show_key'],r['title']),{})[cleaned(r['topic'] or '')]=r['n']
+    for (show,title),topics in by_show.items():
+        k=key(INVISIBLE.sub('',title)).replace(' ','')
+        options={title:1}
+        for topic,n in topics.items():
+            if topic and key(INVISIBLE.sub('',topic)).replace(' ','')==k:options[topic]=n
+        better=best_spelling(options)
+        # 0.6.131 (Mac-Prüfung 0.6.130, Rückweg nach 0.6.129: MAKRO → „makro“, NACHTCAFÉ → „NACHTCAFé“): the 0.6.130
+        # undo of capitals is gone – it could not know the former spelling. Only spacing and invisible characters.
+        if better==title or not spacing_differs(title,better):continue
+        if spelling_score(better,options)<spelling_score(INVISIBLE.sub('',title),options):continue
+        for w in c.execute("SELECT id,meta FROM works WHERE show_key=? AND title=? AND state!='manual'",(show,title)).fetchall():
+            try:m=json.loads(w['meta'] or '{}')
+            except (TypeError,ValueError):continue
+            m['title']=better
+            reason=str(m.get('reason') or '')
+            if reason:m['reason']=reason.replace('„'+title+'“','„'+better+'“')
+            c.execute('UPDATE works SET title=?,meta=? WHERE id=?',(better,json.dumps(m),w['id']))
+        out[title]=better
+    return out
+
+def merge_spacing_variants(c):
+    """0.6.127 (Björn 23.11.2026, Mac-Abfrage: „#BR24 Zeitreise“ 150 Werke f07074db… und „#BR24Zeitreise“ 79 Werke
+    17964125… als zwei Reihen): Reihen desselben Senders, deren Titel sich nur in Leerzeichen unterscheiden (gleiches
+    Jahr), werden eine Reihe – unter dem Schlüssel mit den meisten Werken. Nie bei verschiedenen Datenbank-Identitäten
+    (IMDb/TVDB), nie über Sender hinweg; Nutzerentscheidungen bleiben. Idempotent; returns {old title: new title}."""
+    groups={}
+    for show,title,year,n in c.execute("""SELECT show_key,title,year,COUNT(*) FROM works WHERE kind='series'
+            AND COALESCE(show_key,'')!='' AND state!='manual' GROUP BY show_key,title"""):
+        k=key(title).replace(' ','')
+        if len(k)<4:continue
+        g=groups.setdefault((k,year),{})
+        title_n=g.setdefault(show,{})
+        title_n[title]=title_n.get(title,0)+n
+    out={}
+    for (k,year),shows in groups.items():
+        if len(shows)<2:continue
+        info={}
+        for show in shows:
+            refs=set();channels=set()
+            for r in c.execute("""SELECT w.state,json_extract(w.meta,'$.provider') provider,json_extract(w.meta,'$.reference_id') ref,
+                    (SELECT lower(trim(json_extract(o.payload,'$.channel'))) FROM offers o WHERE o.work_id=w.id
+                     ORDER BY o.active DESC,o.rank DESC LIMIT 1) channel FROM works w WHERE w.show_key=?""",(show,)):
+                if r['channel']:channels.add(r['channel'])
+                if r['ref'] and r['provider'] in ('IMDb Offline','TVDB','TMDB','OMDb'):refs.add(str(r['ref']))
+            info[show]=(refs,channels,sum(shows[show].values()))
+        all_refs=set().union(*(v[0] for v in info.values()))
+        if len(all_refs)>1:continue
+        target=max(info,key=lambda s:(bool(info[s][0]),info[s][2],s))
+        # 0.6.128 (Diagnose Pro 0.6.127: „eishockeyaktuell“, „sportarena“, weicher Trennstrich in „Son­ne“): the better
+        # spelling wins, not the larger group – word breaks and capitals first, invisible characters removed.
+        merged={s for s in info if s==target or (info[s][1] and info[s][1]&info[target][1])}
+        target_title=best_spelling({tt:n for s in merged for tt,n in shows[s].items()})
+        for show,(refs,channels,_) in info.items():
+            if show!=target and (not channels or not (channels & info[target][1])):continue
+            for w in c.execute("SELECT id,title,meta FROM works WHERE show_key=? AND state!='manual'",(show,)).fetchall():
+                try:m=json.loads(w['meta'] or '{}')
+                except (TypeError,ValueError):continue
+                old=w['title']
+                # 0.6.131 (Mac-Prüfung 0.6.130: KiKA „ECHT“ 174, WDR „Echt?“ 13 und MDR „Echt“ 13 wurden alle „Echt?“):
+                # only a real spacing variant moves – a case or punctuation variant (same key) stays where and as it is.
+                if not spacing_differs(old,target_title):continue
+                m['title']=target_title
+                reason=str(m.get('reason') or '')
+                if reason and old:m['reason']=reason.replace('„'+str(old)+'“','„'+target_title+'“')
+                c.execute('UPDATE works SET title=?,show_key=?,meta=? WHERE id=?',(target_title,target,json.dumps(m),w['id']))
+                if old!=target_title:out[old]=target_title
+    return out
+
 def reopen_full_programmes(c,limit=100000):
     """0.6.116, once: whole programmes 0.6.113/0.6.114 filed as „Extra zu …“ or clip are reopened. Returns (n, samples)."""
     rows=c.execute("""SELECT * FROM works WHERE kind='other' AND state='format'
@@ -2039,6 +2437,41 @@ def file_open_clip(c,row,m,source):
              reason='Clip (Podcast, Pressekonferenz, Ausschnitt); keine vollständige Sendung, wird nicht abgeglichen.')
     c.execute("UPDATE works SET meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
     return True
+
+FILM_TRAILER_LONGEST=600
+FILM_SUFFIX_SQL=("""(title LIKE '% - Spielfilm,%' OR title LIKE '% - Fernsehfilm,%' OR title LIKE '% - Dokumentarfilm%'
+             OR title LIKE '% - Animationsfilm,%' OR title LIKE '% - Fernsehspiel,%' OR title LIKE '% - Stummfilm,%' OR title LIKE '% - Musikfilm,%'
+             OR title LIKE '% – Spielfilm,%' OR title LIKE '% – Fernsehfilm,%' OR title LIKE '% – Dokumentarfilm%')""")
+def file_film_trailers(c):
+    """0.6.130 (Mac-Prüfung 0.6.129: „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ hat nur ein 3sat-Angebot von
+    162 s, ebenso Fight Club, Hamilton): a work named like a 3sat film whose longest offer runs under 10 minutes is the
+    trailer of that film – filed as Trailer (kind other, state format) instead of „prüfen“. If a long offer arrives
+    later, the work is opened again as film. User decisions, matches and requested checks stay. Returns (filed, reopened, samples)."""
+    import metadata
+    filed=reopened=0;samples=[]
+    for row in c.execute("""SELECT * FROM works WHERE state IN ('pending','retry','review','format') AND kind IN ('movie','unknown','other')
+            AND """+FILM_SUFFIX_SQL).fetchall():
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        if m.get('scan_requested'):continue
+        source=film_source(c,row['id'])
+        if not source or not metadata.film_suffix_year(source.get('title') or row['title']):continue
+        longest=int(source.get('duration') or 0)
+        if m.get('film_trailer'):
+            if longest>=FILM_SHORTEST and row['state']=='format':
+                fresh=seed(source);fresh['reason']='Vollständiger Film eingetroffen; neu prüfen (0.6.130)'
+                c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0 WHERE id=?",
+                          (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id']));reopened+=1
+            continue
+        if row['state']=='format' or not 0<longest<FILM_TRAILER_LONGEST:continue
+        if SHORT_FILM.search(' '.join((str(source.get('title') or ''),str(source.get('topic') or ''),str(source.get('description') or '')[:200]))):continue
+        film=metadata.FILM_SUFFIX.sub('',cleaned(source.get('title') or row['title'])).strip(' -–')
+        m.update(kind='other',state='format',film_trailer=True,episode_verified=False,related_film_title=film,
+                 reason='Trailer zum Film „'+film+'“ (nur ein kurzes Angebot); kein vollständiger Film, wird nicht abgeglichen.')
+        c.execute("UPDATE works SET kind='other',meta=?,state='format',next_try=0 WHERE id=?",(json.dumps(m),row['id']))
+        filed+=1
+        if len(samples)<20:samples.append(str(row['title'])[:80])
+    return filed,reopened,samples
 
 def restart_formats(c):set_state(c,'format_cursor',0)
 
@@ -2249,6 +2682,7 @@ def sendung_suggestion(m,source,sendung):
     return sorted(usable,key=lambda x:rank.get(x.get('provider'),len(rank)))[0]
 
 YEAR_CLOSE_REASON='Film: Titel und Laufzeit stimmen, Jahr ein Jahr versetzt (Produktions-/Erscheinungsjahr)'
+YEAR_TWO_REASON='Film: Titel exakt und Laufzeit stimmen, Jahr zwei Jahre versetzt (Produktions-/Erscheinungsjahr, 0.6.135)'
 def undo_short_year_close(c):
     """0.6.108, once: films matched by the 0.6.97 year rule from a clip (< matching.YEAR_CLOSE_MIN_SECONDS: SRF „Dai,
     domanda!“ „Sport“ 9 min, „Moda“ 10 min) are recognised again from the sender data. Returns [(id,title)]."""
@@ -2267,6 +2701,13 @@ def undo_short_year_close(c):
         out.append((row['id'],row['title']))
     return out
 
+def imdb_runtime(tconst):
+    try:
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        return archive.movie_runtime(tconst) if archive is not None and hasattr(archive,'movie_runtime') else None
+    except Exception:return None
+
 def rematch_movie_suggestions(c,after='',limit=500):
     """0.6.97, once: films „prüfen“ whose stored suggestions the year rule (matching.year_close) now accepts are
     matched. Returns (matched, last id or None)."""
@@ -2281,13 +2722,53 @@ def rematch_movie_suggestions(c,after='',limit=500):
         except (TypeError,ValueError):duration=0
         usable=[dict(x,source_duration_seconds=x.get('source_duration_seconds') or duration) for x in m.get('suggestions') or []
                 if isinstance(x,dict) and x.get('kind')=='movie']
+        # 0.6.138: suggestions stored before 0.6.138 lack the IMDb runtime of the two-year rule (More than Honey)
+        for x in usable:
+            if x.get('provider')=='IMDb Offline' and not x.get('imdb_runtime_seconds'):
+                runtime=imdb_runtime(x.get('reference_id'))
+                if runtime:x['imdb_runtime_seconds']=runtime
         judged=match_meta(m,{'title':row['title']})
+        # 0.6.135: stored suggestions get the title-part comparison too (Wallander „… 01 - …“)
+        import metadata
+        parts=metadata.film_title_parts(metadata.query_title(judged.get('title') or row['title']))
+        qmeta=dict(judged,title=metadata.query_title(judged.get('title') or row['title']))
+        usable=[metadata.raise_part_similarity(qmeta,x,parts) for x in usable]
         chosen=auto_choice(judged,usable)
         if not chosen or chosen.get('kind')!='movie':continue
         if str(chosen.get('year'))==str(judged.get('year')):chosen.update(state='auto_matched',reason='Titel und Jahr aus dem Sendertitel stimmen überein')
-        else:chosen.update(state='auto_matched',year_close=True,reason=YEAR_CLOSE_REASON)
+        else:
+            try:two=abs(int(chosen.get('year'))-int(judged.get('year')))==2
+            except (TypeError,ValueError):two=False
+            chosen.update(state='auto_matched',year_close=True,reason=YEAR_TWO_REASON if two else YEAR_CLOSE_REASON)
         save_metadata(c,row['id'],chosen,'matched');done+=1
     return done,(rows[-1]['id'] if rows else None)
+
+def undo_year_two(c):
+    """0.6.136, once (only copies that ran 0.6.135; Björn never had it): films matched by the 0.6.135 two-year rule
+    that the narrowed rule (IMDb archive, running time within 8 %) no longer accepts – „Black Box“ 2022 → US-Film 2020 –
+    are recognised again from the sender data. Returns [(id, title)]."""
+    import matching
+    out=[]
+    for row in c.execute("SELECT * FROM works WHERE kind='movie' AND state='matched' AND json_extract(meta,'$.reason')=?",(YEAR_TWO_REASON,)).fetchall():
+        m=json.loads(row['meta'] or '{}')
+        source=film_source(c,row['id'])
+        if not source:continue
+        judged=match_meta({'title':source.get('title'),'kind':'movie'},source)
+        cand=dict(m,source_duration_seconds=m.get('source_duration_seconds') or source.get('duration'))
+        if matching.year_close(judged,cand):continue
+        fresh=seed(source);fresh['reason']='0.6.136: Jahr zwei Jahre versetzt ohne passende IMDb-Laufzeit, neu prüfen'
+        c.execute("UPDATE works SET title=?,kind=?,show_key=?,meta=?,state='pending',attempts=0,next_try=0 WHERE id=?",
+                  (fresh['title'],fresh['kind'],showkey(fresh),json.dumps(fresh),row['id']))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+        out.append((row['id'],str(source.get('title') or '')[:80]))
+    return out
+
+def truncated_note_works(c):
+    """0.6.121: ids of open works whose title ends in a cut version note („… (Originalversion“), searched again once."""
+    import metadata
+    rows=c.execute("""SELECT id,title FROM works WHERE kind IN ('movie','unknown','series') AND state IN ('review','retry','pending')
+        AND (title LIKE '%(%' OR title LIKE '%[%')""").fetchall()
+    return [r[0] for r in rows if metadata.TRUNCATED_NOTE.search(str(r[1] or ''))]
 
 def film_suffix_works(c):
     """0.6.97: ids of open films/unknown works whose title carries 3sat's „- Spielfilm, Land Jahr“ (searched again)."""
@@ -2852,6 +3333,103 @@ def reclassify_batch(c,limit=500):
     set_state(c,'reclassify_cursor_v030',cursor if rows else 'complete')
     return len(rows)
 
+GENRE_REFERENCE_PROVIDERS=('IMDb Offline','OMDb','TMDB','TVDB')
+def heal_derived_genres(c,after='',limit=500):
+    """0.6.135 (Prüfvermerk 0.6.134: Sport-Clip, Sport-Arena, Paris 2024 als Nachrichten, Sportschau Wintersport als
+    Talk): sender-derived genres (genre_source „Sender (abgeleitet)“) follow the narrowed broadcaster rule – Nachrichten
+    and Talk only from the programme's own name, Sport from the name. Names: work title, Sendung name, topics of its
+    active offers. Other derived genres (Dokumentation, Magazin, Kultur, Kinder) stay. Returns (changed, samples, last id)."""
+    import broadcaster
+    rows=c.execute("""SELECT id,title,meta FROM works WHERE id>? AND json_valid(meta)
+        AND json_extract(meta,'$.genre_source')='Sender (abgeleitet)' ORDER BY id LIMIT ?""",(after,limit)).fetchall()
+    changed=0;samples=[]
+    for row in rows:
+        m=json.loads(row['meta'])
+        old=list(m.get('genres') or [])
+        names=[str(row['title'] or ''),str(m.get('sendung_name') or '')]
+        names+=[str(t or '') for (t,) in c.execute("SELECT json_extract(payload,'$.topic') FROM offers WHERE work_id=? AND active=1",(row['id'],))]
+        names=[n for n in dict.fromkeys(names) if n]
+        # 0.6.136 (Mac-Prüfung 0.6.135): only a Sport name changes anything – Nachrichten/Talk stay as they were
+        # (tagesschau24, hessenschau, phoenix vor ort lost them to Kultur or to nothing).
+        # 0.6.138 (Mac-Prüfung 0.6.136): a regional news name (broadcaster.NEWS_NAMES) makes Nachrichten instead of Kultur.
+        joined=' '.join(names)
+        if broadcaster.SPORT_HINT.search(joined):new=['Sport']+[g for g in old if g not in ('Nachrichten','Talk','Sport')]
+        elif broadcaster.NEWS_NAMES.search(joined):new=(['Nachrichten']+[g for g in old if g not in ('Nachrichten','Kultur')])[:2]
+        else:continue
+        if new==old:continue
+        m['genres']=new
+        if not new:m['genre_source']='Unbekannt'
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(row['id'],))
+        for g in new:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+        changed+=1
+        if len(samples)<20:samples.append({'title':str(row['title'] or '')[:80],'before':old,'after':new})
+    return changed,samples,(rows[-1]['id'] if rows else None)
+
+BACKFILL_SOURCE='Reihe (nachgetragen)'
+BACKFILL_MIN_SIBLINGS=3
+
+def undo_series_genre_backfill(c,limit=500):
+    """0.6.132: nimmt alle bis 0.6.131 aus der Reihe nachgetragenen Genres zurück (Werke werden danach von backfill_genres
+    mit der strengeren Regel neu bewertet). Returns Anzahl."""
+    ids=[r[0] for r in c.execute("""SELECT id FROM works WHERE json_valid(meta)
+        AND json_extract(meta,'$.genre_source')=? LIMIT ?""",(BACKFILL_SOURCE,limit))]
+    for wid in ids:
+        m=json.loads(c.execute('SELECT meta FROM works WHERE id=?',(wid,)).fetchone()[0])
+        m.pop('genres',None);m.pop('genre_source',None)
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),wid))
+        c.execute('DELETE FROM work_genres WHERE work_id=?',(wid,))
+    return len(ids)
+
+def backfill_genres(c,imdb_genres=None,after='',limit=500,cache=None):
+    """0.6.127 (Björn 23.11.2026: Werkkatalog „Unbekannt“ 2.008 Filme / 4.052 Reihen; Diagnose Air 0.6.120 N-E – das
+    sind Werke ganz ohne Rohgenre, z. B. verknüpfte „50 Jahre Roland Kaiser“, „Accept – Hellfest“): Werke mit aktivem
+    Angebot und ohne Genre bekommen es nachgetragen – aus dem lokalen IMDb-Archiv, wenn sie mit einer IMDb-Kennung
+    verknüpft/erkannt sind, sonst als Folge einer Reihe die Genres, die mindestens die Hälfte der Geschwister mit Genre
+    trägt (höchstens drei). Art, Zustand und Identität bleiben. Returns (changed, samples, last id)."""
+    rows=c.execute("""SELECT w.id,w.kind,w.show_key,w.meta,w.title FROM works w WHERE w.id>? AND w.state!='manual'
+        AND NOT EXISTS(SELECT 1 FROM work_genres g WHERE g.work_id=w.id)
+        AND EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1) ORDER BY w.id LIMIT ?""",(after,limit)).fetchall()
+    # 0.6.135 (Prüfvermerk 0.6.134: Nachtrag auf dem Air-Weg 43 min): the siblings' own genres do not change during a
+    # run (backfilled ones never count), so the caller may keep one cache across all batches of a run.
+    changed=0;samples=[];siblings={} if cache is None else cache
+    for row in rows:
+        try:m=json.loads(row['meta'] or '{}')
+        except (TypeError,ValueError):continue
+        found=[];source=''
+        ref=str(m.get('episode_reference_id') or m.get('reference_id') or '')
+        if imdb_genres and ref.startswith('tt') and m.get('provider') in GENRE_REFERENCE_PROVIDERS:
+            try:found=normalized_genres(imdb_genres(ref))
+            except Exception:found=[]
+            source='IMDb Offline (nachgetragen)'
+        if not found and row['kind']=='series' and row['show_key']:
+            # 0.6.138 (Mac-Prüfung 0.6.136: hessenschau 3.442 ohne Genre): a regional news name is Nachrichten itself
+            import broadcaster
+            names=' '.join(str(x or '') for x in (row['title'],m.get('title'),m.get('sendung_name')))
+            # 0.6.139 (Prüfvermerk 0.6.138: „buten un binnen | sportblitz“ bekam Nachrichten): ein Sportname geht vor
+            if broadcaster.NEWS_NAMES.search(names) and not broadcaster.SPORT_HINT.search(names):
+                found=['Nachrichten'];source='Sender (abgeleitet)'
+        if not found and row['kind']=='series' and row['show_key']:
+            if row['show_key'] not in siblings:
+                # 0.6.132 (Diagnose Air 0.6.131: „Rudis Rasselbande“, „Kunst + Krempel“ als Nachrichten): nur Geschwister
+                # mit eigenem Genre zählen – nachgetragene Genres früherer Stapel schaukelten sich sonst auf –, mindestens
+                # BACKFILL_MIN_SIBLINGS davon und ein Genre muss zwei Drittel von ihnen tragen.
+                own="""FROM work_genres g JOIN works w ON w.id=g.work_id WHERE w.show_key=?
+                    AND COALESCE(json_extract(CASE WHEN json_valid(w.meta) THEN w.meta END,'$.genre_source'),'')!=?"""
+                with_genre=c.execute('SELECT COUNT(DISTINCT g.work_id) '+own,(row['show_key'],BACKFILL_SOURCE)).fetchone()[0]
+                common=c.execute('SELECT g.genre,COUNT(*) n '+own+' GROUP BY g.genre ORDER BY n DESC,g.genre LIMIT 3',
+                    (row['show_key'],BACKFILL_SOURCE)).fetchall()
+                siblings[row['show_key']]=([g for g,n in common if n*3>=with_genre*2]
+                    if with_genre>=BACKFILL_MIN_SIBLINGS else [])
+            found=siblings[row['show_key']];source=BACKFILL_SOURCE
+        if not found:continue
+        m['genres']=found;m['genre_source']=source
+        c.execute('UPDATE works SET meta=? WHERE id=?',(json.dumps(m),row['id']))
+        for g in found:c.execute('INSERT OR IGNORE INTO work_genres VALUES(?,?)',(row['id'],g))
+        changed+=1
+        if len(samples)<20:samples.append({'title':str(row['title'] or '')[:80],'genres':found,'source':source})
+    return changed,samples,(rows[-1]['id'] if rows else None)
+
 def normalized_genres(values):
     from metadata import genres
     return genres(values or [])
@@ -3034,6 +3612,10 @@ def build_deferred_indexes(connect,event=None,error=None):
                 import kids_catalog,unified_index;invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
     except Exception as e:
         if error:error('kids_genre_heal_failed',e)
+    try:
+        with connect() as c:c.execute(SERIES_FILM_INDEX_SQL)   # 0.6.137, < 1 s on 686k works
+    except Exception as e:
+        if error:error('catalog_series_film_index_failed',e,index='work_series_film')   # the list also works without it
     with connect() as c:
         if index_ready(c):MAINTENANCE.update(phase='done');return True
     started=time.time();MAINTENANCE.clear()
@@ -3109,7 +3691,11 @@ def review_listing(c,query='',state='open',offset=0):
     clauses=['EXISTS(SELECT 1 FROM offers o WHERE o.work_id=w.id AND o.active=1)'];args=[]
     if state=='open':clauses.append("w.state IN ('pending','retry','review','identified')")
     elif state in ('pending','retry','review','identified','manual','matched','format'):clauses.append('w.state=?');args.append(state)
-    if query:clauses.append('(w.title LIKE ? OR w.topic LIKE ?)');args.extend(['%'+query[:150]+'%']*2)
+    if query:
+        # 0.6.140 (Mac-Prüfung 0.6.138: Suche „Altlasten“ 0 Treffer): also the film name of a Reihenfilm (partial index)
+        clauses.append("(w.title LIKE ? OR w.topic LIKE ? OR w.id IN (SELECT id FROM works WHERE kind='series' AND json_valid(meta)"
+                       " AND json_extract(meta,'$.series_film')=1 AND json_extract(meta,'$.series_film_title') LIKE ?))")
+        args.extend(['%'+query[:150]+'%']*3)
     where=' AND '.join(clauses);offset=max(0,int(offset))
     total=c.execute('SELECT COUNT(*) FROM works w WHERE '+where,args).fetchone()[0]
     rows=c.execute('SELECT w.* FROM works w WHERE '+where+' ORDER BY w.title COLLATE NOCASE,w.id LIMIT 48 OFFSET ?',args+[offset]).fetchall()

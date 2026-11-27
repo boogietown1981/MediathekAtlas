@@ -84,7 +84,14 @@ CREATE TABLE title_episode(tconst TEXT,parentTconst TEXT,seasonNumber INTEGER,ep
              'source_duration_seconds': 5189}   # 0.6.108: Laufzeit des Videos gehört dazu (ab 40 min)
         self.assertEqual(matching.issues({'kind': 'movie', 'year': 2015}, c), [])
         self.assertTrue(matching.issues({'kind': 'movie', 'year': 2015}, dict(c, runtime_agrees=False)))
+        # 0.6.135: two years apart only with the exact title and at least 60 min (More than Honey)
+        # 0.6.136: zwei Jahre nur mit IMDb-Archiv und IMDb-Laufzeit innerhalb 8 %
         self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, c))
+        c2 = dict(c, provider='IMDb Offline', reference_runtime_seconds=5300)
+        self.assertEqual(matching.issues({'kind': 'movie', 'year': 2014}, c2), [])
+        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, dict(c2, similarity=.99)))
+        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2014}, dict(c2, source_duration_seconds=3000)))
+        self.assertTrue(matching.issues({'kind': 'movie', 'year': 2013}, c))
 
 
 class HealTests(unittest.TestCase):

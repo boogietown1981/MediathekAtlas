@@ -1,10 +1,10 @@
 import subprocess,sys,tempfile,types,platform
-import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib
+import json, os, secrets, signal, socketserver, sqlite3, threading, time, webbrowser, urllib.parse, hashlib, re
 from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
-import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover
-import series_autoload,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover, epg
+import series_autoload,local_titles,lokal,lokal_enrichment,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -66,8 +66,8 @@ def job_ids(q):
 
 
 @contextmanager
-def db():
-    c=sqlite3.connect(ROOT/'catalog.db',timeout=30);c.row_factory=sqlite3.Row
+def db(timeout=30):
+    c=sqlite3.connect(ROOT/'catalog.db',timeout=timeout);c.row_factory=sqlite3.Row
     # 0.6.42: WAL + NORMAL syncs only at checkpoints instead of on every small commit. On an
     # external USB disk (Björn: /Volumes/Docking-2) FULL made each commit wait for the disk and
     # other writers ran into „database is locked“. WAL+NORMAL cannot corrupt the database; after a
@@ -168,6 +168,10 @@ def put_job(j):
             if progress:return
             if attempt==9:raise
             STOP.wait(2)
+    # 0.6.148: geladene Titel stehen in Katalog und Kinderecke vorn – nach einem fertigen Download neu ordnen
+    if j['state']=='done':
+        try:local_titles.invalidate();unified_index.invalidate(soft=True)   # weich: bisherige Liste antwortet weiter; Kinderecke folgt nach TTL
+        except Exception:pass
     # 0.5.61: subtitle files listed in the Archive.org manifest go next to the finished video.
     if j['state']=='done' and j.get('origin')==archive_downloads.ORIGIN and j.get('sidecars') and not j.get('sidecars_fetched'):
         def subtitles(job=dict(j)):
@@ -413,6 +417,13 @@ def worker():
                     diagnostics.event('download_retry_planned',job_id=j['id'],retries=j['retries'],not_before=int(j['not_before']),source=download_retry.source_of(j))
                 else:j.update(state='error',error=j.get('error') or core.safe_error(e))
                 put_job(j)
+            # 0.6.160: yt-dlp was renewed after a challenge failure: given-up "not available" jobs get another try
+            fresh=youtube_downloads.take_refreshed() if j.get('origin')=='youtube' else ''
+            if fresh:
+                try:
+                    with db() as c:moved=youtube_abos.requeue_not_available(c,tool=fresh)
+                    if moved:diagnostics.event('youtube_jobs_requeued',count=moved,ytdlp=fresh)
+                except Exception as e2:diagnostics.error('youtube_requeue_failed',e2)
         if j.get('state')=='done' and j.get('origin')==archive_downloads.ORIGIN:
             # 0.5.95: signed receipt with checksum for the Verbund; runs beside the queue, a large file takes a while to read.
             threading.Thread(target=archive_receipt,args=(dict(j),),daemon=True,name='archive_receipt').start()
@@ -520,6 +531,7 @@ IMDB=imdb_archive.Archive(ROOT,STOP,imdb_updated,folder=_IMDB_DIR,available=_IMD
 IMDB.locate=lambda:storage_locations.imdb_location(HOME,ROOT)
 imdb_archive.ACTIVE=IMDB
 _UNIFIED_SOURCES={k:_SnapshotSource(k,m[0]) for k,m in _PORTAL_MODULES.items()}
+_UNIFIED_SOURCES['lokal']=lokal   # 0.6.151: lokale Filmarchive (eigene Abfrage, schnell; der Index speichert zwischen)
 _STATUS_CACHE=(0,{})
 _TREE_CACHE=(float('-inf'),[],[])
 _TREE_TTL=60
@@ -600,9 +612,23 @@ def recognition_for_export(wait=20.0):
     """0.6.9: the diagnosis of 16.11.2026 had an empty table "Erkennung je Sender" (still loading,
     because nobody had opened it). The export waits a little for the background count."""
     result=recognition();deadline=time.monotonic()+wait
-    while result.get('loading') and not result.get('channels') and time.monotonic()<deadline:
+    # 0.6.145 (Pro-Diagnose 26.11.2026: Stand 37 h alt, loading): also wait while only an old count from an earlier
+    # run is there (restored at start, nobody opened the view since); the export says how old the count is.
+    def stale(r):return not r.get('channels') or time.time()-float(r.get('computed_at') or 0)>RECOGNITION_STALE
+    while result.get('loading') and stale(result) and time.monotonic()<deadline:
         time.sleep(.25);result=recognition()
-    return result
+    computed=float(result.get('computed_at') or 0)
+    return {**result,'age_hours':round((time.time()-computed)/3600,1) if computed else None}
+RECOGNITION_STALE=6*3600
+# 0.6.152 (Mac-Prüfung 0.6.147, Air mit Stand > 6 h: erster Export 20,7 s OHNE Senderstatistik): die Übersicht wartete
+# bis 30 s auf die frische Zählung, der Export gibt jedem Teil aber nur 20 s – dann fehlte die ganze Übersicht. Jetzt
+# höchstens 15 s warten, danach die alte Zählung mit age_hours/loading ausgeben (frisch beim nächsten Export).
+EXPORT_RECOGNITION_WAIT=15.0
+# 0.6.153 (Mac-Prüfung 0.6.150 nicht bestanden: Praxis mit Meerblick doppelt, 35 Tatort/Polizeiruf-Filme einzeln, Fortsetzungen
+# und Fassungen als „Mehrteiler“): Filmreihen-/Mehrteiler-Kacheln ab Werk aus, bis die Korrektur geprüft ist. Mit ?reihen=1
+# weiter abrufbar (Prüfung); lokale Archive (0.6.151) und Korrekturen (0.6.152) hängen nicht daran.
+# 0.6.154: Korrektur (unified_index.collapse_reihen) – wieder an; mit ?reihen=0 bzw. hier False jederzeit abschaltbar.
+UNIFIED_REIHEN=True
 def catalog_status():
     global _STATUS_CACHE,_STATUS_BUSY
     snapshot=_STATUS_CACHE
@@ -743,13 +769,23 @@ class Handler(BaseHTTPRequestHandler):
         try:
             with db() as c:source=streaming.resolve(c,offer=q.get('offer',[''])[0],job=q.get('job',[''])[0],
                                                   netzkino=q.get('netzkino',[''])[0],pluto=q.get('pluto',[''])[0],
-                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],dmax=q.get('dmax',[''])[0],filmfriend=q.get('filmfriend',[''])[0],dailyme=q.get('dailyme',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
+                                                  justwatch=q.get('justwatch',[''])[0],rakuten=q.get('rakuten',[''])[0],joyn=q.get('joyn',[''])[0],toggo=q.get('toggo',[''])[0],crunchyroll=q.get('crunchyroll',[''])[0],samsung=q.get('samsung',[''])[0],plex=q.get('plex',[''])[0],servustv=q.get('servustv',[''])[0],rtlplus=q.get('rtlplus',[''])[0],redbulltv=q.get('redbulltv',[''])[0],dmax=q.get('dmax',[''])[0],filmfriend=q.get('filmfriend',[''])[0],dailyme=q.get('dailyme',[''])[0],lokal=q.get('lokal',[''])[0],sender=q.get('sender',[''])[0],root=ROOT,quality=_play_quality(q),
                                                   youtube=q.get('youtube',[''])[0])
         except ValueError as e:return self.send({'error':str(e)},404)
         if q.get('raw',['0'])[0]=='1':
             if source['kind']!='file':return self.send({'error':'Nur lokale Dateien können direkt geladen werden'},400)
             return self.send_file(Path(source['path']).resolve(),True)
         if self.command=='HEAD':return self.send(b'',ctype='video/mp4')
+        # 0.6.153 (Mac-Prüfung 0.6.151, MKV springt zurück): Chromium fragt den umgewandelten Strom einer lokalen
+        # Datei manchmal zusätzlich ab einer Byte-Stelle an („bytes=1015808-“), während die erste Anfrage noch läuft.
+        # Bisher ersetzte das den laufenden Strom derselben Sitzung und lieferte wieder ab Byte 0 – die Wiedergabe
+        # brach ab („data source error“) oder sprang. Die Umwandlung einer Datei ist bytegleich wiederholbar
+        # (-c copy, gleiche Befehlszeile): ein eigener Hilfsstrom überspringt die ersten Bytes und antwortet mit 206;
+        # der Hauptstrom bleibt unberührt.
+        skip=0
+        if source.get('kind')=='file':
+            m=re.fullmatch(r'bytes=(\d+)-',(self.headers.get('Range') or '').strip())
+            if m:skip=int(m.group(1))
         try:start=max(0.0,float(q.get('t',['0'])[0] or 0))
         except ValueError:start=0.0
         # 0.5.63: ffmpeg gets one quality level instead of the whole master playlist (starts sooner,
@@ -765,7 +801,7 @@ class Handler(BaseHTTPRequestHandler):
             if q.get('audio',[''])[0]:
                 try:track=tracks.audio_index(source,q.get('audio',[''])[0])
                 except Exception:track=None
-            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist,audio_track=track),q.get('session',[''])[0][:64],cleanup=playlist)
+            proc=streaming.start(streaming.command(source,start,streaming.audio_copy(source),playlist=playlist,audio_track=track),q.get('session',[''])[0][:64],cleanup=playlist,helper=bool(skip))
         except RuntimeError as e:
             _unlink(playlist);return self.send({'error':str(e)},429)
         except (ValueError,OSError) as e:
@@ -773,12 +809,23 @@ class Handler(BaseHTTPRequestHandler):
         sent=0;first_after=None
         try:
             first=proc.stdout.read1(65536) if hasattr(proc.stdout,'read1') else proc.stdout.read(65536)
+            left=skip
+            while first and left>=len(first):
+                left-=len(first);first=proc.stdout.read1(1048576) if hasattr(proc.stdout,'read1') else proc.stdout.read(1048576)
+            if first and left:first=first[left:]
+            if not first and skip:
+                code,err=streaming.finish(proc)
+                if code==0:   # hinter dem Ende der Umwandlung
+                    self.send_response(416);self.send_header('Content-Range','bytes */*');self.send_header('Content-Length','0');self.end_headers();return
+                diagnostics.event('playback_range_failed',level='WARNING',origin=source['kind'],code=code,skip=skip,detail=err)
+                return self.send({'error':'Teilanfrage abgebrochen'},502)
             if not first:
                 code,err=streaming.finish(proc)
                 diagnostics.event('playback_failed',level='ERROR',origin=source['kind'],code=code,detail=err)
                 return self.send({'error':'Wiedergabe konnte nicht gestartet werden. Details im Live-Protokoll.'},502)
             first_after=round(time.monotonic()-began,2)
-            self.send_response(200);self.send_header('Content-Type','video/mp4');self.send_header('Cache-Control','no-store')
+            self.send_response(206 if skip else 200);self.send_header('Content-Type','video/mp4');self.send_header('Cache-Control','no-store')
+            if skip:self.send_header('Content-Range','bytes %d-%d/*'%(skip,skip+STREAM_RANGE_SPAN-1))
             self.send_header('X-Content-Type-Options','nosniff');self.send_header('Connection','close');self.end_headers()
             chunk=first
             while chunk:
@@ -1131,6 +1178,8 @@ def get_live_tv(self,path):
                                          provider=q.get('provider',[''])[0][:20],group=q.get('group',[''])[0][:120])
     try:data['pluto']=pluto.state(ROOT)
     except Exception:data['pluto']={}   # 0.5.67: a busy Pluto database must not hold back the stations
+    try:data['epg']=epg.state(ROOT)   # Programmführer: status line and load button in the tab
+    except Exception:data['epg']={}
     try:data['samsung']=samsung_tvplus.state(ROOT)   # 0.5.97: hint and load button in the tab
     except Exception:data['samsung']={}
     # 0.5.63 (Björn, 12.11.2026: the Live-TV tab showed no stations with 0.5.61 although the
@@ -1271,6 +1320,33 @@ def get_kids_live(self,path):
         if not kids_rules.live_enabled(c):return self.send({'enabled':False,'stations':[]})
         return self.send({'enabled':True,'stations':kids_catalog.live(c,ROOT)})
 
+# 0.6.151 (Björn 26.11.2026): lokale Filmarchive auf Ordnern/Freigaben – Ordner, Stand, Einlesen (lokal.py)
+@ROUTES.get('/api/lokal')
+def get_lokal(self,path):
+    return self.send(lokal.state(ROOT))
+
+@ROUTES.post('/api/lokal-dirs')
+def post_lokal_dirs(self,path,d):
+    # 0.6.153: Eingabefehler (relativer Pfad, Laufwerkswurzel) als Antwort, nicht als ERROR im Protokoll
+    try:folders=lokal.set_dirs(ROOT,d.get('dirs') or '')
+    except ValueError as e:return self.send({'error':str(e)},400)
+    local_titles.invalidate();unified_index.invalidate(soft=True)
+    started=lokal.start_sync(ROOT) if folders else False
+    diagnostics.event('lokal_dirs_saved',folders=len(folders))
+    return self.send({**lokal.state(ROOT),'started':started})
+
+@ROUTES.post('/api/lokal-scan')
+def post_lokal_scan(self,path,d):
+    if not lokal.dirs(ROOT):return self.send({'error':'Noch kein Archivordner eingetragen'},400)
+    return self.send({**lokal.state(ROOT),'started':lokal.start_sync(ROOT)})
+
+@ROUTES.post('/api/lokal-enrich')
+def post_lokal_enrich(self,path,d):
+    with SERVICE.provider_slots:result=lokal_enrichment.enrich(ROOT,str(d.get('id','')),settings(),force=d.get('force') is True)
+    diagnostics.event('lokal_reference_check',status=result['status'],candidates=len(result.get('references',[])))
+    unified_index.invalidate(soft=True)
+    return self.send(result)
+
 @ROUTES.get('/api/kids-episodes')
 def get_kids_episodes(self,path):
     import watch_state
@@ -1291,7 +1367,7 @@ def get_kids_play(self,path):
         shelf=_kids_shelf()
         with db() as c:ok=kids_catalog.allowed_ref(shelf,ref,c)   # 0.6.109: je Werk serverseitig geprüft
     if not ok:return self.send({'error':'Dieses Video gibt es in der Kinderecke nicht'},404)
-    return get_play(self,path)
+    return get_play(self,path,kids_ref=ref)
 
 # 0.6.27: abonnierte Videos im Dashboard, je Kanal (web/abo_shelf.js)
 @ROUTES.get('/api/youtube-abo-videos')
@@ -1383,8 +1459,8 @@ def get_download_options(self,path):
     return self.send({**download_quality.options(source,(lambda:module.play_source(ROOT,item)) if module else None),'heights':list(download_quality.HEIGHTS)})
 
 @ROUTES.get('/api/play')
-def get_play(self,path,v1=False):
-    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender')}
+def get_play(self,path,v1=False,kids_ref=None):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query);ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender','lokal')}
     direct_youtube=q.get('direct',[''])[0]=='1'
     yt_id=q.get('youtube',[''])[0]
     if yt_id:
@@ -1402,7 +1478,12 @@ def get_play(self,path,v1=False):
     try:
         with db() as c:source=streaming.resolve(c,root=ROOT,quality=quality,**ref)
         info=streaming.plan(source,levels=q.get('levels',[''])[0]!='0')
-    except ValueError as e:return self.send({'error':str(e)},404)
+    except ValueError as e:
+        if kids_ref:   # 0.6.135: Kopierschutz/nicht verfügbar → Kachel 7 Tage aus der Kinderecke
+            try:
+                with db() as c:kids_catalog.note_unplayable(c,kids_ref,e)
+            except Exception:pass
+        return self.send({'error':str(e)},404)
     if q.get('probe',[''])[0]=='1':return self.send({'levels':info.get('levels') or []})  # 0.5.72: levels only, for the ffmpeg fallback
     base=('/api/v1/stream?' if v1 else '/api/stream?')+urllib.parse.urlencode({k:v for k,v in ref.items() if v})
     if info['origin']=='local':info['src']=base+('&raw=1' if info['mode']=='direct' else '')
@@ -1444,14 +1525,14 @@ def _bounded_parts(parts,budget=20.0):
 def get_diagnostics(self,path):
     # Catalogue counts and the cached recognition per channel make the export evaluable on its own.
     def overview_parts():
-        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(15.0),'runtime':runtime_tools.cached_report()}
+        return {'catalog':{k:v for k,v in catalog_status().items() if k!='sync'},'recognition':recognition_for_export(EXPORT_RECOGNITION_WAIT),'runtime':runtime_tools.cached_report()}
     parts={'overview':overview_parts,'storage':_storage_for_export,'imdb':IMDB.status,'provider_statistics':provider_stats.snapshot,
            'providers':lambda:[name for name,k in [('TMDB','tmdb'),('TVDB','tvdb'),('OMDb','omdb')] if settings().get(k)] or ['Wikidata'],
            'netzkino_downloads':netzkino_download_summary,'ytdl_nightly':ytdl_bridge.status,'pluto':lambda:pluto.state(ROOT),'justwatch':lambda:justwatch.state(ROOT),
            'rakuten':lambda:rakuten.state(ROOT),'joyn':lambda:joyn.state(ROOT),'toggo':lambda:toggo.state(ROOT),'crunchyroll':lambda:crunchyroll.state(ROOT),
            'samsung':lambda:samsung_tvplus.summary(ROOT),'plex':lambda:plex.state(ROOT),'servustv':lambda:servustv.state(ROOT),'redbulltv':lambda:redbulltv.state(ROOT),'dmax':lambda:dmax.state(ROOT),'filmfriend':lambda:filmfriend.state(ROOT),'dailyme':lambda:dailyme.state(ROOT),'sender_live':lambda:sender_live.summary(ROOT),'rtlplus':lambda:rtlplus.state(ROOT),
            'youtube':lambda:{**youtube.state(ROOT),'offline_switch':youtube_downloads.status(ROOT)},'youtube_abos':lambda:youtube_abos.summary(ROOT),'youtube_discover':lambda:youtube_discover.summary(ROOT),
-           'live_tv':live_tv_summary,'watch':lambda:watch_state.summary(ROOT),'series_autoload':series_autoload_summary,'archive_works':lambda:archive_recognition.summary(ROOT),
+           'live_tv':live_tv_summary,'epg':lambda:epg.summary(ROOT),'watch':lambda:watch_state.summary(ROOT),'series_autoload':series_autoload_summary,'archive_works':lambda:archive_recognition.summary(ROOT),
            'network':lambda:{'trust_store':netcheck.ensure_trust_store(),'hosts':netcheck.probe()},'reference_share':lambda:__import__('reference_share').stats(ROOT),'cast_photos':lambda:__import__('cast_photos').store_stats(ROOT)}
     found=_bounded_parts(parts)
     overview=found.pop('overview')
@@ -1485,8 +1566,61 @@ def _storage_for_export():
     try:
         o=STORAGE.overview();return {'locations':o['locations'],'move':o['move'],'pending':o['pending'],'last':o['last'],'previous':o['previous']}
     except Exception as e:return {'error':core.safe_error(e)}
+SETTINGS_QUICK_TIMEOUT=5
+_SETTINGS_DEFERRED=[];_SETTINGS_DEFERRED_LOCK=threading.Lock();_SETTINGS_LATEST=[None]
+def _pin_latest_settings():
+    # the newest deferred settings stay readable until written (time.monotonic()-inf is always below SETTINGS_TTL)
+    if _SETTINGS_LATEST[0] is not None:
+        with _SETTINGS_LOCK:_SETTINGS_CACHE.update(payload=_SETTINGS_LATEST[0],at=float('inf'),gen=_SETTINGS_CACHE['gen']+1)
+def write_waiting(fn,payload=None):
+    """0.6.123/0.6.125 (Mac-Prüfungen 0.6.120 und 0.6.123: POST /api/series-autoload settings → „database is locked“,
+    einmal 134 s Antwortzeit, während die Start-Heilungen schreiben): a user's settings write tries the database for
+    at most SETTINGS_QUICK_TIMEOUT seconds. If it is busy, the change is kept in memory (settings() returns it at
+    once) and written by a background thread as soon as the database is free; the request answers right away.
+    The function runs in its own transaction. Returns True if written now, False if deferred."""
+    with _SETTINGS_DEFERRED_LOCK:queued=bool(_SETTINGS_DEFERRED)
+    if not queued:   # an earlier deferred write must never land after this newer one
+        try:
+            with db(timeout=SETTINGS_QUICK_TIMEOUT) as c:fn(c)
+            return True
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):raise
+        SERVICE.sqlite_busy_count+=1
+    with _SETTINGS_DEFERRED_LOCK:
+        _SETTINGS_DEFERRED.append(fn);start=len(_SETTINGS_DEFERRED)==1
+        if payload is not None:_SETTINGS_LATEST[0]=payload
+        _pin_latest_settings()
+    diagnostics.event('settings_write_deferred',waiting=len(_SETTINGS_DEFERRED))
+    if start:threading.Thread(target=_write_deferred_settings,daemon=True,name='settings_deferred').start()
+    return False
+def _write_deferred_settings():
+    tries=0
+    while True:
+        with _SETTINGS_DEFERRED_LOCK:pending=list(_SETTINGS_DEFERRED)
+        if not pending:return
+        tries+=1
+        try:
+            with db() as c:
+                for fn in pending:fn(c)
+        except sqlite3.OperationalError as e:
+            if not catalog_service.sqlite_busy(e):
+                diagnostics.error('settings_write_failed',e)
+                with _SETTINGS_DEFERRED_LOCK:
+                    del _SETTINGS_DEFERRED[:len(pending)]
+                    if not _SETTINGS_DEFERRED:_SETTINGS_LATEST[0]=None
+                invalidate_settings();continue
+            if STOP.wait(2):return
+            continue
+        with _SETTINGS_DEFERRED_LOCK:
+            del _SETTINGS_DEFERRED[:len(pending)]
+            if _SETTINGS_DEFERRED:_pin_latest_settings()   # store_settings above showed an older one meanwhile
+            else:
+                if _SETTINGS_LATEST[0] is not None:
+                    with _SETTINGS_LOCK:_SETTINGS_CACHE.update(payload=_SETTINGS_LATEST[0],at=time.monotonic(),gen=_SETTINGS_CACHE['gen']+1)
+                _SETTINGS_LATEST[0]=None
+        diagnostics.event('settings_write_done',writes=len(pending),tries=tries)
 def _save_settings(s):
-    with db() as c:store_settings(c,s)
+    write_waiting(lambda c:store_settings(c,s),json.dumps(s))
 STORAGE=storage_locations.Context(HOME,ROOT,settings,_save_settings,db,diagnostics.event,diagnostics.error,imdb=IMDB)
 
 @ROUTES.get('/api/storage-locations')
@@ -1588,7 +1722,7 @@ def get_unified(self,path):
     return self.send(unified_index.page(ROOT,db,kind=q.get('kind',['movies'])[0],query=q.get('q',[''])[0],
         genre=q.get('genre',[''])[0],sort=q.get('sort',['title'])[0],collection=q.get('collection',[''])[0],
         offset=q.get('offset',['0'])[0],merge_duplicates=ui_prefs.load(ROOT)['merge_duplicates'],modules=_UNIFIED_SOURCES,
-        language=q.get('lang',[''])[0],only=q.get('only',[''])[0]))
+        language=q.get('lang',[''])[0],only=q.get('only',[''])[0],reihen=q.get('reihen',['1' if UNIFIED_REIHEN else '0'])[0]=='1'))   # 0.6.150: Filmreihen zusammengefasst
 
 @ROUTES.get('/api/display')
 def get_display(self,path):
@@ -1730,6 +1864,23 @@ def get_state(self,path):
     return self.send({'maintenance':dict(catalog.MAINTENANCE),'artwork_checked':SERVICE.artwork_checked,'imdb':imdb,'jobs':job_list,'settings':{'download_dir':s['download_dir'],'cache_dir':s.get('cache_dir',''),'storage_problems':storage_locations.problems(s),'tmdb_set':bool(s.get('tmdb')),'omdb_set':bool(s.get('omdb')),'tvdb_set':bool(s.get('tvdb')),'tvdb_pin_set':bool(s.get('tvdb_pin')),'fanart_set':bool(s.get('fanart') or s.get('fanart_personal')),'youtube_set':bool(s.get('youtube')),'auto_catalog':s['auto_catalog'],'auto_metadata':s['auto_metadata'],'scan_priority':s.get('scan_priority','balanced'),'complete_series':s.get('complete_series',True),'metadata_workers':s.get('metadata_workers',2),'episode_workers':s.get('episode_workers',2),'sender_direct_lookup':s.get('sender_direct_lookup',False),'library_dirs':s.get('library_dirs',[]),'mesh_dir':s.get('mesh_dir',''),'mesh_name':s.get('mesh_name',''),'mesh_peers':[p['url'] for p in meshpeer.peer_list(s)],'mesh_shared':NETWORK and meshpeer.valid_key(s.get('mesh_key'))},'tools':{'ffmpeg':bool(tools['ffmpeg'].get('ok')),'ffprobe':bool(tools['ffprobe'].get('ok'))},'runtime':tools,'catalog':catalog_part,'metadata':SERVICE.metadata_status,'provider_pauses':pauses,'reclassification':SERVICE.reclassification,'server':{'network':NETWORK,'managed':MANAGED,'version':VERSION},'mesh':SERVICE.mesh_status})
 
 # 0.5.97: Samsung TV Plus has live channels only (no catalogue page, see samsung_tvplus.py)
+# Programmführer (epg.py): programme of the public broadcasters for the Live-TV tab and as recognition evidence
+@ROUTES.get('/api/epg')
+def get_epg(self,path):
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    station=q.get('station',[''])[0][:60]
+    if not station:return self.send(epg.state(ROOT))
+    try:return self.send({'station':station,'broadcasts':epg.schedule(ROOT,station,q.get('day',[''])[0][:10] or None)})
+    except ValueError as e:return self.send({'error':str(e)},400)
+
+@ROUTES.post('/api/epg-sync')
+def post_epg_sync(self,path,d):
+    return self.send({'started':epg.start_sync(ROOT),'status':epg.state(ROOT)})
+
+@ROUTES.post('/api/epg-auto')
+def post_epg_auto(self,path,d):
+    return self.send({'status':epg.set_auto(ROOT,d.get('enabled'))})
+
 @ROUTES.post('/api/samsung-sync')
 def post_samsung_sync(self,path,d):
     return self.send({'started':samsung_tvplus.start_sync(ROOT),'status':samsung_tvplus.state(ROOT)})
@@ -1762,7 +1913,7 @@ def post_youtube_key(self,path,d):
     elif key:
         if not __import__('re').fullmatch(r'[A-Za-z0-9_\-]{20,80}',key):raise ValueError('Das sieht nicht wie ein Google-API-Schlüssel aus')
         s['youtube']=key
-    with db() as c:store_settings(c,s)
+    _save_settings(s)
     started=bool(s.get('youtube')) and youtube.start_sync(ROOT)
     return self.send({'status':youtube.state(ROOT),'started':started})
 
@@ -1780,6 +1931,27 @@ def post_youtube_ytdlp_install(self,path,d):
             if st['requeued']:diagnostics.event('youtube_jobs_requeued',count=st['requeued'],js_runtime=True)
     except Exception as e:diagnostics.error('youtube_requeue_failed',e)
     return self.send(st)
+
+@ROUTES.post('/api/youtube-access-check')
+def post_youtube_access_check(self,path,d):
+    # 0.6.161: "YouTube-Zugang prüfen" – one video simulated (nothing downloaded); yt-dlp renewed if its
+    # challenge solver is too old; on success the given-up/waiting "not available" jobs get another try.
+    video=str(d.get('video') or '').strip()
+    with db() as c:
+        if not video:video=youtube_abos.not_available_video(c)
+        if not video:return self.send({'error':'Kein gescheitertes YouTube-Video vorhanden; bitte eine Video-ID oder Videoadresse angeben'},400)
+    try:r=youtube_downloads.check_access(ROOT,video)
+    except ValueError as e:return self.send({'error':str(e)},400)
+    except OSError as e:return self.send({'error':'Prüfung nicht möglich: '+core.safe_error(e)},502)
+    r['requeued']=0
+    if r['ok']:
+        try:
+            with db() as c:r['requeued']=youtube_abos.requeue_not_available(c,tool=r['tool_version'])
+            if r['requeued']:diagnostics.event('youtube_jobs_requeued',count=r['requeued'],ytdlp=r['tool_version'],check=True)
+        except Exception as e:diagnostics.error('youtube_requeue_failed',e)
+    youtube_downloads.take_refreshed()
+    r['offline']=youtube_downloads.status(ROOT)
+    return self.send(r)
 
 @ROUTES.post('/api/youtube-download-add')
 def post_youtube_download_add(self,path,d):
@@ -2167,7 +2339,7 @@ def post_series_autoload(self,path,d):
     if action=='settings':
         s=json.loads(_settings_payload())
         series_autoload.clean_settings(d,s)
-        with db() as c:store_settings(c,s)
+        _save_settings(s)
         diagnostics.event('series_autoload_settings',**series_autoload.config(s))
         SERVICE.subscription_wake.set()
     else:
@@ -2273,10 +2445,11 @@ def post_settings(self,path,d):
         if folder:folder=str(meshjournal.check_folder(folder,create=d.get('mesh_init') is True))
         s['mesh_dir']=folder
     if 'mesh_name' in d:s['mesh_name']=str(d['mesh_name'] or '').strip()[:80]
-    with db() as c:
+    def write(c):
         store_settings(c,s)
         if any(s.get(k)!=previous.get(k) for k in ('tmdb','omdb','tvdb','tvdb_pin')):
             c.execute("UPDATE works SET state=CASE WHEN state='identified' THEN state ELSE 'pending' END,next_try=0 WHERE state IN ('review','retry','identified')")
+    write_waiting(write,json.dumps(s))
     if any(s.get(k)!=previous.get(k) for k in ('mesh_dir','mesh_name','auto_metadata')):threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     return self.send({'ok':True})
 
@@ -2333,7 +2506,7 @@ def post_mesh_direct(self,path,d):
         if name:s['mesh_name']=name
     elif action=='folder-off':s['mesh_dir']=''
     else:raise ValueError('Unbekannte Aktion')
-    with db() as c:store_settings(c,s)
+    _save_settings(s)
     diagnostics.register_secrets(s.get('mesh_key'),*[p['key'] for p in meshpeer.peer_list(s)])
     threading.Thread(target=SERVICE.mesh_tick,daemon=True,name='mesh_apply').start()
     out={'ok':True,'key':s.get('mesh_key',''),'tailscale':meshpeer.tailscale_address(),'network':NETWORK,'port':self.server.server_port}
@@ -2422,7 +2595,7 @@ def post_languages_observe(self,path,d):
 
 # 0.6.6: audio tracks and subtitles the player can offer for a source played through ffmpeg or as a file
 def _track_source(q):
-    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender')}
+    ref={k:q.get(k,[''])[0] for k in ('offer','job','netzkino','pluto','justwatch','rakuten','joyn','toggo','crunchyroll','samsung','plex','servustv','rtlplus','redbulltv','dmax','filmfriend','dailyme','sender','lokal')}
     if q.get('direct',[''])[0]=='1':ref['youtube']=q.get('youtube',[''])[0]   # own player only; the embedded player has its own subtitles
     with db() as c:return ref,streaming.resolve(c,root=ROOT,quality=_play_quality(q),**ref)
 
@@ -2604,7 +2777,8 @@ def post_job_remove(self,path,d):
     return self.send({'ok':True})
 
 # 0.5.73: the page's own scripts, also reachable as /code/<name> (see web/app.js)
-SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
+STREAM_RANGE_SPAN=1<<40   # Länge des umgewandelten Stroms ist vorab unbekannt (206 nach einer Byte-Anfrage, s. stream)
+SCRIPTS=('/app.js','/direct_start.js','/player.js','/pluto.js','/portal_categories.js','/portal_panel.js','/admin.js','/display.js','/justwatch.js','/rakuten.js','/joyn.js','/toggo.js','/plex.js','/servustv.js','/redbulltv.js','/dmax.js','/filmfriend.js','/dailyme.js','/rtlplus.js','/youtube.js','/youtube_abos.js','/youtube_discover.js','/kids_parents.js','/abo_shelf.js','/netzkino.js','/video_audit.js','/netzkino_detail.js','/netzkino_downloads.js','/unified_catalog.js','/portal_title.js','/offline_button.js','/live_tv.js','/backups.js','/series_autoload.js','/lokal_archive.js','/titleview.js','/watchlist.js','/storage.js','/storage_locations.js','/system.js','/crunchyroll.js','/watch_mode.js')
 
 class Server(ThreadingHTTPServer):
     # 0.5.73: the page opens some twenty connections at once (one per script, HTTP/1.0). With the default
@@ -2651,8 +2825,9 @@ if __name__=='__main__':
         # 0.6.0: one planner (planner.py) instead of two threads per platform; Samsung TV Plus and
         # the Archive.org recognition join it (formerly samsung_tvplus.loop, archive_recognition.loop).
         PLANNER[0]=platform_registry.start_background(platform_context(),STOP,
-            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos)],
-            extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich)])
+            extra_catalog=[planner.CatalogJob('samsung',samsung_tvplus),planner.CatalogJob('youtube_abos',youtube_abos),planner.CatalogJob('epg',epg),planner.CatalogJob('lokal',lokal)],
+            extra_enrichment=[planner.EnrichJob('archive',archive_recognition.background_pending(db),archive_recognition.enrich),
+                              planner.EnrichJob('lokal',lokal_enrichment.pending,lokal_enrichment.enrich)])   # 0.6.151
     if not os.environ.get('MEDIATHEKATLAS_DISABLE_BACKGROUND'):
         portal_control.Scheduler(db,STOP).start()
         # 0.6.35: Die Erkennung (viele Schreibzugriffe) startet erst, wenn der einmalige Index steht.
@@ -2671,10 +2846,20 @@ if __name__=='__main__':
                     with db() as c:catalog.listing(c,kind=kind,downloaded=downloaded)
                     diagnostics.event('catalog_listing_prewarmed',kind=kind,downloaded=downloaded,seconds=round(time.monotonic()-started,2))
                 except Exception as e:diagnostics.error('catalog_listing_prewarm_failed',e)
+            # 0.6.124 (Diagnose Air 0.6.120, N-H): the Kinderecke after the start heals and the first Jahrgänge/
+            # Schreibweisen pass, which would discard an earlier build (first call 19,4 s).
+            settled=SERVICE.startup_settled(stop=STOP)
+            if STOP.is_set():return
             try:
                 started=time.monotonic();_kids_shelf()
-                diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2))
+                diagnostics.event('kids_shelf_prewarmed',seconds=round(time.monotonic()-started,2),after_heals=settled)
             except Exception as e:diagnostics.error('kids_shelf_prewarm_failed',e)
+            # 0.6.146: Bilder für Kinderecke-Reihen ohne Bild von der ARD-/ZDF-Mediathek, danach stündlich
+            while not STOP.is_set():
+                try:kids_catalog.fetch_missing_pictures(ROOT,db)
+                except Exception as e:diagnostics.error('kids_pictures_failed',e)
+                # 0.6.152: Sender pausiert/Stundenlimit erreicht → nach 10 min erneut statt erst nach einer Stunde
+                if STOP.wait(600 if kids_catalog.LAST_FETCH.get('stopped') else 3600):return
         threading.Thread(target=prewarm_listing,daemon=True,name='catalog_listing_prewarm').start()
         # 0.6.99: Altersfreigaben (FSK) erkannter Werke aus Wikidata für die Kinderecke
         threading.Thread(target=kids_rules.loop,args=(db,STOP,VERSION,diagnostics.event,diagnostics.error),

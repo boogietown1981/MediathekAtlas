@@ -1,3 +1,374 @@
+## 0.6.161 – Prüfbarer Weg für die yt-dlp-Erneuerung (Mac-Prüfung 0.6.159/0.6.160); auf 0.6.160
+
+- Mac-Prüfung (BEFUND-06159-06160.txt): Ursache bestätigt; stable 2026.11.23 und nightly 2026.11.24.232653 lösen Player b485e332 (tv-Variante, Formate 308+251). App-Teil nicht prüfbar: alte Abo-Aufträge in der Testkopie „abgelaufen“, /api/youtube-download-add nur für katalogisierte Videos.
+- Neu `POST /api/youtube-access-check` {video} und Knopf „YouTube-Zugang prüfen“ (Feld: Video-ID/-Adresse, leer = zuletzt gescheitertes „not available“-Video, `youtube_abos.not_available_video`). `youtube_downloads.check_access`: `yt-dlp -s` (kein Download) mit JS-Laufzeit; bei Challenge-Fehler sofort `refresh_for_challenge(force=True)` und zweite Simulation; Ergebnis mit Version vorher/nachher, Clients, Meldung; Ereignis `youtube_access_check`. Bei Erfolg `requeue_not_available(tool=Version)`.
+- Test: macOS-Runner-Aufräumschritt in `test_nas_packages` (terminate → 30 s → kill), CI 0.6.160 war nur dort rot.
+- 0.6.158 am Mac BESTANDEN (PRUEFVERMERK-06158.txt), an Björn ausgegeben.
+- Tests: `tests/test_v06161.py` (7).
+
+## 0.6.160 – Ursache B1: yt-dlp-Lösungsskript zu alt für YouTubes Player; auf 0.6.159
+
+- Mac-Prüfung (Pro, nur Simulation; ytdlp-kindervideo-bFJHcm_GVlc.txt, ytdlp-normalvideo-ts50v5vV7D4.txt): yt-dlp stable 2026.10.26 (Air: 2026.11.06), yt-dlp-ejs 0.8.0, Deno 2.9.8, Player b485e332. Deno wird übergeben, „Error solving n challenge … TypeError: a.addOnDisposeCallback is not a function“ → „n challenge solving failed“; Kindervideo nur über web_embedded/web (Formate ohne URL) → „This video is not available“. Normales Video läuft über tv/m3u8. Im Browser spielt das Kindervideo. Auch der Pro hat 10 solche Abo-Videos.
+- `challenge_failed`, `refresh_for_challenge`: bei Challenge-Fehler eigenes yt-dlp erneuern (stabile Ausgabe; ist sie nicht neuer, die offizielle Nightly-Ausgabe yt-dlp/yt-dlp-nightly-builds mit SHA2-256SUMS), höchstens alle 12 h (tools/yt-dlp-refresh.json, Kanal bleibt, auch für „yt-dlp einrichten“). Ereignisse `youtube_ytdlp_refreshed` / `youtube_ytdlp_refresh_failed`.
+- Meldung bei Challenge-Fehler: „yt-dlp konnte YouTubes aktuellen Player nicht entschlüsseln („n challenge“); MediathekAtlas hat yt-dlp X eingerichtet, neuer Versuch in Kürze“ statt „YouTube verweigert“. Marker „This video is not available“ bleibt.
+- Nach der Erneuerung: `requeue_not_available(c, tool=version)` reiht aufgegebene und noch wartende „not available“-Aufträge je yt-dlp-Version einmal neu ein (gestaffelt). `find_tool`: eigenes yt-dlp gewinnt, wenn es neuer ist als ein installiertes.
+- Wiedergabe-Abfrage (-j) ohne --no-warnings, Grund aus den ERROR-Zeilen; bei Challenge-Fehler ebenfalls Erneuerung.
+- Annahme (nicht geprüft, YouTube in der Cloud gesperrt): eine neuere yt-dlp-/ejs-Ausgabe löst den Player; Nightly-Prüfsummendatei mit Eintrag „yt-dlp“ von hier aus abrufbar bestätigt.
+- Tests: `tests/test_v06160.py` (7).
+
+## 0.6.159 – B1 Air-Diagnose 0.6.153 (YouTube-Kindervideos trotz Deno „not available“); auf 0.6.158
+
+- Befund (diagnose-2026-11-27-mittag-06153-air.md, B1): 4 Abo-Downloads aus drei neuen Kinder-Kanälen scheiterten 8× mit „This video is not available“; Deno eingerichtet (`tool_current` true), yt-dlp 2026.11.06. `_failure` riet trotzdem „Deno einrichten“.
+- `_failure(text, js_runtime, js_used)`: Deno-Rat nur ohne JavaScript-Laufzeit; Laufzeit da, aber yt-dlp zu alt → „yt-dlp einrichten“; Laufzeit übergeben → „YouTube verweigert das Video gerade (Bot-Sperre der Adresse, Kindervideo oder regional gesperrt; Deno ist eingerichtet, neuer Versuch später)“. Marker „This video is not available“ bleibt (Neueinreihung 0.6.36).
+- Ursache klären: Download ohne `--no-warnings` (Warnungen nur ins Fehlerprotokoll); neues Ereignis `youtube_download_failed` (WARNING) mit Video-ID, Abo, `js_runtime`, `js_args`, yt-dlp-Herkunft/-Version, abgefragten YouTube-Clients (aus „Downloading … client config / player API JSON“) und den letzten WARNING/ERROR-Zeilen ohne URLs. Bewertung des Fehlers nur über die ERROR-Zeilen, damit Warnungen (z. B. „timeout“) sie nicht verändern.
+- Eigentliche Ursache in der Cloud nicht prüfbar (YouTube gesperrt); Annahme: YouTube liefert diese Kindervideos über die mit Deno genutzten Clients nicht aus oder sperrt die Adresse. Das neue Ereignis entscheidet das beim nächsten Fehlschlag.
+- Tests: `tests/test_v06159.py` (6), `test_v0636_youtube_kids` angepasst.
+
+## 0.6.158 – Befunde Mac-Prüfung 0.6.157 (Fortsetzungen als Mehrteiler); auf 0.6.157
+
+- Mac-Prüfung 0.6.157: Bilder und Reihenfilme BESTANDEN; Befund Mehrteiler (BEFUND-06157.txt): „Zärtliche Chaoten – Teil 1/2“ (Pluto TV, Komödie, 1986/1987) und neu „Freitag der 13“ (Rakuten/Joyn, Horror, Teil 2/4/5/6/7) als Mehrteiler. 0.6.157 NICHT-INSTALLIEREN.
+- Ursache: `_sequels` las Genres nur aus Mediatheken-Werken, Plattform-Angebote blieben ohne Genre → „kein erzählendes Genre“ → Mehrteiler. Neu `_offer_genres` (categories, source_genres, genres, genre-Text der Plattform-Zeile). Regel ohne IMDb: erzählendes Genre und kein Jahr kommt bei zwei verschiedenen Teilen vor → Fortsetzung (Elvis Teil 1/2 beide 2005, Traktorgiganten 2010/2011 geteilt → Mehrteiler).
+- Gegen echte Daten geprüft: alle 86 Kandidatengruppen der Pro-Kopie (werkzeuge/mehrteiler_dump.py, zwei Läufe am Mac, `tests/data/mehrteiler-kandidaten-06157.tsv`): einzeln nur Freitag der 13, Zärtliche Chaoten, The Lies We Tell (Part 2 2012 / Part 3 2014, eigene Spielfilme 107/120 min); 79 Mehrteiler-Kacheln.
+- Kinderecke (Hinweis 0.6.157): bei Abo-Videos darf der Titelteil auch mit dem Reihennamen enden („Pia und die wilde Natur“ → „Die wilde Natur“).
+- Tests: `tests/test_v06158.py` (4, davon einer gegen alle echten Kandidaten).
+
+## 0.6.157 – Befunde Mac-Prüfung 0.6.156 (YouTube-Bilder, Mehrteiler) und Hinweise; auf 0.6.156
+
+- Mac-Prüfung 0.6.156: Reihenkachel-Klick und Air-Bilderlauf BESTANDEN, zwei Befunde (BEFUND-06156.txt); 0.6.156 NICHT-INSTALLIEREN.
+- (1) YouTube-Bilder: 2 von 6 falsch („Die drei Musketiere“ ← „Die drei Musketiere der Neuzeit (ACTION … ganzer Film)“, „Die Serie“ ← TOGGO-Short, fraglich „Lernen mit Spaß“). `kids_catalog.youtube_index` zerlegt Videotitel in Teile (`|`, ` – `, `:`, Klammern, `#`); YouTube-Katalog (ganze Filme): ein Teil muss genau der Reihenname sein; Abo-Videos: ein Teil beginnt mit ihm. `_specific`: Reihennamen ohne eigenes Wort (≥ 4 Buchstaben, kein Allerweltswort wie Serie/Lernen/Spaß) bekommen kein YouTube-Bild.
+- (2) Mehrteiler: „Kolbenfresser“, „Monster High Webisodes“, „The Lies We Tell …“ fielen durch die Jahresregel aus 0.6.156 heraus. `_sequels` ohne IMDb nur noch, wenn ein Teil ein erzählendes Genre trägt (`FICTION`: Komödie, Drama, Krimi …).
+- Hinweise: `catalog.as_series_film` setzt `kind='movie'` (Suche zeigt „Film“ statt „Serie · 1 Folgen“); `streaming._title` für Reihenfilme „Reihe – Film (Filmjahr)“ statt „Tatort (1970)“. Offen: Reihenkacheln erst ca. 3,5 min nach dem Markierlauf (Neuaufbau im Hintergrund).
+- Tests: `tests/test_v06157.py` (3), `tests/test_v06152.py`/`test_v06156.py` angepasst.
+
+## 0.6.156 – Befunde Mac-Prüfung 0.6.155 (Reihenkachel, Kinderecke-Bilder, Mehrteiler); auf 0.6.155
+
+- Mac-Prüfung 0.6.155 NICHT BESTANDEN (BEFUND-06155.txt); 0.6.154 hat denselben Reihenkachel-Fehler. Beide NICHT-INSTALLIEREN, ausgegeben bleibt 0.6.153.
+- (1) Reihenkachel „Folgen & Details“ → „Serie nicht gefunden“: `unified_index.page` überschrieb seit 0.6.154 den show_key der Kachel mit dem Reihennamen (`title_key`), die Serienseite fand ihn nicht. Jetzt bleibt der echte show_key (`reihe_key` getrennt), und der Knopf heißt „Alle Filme“ und öffnet wie Bild und Titel die Suche nach dem Reihennamen (neueste zuerst). Jahr der Kachel = neuester Film (`entryYear`, vorher Startjahr der Reihe, Tatort 1970). Neuer Klicktest `tests/browser/film_reihen.cjs` (Reihe unter zwei show_keys + eigenes Filmwerk, Knopf/Titel/Bild, Mehrteiler).
+- (2) Kinderecke-Bilder auf dem Air-Weg: in 8 h kein `kids_pictures_fetched`. Seit 0.6.155 lief nach erreichtem Senderlimit für JEDE fehlende Reihe `youtube_picture` (eigene Verbindung, zwei LIKE-Suchen ohne Index über den ganzen YouTube-Bestand); das Ereignis kam erst am Ende. Jetzt `youtube_index`: Titel/Bilder (neueste 20.000 je Tabelle) einmal je Lauf, Abgleich im Speicher; Lauf endet spätestens nach `PICTURE_SECONDS=120`; `kids_pictures_fetched` bei JEDEM Lauf mit `seconds`.
+- (3) Mehrteiler: `PART_LOOSE` – „Teil n“ mit Zusatz („Kolbenfresser Teil 1 Maisernte hautnah“) gehört zu einem Grundtitel, der schon streng erkannte Teile hat. `_sequels` ohne IMDb: Fortsetzung, wenn jeder Teil sein eigenes Jahr hat (aufsteigend, kein Jahr doppelt) und kein Teil Doku/Reportage ist („Zärtliche Chaoten“ 1986/1987 einzeln; „Traktorgiganten“ Jahre geteilt, „Elvis“ 2005 + Fassung 2013, „Kolbenfresser“ Doku bleiben Mehrteiler).
+- Hinweis Prüfung: 1–2 min nach dem Markierlauf noch die alte Liste ohne Reihen (Neuaufbau im Hintergrund) – unverändert, gewollt (Liste antwortet sofort).
+- Tests: `tests/test_v06156.py` (3), `tests/browser/film_reihen.cjs` (neu), `tests/test_v06155.py` (Elvis wie im Katalog).
+
+## 0.6.155 – Hinweise aus den Mac-Prüfungen 0.6.152–0.6.154; auf 0.6.154
+
+- Prüfungen: 0.6.152 BESTANDEN mit zwei Hinweisen (BEFUND-06152.txt), 0.6.153 BESTANDEN (PRUEFVERMERK-06153.txt), 0.6.154 BESTANDEN mit Hinweisen (BEFUND-06154.txt).
+- Mehrteiler (0.6.154: „Traktorgiganten Teil 1–4“ 2010/2011, „Kolbenfresser Teil 1–3“, „Elvis – Teil 1/2“ getrennt): verschiedene Jahre allein trennen nicht mehr. `unified_index._sequels`: Fortsetzung erst, wenn zusätzlich mindestens zwei Teile verschiedene IMDb-Nummern tragen (eigene Filme wie „Zärtliche Chaoten“ 1986/1987); gleiche Nummer (Mini-Serie) oder keine bleibt Mehrteiler.
+- Kinderecke-Bilder (0.6.152, Air: „asked 1, stopped true“ auch nach 10 min): ist das Sender-Stundenlimit erreicht, wird für diese und alle weiteren Reihen des Laufs nur noch das YouTube-Vorschaubild aus dem eigenen Bestand gesucht (gefunden → gemerkt, sonst nichts gemerkt, später erneut). Die Rücklage der Erkennung bleibt unverändert (Erkennung vorrangig).
+- Player (0.6.153: Klick ganz rechts zeigte „3:18 / 3:00“): Position im umgewandelten Strom höchstens Gesamtdauer (`position()`), gilt auch für den gespeicherten Fortschritt.
+- Laufzeit (0.6.154: merge 0,74 s beim zweiten Aufbau): `unified_index_built.sources` nennt jetzt die Anteile `reihen` und `local`, damit die nächste Diagnose zeigt, welcher Teil Zeit braucht. Pro-Hinweis 0.6.152 (erster Serienaufruf nach 10 min einmal 3,75 s) hier nicht nachstellbar; offen.
+- Tests: `tests/test_v06155.py` (4), `tests/test_v06154.py` angepasst (Fortsetzung mit IMDb-Nummern), `test_v0557_start` (Anteile reihen/local).
+
+## 0.6.154 – Filmreihen-/Mehrteiler-Kacheln korrigiert und wieder an; auf 0.6.153
+
+- Befunde Mac-Prüfung 0.6.150 (BEFUND-06150.txt, filmreihen-mehrteiler-06150.tsv), `unified_index.collapse_reihen`:
+  - Reihe = `title_key(Reihenname)` statt show_key: „Praxis mit Meerblick“ (11 + 8 unter zwei show_keys) wird eine Kachel.
+  - Eigene Filmwerke „Reihe: Titel“ / „Reihe – Titel“ (`REIHE_PREFIX`) gehören zu einer vorhandenen Reihe („Tatort: Azra“, „Polizeiruf 110: Paranoia“, ORF-Schreibweise). Ohne Trenner („Tatort Matterhorn“) bleibt der Titel einzeln.
+  - Die Reihenkachel öffnet die Suche nach dem Reihennamen (neueste zuerst, `showParts(query,'year')`) statt einer show_key-Serienseite: dort steht jeder Film einzeln mit allen Anbietern. Damit dürfen zusammengeführte Titel (Maria Wern mit zweitem Anbieter) in die Reihe, ohne dass ein Angebot verschwindet.
+  - Mehrteiler: `PART` liest „Teil 1/ 2“ (Grundtitel „Fremde Verwandte“ statt „Fremde Verwandte Teil“); Teile mit verschiedenen Jahren gelten als Fortsetzungen und bleiben einzeln („Zärtliche Chaoten – Teil 1“ 1986 / „Teil 2“ 1987); Teilzahl = verschiedene Teilnummern, nicht Fassungen (Audiodeskription, Varianten).
+- `server.UNIFIED_REIHEN=True` (abschaltbar; `?reihen=0` wie im Ansehen-Modus).
+- Tests: `tests/test_v06154.py` (3), `tests/test_v06150.py` angepasst.
+
+## 0.6.153 – Filmreihen-/Mehrteiler-Kacheln ab Werk aus, MKV-Wiedergabe bricht nicht mehr ab; auf 0.6.152
+
+- Mac-Prüfung 0.6.150 NICHT BESTANDEN (BEFUND-06150.txt): „Praxis mit Meerblick“ als zwei Reihenkacheln (zwei show_keys), 35 Tatort-/Polizeiruf-Filme als eigene Filmwerke einzeln, „Zärtliche Chaoten – Teil 1/2“ (Fortsetzungen) als Mehrteiler, „Fremde Verwandte Teil“ falsch abgeschnitten, Teilzahl zählt Fassungen (AD) mit.
+- Damit lokale Archive (0.6.151) und die Prüfkorrekturen (0.6.152) ausgabefähig sind: `server.UNIFIED_REIHEN=False` – `/api/unified` fasst nur noch mit `?reihen=1` zusammen (zur Prüfung der Korrektur). Code und Tests von `collapse_reihen` bleiben; die Korrektur folgt als eigene Nummer.
+- Mac-Prüfung 0.6.151 BESTANDEN mit zwei Befunden (BEFUND-06151.txt):
+  - (1) `lokal.SKIP_FILE` erkennt „sample“/„trailer“ auch als ganzen Dateinamen („sample.mkv“, „trailer-2.mp4“); „Trailer Park Boys S01E01“ bleibt.
+  - (2) „MKV spult nicht, Dauer 10 s“: Zwei Ursachen. a) Echter Fehler, im Klicktest wiederholt nachgestellt (etwa jeder dritte Start): Chromium fragt den umgewandelten Strom einer lokalen Datei kurz nach dem Start zusätzlich ab einer Byte-Stelle an (`Range: bytes=1015808-`, `bytes=4194304-`). Der Server behandelte das als neue Wiedergabe derselben Sitzung, beendete den laufenden ffmpeg und lieferte wieder ab Byte 0 – die Wiedergabe brach ab („data source error“) bzw. sprang zurück. Jetzt: `server.stream` beantwortet `bytes=N-` (N > 0) bei Dateien mit 206 aus einem eigenen Hilfsstrom (`streaming.start(..., helper=True)`, ersetzt nichts, eigene Grenze `MAX_RANGE_HELPERS=4`), der die ersten N Bytes überspringt; die Umwandlung mit `-c copy` ist bytegleich wiederholbar (geprüft: `cmp` gleich). Danach 10 von 10 Starts und 4 von 4 Klicktests ohne Abbruch. b) Messmethode: im umgewandelten Strom kennt das Video-Element nur das gelieferte Stück (`duration` ≈ 10 s, `seekable` leer); direktes Setzen von `video.currentTime` fällt auf 0 zurück. Der Player selbst meldet die Gesamtdauer und spult über seine Leiste (0:00 → 1:04).
+  - Hinweise: je Ordner `small` (übergangene Videos unter 20 MB) in Stand und Oberfläche; `lokal_scan` mit `seconds` und `small`; `/api/lokal-dirs` und `/api/lokal-scan` antworten bei Eingabefehlern mit 400 statt eines ERROR-Eintrags.
+- Tests: `tests/test_v06153.py` (5), `tests/browser/lokal_archive.cjs` (+ sample.mkv, echte MKV mit ffmpeg: Start, Gesamtdauer, Spulen über die Leiste).
+
+## 0.6.152 – Korrekturen Mac-Prüfung 0.6.147 (Countdown, eigene Reihe, Kinderecke-Bilder, Export, gealterte Liste); auf 0.6.151
+
+- Prüfvermerk 0.6.147 (BESTANDEN mit Hinweisen):
+  - (a) `kids.js`: `pointerover`/`pointermove` (nur Maus) über `#kids-suggest` halten den Countdown an; nach einem Film werden die Halte-Handler gelöst.
+  - (b) `suggest`: die eigene Serie fällt auch nach einem Neuladen der Liste heraus (gleiche Kennung bzw. gleicher Titel/Titelanfang, `sameShow`).
+  - (c) `broadcaster.lookup_limited(purpose=…)`: solange die Kinderecke Bilder sucht (< 2 h), nutzt die Erkennung höchstens 100 der 120 Abfragen je Stunde (Gesamtgrenze unverändert). `kids_catalog.fetch_missing_pictures` meldet einen Stopp (`LAST_FETCH`), der Server versucht dann nach 10 statt 60 min erneut. Neu `youtube_picture`: Vorschaubild (nur i.ytimg.com) eines Kinder-Abo- oder YouTube-Katalogvideos, dessen Titel den Reihennamen als ganze Wortfolge enthält (mind. 6 Zeichen, ein Wort mind. 10), kein Netz. Fehlschläge aus 0.6.146/0.6.147 (ohne `v`) werden sofort neu versucht. Ereignis `kids_pictures_fetched` mit `from_youtube`, `stopped`.
+  - (d) Diagnose: die Übersicht wartet höchstens 15 s (`EXPORT_RECOGNITION_WAIT`) auf die frische Senderzählung, statt 30 s bei 20 s Frist je Teil, und liefert sonst die alte Zählung mit `age_hours`.
+  - (e) `catalog._listing_groups`: Eine nur gealterte Liste (TTL 10 min, ohne Änderung) wird sofort aus dem Speicher beantwortet und im Hintergrund erneuert. Nach `invalidate_listings` baut eine schnelle Liste weiter gleich neu.
+- Prüfbericht 0.6.149 (Hinweis): Mediathek-Downloads galten auch ohne Datei als „geladen“. Jetzt zählt wie bei den Plattform-Kopien nur eine vorhandene Datei: `local_titles.present_downloads` (Katalog, 30 s zwischengespeichert), Kinderecke über `file_state` (`file_missing`, `_has_file`), Folgen und Nummern-Serien ebenso. Abspielen ohne Datei läuft wie bisher über das Angebot.
+- Tests: `tests/test_v06152.py` (13), `tests/test_v06148.py` (Eintrag ohne Datei), `tests/browser/kids_corner.cjs` (+3; Darüberfahren und Eintrag ohne Datei scheitern gegen 0.6.151).
+
+## 0.6.151 – Lokale Filmarchive auf Ordnern/Freigaben (NFO zuerst, sonst Dateinamen + Erkennung); auf 0.6.150
+
+- Björn 26.11.2026: „Erkennung bzw. Einbindung von lokalen Filmarchiven auf Shares; wenn dort schon NFO-Dateien sind, können diese gleich genutzt werden, wenn noch keine sind, werden sie eben gescannt und zugeordnet.“
+- Neues Modul `lokal.py` (eigene Datenbank `lokal.sqlite3`, Tabellen `lokal_items`/`lokal_state`): Ordnerliste (absolut, keine Laufwerkswurzel, höchstens 20), `scan` inkrementell (unveränderte Größe/Änderungszeit → nur `seen`), überspringt Papierkörbe, `@eaDir`, Beispiele/Trailer, `._*` und Dateien unter 20 MB, folgt keinen Ordner-Verknüpfungen. Fehlende Freigabe oder leerer Einhängepunkt → Titel `offline` (nie gelöscht); fehlende Einzeldatei → `gone`; entfernter Ordner → seine Titel raus (Dateien unberührt).
+- NFO (`read_nfo`): movie/tvshow/episodedetails, uniqueid imdb/tmdb, nur https-Bilder, Laufzeit; DOCTYPE/ENTITY werden nicht ausgewertet; reine URL-NFO liefert die IMDb-Nummer. Ohne NFO `parse_name` (Release-Tags, Jahr, SxxEyy/1x02, Staffelordner).
+- Abgleich `lokal_enrichment.py` über `portal_enrichment` (wie Plattformen, Planer-Aufgabe `enrich:lokal`); eine IMDb-/TMDB-Nummer aus der NFO filtert abweichende Kandidaten (`nfo_lookup`), fehlt der Treffer, kommt er über die Nummer aus dem IMDb-Archiv. Genres einer NFO mit IMDb-Nummer zählen als eingeordnet.
+- Katalog: Quelle `lokal` im gemeinsamen Index (Rang vor ARD/ZDF), `local_titles` zählt sie als geladen; Knopf „Lokales Archiv“ (nur über den Index, `only=lokal`), Titelseite (`portal_title`, ohne Offline-Kopie/Anbieter-Link, Hinweis bei offline), Player `playLokal` → `streaming.resolve(lokal=…)` → Datei, nur innerhalb der eingetragenen Ordner (realpath).
+- Server: `GET /api/lokal`, `POST /api/lokal-dirs`, `/api/lokal-scan`, `/api/lokal-enrich`; Planer-Katalogaufgabe `lokal` (alle 6 h). Web: `web/lokal_archive.js`, Einstellungskarte „Lokale Filmarchive“.
+- Tests: `tests/test_v06151.py` (17), `tests/browser/lokal_archive.cjs` (neu).
+
+## 0.6.150 – Filme: Filmreihen (Tatort, Polizeiruf …) und Mehrteiler als eine Kachel; auf 0.6.149
+
+- Björn 26.11.2026 zu „Tatort/Polizeiruf einzeln unter Filme?“: „wenn es Filme sind, dann ja, aber man kann sie auch als Reihe zusammenfassen, z. B. alle Tatort-Filme, bzw. wenn ein Film 1–n Teile hat“; Koproduktionen mit Deutschland (Van der Valk, Irene Huss, Maria Wern) bleiben unter Filme.
+- `unified_index.collapse_reihen` (nur Filmliste ohne Suche, Parameter `reihen`; `/api/unified` Standard an, Ansehen-Modus `reihen=0`, Kinderecke ohne): Reihenfilme (`series_film`) derselben `show_key` ab `REIHE_MIN`=3 → eine Kachel mit dem Reihennamen (Jahr = neuester Film, `reihe`/`show_key`/`film_count`, `series_parent` → öffnet die Reihe). Sendeplatz-Namen (`REIHE_SLOT`: film/kino/movie/…) bleiben einzeln; mit anderem Anbieter zusammengeführte Titel bleiben einzeln (kein Angebot verschwindet). Mehrteiler (`PART`: „Teil n“, „(n/m)“, „Teil zwei“) ab zwei verschiedenen Teilen → Kachel „Grundtitel“ mit `mehrteiler` {query, parts}; Klick sucht den Grundtitel (Teile einzeln, nach Titel).
+- Web: Katalogkarte „Filmreihe · n Filme“ bzw. „Mehrteiler · n Teile“ (`showParts`).
+- Tests: `tests/test_v06150.py` (4).
+
+## 0.6.149 – Kinderecke: Kanalfilter und Kanalreihen; Fortschrittsbalken und „Gesehen“ im Katalog; auf 0.6.148
+
+- Björn 26.11.2026: „in der Kinderecke tauchen die neu hinzugefügten Kanäle nur oben auf, aber nicht in der Gesamtansicht, auch werden nicht die Videos eines Kanals angezeigt, wenn ich darauf drücke, obwohl schon welche runtergeladen wurden“.
+  - Ursache (2): `youtube_abos.id` ist INTEGER; der Kanal-Chip setzte `state.filter` auf eine Zahl, `render()` rief `state.filter.startsWith('g:')` (seit 0.6.93) → TypeError, die Ansicht blieb leer. Im Klicktest gegen 0.6.148 nachgestellt („Skriptfehler: TypeError: state.filter.startsWith is not a function“). Jetzt sind Kanal- und Abo-Kennungen in `web/kids.js` immer Text.
+  - Ursache (1): in „Alle“ standen die Kanalreihen hinter allen Film-/Seriengruppen (Testkopie: hinter „Noch mehr“ mit 264 Titeln, beim Mac mehrere Hundert). Jetzt direkt nach „Neu für dich“/„Weiterschauen“.
+- Björn 26.11.2026: „Fortschritt bzw. schon geschaut Anzeige wie bei YouTube, und wenn ich das Video das nächste Mal starte, geht es an der Stelle weiter“. Bestand geprüft: Kinderecke (Balken, ✓, Fortsetzen ab 20 s) und großer Player (Fortsetzen, Weiterschauen) hatten es schon. Lücken geschlossen:
+  - Katalogkarten (Filme): Balken bzw. „✓ Gesehen“ aus `watch_state` (`AtlasWatch.progressNode`, nach jedem Laden der Stände neu gemalt); `watch_state.overview` liefert dafür je Stand die Länge.
+  - Kinderecke: ARD/ZDF-Filme übernehmen den Stand des großen Players (Werk-Kennung), wenn die Kinderecke selbst keinen hat.
+- Tests: `tests/test_v06149.py` (4), `tests/browser/kids_corner.cjs` (+3 Prüfungen: Kanalreihe vor den Gruppen, Kanalfilter zeigt das geladene Video, nur Videos dieses Kanals; scheitern gegen 0.6.148).
+
+## 0.6.148 – Kinderecke: nummerierte Einzelfilme als eine Serie; geladene Filme/Serien zuerst (Kinderecke und Katalog); auf 0.6.147
+
+- Björn 26.11.2026 (Bild Kinderecke „Abenteuer“: „10. Die verwegenen Vier auf heißer Spur“, „11. …“, „2. … reißen aus“ … je als eigene Kachel, 26 min): „die verwegene sollten als serie zusammengefasst werden“.
+- `kids_catalog.numbered_series` (in `_finish` nach den Film-Filtern und Elternsperren): Filmkacheln mit Titel „NN. Rest“ (1–3 Ziffern, `.`/`)`/`:`) werden je Anbieter nach den ersten beiden Wörtern gebündelt; ab 3 verschiedenen Nummern und gemeinsamem Titelanfang (≥ 2 Wörter, ≥ 8 Zeichen) entsteht eine Serienkachel (`series.id = nummern-<sha1>`, Name = gemeinsamer Titelanfang, Bild der niedrigsten Nummer, Gruppe = häufigste der Filme). Die Filme verschwinden als Einzelkacheln und sind die Folgen (Nummer = `episode`, Titel ohne Nummer), nach Nummer sortiert.
+- `/api/kids-episodes` liefert für `nummern-…` die gebündelten Filme (gleiche `ref`/`key` → Weiterschauen bleibt); `allowed_ref`/`_listed` kennt die Filme der Serie (Abspielen auch ohne vorheriges Öffnen der Folgenliste; Mediatheken-Angebote weiter je Werk geprüft). Elternsperre: Kachel-Sperre der Serie. `/api/kids` liefert die Folgenliste nicht mit (`with_progress`). Ereignis `kids_numbered_series` (Anzahl, Namen).
+- Björn 26.11.2026: „bitte auch geladene Videos bei der Anzeige bevorzugen, also geladene Filme und Serien“; auf Nachfrage auch im normalen Katalog („ja bitte“).
+- Neues Modul `local_titles`: lokale Kopie wie beim Abspielen – `downloaded_items` je Werk (Serienansicht: alle Werke einer Reihe mit mindestens einer geladenen Folge), Plattform-Kopien aus fertigen Aufträgen (`<origin>_id`, Datei vorhanden; 30 s zwischengespeichert). Wenige Abfragen über die kleinen Tabellen, nie je Katalogeintrag.
+- `unified_index.build`: nach der gewählten Sortierung (Titel/Jahr) stabil „geladen zuerst“; Seiteneinträge tragen `local`. Fertiger Download → `local_titles.invalidate()` + weiche Index-Erneuerung (`put_job`). Gilt für Katalog „Filme/Serien“, Ansehen-Modus und Kinderecke (die Kinderecke liest denselben Index, geladene Titel fallen nie unter die 1.500-Grenze).
+- Web: Katalogkarte „⬇ Geladen“ (`atlas-uc-local`), Ansehen-Modus Plakette „⬇ GELADEN“; Kinderecke: Reihen sortieren geladen zuerst, Plakette „⬇ Geladen“ (aria-label „, geladen“), „Mehr davon“ +1 für Geladenes; Folgen (ARD/ZDF, Nummern-Serie) tragen `local`.
+- Tests: `tests/test_v06148.py` (12: Nummern-Serie 4, geladen zuerst 5 inkl. Plattform-Kopie ohne Datei, Serie über eine Folge, Jahressortierung), `tests/browser/kids_corner.cjs` (+6 Prüfungen: keine Einzelkachel, Folgen 1/2/10 in Reihenfolge, Folge 2 spielt vom Angebot des Films, geladener Film vorn und markiert).
+
+## 0.6.147 – Kinderecke: Vorschläge nach dem Video; Suche nach Katalogänderung aktuell; auf 0.6.146
+
+- Befund 0.6.144 (BEFUND-06144.txt): Laufzeit und M1-Air-Punkte bestanden; neu: Suche „Geisternetze“ vor dem Markierlauf 0 Treffer, 10 min danach weiter 0 (0.6.142: 1), nach Neustart 1. Ursache: seit 0.6.144 werden veraltete Listen bei belegter Build-Sperre aus dem Speicher beantwortet und im Hintergrund hinter `_LISTING_BUILD`/`unified_index._BUILD` erneuert – auch Suchen, deren Erneuerung hinter den langen Aufbauten (Kinderecke) hing.
+- `catalog.invalidate_listings` (weich) verwirft Such-Einträge; Suchen werden nie veraltet beantwortet, auch mit `wait=False` sofort und ohne `_LISTING_BUILD` gebaut (`_listing_refresh` für Suchen ohne Sperre). `unified_index.invalidate(soft=True)` verwirft Such-Indizes; Such-Indizes bauen ohne `_BUILD`. Ganze Listen bleiben wie in 0.6.144 (veraltet sofort, Erneuerung im Hintergrund).
+- Tests: `tests/test_v06147.py` (4; zwei davon scheitern gegen 0.6.146).
+- Björn 26.11.2026: „wie bei YouTube … wenn ich ein Video abgespielt habe … unten neue Videos aus dem verfügbaren Katalog, die dazu passen könnten“.
+- `web/kids.js` `suggest`: Pool = Abo-Videos, Filme und Serien der Kinderecke (vom Server bereits gefiltert; `/api/kids-play` prüft jede Wiedergabe erneut). Punkte: gleicher Kanal +3, gleiches Thema (außer „Noch mehr“) +2, gemeinsame Titelwörter (≥ 4 Buchstaben, ohne Füllwörter/Sendernamen) je +1,5 bis 3; ungesehen +1, neu/angefangen +0,5, gleiche Art +0,5, gesehen −2; Rückfall gleiche Art 0,25. Eine Folge zählt mit Titel und Thema ihrer Serie; laufender Titel, nächste Folge und die eigene Serie werden nie vorgeschlagen. Gleichstand stabil nach Prüfsumme.
+- `offerNext`: Reihe „Mehr davon“ (bis 8 Kacheln) unter „Gleich geht's weiter mit“; Zeigen/Blättern/Fokus hält den Countdown an. Ohne nächste Folge (Film, letzte Folge) nur die Vorschläge, ohne Countdown, nach 60 s zurück; ohne Vorschläge wie bisher nach 1,5 s zurück. Serie als Vorschlag öffnet ihre Folgenseite.
+- Tests: `tests/browser/kids_corner.cjs` (+3 Prüfungen: Themenvorschläge, keine laufende/nächste Folge, Vorschläge nach einem Film ohne Countdown).
+
+## 0.6.146 – Kinderecke: Kachelhöhe der Kanalreihen, Bilder für Reihen ohne Bild; auf 0.6.145
+
+- Björn 26.11.2026 (zwei Bildschirmfotos): „CHECKER WELT“/„Jordan Matter“ mit halb leeren Kacheln; „Checker Reportagen“, „Carolin testet“, „#WIR – Freundschaft grenzenlos“, „Die wilde Natur“ u. a. nur mit Anfangsbuchstaben.
+- Ursache Kachelhöhe: `moreTile` („Alle 51 Videos“) war immer eine Hochkant-Kachel (2:3); in einer 16:9-Videoreihe zog sie alle Kacheln der Reihe auf Plakathöhe. Jetzt hat sie die Form ihrer Reihe.
+- Ursache Bilder: `_fill_pictures` (0.6.121) findet nur Bilder, die schon im Bestand sind; Mediatheken-Reihen ohne TMDB/TVDB-Eintrag und ohne Folge mit Bild blieben leer. Neu `kids_catalog.fetch_missing_pictures` (Server, nach dem Vorabbau der Kinderecke, dann stündlich): je Reihe ohne Bild höchstens 6 Angebote mit ARD-/ZDF-Mediathek-Seite, `broadcaster.lookup_limited` (Stundenlimit, Pause), Sendungsbild vor Folgenbild, gemerkt in `catalog_state.kids_pictures` (ohne Bild: neuer Versuch nach 7 Tagen; pausiert: nichts gemerkt). KiKA-, arte- und 3sat-Seiten werden nicht abgefragt (keine freigegebene Schnittstelle) und im Ereignis `kids_pictures_fetched` als `examples_without_page` genannt.
+- `_fill_pictures`: gleichnamige Kachel auch über Filme und Serien hinweg.
+- Tests: `tests/test_v06146.py` (5).
+
+## 0.6.145 – filmfriend nach Seitenfehler vollständig, Senderstatistik in der Diagnose aktuell; auf 0.6.144
+
+- Grundlage: berichte/diagnose-2026-11-26-abend-06139-pro.md (B1, B2).
+- B1 `filmfriend.Crawl.collect`: eine fehlgeschlagene Suchseite wird nach `PAGE_RETRY` (10 s) einmal wiederholt, danach geht es mit der nächsten Seite weiter (nach `PAGE_SKIP_LIMIT` = 3 Fehlseiten in Folge Ende dieser Suche); vorher `break` nach dem ersten Fehler (26.11.: 107 statt 173 Seiten, 2.275 statt 3.629 Filme, „complete“).
+- B1 `filmfriend.sync`: fehlende Suchseite (`missed_pages`) = teilweise; weniger als `PLAUSIBLE_SHARE` (90 %) der Titel des letzten vollständigen Laufs (`complete_titles`, beim ersten Lauf: in 7 Tagen gesehene Titel) = teilweise, bis `SHRUNK_ACCEPT` (3) fehlerfreie Läufe in Folge den kleineren Katalog bestätigen. Teilweise Läufe lassen die bisherigen Titel sichtbar. Ereignis mit `missed_pages`, `shrunk`, `titles_before`.
+- B2 `server.recognition_for_export`: wartet (Diagnose 30 s) auch, wenn nur ein mehr als 6 h alter Stand vorliegt; Ausgabe mit `age_hours`.
+- Nicht geändert: B3 (Filme −46, wohl abgelaufene Angebote) und B4 („Rote Rosen“ Genre) beobachten.
+- Tests: `tests/test_v06145.py` (5); `tests/test_v06143.py` schließt seine Verbindung.
+
+## 0.6.144 – Filmliste wartet nicht hinter anderen Aufbauten; auf 0.6.143
+
+- Befund 0.6.142 (BEFUND-06142.txt): Funktion bestanden; Air direkt nach `catalog_series_films_marked` /api/catalog movie 54,4 s (build_seconds 0,16 s), parallel unified_index_built 8,3 s und kids_shelf_prewarmed 47,4 s; erste Suche 6,5–10,1 s.
+- Ursache: `invalidate_listings` macht alle Listen veraltet; eine schnelle Liste (< LISTING_SLOW) wurde danach im Anfrage-Thread neu gebaut und wartete dafür auf `_LISTING_BUILD`, das Kinderecke und zusammengeführter Index belegten. Suchen warteten ebenso.
+- `catalog._listing_groups`: veraltete Liste wird auch dann sofort aus dem Speicher beantwortet und im Hintergrund erneuert, wenn `_LISTING_BUILD` belegt ist; Suchen bauen ohne `_LISTING_BUILD` auf der Verbindung der Anfrage.
+- `unified_index.invalidate(soft=True)` (alte Indizes bleiben lesbar, Erneuerung im Hintergrund) für den Reihenfilm-Markierlauf; harte Variante bleibt für Einstellungen (Kinder-Altersgrenze, Anzeige).
+- Tests: `tests/test_v06144.py` (7).
+
+## 0.6.143 – M1-Air-Diagnose: IMDb-Platz, Filmliste mobil, filmfriend, Rosetta, Diagnose; auf 0.6.142
+
+- Grundlage: berichte/diagnose-2026-11-26-abend-06139-m1air.md (MacBook Air M1 8 GB, mobil, 0.6.139).
+- B2 `imdb_archive.Archive.space_gate`/`update`: kein Update, wenn frei (Finder-Wert) + bereits geladene Zwischendateien kleiner als Archiv + 2 GB; Phase `waiting_space`, Prüfung alle 15 min (`SPACE_RECHECK`), kein Fehlerzähler/Back-off, Ereignis `imdb_archive_waiting_space` einmal je Übergang. Fertige Downloads werden bei Platzfehlern nicht mehr gelöscht.
+- B1 `filmlist._download`: Teil-Download bleibt (filmliste.part + .part.tag mit ETag/Last-Modified) und wird mit `Range`/`If-Range` fortgesetzt; 200 statt 206 = neu beginnen; HTTP-Fehler (z. B. 416) verwerfen den Teil. Abbruch vor Content-Length = `filmlist.Truncated` (Netzfehler). Antwort ohne xz-Kennung = „Anmeldeseite eines WLAN/Hotspots?“. `feed_download_failed` mit `network` und `kept_bytes`.
+- B1 `catalog_service.feed_retry_delay`: bei Netzfehlern 10 → 30 → 60 min statt 5 min, Rücksetzen nach erfolgreichem Download; „Jetzt starten“ unverändert sofort.
+- B4 `filmfriend.Crawl`: nach `provider_base.NET_FAILURE_BUDGET` (3) Verbindungsfehlern keine weiteren Anfragen, Lauf teilweise, nächster Versuch nach `NET_RETRY` (2 h); `filmfriend_sync_completed` mit `net_failures`/`stopped`.
+- B6 `system_monitor.machine_details` (RAM, Swap, `kern.memorystatus_level`, Prozessspeicher, `sysctl.proc_translated`, `hw.optional.arm64`, Hinweise) und `databases` in status.json der Diagnose.
+- B3 `launcher.sh`: auf Apple Silicon zuerst ein Python, das mit `arch -arm64` startet; alle Aufrufe über `PYCMD`; nur ohne arm64-Python Intel-Python unter Rosetta mit Hinweis im Startprotokoll.
+- B7 (Ruhezustand) nicht geändert: der hängende Download endete eine Minute nach dem Aufwachen durch die Lese-Zeitgrenze; mit B1 geht der Teil nicht mehr verloren.
+- Tests: `tests/test_v06143.py` (14).
+
+## 0.6.142 – Reihenfilme: Tatort ohne Landangabe; auf 0.6.141
+
+- Befund 0.6.141 (BEFUND-06141.txt): Rebecka Martinsson, Brokenwood, Maria Wern (ohne Koproduktion) richtig weg, keine Dubletten, Regression bestanden; drei deutsche Tatorte fielen heraus: BR „Spielfilm | Krimi 2021 … Tatort-Fall“ (ohne Land), WDR „Fernsehfilm Deutschand 2024“ (Tippfehler).
+- `catalog.series_film_german`: ausgeschlossen nur, wenn die Filmangabe eine Länderliste vor dem Jahr nennt und kein Land davon deutschsprachig ist; ohne Landangabe deutschsprachig; ein Landname mit Ähnlichkeit ≥ 0,85 zu Deutschland/Österreich/Schweiz/Bundesrepublik zählt als dieses Land.
+- Unverändert bis Björns Entscheidung: Koproduktionen mit Deutschland (Maria Wern „Schweden/Deutschland 2020“, Van der Valk, Irene Huss) bleiben unter Filme; Tatort/Polizeiruf unter Filme.
+- Tests: `tests/test_v06140.py` (+1).
+
+## 0.6.141 – Reihenfilme: Korrektur Mac-Urteil 0.6.140; auf 0.6.140
+
+- Befund 0.6.140 (BEFUND-06140.txt): Markierlauf 60/69 s, Filmtitel/-jahr, Dubletten Air, Zweiteiler, Filmwerke, Suche, Reihen, Kinderecke, Serien-Kacheln (−4, kein −138), Regression bestanden.
+- Rebecka Martinsson 5, Maria Wern 9, Brokenwood 1 noch unter Filme (Angebote nur mit IMDbs „(Sxx/Eyy)“ wie Praxis mit Meerblick): Reihenfilm nur mit deutschsprachigem Produktionsland in der Filmangabe (`SERIES_FILM_COUNTRY`: Deutschland, BRD, DDR, Österreich, Schweiz, auch als Koproduktion „Dänemark/Norwegen/Deutschland“); „Fernsehfilm Schweden“, „Spielfilm Neuseeland“ bleiben Folgen.
+- Brokenwood-Titel doppelt („… – Die Familienfehde – Brokenwood – Mord in Neuseeland“): `series_film_part` entfernt die Reihe in jeder Strich-Schreibweise.
+- 10 Praxis-mit-Meerblick-Dubletten (Pro, zwei Serienwerke unter verschiedenen Reihenschlüsseln): ein Film je Reihenname und Filmname statt je show_key.
+- Tatort ohne Jahr: Jahr auch aus „(2023)“ im Angebotstitel.
+- Tests: `tests/test_v06140.py` (+2), `tests/test_v06137.py` (3sat-Fall mit Koproduktion).
+
+## 0.6.140 – Reihenfilme in der Reihe und unter Filme, neu nach Mac-Urteil 0.6.138; auf 0.6.139
+
+- Björn 26.11.2026: „In der Reihe und unter Filme“. 0.6.137 wieder eingespielt (Cherry-pick f488a1ab) und nach BEFUND-06138.txt korrigiert:
+- Jahr/Titel in der API: `catalog.as_series_film` setzt in der Filmliste (`listing(kind='movie')`, `unified_index.page`) `metadata.title`/`year` auf Filmtitel und Filmjahr, die Reihe steht in `series_title`, Kachel trägt `series_film` (vorher Tatort 1970, Usedom 2014).
+- Episodische Reihen: `catalog.episodic_show` – trägt ein Angebot der Reihe „(n/m)“ mit m ≥ 3 oder zwei Angebote „Del n“/„Folge n“, ist kein Werk der Reihe ein Reihenfilm (Rebecka Martinsson, Maria Wern, Brokenwood, Sophie Cross); ein Werk mit „Del n“/„Folge n“ im Titel nie (Mord auf Shetland „Folge 3“). IMDbs „(S05/E06)“ zählt nicht (Praxis mit Meerblick bleibt Reihenfilm).
+- Filmname aus dem Angebotstitel (`series_film_part`: Reihe, Klammern wie „(9)“, „(S01/E02)“, „(Originalversion)“, „(klare Sprache)“ und „· NEU“ entfernt), nicht aus dem IMDb-Folgentitel. Ohne eigenen Namen kein Reihenfilm, außer Zweiteiler („Lost in Fuseta (1/2)“, „Der Seerosenteich (1/2)“ bei „Zweiteiliger Spielfilm“).
+- Dubletten: je Reihe und Filmname (mit Teil) nur ein Werk (kleinste Kennung des Laufs) – „Geisternetze (26)“/„· NEU“, „Altlasten (9)“ und „Altlasten – … (9)“, Fassungen. Existiert der Filmname schon als eigenes Filmwerk mit aktivem Angebot („Die Drei von der Müllabfuhr – Kassensturz“, „Mankells Wallander 17 – Diebe“), kein zusätzlicher Reihenfilm.
+- Suche: `listing(query=…)` findet auch `series_film_title` (über den Teilindex).
+- Markierlauf liest nur Kandidaten (erkannt und Angebot ≥ 80 min, oder schon gekennzeichnet) – Air 0.6.138: 78 min für alle Serienwerke.
+- Bewusst: Tatort und Polizeiruf 110 sind Reihenfilme (je Film ein Fernsehfilm) und stehen unter Filme.
+- Tests: `tests/test_v06137.py` (6, angepasst), `tests/test_v06140.py` (5 + 6 geerbt).
+
+## 0.6.139 – 0.6.138 ohne Reihenfilme; auf 0.6.138
+
+- Mac-Prüfung 0.6.138 (BEFUND-06138.txt): Korrekturen D (More than Honey verknüpft, tt2263058; Black Box review; Zwei-Jahres-Fälle ohne Fehlverknüpfung) und G (DER TAG, hessenschau, Abendschau, Lokalzeit, Sachsenspiegel, Nordmagazin Nachrichten) bestanden, Regression bestanden; Reihenfilme aus 0.6.137 NICHT bestanden (669 statt 130–200 markiert, Reihenjahr statt Filmjahr, doppelte Kacheln, nummerierte Krimifolgen, Suche nach Filmtitel ohne Treffer).
+- Damit die bestandenen Korrekturen ohne Warten an Björn gehen können: 0.6.137 zurückgenommen (git revert f488a1ab: `series_film`, `mark_series_films`, Filmliste/Kategorienbaum/unified_index wie 0.6.136). Kopien mit 0.6.137/0.6.138 behalten ungenutzte `meta.series_film`-Felder und den Teilindex `work_series_film` (wirkungslos). Reihenfilme folgen korrigiert als eigene Version.
+- Hinweis 0.6.138: „buten un binnen | sportblitz“ bekam zusätzlich Nachrichten – im Genre-Nachtrag geht ein Sportname jetzt vor.
+- Tests: `tests/test_v06138.py` (+1).
+
+## 0.6.138 – Korrektur Mac-Urteil 0.6.136 (More than Honey, DER TAG/hessenschau); auf 0.6.137
+
+- Befund 0.6.136 (BEFUND-06136.txt): Black Box, Wallander, tagesschau24 (Pro), phoenix vor ort, Sport, Regression bestanden.
+- D More than Honey blieb „prüfen“ (IMDb Offline 2012, Ähnlichkeit 1,0, 88,4 gegen 95 min): IMDb-Offline-Filmkandidaten trugen keine IMDb-Laufzeit (`reference_runtime_seconds` nur bei Serien), `matching.year_two_runtime` lehnte daher jeden Zwei-Jahres-Fall ab. Der Unit-Test 0.6.136 setzte die Laufzeit von Hand. Jetzt `imdb_runtime_seconds` am Kandidaten (eigenes Feld, die Kurzformat-Prüfung über `reference_runtime_seconds` bleibt unberührt), `Archive.movie_runtime` für gespeicherte Vorschläge älterer Versionen; Merker `film_rules_v06138` bewertet auf Kopien mit 0.6.135/0.6.136 die gespeicherten Vorschläge einmal neu, sobald das IMDb-Archiv bereit ist (Formatdurchlauf fragt erneut). Ereignis `catalog_film_rules_applied` meldet jetzt version 0.6.138.
+- G „DER TAG in Berlin & Brandenburg“ (Pro Kultur, Reihe nachgetragen) und hessenschau/„Unbekannt“: `broadcaster.NEWS_NAMES` (hessenschau, Abendschau, rbb24, Lokalzeit, Sachsenspiegel, Nordmagazin, buten un binnen, DER TAG in Berlin, Brandenburg aktuell, Regionalzeit, Landesschau aktuell; nur aus dem Namen, nicht BR24) ergibt Nachrichten, „Kultur“ aus der Beschreibung entfällt. Heilung `heal_derived_genres` (Merker `derived_genres_v06138`), danach Reihen-Nachtrag neu (`genre_backfill_v06138`); Werke ohne Genre mit solchem Namen bekommen Nachrichten direkt. „Politik“ bleibt ohne Genre (allgemeiner Rubrikname).
+- Tests: `tests/test_v06138.py` (4, End-to-End mit IMDb-Archiv).
+
+## 0.6.137 – Reihenfilme in der Reihe und unter Filme; auf 0.6.136
+
+- Björn 26.11.2026 (Entscheidung „In der Reihe und unter Filme“): Reihenfilme sind Serienwerke (IMDb führt „Der Usedom-Krimi“ als Serie) und standen bisher nur in ihrer Reihe. Auswertung Air 0.6.136 (`filme-als-folge-06136.tsv`): 172 erkannte Serienwerke ab 80 min, davon 131 mit Sendertext „Spielfilm …“/„Fernsehfilm …“.
+- `catalog.series_film`: erkanntes Serienwerk (identified/matched/manual), längstes Angebot ≥ 80 min, Sendertext beginnt mit „(Zweiteiliger) Spielfilm/Fernsehfilm“ oder 3sat-Titel „- Spielfilm, Land Jahr“, `film_shaped` (kein Teil n/m mit m ≥ 3, keine datierte Ausgabe). Mehrteiler ohne Filmangabe (Das Adlon, Bodyguard (n/3), Oktoberfest 1900) bleiben nur Folgen.
+- `catalog.mark_series_films` setzt/entfernt `meta.series_film` mit `series_film_title` („Reihe – Filmtitel“) und `series_film_year` (aus dem Sendertext); läuft beim Start und alle 6 h im Formatdurchlauf (Ereignis `catalog_series_films_marked`). Werke werden nicht umgestuft, Folgensuche und Reihe bleiben unverändert.
+- `catalog.listing(kind='movie')` nimmt Reihenfilme mit auf (`MOVIE_VIEW_SQL`), je Werk eine Kachel ohne „Serie öffnen“; Titel und Jahr der Filmliste aus den neuen Feldern; `category_tree` zählt Reihenfilme zusätzlich je Film; `unified_index` zeigt sie unter Filme als Einzelfilm. Teilindex `work_series_film` wird nach dem Start angelegt (`build_deferred_indexes`); `GROUP BY +w.id` hält die Abfrage auf den Art-Indizes (synthetische 686k-DB: Filmliste 0,57 → 0,78 s, ohne Index 1,6 s).
+- Tests: `tests/test_v06137.py` (6).
+
+## 0.6.136 – Korrektur Mac-Urteil 0.6.135 (Black Box, Nachrichtensendungen als Kultur); auf 0.6.135
+
+- Befund 0.6.135 (BEFUND-06135.txt): Wallander, More than Honey, Sport, Kinderecke, Export bestanden; zwei Funde.
+- D „Black Box - Spielfilm, Deutschland 2022“ (115 min) wurde TMDB „Black Box“ USA 2020 (100 min) über die Zwei-Jahres-Regel – TMDBs eigene Laufzeittoleranz (15 %) ließ die Laufzeit „passen“. `matching.year_close` verlangt bei zwei Jahren jetzt zusätzlich einen Treffer aus dem lokalen IMDb-Archiv und eine Laufzeit innerhalb 8 % der IMDb-Laufzeit (`year_two_runtime`, More than Honey 95/88 min passt). Einmalig auf Kopien, die 0.6.135 liefen: `catalog.undo_year_two` (Merker `year_two_v06136`, Ereignis `catalog_year_two_undone`). Björns Geräte hatten 0.6.135 nie.
+- G tagesschau24 (7.252), hessenschau (3.265), DER TAG (2.239), „Politik“ (1.703) wurden Kultur, phoenix vor ort und ZDFheute live verloren Talk: 0.6.135 nahm Nachrichten/Talk nur noch aus dem Namen, „tagesschau24“ traf das Wort nicht, ein zweites Genre rückte auf. Nachrichten und Talk kommen wieder wie bis 0.6.134 auch aus Beitragstitel und Beschreibung; nur Sport aus dem Namen verdrängt sie. Nachrichten-Muster erkennt „tagesschau24“ und „ZDFheute“. Die einmalige Heilung ändert nur Werke mit Sport-Namen (Merker `derived_genres_v06136`). Prüfkopien mit 0.6.135 behalten den Verlust (nicht genau umkehrbar); Prüfung nur ab frischen Kopien.
+- Tests: `tests/test_v06135.py` (8, angepasst), `tests/test_v0697.py`.
+
+## 0.6.135 – Hinweise aus dem Prüfvermerk 0.6.134 (3sat-Filme, Sport-Genres, Kopierschutz-Kacheln, Speicher im Export); auf 0.6.134
+
+- Grundlage: PRUEFVERMERK-06134.txt (Mac-Prüfung bestanden, Hinweise für die nächste Version).
+- Wallander (TMDB „Mankells Wallander 01 - Eiskalt wie der Tod“, Ähnlichkeit 0,962, Jahr und Laufzeit passen): `metadata.raise_part_similarity` vergleicht auch ohne Reihennummer vor einem Trenner (`SERIES_INDEX`, „… 01 - …“) und mit dem ganzen Titel; eine Fortsetzungszahl am Ende bleibt ein anderer Film. Gilt auch für gespeicherte Vorschläge (`rematch_movie_suggestions`).
+- More than Honey (3sat 2010, IMDb 2012, Titel exakt, Laufzeit passt): `matching.year_close` lässt zwei Jahre Abstand zu, nur mit exaktem Titel (≥ 0,999), Video ab 60 min und passender Laufzeit; Begründung `YEAR_TWO_REASON`. `SEARCH_REV` v06135, 3sat-Filme einmal neu (Merker `film_rules_v06135`).
+- Genres: `broadcaster.genres` nimmt Nachrichten und Talk (wie Kinder) nur aus dem Namen der Sendung, nicht aus Beitragstitel oder Beschreibung („aktuell“, „Interview“); Sport aus dem Namen (`SPORT_HINT`: Sport…, Wintersport, Olympia, Paris 2024, Fußball, Eishockey …) verdrängt Nachrichten/Talk. Einmalig `catalog.heal_derived_genres` (Merker `derived_genres_v06135`, Ereignis `catalog_derived_genres_healed`) für Werke mit „Sender (abgeleitet)“, danach Rücknahme und Neubewertung der Reihen-Nachträge (Merker `genre_backfill_v06135`). Nachtrag schneller: Geschwister-Zwischenspeicher über alle Stapel eines Laufs.
+- Kinderecke: scheitert das Abspielen eines Netzkino-/Plex-/Plattform-Films am Kopierschutz oder „nicht mehr verfügbar“, wird die Kachel 7 Tage ausgeblendet (`kids_catalog.note_unplayable`, Tabelle `kids_unplayable`, Ereignis `kids_tile_hidden`); Netzfehler zählen nicht. Kopierschutz wird nicht umgangen.
+- Diagnose-Export: Speicherorte tragen zusätzlich `strict_free` (sofort frei ohne löschbaren Platz).
+- Nicht geändert: „Wo ist Anne Frank – Die Hintergründe, Teil 1/2“ (keine Filme; Laufzeit und Angebot am Mac abfragen, bevor eine Regel greift); BR24 → Dokumentation (BR24 ist Nachrichtenmarke und Dokureihe, kein eindeutiger Name).
+- Tests: `tests/test_v06135.py` (7), `tests/test_v0697.py` (zwei Jahre).
+
+## 0.6.134 – Kinderecke: Märchen mit mehreren KiKA-Angeboten spielen wieder; auf 0.6.133
+
+- Mac-Prüfung 0.6.132 (frische Pro-Kopie, alle 555 Filmkacheln per `/api/kids-play`): 510 abspielbar, 45 nicht. 32 davon Mediatheken-Filme mit Weg „sender“ und 404 „Dieses Video gibt es in der Kinderecke nicht“ – Björns Märchen (Das Märchen von der Regentrude, Der Schweinehirt, Die sechs Schwäne, Die drei Federn, Die Salzprinzessin …, dazu Bibi & Tina, Löwenzahn, Juli tanzt, Weihnachten in Sommerby). Die Angebote waren aktiv. Ursache: `work_allowed` ließ bei einem Werk mit mehreren Kindersender-Angeboten nur das von `kids_offer` (kleinste id) zu (Regel 0.6.113), die Liste zeigte ein anderes. Jetzt ist ein Angebot vom Kindersender immer zulässig; abgelehnt wird nur ein Angebot eines anderen Senders, wenn ein Kindersender-Zwilling existiert. Die Ausblendung aus 0.6.133 hätte diese Märchen versteckt; mit dem Fix bleiben sie und spielen.
+- Offen (eigener Schritt): 12 Netzkino-/Plex-Filme mit Kopierschutz und 1 nicht mehr verfügbarer Netzkino-Film stehen als Kachel, der Kopierschutz zeigt sich erst beim Abspielen.
+- Tests: `tests/test_v06113_kinder_zwilling.py` (+1, scheitert mit 0.6.133).
+
+## 0.6.133 – Kinderecke: Filme nur mit abspielbarem Angebot; auf 0.6.132
+
+- Björn 25.11.2026: „in der Kinderecke waren gestern einige Märchen nicht mehr abspielbar, auch wenn sie noch in der Übersicht waren“ (Titel und Gerät noch offen). Ursache am Code: die Filmkacheln kommen aus dem gemeinsamen Index (`unified_index.page`), Reihen wurden schon gegen die Datenbank geprüft (`_kids_shows`), Filme nicht. Abgespielt wird nach dem aktuellen Stand (`/api/kids-play` → `offer_allowed`, `streaming.resolve` prüft nicht, ob das Angebot noch aktiv ist). Ein depubliziertes Angebot oder ein inzwischen umgestuftes Werk (Filmregel, Genre-Heilung, Sperrwort) blieb als Kachel stehen.
+- `kids_catalog._playable_films` (nach `_prefer_kids_offers`): Mediatheken-Filme nur mit vorhandenem, aktivem Angebot (lokale Kopie zählt) und `offer_allowed`; die Kategorieregel wird je Liste einmal gelesen (`work_allowed(..., clause)`). Ereignis `kids_tiles_unplayable` mit Gründen und bis zu 20 Titeln. Scheitert die Prüfung, bleibt die Liste unverändert.
+- Tests: `tests/test_v06132.py` (+3).
+
+## 0.6.132 – Korrekturen aus der Air-Diagnose 0.6.131 (Krimireihen, 3sat, Genre-Nachtrag, freier Speicher); auf 0.6.131
+
+- Grundlage: berichte/diagnose-2026-11-25-vormittag-06131-air.md.
+- Krimireihen (56 zurückgeholte Werke, alle Folgen von Reihen: Brokenwood 7/20, Inspector Mathias 3/9, Sophie Cross 1/3, Rebecka Martinsson 02/08 …, danach „prüfen“ ohne Kandidat): `catalog.film_shaped` – ein Teil „(n/m)“ mit m ≥ 3 ist kein Film, auch in Spielfilmlänge (`SERIES_PARTS`); Zweiteiler (1/2) und „(2)“ bleiben Filme. Die Heilung `reseed_non_films` läuft dafür noch einmal (Merker `film_seed_v06132`) und gibt solchen Werken ihre Sender-Einordnung zurück. „Mammon: Opfer (1/3)“ gilt jetzt als Folge (Test 0.6.125 angepasst). Die Rücknahme `restore_reseeded_films` läuft nicht erneut, wo 0.6.128 oder später sie schon ausgeführt hat (Air: „Frieden, Folge 3/6“, „Mordshunger (1/4)“ bei jeder Version hin und her, Heilungen 137 s).
+- 3sat-Filme auf „prüfen“ mit Kandidat (Mankells Wallander, More than Honey): `metadata.film_title_parts` liefert zusätzlich den Titel ohne vorangestellten Autorennamen im Genitiv („Wallander – Eiskalt wie der Tod“); `metadata.raise_part_similarity` wertet einen TMDB-/OMDb-Film, dessen Titel einem Titelteil entspricht, als exakten Titel – nur mit Titeljahr und passender Laufzeit. `SEARCH_REV` v06132, 3sat-Filme einmal neu geprüft (Merker `film_rules_v06132`). Neues Ereignis `film_review_candidates` (höchstens 300 je Lauf): Kandidaten eines 3sat-Films auf „prüfen“ mit Jahr, Ähnlichkeit, Laufzeit und Gründen. Ein Jahr Abstand ohne Laufzeit oder zwei Jahre Abstand bleiben bewusst „prüfen“.
+- Genre-Nachtrag („Rudis Rasselbande“, „Kunst + Krempel“ als Nachrichten): `catalog.backfill_genres` zählt nur Geschwister mit eigenem Genre (nicht `Reihe (nachgetragen)`), braucht mindestens drei davon und zwei Drittel für ein Genre. Einmalig (`genre_backfill_v06132`, Ereignis `catalog_genre_backfill_undone`) werden alle aus der Reihe nachgetragenen Genres entfernt und mit der neuen Regel neu bewertet.
+- Freier Speicher am Mac (App 18 GB, Systemeinstellungen 210 GB inkl. löschbar): `system_monitor.usage/free_bytes` nimmt auf macOS die Kapazität „für wichtige Nutzung“ (`NSURLVolumeAvailableCapacityForImportantUsageKey` über osascript, 120 s je Laufwerk zwischengespeichert, Rückfall auf statvfs). Genutzt für Systemmonitor, Speicherorte, Speicherübersicht, IMDb-Platzschätzung und Abo-Budget; harte Schreibprüfungen (512 MiB) bleiben beim strengen Wert.
+- Tests: `tests/test_v06132.py` (11), `tests/test_v06127.py` (Genre-Regel), `tests/test_v06125.py` (Mammon).
+
+## 0.6.131 – Korrektur Mac-Urteil 0.6.130 (ECHT → „Echt?“, Rückweg nach 0.6.129); auf 0.6.130
+
+- Mac-Prüfung 0.6.130: für frische Kopien von Björns Geräten alles erfüllt (S, X Trailer, L5/L3, R/T, Regression), aber zwei Funde.
+- ECHT: KiKA/ZDF „ECHT“ (Jugendserie, 174), WDR „Echt?“ (13) und MDR „Echt“ (13) wurden alle „Echt?“. `catalog.merge_spacing_variants` bewegt und benennt jetzt nur noch Werke um, deren Titel sich wirklich in Wortgrenzen oder unsichtbaren Zeichen vom Zieltitel unterscheidet (`spacing_differs`); reine Groß-/Klein- oder Satzzeichen-Varianten bleiben in ihrer Reihe und unter ihrem Namen (das bleibt Sache von `unify_show_spelling`). Damit entfallen auch reine Groß→Klein-Angleichungen wie „CAVE PAINTER“ → „Cave Painter“.
+- Rückweg nach 0.6.129 (nur Prüfkopien; Björns Geräte liefen nie mit 0.6.129): die 0.6.130-Rücknahme von Großschreibung schrieb „MAKRO“ → „makro“ und „NACHTCAFÉ“ → „NACHTCAFé“, weil die frühere Schreibweise nicht gespeichert ist. Sie ist entfernt; Prüfungen nur ab frischen Kopien von Björns Geräten.
+- Tests: `tests/test_v06130.py` angepasst (+ECHT, Rücknahme entfällt).
+- Programmführer (EPG-Thread, 35bb3cb0): weitere Ländernamen in der Land/Jahr-Unterzeile („Andorra/Deutschland 2013“, Sturm der Liebe); einmalige Bereinigung aller Überlappungen in epg.sqlite3 (Merker `dedupe_all_v06131`, ältere Tage 10.–22.11.: 3sat 494, phoenix 22).
+
+## 0.6.130 – Korrektur Mac-Urteil 0.6.129 (S Großschreibung, L5/L3 Programmführer) und 3sat-Trailer; auf 0.6.129
+
+### Erkennung
+- S (Mac-Prüfung 0.6.129: `catalog_spacing_variants_merged` schrieb Nachtcafé → NACHTCAFÉ, Presseclub → PRESSECLUB, Respekt, Makro, Unkraut, Druck, super.markt … und „Betrifft“ → „betrifft: ...“): `catalog.spelling_score` zählt keine Großbuchstaben mehr; Großbuchstaben-only ist die schwächere Schreibweise, zusammengeschriebenes Kleingeschriebenes („eishockeyaktuell“) verliert gegen eine Variante mit Wortgrenze oder Großbuchstaben, sonst entscheidet die Werkzahl. Wortgrenzen zählen nur zwischen Buchstaben (Satzzeichen am Ende nicht). Innerhalb einer Reihe werden reine Groß-/Kleinvarianten nicht mehr umbenannt (`catalog.spacing_differs`; das bleibt bei `unify_show_spelling`). `respace_show_titles` gibt einer Reihe in Großbuchstaben die Schreibweise aus den Themen ihrer Werke zurück, wenn der Sender sie anders schreibt (Prüfkopien mit 0.6.128/0.6.129; echte Sender-Großschreibung wie „PRESSECLUB“ im Thema bleibt).
+- Trailer (Mac-Prüfung 0.6.129: „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ einziges Angebot 162 s, ebenso Fight Club, Hamilton): `catalog.file_film_trailers` (jeder Formatdurchlauf, Ereignis `catalog_film_trailers_filed`): ein Werk mit 3sat-Filmtitel, dessen längstes Angebot unter 10 min läuft, wird als Trailer abgelegt (Art other, Zustand format, `film_trailer`, „Trailer zum Film …“); Kurz-, Animations-, Trickfilme ausgenommen. Kommt später ein langes Angebot, wird es wieder als Film geprüft.
+- Tests: `tests/test_v06130.py` (13, davon 5 geerbt).
+
+### Programmführer (EPG-Thread, 31fd0260)
+
+- L5 (ONE „Rote Rosen – Deutschland 2015 · Folge 2019“): eine ARD-Unterzeile aus Land und Jahr („Deutschland 2015“, „USA/Kanada 1999“) ist Produktionsland/-jahr, kein Folgentitel (`epg.PRODUCTION`, nur echte Ländernamen – „Hochwasser 2026“ bleibt Titel).
+- Überlappungen in epg.sqlite3 (3sat: 19 in 6 h, jede Sendung von ARD und ZDF mit 1 min Versatz; phoenix: Dachblock „PHOENIX | vor ort“ 08:30–19:15 über der Übertragung): `epg.dedupe` nach jedem Lauf (Sendungen ab vorgestern) – zweite Quelle bei Überlappung mit der besser eingestuften (`SOURCE_RANK`), gleicher Titel innerhalb 5 min, Dachblöcke ab 3 h mit mindestens zwei Sendungen darin. Bestehende Dateien heilen beim nächsten Lauf. Ereignis `epg_loaded` mit `removed_overlaps`. Ohne Alias im DELETE (ältere SQLite auf NAS).
+- Tests: `tests/test_epg_programmfuehrer.py` (+3).
+
+## 0.6.129 – Live-TV-Befunde L1–L5 aus dem ersten Echtlauf des Programmführers; auf 0.6.128
+
+- Grundlage: berichte/diagnose-2026-11-24-vormittag-06127-pro.md, Abschnitt 11 (Björns Bildschirmfoto Live-TV).
+- L3 phoenix („Jetzt 08:30–19:15 PHOENIX – vor ort“, „Danach 13:00 …“): `epg.now_next` nimmt je Sender nur eine Quelle (`SOURCE_RANK`: SRF, ARD, ZDF – ARD und ZDF liefern phoenix/KiKA/3sat beide), als „Jetzt“ die kürzeste laufende Sendung, als „Danach“ die nächste beginnende; beginnt sie innerhalb der laufenden, trägt sie `inside` und heißt „Ab …“.
+- L5 ONE „Rote Rosen (2019)/(2020)“: `epg.parse_ard` liest eine Zahl in Klammern hinter dem Titel als Folgennummer (die ARD-Quelle hat kein Jahresfeld); Anzeige „Folge 2019“.
+- L2/L4 „ARD Tagessc…“ ohne Programm, tagesschau24 ohne Mediathek-Knopf: Schreibweisen `ardtagesschau`/`ardtagesschau24` gehören zu `tagesschau24` (`live_tv.STATIONS`). Am Mac zu bestätigen.
+- L1 arte mit zwei Knöpfen „ARD, ZDF & Co.“: zwei Streams eines Anbieters in einer Kachel bekommen `label` aus ihrem Titel („ARTE.DE“, „ARTE.FR“).
+- Tests: `tests/test_epg_programmfuehrer.py` (+5).
+
+## 0.6.128 – Korrektur aus Diagnose Pro 0.6.127 (erster Echtlauf); auf 0.6.127
+
+- Grundlage: berichte/diagnose-2026-11-24-vormittag-06127-pro.md und Björns Rückmeldung („Kurzer Prozess“ weder in Listen noch in der Suche).
+- Filmregel: `film_shaped` beurteilt jetzt die Laufzeit des längsten Angebots (`catalog.film_source`), nicht das bestplatzierte – „Kurzer Prozess – Righteous Kill – Spielfilm, USA 2008“ fiel wegen eines kurzen Ausschnitts mit vollem Titel heraus. Neuer Merker `film_seed_v06128`; wo 0.6.123 oder 0.6.125 lief, nimmt `restore_reseeded_films` zuerst zurück – jetzt auch Werke, die die Einordnung „ohne Art“ inzwischen als Beitrag abgelegt hat (state format mit unknown_before, ab Spielfilmlänge und mit Filmhinweis des Senders), Genres werden mitgesetzt.
+- 3sat-Filme: Fortsetzungen in allen Schreibweisen (`metadata.film_number_variants`: „Der Pate II“ → „Der Pate 2“, „Der Pate – Teil II“, „Der Pate – Teil 2“), wie Titelteile nur mit Jahr aus dem Titelzusatz. `matching.choose`: widersprechen sich Filmkandidaten, entscheiden die mit Titeljahr und passender Laufzeit, wenn sie sich einig sind (Terrified 2017: 8 Kandidaten „prüfen“). `SEARCH_REV` v06128, Filmheilung einmal erneut (Merker `film_rules_v06128`).
+- Leerzeichen-Reihen: die lesbarste Schreibweise gewinnt (Wortgrenzen, Großbuchstaben, dann Werkzahl) statt der Mehrheit; unsichtbare Zeichen (weicher Trennstrich) entfernt (`catalog.best_spelling`). `catalog.respace_show_titles` gibt 0.6.127-Reihen („eishockeyaktuell“, „sportarena“) die Schreibweise aus den Themen ihrer Werke zurück.
+- Bekannt, nicht geändert: Genre-Nachtrag über die Reihe ist so gut wie die Genres der Geschwister („buten un binnen“ → Dokumentation).
+- Tests: `tests/test_v06128.py` (11, davon 5 geerbt), `tests/test_v06124.py` angepasst.
+
+## 0.6.127 – Erkennung: Genre-Nachtrag für Werke ohne Genre, Reihen mit Leerzeichen-Varianten; auf 0.6.126
+
+- N-E (Björn 23.11.2026, Werkkatalog „Filme › Unbekannt“ 2.008 / „Serien › Unbekannt“ 4.052; Diagnose Air 0.6.120): „Unbekannt“ = Werk ohne Rohgenre. Neu `catalog.backfill_genres` (beim Start und alle 6 h im Formatdurchlauf, Ereignis `catalog_genres_backfilled`): IMDb-verknüpfte/-erkannte Werke bekommen die Genres aus dem lokalen IMDb-Archiv (`imdb_archive.Archive.genres`), Folgen einer Reihe die Genres, die mindestens die Hälfte der Geschwister mit Genre trägt (höchstens drei). Art, Zustand und Identität bleiben.
+- N-G (Mac-Abfrage 23.11.: „#BR24 Zeitreise“ 150 Werke, „#BR24Zeitreise“ 79): `catalog.merge_spacing_variants` (im 6-h-Schreibweisenlauf, Ereignis `catalog_spacing_variants_merged`): Reihen gleichen Senders und Jahres, deren Titel sich nur in Leerzeichen unterscheiden, kommen unter den Schlüssel mit den meisten Werken; nie bei verschiedenen Datenbank-Kennungen.
+- Bewusst nicht: „Anna, Paula, Pia und die wilden Tiere“ / „Paula, Anna und die wilden Tiere“ (verschieden benannte Nachfolgereihen, keine sichere Regel); Animanimals ist laut Mac-Prüfung bereits eine Kachel.
+- Tests: `tests/test_v06127.py` (5).
+
+## 0.6.126 – Programmführer (EPG) Stufe 1: Jetzt/Danach im Live-TV; Wunschliste-Link; auf 0.6.125
+
+- Björn (23.11.2026): EPG für die TV-Sender im Live-TV und als Beleg für die Erkennung. Einschätzung: berichte/einschaetzung-epg-2026-11-23.md.
+- Neu `epg.py`: Programmdaten direkt von den Sendern, eigene Datei `epg.sqlite3` (nicht catalog.db), Lauf alle 6 h über den Planer (`planner.CatalogJob('epg')`, Schalter „Automatik“, Standard an):
+  - SRF: SRG Integration Layer `il.srgssr.ch/integrationlayer/2.0/srf/programGuide/tv/byDate/<Tag>` (live geprüft 23.11.: ~14–20 Tage zurück, ~5 Wochen voraus; Genre, Staffel/Folge, Wiederholung, `mediaUrn`).
+  - ARD: `programm-api.ard.de/program/api/program?day=<Tag>` (alle ARD-Sender je Tag; live geprüft: einige Tage zurück, 30 Tage = 404).
+  - ZDF-Familie: `api.zdf.de/cmdm/epg/broadcasts` mit Gast-Token (App-Token, sonst aus zdf.de/live-tv wie mediathekview/zapp-backend). Nicht live geprüft.
+  - Tage: gestern bis 7 Tage voraus bei jedem Lauf, ältere Tage einmal (erster Lauf bis 14 Tage zurück); Sendungen älter als 400 Tage werden gelöscht. Eine Quelle, die nicht antwortet, hält die anderen nicht auf (`partial`). Ereignis `epg_loaded` (nur Zahlen).
+- Live-TV: `live_tv._attach_programme` hängt je Sender `programme` (now/next) an und stellt „Jetzt: … · danach …“ vor die Beschreibung; Kachel zeigt Jetzt mit Uhrzeit, Fortschrittsbalken, Staffel/Folge/Genre und Danach. Block „Programmführer · ARD, ZDF, SRF“ mit Automatik und „↻ Programm jetzt laden“. Neue Sender SRF zwei/SRF info in `STATIONS`.
+- API: `GET /api/epg` (Status; mit `station`/`day` die Sendungen eines Tages), `POST /api/epg-sync`, `POST /api/epg-auto`; Diagnose-Export Teil `epg`.
+- Vorbereitet für Stufe 2 (noch nicht in der Erkennung verwendet): `epg.match` (SRF exakt über die Video-ID, sonst Sender + Sendezeit ±5 min + Dauer ±20 %), `epg.kind_hint` (Genre → Film/Sendung). Messabfrage: berichte/abfragen/epg-zeitfenster-0726.sql.
+- Detailansicht: „Sendetermine bei Wunschliste“ (Formular-POST an wunschliste.de/suche erst auf Klick, neuer Tab). Kein automatisches Auslesen (Impressum: nur privater Gebrauch; Feeds per robots.txt gesperrt).
+- Tests: `tests/test_epg_programmfuehrer.py` (16), Klicktest `tests/browser/epg_live.cjs`.
+
+## 0.6.125 – Korrektur Mac-Urteil 0.6.123 (F: echte Filme umgestuft, S: Einstellungen „database is locked“); auf 0.6.124
+
+- F (Mac-Prüfung 0.6.123: 489 Werke als „Kein Film“ umgestuft, 244 davon ab 80 min ohne Datum – Löwenzahn-Filme, Bullerbü, „It Follows (Englisch)“, „Der Amsterdam-Krimi (2)“, „Wo ist Anne Frank – Teil 1/2“; Kinderecke verlor 9 Filme). Zwei Ursachen:
+  - `catalog.reseed_non_films` stufte jedes offene Film-Werk um, dessen Sender-Vorschlag (`seed`) nicht „Film“ ergab – auch Filme, die erst die Erkennung zu Filmen gemacht hatte. Jetzt nur Werke, die `film_shaped` selbst ablehnt.
+  - `film_shaped`: ab Spielfilmlänge (`FILM_FEATURE` 60 min) ist ein nummerierter Teil ein Film einer Filmreihe; nur eine datierte Ausgabe ist dann kein Film.
+  - Rücknahme für Prüfkopien, auf denen 0.6.123/0.6.124 lief (Merker `film_seed_v06123` vorhanden): `catalog.restore_reseeded_films` macht offene Werke (unknown/series, nicht verknüpft, keine bestätigte Folge) wieder zu Filmen, wenn sie noch den 0.6.123-Grund tragen oder der Sender-Vorschlag ohne Formprüfung „Film“ war, und `film_shaped` sie annimmt (Ereignis `catalog_films_restored`). Nicht exakt: Werke, deren Grund die Erkennung inzwischen überschrieben hat und die nur über die Erkennung Filme waren, bleiben – Prüfungen daher ab frischer Kopie. Björns Geräte hatten 0.6.123/0.6.124 nie.
+  - Neuer Merker `film_seed_v06125` (die korrigierte Neu-Einordnung läuft einmal, auch wo 0.6.123 lief).
+- S (Mac-Prüfung 0.6.123: erster POST /api/series-autoload settings → „database is locked“, zweiter 134 s): `server.write_waiting` versucht höchstens 5 s (`SETTINGS_QUICK_TIMEOUT`); ist die Datenbank belegt, gilt die Änderung sofort im Speicher (`settings()`), ein Hintergrundfaden schreibt sie, sobald die Datenbank frei ist (Ereignisse `settings_write_deferred`, `settings_write_done`); spätere Änderungen reihen sich dahinter ein und landen nie vor einer früheren. `db()` nimmt dafür einen `timeout`.
+- Tests: `tests/test_v06125.py` (4), `tests/test_v06123.py` angepasst.
+
+## 0.6.124 – Diagnose Air 0.6.120 (N-D, N-H): 3sat-Filme über Titelteile, Suchspeicher mit Revision, Kinderecke nach den Heilungen; auf 0.6.123
+
+- Grundlage: Diagnose Air 23.11.2026 19:44 Uhr (berichte/diagnose-2026-11-23-abend-06120-air.md): die 0.6.120-Filmheilung reihte 225 3sat-Filme neu ein, alle Stichproben endeten „prüfen“ mit `from_cache: true` und meist 0 IMDb-Treffern.
+- Ursache 1: `metadata_cache` (24 h) war nur mit dem gespeicherten Titel verschlüsselt; eine geänderte Suche (z. B. 0.6.121 `TRUNCATED_NOTE`) kam bei neu eingereihten Werken nicht an. Neu im Schlüssel: `metadata.SEARCH_REV` ('v06124', bei jeder Änderung der Abfragen erhöhen) und der Suchtitel `metadata.query_title`.
+- Ursache 2: Das lokale IMDb-Archiv sucht nur exakte Namen; 3sat verbindet Original-/deutschen Titel oder Reihe/Autor und Titel. Neu `metadata.film_title_parts`/`film_part_candidates`: ohne exakten Filmtreffer und mit Jahr aus dem Titelzusatz wird jeder Titelteil gesucht; nur Filme mit Jahr ±1; ein Treffer ist nur mit gleichem Jahr und passender Laufzeit automatisch, sonst Vorschlag (Ähnlichkeit 0,9). Zwei Teile mit verschiedenen Filmen entscheiden nichts.
+- Filmheilung läuft dafür noch einmal (Merker `film_rules_parts_v06124`, Ereignis `catalog_film_rules_applied` mit version 0.6.124).
+- N-H: Kinderecke-Vorabaufbau wartet auf die Start-Heilungen und den ersten Formatdurchlauf (Jahrgänge/Schreibweisen verwarfen die Liste, erster Aufruf 19,4 s), höchstens 15 min (`Service.startup_settled`, Ereignis `kids_shelf_prewarmed` mit `after_heals`).
+- Tests: `tests/test_v06124.py` (8).
+
+## 0.6.123 – Erkennung: Sendungsausgaben/Teile/Kurzbeiträge nicht als Film; Einstellungen warten auf belegte Datenbank; auf 0.6.122
+
+- Grundlage: Björn 23.11.2026 (Bildschirmfotos ARD Mediathek „Filme > Unbekannt“): „10 vor 10 vom <Datum>“, nummerierte Teile und kurze Clips standen als Film auf „prüfen“. Ursache: `catalog.seed` setzte die Art Film über Filmwörter in Beschreibung/Kategorie, ohne Titelform und Laufzeit zu beachten.
+- `catalog.film_shaped`: kein Film bei datierter Ausgabe (`DATED`, `DATED_DAY` ohne Jahr), Ausgabennummerierung (`EDITION_NUMBERING`), Teilangabe (`metadata.PART`) oder Laufzeit unter 20 min (außer Kurz-/Animations-/Trickfilm in Titel, Thema oder Beschreibung). Gilt beim Anlegen (`seed`).
+- Einmalige Heilung `catalog.reseed_non_films` (Merker `film_seed_v06123`, in den Start-Heilungen, belegt-fest, Ereignis `catalog_non_films_reseeded`): Film-Werke auf pending/retry/review, deren bestes Angebot heute kein Film mehr wäre, werden über `requeue_from_source` neu eingeordnet. Verknüpfte Filme (matched/identified) bleiben unberührt.
+- Mac-Prüfung 0.6.120 (Nachlade-Test): `POST /api/series-autoload` (settings) meldete während der Start-Heilungen einmal „database is locked“. Neu `server.write_waiting`: Einstellungen speichern (alle Wege über `store_settings`, auch `/api/settings` mit Neu-Einreihung) wartet und wiederholt bis zu 4× bei belegter Datenbank (Ereignis `settings_write_busy`).
+- Nicht in dieser Version (vorgemerkt): „#BR24 Zeitreise“/„#BR24Zeitreise“ als ein Schlüssel, „14: Diaries of the Great War“ als eine Reihe, doppelte Reihenschlüssel (Animanimals, „Anna, Paula, Pia …“), Genre-Nachtrag für verknüpfte Werke ohne Genre.
+- Tests: `tests/test_v06123.py` (5).
+
+## 0.6.122 – Sammelstand: Erkennung 0.6.121 + Kinderecke-Bilder; auf main 0.6.120
+
+### Erkennung (0.6.121, nicht ausgegeben – Langzeitdiagnose Air N-D/N-F)
+
+- N-D: `metadata.TRUNCATED_NOTE` – eine offene Klammer am Titelende, die wie ein Fassungs-/Barrierefreiheitshinweis beginnt („(Originalversion“, „(mit Untert“, „(OmU“), fällt aus dem Suchtitel; Werkkennungen bleiben unverändert. Offene Werke damit einmal neu eingereiht (Merker `truncated_notes_v06121`, Ereignis `catalog_truncated_notes_requeued`).
+- N-F: `artwork.log_due` – `artwork_checked` mit Fehler einmal je Titel und Tag, Erfolge jede 25. Prüfung (vorher 73 % des Protokolls, Diagnosefenster 44 h).
+- Abfragen Runde 7 für die restlichen Werke ohne Art: `berichte/abfragen/ohne-art-0721-runde7.sql` (Projektablage).
+- Tests: `tests/test_v06121.py` (6).
+
+### Kinderecke-Bilder (Kinderecke-Thread, 295d0cea): Bilder statt Anfangsbuchstaben, Doku nicht unter Zeichentrick, deckende Kopfleiste
+- Grundlage: Björn 23.11.2026 mit Bildschirmfoto: in der Kinderecke tragen einige Reihen/Filme nur den Anfangsbuchstaben („Animanimals“ einmal mit, einmal ohne Bild, „#WIR – Freundschaft grenzenlos“, „Anna auf dem Bauernhof“, „Anna, Paula, Pia und die wilden Tiere“, „Carolin testet“, „Die wilde Natur“); „Asterix und Co. – Die Comicwelten des Albert Uderzo“ unter „Zeichentrick“; oberste Reihe als unscharfer Streifen unter der Kopfleiste.
+- Ursache Bilder: Die IMDb-Datensätze enthalten keine Bilder; Bilder kommen von TMDB, TVDB, Fanart.tv, Wikidata oder dem Anbieter. Die Kinderecke nahm zudem nur das Bild des ersten abspielbaren Angebots eines zusammengeführten Titels (die Werkliste nimmt das erste vorhandene) und bei Mediatheken-Reihen nur das Bild des stellvertretenden Werks.
+- Neu: Bild aus einem anderen Angebot desselben Titels; bei Mediatheken-Reihen das Bild einer anderen Folge bzw. des erkannten Reihen-Werks; sonst das Bild einer gleichnamigen Kachel derselben Art. Ohne jedes Bild bleibt der Anfangsbuchstabe.
+- Gruppen: Dokumentationen (Kategorie oder „Doku“/„Documentary“ im Genre) nie unter „Zeichentrick“.
+- Kopfleiste der Kinderecke deckend statt nach unten durchsichtig (die darunter gescrollte Reihe schimmerte als unscharfer Streifen durch).
+- Nicht geändert: doppelte Reihen unter verschiedenen Schlüsseln („Animanimals“, „Anna, Paula, Pia …“) – Sache der Erkennung.
+- Tests: `tests/test_v06121_kinder_bilder.py` (4, auf 0.6.120 rot).
+
 ## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (E6); auf 0.6.119
 
 - E6: `catalog.unify_show_spelling` benennt nur Werke eines Senders um, der die Markenschreibweise selbst in Titel oder Thema führt (ARD/MDR „Mittagsmagazin“ 289 Werke bekamen SRFs „MittagsMagazin“, weil ein show_key über Sender reicht). Auch Werke anderer Art unter der Reihe (3 „Kikaninchen“-Ausschnitte blieben).

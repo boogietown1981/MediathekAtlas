@@ -63,6 +63,7 @@
     install.hidden = !o.enabled || ready;
     install.textContent = !o.tool ? 'yt-dlp einrichten' : !o.js_runtime && o.tool_current !== false ? 'Deno einrichten' : 'yt-dlp und Deno einrichten';
     $('youtube-offline').hidden = !o.enabled;
+    $('youtube-access').hidden = !o.enabled || !o.tool;
   }
 
   async function load() {
@@ -130,6 +131,16 @@
       say(r.js_error ? r.js_error : 'yt-dlp und JavaScript-Laufzeit eingerichtet.' + (r.requeued ? ' ' + r.requeued + ' gescheiterte Videos werden erneut versucht.' : ''), !!r.js_error); }
     catch (e) { ev.target.textContent = label; say(e.message, true); }
     ev.target.disabled = false;
+  };
+  // 0.6.161: one video simulated (nothing downloaded); renews yt-dlp when YouTube's player changed.
+  $('youtube-access-check').onclick = async ev => {
+    const label = ev.target.textContent; ev.target.disabled = true; ev.target.textContent = 'Wird geprüft (bis zu 2 Min.) …';
+    try {
+      const r = await window.api('youtube-access-check', {video: $('youtube-access-video').value.trim()});
+      if (r.offline) renderOffline(r.offline);
+      say(r.message + (r.requeued ? ' · ' + r.requeued + ' gescheiterte Videos werden erneut versucht.' : ''), !r.ok);
+    } catch (e) { say(e.message, true); }
+    ev.target.textContent = label; ev.target.disabled = false;
   };
   $('youtube-setup').addEventListener('toggle', () => { if ($('youtube-setup').open) load(); });
   window.MediathekAtlasYouTube = {refresh: () => { load(); return panel.refresh(); }, openDetail: panel.openDetail, openAlbum: panel.openAlbum};

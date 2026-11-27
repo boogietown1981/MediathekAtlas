@@ -228,5 +228,10 @@ class DesktopModeTests(unittest.TestCase):
                 status,body,_=call(port,'GET','/',headers={'Host':f'127.0.0.1:{port}'});self.assertEqual(status,200);self.assertIn('atlas-token',body)
                 self.assertEqual(call(port,'GET','/',headers={'Host':'evil.example'})[0],403)
                 self.assertEqual(json.loads(call(port,'GET','/api/login-state',headers={'Host':f'127.0.0.1:{port}'})[1]),{'required':False})
-            finally:p.terminate();p.wait(10);p.stdout.close()
+            finally:
+                # 0.6.161: macos-15 runner needed > 10 s to stop the server once (CI 0.6.160); the check above already ran
+                p.terminate()
+                try:p.wait(30)
+                except subprocess.TimeoutExpired:p.kill();p.wait(10)
+                p.stdout.close()
 if __name__=='__main__':unittest.main()

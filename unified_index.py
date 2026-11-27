@@ -19,6 +19,7 @@ Merging never changes stored data and never asserts an identity: it is a present
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -31,12 +32,12 @@ _CACHE = {}
 _LOCK = threading.Lock()
 _BUILD = threading.Lock()
 
-SOURCES = ('mediatheken', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'dailyme', 'rtlplus')
-NAMES = {'mediatheken': 'ARD, ZDF & Co.', 'netzkino': 'Netzkino', 'pluto': 'Pluto TV',
+SOURCES = ('mediatheken', 'lokal', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'dailyme', 'rtlplus')
+NAMES = {'mediatheken': 'ARD, ZDF & Co.', 'lokal': 'Lokales Archiv', 'netzkino': 'Netzkino', 'pluto': 'Pluto TV',
          'justwatch': 'JustWatch TV', 'rakuten': 'Rakuten TV', 'youtube': 'YouTube', 'joyn': 'Joyn', 'toggo': 'TOGGO', 'crunchyroll': 'Crunchyroll', 'plex': 'Plex', 'servustv': 'ServusTV', 'redbulltv': 'Red Bull TV', 'dmax': 'DMAX & TLC', 'filmfriend': 'filmfriend', 'dailyme': 'dailyme TV', 'rtlplus': 'RTL+'}
 # Which offer represents a merged entry: curated catalogues first, uploads with free-text
 # titles and landscape thumbnails (YouTube) and copy-protected offers (Rakuten) last.
-RANK = {'mediatheken': 0, 'netzkino': 1, 'pluto': 2, 'justwatch': 3, 'rakuten': 4, 'youtube': 5, 'joyn': 6, 'toggo': 7, 'crunchyroll': 8, 'plex': 9, 'servustv': 10, 'rtlplus': 11, 'redbulltv': 12, 'dmax': 13, 'filmfriend': 14, 'dailyme': 15}
+RANK = {'lokal': -1, 'mediatheken': 0, 'netzkino': 1, 'pluto': 2, 'justwatch': 3, 'rakuten': 4, 'youtube': 5, 'joyn': 6, 'toggo': 7, 'crunchyroll': 8, 'plex': 9, 'servustv': 10, 'rtlplus': 11, 'redbulltv': 12, 'dmax': 13, 'filmfriend': 14, 'dailyme': 15}
 # Sources whose year is the upload year, not the year of the work.
 LOOSE_YEAR = {'youtube', 'servustv', 'redbulltv'}
 
@@ -228,13 +229,13 @@ def _netzkino_offers(netzkino, root, view, query, genre, collection):
 
 
 def build(root, db, kind='movies', query='', genre='', sort='title', collection='', merge_duplicates=True,
-          modules=None, language='', only=''):
+          modules=None, language='', only='', reihen=False):
     """Complete merged index for one filter. ``db`` is the context-manager factory of the main
     catalogue; ``modules`` maps source -> module (tests pass fakes)."""
     import catalog
     if modules is None:
-        import netzkino, pluto, justwatch, rakuten, youtube, joyn, toggo, crunchyroll, plex, servustv, rtlplus, redbulltv, dmax, filmfriend, dailyme
-        modules = {'netzkino': netzkino, 'pluto': pluto, 'justwatch': justwatch, 'rakuten': rakuten,
+        import lokal, netzkino, pluto, justwatch, rakuten, youtube, joyn, toggo, crunchyroll, plex, servustv, rtlplus, redbulltv, dmax, filmfriend, dailyme
+        modules = {'lokal': lokal, 'netzkino': netzkino, 'pluto': pluto, 'justwatch': justwatch, 'rakuten': rakuten,
                    'youtube': youtube, 'joyn': joyn, 'toggo': toggo, 'crunchyroll': crunchyroll, 'plex': plex, 'servustv': servustv, 'rtlplus': rtlplus,
                    'redbulltv': redbulltv, 'dmax': dmax, 'filmfriend': filmfriend, 'dailyme': dailyme}
     view = 'series' if kind == 'series' else 'movies'
@@ -274,7 +275,7 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
     except Exception as exc:   # one broken source never hides the others
         errors['mediatheken'] = str(exc)[:160] or exc.__class__.__name__
     seconds['mediatheken'] = round(time.monotonic() - started, 2)
-    for source in ('netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'dailyme', 'rtlplus'):
+    for source in ('lokal', 'netzkino', 'pluto', 'justwatch', 'rakuten', 'youtube', 'joyn', 'toggo', 'crunchyroll', 'plex', 'servustv', 'redbulltv', 'dmax', 'filmfriend', 'dailyme', 'rtlplus'):
         module = modules.get(source)
         if module is None or (only and only != source):
             continue
@@ -296,14 +297,197 @@ def build(root, db, kind='movies', query='', genre='', sort='title', collection=
         seconds[source] = round(time.monotonic() - started, 2)
     started = time.monotonic()
     entries = merge(offers, merge_duplicates, subtitles=view == 'movies')   # series: 'Star Trek' is not 'Star Trek: Voyager'
+    if reihen and view == 'movies' and not query:
+        try:
+            began = time.monotonic()
+            entries = collapse_reihen(db, entries)
+            seconds['reihen'] = round(time.monotonic() - began, 2)   # 0.6.155: Anteil am merge (Prüfung 0.6.154: 0,74 s)
+        except Exception as exc:     # eine Zusammenfassung kostet nie die Liste
+            errors['reihen'] = str(exc)[:160] or exc.__class__.__name__
     if sort == 'year':
         entries.sort(key=lambda e: (-(e['year'] or 0), _sort_title(e['title'])))
     else:
         entries.sort(key=lambda e: _sort_title(e['title']))
+    # 0.6.148 (Björn 26.11.2026: „geladene Filme und Serien bevorzugen“, auch im normalen Katalog): Titel mit lokaler
+    # Kopie stehen vorn, innerhalb beider Teile bleibt die gewählte Sortierung
+    try:
+        import local_titles
+        began = time.monotonic()
+        with db() as c:
+            if local_titles.mark_entries(c, entries, series=view == 'series'):
+                entries = local_titles.local_first(entries)
+        seconds['local'] = round(time.monotonic() - began, 2)   # 0.6.155: Anteil am merge
+    except Exception:
+        pass
     seconds['merge'] = round(time.monotonic() - started, 2)
     return {'entries': entries, 'counts': counts, 'errors': errors, 'pending': pending, 'seconds': seconds,
             'genre_counts': [{'genre': g, 'n': n} for g, n in sorted(genre_counts.items())],
             'merged': sum(1 for e in entries if len(e['offers']) > 1)}
+
+
+# 0.6.150 (Björn 26.11.2026 zu Tatort/Polizeiruf unter Filme: „wenn es Filme sind, dann ja, aber man kann sie auch als
+# Reihe zusammenfassen, z. B. alle Tatort-Filme, bzw. wenn ein Film 1–n Teile hat“). Nur in der Filmliste ohne Suche
+# (eine Suche zeigt weiter jeden Film einzeln):
+# * Filmreihe: Reihenfilme (catalog.mark_series_films) derselben Mediatheken-Reihe ab REIHE_MIN Filmen werden EINE
+#   Kachel mit dem Reihennamen; sie öffnet die Reihe wie eine Serie. Sendeplätze („FilmMittwoch im Ersten“, „Herzkino“,
+#   „Fernsehfilm der Woche“ …) sind keine Reihe und bleiben einzeln (REIHE_SLOT). Titel, die auch bei einem anderen
+#   Anbieter stehen (zusammengeführt), bleiben einzeln, damit kein Angebot verschwindet.
+# * Mehrteiler: Titel „… Teil 1“, „… (2/3)“, „…, Teil zwei“ desselben Grundtitels ab zwei verschiedenen Teilen werden
+#   EINE Kachel „Grundtitel“ (Mehrteiler · n Teile); sie zeigt die Teile über die Suche.
+# 0.6.154 (Mac-Prüfung 0.6.150, BEFUND-06150.txt):
+# * Eine Reihe ist ihr NAME, nicht ein show_key („Praxis mit Meerblick“ stand unter zwei show_keys als zwei Kacheln).
+# * Eigene Filmwerke „Reihe: Titel“ / „Reihe – Titel“ (ORF-Schreibweise „Tatort: Azra“, „Polizeiruf 110: Paranoia“)
+#   gehören zu ihrer Reihe, wenn es die Reihe gibt. „Tatort Matterhorn“ ohne Trenner bleibt einzeln (nicht sicher).
+# * Die Kachel öffnet die Suche nach dem Reihennamen (wie ein Mehrteiler): dort steht jeder Film einzeln mit allen
+#   Anbietern. Deshalb dürfen jetzt auch zusammengeführte Titel (Maria Wern bei zwei Anbietern) in die Reihe.
+# * Mehrteiler: „Teil 1/ 2“ wird als Teil erkannt (Grundtitel nicht mehr „… Teil“); Teile mit verschiedenen Jahren sind
+#   Fortsetzungen („Zärtliche Chaoten – Teil 1“ 1986, „Teil 2“ 1987) und bleiben einzeln; gezählt werden verschiedene
+#   Teilnummern, nicht Fassungen (Audiodeskription, Varianten).
+REIHE_MIN = 3
+REIHE_SLOT = re.compile(r'(?i)film|kino|movie|cinema|sendeplatz|premiere|sommer|highlights?\b|mediathek')
+PART = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:\(?\s*(?:(?:teil|part)\s*)?(?P<n>\d{1,2})\s*/\s*\d{1,2}\s*\)?|\(?(?:teil|part)\s+(?P<m>\d{1,2}|eins|zwei|drei|vier|fünf|one|two|three)\)?)\s*$')
+PART_HINT = re.compile(r'(?i)\d\s*/\s*\d|teil|part')
+# 0.6.156 (Mac-Prüfung 0.6.155: „Kolbenfresser Teil 1 Maisernte hautnah“ fiel aus dem Mehrteiler): „Teil n“ mit Zusatz
+# dahinter zählt nur, wenn derselbe Grundtitel schon streng erkannte Teile hat
+PART_LOOSE = re.compile(r'(?i)^(?P<base>.*?\S)\s*[-–—:,(]?\s*(?:teil|part)\s+(?P<n>\d{1,2})\b\s*[-–—:,.)]?\s*\S.*$')
+DOKU = {'dokumentation', 'doku', 'dokumentarfilm', 'reportage', 'documentary', 'wissen', 'natur', 'technik'}
+# 0.6.157 (Mac-Prüfung 0.6.156: „Kolbenfresser“, „Monster High Webisodes“, „The Lies We Tell …“ fielen aus den Mehrteilern):
+# ohne IMDb gilt die Jahresregel nur für Spielfilme mit erzählendem Genre
+FICTION = {'komödie', 'komoedie', 'drama', 'krimi', 'thriller', 'action', 'abenteuer', 'liebesfilm', 'romanze', 'romantik',
+           'horror', 'science-fiction', 'science fiction', 'western', 'spielfilm', 'kriegsfilm', 'heimatfilm', 'comedy', 'crime'}
+PART_WORDS = {'eins': 1, 'zwei': 2, 'drei': 3, 'vier': 4, 'fünf': 5, 'one': 1, 'two': 2, 'three': 3}
+REIHE_PREFIX = re.compile(r'^(?P<name>[^:–—]{3,60}?)\s*(?::|\s[-–—])\s+\S')
+
+
+def _part(title):
+    m = PART.match(str(title or '').strip())
+    if not m or len(m.group('base')) < 3:
+        return None
+    raw = (m.group('n') or m.group('m') or '').casefold()
+    number = int(raw) if raw.isdigit() else PART_WORDS.get(raw)
+    base = m.group('base').rstrip(' -–—:,(')
+    return (base, number) if number and len(base) >= 3 else None
+
+
+def _offer_genres(item):
+    """Genres eines Plattform-Angebots (categories, source_genres, genres, genre-Text)."""
+    out = set()
+    for key in ('categories', 'source_genres', 'genres'):
+        value = item.get(key)
+        if isinstance(value, (list, tuple)):
+            out |= {str(g).casefold().strip() for g in value}
+    if isinstance(item.get('genre'), str):
+        out |= {g.casefold().strip() for g in re.split(r'[,/|]', item['genre']) if g.strip()}
+    return out
+
+
+def _sequels(db, members, numbers=None):
+    """Teile desselben Grundtitels aus verschiedenen Jahren: Fortsetzung (einzeln lassen) oder Mehrteiler?
+    0.6.155: Fortsetzung, wenn mindestens zwei Teile verschiedene IMDb-Nummern tragen (eigene Filme).
+    0.6.156/0.6.157: ohne IMDb entscheiden Genre und Jahre; Doku/Reportage oder kein erzählendes Genre → Mehrteiler.
+    0.6.158 (Mac-Prüfung 0.6.157: „Zärtliche Chaoten“ bei Pluto TV, „Freitag der 13“ bei Rakuten/Joyn/Netzkino wieder als
+    Mehrteiler): die Genres der Plattform-Angebote zählen mit (vorher nur Mediatheken-Werke), und ein erzählender Film ist
+    eine Fortsetzung, sobald kein Jahr bei zwei verschiedenen Teilen vorkommt (Elvis Teil 1 und 2 beide 2005 → Mehrteiler)."""
+    ids = [o['id'] for e in members for o in e['offers'] if o['source'] == 'mediatheken']
+    imdb, genres = set(), set()
+    for e in members:
+        for o in e['offers']:
+            if o['source'] != 'mediatheken':
+                item = o.get('item') or {}
+                imdb.add(str(item.get('imdb_id') or item.get('imdb') or ''))
+                genres |= _offer_genres(item)
+    if ids:
+        with db() as c:
+            marks = ','.join('?' * len(ids))
+            for tt, gs in c.execute("SELECT json_extract(meta,'$.imdb_id'), json_extract(meta,'$.genres') FROM works "
+                                    "WHERE id IN (%s) AND json_valid(meta)" % marks, ids):
+                imdb.add(str(tt or ''))
+                try:
+                    genres |= {str(g).casefold() for g in (json.loads(gs) if gs else []) or []}
+                except (TypeError, ValueError):
+                    pass
+    if len({i for i in imdb if i.startswith('tt')}) >= 2:
+        return True
+    if not numbers or genres & DOKU or not genres & FICTION:
+        return False
+    parts_of_year = {}
+    for e, n in zip(members, numbers):
+        if e.get('year'):
+            parts_of_year.setdefault(e['year'], set()).add(n)
+    return len(parts_of_year) >= 2 and all(len(p) == 1 for p in parts_of_year.values())
+
+
+def collapse_reihen(db, entries):
+    """Filmreihen und Mehrteiler der Filmliste zusammenfassen (siehe REIHE_MIN)."""
+    ids = [o['id'] for e in entries for o in e['offers'] if o['source'] == 'mediatheken']
+    shows, names = {}, {}
+    if ids:
+        with db() as c:
+            for wid, show, title in c.execute(
+                    "SELECT w.id, w.show_key, w.title FROM works w WHERE w.kind='series' AND json_valid(w.meta) "
+                    "AND json_extract(w.meta,'$.series_film')=1"):
+                name = str(title or show or '').strip()
+                key = title_key(name)
+                if show and key:
+                    shows[wid] = key
+                    names.setdefault(key, name)
+    groups = {}
+    for i, e in enumerate(entries):
+        mediathek = [o for o in e['offers'] if o['source'] == 'mediatheken']
+        key = next((shows[o['id']] for o in mediathek if o['id'] in shows), None)
+        if key and not REIHE_SLOT.search(names[key]):
+            groups.setdefault(('reihe', key), []).append(i)
+    in_reihe = {i for k, v in groups.items() for i in v}
+    for i, e in enumerate(entries):     # eigene Filmwerke „Tatort: Azra“ zu einer vorhandenen Reihe
+        if i in in_reihe or not any(o['source'] == 'mediatheken' for o in e['offers']):
+            continue
+        m = REIHE_PREFIX.match(str(e['title'] or ''))
+        key = m and title_key(m.group('name'))
+        if key and ('reihe', key) in groups:
+            groups[('reihe', key)].append(i);in_reihe.add(i)
+    parts_of = {}
+    for i, e in enumerate(entries):
+        t = str(e['title'] or '')
+        if i in in_reihe or not (PART_HINT.search(t)):
+            continue
+        part = _part(t)
+        if part:
+            parts_of[i] = part
+            groups.setdefault(('teile', title_key(part[0])), []).append(i)
+    for i, e in enumerate(entries):      # 0.6.156: „Teil 1 Maisernte hautnah“ zu vorhandenen Teilen desselben Grundtitels
+        if i in in_reihe or i in parts_of:
+            continue
+        m = PART_LOOSE.match(str(e['title'] or '').strip())
+        base = m and m.group('base').rstrip(' -–—:,(')
+        if base and len(base) >= 3 and ('teile', title_key(base)) in groups:
+            parts_of[i] = (base, int(m.group('n')))
+            groups[('teile', title_key(base))].append(i)
+    replace, drop = {}, set()
+    for (what, key), members in groups.items():
+        members.sort()
+        years = [entries[i]['year'] for i in members if entries[i]['year']]
+        if what == 'reihe':
+            if len(members) < REIHE_MIN:
+                continue
+            offer = next(o for i in members for o in entries[i]['offers'] if o['source'] == 'mediatheken' and o['id'] in shows)
+            offer = dict(offer, episodes=len(members), reihe=key)
+            name = names[key]
+            replace[members[0]] = {'title': name, 'year': max(years) if years else None, 'offers': [offer], 'reihe': key,
+                                   'mehrteiler': {'query': name, 'parts': len(members), 'reihe': True}}
+        else:
+            numbers = {parts_of[i][1] for i in members}
+            if len(numbers) < 2 or (len(set(years)) > 1 and _sequels(db, [entries[i] for i in members],
+                                                                      [parts_of[i][1] for i in members])):
+                continue    # ein Teil allein bzw. Fortsetzungen (siehe _sequels)
+            first = entries[min(members, key=lambda i: (parts_of[i][1], i))]
+            base = parts_of[min(members, key=lambda i: (parts_of[i][1], i))][0]
+            replace[members[0]] = dict(first, title=base, year=min(years) if years else first['year'],
+                                       mehrteiler={'query': base, 'parts': len(numbers)})
+        keep = members[0]
+        drop.update(i for i in members if i != keep)
+    if not replace:
+        return entries
+    return [replace.get(i, e) for i, e in enumerate(entries) if i not in drop]
 
 
 class _Skip(Exception):
@@ -368,6 +552,10 @@ def _cached(key, builder):
                     threading.Thread(target=_renew, args=(key, builder), daemon=True,
                                      name='unified_index_renew').start()
                 return hit[1]
+    if _is_search(key):
+        # 0.6.148 (Mac-Prüfung 0.6.144: „Geisternetze“ blieb nach dem Markierlauf 0 Treffer): eine Suche ist klein und
+        # wartet nicht hinter dem Aufbau ganzer Listen (Kinderecke) auf _BUILD
+        return _build_into(key, builder)
     with _BUILD:
         with _LOCK:
             hit = _CACHE.get(key)
@@ -376,15 +564,31 @@ def _cached(key, builder):
         return _build_into(key, builder)
 
 
-def invalidate():
+def _is_search(key):
+    return isinstance(key, tuple) and len(key) > 2 and bool(key[2])
+
+
+def invalidate(soft=False):
+    """Forget every index. ``soft`` (0.6.144, Mac-Prüfung 0.6.142: Filme 54 s direkt nach dem Reihenfilm-Markierlauf auf
+    dem Air, weil die Anfrage nach dem Leeren des Speichers hinter dem Kinderecke-Aufbau auf _BUILD wartete): the
+    indexes stay readable and count as outdated – the next reader gets the previous answer at once and the renewal
+    runs in the background. For content changes only; settings that must never show the old answer (Kinder-
+    Altersgrenze, Anzeige) keep the hard variant."""
     with _LOCK:
         _GEN[0] += 1
-        _CACHE.clear()
         _BUSY.clear()
+        if not soft:
+            _CACHE.clear()
+            return
+        for key, (_, value) in list(_CACHE.items()):
+            if value.get('pending') or _is_search(key):   # 0.6.148: Suchen neu, nicht veraltet beantworten
+                _CACHE.pop(key)
+            else:
+                _CACHE[key] = (float('-inf'), value)
 
 
 def page(root, db, kind='movies', query='', genre='', sort='title', collection='', offset=0,
-         merge_duplicates=True, modules=None, language='', only=''):
+         merge_duplicates=True, modules=None, language='', only='', reihen=False):
     """One page of the merged index with the full rows of each offer."""
     import catalog
     kind = 'series' if kind == 'series' else 'movies'
@@ -399,9 +603,10 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
     import languages
     language = languages.valid_filter(language)
     only = only if only in SOURCES else ''
-    key = (str(root), kind, query.casefold(), genre.casefold(), sort, collection, bool(merge_duplicates), language, only)
+    reihen = bool(reihen) and kind == 'movies' and not query
+    key = (str(root), kind, query.casefold(), genre.casefold(), sort, collection, bool(merge_duplicates), language, only, reihen)
     index = _cached(key, lambda: build(root, db, kind, query, genre, sort, collection, merge_duplicates, modules,
-                                       language, only))
+                                       language, only, reihen))
     chosen = index['entries'][offset:offset + PAGE]
     items = []
     with db() as c:
@@ -413,7 +618,12 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                     row = catalog.item(c, work)
                     if not row:
                         continue   # merged or removed since the index was built
-                    row.update(episodes=offer['episodes'], series_parent=work['kind'] == 'series')
+                    row.update(episodes=offer['episodes'], series_parent=work['kind'] == 'series' and kind == 'series')   # 0.6.137: Reihenfilm under Filme
+                    if offer.get('reihe'):
+                        # 0.6.150: Filmreihe unter Filme (Tatort, Polizeiruf …) öffnet wie eine Serie ihre Filme
+                        row.update(series_parent=True, reihe=True, reihe_key=offer['reihe'], film_count=offer['episodes'])   # 0.6.156: show_key bleibt echt (Mac-Prüfung 0.6.155: „Serie nicht gefunden“)
+                    elif kind != 'series':
+                        catalog.as_series_film(row)   # 0.6.140: film title and year
                     lang = row.get('languages') or {}
                     row.update(lang=lang.get('short', ''), lang_text=lang.get('text', ''))
                     out.append({'source': 'mediatheken', 'item': row})
@@ -427,6 +637,10 @@ def page(root, db, kind='movies', query='', genre='', sort='title', collection='
                     out.append({'source': offer['source'], 'item': item})
             if out:
                 items.append({'title': entry['title'], 'year': entry['year'], 'offers': out})
+                if entry.get('local'):
+                    items[-1]['local'] = True        # 0.6.148: geladen (lokale Kopie)
+                if entry.get('mehrteiler'):
+                    items[-1]['mehrteiler'] = entry['mehrteiler']   # 0.6.150
     return {'items': items, 'total': len(index['entries']), 'offset': offset, 'page': PAGE,
             'counts': index['counts'], 'errors': index['errors'], 'genre_counts': index['genre_counts'],
             'merged': index['merged'], 'names': NAMES, 'pending': index.get('pending') or [],

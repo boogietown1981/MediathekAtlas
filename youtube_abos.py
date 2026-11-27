@@ -798,8 +798,8 @@ def free_bytes(path):
     for candidate in (p, *p.parents):
         try:
             if candidate.exists():
-                import shutil
-                return shutil.disk_usage(candidate).free
+                import system_monitor   # 0.6.132: including purgeable space on macOS
+                return system_monitor.usage(candidate)['free']
         except OSError:
             return None
     return None
@@ -1297,25 +1297,49 @@ REQUEUE_NO_HARDLINK = ('[Errno 45]', 'Operation not supported', '[Errno 95]')
 NOT_AVAILABLE = 'This video is not available'
 
 
-def requeue_not_available(c, now=None):
-    """Aufgegebene YouTube-Aufträge mit „This video is not available“ einmal neu einreihen (gestaffelt)."""
+def requeue_not_available(c, now=None, tool=''):
+    """Aufgegebene YouTube-Aufträge mit „This video is not available“ einmal neu einreihen (gestaffelt).
+
+    0.6.160: ``tool`` – neu eingerichtete yt-dlp-Version; dann bekommt jeder aufgegebene Auftrag je
+    yt-dlp-Version einen weiteren Versuch (unabhängig vom einmaligen Merker 0.6.36)."""
     now = time.time() if now is None else float(now)
     moved = 0
-    for job_id, payload in c.execute("SELECT id,payload FROM jobs WHERE state='error' "
-                                     "AND json_extract(payload,'$.origin')='youtube'").fetchall():
+    states = "('error','queued')" if tool else "('error')"
+    for job_id, payload, state in c.execute("SELECT id,payload,state FROM jobs WHERE state IN %s "
+                                            "AND json_extract(payload,'$.origin')='youtube'" % states).fetchall():
         try:
             job = json.loads(payload)
         except (TypeError, ValueError):
             continue
-        error = str(job.get('error') or '')
-        if job.get('requeued_0636') or NOT_AVAILABLE not in error:
+        # 0.6.160: a job still waiting in its backoff after "not available" is brought forward too
+        error = str(job.get('error') or '') if state == 'error' else str(job.get('last_error') or '')
+        if NOT_AVAILABLE not in error or (job.get('requeued_tool') == tool if tool else job.get('requeued_0636')):
             continue
+        if state == 'queued' and float(job.get('not_before') or 0) <= now + 60 + moved * 120:
+            continue                             # already due: leave it alone
         job.update(state='queued', not_before=now + 60 + moved * 120, received=0, total=0, speed=0, eta=None,
                    error='', retries=0, last_error=error[:200], requeued_0636=True,
-                   note='Wird mit JavaScript-Laufzeit (Deno) erneut versucht')
+                   note=('Wird mit yt-dlp %s erneut versucht' % tool) if tool else 'Wird mit JavaScript-Laufzeit (Deno) erneut versucht')
+        if tool:
+            job['requeued_tool'] = tool
         c.execute('UPDATE jobs SET payload=?,state=? WHERE id=?', (json.dumps(job), 'queued', job_id))
         moved += 1
     return moved
+
+
+def not_available_video(c):
+    """0.6.161: video id of the most recent YouTube job that failed with "This video is not available"."""
+    for (payload,) in c.execute("SELECT payload FROM jobs WHERE state IN ('error','queued') "
+                                "AND json_extract(payload,'$.origin')='youtube' ORDER BY rowid DESC LIMIT 2000"):
+        try:
+            job = json.loads(payload)
+        except (TypeError, ValueError):
+            continue
+        if NOT_AVAILABLE in str(job.get('error') or '') + str(job.get('last_error') or ''):
+            video = str((job.get('source') or {}).get('_video_id') or '')
+            if video:
+                return video
+    return ''
 
 
 def requeue_on_start(c, now=None, js_ready=False):

@@ -28,6 +28,11 @@ def _http(url):return isinstance(url,str) and re.match(r'(?i)^https?://',url) is
 def _title(meta,row):
     meta=meta or {};row=row or {}
     name=meta.get('title') or row.get('topic') or row.get('title') or 'Video'
+    if meta.get('series_film') and meta.get('series_film_title'):
+        # 0.6.157 (Mac-Prüfung 0.6.156: Player-Titel „Tatort (1970)“): Reihenfilm mit Filmtitel und Filmjahr
+        film=str(meta['series_film_title']);reihe=str(meta.get('title') or '')
+        name=film if not reihe or film.casefold().startswith(reihe.casefold()) else reihe+' – '+film
+        return name+(' (%s)'%meta['series_film_year'] if meta.get('series_film_year') else '')
     if meta.get('kind')=='series' and meta.get('episode'):
         name+=' · S%02dE%02d'%(int(meta.get('season') or 0),int(meta['episode']))
         if meta.get('episode_title'):name+=' · '+meta['episode_title']
@@ -74,7 +79,7 @@ def resolve_netzkino(c,root,item_id,resolver=None,now=None):
     return {'kind':'url','url':downloads.safe_url(found['url']),'hls':False,'quality':'Netzkino MP4','title':title,
             'duration':row.get('duration') or found.get('duration') or 0,'provider':'netzkino'}
 
-def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus='',redbulltv='',sender='',dmax='',filmfriend='',dailyme=''):
+def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justwatch='',rakuten='',joyn='',quality='auto',youtube='',toggo='',crunchyroll='',samsung='',plex='',servustv='',rtlplus='',redbulltv='',sender='',dmax='',filmfriend='',dailyme='',lokal=''):
     """Best playable source: a finished local download wins over the online stream."""
     if samsung:
         # 0.5.97: Samsung TV Plus live channel (HLS without copy protection, see samsung_tvplus.py)
@@ -104,6 +109,11 @@ def resolve(c,offer='',job='',netzkino='',root=None,resolver=None,pluto='',justw
         # 0.6.62: dailyme plays only in its own player (session and key per video): never a source (dailyme.py)
         import dailyme as dailyme_tv
         return dailyme_tv.play_source(root,dailyme)
+    if lokal:
+        # 0.6.151: Datei aus einem lokalen Filmarchiv (Ordner/Freigabe), nur innerhalb der eingetragenen Ordner
+        if root is None:raise ValueError('Lokales Archiv nicht verfügbar')
+        import lokal as local_archive
+        return local_archive.play_source(root,lokal)
     if servustv:
         # 0.5.101: ServusTV video or live channel (plain HLS, checked by hls_guard, see servustv.py)
         if root is None:raise ValueError('ServusTV-Katalog nicht verfügbar')
@@ -327,16 +337,27 @@ def audio_copy(source,info=None):
     audio=next((s.get('codec_name') for s in info.get('streams',[]) if s.get('codec_type')=='audio'),None)
     return 'aac' if audio=='aac' else not audio or audio in BROWSER_AUDIO
 
-def start(args,session='',cleanup=None):
-    """Start ffmpeg; a new request of the same player session replaces its previous stream (seeking)."""
+MAX_RANGE_HELPERS=4   # 0.6.153: Hilfsströme für Byte-Anfragen des Browsers (server.stream), kurzlebig
+
+def start(args,session='',cleanup=None,helper=False):
+    """Start ffmpeg; a new request of the same player session replaces its previous stream (seeking).
+    helper=True (0.6.153): zusätzlicher Strom für eine Byte-Anfrage derselben Wiedergabe; er ersetzt nichts
+    und zählt nicht gegen MAX_STREAMS (eigene Grenze MAX_RANGE_HELPERS)."""
     with _LOCK:
-        old=_RUNNING.pop(session,None) if session else None
-        if old:_stop(old)
         for key,proc in list(_RUNNING.items()):
             if proc.poll() is not None:_RUNNING.pop(key,None)
-        if len(_RUNNING)>=MAX_STREAMS:raise RuntimeError('Es laufen bereits %d Wiedergaben. Bitte eine beenden und erneut versuchen.'%MAX_STREAMS)
+        if helper:
+            if sum(1 for p in _RUNNING.values() if getattr(p,'atlas_helper',False))>=MAX_RANGE_HELPERS:
+                raise RuntimeError('Zu viele gleichzeitige Teilanfragen. Bitte die Wiedergabe neu starten.')
+            session='%s#%x'%(session,id(args))
+        else:
+            old=_RUNNING.pop(session,None) if session else None
+            if old:_stop(old)
+            if sum(1 for p in _RUNNING.values() if not getattr(p,'atlas_helper',False))>=MAX_STREAMS:
+                raise RuntimeError('Es laufen bereits %d Wiedergaben. Bitte eine beenden und erneut versuchen.'%MAX_STREAMS)
         proc=subprocess.Popen(args,stdout=subprocess.PIPE,stderr=subprocess.PIPE,stdin=subprocess.DEVNULL)
         proc.atlas_cleanup=cleanup   # one-level playlist of this stream
+        proc.atlas_helper=helper
         _RUNNING[session or str(id(proc))]=proc
     return proc
 

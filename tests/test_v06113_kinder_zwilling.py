@@ -56,6 +56,22 @@ class Twin(Mixed):
             self.assertFalse(kids_catalog.offer_allowed(c, 'o-film'))
             self.assertTrue(kids_catalog.offer_allowed(c, 'k-film'))
 
+    def test_every_kids_channel_offer_plays(self):
+        # 0.6.134 (Mac-Prüfung 0.6.132: „Das Märchen von der Regentrude“ mit zwei aktiven KiKA-Angeboten, 404)
+        self.add('film', 'Das Märchen von der Regentrude', ['Abenteuer'], channel='ZDF')
+        self.twin('film')
+        with self.db() as c:
+            c.execute("INSERT INTO offers(id,work_id,payload,active) VALUES('z-film','film',?,1)",
+                      (json.dumps({'title': 'Regentrude', 'channel': 'KiKA', 'topic': '', 'duration': 5400,
+                                   'url_video': 'https://example.org/z.mp4'}),))
+            self.assertEqual(kids_catalog.kids_offer(c, 'film')[0], 'k-film')
+            self.assertTrue(kids_catalog.offer_allowed(c, 'z-film'))    # zweites KiKA-Angebot
+            self.assertFalse(kids_catalog.offer_allowed(c, 'o-film'))   # ZDF bleibt gesperrt
+        d = self.data()
+        tile = [t for t in d['movies'] if t['title'] == 'Das Märchen von der Regentrude'][0]
+        with self.db() as c:
+            self.assertTrue(kids_catalog.allowed_ref(d, tile['ref'], c))
+
 
 class Explain(Mixed):
     def test_paths(self):

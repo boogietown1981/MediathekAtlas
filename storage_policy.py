@@ -147,8 +147,9 @@ def _disk(folder):
     probe = Path(folder).expanduser()
     for candidate in (probe, *probe.parents):
         try:
-            usage = shutil.disk_usage(candidate)
-            return {'total_bytes': usage.total, 'free_bytes': usage.free}
+            import system_monitor   # 0.6.132: including purgeable space on macOS
+            usage = system_monitor.usage(candidate)
+            return {'total_bytes': usage['total'], 'free_bytes': usage['free']}
         except OSError:
             continue
     return {'total_bytes': 0, 'free_bytes': 0}

@@ -9,6 +9,8 @@
   const $ = id => document.getElementById(id);
   const make = (tag, text, cls) => { const n = document.createElement(tag); if (text !== undefined) n.textContent = text; if (cls) n.className = cls; return n; };
   const SOURCES = {
+    // 0.6.151: lokales Filmarchiv – liegt schon als Datei vor, daher keine Offline-Aufträge und kein Anbieter-Link
+    lokal: {play: () => window.playLokal, jobs: () => '', add: '', action: '', enrich: 'lokal-enrich'},
     netzkino: {play: () => window.playNetzkino, jobs: id => 'netzkino-downloads?id=' + encodeURIComponent(id), add: 'netzkino-download-add',
       action: 'netzkino-download-action', enrich: 'netzkino-enrich', external: 'Bei Netzkino öffnen'},
     pluto: {play: () => window.playPluto, jobs: id => 'pluto-downloads?id=' + encodeURIComponent(id), add: 'pluto-download-add',

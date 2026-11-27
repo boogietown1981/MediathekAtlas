@@ -32,7 +32,9 @@
     return h ? h + ':' + String(m).padStart(2, '0') + ':' + x : m + ':' + x; };
   const channelOf = v => state.channels.find(c => c.id === v.abo) || {};
   // Ein Abo-Video wird zu einem abspielbaren Eintrag wie Filme und Folgen (ref, key, Bild).
-  const fromAbo = v => Object.assign(v, {type: 'abo', ref: {job: v.job}, key: 'job:' + v.job, picture: v.poster ? image('job', v.job) : '', group: v.abo});
+  // 0.6.149 (Björn: Kanal oben angetippt → keine Videos): Abo-Kennungen sind Zahlen; der Filter state.filter wird als Text
+  // verglichen (startsWith 'g:' warf bei einer Zahl einen Fehler, die Ansicht blieb leer). Kennungen immer als Text.
+  const fromAbo = v => Object.assign(v, {abo: String(v.abo), type: 'abo', ref: {job: v.job}, key: 'job:' + v.job, picture: v.poster ? image('job', v.job) : '', group: String(v.abo)});
   // 0.6.93: die Gruppe des Servers (Märchen …) heißt hier theme; group bleibt die Abspielreihe (nextOf)
   const fromCatalog = (t, type) => Object.assign(t, {type, picture: t.poster || '', theme: t.group || 'mehr', group: type});
 
@@ -84,13 +86,19 @@
     const b = make('button', 'kids-tile' + (tall ? ' is-poster' : '') + (v.done ? ' is-done' : '')); b.type = 'button';
     b.style.setProperty('--chip', color(v.type === 'abo' ? v.abo : v.id || v.title));
     const where = v.type === 'abo' ? channelOf(v).name || '' : v.type === 'series' ? 'Serie' : v.type === 'movie' ? 'Film' : '';
-    b.setAttribute('aria-label', (v.new ? 'Neu: ' : '') + v.title + (where ? ', ' + where : ''));
+    b.setAttribute('aria-label', (v.new ? 'Neu: ' : '') + v.title + (where ? ', ' + where : '') + (v.local && v.type !== 'abo' ? ', geladen' : ''));
+    if (v.local && v.type !== 'abo') b.classList.add('is-local');
     b.dataset.kind = v.type;
     const th = thumb(v, tall);
     th.append(make('span', 'kids-play', v.type === 'series' ? '☰' : '▶'));
     if (v.type === 'live') th.append(make('span', 'kids-new kids-live', 'LIVE'));
     if (v.new) th.append(make('span', 'kids-new', 'NEU'));
     else if (v.done) th.append(make('span', 'kids-seen', '✓'));
+    if (v.local && v.type !== 'abo') {   // 0.6.148: geladen – spielt auch ohne Internet
+      const tag = make('span', 'kids-local', '⬇ Geladen');
+      tag.title = v.type === 'series' ? 'Folgen geladen – spielen auch ohne Internet' : 'Geladen – spielt auch ohne Internet';
+      th.append(tag);
+    }
     if (v.duration && v.type !== 'series') th.append(make('span', 'kids-time', clock(v.duration)));
     if (v.progress > 0) { const p = make('span', 'kids-progress'); const f = make('span'); f.style.width = Math.round(v.progress * 100) + '%'; p.append(f); th.append(p); }
     let label = v.title;
@@ -120,8 +128,10 @@
     requestAnimationFrame(update); box.kidsUpdate = update;
     wrap.append(prev, box, next); return wrap;
   }
-  function moreTile(n, filter, name) {
-    const b = make('button', 'kids-tile kids-more is-poster'); b.type = 'button';
+  // 0.6.146 (Björn 26.11.2026, Bild „CHECKER WELT“/„Jordan Matter“: halbe Kachel leer): die „Alle …“-Kachel hat die Form
+  // ihrer Reihe; als Hochkant-Kachel in einer Videoreihe machte sie die ganze Reihe so hoch wie ein Filmplakat.
+  function moreTile(n, filter, name, tall) {
+    const b = make('button', 'kids-tile kids-more' + (tall ? ' is-poster' : '')); b.type = 'button';
     b.setAttribute('aria-label', 'Alle ' + n + ' ' + name + ' anzeigen');
     const th = make('span', 'kids-thumb no-picture'); th.append(make('span', 'kids-letter', '→'));
     b.append(th, make('span', 'kids-title', 'Alle ' + n + ' ' + name));
@@ -134,14 +144,15 @@
     const box = make('div', grid ? 'kids-grid' : 'kids-strip');
     if (list.some(v => v.type === 'movie' || v.type === 'series')) box.classList.add('is-posters');
     for (const v of list) box.append(tile(v, all || list));
-    if (more) box.append(moreTile(more.n, more.filter, more.name));
+    if (more) box.append(moreTile(more.n, more.filter, more.name, box.classList.contains('is-posters')));
     sec.append(h, grid ? box : scroller(box)); return sec;
   }
   const STRIP = 40;          // Kacheln je Reihe in „Alle“; der Rest über „Alle …“ bzw. die Auswahl oben
   const count = (n, one, many) => n + ' ' + (n === 1 ? one : many);
   // 0.6.93: Filme und Serien in wenigen Gruppen statt einer langen Reihe (kids_catalog.GROUPS). Ohne Gruppen
   // (ältere Server) bleibt es bei einer Reihe „Filme“ bzw. „Serien“.
-  const byTitle = list => list.sort((a, b) => String(a.title).localeCompare(String(b.title), 'de', {sensitivity: 'base'}));
+  // 0.6.148 (Björn: „geladene Filme und Serien bevorzugen“): Titel mit lokaler Kopie stehen in jeder Reihe vorn
+  const byTitle = list => list.sort((a, b) => (!a.local - !b.local) || String(a.title).localeCompare(String(b.title), 'de', {sensitivity: 'base'}));
   const inGroup = (list, id) => list.filter(v => (v.theme || 'mehr') === id);
   function grouped(main, list, what) {
     const cut = (n, filter) => (n > STRIP ? {n, filter, name: 'Titel'} : null);
@@ -180,7 +191,7 @@
     if (state.filter === 'live') { renderLive(main); return; }
     if (state.filter === 'movies') { grouped(main, state.movies, 'Filme'); return; }
     if (state.filter === 'series') { grouped(main, state.series, 'Serien'); return; }
-    if (state.filter.startsWith('g:')) {
+    if (String(state.filter).startsWith('g:')) {
       const g = state.groups.find(x => 'g:' + x.id === state.filter) || {name: '', icon: ''};
       const list = inGroup(byTitle([...state.movies, ...state.series]), g.id);
       main.append(row(g.icon + ' ' + g.name, count(list.length, 'Titel', 'Titel'), list, true)); return;
@@ -194,11 +205,13 @@
     const started = [...state.videos, ...state.movies].filter(v => v.progress > 0);
     if (started.length) main.append(row('Weiterschauen', '', started.slice(0, 20)));
     const cut = (n, filter, name) => (n > STRIP ? {n, filter, name} : null);
-    grouped(main, byTitle([...state.movies, ...state.series]), '');
+    // 0.6.149 (Björn: neue Kanäle „nur oben, nicht in der Gesamtansicht“): die Kanalreihen standen hinter allen Film- und
+    // Seriengruppen (mehrere Hundert Titel) – jetzt direkt nach „Neu“/„Weiterschauen“, vor den Gruppen
     for (const c of state.channels) {
       const own = state.videos.filter(v => v.abo === c.id);
       if (own.length) main.append(row(c.name, own.length + ' Videos', own.slice(0, STRIP), false, own, cut(own.length, c.id, 'Videos')));
     }
+    grouped(main, byTitle([...state.movies, ...state.series]), '');
   }
 
   // ------------------------------------------------------------ Serie: Folgen in der Kinderecke
@@ -229,7 +242,7 @@
   async function load() {
     try {
       const d = await api('kids');
-      state.channels = d.channels || []; state.videos = (d.videos || []).map(fromAbo);
+      state.channels = (d.channels || []).map(c => Object.assign(c, {id: String(c.id)})); state.videos = (d.videos || []).map(fromAbo);
       state.liveEnabled = !!d.live_enabled;
       const cat = d.catalog || {};
       state.movies = (cat.movies || []).map(t => fromCatalog(t, 'movie'));
@@ -345,16 +358,90 @@
     return list.slice(i + 1).find(x => !x.done) || list.slice(0, i).find(x => !x.done && x.new) || list[i + 1] || null;
   }
   function clearNext() { clearTimeout(state.nextTimer); $('kids-next').hidden = true; $('kids-next-fill').classList.remove('run'); }
+  // 0.6.147 (Björn 26.11.2026: „wie bei YouTube … unten neue Videos aus dem verfügbaren Katalog, die dazu passen“):
+  // Vorschläge nur aus dem, was die Kinderecke ohnehin zeigt (Abo-Videos, freigegebene Filme und Serien; der Server
+  // prüft jede Wiedergabe erneut). Feste Regeln, keine KI: gleicher Kanal bzw. gleiche Reihe, gleiches Thema,
+  // gemeinsame Wörter im Titel; Ungesehenes und Neues zuerst; Gesehenes nur, wenn sonst nichts passt.
+  const STOP = new Set(['der', 'die', 'das', 'und', 'mit', 'für', 'von', 'den', 'dem', 'des', 'ein', 'eine', 'einer', 'im', 'in', 'am',
+    'an', 'auf', 'zu', 'zum', 'zur', 'ist', 'wie', 'was', 'wer', 'the', 'and', 'of', 'to', 'my', 'a', 'folge', 'staffel', 'teil', 'video',
+    'neu', 'kinder', 'kids', 'br', 'kika', 'ard', 'zdf', 'wdr', 'ndr', 'swr', 'shorts']);
+  const words = text => new Set(String(text || '').toLowerCase().normalize('NFC').split(/[^0-9a-zäöüß]+/)
+    .filter(w => w.length >= 4 && !STOP.has(w)));
+  const plain = t => String(t || '').toLowerCase().normalize('NFC').replace(/[^0-9a-zäöüß]+/g, ' ').trim();
+  // gleiche Reihe: gleicher Titel oder einer ist der Anfang des anderen („Löwenzahn“ / „Löwenzahn mit Peter Lustig“)
+  const sameShow = (a, b) => { a = plain(a); b = plain(b); return !!a && !!b && (a === b || a.startsWith(b + ' ') || b.startsWith(a + ' ')); };
+  function suggest(v, skip, n) {
+    // eine Folge zählt mit ihrer Serie (Titel, Thema); die Serie selbst wird nicht vorgeschlagen
+    const show = v.type === 'episode' ? state.show : null;
+    const theme = show ? show.theme : v.theme;
+    const own = words(v.title + ' ' + (v.type === 'abo' ? channelOf(v).name || '' : '') + ' ' + (show ? show.title : ''));
+    const pool = [...state.videos, ...state.movies, ...state.series];
+    const scored = [];
+    for (const x of pool) {
+      // 0.6.152 (Mac-Prüfung 0.6.147: „Löwenzahn mit Peter Lustig“ als erste Kachel nach einer Löwenzahn-Folge): die eigene
+      // Serie auch dann auslassen, wenn die Liste inzwischen neu geladen wurde (anderes Objekt, gleiche Kennung/gleicher Titel)
+      if (show && x.type === 'series' && ((x.id && x.id === show.id) || sameShow(x.title, show.title))) continue;
+      if (x === v || x === show || (x.key && x.key === v.key) || (x.id && x.id === v.id && x.type === v.type) || x === skip) continue;
+      let score = 0;
+      if (v.type === 'abo' && x.type === 'abo' && x.abo === v.abo) score += 3;
+      if (v.type !== 'abo' && x.type !== 'abo' && x.theme && x.theme === theme && x.theme !== 'mehr') score += 2;
+      let shared = 0;
+      for (const w of words(x.title + ' ' + (x.type === 'abo' ? channelOf(x).name || '' : ''))) if (own.has(w)) shared++;
+      score += Math.min(3, shared) * 1.5;
+      // schwacher Rückfall, damit nach jedem Video etwas kommt: dieselbe Art (Abo-Video bzw. Film/Serie)
+      if (!score) { if ((x.type === 'abo') !== (v.type === 'abo')) continue; score = .25; }
+      if (x.done) score -= 2; else { score += 1; if (x.new) score += .5; if (x.progress > 0) score += .5; }
+      if (x.local && x.type !== 'abo') score += 1;     // 0.6.148: Geladenes bevorzugen (spielt ohne Netz)
+      if (x.type === v.type) score += .5;
+      scored.push([score, hash(String(v.key || v.id || v.title) + '|' + String(x.key || x.id || x.title)) % 1000, x]);
+    }
+    scored.sort((a, b) => b[0] - a[0] || a[1] - b[1]);
+    return scored.slice(0, n || 8).map(e => e[2]);
+  }
+  window.__kidsSuggest = (title, n) => { const v = [...state.videos, ...state.movies, ...state.series].find(x => x.title === title);
+    return v ? suggest(v, null, n).map(x => x.title) : null; };   // Klicktest
+  const listOf = x => x.type === 'abo' ? state.videos.filter(y => y.abo === x.abo) : x.type === 'movie' ? state.movies : state.series;
+  function showSuggestions(v, skip) {
+    const list = suggest(v, skip, 8), host = $('kids-suggest-list');
+    host.replaceChildren(...list.map(x => {
+      const b = tile(x, listOf(x));
+      b.onclick = () => {
+        if (x.type === 'series') { close(); openSeries(x); }
+        else play(x, listOf(x));
+      };
+      return b;
+    }));
+    $('kids-suggest').hidden = !list.length;
+    $('kids-next').classList.toggle('has-suggest', list.length > 0);
+    host.scrollLeft = 0;
+    return list.length;
+  }
   function offerNext() {
-    const n = state.current && nextOf(state.current);
-    if (!n) { setTimeout(close, 1500); return; }
+    const v = state.current, n = v && nextOf(v);
+    const many = v ? showSuggestions(v, n) : 0;
+    if (!n && !many) { setTimeout(close, 1500); return; }
+    for (const id of ['kids-next-head', 'kids-next-play', 'kids-next-bar']) $(id).hidden = !n;
+    $('kids-next').hidden = false;
+    if (!n) {   // nach einem Film: nur die Vorschläge, ohne Countdown; nach einer Minute ohne Wahl zurück
+      $('kids-suggest').onpointerdown = $('kids-suggest').onfocusin = $('kids-suggest').onpointerover = $('kids-suggest').onpointermove = null;
+      $('kids-suggest-list').onscroll = null;
+      $('kids-next-stop').focus();
+      state.nextTimer = setTimeout(close, 60000);
+      return;
+    }
     $('kids-next-title').textContent = n.title;
     const img = $('kids-next-img'); if (n.picture) img.src = n.picture; else img.removeAttribute('src');
-    $('kids-next').hidden = false;
     const fill = $('kids-next-fill'); fill.classList.remove('run'); void fill.offsetWidth; fill.classList.add('run');
     $('kids-next-play').onclick = () => play(n, state.list);
     $('kids-next-play').focus();
     state.nextTimer = setTimeout(() => play(n, state.list), 6000);
+    // wer in den Vorschlägen blättert oder darauf zeigt, möchte selbst wählen: Countdown anhalten
+    const hold = () => { clearTimeout(state.nextTimer); fill.classList.remove('run'); };
+    $('kids-suggest').onpointerdown = hold; $('kids-suggest').onfocusin = hold; $('kids-suggest-list').onscroll = hold;
+    // 0.6.152 (Mac-Prüfung 0.6.147: Darüberfahren hielt nicht an): Maus über den Vorschlägen hält an – auch wenn sie
+    // schon dort stand, als der Endbildschirm erschien (dann kommt kein pointerover, aber die erste Bewegung)
+    const hover = e => { if (e.pointerType === 'mouse') hold(); };
+    $('kids-suggest').onpointerover = hover; $('kids-suggest').onpointermove = hover;
   }
   video.addEventListener('playing', () => say(''));
   video.addEventListener('waiting', () => say('Lädt …'));

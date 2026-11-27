@@ -78,7 +78,7 @@ class MeshCursorTests(unittest.TestCase):
 class SourceChecks(unittest.TestCase):
     server=(ROOT/'server.py').read_text(encoding='utf-8')
     def test_catalog_connections_use_normal_sync(self):
-        block=self.server[self.server.index('def db():'):self.server.index('_BOOT=')]
+        block=self.server[self.server.index('def db('):self.server.index('_BOOT=')]
         self.assertIn("PRAGMA synchronous=NORMAL",block)
     def test_settings_writes_go_through_cache_invalidation(self):
         writes=re.findall(r"INSERT OR REPLACE INTO settings",self.server)
@@ -86,7 +86,8 @@ class SourceChecks(unittest.TestCase):
         body=self.server[self.server.index('def store_settings'):self.server.index('def _settings_payload')]
         # 0.6.53: write-through with a generation counter (a reader before the commit kept the old row).
         self.assertIn("_SETTINGS_CACHE.update(payload=payload",body);self.assertIn("gen=_SETTINGS_CACHE['gen']+1",body)
-        self.assertGreaterEqual(self.server.count('store_settings(c,s)'),4)
+        # 0.6.123: callers go through _save_settings/write_waiting (waits for a busy database), which calls store_settings
+        self.assertGreaterEqual(self.server.count('store_settings(c,s)')+self.server.count('_save_settings(s)'),4)
     def test_diagnostic_log_holds_a_night(self):
         self.assertGreaterEqual(diagnostics.LOG_BYTES*(diagnostics.LOG_BACKUPS+1),32*1024*1024)
 

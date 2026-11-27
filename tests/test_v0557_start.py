@@ -254,7 +254,7 @@ class UnifiedStartTests(Base):
         finally:
             unified_index.ON_BUILD = None
         self.assertEqual(seen[0][0], 'movies')
-        self.assertEqual(set(seen[0][1]), {'mediatheken', 'pluto', 'merge'})
+        self.assertEqual(set(seen[0][1]) - {'local', 'reihen'}, {'mediatheken', 'pluto', 'merge'})   # 0.6.155: merge-Anteile
 
 
 if __name__ == '__main__':

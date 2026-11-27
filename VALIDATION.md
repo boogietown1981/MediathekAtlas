@@ -1,5 +1,125 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.161 – YouTube-Zugang prüfen (27. November 2026)
+- Automatisch: tests/test_v06161.py (7: Simulation statt Download, sofortige Erneuerung, ohne neuere Ausgabe, ohne Deno, Eingabe, force, Auftragssuche, Verdrahtung), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf. Am Mac: PRUEFLISTE in releases/0.6.161.
+
+## 0.6.160 – Ursache B1 yt-dlp-Lösungsskript (27. November 2026)
+- Automatisch: tests/test_v06160.py (7: Erkennung, stabil→Nightly mit 12-h-Sperre und Kanal, Prüfsummenfehler installiert nichts, eigenes neueres yt-dlp hat Vorrang, fetch-Meldung/Ereignis, Neueinreihen je Version, Verdrahtung), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf, echte Nightly-Ausgabe gegen Player b485e332. Am Mac: PRUEFLISTE in releases/0.6.160.
+
+## 0.6.159 – B1 Air-Diagnose 0.6.153 (27. November 2026)
+- Automatisch: tests/test_v06159.py (6: Meldetexte je Laufzeitzustand, Client-Erkennung, fetch mit Deno/ohne Deno, Ereignis ohne URLs, Warnung ändert Bewertung nicht), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf (Netz gesperrt). Am Mac: PRUEFLISTE in releases/0.6.159.
+
+## 0.6.158 – Befunde Mac-Prüfung 0.6.157 (27. November 2026)
+- Automatisch: tests/test_v06158.py (4; Regel gegen alle 86 echten Kandidatengruppen der Pro-Kopie), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.158.
+
+## 0.6.157 – Befunde Mac-Prüfung 0.6.156 (27. November 2026)
+- Automatisch: tests/test_v06157.py (3), angepasste Tests 0.6.152/0.6.156, gesamte Suite, Node-Tests, Klicktests (film_reihen.cjs). Nicht hier geprüft: echte Kataloge (Genres von „Zärtliche Chaoten“), Air-Bilder. Am Mac: PRUEFLISTE in releases/0.6.157.
+
+## 0.6.156 – Befunde Mac-Prüfung 0.6.155 (27. November 2026)
+- Automatisch: tests/test_v06156.py (3), tests/browser/film_reihen.cjs (neu: Reihenkachel per Knopf, Titel, Bild → alle Filme, kein „Serie nicht gefunden“; Mehrteiler öffnet Teile), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge, Air-Bilderlauf. Am Mac: PRUEFLISTE in releases/0.6.156.
+
+## 0.6.155 – Hinweise Mac-Prüfungen 0.6.152–0.6.154 (27. November 2026)
+- Automatisch: tests/test_v06155.py (4), tests/test_v06154.py (angepasst), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge, Air-Bilderlauf mit erschöpftem Limit, 3,75-s-Serienaufruf (Pro). Am Mac: PRUEFLISTE in releases/0.6.155.
+
+## 0.6.154 – Filmreihen-/Mehrteiler-Kacheln korrigiert (26. November 2026)
+- Automatisch: tests/test_v06154.py (3: eine Kachel je Reihenname, eigene Filmwerke mit Trenner, zusammengeführte Titel, Fortsetzungen, Fassungen, „Teil 1/ 2“), tests/test_v06150.py, gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echte Kataloge (Pro/Air-Kopie) – Am Mac: PRUEFLISTE in releases/0.6.154.
+
+## 0.6.153 – Filmreihen-Kacheln ab Werk aus (26. November 2026)
+- Automatisch: tests/test_v06150.py (angepasst), tests/test_v06153.py (5), tests/browser/lokal_archive.cjs (echte MKV: Start, Spulen; sample.mkv; 4 Läufe in Folge grün), Chromium gegen eigenen Server 10 Starts ohne Abbruch (vorher etwa jeder dritte mit „data source error“), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.153.
+
+## 0.6.152 – Korrekturen Mac-Prüfung 0.6.147 (26. November 2026)
+- Automatisch: tests/test_v06152.py (13), tests/browser/kids_corner.cjs (+2), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.152.
+
+## 0.6.151 – Lokale Filmarchive (26. November 2026)
+- Automatisch: tests/test_v06151.py (17), tests/browser/lokal_archive.cjs (neu, Einstellungen → Einlesen → Katalog → Titelseite → Abspielquelle), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.151 (echte SMB-Freigabe, NFO-Bestand, Abmelden der Freigabe).
+
+## 0.6.150 – Filmreihen und Mehrteiler unter Filme (26. November 2026)
+- Automatisch: tests/test_v06150.py (4), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.150 (echter Katalog: welche Reihen werden zusammengefasst, Sendeplätze einzeln, Laufzeit).
+
+## 0.6.149 – Kinderecke-Kanäle, Fortschritt im Katalog (26. November 2026)
+- Automatisch: tests/test_v06149.py (4), tests/browser/kids_corner.cjs (+3), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.149 (u. a. Kanal neu abonnieren, erstes Video geladen → Reihe und Kanalfilter ohne Neustart).
+
+## 0.6.148 – Nummerierte Folgen als Serie, geladene Titel zuerst (26. November 2026)
+- Automatisch: tests/test_v06148.py (12), tests/browser/kids_corner.cjs (+6), gesamte Suite, Node-Tests, Klicktests; Bildschirmfoto der Testkopie in releases/0.6.148. Am Mac: echte Kinderecke „Die verwegenen Vier“ (PRUEFLISTE in releases/0.6.148).
+
+## 0.6.147 – Kinderecke Vorschläge nach dem Video (26. November 2026)
+- Automatisch: tests/test_v06147.py (4), tests/browser/kids_corner.cjs (+3), gesamte Suite, Node-Tests, Klicktests; Bildschirmfoto der Testkopie in releases/0.6.147. Am Mac: echte Kinderecke (PRUEFLISTE in releases/0.6.147).
+
+## 0.6.146 – Kinderecke Kachelhöhe, Bilder (26. November 2026)
+- Automatisch: tests/test_v06146.py (5), gesamte Suite, Node-Tests, Klicktests. Am Mac: Kinderecke ansehen, kids_pictures_fetched (PRUEFLISTE in releases/0.6.146).
+
+## 0.6.145 – filmfriend, Senderstatistik (26. November 2026)
+- Automatisch: tests/test_v06145.py (5), gesamte Suite, Node-Tests, Klicktests. Am Mac: filmfriend-Abgleich am echten Netz, Diagnose-Export (PRUEFLISTE in releases/0.6.145).
+
+## 0.6.144 – Filmliste ohne Wartezeit nach Markierlauf (26. November 2026)
+- Automatisch: tests/test_v06144.py (7), gesamte Suite, Node-Tests, Klicktests. Am Mac: Laufzeit Air direkt nach catalog_series_films_marked (PRUEFLISTE in releases/0.6.144).
+
+## 0.6.143 – M1-Air-Diagnose (26. November 2026)
+- Automatisch: tests/test_v06143.py (14), gesamte Suite, Node-Tests, Klicktests. Am Mac: Startprotokoll (arm64-Auswahl), IMDb-Platzsperre an einer Kopie, Filmlisten-Fortsetzung (PRUEFLISTE in releases/0.6.143).
+
+## 0.6.142 – Reihenfilme, Tatort ohne Landangabe (26. November 2026)
+- Automatisch: tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.142).
+
+## 0.6.141 – Reihenfilme, Korrektur Mac-Urteil 0.6.140 (26. November 2026)
+- Automatisch: tests/test_v06137.py, tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.141).
+
+## 0.6.140 – Reihenfilme neu (26. November 2026)
+- Automatisch: tests/test_v06137.py, tests/test_v06140.py, gesamte Suite, Node-Tests, Klicktests; synthetische 686k-DB (Filmliste 0,68 s, Markierlauf 3,6 s, Suche 0,2 s). Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.140).
+
+## 0.6.139 – 0.6.138 ohne Reihenfilme (26. November 2026)
+- Automatisch: gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.139).
+
+## 0.6.138 – Korrektur Mac-Urteil 0.6.136 (26. November 2026)
+- Automatisch: tests/test_v06138.py (4), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.138).
+
+## 0.6.137 – Reihenfilme auch unter Filme (26. November 2026)
+- Automatisch: tests/test_v06137.py (6), gesamte Suite, Node-Tests, Klicktests; Laufzeitmessung an der synthetischen 686k-Werke-DB. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.137).
+
+## 0.6.136 – Korrektur Mac-Urteil 0.6.135 (25. November 2026)
+- Automatisch: tests/test_v06135.py (8), tests/test_v0697.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.136).
+
+## 0.6.135 – 3sat-Filme, Sport-Genres, Kopierschutz-Kacheln (25. November 2026)
+- Automatisch: tests/test_v06135.py (7), tests/test_v0697.py angepasst, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.135).
+
+## 0.6.134 – Kinderecke-Zwilling (25. November 2026)
+- Automatisch: neuer Test in tests/test_v06113_kinder_zwilling.py (gegen 0.6.133 rot, jetzt grün), alle Kinderecke-Tests, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung der 32 Titel (PRUEFLISTE in releases/0.6.134).
+
+## 0.6.133 – Kinderecke-Filme nur mit abspielbarem Angebot (25. November 2026)
+- Automatisch: tests/test_v06132.py (14), alle Kinderecke-Tests (134), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.133, deckt 0.6.132 mit ab).
+
+## 0.6.132 – Krimireihen, 3sat, Genre-Nachtrag, freier Speicher (25. November 2026)
+- Automatisch: tests/test_v06132.py (11), angepasst test_v06125/test_v06127, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.132); Speicherwert über osascript nur am Mac prüfbar.
+
+## 0.6.131 – Korrektur Mac-Urteil 0.6.130 (ECHT, Rückweg nach 0.6.129) (25. November 2026)
+- Automatisch: tests/test_v06130.py (20, angepasst), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.131).
+
+## 0.6.130 – Korrektur Mac-Urteil 0.6.129 (S, L5, L3) und Trailer (24. November 2026)
+- Automatisch: tests/test_v06130.py (13), tests/test_epg_programmfuehrer.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.130).
+
+## 0.6.129 – Live-TV-Befunde L1–L5 (24. November 2026)
+- Automatisch: tests/test_epg_programmfuehrer.py (21), gesamte Suite, Node-Tests, Klicktests (click_all, epg_live). Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.129, enthält 0.6.128).
+
+## 0.6.128 – Korrektur Diagnose Pro 0.6.127 (24. November 2026)
+- Automatisch: tests/test_v06128.py (11), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.128).
+
+## 0.6.127 – Genre-Nachtrag, Leerzeichen-Reihen (23. November 2026)
+- Automatisch: tests/test_v06127.py (5), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.127).
+
+## 0.6.126 – Programmführer Stufe 1, Wunschliste-Link (23. November 2026)
+- Automatisch: tests/test_epg_programmfuehrer.py (16), gesamte Suite, Node-Tests, Klicktests (click_all, epg_live). Quellen am echten Netz: SRF und ARD am 23.11. im Browser abgefragt, ZDF nicht. Echter Lauf: Mac-Prüfung (PRUEFLISTE in releases/0.6.126).
+
+## 0.6.125 – Korrektur Mac-Urteil 0.6.123 (F, S) (23. November 2026)
+- Automatisch: tests/test_v06125.py (4), tests/test_v06123.py (angepasst), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.125).
+
+## 0.6.124 – 3sat-Titelteile, Suchspeicher, Kinderecke nach Heilungen (23. November 2026)
+- Automatisch: tests/test_v06124.py (8), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.124).
+
+## 0.6.123 – Keine Sendungsausgaben als Film, Einstellungen bei belegter Datenbank (23. November 2026)
+- Automatisch: tests/test_v06123.py (5), gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.123).
+
+## 0.6.122 – Sammelstand Erkennung 0.6.121 + Kinderecke-Bilder (23. November 2026)
+- Automatisch: tests/test_v06121.py, tests/test_v06121_kinder_bilder.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.122).
+
 ## 0.6.120 – Korrektur Mac-Urteil 0.6.119 (23. November 2026)
 - Automatisch: tests/test_v06120.py, gesamte Suite, Node-Tests, Klicktests. Echter Bestand: Mac-Prüfung (PRUEFLISTE in releases/0.6.120).
 

@@ -574,8 +574,9 @@ def disk(path):
     if p is None:
         return {'free': 0, 'total': 0}
     try:
-        usage = shutil.disk_usage(p)
-        return {'free': usage.free, 'total': usage.total}
+        import system_monitor   # 0.6.132: on macOS including purgeable space (Finder value)
+        usage = system_monitor.usage(p)
+        return {'free': usage['free'], 'total': usage['total'], 'strict_free': usage['strict_free']}
     except OSError:
         return {'free': 0, 'total': 0}
 
@@ -669,12 +670,13 @@ def volumes():
             if sys.platform.startswith('linux') and p.parent == Path('/media') and user and p.name == user:
                 continue
             seen.add(str(p))
-            usage = shutil.disk_usage(p)
+            import system_monitor   # 0.6.132: free space as the Finder shows it
+            usage = system_monitor.usage(p)
         except OSError:
             continue
-        if usage.total <= 0:
+        if usage['total'] <= 0:
             continue
-        found.append({'path': str(p), 'name': p.name or str(p), 'free': usage.free, 'total': usage.total,
+        found.append({'path': str(p), 'name': p.name or str(p), 'free': usage['free'], 'total': usage['total'],
                       'network': filesystem(p) in NETWORK_FS})
     return found[:16]
 
@@ -1633,6 +1635,8 @@ class Context:
                                  default=None)
             item = {'kind': kind, 'label': KINDS[kind], 'path': path, 'free': space['free'], 'total': space['total'],
                     'reachable': reachable, 'suggest': SUBFOLDER[kind]}
+            if 'strict_free' in space:      # 0.6.135 (Prüfvermerk 0.6.134): sofort frei ohne löschbaren Platz, im Diagnose-Export
+                item['strict_free'] = space['strict_free']
             if kind == 'cache':
                 item['base'] = s.get('cache_dir') or ''
                 item['shared_with_downloads'] = not s.get('cache_dir')

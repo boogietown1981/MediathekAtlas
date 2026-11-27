@@ -64,6 +64,7 @@ class Service:
         # checked 10 works as „Planet Schule“ afterwards. Recognition and episode workers wait for the quick once-heals
         # (refile_loop.early_heals), at most HEAL_WAIT seconds. Outside start() (tests, tools) the gate stays open.
         self.heals_done=threading.Event();self.heals_started=time.monotonic()
+        self.first_format_pass=threading.Event()   # 0.6.124: set after the first Jahrgänge/Schreibweisen pass
         for fn in (self.sync_loop,self.refile_loop,self.reclassify_loop,self.video_audit_loop,self.artwork_loop,self.mesh_loop,self.movie_dedup_loop,self.film_hint_loop,self.subscription_loop):
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name=fn.__name__).start()
         # Eight long-lived workers are cheap while idle; actual concurrency is configurable.
@@ -74,6 +75,19 @@ class Service:
         for index in range(MAX_EPISODE_WORKERS):
             fn=lambda index=index:self.episode_loop(index)
             threading.Thread(target=self.supervise,args=(fn,),daemon=True,name='episode_worker_%d'%(index+1)).start()
+    def startup_settled(self,timeout=900.0,stop=None):
+        """0.6.124 (Diagnose Air 0.6.120, N-H: Kinderecke vorab nach 8,7 s gebaut, von Jahrgängen/Schreibweisen 30 s
+        später verworfen, erster Aufruf 19,4 s): waits until the once-heals and the first format pass are done
+        (at most timeout seconds in all). True if settled, False on timeout or stop."""
+        deadline=time.monotonic()+timeout;stop=stop or self.stop
+        for name in ('heals_done','first_format_pass'):
+            while True:   # start() creates the gates after the index build
+                gate=getattr(self,name,None)
+                if gate is not None and gate.is_set():break
+                if stop.is_set() or time.monotonic()>deadline:return False
+                if gate is None:stop.wait(1)
+                else:gate.wait(1)
+        return True
     def wait_for_heals(self):
         """0.6.86: True while a worker must still wait for the once-heals (checked every 2 s)."""
         gate=getattr(self,'heals_done',None)
@@ -139,10 +153,60 @@ class Service:
                 self.sqlite_busy_count+=1
                 if self.stop.wait(2):return None
         return None
+    def reseed_non_films(self):
+        """0.6.123, once (before the workers): catalog.reseed_non_films – „10 vor 10 vom …“ is no film.
+        0.6.125 (Mac-Prüfung 0.6.123: 489 echte Filme umgestuft): where the 0.6.123 pass ran, its films come back first
+        (catalog.restore_reseeded_films); the corrected pass runs once under film_seed_v06125."""
+        with self.db() as c:
+            # 0.6.128 (Diagnose Pro 0.6.127: „Kurzer Prozess“ mit kurzem Ausschnitt aussortiert): once more with the
+            # longest offer; where an earlier pass ran (0.6.123 or 0.6.125), its films come back first.
+            # 0.6.132: once more – episodes „(n/m)“ with m ≥ 3 the 0.6.128 restore made films again go back to unknown
+            if catalog.get_state(c,'film_seed_v06132',False):return None
+            # 0.6.132 (Diagnose Air 0.6.131: „Frieden, Folge 3/6“, „Mordshunger (1/4)“ bei jeder Version zurück und wieder
+            # umgestuft, Heilungen 137 s): the restore runs only once – not again where 0.6.128 or later already did it.
+            old_ran=bool((catalog.get_state(c,'film_seed_v06123',False) or catalog.get_state(c,'film_seed_v06125',False))
+                         and not catalog.get_state(c,'film_seed_v06128',False))
+        if old_ran:
+            restored=self.batched(catalog.restore_reseeded_films,'film_seed_restore')
+            if restored is None:return None
+            if restored[0]:diagnostics.event('catalog_films_restored',works=restored[0],samples=restored[1]);catalog.invalidate_listings()
+        done=self.batched(catalog.reseed_non_films,'film_seed')
+        if done is None:return None
+        if done[0]:diagnostics.event('catalog_non_films_reseeded',works=done[0],samples=done[1]);catalog.invalidate_listings()
+        state={'works':done[0],'restored':restored[0] if old_ran else 0,'at':time.time()}
+        with self.db() as c:catalog.set_state(c,'film_seed_v06125',state);catalog.set_state(c,'film_seed_v06128',state);catalog.set_state(c,'film_seed_v06132',state)
+        return done[0]
+    def batched(self,fn,label):
+        """Runs fn(c,after) -> (n, samples, last id) in short transactions until done; (total, samples) or None on stop."""
+        after='';total=0;samples=[]
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:n,s,after=fn(c,after)
+                total+=n;samples+=s[:20-len(samples)]
+                if after is None:return total,samples
+                if self.stop.wait(.05):return None
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.busy(label)
+                if self.stop.wait(2):return None
+        return None
+    def requeue_truncated_notes(self):
+        """0.6.121, once: works with a cut version note in the title are searched again with the cleaned title."""
+        try:
+            with self.db() as c:
+                if catalog.get_state(c,'truncated_notes_v06121',False):return 0
+                ids=catalog.truncated_note_works(c)
+                c.executemany("UPDATE works SET state='pending',attempts=0,next_try=0 WHERE id=?",[(w,) for w in ids])
+                catalog.set_state(c,'truncated_notes_v06121',{'requeued':len(ids),'at':time.time()})
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.busy('truncated_notes');return 0
+        if ids:diagnostics.event('catalog_truncated_notes_requeued',works=len(ids))
+        return len(ids)
     def early_heals(self):
         """0.6.86: once-heals that change series identities, before any worker claims a work."""
         try:
-            self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
+            self.requeue_truncated_notes();self.reseed_non_films();self.heal_topics();self.reseed_portal();self.undo_clip_sendung();self.reset_generic_identities();self.heal_sendung_suggestions();self.heal_series_names();self.reopen_full_programmes()
         finally:
             gate=getattr(self,'heals_done',None)
             if gate is not None and not gate.is_set():
@@ -220,10 +284,27 @@ class Service:
         next_try, so each film turn of the worker takes them before the ~5,000 other new works."""
         with self.db() as c:
             # Diagnose Air 23.11.2026: once more with the title year in matching (catalog.match_meta)
-            if catalog.get_state(c,'film_rules_suffix_year',False):return
-            ids=catalog.film_suffix_works(c)
-            c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
-            undone=catalog.undo_short_year_close(c)
+            # 0.6.124 (Diagnose Air 0.6.120): once more with title parts (metadata.film_part_candidates) and the new
+            # cache key – the 0.6.119/0.6.120 pass got the old search results from the 24-h cache.
+            # 0.6.128: once more with sequel spellings (Der Pate II) and the year+runtime tie-break (Terrified)
+            # 0.6.132: once more with the possessive-free title part and the part similarity (Wallander, Air 0.6.131)
+            # 0.6.135: once more – film series index (Wallander 01) and two years apart with exact title (More than Honey)
+            if catalog.get_state(c,'film_rules_v06138',False):return
+            ids=[];undone=[]
+            if catalog.get_state(c,'film_rules_v06135',False):
+                # 0.6.136: copies that ran 0.6.135 – the two-year matches the narrowed rule rejects go back, once
+                if not catalog.get_state(c,'year_two_v06136',False):
+                    back=catalog.undo_year_two(c)
+                    catalog.set_state(c,'year_two_v06136',{'works':len(back),'at':time.time()})
+                    if back:diagnostics.event('catalog_year_two_undone',works=len(back),titles=[t for _,t in back[:20]])
+                # 0.6.138 (Mac-Prüfung 0.6.136, More than Honey): only the stored suggestions once more, now with the
+                # IMDb runtime – no new search. Needs the archive; until it is ready the format pass asks again.
+                import imdb_archive
+                if not getattr(imdb_archive.ACTIVE,'updated',0):return
+            else:
+                ids=catalog.film_suffix_works(c)
+                c.executemany("UPDATE works SET state='pending',attempts=0,next_try=? WHERE id=?",[(i-1e6,w) for i,w in enumerate(ids)])
+                undone=catalog.undo_short_year_close(c)
         after='';matched=0
         while not self.stop.is_set():
             try:
@@ -237,12 +318,12 @@ class Service:
                 if self.stop.wait(2):return
         if self.stop.is_set():return
         diagnostics.event('catalog_film_rules_applied',suffix_requeued=len(ids),year_matched=matched,
-                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.108')
+                          clips_undone=len(undone),clips=[t for _,t in undone[:20]],version='0.6.138')
         if matched or undone:catalog.invalidate_listings()
         state={'suffix_requeued':len(ids),'year_matched':matched,'clips_undone':len(undone),'at':time.time()}
         with self.db() as c:
             catalog.set_state(c,'film_rules_v0697',state);catalog.set_state(c,'film_rules_v06108',state)
-            catalog.set_state(c,'film_rules_suffix_year',state)
+            catalog.set_state(c,'film_rules_suffix_year',state);catalog.set_state(c,'film_rules_parts_v06124',state);catalog.set_state(c,'film_rules_v06128',state);catalog.set_state(c,'film_rules_v06132',state);catalog.set_state(c,'film_rules_v06135',state);catalog.set_state(c,'year_two_v06136',state);catalog.set_state(c,'film_rules_v06138',state)
     def heal_topics(self):
         """0.6.92, once: works that lost works.topic on a move to the canonical ID get it back (catalog.heal_missing_topics)."""
         total=0
@@ -339,6 +420,14 @@ class Service:
         self.format_wake.set();self.subscription_wake.set()
         diagnostics.event('catalog_snapshot_diff',**changes,processed=count,import_seconds=round(time.monotonic()-import_started,2))
         self.status(phase='complete',processed=count,changes=changes);return count
+    FEED_NET_BACKOFF=(600,1800,3600)
+    def feed_retry_delay(self,error):
+        """0.6.143 (M1-Air-Diagnose 26.11.2026: ohne Netz alle ~5–10 min ein neuer Zyklus mit 3 Versuchen): bei
+        Netzfehlern wachsende Wartezeit 10 → 30 → 60 min (ein Klick auf „Jetzt starten“ geht immer sofort), sonst 5 min."""
+        if not filmlist.network_error(error):
+            self.feed_net_failures=0;return 300
+        self.feed_net_failures=getattr(self,'feed_net_failures',0)+1
+        return self.FEED_NET_BACKOFF[min(self.feed_net_failures,len(self.FEED_NET_BACKOFF))-1]
     def sync_loop(self):
         retry_after=0
         while not self.stop.wait(2):
@@ -367,7 +456,7 @@ class Service:
             self.wake.clear();self.restart.clear();started=time.time()
             def cancelled():return self.stop.is_set() or self.restart.is_set() or task_control.paused('filmlist') or (not requested and not self.settings().get('auto_catalog',True))
             try:
-                path=filmlist.download(self.root,self.status,cancelled)
+                path=filmlist.download(self.root,self.status,cancelled);self.feed_net_failures=0
                 self.import_snapshot(path,started,cancelled)
             except InterruptedError:self.status(phase='paused')
             except sqlite3.OperationalError as e:
@@ -376,8 +465,23 @@ class Service:
                 self.busy('sync');diagnostics.event('catalog_sync_busy',level='WARNING',error=core.safe_error(e))
                 self.status(phase='waiting',error='Datenbank belegt, neuer Versuch in 1 min');retry_after=time.time()+60
             except Exception as e:
-                diagnostics.error('catalog_sync_failed',e)
-                self.status(phase='error',error=core.safe_error(e));retry_after=time.time()+300
+                delay=self.feed_retry_delay(e)
+                diagnostics.error('catalog_sync_failed',e,retry_seconds=delay)
+                self.status(phase='error',error=core.safe_error(e),retry_at=time.time()+delay);retry_after=time.time()+delay
+    FILM_REVIEW_LOG=300
+    def log_film_review(self,meta,source,judged,candidates):
+        """0.6.132 (Diagnose Air 0.6.131: „More than Honey“, Wallander „prüfen“ mit Kandidat, Grund nicht im Export): for
+        3sat-style film titles the candidates and why each one was not taken (at most FILM_REVIEW_LOG per run)."""
+        if getattr(self,'film_review_logged',0)>=self.FILM_REVIEW_LOG:return
+        if not metadata.film_suffix_year(meta.get('title')) and not metadata.film_suffix_year((source or {}).get('title')):return
+        import matching
+        self.film_review_logged=getattr(self,'film_review_logged',0)+1
+        diagnostics.event('film_review_candidates',title=str(meta.get('title') or '')[:120],year=judged.get('year'),
+            duration=(source or {}).get('duration'),candidates=[{'provider':c.get('provider'),'title':str(c.get('title') or '')[:80],
+            'kind':c.get('kind'),'year':c.get('year'),'similarity':round(float(c.get('similarity') or 0),3),
+            'runtime_agrees':bool(c.get('runtime_agrees')),'runtime_mismatch':bool(c.get('runtime_mismatch')),
+            'title_part':c.get('title_part'),'issues':matching.issues(judged,c)[:4],'verified':matching.verified(judged,c)}
+            for c in candidates[:5]])
     def metadata_state(self,**state):
         self.metadata_status={**state,'checked_session':self.checked,'updated_at':time.time()}
         # 0.6.44: the live status stays complete for the UI; the protocol keeps waiting/error states, results
@@ -1419,7 +1523,7 @@ class Service:
         self.metadata_state(phase='checking',title=m['title'],work_id=wid,providers=providers)
         started=time.monotonic()
         try:
-            ck=catalog.digest(json.dumps(['v0531',config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
+            ck=catalog.digest(json.dumps(['v0531',metadata.SEARCH_REV,metadata.query_title(m['title']),config.get('imdb_generation'),m['title'],m['kind'],m.get('year'),m.get('season'),m.get('episode'),m.get('episode_title'),entry['source'].get('title'),entry['source'].get('topic'),entry['source'].get('duration'),config.get('tmdb'),config.get('omdb'),config.get('tvdb'),config.get('tvdb_pin')],sort_keys=True))
             with self.db() as c:cached=c.execute('SELECT payload FROM metadata_cache WHERE id=? AND checked>?',(ck,time.time()-86400)).fetchone()
             if cached and not priority:result=json.loads(cached[0])
             else:
@@ -1432,6 +1536,7 @@ class Service:
             judged=catalog.match_meta(m,entry['source'])
             chosen=catalog.auto_choice(judged,usable);recognized=chosen or catalog.work_choice(judged,usable)
             outcome='retry' if result['warnings'] or result.get('deferred_providers') else 'review'
+            if not chosen and usable:self.log_film_review(m,entry['source'],judged,usable)
             for write_attempt in range(4):
                 try:
                     with self.db() as c:
@@ -1518,6 +1623,15 @@ class Service:
             if assigned:diagnostics.event('catalog_formats_assigned',assigned=assigned);assigned=0
             self.merge_year_editions()
             self.unify_show_spelling()
+            self.backfill_genres()
+            self.mark_series_films()
+            try:self.film_heals()   # 0.6.138: returns at once after its Merker; waits there for the IMDb archive
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.sqlite_busy_count+=1
+            self.file_film_trailers()
+            gate=getattr(self,'first_format_pass',None)
+            if gate is not None:gate.set()
             waiting=self.refile_suggested_sendungen()=='waiting'
             self.unknown_sweep()
             # 0.6.114: an undecided B2 refiling is tried again after 2 minutes, not after an hour
@@ -1540,13 +1654,99 @@ class Service:
         self.spelling_at=time.monotonic()
         try:
             with self.db() as c:changed=catalog.unify_show_spelling(c)
+            # 0.6.127: „#BR24 Zeitreise“/„#BR24Zeitreise“ – Reihen, die sich nur in Leerzeichen unterscheiden
+            with self.db() as c:spaced=catalog.merge_spacing_variants(c)
+            with self.db() as c:spaced.update(catalog.respace_show_titles(c))   # 0.6.128
         except sqlite3.OperationalError as e:
             if not sqlite_busy(e):raise
             self.sqlite_busy_count+=1;self.spelling_at=time.monotonic()-self.SPELLING_EVERY+300;return None
+        if spaced:
+            diagnostics.event('catalog_spacing_variants_merged',titles=len(spaced),samples=dict(list(spaced.items())[:30]))
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
         if changed:
             diagnostics.event('catalog_show_spelling_unified',titles=len(changed),samples=dict(list(changed.items())[:30]))
             catalog.invalidate_listings();catalog.kids_signal_invalidate()
         return changed
+    def file_film_trailers(self):
+        """0.6.130, every format pass: 3sat film titles with only a trailer (catalog.file_film_trailers)."""
+        try:
+            with self.db() as c:filed,reopened,samples=catalog.file_film_trailers(c)
+        except sqlite3.OperationalError as e:
+            if not sqlite_busy(e):raise
+            self.busy('film_trailers');return None
+        if filed or reopened:
+            diagnostics.event('catalog_film_trailers_filed',filed=filed,reopened=reopened,samples=samples)
+            catalog.invalidate_listings()
+        return filed,reopened
+    GENRES_EVERY=6*3600
+    def backfill_genres(self,force=False):
+        """0.6.127, at start and then every 6 h in the format pass: genres for works without any (catalog.backfill_genres)."""
+        if not force and time.monotonic()-getattr(self,'genres_at',-1e9)<self.GENRES_EVERY:return None
+        self.genres_at=time.monotonic()
+        import imdb_archive
+        archive=imdb_archive.ACTIVE
+        lookup=archive.genres if archive is not None and getattr(archive,'updated',None) and hasattr(archive,'genres') else None
+        if self.heal_derived_genres() is None:return None
+        if self.undo_genre_backfill() is None:return None
+        cache={}
+        done=self.batched(lambda c,after:catalog.backfill_genres(c,lookup,after,cache=cache),'genre_backfill')
+        if done and done[0]:
+            diagnostics.event('catalog_genres_backfilled',works=done[0],samples=done[1][:10])
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        return done
+    SERIES_FILMS_EVERY=6*3600
+    def mark_series_films(self,force=False):
+        """0.6.137, at start and then every 6 h in the format pass: Reihenfilme also under Filme (catalog.mark_series_films)."""
+        if not force and time.monotonic()-getattr(self,'series_films_at',-1e9)<self.SERIES_FILMS_EVERY:return None
+        self.series_films_at=time.monotonic()
+        cache={}
+        done=self.batched(lambda c,after:catalog.mark_series_films(c,after,cache=cache),'series_films')
+        if done and done[0]:
+            diagnostics.event('catalog_series_films_marked',works=done[0],samples=done[1][:15])
+            catalog.invalidate_listings()
+            try:
+                import unified_index;unified_index.invalidate(soft=True)   # 0.6.144: alte Liste sofort, Erneuerung im Hintergrund
+            except Exception:pass
+        return done
+    def heal_derived_genres(self):
+        """0.6.135, once (Merker derived_genres_v06135): catalog.heal_derived_genres in short batches; afterwards the
+        series genres taken from the Reihe are judged again (undo_genre_backfill with its own Merker)."""
+        with self.db() as c:
+            if catalog.get_state(c,'derived_genres_v06138',False):return 0
+        done=self.batched(catalog.heal_derived_genres,'derived_genres')
+        if done is None:return None
+        if done[0]:
+            diagnostics.event('catalog_derived_genres_healed',works=done[0],samples=done[1][:15])
+            catalog.invalidate_listings();catalog.kids_signal_invalidate()
+        with self.db() as c:
+            state={'works':done[0],'at':time.time()}
+            catalog.set_state(c,'derived_genres_v06135',state);catalog.set_state(c,'derived_genres_v06136',state);catalog.set_state(c,'derived_genres_v06138',state)
+        return done[0]
+    def undo_genre_backfill(self):
+        """0.6.132, once (Merker genre_backfill_v06132): series genres taken from the Reihe up to 0.6.131 are removed in
+        short batches and judged again by the stricter catalog.backfill_genres. Returns the count or None if postponed.
+        0.6.135: once more (Merker genre_backfill_v06135) after heal_derived_genres – the siblings' own genres changed."""
+        total=0
+        while not self.stop.is_set():
+            try:
+                with self.db() as c:
+                    # 0.6.138: once more after the news-name heal (DER TAG in Berlin & Brandenburg)
+                    if catalog.get_state(c,'genre_backfill_v06138',False):return total
+                    n=catalog.undo_series_genre_backfill(c)
+                    if not n:
+                        state={'removed':total,'at':time.time()}
+                        catalog.set_state(c,'genre_backfill_v06132',state);catalog.set_state(c,'genre_backfill_v06135',state);catalog.set_state(c,'genre_backfill_v06138',state)
+            except sqlite3.OperationalError as e:
+                if not sqlite_busy(e):raise
+                self.busy('genre_backfill_undo')
+                if self.stop.wait(2):return None
+                continue
+            total+=n
+            if not n:
+                if total:diagnostics.event('catalog_genre_backfill_undone',works=total)
+                return total
+            if self.stop.wait(.05):return None
+        return None
     def refile_suggested_sendungen(self):
         """0.6.113, once when the IMDb archive is ready (catalog.refile_suggested_sendungen): Folgen that 0.6.88 filed
         under a suggested Sendung without IMDb episodes become its contributions now instead of after 30 days.

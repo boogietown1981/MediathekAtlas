@@ -81,6 +81,71 @@ def memory():
     return None, None
 
 
+def _sysctl(name):
+    try:
+        out = subprocess.run(['/usr/sbin/sysctl', '-n', name], capture_output=True, text=True, timeout=3)
+        return out.stdout.strip() if out.returncode == 0 else None
+    except (OSError, subprocess.SubprocessError):
+        return None
+
+
+def _swapusage(text):
+    """(total, used) bytes from macOS ``sysctl -n vm.swapusage`` (``total = 2048.00M  used = 1024.50M  free = …``)."""
+    import re
+    units = {'K': 1024, 'M': 1024 ** 2, 'G': 1024 ** 3}
+    found = {k: float(v) * units.get(u, 1) for k, v, u in re.findall(r'(total|used)\s*=\s*([\d.,]+)([KMG]?)', text.replace(',', '.'))}
+    if 'total' not in found:
+        return None, None
+    return int(found['total']), int(found.get('used', 0))
+
+
+def swap():
+    """(total, used) bytes of swap, None where unknown."""
+    try:
+        if sys.platform.startswith('linux'):
+            values = {}
+            for line in Path('/proc/meminfo').read_text().splitlines():
+                name, _, rest = line.partition(':')
+                parts = rest.split()
+                if parts and parts[0].isdigit():
+                    values[name.strip()] = int(parts[0]) * 1024
+            if 'SwapTotal' in values:
+                return values['SwapTotal'], values['SwapTotal'] - values.get('SwapFree', 0)
+        elif sys.platform == 'darwin':
+            text = _sysctl('vm.swapusage')
+            if text:
+                return _swapusage(text)
+    except (OSError, ValueError):
+        pass
+    return None, None
+
+
+def machine_details():
+    """0.6.143 (M1-Air-Diagnose 26.11.2026: Arbeitsspeicher, Auslagerung und Rosetta fehlten in der Diagnose): RAM,
+    Swap, Speicherdruck (macOS: freier Anteil laut kern.memorystatus_level), Prozessspeicher und ob Python unter
+    Rosetta 2 läuft. Nur lokale Abfragen mit kurzen Zeitgrenzen; unbekannte Werte bleiben None."""
+    total, available = memory()
+    swap_total, swap_used = swap()
+    details = {'memory_total': total, 'memory_available': available, 'swap_total': swap_total, 'swap_used': swap_used,
+               'process_memory': process_memory(), 'memory_free_percent': None, 'rosetta': None, 'apple_silicon': None,
+               'cores': os.cpu_count() or 1, 'load': load()}
+    if sys.platform == 'darwin':
+        level = _sysctl('kern.memorystatus_level')
+        details['memory_free_percent'] = int(level) if level and level.isdigit() else None
+        translated = _sysctl('sysctl.proc_translated')
+        details['rosetta'] = translated == '1' if translated in ('0', '1') else False if translated is None and platform.machine() == 'arm64' else None
+        arm = _sysctl('hw.optional.arm64')
+        details['apple_silicon'] = arm == '1' if arm in ('0', '1') else None
+    hints = []
+    if details['rosetta']:
+        hints.append('Python läuft unter Rosetta 2 (Intel-Code auf Apple Silicon): langsamer und mit mehr Arbeitsspeicher. '
+                     'Im Finder unter „Informationen“ den Haken „Mit Rosetta öffnen“ entfernen oder ein arm64-Python installieren.')
+    if swap_used and total and swap_used > total / 4:
+        hints.append('Viel ausgelagerter Arbeitsspeicher (%.1f GB).' % (swap_used / GB))
+    details['hints'] = hints
+    return details
+
+
 def process_memory():
     """Memory of this MediathekAtlas process in bytes, or None."""
     try:
@@ -119,10 +184,66 @@ def load():
         return None
 
 
+# 0.6.132 (Diagnose Air 0.6.131: Speicheranzeige 5 GB frei, der Finder meldete deutlich mehr): on macOS APFS keeps
+# purgeable space (local snapshots, iCloud caches) that statvfs counts as used. The Finder shows the
+# "available for important usage" capacity – macOS frees purgeable space for it on demand. Displays, warnings and
+# space estimates use that value; hard write checks (512 MiB margins) keep the strict free space.
+_IMPORTANT_JS = ("ObjC.import('Foundation');function run(argv){var k='NSURLVolumeAvailableCapacityForImportantUsageKey';"
+                 "var u=$.NSURL.fileURLWithPath(argv[0]);var r=u.resourceValuesForKeysError($([k]),null);"
+                 "if(!r||r.isNil())return '';var v=r.objectForKey(k);return (v&&!v.isNil())?String(v.longLongValue):'';}")
+_IMPORTANT = {}
+_IMPORTANT_LOCK = threading.Lock()
+IMPORTANT_TTL = 120.0
+
+
+def _important_capacity(path):
+    """Bytes macOS makes available for important usage on the volume of ``path`` (cached per volume), else None."""
+    if sys.platform != 'darwin':
+        return None
+    try:
+        dev = os.stat(path).st_dev
+    except OSError:
+        return None
+    now = time.monotonic()
+    with _IMPORTANT_LOCK:
+        hit = _IMPORTANT.get(dev)
+        if hit and now - hit[0] < IMPORTANT_TTL:
+            return hit[1]
+    value = None
+    try:
+        out = subprocess.run(['/usr/bin/osascript', '-l', 'JavaScript', '-e', _IMPORTANT_JS, str(path)],
+                             capture_output=True, text=True, timeout=5)
+        text = (out.stdout or '').strip()
+        value = int(text) if out.returncode == 0 and text.isdigit() and int(text) > 0 else None
+    except (OSError, ValueError, subprocess.SubprocessError):
+        value = None
+    with _IMPORTANT_LOCK:
+        _IMPORTANT[dev] = (now, value)
+    return value
+
+
+def usage(path):
+    """shutil.disk_usage with ``free`` as the user sees it: on macOS including purgeable space. ``strict_free`` is the
+    plain statvfs value. Raises OSError like shutil.disk_usage."""
+    plain = shutil.disk_usage(path)
+    total = getattr(plain, 'total', 0) or 0
+    important = _important_capacity(path)
+    free = max(plain.free, min(important, total) if total else important) if important else plain.free
+    return {'total': total, 'used': max(0, total - free), 'free': free, 'strict_free': plain.free}
+
+
+def free_bytes(path):
+    """Free bytes as shown to the user (see ``usage``), None if the path cannot be read."""
+    try:
+        return usage(path)['free']
+    except OSError:
+        return None
+
+
 def drive(path):
     try:
-        usage = shutil.disk_usage(path)
-        return {'path': str(path), 'total_bytes': usage.total, 'free_bytes': usage.free}
+        u = usage(path)
+        return {'path': str(path), 'total_bytes': u['total'], 'free_bytes': u['free'], 'strict_free_bytes': u['strict_free']}
     except OSError:
         return {'path': str(path), 'total_bytes': None, 'free_bytes': None}
 

@@ -223,13 +223,15 @@ def seed_file(path):
         f.write(data);f.flush();os.fsync(f.fileno())
 
 UPDATE_MARGIN=2*1000**3
+SPACE_RECHECK=900   # 0.6.143: Platz alle 15 min neu prüfen (ohne Download)
 def update_space(archive_bytes):
     """0.6.79: free bytes the weekly update needs next to an archive of ``archive_bytes`` (new archive + 2 GB)."""
     return int(archive_bytes)+UPDATE_MARGIN if archive_bytes else 0
 
 def _free_bytes(folder):
-    try:return shutil.disk_usage(folder).free
-    except OSError:return None
+    # 0.6.132: the space estimate uses the Finder value (macOS frees purgeable space for the download on demand)
+    import system_monitor
+    return system_monitor.free_bytes(folder)
 
 def build(path,files,progress=lambda **k:None,cancelled=lambda:False):
     seed_file(path)
@@ -432,7 +434,36 @@ class Archive:
                     if time.monotonic()-last>.5:self.progress(received=received,total=total);last=time.monotonic()
         if total and received!=total:raise ValueError('IMDb-Download unvollständig')
         os.replace(part,path)
+    def staged_bytes(self):
+        n=0
+        for kind in HEADERS:
+            for p in (self.root/(kind+'.tsv.gz'),self.root/(kind+'.tsv.gz.part')):
+                try:n+=p.stat().st_size if p.exists() else 0
+                except OSError:pass
+        return n
+    def space_gate(self):
+        """0.6.143 (M1-Air-Diagnose 26.11.2026: 14,6 GB frei, 23,8 GB nötig, Update lud trotzdem 1,4 GB und füllte die
+        Platte bis unter 512 MiB): vor dem Update prüfen, ob neben dem Archiv genug Platz ist. Bereits geladene
+        Zwischendateien zählen als vorhanden. Gibt (nötig, frei) zurück, wenn es nicht reicht, sonst None."""
+        if not self.updated:return None
+        try:size=self.path.stat().st_size
+        except OSError:return None
+        need=update_space(size);free=_free_bytes(self.root)
+        if not need or free is None or free+self.staged_bytes()>=need:return None
+        return need,free
     def update(self):
+        short=self.space_gate()
+        if short:
+            need,free=short
+            with self.lock:
+                before=self.state.get('phase')
+                self.retry_at=time.time()+SPACE_RECHECK
+                self.state={'phase':'waiting_space','error':'','need_bytes':need,'free_bytes':free,'retry_at':self.retry_at}
+            if before!='waiting_space':
+                diagnostics.event('imdb_archive_waiting_space',need_bytes=need,free_bytes=free,staged_bytes=self.staged_bytes())
+            return False
+        with self.lock:
+            if self.state.get('phase')=='waiting_space':self.state={'phase':'ready' if self.updated else 'waiting'}
         staging=self.root/'building.db';files={};done=False
         try:
             staging.unlink(missing_ok=True)
@@ -465,8 +496,8 @@ class Archive:
             self.failures+=1
             self.retry_at=time.time()+min(86400,3600*2**(self.failures-1));self.progress(phase='error',error=core.safe_error(e),retry_at=self.retry_at)
             diagnostics.error('imdb_archive_failed',e,attempt=self.failures,sqlite_error=getattr(e,'sqlite_errorname',''),folder_free=_free_bytes(self.root))
-            # Without free space, keeping the downloads would only make it worse.
-            if isinstance(e,OSError) and 'Speicher' in str(e):done=True
+            # 0.6.143: fertige Downloads bleiben auch bei Platzmangel erhalten (die Platzprüfung vor dem nächsten Versuch
+            # zählt sie mit); vorher wurden sie gelöscht und beim nächsten Versuch über Mobilfunk erneut geladen.
         finally:
             staging.unlink(missing_ok=True)
             staging.with_name(staging.name+'-journal').unlink(missing_ok=True)
@@ -699,6 +730,18 @@ class Archive:
             if self.version>=2:m.update(self._credits(c,fields['episode_reference_id']))
             result['candidates'].append(m)
         return result
+    def movie_runtime(self,tconst):
+        """0.6.138: IMDb runtime of one film in seconds, or None (stored suggestions of older versions lack it)."""
+        if not self.updated or not str(tconst or '').startswith('tt'):return None
+        rows=self._lookup('SELECT runtimeMinutes FROM title_basics WHERE tconst=?',(tconst,),('runtime',tconst))
+        try:minutes=int(rows[0]['runtimeMinutes']) if rows and rows[0]['runtimeMinutes'] else 0
+        except (TypeError,ValueError):minutes=0
+        return minutes*60 if 1<=minutes<=600 else None
+    def genres(self,tconst):
+        """0.6.127: IMDb genres of one title (genre backfill for matched works without genre)."""
+        if not self.updated or not str(tconst or '').startswith('tt'):return []
+        rows=self._lookup('SELECT genres FROM title_basics WHERE tconst=?',(tconst,),('genres',tconst))
+        return [g for g in (rows[0]['genres'] or '').split(',') if g and g!='\\N'] if rows else []
     def candidates(self,row,meta):
         if not self.updated:return []
         c=self._reader()
@@ -713,6 +756,10 @@ class Archive:
                 # A separately catalogued series runtime is informative, but
                 # never proves an individual video is a full episode.
                 m['reference_runtime_seconds']=h['runtimeMinutes']*60
+            if kind=='movie' and h['runtimeMinutes'] and 1<=h['runtimeMinutes']<=600:
+                # 0.6.138 (Mac-Prüfung 0.6.136: More than Honey blieb „prüfen“): the two-year rule compares with the
+                # IMDb runtime (matching.year_two_runtime); a separate field, reference_runtime_seconds stays series-only
+                m['imdb_runtime_seconds']=h['runtimeMinutes']*60
             if kind=='movie' and h['runtimeMinutes'] and row.get('duration'):
                 delta=abs(h['runtimeMinutes']*60-row['duration']);m['runtime_agrees']=delta<=max(300,h['runtimeMinutes']*6);m['runtime_mismatch']=not m['runtime_agrees']
             if kind=='series':m.update(self._episode(row,meta,h['tconst'],title))

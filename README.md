@@ -1,4 +1,159 @@
-# MediathekAtlas · 0.6.120
+# MediathekAtlas · 0.6.161
+
+## Neu in 0.6.161: „YouTube-Zugang prüfen“
+- Im YouTube-Bereich (Offline-Speichern) prüft ein Knopf ein Video, ohne es herunterzuladen: das zuletzt gescheiterte oder eine eingegebene Video-ID/-Adresse. Kann yt-dlp YouTubes Player nicht mehr entschlüsseln, wird es sofort aktualisiert und noch einmal geprüft; klappt es, werden die gescheiterten Videos erneut versucht.
+
+## Neu in 0.6.160: YouTube-Kindervideos laden wieder (yt-dlp hält sich selbst aktuell)
+- YouTube hat seinen Player geändert; das mitgelieferte yt-dlp konnte ihn nicht mehr entschlüsseln. Normale Videos liefen über einen Umweg weiter, Kindervideos scheiterten mit „This video is not available“. MediathekAtlas erkennt das jetzt, holt selbst eine neuere yt-dlp-Version (offizielle Ausgabe, Prüfsumme geprüft, höchstens zweimal am Tag) und versucht die betroffenen Downloads erneut.
+
+## Neu in 0.6.159: YouTube-Fehler ehrlich erklärt
+- Scheitert ein YouTube-Download mit „This video is not available“, obwohl Deno eingerichtet ist, rät MediathekAtlas nicht mehr zu „Deno einrichten“, sondern nennt die wahrscheinlichen Gründe (Sperre der Adresse, Kindervideo, regional gesperrt) und versucht es später erneut. Der Deno-Rat erscheint nur noch, wenn Deno wirklich fehlt; ist yt-dlp zu alt, heißt es „yt-dlp einrichten“.
+- Die Diagnose hält zu jedem gescheiterten YouTube-Download fest, welche YouTube-Zugänge yt-dlp probiert hat, ob Deno benutzt wurde und was yt-dlp gemeldet hat (ohne Adressen).
+
+## Neu in 0.6.158: Fortsetzungen bleiben einzeln
+- Filmfortsetzungen wie „Zärtliche Chaoten“ (Pluto TV), „Freitag der 13“ (Rakuten, Joyn) oder „The Lies We Tell …“ (Plex) werden nicht mehr zu einem Mehrteiler zusammengefasst; die Genres der Plattformen zählen jetzt mit. Echte Mehrteiler (Traktorgiganten, Elvis, Kolbenfresser, Vera Brühne …) bleiben eine Kachel.
+- Kinderecke: „Die wilde Natur“ bekommt sein passendes Vorschaubild zurück.
+
+## Neu in 0.6.157: Bilder und Mehrteiler genauer
+- Kinderecke: Ein YouTube-Vorschaubild wird nur genommen, wenn ein ganzer Teil des Videotitels zur Reihe passt; zu allgemeine Reihennamen („Die Serie“) bekommen keines. Ganze Filme aus dem YouTube-Katalog („Die drei Musketiere der Neuzeit“) werden nicht mehr verwechselt.
+- Mehrteiler wie „Kolbenfresser“ stehen wieder in einer Kachel; nur Spielfilme mit eigenem Jahr je Teil gelten als Fortsetzungen.
+- Filme einer Filmreihe erscheinen in der Suche als „Film“ (nicht „Serie · 1 Folgen“), der Player zeigt „Tatort – Filmtitel (Jahr)“.
+
+## Neu in 0.6.156: Filmreihen öffnen sich richtig
+- Der Knopf einer Filmreihen-Kachel heißt „Alle Filme“ und zeigt alle Filme der Reihe (vorher Fehlermeldung „Serie nicht gefunden“). Die Kachel nennt das Jahr des neuesten Films.
+- Mehrteiler: Teile mit Zusatz im Titel („Kolbenfresser Teil 1 Maisernte hautnah“) gehören dazu; Fortsetzungen wie „Zärtliche Chaoten“ bleiben einzeln, auch ohne IMDb-Nummer.
+- Kinderecke: Die Bildersuche liest den YouTube-Bestand nur noch einmal je Lauf und endet spätestens nach 2 Minuten.
+
+## Neu in 0.6.155: Feinschliff nach den Prüfungen 0.6.152–0.6.154
+- Mehrteiler mit Teilen aus verschiedenen Jahren (z. B. „Traktorgiganten Teil 1–4“) stehen wieder in einer Kachel; Fortsetzungen, die eigene Filme sind (z. B. „Zärtliche Chaoten“), bleiben einzeln.
+- Kinderecke: Ist das Stundenlimit der Senderabfragen erreicht, bekommen Reihen trotzdem ein passendes Vorschaubild aus dem eigenen YouTube-Bestand.
+- Die Zeitanzeige des Players geht am Ende der Leiste nicht mehr über die Gesamtdauer hinaus.
+
+## Neu in 0.6.154: Filmreihen und Mehrteiler wieder zusammengefasst, korrigiert
+- Unter „Filme“ stehen Filmreihen (Tatort, Polizeiruf 110, Nord bei Nordwest …) und Mehrteiler (Teil 1–n) wieder als je eine Kachel. Die Kachel öffnet alle Filme der Reihe bzw. alle Teile einzeln, Reihen mit den neuesten zuerst.
+- Korrigiert nach der Prüfung von 0.6.150: eine Reihe erscheint nur noch einmal (Praxis mit Meerblick), Filme wie „Tatort: Azra“ gehören mit in die Tatort-Reihe, auch Titel mit einem zweiten Anbieter (Maria Wern). Fortsetzungen aus verschiedenen Jahren (Zärtliche Chaoten Teil 1 und 2) gelten nicht als Mehrteiler, Fassungen (Audiodeskription) zählen nicht als eigene Teile, „Teil 1/ 2“ wird richtig gelesen.
+- Eine Suche zeigt weiter jeden Film einzeln.
+
+## Neu in 0.6.153: Filmreihen-Kacheln vorerst aus
+- Die Sammelkacheln „Filmreihe“ und „Mehrteiler“ aus 0.6.150 sind ab Werk ausgeschaltet, bis ihre Korrektur geprüft ist (Prüfung 0.6.150: eine Reihe doppelt, einzelne Tatort-Filme nicht erfasst, Fortsetzungen als Mehrteiler). Unter „Filme“ steht wieder jeder Film einzeln wie in 0.6.149. Alles andere aus 0.6.150–0.6.152 bleibt.
+- Lokale Filmarchive (Prüfung 0.6.151): „sample.mkv“ im Filmordner erscheint nicht mehr als zweiter Film; übergangene kleine Videos (unter 20 MB) werden je Ordner genannt; Tippfehler beim Ordner erscheinen nur als Hinweis, nicht als Fehler im Protokoll.
+- MKV-Dateien (lokales Archiv und eigene Downloads) brechen im eingebauten Player nicht mehr kurz nach dem Start ab bzw. springen nicht mehr zurück.
+
+## Neu in 0.6.152: Korrekturen aus der Prüfung von 0.6.147
+- Kinderecke: Mit der Maus über „Mehr davon“ fahren hält den Countdown zur nächsten Folge an. „Mehr davon“ zeigt die laufende Reihe nicht mehr selbst an.
+- Kinderecke-Bilder: Die Bildsuche bei ARD/ZDF behält einen Teil des Stundenlimits (20 von 120) und versucht es nach 10 statt 60 Minuten erneut, wenn das Limit erreicht war. Reihen ohne Senderseite (viele KiKA-Reihen) bekommen das Vorschaubild eines passenden YouTube-Videos aus dem eigenen Bestand.
+- „⬇ Geladen“ nur noch, wenn die Datei wirklich da ist (verschobene oder gelöschte Downloads zählen nicht mehr).
+- Diagnose-Export enthält die Senderstatistik auch beim ersten Abruf mit altem Stand. Film- und Serienliste kommen nach 10 Minuten sofort aus dem Speicher und werden im Hintergrund erneuert.
+
+## Neu in 0.6.151: Lokale Filmarchive auf Ordnern und Freigaben
+- Einstellungen → „Lokale Filmarchive“: eigene Film- und Serienordner eintragen, z. B. eine eingebundene NAS-Freigabe (/Volumes/Filme). MediathekAtlas liest dort nur, verändert und löscht nichts.
+- Liegen NFO-Dateien (Kodi, Jellyfin, Emby) daneben, werden Titel, Jahr, Beschreibung, Genres, Bild und IMDb-/TMDB-Nummer direkt übernommen; die IMDb-Nummer entscheidet dann den Abgleich. Ohne NFO werden Datei- und Ordnernamen gedeutet (Titel, Jahr, S01E02, Staffelordner) und wie die Plattform-Titel über IMDb, TVDB und TMDB zugeordnet.
+- Neue Quelle „Lokales Archiv“ im Katalog; gleiche Titel anderer Anbieter landen in derselben Kachel. Archivtitel gelten als „⬇ Geladen“ und laufen im eingebauten Player (MKV & Co. über ffmpeg).
+- Neu eingelesen wird alle 6 Stunden und auf Knopfdruck, nur Neues und Geändertes. Ist eine Freigabe nicht eingebunden, bleiben die Titel erhalten und sind als offline markiert.
+
+## Neu in 0.6.150: Filmreihen und Mehrteiler unter Filme zusammengefasst
+- Unter „Filme“ stehen Reihenfilme einer Mediatheken-Reihe (Tatort, Polizeiruf 110, Der Usedom-Krimi …) ab drei Filmen als EINE Kachel „Filmreihe · n Filme“; sie öffnet die Filme der Reihe. Sendeplätze wie „FilmMittwoch im Ersten“ oder „Herzkino“ sind keine Reihe und bleiben einzeln.
+- Mehrteiler („… Teil 1“, „… (2/3)“) stehen als eine Kachel „Mehrteiler · n Teile“; sie zeigt die Teile in Reihenfolge.
+- Eine Suche zeigt weiterhin jeden Film einzeln; Kinderecke und Ansehen-Modus bleiben unverändert.
+
+## Neu in 0.6.149: Kinderecke-Kanäle repariert, Fortschritt überall sichtbar
+- Kinderecke: Ein neu abonnierter Kanal zeigt beim Antippen oben seine Videos (vorher blieb die Ansicht leer). In „Alle“ stehen die Kanalreihen jetzt direkt nach „Neu“ und „Weiterschauen“, vor den Film- und Seriengruppen.
+- Fortschritt wie bei YouTube: Katalogkarten zeigen einen roten Balken für Angefangenes und „✓ Gesehen“ für Fertiges; Starten setzt an der gemerkten Stelle fort (wie bisher im Player). Die Kinderecke übernimmt auch Stände, die im großen Player entstanden sind.
+
+## Neu in 0.6.148: Nummerierte Folgen als eine Serie, geladene Titel zuerst
+- Anbieter führen Folgen einer Reihe oft als einzelne Filme mit vorangestellter Nummer („10. Die verwegenen Vier auf heißer Spur“, „2. Die verwegenen Vier reißen aus“). Ab drei solchen Filmen desselben Anbieters mit gemeinsamem Titelanfang zeigt die Kinderecke EINE Serienkachel („Die verwegenen Vier“), die Folgen darin nach Nummer sortiert. Abspielen, Weiterschauen und Sperren funktionieren wie vorher.
+- Geladene Filme und Serien zuerst: Titel mit lokaler Kopie (ARD/ZDF-Downloads; Plattform-Kopien von Netzkino, Pluto, Plex, ServusTV, Red Bull TV …) stehen in der Kinderecke in jeder Reihe vorn, tragen „⬇ Geladen“ und werden unter „Mehr davon“ bevorzugt. Im normalen Katalog (Filme/Serien, Ansehen-Modus) stehen sie ebenfalls vorn und sind markiert; eine Serie gilt als geladen, sobald eine Folge geladen ist.
+
+## Neu in 0.6.147: Kinderecke schlägt nach dem Video Passendes vor
+- Am Ende eines Videos, Films oder einer Folge zeigt die Kinderecke wie YouTube eine Reihe „Mehr davon“: weitere Videos desselben Kanals, Titel aus demselben Thema (Tiere, Wissen, Märchen …) und Titel mit gemeinsamen Wörtern, Ungesehenes und Neues zuerst. Vorgeschlagen wird nur, was die Kinderecke ohnehin zeigt (Freigaben, Sperren und Altersgrenze gelten weiter). Feste Regeln, keine KI.
+- Die Suche findet neue Reihenfilme sofort nach dem Markierlauf (in 0.6.144–0.6.146 blieb eine vorher gestellte Suche bis zum Neustart veraltet).
+- Die nächste Folge startet weiterhin nach 6 Sekunden; wer in den Vorschlägen blättert oder tippt, hält den Countdown an. Nach einem Film bleiben die Vorschläge stehen, bis ein Kind wählt oder „Zurück“ drückt (nach einer Minute automatisch zurück).
+
+## Neu in 0.6.146: Kinderecke kompakter und mit mehr Bildern
+- Die Reihen der YouTube-Kanäle sind nur noch so hoch wie ihre Kacheln (die „Alle …“-Kachel am Ende hat jetzt die Form der Reihe).
+- Reihen aus den Mediatheken, für die es nirgends ein Bild gab, bekommen das Bild der Sendung von der ARD- bzw. ZDF-Mediathek (im Hintergrund, stündlich, mit derselben Drosselung wie die Erkennung). Gleichnamige Filme und Serien teilen sich ein Bild.
+
+## Neu in 0.6.145: filmfriend vollständig
+- Liefert filmfriend eine Seite des Katalogs nicht, fragt MediathekAtlas sie nach kurzer Pause noch einmal ab und liest danach die übrigen Seiten weiter. Fehlt eine Seite trotzdem oder kommen deutlich weniger Titel als beim letzten vollständigen Abgleich, gilt der Abgleich als teilweise und die bisherigen Titel bleiben sichtbar (vorher fehlte nach einem einzigen Fehler gut ein Drittel des Katalogs für einen Tag).
+- Die Diagnose wartet auf eine aktuelle Senderstatistik, wenn nur ein alter Stand vorliegt, und nennt dessen Alter.
+
+## Neu in 0.6.144: Filmliste ohne Wartezeit nach Katalogänderungen
+- Ändert sich der Katalog im Hintergrund (zum Beispiel neue Reihenfilme), zeigt die Filmliste sofort den bisherigen Stand und aktualisiert sich im Hintergrund, statt hinter dem Aufbau der Kinderecke zu warten. Suchen warten ebenfalls nicht mehr darauf.
+
+## Neu in 0.6.143: unterwegs und auf kleinen Macs
+- Das IMDb-Update startet nur, wenn neben dem Archiv genug Platz ist. Sonst steht „Wartet auf Speicherplatz“ da, nichts wird geladen, und alle 15 Minuten wird neu geprüft. Bereits geladene Dateien bleiben erhalten.
+- Bricht der Download der Filmliste ab (Mobilfunk, Hotspot), setzt der nächste Versuch an derselben Stelle fort. Ohne Netz wartet MediathekAtlas länger zwischen den Versuchen (10, 30, dann 60 Minuten); „Jetzt starten“ geht immer sofort. Eine Anmeldeseite eines WLANs wird als solche gemeldet.
+- filmfriend hält nach drei Verbindungsfehlern an und versucht es später erneut, statt Hunderte Fehler zu sammeln.
+- Auf Macs mit Apple-Chip startet MediathekAtlas ein natives Python (arm64) bevorzugt; läuft nur ein Intel-Python unter Rosetta, steht ein Hinweis im Startprotokoll und in der Diagnose.
+- Die Diagnose enthält Arbeitsspeicher, Auslagerung, Speicherdruck, Rosetta und die Größe der Datenbanken.
+
+## Neu in 0.6.142: Reihenfilme auch unter Filme
+- Filme einer Reihe (Der Usedom-Krimi, Die Füchsin, Die drei von der Müllabfuhr, Tatort, Polizeiruf 110 …) bleiben in ihrer Reihe und stehen zusätzlich einzeln unter Filme, mit eigenem Filmtitel und Filmjahr („Die drei von der Müllabfuhr – Altlasten“, 2023). Die Suche findet sie auch über den Filmtitel.
+- Als Reihenfilm gilt eine erkannte Folge ab 80 Minuten, die der Sender als deutschsprachigen Spielfilm oder Fernsehfilm ankündigt (Produktionsland Deutschland, Österreich oder Schweiz; ohne Landangabe zählt der Film als deutschsprachig). Folgen von Serien mit gezählten Teilen (Rebecka Martinsson „Del 1“, Brokenwood, Mord auf Shetland), Fassungen desselben Films und Filme, die es schon als eigenen Film gibt, erscheinen nicht zusätzlich.
+
+## Neu in 0.6.139 (enthält 0.6.138): More than Honey, regionale Nachrichtensendungen
+- Filme, deren Jahr in der IMDb zwei Jahre abweicht, werden mit passender IMDb-Laufzeit jetzt tatsächlich verknüpft („More than Honey“ 2010/2012); „Black Box“ 2022 bleibt getrennt vom US-Film.
+- Regionale Nachrichtensendungen ohne Nachrichtenwort im Namen (hessenschau, DER TAG in Berlin & Brandenburg, Abendschau, Lokalzeit …) tragen das Genre Nachrichten statt Kultur oder keinem Genre.
+
+## Neu in 0.6.136: 3sat-Filme, Sport-Genres, Kinderecke ohne Kopierschutz-Kacheln
+- 3sat-Filme werden auch erkannt, wenn die Datenbank eine Reihennummer im Titel führt („Mankells Wallander 01 – …“) oder das Jahr zwei Jahre abweicht – nur mit exaktem Titel und einer Laufzeit, die zur IMDb-Angabe passt („More than Honey“ 2010/2012; „Black Box“ 2022 wird nicht mit dem US-Film von 2020 verwechselt).
+- Sport-Sendungen („Sport-Clip“, „Sport-Arena“, „Paris 2024“, „Sportschau Wintersport“) tragen das Genre Sport statt Nachrichten oder Talk; Nachrichtensendungen (tagesschau24, hessenschau) bleiben Nachrichten.
+- Kinderecke: ein Netzkino-/Plex-Film, der wegen Kopierschutz oder fehlender Verfügbarkeit nicht spielt, verschwindet für 7 Tage aus der Liste.
+
+## Neu in 0.6.134: Märchen in der Kinderecke spielen wieder
+- Filme mit mehreren KiKA-Angeboten (Das Märchen von der Regentrude, Der Schweinehirt, Die sechs Schwäne …) ließen sich in der Kinderecke nicht abspielen („Dieses Video gibt es in der Kinderecke nicht“). Jedes Angebot vom Kindersender ist jetzt zulässig.
+- Filme der Mediatheken erscheinen in der Kinderecke nur noch, wenn ihr Angebot aktiv ist (oder lokal gespeichert) und sie nach aktuellem Stand zugelassen sind.
+
+## Neu in 0.6.132: Krimireihen bleiben Serien, 3sat-Filme, Genres, freier Speicher am Mac
+- Nummerierte Folgen einer Reihe („Brokenwood (7/20)“, „Rebecka Martinsson (02/08)“) werden nicht mehr als Filme zurückgeholt; Zweiteiler und einzelne Spielfilme bleiben Filme.
+- 3sat-Filme: ein Autorenname vor dem Titel („Mankells Wallander – …“) stört die Suche nicht mehr; bei Filmen auf „prüfen“ steht im Protokoll, warum der Kandidat nicht genommen wurde.
+- Genres aus der Reihe nur noch, wenn mindestens drei Folgen ein eigenes Genre tragen und zwei Drittel davon dasselbe; bisher so nachgetragene Genres werden einmal neu bewertet.
+- Am Mac zeigt die App den freien Speicher wie der Finder (einschließlich löschbarem Platz).
+
+## Neu in 0.6.131: verschiedene Sendungen gleichen Namens bleiben getrennt
+- Reihen werden nur noch bei echten Leerzeichen-Unterschieden zusammengeführt („#BR24 Zeitreise“/„#BR24Zeitreise“); Sendungen, die sich nur in Groß-/Kleinschreibung oder Satzzeichen unterscheiden (KiKA „ECHT“, WDR „Echt?“, MDR „Echt“), bleiben getrennt und behalten ihren Namen.
+
+## Neu in 0.6.130: Reihennamen ohne Großschreibung, Trailer als Trailer, sauberer Programmführer
+- Zusammengeführte Reihen behalten ihre normale Schreibweise („Nachtcafé“ statt „NACHTCAFÉ“).
+- 3sat-Filmtitel, zu denen nur ein kurzer Trailer vorliegt („Kurzer Prozess – Righteous Kill“), stehen als Trailer da statt auf „prüfen“; kommt der ganze Film, wird er wieder als Film geprüft.
+- Programmführer: keine Unterzeile „Deutschland 2015“ mehr bei täglichen Serien, keine doppelten 3sat-Einträge und keine überlappenden Blöcke bei phoenix.
+
+## Neu in 0.6.129: Programmführer im Live-TV nachgebessert
+- phoenix, KiKA und 3sat zeigen das Programm nur noch aus einer Quelle; „Jetzt“ ist die tatsächlich laufende Sendung statt eines langen Sendeblocks, und was mitten im Block beginnt, steht als „Ab 13:00“ da.
+- Tägliche ARD-Serien zeigen ihre Folgennummer („Rote Rosen · Folge 2019“) statt einer scheinbaren Jahreszahl.
+- „ARD Tagesschau“ gehört zu tagesschau24 (Programm und Mediathek-Knopf in einer Kachel); arte zeigt seine zwei Livestreams als „ARTE.DE“ und „ARTE.FR“.
+
+## Neu in 0.6.128: aussortierte Filme zurück, bessere Reihennamen
+- Filme mit einem kurzen Ausschnitt als erstem Angebot („Kurzer Prozess – Righteous Kill“) bleiben Filme; maßgeblich ist das längste Angebot. Von 0.6.123/0.6.125 aussortierte Filme kommen zurück.
+- Fortsetzungen werden in allen üblichen Schreibweisen gesucht („Der Pate II“ = „Der Pate – Teil II“); bei mehreren gleichnamigen Filmen entscheiden Jahr und Laufzeit.
+- Zusammengeführte Reihen tragen die lesbare Schreibweise („Eishockey aktuell“ statt „eishockeyaktuell“), unsichtbare Trennzeichen fallen weg.
+
+## Neu in 0.6.127: weniger „Unbekannt“, keine doppelten Reihen durch Leerzeichen
+- Werke ohne Genre (im Werkkatalog „Unbekannt“) bekommen es nachgetragen: aus dem IMDb-Archiv, wenn sie mit IMDb verknüpft sind, sonst von den anderen Folgen ihrer Reihe.
+- Reihen desselben Senders, die sich nur in Leerzeichen unterscheiden („#BR24 Zeitreise“/„#BR24Zeitreise“), werden eine Reihe.
+
+## Neu in 0.6.126: Programmführer im Live-TV
+- Die Sender von ARD (Das Erste, Dritte, ONE, ARD alpha, tagesschau24), ZDF (mit ZDFneo, ZDFinfo, 3sat, KiKA, phoenix) und SRF zeigen im Live-TV, was gerade läuft (mit Fortschritt) und was danach kommt – direkt aus den Programmdaten der Sender, ohne Konto und ohne Schlüssel, alle 6 Stunden aktualisiert (Live-TV → „Programmführer · ARD, ZDF, SRF“, abschaltbar).
+- In der Detailansicht eines Werks führt „Sendetermine bei Wunschliste“ zur Suche bei TV Wunschliste (nur als Link; MediathekAtlas liest die Seite nicht aus).
+
+## Neu in 0.6.125: Filme bleiben Filme, Einstellungen sofort gespeichert
+- Filme in Spielfilmlänge (ab 60 Minuten) bleiben Filme, auch mit Nummer im Titel („Der Amsterdam-Krimi (2)“, „Wo ist Anne Frank – Teil 1“); nur datierte Sendungsausgaben und kurze nummerierte Teile gelten nicht als Film. Die Neu-Einordnung aus 0.6.123 nimmt nur noch solche Werke.
+- Einstellungen werden auch direkt nach dem Start sofort übernommen: ist die Datenbank belegt, gilt die Änderung gleich und wird im Hintergrund gespeichert.
+
+## Neu in 0.6.124: 3sat-Filme besser erkannt, Kinderecke schneller nach dem Start
+- 3sat-Filme, deren Titel zwei Namen verbindet („The Pledge - Das Versprechen“, „Jussi Adler-Olsen: Erlösung“), werden auch über den einzelnen Titelteil im IMDb-Archiv gefunden – nur mit passendem Jahr; automatisch verknüpft nur, wenn auch die Laufzeit passt.
+- Nach einer Änderung der Suche werden erneut geprüfte Titel wirklich neu gesucht statt mit dem gespeicherten alten Ergebnis beantwortet.
+- Die Kinderecke wird nach dem Start erst vorbereitet, wenn die einmaligen Aufräumarbeiten fertig sind – der erste Aufruf muss sie dann nicht neu bauen.
+
+## Neu in 0.6.123: keine Sendungsausgaben mehr unter „Filme“
+- Datierte Sendungsausgaben („10 vor 10 vom 21.11.2026“), nummerierte Teile („Teil 3“, „Folge 12“) und Videos unter 20 Minuten werden nicht mehr als Film eingeordnet, nur weil die Beschreibung „Film“ enthält; Kurz-, Animations- und Trickfilme bleiben Filme. Bereits so eingeordnete offene Werke werden einmal neu eingeordnet.
+- Einstellungen (z. B. Serien automatisch laden) speichern während der Start-Heilungen: bei belegter Datenbank wird gewartet und wiederholt statt „database is locked“ zu melden.
+
+## Neu in 0.6.122: Bilder in der Kinderecke, abgeschnittene Titel, längere Diagnosen
+- Kinderecke: Reihen und Filme ohne eigenes Bild nehmen das Bild eines anderen Angebots, einer anderen Folge oder der erkannten Reihe statt nur des Anfangsbuchstabens; Dokus stehen nicht mehr unter „Zeichentrick“; die Kopfleiste ist deckend.
+- Titel, die der Sender nach 80 Zeichen abschneidet („… (Originalversion“), werden ohne den Rest des Hinweises gesucht und einmal neu geprüft.
+- Der Bilder-Abgleich schreibt Fehler je Titel nur noch einmal am Tag und Erfolge als Stichprobe ins Protokoll – eine Diagnose reicht dadurch deutlich länger.
+
 
 ## Neu in 0.6.120: Schreibweise je Sender
 - Markenschreibweisen (KiKANiNCHEN) gelten nur für den Sender, der sie selbst so schreibt: ARD und MDR behalten „Mittagsmagazin“, SRF „MittagsMagazin“. Auch Ausschnitte und Extras einer Reihe werden angeglichen.

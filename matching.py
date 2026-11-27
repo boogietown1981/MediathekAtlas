@@ -29,10 +29,25 @@ def year_close(meta,c):
     # 1999/1996): only a feature-length video, with its running time known, is a film one year apart.
     try:duration=float(c.get('source_duration_seconds') or 0)
     except (TypeError,ValueError):duration=0
-    return (c.get('kind')=='movie' and abs(a-b)==1 and float(c.get('similarity') or 0)>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS
-            and bool(c.get('runtime_agrees')) and not c.get('runtime_mismatch'))
+    # 0.6.135 (Prüfvermerk 0.6.134: „More than Honey – Dokumentarfilm …, Schweiz 2010“, IMDb 2012, Titel exakt,
+    # Laufzeit passt): two years apart only with the exact title and a feature-length video.
+    # 0.6.136 (Mac-Prüfung 0.6.135: „Black Box - Spielfilm, Deutschland 2022“, 115 min, wurde TMDB „Black Box“ USA
+    # 2020, 100 min – TMDB's own runtime tolerance of 15 % let it agree): two years apart also need the local IMDb
+    # archive and a running time within YEAR_TWO_RUNTIME of the IMDb runtime (More than Honey 95/88 min).
+    gap=abs(a-b);similarity=float(c.get('similarity') or 0)
+    near=gap==1 and similarity>=.985 and duration>=YEAR_CLOSE_MIN_SECONDS or gap==2 and similarity>=.999 and duration>=YEAR_TWO_MIN_SECONDS and year_two_runtime(c,duration)
+    return bool(c.get('kind')=='movie' and near and c.get('runtime_agrees') and not c.get('runtime_mismatch'))
 
 YEAR_CLOSE_MIN_SECONDS=40*60
+YEAR_TWO_MIN_SECONDS=60*60
+YEAR_TWO_RUNTIME=.08
+
+def year_two_runtime(c,duration):
+    if c.get('provider')!='IMDb Offline':return False
+    # 0.6.138 (Mac-Prüfung 0.6.136): IMDb Offline film candidates carry imdb_runtime_seconds, not reference_runtime_seconds
+    try:ref=float(c.get('imdb_runtime_seconds') or c.get('reference_runtime_seconds') or 0)
+    except (TypeError,ValueError):return False
+    return bool(ref and abs(ref-duration)<=max(300,ref*YEAR_TWO_RUNTIME))
 
 def verified(meta,c):
     if issues(meta,c):return False
@@ -50,7 +65,13 @@ def conflict(a,b):
 
 def choose(meta,rows,work_only=False):
     good=[c for c in rows if not issues(meta,c,work_only=work_only) and ((work_only and (c.get('provider') in ORDER[:-1] or c.get('confidence')=='high')) or verified(meta,c))]
-    if not good or any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):return None
+    if good and any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):
+        # 0.6.128 (Diagnose Pro 0.6.127: „Terrified – Spielfilm, Argentinien 2017“ mit 8 Kandidaten „prüfen“): among
+        # films that disagree, those with the title year and an agreeing running time decide – if they agree.
+        good=[c for c in good if c.get('kind')=='movie' and meta.get('year') and str(c.get('year'))==str(meta['year'])
+              and c.get('runtime_agrees') and not c.get('runtime_mismatch')]
+        if any(conflict(a,b) for i,a in enumerate(good) for b in good[i+1:]):return None
+    if not good:return None
     good.sort(key=lambda c:ORDER.index(c.get('provider')) if c.get('provider') in ORDER else 99)
     chosen=dict(good[0]);sources=dict(chosen.get('field_sources') or {})
     # Never mix provider IDs or episode evidence. Supplement only compatible titles.

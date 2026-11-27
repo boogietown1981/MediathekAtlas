@@ -500,6 +500,65 @@ QUERY_NOISE=(
 FILM_SUFFIX=re.compile(r'(?i)\s+[-–]\s+(?:spielfilm|fernsehfilm|dokumentarfilm|kurzfilm|animationsfilm|trickfilm|fernsehspiel|stummfilm|musikfilm|kinofilm)'
                        r'(?:\s+von\s+[^,]{2,80})?,\s*[^,]{2,80}?\s+((?:18|19|20)\d{2})\s*$')
 QUERY_NOISE=(FILM_SUFFIX,)+QUERY_NOISE
+# 0.6.121 (Langzeitdiagnose Air 23.11.2026, N-D): the broadcaster cuts long titles after 80 characters, so a version
+# note loses its closing bracket („… Simone de Beauvoir (Originalversion“) and stayed in the search title (TMDB
+# similarity 0.88, no kind). An unclosed bracket at the end that starts like a version/accessibility note goes, also
+# cut inside the word („(Originalvers“, „(mit Untert“). Search title only – work identities are unchanged.
+TRUNCATED_NOTE=re.compile(r'(?i)\s*[([]\s*(?:mit\s+)?(?:orig\w*|untert\w*|hörf\w*|hörfilm|audio\w*|gebärd\w*|omu\b|ov\b|vost\w*|dgs\b|ad\b)[^)\]]*$')
+QUERY_NOISE=QUERY_NOISE+(TRUNCATED_NOTE,)
+# 0.6.124 (Diagnose Air 0.6.120, N-D): the result cache (catalog_service, 24 h) was keyed by the stored title only, so
+# requeued works got the answer of the old search („from_cache“) after a change of the search. The revision and the
+# search title are part of the key now; raise SEARCH_REV whenever the queries change.
+SEARCH_REV='v06135'
+def film_title_parts(title):
+    """0.6.124 (Diagnose Air 0.6.120, 3sat-Filme „prüfen“ ohne IMDb-Treffer): 3sat joins series/author and film
+    title or original and German title – „The Pledge - Das Versprechen“, „Jussi Adler-Olsen: Erlösung“. The local
+    IMDb archive only knows exact names, so each part (and the rest after each separator) is a further query."""
+    text=str(title or '').strip()
+    pieces=[x.strip() for x in re.split(r'\s+[-–]\s+|:\s+',text) if x.strip()]
+    if len(pieces)<2:return []
+    out=[]
+    for i,x in enumerate(pieces):
+        rest=text[text.find(x):].strip() if i else ''
+        for v in (x,rest):
+            if v and v!=text and len(v)>=4 and not generic_topic(v) and v not in out:out.append(v)
+    # 0.6.132 (Diagnose Air 0.6.131: „Mankells Wallander – Eiskalt wie der Tod“): an author's possessive in front of
+    # the series name („Mankells“, „Rosamunde Pilchers“ has two words and stays) is not part of the database title.
+    m=POSSESSIVE.match(text)
+    if m:
+        rest=text[m.end():].strip()
+        if len(rest)>=4 and rest not in out:out.insert(0,rest)
+    return out[:6]
+POSSESSIVE=re.compile(r'^[A-ZÄÖÜ][a-zäöüß]{2,}s\s+(?=\S+\s+[-–:]\s|\S+:\s)')
+SERIES_INDEX=re.compile(r'\s+0?\d{1,2}(?=\s*[-–:]\s)')
+def raise_part_similarity(meta,c,parts):
+    """0.6.132 (Diagnose Air 0.6.131: 3sat-Filme mit einem Kandidaten bleiben „prüfen“): a film found under the whole
+    3sat title whose database title equals one part of it („Wallander – Eiskalt wie der Tod“) counts as an exact title
+    – only with the title year and an agreeing running time, like film_part_candidates."""
+    if c.get('kind')!='movie' or float(c.get('similarity') or 0)>=.985:return c
+    if not (meta.get('year') and str(c.get('year'))==str(meta['year']) and c.get('runtime_agrees') and not c.get('runtime_mismatch')):return c
+    # 0.6.135 (Prüfvermerk 0.6.134: TMDB „Mankells Wallander 01 - Eiskalt wie der Tod“, Ähnlichkeit 0,962): the running
+    # number of a film series inside the database title („… 01 - …“) is no part of the 3sat title.
+    found=str(c.get('title') or '')
+    names={found,SERIES_INDEX.sub('',found)}
+    score,part=max((core.title_similarity(p,n),p) for p in [meta.get('title') or '',*parts] if p for n in names)
+    if score>=.985:c.update(similarity=score,title_part=part,reason=(c.get('reason') or '')+f' Titelteil „{part}“, Jahr und Laufzeit passen.')
+    return c
+ROMAN={'I':1,'II':2,'III':3,'IV':4,'V':5,'VI':6,'VII':7,'VIII':8,'IX':9,'X':10}
+FILM_NUMBER=re.compile(r'^(.{2,}?)\s*(?:[-–:]\s*)?(?:Teil\s+)?(X|IX|VIII|VII|VI|V|IV|III|II|\d{1,2})\s*$')
+def film_number_variants(title):
+    """0.6.128 (Diagnose Pro 0.6.127: „Der Pate II – Spielfilm, USA 1974“ ohne Kandidaten; IMDb führt „Der Pate –
+    Teil II“): the numbered sequel in the other usual spellings – arabic/roman, with and without „Teil“."""
+    m=FILM_NUMBER.match(str(title or '').strip())
+    if not m:return []
+    base,num=m.group(1).strip(' -–:'),m.group(2)
+    n=ROMAN.get(num) or (int(num) if num.isdigit() else 0)
+    if not 2<=n<=10 or len(base)<2:return []
+    roman=[k for k,v in ROMAN.items() if v==n][0]
+    out=[]
+    for v in (f'{base} {n}',f'{base} {roman}',f'{base} - Teil {roman}',f'{base} - Teil {n}'):
+        if norm(v)!=norm(title) and v not in out:out.append(v)
+    return out
 def film_suffix_year(title):
     """Year of a 3sat film title „… - Spielfilm, USA 1993“, else None."""
     m=FILM_SUFFIX.search(str(title or ''))
@@ -529,6 +588,18 @@ def provider_complete(start,**fields):
     seconds=round(time.monotonic()-start,2)
     if seconds>=PROVIDER_SLOW_SECONDS:diagnostics.event('provider_complete',seconds=seconds,**fields)
 
+def film_part_candidates(row,meta,year):
+    """0.6.124: IMDb films named by one part of a 3sat title. Same year as the title suffix (or one apart); a part
+    is no exact title, so the hit is only verified with an agreeing running time, else it stays a suggestion."""
+    import imdb_archive
+    found={}
+    for part in film_title_parts(meta['title'])+film_number_variants(meta['title']):
+        for h in imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'movie','title':part}):
+            if not h.get('year') or abs(int(h['year'])-int(year))>1:continue
+            h=dict(h,reason=f'Titelteil „{part}“ im lokalen IMDb-Archiv, Jahr aus dem Titelzusatz',title_part=part)
+            if not (h.get('runtime_agrees') and int(h['year'])==int(year)):h.update(similarity=.9,confidence='possible')
+            found.setdefault(h['reference_id'],h)
+    return list(found.values())
 def candidates(row,meta,settings):
     meta={k:v for k,v in meta.items() if k not in ('suggestions','metadata_warnings','deferred_providers')};kind=meta['kind'];topic=row.get('topic','');queries=[]
     suffix_year=film_suffix_year(meta['title']) or film_suffix_year(row.get('title'))
@@ -584,6 +655,8 @@ def candidates(row,meta,settings):
     if imdb_archive.ACTIVE and imdb_archive.ACTIVE.updated:
         try:
             local=imdb_archive.ACTIVE.candidates(row,meta)
+            if suffix_year and kind in ('movie','unknown') and not any(x.get('kind')=='movie' for x in local):
+                local.extend(film_part_candidates(row,meta,suffix_year))
             if meta.get('kind') not in ('movie','series') and row.get('topic') and row['topic']!=meta.get('title'):
                 local.extend(imdb_archive.ACTIVE.candidates(row,{**meta,'kind':'series','title':row['topic']}))
             out.extend(local)
@@ -622,6 +695,7 @@ def candidates(row,meta,settings):
                 hits=fn(row,meta,(settings[field],settings.get('tvdb_pin','')) if field=='tvdb' else settings[field],k,title);out.extend(hits)
                 for c in hits:
                     video_causality.annotate(row,c)
+                    if suffix_year:raise_part_similarity(meta,c,film_title_parts(meta['title']))
                     c['plausibility_issues']=matching.issues(meta,c)
                 provider_success(provider)
                 if not hits:negative_cache.remember(provider,k,title,year,credential)

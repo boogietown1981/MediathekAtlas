@@ -516,7 +516,7 @@ function renderImdb(s={}){
  imdbReady=!!s.ready;
  const phases={waiting:'Erstimport steht an',downloading:'Datensatz wird geladen',
    importing:'SQLite-Import',indexing:'Suchindizes werden erstellt',retrying:'Wiederhole unterbrochenen Download',ready:'Archiv bereit',
-   error:'Aktualisierung fehlgeschlagen'};
+   error:'Aktualisierung fehlgeschlagen',waiting_space:'Wartet auf Speicherplatz (kein Download, das bisherige Archiv bleibt nutzbar)'};
  const phase=phases[s.phase]||'Nicht gestartet',last=imdbDate(s.updated),next=imdbDate(s.next_update);
  const busy=['downloading','retrying','importing','indexing'].includes(s.phase);
  const size=s.archive_bytes>0?(s.archive_bytes/1073741824).toLocaleString('de-DE',{maximumFractionDigits:2})+' GiB':'–';
@@ -592,6 +592,18 @@ function openDetail(item){const m=item.metadata;$('detail-title').textContent=m.
  const action=$('detail-action');action.textContent=item.series_parent?'Folgen ansehen':'Metadaten prüfen & herunterladen';action.onclick=()=>{$('media-detail').close();if(item.series_parent)selectFilter({kind:'series',show:item.show_key});else edit(item);};renderDetailExtras(item);$('media-detail').showModal();}
 $('detail-close').onclick=()=>$('media-detail').close();
 
+// Sendetermine bei TV Wunschliste (imfernsehen GmbH): nur als Link, MediathekAtlas liest die Seite nicht aus
+// (Impressum: Inhalte nur zum privaten Gebrauch). Die Suche dort nimmt nur POST an, darum ein kleines Formular,
+// das erst auf Klick in einem neuen Tab abgeschickt wird.
+function wunschlisteLink(data,item){
+ const m=item.metadata||{},r=item.source||{};
+ const name=String(m.title||r.topic||'').trim().slice(0,120);
+ if(!name)return;
+ const form=document.createElement('form');form.method='post';form.action='https://www.wunschliste.de/suche';form.target='_blank';form.rel='noopener noreferrer';
+ const q=document.createElement('input');q.type='hidden';q.name='query';q.value=name;form.append(q);
+ const b=el('button','↗ Sendetermine bei Wunschliste','linklike');b.type='submit';b.title='Sucht „'+name+'“ bei TV Wunschliste (öffnet einen neuen Tab)';form.append(b);
+ const dd=el('dd');dd.append(form);data.append(el('dt','Sendetermine'),dd);
+}
 function renderDetailExtras(item){
  const m=item.metadata,r=item.source,credits=item.series_parent?(m.show_credits||m):m;
  const rating=Number(m.rating);$('detail-rating').textContent=m.rating!=null&&m.rating!==''&&Number.isFinite(rating)?'★ '+rating.toLocaleString('de-DE')+' / 10 · '+(m.rating_source||(['OMDb','IMDb Offline'].includes(m.provider)?'IMDb':m.provider||'Quelle unbekannt'))+(m.votes!=null?' · '+countLabel(Number(m.votes))+' Stimmen':''):'Bewertung noch nicht vorhanden';
@@ -608,6 +620,7 @@ function renderDetailExtras(item){
  }
  if(!item.series_parent){add('Laufzeit des Angebots',r.duration?Math.round(r.duration/60)+' Minuten':null);add('Sender',r.channel);add('Fassung',item.special||'Regulär');add('Verfügbarkeit',item.available?'Aktuell gelistet':'Nicht mehr gelistet');add('Ablaufdatum',availabilityLabel(r));if(m.kind==='series'){add('Staffel / Folge',Number.isInteger(m.season)&&Number.isInteger(m.episode)?'S'+String(m.season).padStart(2,'0')+'E'+String(m.episode).padStart(2,'0'):'Noch nicht bestätigt');add('Episodentitel',m.episode_title);}}
  add('Drehbuch',(credits.writers||[]).join(', '));
+ wunschlisteLink(data,item);
  $('detail-credits').textContent=[credits.directors?.length?'Regie: '+credits.directors.join(', '):'',credits.cast?.length?'Besetzung: '+credits.cast.map(x=>x.name+(x.role?' ('+x.role+')':'')).join(', '):''].filter(Boolean).join(' · ');
  renderPlaySlot(item);
  const host=$('detail-downloads');host.replaceChildren();

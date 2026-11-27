@@ -26,6 +26,7 @@
 ./mediathekatlas/dailyme.py
 ./mediathekatlas/dailyme_enrichment.py
 ./mediathekatlas/sender_live.py
+./mediathekatlas/epg.py
 ./mediathekatlas/artwork.py
 ./mediathekatlas/diagnostic_extensions.py
 ./mediathekatlas/youtube_downloads.py

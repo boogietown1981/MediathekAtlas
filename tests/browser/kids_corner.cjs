@@ -52,6 +52,8 @@ add('t1', 'Tatort Folge', ['Krimi'], 'series', 'Tatort', 1, 1)
 # viele Kinderfilme (Reihe muss sich blättern lassen, Liste nicht nach 240 abgeschnitten)
 add('gaensemagd', 'Zz Die Gänsemagd', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
 add('kikafilm', 'Ein KiKA-Film', ['Abenteuer'], channel='KiKA')
+# 0.6.148: Folgen als einzelne Filme mit vorangestellter Nummer → eine Serie, nach Nummer sortiert
+for n, rest in ((10, 'auf heißer Spur'), (2, 'in Gefahr'), (1, 'reißen aus')): add('vv%d' % n, '%d. Die verwegenen Vier %s' % (n, rest), ['Kinder', 'Abenteuer'])
 add('m4', 'Die Maus im Wald', [], 'series', 'Die Maus', 1, 4, state='pending', attempts=0)
 # 0.6.98: eine Reihe muss selbst Kinderprogramm sein (mind. 80 % der eingeordneten Folgen); Nachrichtenreihe mit
 # einzelnen „Kinder“-Werken bleibt draußen
@@ -59,6 +61,12 @@ add('m5', 'Die Maus im Schnee', ['Kinder'], 'series', 'Die Maus', 1, 5)
 add('m6', 'Die Maus im Regen', ['Kinder'], 'series', 'Die Maus', 1, 6)
 for i in range(12): add('pol%02d' % i, 'Politik heute %d' % i, ['Kinder'] if i < 2 else ['Talk'], 'series', 'Politik', 1, i + 1)
 for i in range(260): add('kf%03d' % i, 'Kinderfilm %03d' % i, ['Kinder'])
+# 0.6.148: geladener Film steht vorn und trägt das Zeichen „geladen“
+# 0.6.152: „geladen“ nur mit vorhandener Datei (kf258: Eintrag ohne Datei zählt nicht)
+import os
+kf259 = os.path.join(os.path.dirname(os.path.abspath(sys.argv[1])), 'kf259.mkv'); open(kf259, 'wb').write(b'x')
+c.execute("INSERT INTO downloaded_items VALUES('kf259',?,1)", (kf259,))
+c.execute("INSERT INTO downloaded_items VALUES('kf258','/nicht/vorhanden/kf258.mkv',1)")
 # 0.6.93: Gruppen – drei Märchen, drei Zeichentrickfilme (kleinere Gruppen gehen in „Noch mehr“)
 add('schnee', 'Schneewittchen', ['Fantasy'], channel='ZDF', topic='Märchenperlen')
 add('holle', 'Frau Holle', ['Familie', 'Fantasy'], topic='Sechs auf einen Streich')
@@ -68,7 +76,18 @@ add('trick3', 'Comic-Abenteuer', ['Kinder', 'Animation'])
 add('wartet', 'Wartender Kinderfilm', [], topic='Kinderfilme', state='retry')
 c.execute("INSERT INTO works(id,title,kind,year,show_key,meta,state,attempts,topic) VALUES('kikalive','KiKA Livestream','other',NULL,'kikalive','{}','format',0,'Livestream')")
 c.execute("INSERT INTO offers(id,work_id,payload,active) VALUES('o-kikalive','kikalive',?,1)", (json.dumps({'title': 'KiKA Livestream', 'channel': 'KiKA', 'topic': 'Livestream', 'duration': 0, 'url_video': 'https://media.example.org/kikalive.mp4'}),))
+# 0.6.149: neu abonnierter Kanal mit einem fertig geladenen Video (Abo-Kennung ist eine Zahl)
+import os, time
+from pathlib import Path
+c.execute('CREATE TABLE IF NOT EXISTS jobs(id TEXT PRIMARY KEY,payload TEXT,state TEXT)')
+c.execute("INSERT INTO jobs VALUES('abojob1',?,'done')", (json.dumps({'id': 'abojob1', 'origin': 'youtube', 'state': 'done', 'path': '/nicht/vorhanden/abo.mkv', 'source': {'title': 'Testvideo Eins'}}),))
 c.commit()
+import youtube_abos
+y = youtube_abos._connect(Path(os.path.dirname(sys.argv[1])))
+with y:
+    y.execute("INSERT INTO youtube_abos(ref,label,title,added,profile) VALUES('https://www.youtube.com/@testkanal','Testkanal','Testkanal',?,'kinder')", (time.time(),))
+    y.execute("INSERT INTO youtube_abo_videos(abo_id,video,title,published,duration,state,job_id,found,done_at) VALUES(1,'vid1','Testvideo Eins','2026-11-26',3,'done','abojob1',?,?)", (time.time(), time.time()))
+y.close()
 `;
 
 function freePort() {
@@ -143,6 +162,16 @@ async function kidsCorner(browser, url, clip, problems) {
   const chips = await page.locator('.kids-chip-name').allTextContents();
   check('Auswahl Filme/Serien oben: ' + chips.join(','), chips.includes('Filme') && chips.includes('Serien'));
   if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.46-kinderecke.png') });
+  // 0.6.149 (Björn: neuer Kanal nur oben, Antippen zeigt keine Videos): Kanalreihe vor den Gruppen, Kanalfilter zeigt das Video
+  const order = await page.locator('#kids-main .kids-row h2').allTextContents();
+  const at = name => order.findIndex(t => t.includes(name));
+  check('Kanalreihe vor den Film-/Seriengruppen: ' + order.join(' | '), at('Testkanal') >= 0 && at('Testkanal') < at('Märchen'));
+  await page.locator('.kids-chip', { hasText: 'Testkanal' }).click();
+  await page.waitForFunction(() => [...document.querySelectorAll('#kids-main .kids-title')].some(t => t.textContent === 'Testvideo Eins'), null, { timeout: 10000 })
+    .catch(() => check('Kanalfilter zeigt das geladene Video', false));
+  check('Kanalfilter nur mit Videos dieses Kanals', (await page.locator('#kids-main .kids-tile').count()) === 1);
+  await page.locator('.kids-chip', { hasText: 'Alle' }).first().click();
+  await page.waitForSelector('#kids-main .kids-strip');
   await scrolling(page, check);
   await liveAndParents(page, url, check, asked);
 
@@ -151,7 +180,15 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.waitForFunction(() => { const v = document.getElementById('kids-video'); return !document.getElementById('kids-stage').hidden && v.currentTime > 0.3; }, null, { timeout: 20000 })
     .catch(() => problems.push('Film spielt nicht: ' + refused.join(',')));
   check('Film kommt von der Adresse des Senders', asked.some(u => u.endsWith('/rabe.mp4')));
-  await page.locator('#kids-close').click();
+  // 0.6.147: am Ende eines Films „Mehr davon“ statt sofort zurück, ohne Countdown
+  await page.evaluate(() => { const v = document.getElementById('kids-video'); v.currentTime = Math.max(0, (v.duration || 1) - 0.2); });
+  await page.waitForFunction(() => !document.getElementById('kids-next').hidden, null, { timeout: 20000 })
+    .catch(() => problems.push('Nach dem Film erscheinen keine Vorschläge'));
+  const after = await page.evaluate(() => ({ head: document.getElementById('kids-next-head').hidden, bar: document.getElementById('kids-next-bar').hidden,
+    tips: [...document.querySelectorAll('#kids-suggest-list .kids-title')].map(t => t.textContent) }));
+  check('nach dem Film: Vorschläge ohne Countdown: ' + after.tips.join(' | '), after.head && after.bar && after.tips.length > 0 && !after.tips.includes('Der kleine Rabe Socke'));
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.147-kinderecke-vorschlaege.png') });
+  await page.locator('#kids-next-stop').click();
   await page.waitForFunction(() => document.getElementById('kids-stage').hidden);
 
   // Schutz: nichts außerhalb der Liste, auch nicht mit gültiger Sitzung
@@ -176,9 +213,36 @@ async function kidsCorner(browser, url, clip, problems) {
   await page.waitForFunction(() => !document.getElementById('kids-next').hidden, null, { timeout: 30000 })
     .catch(() => problems.push('Nach der Folge wird keine nächste angeboten'));
   check('nächste Folge wird angeboten', (await page.locator('#kids-next-title').textContent()) === 'Die Maus am Meer');
+  // 0.6.147: „Mehr davon“ zeigt nie die laufende Folge oder die nächste doppelt
+  const more = await page.locator('#kids-suggest-list .kids-title').allTextContents();
+  check('Vorschläge ohne laufende/nächste Folge: ' + more.join(' | '), !more.some(t => t.includes('Die Maus im Zoo') || t.includes('Die Maus am Meer')));
+  // 0.6.152 (Mac-Prüfung 0.6.147): die eigene Serie nie in „Mehr davon“; Maus über den Vorschlägen hält den Countdown an
+  check('Vorschläge ohne die eigene Serie: ' + more.join(' | '), !more.some(t => t === 'Die Maus'));
+  if (more.length) {
+    await page.locator('#kids-suggest-list .kids-tile').first().hover();
+    await page.mouse.move(5, 5).catch(() => {});
+    await page.locator('#kids-suggest-list .kids-tile').first().hover();
+    await page.waitForTimeout(7500);
+    check('Darüberfahren hält den Countdown an', await page.evaluate(() => !document.getElementById('kids-next').hidden && !document.getElementById('kids-next-fill').classList.contains('run')));
+  }
   await page.locator('#kids-next-stop').click();
   await page.locator('.kids-back').click();
   check('zurück zur Übersicht', await page.locator('.kids-tile[data-kind=series]').count() >= 1);
+  // 0.6.148: „NN. Die verwegenen Vier …“ als eine Serie, Folgen nach Nummer, jede abspielbar
+  check('keine Einzelkachel „1. Die verwegenen Vier …“', !(await page.locator('#kids-main .kids-tile .kids-title').allTextContents()).some(t => /^\d+\. Die verwegenen/.test(t)));
+  await page.locator('#kids-main .kids-tile[data-kind=series]', { hasText: 'Die verwegenen Vier' }).click();
+  await page.waitForFunction(() => document.querySelectorAll('.kids-tile[data-kind=episode]').length === 3, null, { timeout: 20000 })
+    .catch(() => check('Serie „Die verwegenen Vier“ mit drei Folgen', false));
+  const vv = await page.locator('.kids-tile[data-kind=episode] .kids-title').allTextContents();
+  check('Folgen nach Nummer: ' + vv.join(' | '), vv.length === 3 && vv[0].startsWith('Folge 1:') && vv[1].startsWith('Folge 2:') && vv[2].startsWith('Folge 10:'));
+  if (SHOTS) await page.screenshot({ path: path.join(SHOTS, '0.6.148-kinderecke-nummern-serie.png') });
+  await page.locator('.kids-tile[data-kind=episode]').nth(1).click();
+  await page.waitForFunction(() => { const v = document.getElementById('kids-video'); return !document.getElementById('kids-stage').hidden && v.currentTime > 0.3; }, null, { timeout: 20000 })
+    .catch(() => problems.push('Folge 2 der Nummern-Serie spielt nicht: ' + refused.join(',')));
+  check('Folge 2 kommt vom Angebot des Films', asked.some(u => u.endsWith('/vv2.mp4')));
+  await page.locator('#kids-close').click();
+  await page.waitForFunction(() => document.getElementById('kids-stage').hidden);
+  await page.locator('.kids-back').click();
   const marks = await page.evaluate(async () => {
     const token = document.querySelector('meta[name=atlas-token]').content;
     return (await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json()).catalog;
@@ -225,7 +289,15 @@ async function scrolling(page, check) {
   check('Gruppenreihen Märchen, Zeichentrick, Noch mehr: ' + rows.join(' | '), rows.some(r => r.startsWith('🏰 Märchen')) && rows.some(r => r.startsWith('🎨 Zeichentrick')) && rows.some(r => r.startsWith('⭐ Noch mehr')));
   const fairy = await page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Märchen' }) }).locator('.kids-title').allTextContents();
   check('Märchen-Reihe: ' + fairy.join(' | '), fairy.length === 3 && fairy.includes('Frau Holle') && fairy.includes('Schneewittchen') && fairy.includes('Zz Die Gänsemagd'));
+  // 0.6.147: Vorschläge nach dem Video – gleiches Thema zuerst, nie der Titel selbst
+  const tips = await page.evaluate(() => window.__kidsSuggest('Frau Holle', 6));
+  check('Vorschläge zu „Frau Holle“: ' + (tips || []).join(' | '), Array.isArray(tips) && tips.slice(0, 2).sort().join('|') === 'Schneewittchen|Zz Die Gänsemagd' && !tips.includes('Frau Holle'));
   const strip = page.locator('.kids-row', { has: page.locator('h2', { hasText: 'Noch mehr' }) }).first();
+  const firstMore = await strip.locator('.kids-tile').first().evaluate(t => ({ title: t.querySelector('.kids-title').textContent, local: !!t.querySelector('.kids-local'), label: t.getAttribute('aria-label') }));
+  check('geladener Film vorn und markiert: ' + JSON.stringify(firstMore), firstMore.title === 'Kinderfilm 259' && firstMore.local && firstMore.label.includes('geladen'));
+  const local258 = await page.evaluate(async () => { const token = document.querySelector('meta[name=atlas-token]').content; const r = await (await fetch('/api/kids', { headers: { 'X-Atlas-Token': token } })).json(); return ((r.catalog || {}).movies || []).filter(t => /Kinderfilm 25[89]/.test(t.title)).map(t => t.title + ':' + !!t.local).sort().join(','); });
+  check('Download-Eintrag ohne Datei gilt nicht als geladen: ' + local258, local258 === 'Kinderfilm 258:false,Kinderfilm 259:true');
+  if (SHOTS) await strip.screenshot({ path: path.join(SHOTS, '0.6.148-kinderecke-geladen.png') });
   const box = strip.locator('.kids-strip');
   const before = await box.evaluate(b => ({ left: b.scrollLeft, wide: b.scrollWidth > b.clientWidth + 50 }));
   check('Filmreihe ist breiter als das Fenster', before.wide);

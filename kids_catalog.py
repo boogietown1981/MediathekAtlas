@@ -23,6 +23,7 @@ im Profil „Kinder“. Dieses Modul ergänzt Filme und Serien aus dem gemeinsam
 """
 from __future__ import annotations
 
+import json
 import re
 import threading
 import time
@@ -130,8 +131,13 @@ def _from_offer(offer, view, limit=None):
             return _tile(source, 'series', title, meta.get('year'), meta.get('poster'), series={'show': show})
         if not item.get('available') and not item.get('downloaded'):
             return None
-        return _tile(source, 'movie', title, meta.get('year'), meta.get('poster'), ref={'offer': str(item.get('id') or '')},
+        tile = _tile(source, 'movie', title, meta.get('year'), meta.get('poster'), ref={'offer': str(item.get('id') or '')},
                      duration=src.get('duration'))
+        if item.get('downloaded'):
+            tile['downloaded'] = True      # 0.6.132: lokale Kopie spielt auch ohne aktives Angebot
+            if item.get('file_state') == 'missing':
+                tile['file_missing'] = True    # 0.6.152: Datei verschoben/gelöscht – nicht „geladen“
+        return tile
     item_id = str(item.get('id') or '')
     if source == 'netzkino':
         if item.get('kind') == 'series' or view == 'series':
@@ -205,6 +211,10 @@ def _collect_once(root, db, page, view, merge, modules, limit):
                 tile = None
             if tile and tile['id'] not in seen:
                 seen.add(tile['id'])
+                if _dict(entry).get('local'):
+                    tile['local'] = True            # 0.6.148: geladen (unified_index/local_titles)
+                if not tile.get('poster'):          # 0.6.121: Bild eines anderen Angebots desselben Titels
+                    tile['poster'] = _entry_poster(entry)
                 try:
                     tile['group'] = group_of(entry)
                 except Exception as exc:   # 0.6.103: eine unerwartete Angebotsform kostet nie die ganze Liste
@@ -217,12 +227,259 @@ def _collect_once(root, db, page, view, merge, modules, limit):
     return tiles, pending, False
 
 
+def _offer_poster(offer):
+    offer = _dict(offer)
+    item = _dict(offer.get('item'))
+    if offer.get('source') == 'mediatheken':
+        return _https(_dict(item.get('metadata')).get('poster'))
+    return _https(item.get('poster'))
+
+
+def _entry_poster(entry):
+    """Erstes brauchbares Bild unter allen Angeboten eines zusammengeführten Titels (wie die Werkliste)."""
+    return next((p for p in (_offer_poster(o) for o in _dict(entry).get('offers') or []) if p), '')
+
+
+def _title_key(title):
+    return re.sub(r'[^0-9a-zäöüß]+', '', str(title or '').casefold())
+
+
+def _fill_pictures(db, out):
+    """0.6.121 (Björn 23.11.2026: „einige Serien oder Filme haben nur den Buchstaben als Bild“): Kacheln ohne Bild
+    bekommen, wo vorhanden, ein Bild aus dem eigenen Bestand – Mediatheken-Reihe: das Bild einer anderen Folge bzw. des
+    erkannten Werks derselben Reihe; sonst das Bild einer gleichnamigen Kachel derselben Art (z. B. dieselbe Reihe
+    unter zweitem Schlüssel oder bei einem anderen Anbieter). IMDb liefert keine Bilder; ohne Bild bei TMDB/TVDB/
+    Fanart.tv/Wikidata/Anbieter bleibt der Anfangsbuchstabe."""
+    shows = [t for t in out.get('series') or [] if not t.get('poster') and t.get('source') == 'mediatheken'
+             and (t.get('series') or {}).get('show')]
+    if shows and db is not None:
+        try:
+            with db() as c:
+                for t in shows:
+                    row = c.execute("SELECT json_extract(meta,'$.poster') FROM works WHERE show_key=? AND "
+                                    "json_extract(meta,'$.poster') LIKE 'https://%' ORDER BY (kind='series') DESC, rowid LIMIT 1",
+                                    (t['series']['show'],)).fetchone()
+                    if row:
+                        t['poster'] = _https(row[0])
+        except Exception:
+            pass
+        stored = _stored_pictures(db)      # 0.6.146: Bild der Sendung von der ARD-/ZDF-Mediathek
+        for t in shows:
+            if not t.get('poster'):
+                t['poster'] = _https((stored.get(t['series']['show']) or {}).get('url'))
+    # 0.6.146: gleichnamige Kachel auch über Filme und Serien hinweg (zuerst dieselbe Art)
+    known = {view: {} for view in ('movies', 'series')}
+    for view in known:
+        for t in out.get(view) or []:
+            if t.get('poster'):
+                known[view].setdefault(_title_key(t.get('title')), t['poster'])
+    for view, other in (('movies', 'series'), ('series', 'movies')):
+        for t in out.get(view) or []:
+            if not t.get('poster'):
+                key = _title_key(t.get('title'))
+                t['poster'] = known[view].get(key) or known[other].get(key, '')
+
+
+# 0.6.146 (Björn 26.11.2026, Bild „Tiere & Natur“/„Wissen“: „Checker Reportagen“, „Carolin testet“, „Die wilde Natur“ …
+# weiter nur mit Anfangsbuchstaben): Mediatheken-Reihen, die nirgends im Bestand ein Bild haben (kein Werk der Reihe
+# mit Bild, TMDB/TVDB ohne Eintrag), bekommen das Bild der Sendung bzw. einer Folge von der ARD- oder ZDF-Mediathek
+# (broadcaster.lookup_limited: dieselbe gedrosselte, pausierbare Abfrage wie die Erkennung). KiKA, arte und 3sat
+# bleiben ohne Abfrage (keine freigegebene Schnittstelle). Ergebnis und Fehlschlag merkt sich catalog_state.
+PICTURES_KEY = 'kids_pictures'
+PICTURE_RETRY = 7 * 86400     # eine Reihe ohne Bild wird nach einer Woche wieder gefragt
+PICTURE_BATCH = 20            # Abfragen je Durchgang (das Stundenlimit teilt sie sich mit der Erkennung)
+PICTURE_OFFERS = 6            # Angebote je Reihe, die höchstens versucht werden
+LAST_FETCH = {'stopped': False}
+
+
+def _stored_pictures(db):
+    if db is None:
+        return {}
+    try:
+        import catalog
+        with db() as c:
+            value = catalog.get_state(c, PICTURES_KEY, {}) or {}
+        return value if isinstance(value, dict) else {}
+    except Exception:
+        return {}
+
+
+def _missing_shows(shelf):
+    """Mediatheken-Reihen der zuletzt gebauten Liste ohne Bild: [(show_key, Titel)]."""
+    seen, out = set(), []
+    for t in (shelf or {}).get('series') or []:
+        show = str((t.get('series') or {}).get('show') or '')
+        if t.get('source') == 'mediatheken' and show and not t.get('poster') and show not in seen:
+            seen.add(show);out.append((show, str(t.get('title') or '')))
+    return out
+
+
+_PHRASE = lambda t: re.sub(r'\s+', ' ', re.sub(r'[^0-9a-zäöüß]+', ' ', str(t or '').casefold())).strip()
+
+
+YOUTUBE_INDEX_ROWS = 20000   # 0.6.156: neueste Videos je Tabelle, einmal je Lauf gelesen
+
+
+_SEGMENTS = re.compile(r'\s*(?:\||\s[-–—]\s|:|\(|\)|\[|\]|#|/)\s*')
+_ARTICLES = {'der', 'die', 'das', 'den', 'dem', 'ein', 'eine', 'und', 'mit', 'the', 'a'}
+_GENERIC = {'serie', 'serien', 'folge', 'folgen', 'film', 'filme', 'show', 'sendung', 'kinder', 'spass', 'spaß', 'lernen',
+            'wissen', 'video', 'videos', 'clip', 'clips', 'shorts', 'staffel', 'trailer', 'spezial'}
+
+
+def _segments(title):
+    """Teile eines Videotitels zwischen „|“, „ – “, „:“, Klammern, „#“ als Wortfolgen."""
+    return [p for p in (_PHRASE(x) for x in _SEGMENTS.split(str(title or ''))) if p]
+
+
+def youtube_index(root, rows=YOUTUBE_INDEX_ROWS):
+    """0.6.156 (Mac-Prüfung 0.6.155, Air: Bildabruf lief über 8 h nicht durch): Titel und Vorschaubilder des eigenen
+    YouTube-Bestands EINMAL je Lauf lesen statt je Reihe eine Verbindung und zwei LIKE-Suchen.
+    0.6.157: [(Titelteile, Bild, streng)] – streng für den YouTube-Katalog (ganze Filme, „Die drei Musketiere der Neuzeit“),
+    dort muss ein Titelteil genau der Reihenname sein; bei Abo-Videos genügt ein Titelteil, der mit ihm beginnt."""
+    try:
+        import youtube
+        ydb = youtube._connect(root)
+    except Exception:
+        return []
+    out = []
+    try:
+        if ydb.execute("SELECT 1 FROM sqlite_master WHERE type='table' AND name='youtube_abo_videos'").fetchone():
+            out += [(t, p, False) for t, p in ydb.execute(
+                "SELECT title, poster FROM youtube_abo_videos WHERE poster LIKE 'https://i.ytimg.com/%' ORDER BY found DESC LIMIT ?", (rows,))]
+        out += [(t, p, True) for t, p in ydb.execute(
+            "SELECT title, poster FROM youtube_items WHERE poster LIKE 'https://i.ytimg.com/%' ORDER BY seen DESC LIMIT ?", (rows,))]
+    except Exception:
+        pass
+    finally:
+        ydb.close()
+    return [(_segments(t), _https(p), strict) for t, p, strict in out if _https(p).startswith('https://i.ytimg.com/')]
+
+
+def _specific(phrase):
+    """0.6.157 (Mac-Prüfung 0.6.156: „Die Serie“ ← TOGGO-Short, „Lernen mit Spaß“): ohne ein eigenes Wort (≥ 4 Buchstaben,
+    kein Allerweltswort) ist ein Reihenname zu allgemein für die Bildsuche."""
+    return any(len(w) >= 4 and w not in _GENERIC for w in phrase.split(' ') if w not in _ARTICLES)
+
+
+def youtube_picture(root, title, index=None):
+    """0.6.152 (Mac-Prüfung 0.6.147: KiKA-Reihen wie „Checker Tobi“, „Anna, Paula, Pia …“ bleiben ohne Bild, KiKA wird
+    nicht abgefragt): Vorschaubild eines YouTube-Videos aus dem eigenen Bestand (Kinder-Abos, YouTube-Katalog).
+    Kein Netz; Bilder nur von i.ytimg.com. '' ohne Treffer. 0.6.156: ``index`` aus youtube_index (einmal je Lauf).
+    0.6.157: Treffer nur über einen ganzen Titelteil (siehe youtube_index), nicht irgendwo im Titel."""
+    phrase = _PHRASE(title)
+    if len(phrase) < 6 or ' ' not in phrase and len(phrase) < 10 or not _specific(phrase):
+        return ''       # zu kurz/zu allgemein („Anna“, „Wissen“, „Die Serie“)
+    for parts, url, strict in (youtube_index(root) if index is None else index):
+        for part in parts:
+            # 0.6.158 (Mac-Prüfung 0.6.157: „Die wilde Natur“ ← „… | Pia und die wilde Natur | BR“ ging verloren): bei
+            # Abo-Videos darf der Titelteil mit dem Reihennamen beginnen oder enden
+            if part == phrase or (not strict and (part.startswith(phrase + ' ') or part.endswith(' ' + phrase))):
+                return url
+    return ''
+
+
+PICTURE_SECONDS = 120   # 0.6.156: ein Lauf endet spätestens nach 2 min (Rest beim nächsten Lauf)
+
+
+def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None, youtube=None):
+    """Bilder für Reihen ohne Bild holen (Hintergrund, stündlich). Gibt (gefunden, gefragt, ohne Sender-Seite) zurück;
+    ``LAST_FETCH['stopped']``: Sender-Abfrage pausiert/Stundenlimit, dann früher erneut versuchen."""
+    import catalog
+    import broadcaster
+    now = time.time() if now is None else now
+    lookup = lookup or (lambda row: broadcaster.lookup_limited(row, purpose='pictures'))
+    if youtube is None:
+        cache = []
+
+        def youtube(title):
+            if not cache:
+                cache.append(youtube_index(root))
+            return youtube_picture(root, title, cache[0])
+    began = time.monotonic()
+    LAST_FETCH['stopped'] = False
+    via_youtube = 0
+    with _LOCK:
+        shelf = _LAST.get(str(root))
+    stored = _stored_pictures(db)
+    found = asked = no_page = 0
+    names = []
+    for show, title in _missing_shows(shelf):
+        entry = stored.get(show) or {}
+        # 0.6.152: Fehlschläge älterer Versionen (ohne YouTube-Rückfall, ohne 'v') gleich erneut versuchen
+        if entry.get('url') or (entry.get('v') == 2 and now - float(entry.get('at') or 0) < PICTURE_RETRY):
+            continue
+        if asked >= limit or time.monotonic() - began > PICTURE_SECONDS:
+            break
+        try:
+            with db() as c:
+                rows = [json.loads(r[0]) for r in c.execute(
+                    "SELECT o.payload FROM offers o JOIN works w ON w.id=o.work_id WHERE w.show_key=? AND o.active=1 "
+                    "ORDER BY o.seen DESC LIMIT 40", (show,))]
+        except Exception:
+            continue
+        rows = [r for r in rows if isinstance(r, dict) and broadcaster.reference(r)][:PICTURE_OFFERS]
+        url, stopped = '', False
+        if not rows:
+            no_page += 1
+        if LAST_FETCH['stopped'] and rows:
+            # 0.6.155 (Mac-Prüfung 0.6.152, Air: „asked 1, stopped true“ ohne Ergebnis): Sender heute nicht mehr fragen,
+            # aber das Vorschaubild aus dem eigenen YouTube-Bestand trotzdem nehmen; ohne Bild nichts merken
+            url = youtube(title)
+            if url:
+                via_youtube += 1;stored[show] = {'url': url, 'at': now, 'v': 2};found += 1
+            continue
+        for row in rows:
+            asked += 1
+            try:
+                info = lookup(row) or {}
+            except broadcaster.Unavailable:
+                stopped = True;break          # pausiert oder Stundenlimit: später weiter, nichts merken
+            except Exception:
+                continue
+            url = _https(info.get('series_image')) or _https(info.get('image'))
+            if url:
+                break
+        if stopped:
+            LAST_FETCH['stopped'] = True
+            url = youtube(title)
+            if url:
+                via_youtube += 1;stored[show] = {'url': url, 'at': now, 'v': 2};found += 1
+            continue
+        if not url:          # ohne Senderseite oder ohne Sendungsbild: Vorschaubild aus dem eigenen YouTube-Bestand
+            url = youtube(title)
+            via_youtube += bool(url)
+        if not rows and not url:
+            names.append(title[:60])
+        stored[show] = {'url': url, 'at': now, 'v': 2}
+        found += bool(url)
+    if found or no_page or asked:
+        try:
+            with db() as c:
+                catalog.set_state(c, PICTURES_KEY, stored)
+        except Exception:
+            pass
+    try:   # 0.6.156: das Ereignis kommt bei jedem Lauf (auch ohne fehlende Bilder), mit Dauer
+        import diagnostics
+        diagnostics.event('kids_pictures_fetched', found=found, asked=asked, without_sender_page=no_page,
+                          from_youtube=via_youtube, stopped=LAST_FETCH['stopped'], seconds=round(time.monotonic() - began, 2),
+                          examples_without_page=names[:10], known=sum(1 for v in stored.values() if v.get('url')))
+    except Exception:
+        pass
+    return found, asked, no_page
+
+
 def _finish(db, root, out, pending):
     out['series'] = _kids_shows(db, out['series'])
+    _fill_pictures(db, out)
     out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
     out['movies'] = _prefer_kids_offers(db, out['movies'])
-    out['movies'], out['series'] = _parent_blocks(db, out['movies']), _parent_blocks(db, out['series'])
+    out['movies'] = _playable_films(db, out['movies'])
+    out['movies'] = _drop_unplayable_platform_films(db, out['movies'])
+    out['movies'] = _parent_blocks(db, out['movies'])
+    out['movies'], numbered = numbered_series(out['movies'])       # 0.6.148: „NN. Reihenname …“ als eine Serie
+    out['series'] = _parent_blocks(db, out['series'] + numbered)
+    _mark_local(db, out)
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
@@ -266,6 +523,53 @@ def _drop_empty_platform_series(root, db, tiles):
         except Exception:
             pass
     return [t for t in tiles if t['id'] not in drop] if drop else tiles
+
+
+UNPLAYABLE = re.compile(r'(?i)\bdrm\b|drm-|kopierschutz|widevine|nicht mehr verfügbar')
+
+
+def note_unplayable(c, ref, error):
+    """0.6.135 (Mac-Prüfung 0.6.134: 12 Netzkino-/Plex-Filme mit Kopierschutz und einer „nicht mehr verfügbar“ standen
+    als Kachel, der Kopierschutz zeigt sich erst beim Abspielen): ein Plattform-Film, dessen Abspielen am Kopierschutz
+    oder an fehlender Verfügbarkeit scheitert, wird EMPTY_TTL lang aus der Liste genommen (wie leere Plattform-Serien).
+    Netzfehler zählen nicht. Kopierschutz wird nicht umgangen. Returns True, wenn vermerkt."""
+    if not isinstance(ref, dict) or len(ref) != 1:
+        return False
+    (name, value), = ref.items()
+    if name in ('offer', 'job') or name not in SOURCES:
+        return False
+    import hls_guard
+    if not (isinstance(error, hls_guard.DrmProtected) or UNPLAYABLE.search(str(error))):
+        return False
+    import kids_rules
+    kids_rules.ensure(c)
+    c.execute('INSERT OR REPLACE INTO kids_unplayable VALUES(?,?,?,?)', (name, str(value), time.time(), str(error)[:200]))
+    invalidate()
+    try:
+        import diagnostics
+        diagnostics.event('kids_tile_hidden', source=name, id=str(value)[:80], reason=str(error)[:160])
+    except Exception:
+        pass
+    return True
+
+
+def _drop_unplayable_platform_films(db, tiles):
+    """0.6.135: Plattform-Filme ohne Wiedergabe (note_unplayable) für EMPTY_TTL aus der Liste."""
+    plat = [t for t in tiles if t.get('source') not in ('mediatheken', None) and isinstance(t.get('ref'), dict)]
+    if not plat or db is None:
+        return tiles
+    try:
+        import kids_rules
+        with db() as c:
+            kids_rules.ensure(c)
+            gone = {(r[0], r[1]) for r in c.execute('SELECT source, id FROM kids_unplayable WHERE checked>?',
+                                                     (time.time() - EMPTY_TTL,))}
+    except Exception:
+        return tiles
+    if not gone:
+        return tiles
+    drop = {t['id'] for t in plat for (n, v) in t['ref'].items() if (n, str(v)) in gone}
+    return [t for t in tiles if t['id'] not in drop]
 
 
 def _note_empty_series(c, source, series_id, empty):
@@ -356,15 +660,38 @@ def _signals(entry):
     return cats, ' | '.join(text)[:2000]
 
 
+DOCU = re.compile(r'(?i)\bdoku|documentar')
+
+
 def group_of(entry):
     """Gruppe eines Katalogtitels: Märchen vor Zeichentrick (Märchen gibt es auch gezeichnet), sonst Kategorie oder Text."""
     cats, text = _signals(entry)
     for gid, _name, _icon, rx in GROUPS:
         if rx is None:
             return gid
+        if gid == 'trick' and ('Dokumentation' in cats or DOCU.search(text)):
+            continue      # 0.6.121: „Asterix und Co. – Die Comicwelten des Albert Uderzo“ ist eine Doku, kein Trickfilm
         if (GROUP_CATEGORIES.get(gid, set()) & cats) or rx.search(text):
             return gid
     return 'mehr'
+
+
+def _mark_local(db, out):
+    """0.6.148 (Björn 26.11.2026: „bitte auch geladene Videos bei der Anzeige bevorzugen, also geladene Filme und
+    Serien“; M1 Air mobil im Auto, oft ohne Netz): Kacheln mit lokaler Kopie tragen ``local`` (aus dem gemeinsamen
+    Index, local_titles). Die Kinderecke stellt sie in jeder Reihe nach vorn, markiert sie und bevorzugt sie in
+    „Mehr davon“. Nummern-Serie: geladen, sobald einer ihrer Filme geladen ist."""
+    for t in out.get('movies') or []:
+        if _has_file(t):
+            t['local'] = True
+    for t in out.get('series') or []:
+        if any(f.get('local') or _has_file(f) for f in t.get('films') or ()):
+            t['local'] = True
+
+
+def _has_file(t):
+    """0.6.152 (Mac-Prüfung 0.6.149: Downloads galten auch ohne Datei als geladen): nur mit vorhandener Datei."""
+    return bool(t.get('downloaded')) and not t.get('file_missing')
 
 
 def _fold_small_groups(out):
@@ -376,6 +703,71 @@ def _fold_small_groups(out):
         for t in out.get(view) or []:
             if counts.get(t.get('group'), 0) < MIN_GROUP:
                 t['group'] = 'mehr'
+
+
+# 0.6.148 (Björn 26.11.2026, Bild „Abenteuer“: „die verwegene sollten als serie zusammengefasst werden“): Anbieter
+# führen Folgen einer Reihe oft als einzelne Filme mit vorangestellter Nummer („10. Die verwegenen Vier auf heißer
+# Spur“, „2. Die verwegenen Vier reißen aus“). Mindestens NUMBERED_MIN solche Filme desselben Anbieters mit
+# gemeinsamem Titelanfang (mindestens zwei Wörter) werden zu EINER Serienkachel; ihre Folgen sind genau diese Filme,
+# nach Nummer sortiert. Abspielen, Weiterschauen und Prüfung bleiben je Film wie vorher (gleiche ref/key).
+NUMBERED = re.compile(r'^\s*(\d{1,3})\s*[.):]\s+(\S.*)$')
+NUMBERED_MIN = 3
+NUMBERED_PREFIX = 'nummern-'
+
+
+def _word(w):
+    return re.sub(r'[^\w]+', '', w.casefold().replace('ß', 'ss'))
+
+
+def numbered_series(movies):
+    """(übrige Filme, neue Serienkacheln) – siehe NUMBERED."""
+    import hashlib
+    clusters = {}
+    for t in movies:
+        m = NUMBERED.match(str(t.get('title') or ''))
+        if not m or not isinstance(t.get('ref'), dict):
+            continue
+        words = m.group(2).split()
+        norm = [_word(w) for w in words]
+        if len(norm) < 2 or not norm[0] or not norm[1]:
+            continue
+        clusters.setdefault((t['source'], norm[0], norm[1]), []).append((int(m.group(1)), words, norm, t))
+    used, series = set(), []
+    for (source, _a, _b), members in clusters.items():
+        if len({n for n, *_ in members}) < NUMBERED_MIN:
+            continue
+        members.sort(key=lambda m: (m[0], m[3].get('title') or ''))
+        size = min(len(m[2]) for m in members)
+        common = 0
+        while common < size and all(m[2][common] == members[0][2][common] for m in members):
+            common += 1
+        name = ' '.join(members[0][1][:common]).rstrip(' -–—:,;.')
+        if common < 2 or len(name) < 8:
+            continue
+        key = NUMBERED_PREFIX + hashlib.sha1(('%s|%s' % (source, ' '.join(members[0][2][:common]))).encode('utf-8')).hexdigest()[:16]
+        films = []
+        for number, words, _norm, t in members:
+            ep = _episode(source, t['ref'], ' '.join(words), None, number, t.get('poster'), t.get('duration'))
+            for extra in ('channel', 'weg', 'downloaded', 'file_missing', 'local'):
+                if t.get(extra):
+                    ep[extra] = t[extra]
+            films.append(ep)
+            used.add(t['id'])
+        groups = [m[3].get('group') or 'mehr' for m in members]
+        tile = _tile(source, 'series', name, min((m[3].get('year') or 9999) for m in members),
+                     next((m[3].get('poster') for m in members if m[3].get('poster')), ''), series={'id': key})
+        tile['group'] = max(groups, key=groups.count)
+        tile['films'] = films
+        tile['numbered'] = len(films)
+        series.append(tile)
+    if series:
+        try:
+            import diagnostics
+            diagnostics.event('kids_numbered_series', series=len(series), films=len(used),
+                              names=['%s (%d)' % (t['title'], t['numbered']) for t in series[:10]])
+        except Exception:
+            pass
+    return [t for t in movies if t['id'] not in used], series
 
 
 def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
@@ -461,8 +853,12 @@ def invalidate():
 
 
 def _listed(data, source, kind, field, value):
-    return any(t['source'] == source and (t.get(kind) or {}).get(field) == value
-               for t in data.get('movies', []) + data.get('series', []))
+    tiles = data.get('movies', []) + data.get('series', [])
+    if any(t['source'] == source and (t.get(kind) or {}).get(field) == value for t in tiles):
+        return True
+    # 0.6.148: Filme, die zu einer Nummern-Serie zusammengefasst sind, bleiben abspielbar
+    return kind == 'ref' and any(t['source'] == source and (f.get('ref') or {}).get(field) == value
+                                 for t in data.get('series', []) for f in t.get('films') or ())
 
 
 def allowed_ref(data, ref, c=None):
@@ -483,13 +879,13 @@ def allowed_ref(data, ref, c=None):
     return True
 
 
-def offer_allowed(c, offer_id):
+def offer_allowed(c, offer_id, clause=None):
     """Ein Mediatheken-Angebot ist in der Kinderecke zulässig (siehe work_allowed)."""
     row = c.execute('SELECT work_id FROM offers WHERE id=?', (str(offer_id),)).fetchone()
-    return bool(row) and work_allowed(c, row[0], str(offer_id))
+    return bool(row) and work_allowed(c, row[0], str(offer_id), clause)
 
 
-def work_allowed(c, work_id, offer_id=None):
+def work_allowed(c, work_id, offer_id=None, clause=None):
     """EINE Entscheidung je Werk/Angebot für Liste, Folgenliste, /api/kids-play und Nachladen (0.6.109).
 
     ``work_id``: works.id (Film oder Folge der Mediatheken); ``offer_id``: optional das konkrete Angebot (dann zählen
@@ -517,14 +913,19 @@ def work_allowed(c, work_id, offer_id=None):
     # 0.6.113 (Mac-Prüfung 0.6.112: Young Crime/POV/#Ukraine spielten das ZDF-/WDR-/rbtv-Angebot eines Werks, das über
     # seinen KiKA-Zwilling zugelassen war): hat das Werk ein aktives Kindersender-Angebot, ist nur dieses zulässig
     twin = kids_offer(c, wid)
-    if offer_id and twin and twin[0] != str(offer_id) and not allowed:
+    own_kids = any(ch in _kids_channels() for ch, _ in offers)
+    # 0.6.134 (Mac-Prüfung 0.6.132, Björns Märchen: Regentrude, Schweinehirt, Sechs Schwäne … 32 Filme mit 404 „Dieses
+    # Video gibt es in der Kinderecke nicht“): ein Werk mit mehreren KiKA-Angeboten ließ nur das mit der kleinsten id zu,
+    # die Liste zeigte aber ein anderes. Ein Angebot vom Kindersender ist immer zulässig; abgelehnt wird nur ein
+    # Angebot eines anderen Senders, wenn es einen Kindersender-Zwilling gibt.
+    if offer_id and twin and twin[0] != str(offer_id) and not allowed and not own_kids:
         return False
-    kids_channel = allowed or any(ch in _kids_channels() for ch, _ in offers)
+    kids_channel = allowed or own_kids
     if not kids_channel and (word_blocked(title) or any(word_blocked(t) for _, t in offers)):
         return False
     if kind == 'series' and show:
         return episode_paths(c, show).get(wid) is not None
-    clause, args = catalog.category_clause(c, CATEGORY)
+    clause, args = clause or catalog.category_clause(c, CATEGORY)   # 0.6.132: für eine ganze Liste einmal gelesen
     return bool(c.execute('SELECT 1 FROM works w WHERE w.id=? AND (%s)' % clause, [wid] + list(args)).fetchone())
 
 
@@ -564,11 +965,27 @@ def _remember(source, episodes):
 def episodes(root, c, data, source, series_id, marks=None):
     """Folgen einer Kinderserie aus der Liste, sortiert; nur abspielbare und (ARD/ZDF) einzeln geprüfte."""
     marks = marks or {}
-    field = 'show' if source == 'mediatheken' else 'id'
+    field = 'show' if source == 'mediatheken' and not str(series_id).startswith(NUMBERED_PREFIX) else 'id'
     if source not in SOURCES or not _listed(data, source, 'series', field, series_id):
         raise ValueError('Diese Serie gibt es in der Kinderecke nicht')
     out = []
-    if source == 'mediatheken':
+    if str(series_id).startswith(NUMBERED_PREFIX):
+        # 0.6.148: Nummern-Serie aus Filmkacheln – die Folgen sind die (schon geprüften) Filme der Liste
+        tile = next(t for t in data.get('series', []) if t['source'] == source and t['series'].get('id') == series_id)
+        out = [dict(f) for f in tile.get('films') or []]
+        if c is not None and any(_dict(f.get('ref')).get('offer') for f in out):
+            try:
+                ids = [str(f['ref']['offer']) for f in out if _dict(f.get('ref')).get('offer')]
+                import local_titles
+                present = local_titles.present_downloads(c)
+                here = {r[0] for r in c.execute('SELECT o.id, o.work_id FROM offers o JOIN downloaded_items d ON d.identity=o.work_id '
+                                                'WHERE o.id IN (%s)' % ','.join('?' * len(ids)), ids) if r[1] in present}
+            except Exception:
+                here = set()
+            for f in out:
+                if _has_file(f) or str(_dict(f.get('ref')).get('offer')) in here:
+                    f['local'] = True
+    elif source == 'mediatheken':
         import catalog
         paths = episode_paths(c, series_id)
         show = catalog.show_detail(c, series_id, limit=MAX_EPISODES)
@@ -589,6 +1006,8 @@ def episodes(root, c, data, source, series_id, marks=None):
                 offer_id, channel = twin
             ep = _episode('mediatheken', {'offer': offer_id}, title, meta.get('season'), meta.get('episode'),
                           meta.get('poster') or _dict(show.get('show')).get('poster'), src.get('duration'))
+            if e.get('downloaded') and e.get('file_state') != 'missing':
+                ep['local'] = True                                  # 0.6.148: geladene Folge markieren (0.6.152: mit Datei)
             ep['channel'] = channel[:60]                            # 0.6.109: für die Prüfung je Folge sichtbar
             ep['weg'] = path                                        # 0.6.112: Zulassungsweg (episode_paths)
             out.append(ep)
@@ -734,6 +1153,45 @@ def _prefer_kids_offers(db, tiles):
                 t['key'] = watch_key(t['ref'])
                 t['channel'] = twin[1][:60]
     return tiles
+
+
+def _playable_films(db, tiles):
+    """0.6.132 (Björn 25.11.2026: „in der Kinderecke waren gestern einige Märchen nicht mehr abspielbar, auch wenn sie
+    noch in der Übersicht waren“): die Filmkacheln kommen aus dem gemeinsamen Index, abgespielt wird nach dem
+    aktuellen Stand der Datenbank (/api/kids-play → offer_allowed, streaming.resolve). Ein Mediatheken-Film, dessen
+    Angebot nicht mehr aktiv ist (ohne lokale Kopie) oder den work_allowed inzwischen ablehnt (Werk umgestuft, Genre
+    geheilt, Sperrwort, Angebot gelöscht), erscheint nicht mehr. Ereignis kids_tiles_unplayable nennt Titel und Grund."""
+    films = [t for t in tiles if t.get('source') == 'mediatheken' and _dict(t.get('ref')).get('offer')]
+    if not films or db is None:
+        return tiles
+    drop = {}
+    try:
+        import catalog
+        with db() as c:
+            clause = catalog.category_clause(c, CATEGORY)
+            for t in films:
+                offer = str(t['ref']['offer'])
+                row = c.execute('SELECT active FROM offers WHERE id=?', (offer,)).fetchone()
+                if not row:
+                    drop[t['id']] = (t, 'Angebot fehlt')
+                elif not row[0] and not t.get('downloaded'):
+                    drop[t['id']] = (t, 'Angebot nicht mehr aktiv')
+                elif not offer_allowed(c, offer, clause):
+                    drop[t['id']] = (t, 'nicht mehr zugelassen')
+    except Exception:
+        return tiles                   # Prüfung gescheitert: Liste unverändert, nie leer
+    if not drop:
+        return tiles
+    try:
+        import diagnostics
+        reasons = {}
+        for _, why in drop.values():
+            reasons[why] = reasons.get(why, 0) + 1
+        diagnostics.event('kids_tiles_unplayable', movies=len(drop), reasons=reasons,
+                          titles=['%s [%s]' % (t.get('title'), why) for t, why in list(drop.values())[:20]])
+    except Exception:
+        pass
+    return [t for t in tiles if t['id'] not in drop]
 
 
 def _word_safe(db, tiles):
@@ -1025,7 +1483,9 @@ def with_progress(data, marks):
         rows = []
         for t in data.get(view) or []:
             t = dict(t)
-            mark = marks.get(t.get('key') or '') or {}
+            t.pop('films', None)          # 0.6.148: Folgen der Nummern-Serie liefert /api/kids-episodes
+            # 0.6.149: der große Player merkt ARD/ZDF-Filme unter der Werk-Kennung – dort Angefangenes zählt hier auch
+            mark = marks.get(t.get('key') or '') or (marks.get(str(t['work'])) if t.get('work') else None) or {}
             t['done'] = bool(mark.get('done'))
             t['pos'] = 0 if t['done'] else (mark.get('pos') or 0)
             t['progress'] = round(min(1, t['pos'] / t['duration']), 3) if t.get('duration') and t['pos'] else 0

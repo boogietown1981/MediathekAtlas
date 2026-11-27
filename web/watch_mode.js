@@ -19,7 +19,7 @@
   const posterOkay = v => typeof v === 'string' && /^https:\/\/[a-z0-9.-]+\//i.test(v) && !/[\s<>'"]/.test(v);
   const local = (kind, id) => '/api/kids-image?' + new URLSearchParams({[kind]: id, token: pageToken()});
   const clock = s => { s = Math.round(s || 0); const h = Math.floor(s / 3600), m = Math.floor(s % 3600 / 60); return h ? h + ' Std. ' + m + ' Min.' : m ? m + ' Min.' : ''; };
-  const NAMES = {mediatheken: 'ARD, ZDF & Co.', netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV', rakuten: 'Rakuten TV',
+  const NAMES = {mediatheken: 'ARD, ZDF & Co.', lokal: 'Lokales Archiv', netzkino: 'Netzkino', pluto: 'Pluto TV', justwatch: 'JustWatch TV', rakuten: 'Rakuten TV',
     youtube: 'YouTube', joyn: 'Joyn', toggo: 'TOGGO', crunchyroll: 'Crunchyroll', plex: 'Plex', servustv: 'ServusTV', redbulltv: 'Red Bull TV', dmax: 'DMAX & TLC', filmfriend: 'filmfriend', dailyme: 'dailyme TV', rtlplus: 'RTL+', download: 'Offline'};
   const TABS = [['start', 'Startseite'], ['movies', 'Filme'], ['series', 'Serien'], ['live', 'Live-TV'], ['offline', 'Offline'], ['marked', 'Merkliste']];
   const PAGE = 48;
@@ -89,7 +89,7 @@
       const img = make('img'); img.alt = ''; img.loading = 'lazy'; img.decoding = 'async'; img.referrerPolicy = 'no-referrer'; img.src = o.image;
       img.onload = () => fallback.remove(); img.onerror = () => img.remove(); art.append(img);
     }
-    if (o.badge) art.append(make('span', 'wm-badge' + (o.badge === 'NEU' ? ' wm-new' : o.badge === 'LIVE' ? ' wm-live' : ''), o.badge));
+    if (o.badge) art.append(make('span', 'wm-badge' + (o.badge === 'NEU' ? ' wm-new' : o.badge === 'LIVE' ? ' wm-live' : o.badge === '⬇ GELADEN' ? ' wm-local' : ''), o.badge));
     if (o.time) art.append(make('span', 'wm-time', o.time));
     if (o.progress > 0) { const bar = make('span', 'wm-progress'); const f = make('i'); f.style.width = Math.round(Math.min(1, o.progress) * 100) + '%'; bar.append(f); art.append(bar); }
     art.append(make('span', 'wm-hover', o.hover || '▶'));
@@ -99,7 +99,7 @@
     return b;
   }
   const fromCatalog = item => tile({
-    title: item.title, image: posterOkay(item.poster) ? item.poster : '', shape: 'poster', hover: 'ℹ',
+    title: item.title, image: posterOkay(item.poster) ? item.poster : '', shape: 'poster', hover: 'ℹ', badge: item.local ? '⬇ GELADEN' : '',
     sub: [NAMES[item.source] || item.source, item.year, item.kind === 'series' || item.series_parent ? 'Serie' : null].filter(Boolean).join(' · '),
     action: () => openCatalog(item)});
   const fromContinue = e => tile({
@@ -153,12 +153,12 @@
 
   // ------------------------------------------------------------------ Daten
   async function unified(kind, extra) {
-    const q = new URLSearchParams({kind, sort: 'year', offset: '0', ...(extra || {})});
+    const q = new URLSearchParams({kind, sort: 'year', offset: '0', reihen: '0', ...(extra || {})});   // 0.6.150: einzeln
     const data = await call('unified?' + q);
     const rows = [];
     for (const entry of data.items || []) {
       const offers = (entry.offers || []).map(o => window.AtlasCards.rowOf(o.source, o.item));
-      if (offers.length) rows.push({...offers[0], offers});
+      if (offers.length) rows.push({...offers[0], offers, local: !!entry.local});
     }
     return {rows, data};
   }

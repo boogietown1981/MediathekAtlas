@@ -23,7 +23,7 @@ ZDF_QUERY='''query VideoByCanonical($canonical: String!) {
 }'''
 # Containers of unrelated films are no Sendereihe ("Filme im MDR", "Spielfilme", "Dokus").
 CONTAINER=re.compile(r'(?i)^(?:(?:spiel)?filme?|dokus?|dokumentation(?:en)?|serien?|reportagen?|kino|mediathek)\b|\bfilme im\b|\bfilm-?highlights?\b')
-GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau|tagesthemen|nachrichten|aktuell|heute(?:[- ]journal)?|journal|wetter)\b'),'Nachrichten'),
+GENRE_HINTS=[(re.compile(r'(?i)\b(?:tagesschau\w*|tagesthemen|nachrichten|aktuell|heute(?:[- ]journal)?|zdfheute\w*|journal|wetter)\b'),'Nachrichten'),
              (re.compile(r'(?i)\b(?:doku\w*|dokumentation\w*|reportage\w*|terra x|planet e)\b'),'Dokumentation'),
              (re.compile(r'(?i)\b(?:magazin\w*|servicezeit|ratgeber|verbraucher\w*|markt)\b'),'Magazin'),
              (re.compile(r'(?i)\b(?:talk\w*|gespräch\w*|interview\w*|stöckl|lanz|maischberger|illner)\b'),'Talk'),
@@ -110,7 +110,13 @@ def automated_retry_at(provider):
                    _PAUSED.get(provider,0))
 
 
-def lookup_limited(row):
+# 0.6.152 (Mac-Prüfung 0.6.147, Pro: Kinderecke-Bilder „asked 1, found 0“ – die Erkennung hatte das Stundenlimit schon
+# verbraucht): solange die Kinderecke Bilder sucht (letzte Anfrage < 2 h), bleiben ihr PICTURE_RESERVE der 120 Abfragen je
+# Stunde; die Erkennung nutzt dann höchstens 100. Gesamtgrenze unverändert 120 je Stunde und Anbieter.
+PICTURE_RESERVE=20
+_PICTURE_DEMAND={}
+
+def lookup_limited(row,purpose='recognition'):
     """Capped opt-in unattended lookup; user-initiated lookups stay separate."""
     ref=reference(row)
     if not ref:return None
@@ -122,9 +128,12 @@ def lookup_limited(row):
     if status(provider)['paused']:raise Unavailable(provider+' pausiert')
     with _LOCK:
         now=time.time()
+        if purpose=='pictures':_PICTURE_DEMAND[provider]=now
         start,used=_AUTOMATED_BUDGET.get(provider,(now,0))
         if now-start>=3600:start,used=now,0
-        if used>=AUTOMATED_HOURLY_LIMIT:
+        limit=AUTOMATED_HOURLY_LIMIT
+        if purpose!='pictures' and now-_PICTURE_DEMAND.get(provider,0)<7200:limit-=PICTURE_RESERVE
+        if used>=limit:
             raise BudgetExhausted(provider+': automatisches Stundenlimit erreicht')
         _AUTOMATED_BUDGET[provider]=(start,used+1)
     return lookup(row)
@@ -279,6 +288,21 @@ def lookup(row):
 
 KIDS_HINT=next(p for p,g in GENRE_HINTS if g=='Kinder')
 
+# 0.6.135 (Prüfvermerk 0.6.134: „Sport-Clip“ 41.000 Werke, „Sport-Arena“, „Paris 2024“ als Nachrichten, „Sportschau
+# Wintersport“ als Talk – „aktuell“ oder „Interview“ in einem Beitragstitel bzw. einer Beschreibung): Sport kommt aus
+# dem Namen der Sendung und verdrängt dann Nachrichten und Talk.
+# 0.6.136 (Mac-Prüfung 0.6.135: tagesschau24, hessenschau, DER TAG, „Politik“ → Kultur, phoenix vor ort ohne Genre):
+# Nachrichten und Talk kommen wieder wie bis 0.6.134 auch aus Beitragstitel und Beschreibung; nur Sport aus dem
+# Namen verdrängt sie.
+SPORT_HINT=re.compile(r'(?i)\b(?:sport\w*|\w*(?:winter|motor|kampf|rad|wasser|schnee|extrem|frauen|behinderten|para)sport\w*|'
+                      r'olympi\w*|paris 2024|fußball\w*|bundesliga|eishockey|handball|biathlon|formel 1|leichtathletik|tennis)\b')
+NAME_ONLY=('Kinder',)
+# 0.6.138 (Mac-Prüfung 0.6.136: „DER TAG in Berlin & Brandenburg“ Kultur, hessenschau ohne Genre): regionale
+# Nachrichtensendungen, deren Name kein Nachrichtenwort trägt; nur aus dem Namen. Sie sind Nachrichten, ein „Kultur“
+# aus der Beschreibung („Politik, Wirtschaft, Kultur“) entfällt. BR24 nicht (#BR24 Zeitreise ist Geschichte).
+NEWS_NAMES=re.compile(r'(?i)\b(?:hessenschau|abendschau|rbb24|lokalzeit|sachsenspiegel|nordmagazin|buten un binnen|'
+                      r'der tag in berlin|brandenburg aktuell|regionalzeit|landesschau aktuell)\b')
+
 def genres(*texts,names=None):
     """Genre hints from programme texts. 0.6.98 (Mac-Prüfung 0.6.91: NACHTCAFÉ, Politik, heute, Abendschau in der
     Kinderecke): „Kinder“ only from the programme's own name (Sendereihe, Thema, Sendung) given as ``names``, never
@@ -287,8 +311,14 @@ def genres(*texts,names=None):
     text=' '.join(t for t in texts if t)
     own=' '.join(t for t in (texts if names is None else names) if t)
     out=[]
+    sport=names is not None and bool(SPORT_HINT.search(own))
+    news=names is not None and not sport and bool(NEWS_NAMES.search(own))
+    if sport:out.append('Sport')
+    if news:out.append('Nachrichten')
     for pattern,genre in GENRE_HINTS:
-        if pattern.search(own if genre=='Kinder' else text):out.append(genre)
+        if sport and genre in ('Nachrichten','Talk'):continue
+        if news and genre in ('Nachrichten','Kultur'):continue
+        if pattern.search(own if genre in NAME_ONLY else text):out.append(genre)
     if 'Kinder' in out and len(out)>1:
         # the name says children's programme: that is the label the Kinderecke needs, keep it within the two
         out=['Kinder']+[g for g in out if g!='Kinder']
