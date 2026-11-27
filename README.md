@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.161
+# MediathekAtlas · 0.6.162
+
+## Neu in 0.6.162: Kinderecke ohne doppelte Reihen
+- Reihen mit gleichem Namen (z. B. „Animanimals“), die von verschiedenen Sendern oder Anbietern kommen, stehen in der Kinderecke nur noch einmal. Beim Öffnen erscheinen die Folgen aller Teile zusammen, doppelte Folgen nur einmal. Reihen mit verschiedenen Namen bleiben getrennt.
 
 ## Neu in 0.6.161: „YouTube-Zugang prüfen“
 - Im YouTube-Bereich (Offline-Speichern) prüft ein Knopf ein Video, ohne es herunterzuladen: das zuletzt gescheiterte oder eine eingegebene Video-ID/-Adresse. Kann yt-dlp YouTubes Player nicht mehr entschlüsseln, wird es sofort aktualisiert und noch einmal geprüft; klappt es, werden die gescheiterten Videos erneut versucht.

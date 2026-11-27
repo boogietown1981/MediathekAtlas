@@ -1,3 +1,10 @@
+## 0.6.162 – Kinderecke: gleichnamige Reihen als eine Kachel (Björn 27.11.2026); auf 0.6.161
+
+- Björn (Bild kinderecke-doppelte.png): „teilweise werden sie doppelt dargestellt, der Inhalt ist aber unterschiedlich“ – u. a. „Animanimals“ zweimal unter Zeichentrick. Ursache: `unified_index.merge` führt nie zwei Angebote derselben Quelle zusammen (Remakes, Teile); zwei Reihen gleichen Namens unter verschiedenen Schlüsseln (Pluto „Animanimals“/„Animanimals!“, Mediatheken-Reihenschlüssel je Sender) blieben zwei Kacheln mit je einem Teil der Folgen.
+- `kids_catalog.merge_twin_series` (nach Elternsperren, vor „geladen“): gleicher Titel ohne Satzzeichen/Groß-Klein → eine Kachel (Mediatheken mit Bild zuerst), übrige als `twins`; `episodes()` liefert die Folgen aller Zwillinge (`_episodes_of`), gleiche Folge (Staffel/Folge/Titel) nur einmal, sortiert nach Staffel/Folge. Ein fehlerhafter Zwilling kostet nie die Folgen der Kachel. Nummern-Serien und verschiedene Namen bleiben unberührt.
+- Offen (Daten vom Mac): verschiedene Reihen mit gleichem Bild („Anna, Nina, Pia …“/„Anna, Paula, Pia … wilden Tiere“, „Das checken wir für euch“) – Werkzeug werkzeuge/kinderecke_doppelte.py.
+- Tests: `tests/test_v06162.py` (4), `test_v06121_kinder_bilder` angepasst (eine Kachel statt zwei).
+
 ## 0.6.161 – Prüfbarer Weg für die yt-dlp-Erneuerung (Mac-Prüfung 0.6.159/0.6.160); auf 0.6.160
 
 - Mac-Prüfung (BEFUND-06159-06160.txt): Ursache bestätigt; stable 2026.11.23 und nightly 2026.11.24.232653 lösen Player b485e332 (tv-Variante, Formate 308+251). App-Teil nicht prüfbar: alte Abo-Aufträge in der Testkopie „abgelaufen“, /api/youtube-download-add nur für katalogisierte Videos.

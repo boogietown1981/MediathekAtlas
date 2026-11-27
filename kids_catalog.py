@@ -479,6 +479,7 @@ def _finish(db, root, out, pending):
     out['movies'] = _parent_blocks(db, out['movies'])
     out['movies'], numbered = numbered_series(out['movies'])       # 0.6.148: „NN. Reihenname …“ als eine Serie
     out['series'] = _parent_blocks(db, out['series'] + numbered)
+    out['series'] = merge_twin_series(out['series'])                # 0.6.162: gleichnamige Reihen als eine Kachel
     _mark_local(db, out)
     _fold_small_groups(out)
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
@@ -717,6 +718,42 @@ NUMBERED_PREFIX = 'nummern-'
 
 def _word(w):
     return re.sub(r'[^\w]+', '', w.casefold().replace('ß', 'ss'))
+
+
+# 0.6.162 (Björn 27.11.2026, Bild „Animanimals“ zweimal: „teilweise werden sie doppelt dargestellt, der Inhalt ist
+# aber unterschiedlich“): der gemeinsame Katalog führt nie zwei Angebote derselben Quelle zusammen; zwei Mediatheken-
+# Reihen gleichen Namens unter verschiedenen Reihenschlüsseln (Sender, Schreibweise) blieben zwei Kacheln mit je einem
+# Teil der Folgen. Gleichnamige Serienkacheln (gleicher Titel ohne Satzzeichen/Groß-Klein) werden EINE Kachel; die
+# übrigen hängen als ``twins`` an ihr, /api/kids-episodes liefert die Folgen aller, doppelte Folgen nur einmal.
+# Verschiedene Namen werden nie verschmolzen; Nummern-Serien (aus Filmen) bleiben, wie sie sind.
+def _twin_rank(t):
+    return (t.get('source') != 'mediatheken', not t.get('poster'), not t.get('local'))
+
+
+def merge_twin_series(tiles):
+    by_key, out = {}, []
+    for t in tiles:
+        key = _title_key(t.get('title'))
+        sid = str((t.get('series') or {}).get('id') or '')
+        if not key or sid.startswith(NUMBERED_PREFIX):
+            out.append(t)
+            continue
+        by_key.setdefault(key, []).append(t)
+        if len(by_key[key]) == 1:
+            out.append(t)
+    for key, group in by_key.items():
+        if len(group) < 2:
+            continue
+        group.sort(key=_twin_rank)
+        head = group[0]
+        head['twins'] = [{'source': t['source'], 'series': dict(t.get('series') or {})} for t in group[1:]]
+        head['local'] = any(t.get('local') for t in group) or head.get('local', False)
+        if not head.get('poster'):
+            head['poster'] = next((t['poster'] for t in group if t.get('poster')), '')
+        index = next(i for i, t in enumerate(out) if _title_key(t.get('title')) == key
+                     and not str((t.get('series') or {}).get('id') or '').startswith(NUMBERED_PREFIX))
+        out[index] = head
+    return out
 
 
 def numbered_series(movies):
@@ -968,6 +1005,46 @@ def episodes(root, c, data, source, series_id, marks=None):
     field = 'show' if source == 'mediatheken' and not str(series_id).startswith(NUMBERED_PREFIX) else 'id'
     if source not in SOURCES or not _listed(data, source, 'series', field, series_id):
         raise ValueError('Diese Serie gibt es in der Kinderecke nicht')
+    out = _episodes_of(root, c, data, source, series_id)
+    # 0.6.162: Folgen gleichnamiger Reihen (merge_twin_series) dazu, jede Folge nur einmal
+    tile = next((t for t in data.get('series', []) if t['source'] == source and (t.get('series') or {}).get(field) == series_id), None)
+    seen = {_episode_identity(e) for e in out}
+    for twin in (tile or {}).get('twins') or []:
+        tsrc, tser = twin.get('source'), twin.get('series') or {}
+        tid = tser.get('show') if tsrc == 'mediatheken' else tser.get('id')
+        if tsrc not in SOURCES or not tid:
+            continue
+        try:
+            more = _episodes_of(root, c, data, tsrc, tid)
+        except Exception:                 # eine Zwillingsreihe kostet nie die Folgen der Kachel
+            continue
+        for e in more:
+            ident = _episode_identity(e)
+            if ident not in seen:
+                seen.add(ident)
+                out.append(e)
+    if (tile or {}).get('twins'):
+        out.sort(key=lambda e: (e.get('season') is None, e.get('season') or 0, e.get('episode') is None, e.get('episode') or 0))
+    out = [e for e in out if e['key']][:MAX_EPISODES]
+    for e in out:
+        mark = marks.get(e['key']) or {}
+        e['done'] = bool(mark.get('done'))
+        e['pos'] = 0 if e['done'] else (mark.get('pos') or 0)
+        e['progress'] = round(min(1, e['pos'] / e['duration']), 3) if e['duration'] and e['pos'] else 0
+    _remember(source, out)
+    return {'source': source, 'series': series_id, 'episodes': out}
+
+
+def _episode_identity(e):
+    """Gleiche Folge unter zwei Reihenschlüsseln: gleiche Staffel/Folge und gleicher Titel, sonst gleicher Abspielschlüssel."""
+    title = _title_key(e.get('title'))
+    if title:
+        return ('t', e.get('season'), e.get('episode'), title)
+    return ('k', e.get('key'))
+
+
+def _episodes_of(root, c, data, source, series_id):
+    """Folgen EINER Reihe (ohne Listenprüfung; die macht episodes())."""
     out = []
     if str(series_id).startswith(NUMBERED_PREFIX):
         # 0.6.148: Nummern-Serie aus Filmkacheln – die Folgen sind die (schon geprüften) Filme der Liste
@@ -1026,14 +1103,7 @@ def episodes(root, c, data, source, series_id, marks=None):
                 _note_empty_series(c, source, series_id, not any(e['key'] for e in out))
             except Exception:
                 pass
-    out = [e for e in out if e['key']][:MAX_EPISODES]
-    for e in out:
-        mark = marks.get(e['key']) or {}
-        e['done'] = bool(mark.get('done'))
-        e['pos'] = 0 if e['done'] else (mark.get('pos') or 0)
-        e['progress'] = round(min(1, e['pos'] / e['duration']), 3) if e['duration'] and e['pos'] else 0
-    _remember(source, out)
-    return {'source': source, 'series': series_id, 'episodes': out}
+    return out
 
 
 # 0.6.98 (Mac-Prüfung 0.6.91 nicht bestanden: „Politik“, „NACHTCAFÉ“, „heute“, „Aktuelle Kamera“, „Abendschau“

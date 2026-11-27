@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.162 – Kinderecke gleichnamige Reihen (27. November 2026)
+- Automatisch: tests/test_v06162.py (4: Zusammenführen nur bei gleichem Namen, Folgen aller Zwillinge einmal, Fehler eines Zwillings, Einbindung), angepasster Bildtest 0.6.121, gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.162.
+
 ## 0.6.161 – YouTube-Zugang prüfen (27. November 2026)
 - Automatisch: tests/test_v06161.py (7: Simulation statt Download, sofortige Erneuerung, ohne neuere Ausgabe, ohne Deno, Eingabe, force, Auftragssuche, Verdrahtung), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf. Am Mac: PRUEFLISTE in releases/0.6.161.
 
