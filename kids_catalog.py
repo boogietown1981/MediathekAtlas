@@ -36,6 +36,7 @@ CATEGORY = 'Kinder'
 # JustWatch endete sie bei „D…“, Märchenfilme wie „Die Gänsemagd“ oder „Schneewittchen“ kamen nie an.
 MAX_TITLES = 1500         # je Art (Filme, Serien)
 MAX_EPISODES = 400
+MAX_MERGED_EPISODES = 1600   # 0.6.164: Obergrenze einer Kachel mit gleichnamigen Teilen
 TTL = 120.0
 _SAFE_ID = re.compile(r'^[A-Za-z0-9_.:\-]{1,200}$')
 
@@ -44,8 +45,15 @@ _CACHE = {}               # root -> (monotonic, shelf)
 _BUILDING = set()         # 0.6.81: Wurzeln, deren Liste gerade im Hintergrund erneuert wird
 
 
+# 0.6.164 (Mac-Prüfung 0.6.162: 18 Kinderreihen mit demselben Bild): TheTVDB liefert für Reihen ohne Bild ein
+# Platzhalterbild (…/images/missing/series.jpg); das ist kein Bild der Reihe und zählt wie keines.
+PLACEHOLDER_PICTURES = ('/images/missing/',)
+
+
 def _https(value):
     value = str(value or '')
+    if any(p in value for p in PLACEHOLDER_PICTURES):
+        return ''
     return value if value.startswith('https://') and len(value) <= 600 and not any(ch in value for ch in ' <>"\'') else ''
 
 
@@ -257,7 +265,8 @@ def _fill_pictures(db, out):
             with db() as c:
                 for t in shows:
                     row = c.execute("SELECT json_extract(meta,'$.poster') FROM works WHERE show_key=? AND "
-                                    "json_extract(meta,'$.poster') LIKE 'https://%' ORDER BY (kind='series') DESC, rowid LIMIT 1",
+                                    "json_extract(meta,'$.poster') LIKE 'https://%' AND json_extract(meta,'$.poster') NOT LIKE '%/images/missing/%' "
+                                    "ORDER BY (kind='series') DESC, rowid LIMIT 1",
                                     (t['series']['show'],)).fetchone()
                     if row:
                         t['poster'] = _https(row[0])
@@ -746,7 +755,8 @@ def merge_twin_series(tiles):
             continue
         group.sort(key=_twin_rank)
         head = group[0]
-        head['twins'] = [{'source': t['source'], 'series': dict(t.get('series') or {})} for t in group[1:]]
+        head['twins'] = [{'source': t['source'], 'series': dict(t.get('series') or {}), 'block': t.get('block') or block_target(t)}
+                         for t in group[1:]]
         head['local'] = any(t.get('local') for t in group) or head.get('local', False)
         if not head.get('poster'):
             head['poster'] = next((t['poster'] for t in group if t.get('poster')), '')
@@ -1009,6 +1019,9 @@ def episodes(root, c, data, source, series_id, marks=None):
     # 0.6.162: Folgen gleichnamiger Reihen (merge_twin_series) dazu, jede Folge nur einmal
     tile = next((t for t in data.get('series', []) if t['source'] == source and (t.get('series') or {}).get(field) == series_id), None)
     seen = {_episode_identity(e) for e in out}
+    by_title = {}
+    for e in out:
+        by_title.setdefault(_title_key(e.get('title')), []).append(e)
     for twin in (tile or {}).get('twins') or []:
         tsrc, tser = twin.get('source'), twin.get('series') or {}
         tid = tser.get('show') if tsrc == 'mediatheken' else tser.get('id')
@@ -1020,12 +1033,17 @@ def episodes(root, c, data, source, series_id, marks=None):
             continue
         for e in more:
             ident = _episode_identity(e)
-            if ident not in seen:
-                seen.add(ident)
-                out.append(e)
+            if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or ()):
+                continue
+            seen.add(ident)
+            out.append(e)
+            by_title.setdefault(_title_key(e.get('title')), []).append(e)
     if (tile or {}).get('twins'):
         out.sort(key=lambda e: (e.get('season') is None, e.get('season') or 0, e.get('episode') is None, e.get('episode') or 0))
-    out = [e for e in out if e['key']][:MAX_EPISODES]
+    # 0.6.164 (Mac-Prüfung 0.6.162, Befund A: Schloss Einstein 608 → 400): eine zusammengeführte Kachel darf je Teil
+    # MAX_EPISODES Folgen zeigen, sonst schnitt die Grenze die zweite Reihe fast ganz ab
+    cap = MAX_EPISODES * (1 + len((tile or {}).get('twins') or []))
+    out = [e for e in out if e['key']][:min(cap, MAX_MERGED_EPISODES)]
     for e in out:
         mark = marks.get(e['key']) or {}
         e['done'] = bool(mark.get('done'))
@@ -1041,6 +1059,54 @@ def _episode_identity(e):
     if title:
         return ('t', e.get('season'), e.get('episode'), title)
     return ('k', e.get('key'))
+
+
+def _same_episode(e, others):
+    """0.6.164 (Mac-Prüfung 0.6.162, Befund B: Checkpoint 0 → 13 gleichnamige Folgen, KiKA/WDR): dieselbe Folge aus der
+    Zwillingsreihe trägt oft keine oder andere Staffel-/Folgennummern. Gleicher Titel gilt als dieselbe Folge, außer
+    beide haben Folgennummern und die unterscheiden sich, oder beide haben eine Dauer, die mehr als 90 s abweicht."""
+    if not _title_key(e.get('title')):
+        return False
+    for o in others:
+        if e.get('episode') is not None and o.get('episode') is not None and \
+                (e.get('season'), e.get('episode')) != (o.get('season'), o.get('episode')):
+            continue
+        if e.get('duration') and o.get('duration') and abs(float(e['duration']) - float(o['duration'])) > 90:
+            continue
+        return True
+    return False
+
+
+def twin_targets(root, kind, value):
+    """0.6.164 (Mac-Prüfung 0.6.162 Punkt 4: Heidi gesperrt → nach Neuaufbau stand der Zwilling allein da): Sperrziele
+    der gleichnamigen Teile einer Kachel, deren Sperrziel (kind, value) ist; aus der zuletzt gebauten Liste."""
+    with _LOCK:
+        hit = _CACHE.get(str(root))
+        data = hit[1] if hit else _LAST.get(str(root))
+    for t in (data or {}).get('series') or []:
+        if t.get('twins') and t.get('block') == {'kind': kind, 'id': value}:
+            return [dict(x['block']) for x in t['twins'] if isinstance(x.get('block'), dict)]
+    return []
+
+
+def apply_to_twins(c, root, kind, value, choice, title=''):
+    """Sperren/Freigeben einer zusammengeführten Kachel gilt für alle ihre Teile; Zurücknehmen nimmt auch die
+    Einträge gleichen Namens zurück (die Teile stehen dann nicht mehr in der Liste). Gibt die Zahl der Teile zurück."""
+    import kids_rules
+    if choice in ('', None, 'none'):
+        row = c.execute('SELECT title, choice FROM kids_choices WHERE key=?', ('%s:%s' % (kind, value),)).fetchone()
+        if not row or not _title_key(row[0]):
+            return 0
+        title_key, done = _title_key(row[0]), 0
+        for k, t in c.execute('SELECT key, title FROM kids_choices WHERE choice=? AND key!=?', (row[1], '%s:%s' % (kind, value))).fetchall():
+            if _title_key(t) == title_key:
+                c.execute('DELETE FROM kids_choices WHERE key=?', (k,))
+                done += 1
+        return done
+    targets = twin_targets(root, kind, value)
+    for target in targets:
+        kids_rules.choose(c, target['kind'], str(target['id']), choice, title)
+    return len(targets)
 
 
 def _episodes_of(root, c, data, source, series_id):

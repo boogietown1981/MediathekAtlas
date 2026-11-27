@@ -1306,7 +1306,11 @@ def post_kids_rules(self,path,d):
         with db() as c:
             if 'live' in d:result={'live':kids_rules.set_live(c,d.get('live') is True)}
             elif 'max_age' in d:result={'max_age':kids_rules.set_max_age(c,d.get('max_age'))}
-            else:result=kids_rules.choose(c,str(d.get('kind') or ''),str(d.get('id') or ''),d.get('choice'),str(d.get('title') or ''))
+            else:
+                kind,value,title=str(d.get('kind') or ''),str(d.get('id') or ''),str(d.get('title') or '')
+                twins=kids_catalog.apply_to_twins(c,ROOT,kind,value,d.get('choice'),title) if d.get('choice') in ('allow','block','',None,'none') else 0   # 0.6.164: gleichnamige Teile mit
+                result=kids_rules.choose(c,kind,value,d.get('choice'),title)
+                if twins:result['twins']=twins
     except ValueError as e:return self.send({'error':str(e)},400)
     catalog.invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
     if result.get('choice')=='block':kids_catalog._EPISODES_SEEN.clear()   # 0.6.113: Folgen einer gesperrten Reihe nicht mehr abspielbar

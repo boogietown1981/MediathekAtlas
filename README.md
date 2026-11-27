@@ -1,4 +1,10 @@
-# MediathekAtlas · 0.6.163
+# MediathekAtlas · 0.6.164
+
+## Neu in 0.6.164: Kinderecke – zusammengeführte Reihen vollständig und ohne Doppel
+- Eine Kachel aus gleichnamigen Reihen zeigt jetzt alle Folgen beider Teile (vorher endete die Liste bei 400, z. B. „Schloss Einstein“).
+- Dieselbe Folge von zwei Sendern erscheint nur einmal, auch wenn ein Sender keine Folgennummern angibt.
+- Sperren oder Freigeben einer solchen Kachel gilt für alle ihre Teile; Zurücknehmen ebenso.
+- Das Platzhalterbild von TheTVDB („kein Bild“) wird nicht mehr als Bild der Reihe gezeigt.
 
 ## Neu in 0.6.163: weniger YouTube-Anfragen, keine falschen „Bot“-Meldungen
 - Ein Abo, bei dem noch Videos ausstehen, fragt YouTube nicht mehr alle 20 Minuten nach der Kanalliste. Es lädt die schon bekannten Videos nach und liest die Liste erst nach dem eingestellten Abstand (Standard 3 Stunden) neu. „Jetzt prüfen“ und geänderte Einstellungen lesen sie sofort.

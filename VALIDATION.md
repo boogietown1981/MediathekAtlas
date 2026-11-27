@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.164 – Kinderecke Befunde 0.6.162 (27. November 2026)
+- Automatisch: tests/test_v06164.py (7: Grenze je Teil, Einzelreihe unverändert, Doppel ohne Nummern, verschiedene Nummern/Dauer bleiben, Sperren/Zurücknehmen aller Teile, Sperrziel in Zwillingen und Verdrahtung, TVDB-Platzhalter), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.164.
+
 ## 0.6.163 – YouTube-Anfragen und Meldungen (27. November 2026)
 - Automatisch: tests/test_v06163.py (8: Rückstand ohne neue Liste, Liste nach Abstand/„Jetzt prüfen“/Einstellungsänderung, kein yt-dlp-Aufruf bei Rückstand, Spalte in bestehender DB, Meldungen ohne „Bot“, echte Bot-Prüfung pausiert weiter, Serie zweier Videos pausiert, Erfolg/Zugangsprüfung beendet die Pause), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf. Am Mac: PRUEFLISTE in releases/0.6.163.
 

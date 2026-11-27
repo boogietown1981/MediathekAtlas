@@ -1,3 +1,14 @@
+## 0.6.164 – Kinderecke: Befunde der Mac-Prüfung 0.6.162; auf 0.6.163
+
+- Mac-Prüfung 0.6.162 (BEFUND-06162.txt): Hauptpunkt erfüllt (631 → 552 Serien, gleichnamige Kacheln 0), aber
+  A: `MAX_EPISODES` 400 schnitt zusammengeführte Listen ab (Schloss Einstein 608 → 400, PUR+ 544 → 397, Baumhaus, Wissen macht Ah!; 377 Titel);
+  B: 15 Kacheln mit derselben Folge doppelt (andere Schlüssel/Sender, ohne oder mit anderen Nummern; Checkpoint 0 → 13, Conni 3 → 8);
+  Punkt 4: Sperre „Heidi“ → nach Neuaufbau stand der Zwilling allein da; 18 Kacheln mit TheTVDB-Platzhalter `images/missing/series.jpg`.
+- `kids_catalog.episodes`: Grenze je Teil (`MAX_EPISODES` × Teile, höchstens `MAX_MERGED_EPISODES` 1600); `_same_episode`: Folge eines Zwillings mit gleichem Titel gilt als vorhanden, außer beide haben verschiedene Staffel/Folge oder Dauern > 90 s auseinander.
+- `merge_twin_series`: Zwillinge tragen ihr Sperrziel; `apply_to_twins` (in `POST /api/kids-rules` vor `kids_rules.choose`): Sperren/Freigeben für alle Teile, Zurücknehmen entfernt die gleichnamigen Einträge derselben Wahl.
+- `_https`: `PLACEHOLDER_PICTURES` (`/images/missing/`) gilt als kein Bild, auch bei der Bildsuche je Reihe.
+- Tests: `tests/test_v06164.py` (7).
+
 ## 0.6.163 – YouTube: weniger Anfragen, keine falschen „Bot“-Meldungen (Björn 27.11.2026); auf 0.6.162
 
 - Björn: „bei YouTube gibt es ziemlich viele Botwarnungen, obwohl wir nicht viel runterladen“. Befund (Air-Diagnose 27.11. nachmittags, 0.6.158): 17 Meldungen in 8 Kinder-Abo-Downloads, 0 echte „not a bot“/429 in 6 Tagen; alle „This video is not available“ (sehr wahrscheinlich die n-challenge des alten yt-dlp, behoben ab 0.6.160). Die Meldung nannte das „Bot-Sperre“.
