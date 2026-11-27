@@ -335,6 +335,28 @@ def refresh_for_challenge(root, tool=None, fetch=None, now=None, force=False):
 
 
 _REFRESHED = {'version': ''}
+# 0.6.163 (Air-Diagnose 27.11.: 8 Abo-Videos, 17 Meldungen, 0 Erfolge): "not available" for several different
+# videos in a row is one systemic failure (old yt-dlp, address refused), not one per video. After STREAK_VIDEOS
+# different videos without a success in between, the whole source pauses (download_retry block) with one message.
+_STREAK = {'videos': set(), 'at': 0.0}
+STREAK_VIDEOS = 2
+STREAK_WINDOW = 6 * 3600
+
+
+def _not_available_streak(video, now=None):
+    """Record a "not available" failure; True once STREAK_VIDEOS different videos failed in a row."""
+    now = time.time() if now is None else float(now)
+    with _LOCK:
+        if now - _STREAK['at'] > STREAK_WINDOW:
+            _STREAK['videos'] = set()
+        _STREAK['videos'].add(str(video))
+        _STREAK['at'] = now
+        return len(_STREAK['videos']) >= STREAK_VIDEOS
+
+
+def _streak_reset():
+    with _LOCK:
+        _STREAK['videos'], _STREAK['at'] = set(), 0.0
 
 
 def _video_of(text):
@@ -393,6 +415,10 @@ def check_access(root, video, fetch=None, runner=None):
             result.update(tool_version='.'.join(map(str, tool_version(tool[0]))), challenge_failed=challenge,
                           clients=clients, ok=code == 0, error=error)
     if result['ok']:
+        # 0.6.163: access proven – lift the pause a series of "not available" failures had set
+        _streak_reset()
+        import download_retry
+        download_retry.clear('youtube')
         result['message'] = 'YouTube liefert das Video mit yt-dlp %s%s' % (result['tool_version'],
                              ' (eben aktualisiert von %s)' % before if result['refreshed'] else '')
     elif not js:
@@ -571,6 +597,12 @@ def fetch(row, src, directory, update, cancelled, runner=None):
                            ' (YouTube: „%s“)' % ('This video is not available' if 'this video is not available'
                                                  in errors.lower() else _reason(errors)[:80]))
                 retry, block = True, False
+            if retry and not block and not challenge and 'this video is not available' in errors.lower() \
+                    and _not_available_streak(video):   # n-challenge: yt-dlp is renewed instead (0.6.160)
+                block = True
+                message = ('YouTube gibt seit mehreren Videos nichts heraus („This video is not available“); '
+                           'YouTube-Downloads pausieren, statt jedes Video einzeln zu versuchen – im YouTube-Bereich '
+                           'lässt sich mit „YouTube-Zugang prüfen“ sofort nachsehen')
             _report_failure(row, video, tool, js, jsargs, state['clients'], text, retry, challenge)
             if retry:
                 raise download_retry.RetryLater(message, block=block)
@@ -586,6 +618,7 @@ def fetch(row, src, directory, update, cancelled, runner=None):
         if not files:
             raise ValueError('yt-dlp lieferte keine Videodatei')
         os.replace(max(files, key=lambda p: p.stat().st_size), src)
+        _streak_reset()
         return Path(src).stat().st_size
     finally:
         stop.set()
@@ -667,16 +700,18 @@ def _failure(text, js_runtime=None, js_used=None):
         # 0.6.36: also every "Made for Kids" video when yt-dlp has no JavaScript runtime (see JS_RUNTIMES).
         # 0.6.159 (Air 27.11., B1): Deno was set up, yet the advice still sent Björn to "Deno einrichten".
         if js_runtime is False:
-            return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Bot-Sperre oder '
-                    'Kindervideo ohne Deno; im YouTube-Bereich „Deno einrichten“)'), True, False
+            return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: meist ein Kindervideo, '
+                    'das ohne Deno nicht lädt; im YouTube-Bereich „Deno einrichten“)'), True, False
         if js_runtime and js_used is False:
             return ('YouTube gibt das Video gerade nicht heraus („This video is not available“); yt-dlp ist zu alt, '
                     'um Deno zu nutzen: im YouTube-Bereich „yt-dlp einrichten“'), True, False
         if js_runtime and js_used:
-            return ('YouTube verweigert das Video gerade („This video is not available“: Bot-Sperre der Adresse, '
-                    'Kindervideo oder regional gesperrt; Deno ist eingerichtet, neuer Versuch später)'), True, False
-        return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Bot-Sperre oder '
-                'Kindervideo ohne Deno; im YouTube-Bereich „Deno einrichten“)'), True, False
+            # 0.6.163 (Björn 27.11.: „viele Botwarnungen, obwohl wir kaum laden“): this text is no bot check –
+            # a real one says "confirm you're not a bot" and is handled above. No "Bot" in the wording.
+            return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Kindervideo, regional '
+                    'gesperrt oder vorübergehend verweigert; Deno ist eingerichtet, neuer Versuch später)'), True, False
+        return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Kindervideo, regional '
+                'gesperrt oder vorübergehend verweigert; ohne Deno laden Kindervideos nicht)'), True, False
     return reason, False, False
 
 

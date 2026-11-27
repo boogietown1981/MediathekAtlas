@@ -101,7 +101,7 @@ CREATE TABLE IF NOT EXISTS youtube_abos(
   quality TEXT NOT NULL DEFAULT '720', kids INTEGER NOT NULL DEFAULT 1, interval_hours INTEGER NOT NULL DEFAULT 3,
   enabled INTEGER NOT NULL DEFAULT 1, added REAL NOT NULL, checked REAL NOT NULL DEFAULT 0,
   next_check REAL NOT NULL DEFAULT 0, last_error TEXT NOT NULL DEFAULT '', last_new INTEGER NOT NULL DEFAULT 0,
-  via TEXT NOT NULL DEFAULT '', budget_gb REAL NOT NULL DEFAULT 10, drop_unseen INTEGER NOT NULL DEFAULT 0, UNIQUE(ref, profile));
+  via TEXT NOT NULL DEFAULT '', budget_gb REAL NOT NULL DEFAULT 10, drop_unseen INTEGER NOT NULL DEFAULT 0, listed REAL NOT NULL DEFAULT 0, UNIQUE(ref, profile));
 CREATE TABLE IF NOT EXISTS youtube_abo_videos(
   abo_id INTEGER NOT NULL, video TEXT NOT NULL, title TEXT NOT NULL DEFAULT '', published TEXT NOT NULL DEFAULT '',
   duration INTEGER, poster TEXT NOT NULL DEFAULT '', position INTEGER NOT NULL DEFAULT 0,
@@ -174,6 +174,10 @@ def _connect(root):
             # 0.6.83: Schalter je Abo, Standard aus (nur Schema, kein Tabellendurchlauf)
             with db:
                 db.execute('ALTER TABLE youtube_abos ADD COLUMN drop_unseen INTEGER NOT NULL DEFAULT 0')
+        if 'listed' not in {r[1] for r in db.execute('PRAGMA table_info(youtube_abos)')}:
+            # 0.6.163: Zeitpunkt der letzten echten YouTube-Liste (Rückstand ohne neue Abfrage abarbeiten)
+            with db:
+                db.execute('ALTER TABLE youtube_abos ADD COLUMN listed REAL NOT NULL DEFAULT 0')
     db.executescript(SCHEMA)
     return db
 
@@ -291,7 +295,7 @@ def change(root, abo_id, data, now=None):
                 db.execute('DELETE FROM youtube_abos WHERE id=?', (abo_id,))
                 return {'removed': True}
             if action == 'check':
-                db.execute('UPDATE youtube_abos SET next_check=0,enabled=1 WHERE id=?', (abo_id,))
+                db.execute('UPDATE youtube_abos SET next_check=0,enabled=1,listed=0 WHERE id=?', (abo_id,))   # 0.6.163: echte Liste
                 return {'ok': True}
             fields = _clean(data, dict(row))
             if fields.get('profile', row['profile']) != row['profile'] and db.execute(
@@ -305,6 +309,7 @@ def change(root, abo_id, data, now=None):
             if any(k in fields for k in ('include', 'exclude', 'min_seconds', 'max_seconds')):
                 db.execute("UPDATE youtube_abo_videos SET state='wanted',reason='' WHERE abo_id=? AND state='skipped'", (abo_id,))
             fields['next_check'] = 0
+            fields['listed'] = 0           # 0.6.163: geänderte Einstellungen -> beim nächsten Mal echte Liste
             db.execute('UPDATE youtube_abos SET %s WHERE id=?' % ','.join('%s=?' % k for k in fields),
                        (*fields.values(), abo_id))
         return {'ok': True}
@@ -944,8 +949,14 @@ def check(root, abo_id, now=None, request=None, runner=None, c=None, download_di
         abo['_root'] = str(root)
         first = not abo['checked']
         limit = MAX_LIST if (first or abo['mode'] == 'all') else NEW_LIST
-        request = request if request is not None else _request_for_key()
-        if request is None:
+        # 0.6.163: Stehen nur noch Videos aus (Rückstand), fragt das Abo YouTube erst nach Ablauf des
+        # eingestellten Abstands wieder nach der Liste; bis dahin arbeitet es die gemerkten Videos ab.
+        backlog = (not first and float(abo.get('listed') or 0) > 0
+                   and now - float(abo['listed']) < abo['interval_hours'] * 3600
+                   and db.execute("SELECT 1 FROM youtube_abo_videos WHERE abo_id=? AND state='wanted' LIMIT 1",
+                                  (abo_id,)).fetchone() is not None)
+        request = None if backlog else (request if request is not None else _request_for_key())
+        if request is None and not backlog:
             # 0.6.13: Pausiert YouTube uns gerade (Bot-Prüfung), wartet auch die Liste über yt-dlp.
             import download_retry
             until, why = download_retry.blocked_until('youtube', now)
@@ -955,7 +966,10 @@ def check(root, abo_id, now=None, request=None, runner=None, c=None, download_di
                     db.execute('UPDATE youtube_abos SET last_error=?,next_check=? WHERE id=?', (message, until + 60, abo_id))
                 return {'ok': False, 'error': message, 'paused': True}
         try:
-            if request is not None:
+            if backlog:
+                info, videos = {'title': '', 'channel_id': '', 'playlist': '', 'avatar': ''}, []
+                via = 'backlog'
+            elif request is not None:
                 info, videos = list_with_api(root, abo, limit, request)
                 via = 'api'
             else:
@@ -988,11 +1002,13 @@ def check(root, abo_id, now=None, request=None, runner=None, c=None, download_di
                                                           v['poster'], v['position'], state, reason, now))
                 if state == 'wanted' and not first:
                     added += 1
-            db.execute('UPDATE youtube_abos SET title=?,channel_id=?,playlist=?,avatar=?,via=?,last_error=\'\' WHERE id=?',
-                       (info['title'] or abo['title'], info['channel_id'] or abo['channel_id'],
-                        info['playlist'] or abo['playlist'], info['avatar'] or abo['avatar'], via, abo_id))
+            if not backlog:
+                db.execute('UPDATE youtube_abos SET title=?,channel_id=?,playlist=?,avatar=?,via=?,listed=?,last_error=\'\' WHERE id=?',
+                           (info['title'] or abo['title'], info['channel_id'] or abo['channel_id'],
+                            info['playlist'] or abo['playlist'], info['avatar'] or abo['avatar'], via, now, abo_id))
         abo.update(title=info['title'] or abo['title'], avatar=info['avatar'] or abo['avatar'])
-        _cache_avatar(root, abo)
+        if not backlog:
+            _cache_avatar(root, abo)
         queued, waiting, note = 0, 0, ''
         if c is None and _DB is None:
             note = 'Warteschlange nicht verfügbar'

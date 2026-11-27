@@ -1,3 +1,11 @@
+## 0.6.163 – YouTube: weniger Anfragen, keine falschen „Bot“-Meldungen (Björn 27.11.2026); auf 0.6.162
+
+- Björn: „bei YouTube gibt es ziemlich viele Botwarnungen, obwohl wir nicht viel runterladen“. Befund (Air-Diagnose 27.11. nachmittags, 0.6.158): 17 Meldungen in 8 Kinder-Abo-Downloads, 0 echte „not a bot“/429 in 6 Tagen; alle „This video is not available“ (sehr wahrscheinlich die n-challenge des alten yt-dlp, behoben ab 0.6.160). Die Meldung nannte das „Bot-Sperre“.
+- `youtube_downloads._failure`: „not available“-Texte ohne „Bot“ (Kindervideo, regional gesperrt oder vorübergehend verweigert); echte Bot-Prüfung/429 unverändert mit Quellenpause.
+- `youtube_downloads.fetch`: zwei verschiedene Videos nacheinander „not available“ (6-h-Fenster, ohne Erfolg dazwischen) → `RetryLater(block=True)` mit einer Meldung (Pause der Quelle youtube, Abo-Listen warten mit). Erfolgreicher Download und erfolgreiches „YouTube-Zugang prüfen“ beenden die Serie, Letzteres hebt die Pause auf.
+- `youtube_abos.check`: neue Spalte `listed` (Zeit der letzten echten Liste). Mit Rückstand (gewünschte Videos) und Liste jünger als `interval_hours` keine YouTube-Liste (API oder yt-dlp) und kein Avatar-Abruf, nur `_enqueue`; „Jetzt prüfen“ und Einstellungsänderungen setzen `listed=0`. Vorher wurde bei Rückstand alle 20 Minuten (`BACKLOG_RECHECK`) die ganze Liste gelesen.
+- Tests: `tests/test_v06163.py` (8).
+
 ## 0.6.162 – Kinderecke: gleichnamige Reihen als eine Kachel (Björn 27.11.2026); auf 0.6.161
 
 - Björn (Bild kinderecke-doppelte.png): „teilweise werden sie doppelt dargestellt, der Inhalt ist aber unterschiedlich“ – u. a. „Animanimals“ zweimal unter Zeichentrick. Ursache: `unified_index.merge` führt nie zwei Angebote derselben Quelle zusammen (Remakes, Teile); zwei Reihen gleichen Namens unter verschiedenen Schlüsseln (Pluto „Animanimals“/„Animanimals!“, Mediatheken-Reihenschlüssel je Sender) blieben zwei Kacheln mit je einem Teil der Folgen.

@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.162
+# MediathekAtlas · 0.6.163
+
+## Neu in 0.6.163: weniger YouTube-Anfragen, keine falschen „Bot“-Meldungen
+- Ein Abo, bei dem noch Videos ausstehen, fragt YouTube nicht mehr alle 20 Minuten nach der Kanalliste. Es lädt die schon bekannten Videos nach und liest die Liste erst nach dem eingestellten Abstand (Standard 3 Stunden) neu. „Jetzt prüfen“ und geänderte Einstellungen lesen sie sofort.
+- „This video is not available“ wird nicht mehr als „Bot-Sperre“ bezeichnet. Eine echte Bot-Prüfung von YouTube („confirm you're not a bot“) bleibt eine eigene Meldung mit Pause.
+- Scheitern zwei verschiedene Videos nacheinander mit derselben Meldung, pausieren die YouTube-Downloads einmal gemeinsam, statt jedes Video einzeln zu versuchen und zu melden. „YouTube-Zugang prüfen“ hebt die Pause bei Erfolg sofort auf.
 
 ## Neu in 0.6.162: Kinderecke ohne doppelte Reihen
 - Reihen mit gleichem Namen (z. B. „Animanimals“), die von verschiedenen Sendern oder Anbietern kommen, stehen in der Kinderecke nur noch einmal. Beim Öffnen erscheinen die Folgen aller Teile zusammen, doppelte Folgen nur einmal. Reihen mit verschiedenen Namen bleiben getrennt.
