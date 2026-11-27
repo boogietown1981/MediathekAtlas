@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.159 – B1 Air-Diagnose 0.6.153 (27. November 2026)
+- Automatisch: tests/test_v06159.py (6: Meldetexte je Laufzeitzustand, Client-Erkennung, fetch mit Deno/ohne Deno, Ereignis ohne URLs, Warnung ändert Bewertung nicht), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf (Netz gesperrt). Am Mac: PRUEFLISTE in releases/0.6.159.
+
 ## 0.6.158 – Befunde Mac-Prüfung 0.6.157 (27. November 2026)
 - Automatisch: tests/test_v06158.py (4; Regel gegen alle 86 echten Kandidatengruppen der Pro-Kopie), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.158.
 

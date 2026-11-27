@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.158
+# MediathekAtlas · 0.6.159
+
+## Neu in 0.6.159: YouTube-Fehler ehrlich erklärt
+- Scheitert ein YouTube-Download mit „This video is not available“, obwohl Deno eingerichtet ist, rät MediathekAtlas nicht mehr zu „Deno einrichten“, sondern nennt die wahrscheinlichen Gründe (Sperre der Adresse, Kindervideo, regional gesperrt) und versucht es später erneut. Der Deno-Rat erscheint nur noch, wenn Deno wirklich fehlt; ist yt-dlp zu alt, heißt es „yt-dlp einrichten“.
+- Die Diagnose hält zu jedem gescheiterten YouTube-Download fest, welche YouTube-Zugänge yt-dlp probiert hat, ob Deno benutzt wurde und was yt-dlp gemeldet hat (ohne Adressen).
 
 ## Neu in 0.6.158: Fortsetzungen bleiben einzeln
 - Filmfortsetzungen wie „Zärtliche Chaoten“ (Pluto TV), „Freitag der 13“ (Rakuten, Joyn) oder „The Lies We Tell …“ (Plex) werden nicht mehr zu einem Mehrteiler zusammengefasst; die Genres der Plattformen zählen jetzt mit. Echte Mehrteiler (Traktorgiganten, Elvis, Kolbenfresser, Vera Brühne …) bleiben eine Kachel.

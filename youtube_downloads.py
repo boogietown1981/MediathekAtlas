@@ -319,10 +319,13 @@ def fetch(row, src, directory, update, cancelled, runner=None):
     import download_retry
     work = Path(tempfile.mkdtemp(prefix='.yt-', suffix='.partial', dir=str(Path(src).parent)))
     ffmpeg = downloads.tool('ffmpeg')
+    # 0.6.159 (Air-Diagnose 27.11., B1): yt-dlp's warnings are kept (they go to the error log, never to the
+    # screen) – they say which YouTube client answered and why a video was refused; "--no-warnings" hid that.
+    jsargs = js_args(root, tool)
     args = [*tool[0], '--ignore-config', '--no-playlist', '--no-cache-dir', '--no-cookies-from-browser',
-            '--no-mtime', '--no-part', '--newline', '--no-warnings', '-f', _format(row),
+            '--no-mtime', '--no-part', '--newline', '-f', _format(row),
             '--merge-output-format', 'mkv', '--progress-template', 'download:MAP %(progress.downloaded_bytes)s %(progress.total_bytes)s',
-            '-o', str(work / 'video.%(ext)s'), *js_args(root, tool)]
+            '-o', str(work / 'video.%(ext)s'), *jsargs]
     if row.get('_container') == 'mp4' or row.get('_abo'):
         # 0.6.13: subscription videos come in batches; short pauses between YouTube's requests make the
         # bot check ("Sign in to confirm you're not a bot") less likely. A single click stays immediate.
@@ -342,7 +345,7 @@ def fetch(row, src, directory, update, cancelled, runner=None):
     # 0.6.13 (Björn, 16.11.2026: "0.0 MiB · Geschwindigkeit wird ermittelt" for good): the watcher also
     # ends a download that receives nothing. Before the first byte yt-dlp may take a while (video page,
     # player, pauses), so that limit is longer than the one for a stalled transfer.
-    state = {'bytes': 0, 'moved': time.monotonic(), 'phase': PHASES[0][1], 'stalled': '', 'told': time.monotonic()}
+    state = {'bytes': 0, 'moved': time.monotonic(), 'phase': PHASES[0][1], 'stalled': '', 'told': time.monotonic(), 'clients': []}
 
     def watch():
         while not stop.wait(1):
@@ -368,6 +371,9 @@ def fetch(row, src, directory, update, cancelled, runner=None):
         for line in proc.stdout:
             got = _progress(line)
             if not got:
+                client = _client(line)
+                if client and client not in state['clients']:
+                    state['clients'].append(client)
                 phase = _phase(line)
                 if phase and phase != state['phase']:
                     state['phase'] = phase
@@ -393,7 +399,13 @@ def fetch(row, src, directory, update, cancelled, runner=None):
             raise download_retry.RetryLater(state['stalled'])
         if code != 0:
             log.seek(0)
-            message, retry, block = _failure(log.read()[-4000:])
+            text = log.read()[-4000:]
+            js = find_js_runtime(root)
+            # warnings are kept for the diagnosis only: the reason comes from yt-dlp's ERROR lines, so a warning
+            # mentioning e.g. a timeout or a geo note cannot change how the failure is judged
+            errors = '\n'.join(line for line in text.splitlines() if line.startswith('ERROR:')) or text
+            message, retry, block = _failure(errors, js_runtime=bool(js), js_used=bool(jsargs))
+            _report_failure(row, video, tool, js, jsargs, state['clients'], text, retry)
             if retry:
                 raise download_retry.RetryLater(message, block=block)
             raise ValueError(message)
@@ -444,8 +456,36 @@ def _phase(line):
     return ''
 
 
-def _failure(text):
-    """(reason, temporary, provider-wide pause) for yt-dlp's error output (0.6.13)."""
+CLIENT_LINE = re.compile(r'downloading ([a-z0-9_ ]+?) (?:client config|player api json|tv client config)', re.I)
+URL = re.compile(r'https?://\S+')
+
+
+def _client(line):
+    """YouTube client yt-dlp asked ("Downloading tv client config", "… web safari player API JSON")."""
+    m = CLIENT_LINE.search(str(line or ''))
+    return m.group(1).strip().lower().replace(' ', '_')[:30] if m else ''
+
+
+def _report_failure(row, video, tool, js, jsargs, clients, text, retry):
+    """0.6.159 (B1): one diagnostic event per failed YouTube download with everything needed to tell a
+    refused kids video from a bot block or an unused JavaScript runtime. No addresses (they carry tokens)."""
+    try:
+        import diagnostics
+        lines = [URL.sub('<url>', line.strip())[:240] for line in str(text or '').splitlines()
+                 if line.startswith(('WARNING:', 'ERROR:'))][-6:]
+        diagnostics.event('youtube_download_failed', 'WARNING', video=video, abo=row.get('_abo') or None,
+                          retry=bool(retry), js_runtime=js[0] if js else '', js_args=bool(jsargs),
+                          tool_origin=str(tool[1])[:80], tool_version='.'.join(map(str, tool_version(tool[0]))),
+                          clients=clients[:8], messages=lines)
+    except Exception:                    # diagnostics must never turn into a second failure
+        pass
+
+
+def _failure(text, js_runtime=None, js_used=None):
+    """(reason, temporary, provider-wide pause) for yt-dlp's error output (0.6.13).
+
+    0.6.159: ``js_runtime``/``js_used`` – whether a JavaScript runtime exists and was handed to yt-dlp;
+    the "Deno einrichten" advice is only given when it can help (None = unknown, the old wording)."""
     low = str(text or '').lower()
     reason = _reason(text)
     if "not a bot" in low or 'http error 429' in low or 'too many requests' in low:
@@ -459,6 +499,16 @@ def _failure(text):
         # within minutes, none succeeded – YouTube's answer to a flagged address, not a removed video
         # (that says "Video unavailable"/"Private video"). Retried with growing gaps; given up after the series.
         # 0.6.36: also every "Made for Kids" video when yt-dlp has no JavaScript runtime (see JS_RUNTIMES).
+        # 0.6.159 (Air 27.11., B1): Deno was set up, yet the advice still sent Björn to "Deno einrichten".
+        if js_runtime is False:
+            return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Bot-Sperre oder '
+                    'Kindervideo ohne Deno; im YouTube-Bereich „Deno einrichten“)'), True, False
+        if js_runtime and js_used is False:
+            return ('YouTube gibt das Video gerade nicht heraus („This video is not available“); yt-dlp ist zu alt, '
+                    'um Deno zu nutzen: im YouTube-Bereich „yt-dlp einrichten“'), True, False
+        if js_runtime and js_used:
+            return ('YouTube verweigert das Video gerade („This video is not available“: Bot-Sperre der Adresse, '
+                    'Kindervideo oder regional gesperrt; Deno ist eingerichtet, neuer Versuch später)'), True, False
         return ('YouTube gibt das Video gerade nicht heraus („This video is not available“: Bot-Sperre oder '
                 'Kindervideo ohne Deno; im YouTube-Bereich „Deno einrichten“)'), True, False
     return reason, False, False

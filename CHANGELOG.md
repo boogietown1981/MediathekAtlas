@@ -1,3 +1,11 @@
+## 0.6.159 – B1 Air-Diagnose 0.6.153 (YouTube-Kindervideos trotz Deno „not available“); auf 0.6.158
+
+- Befund (diagnose-2026-11-27-mittag-06153-air.md, B1): 4 Abo-Downloads aus drei neuen Kinder-Kanälen scheiterten 8× mit „This video is not available“; Deno eingerichtet (`tool_current` true), yt-dlp 2026.11.06. `_failure` riet trotzdem „Deno einrichten“.
+- `_failure(text, js_runtime, js_used)`: Deno-Rat nur ohne JavaScript-Laufzeit; Laufzeit da, aber yt-dlp zu alt → „yt-dlp einrichten“; Laufzeit übergeben → „YouTube verweigert das Video gerade (Bot-Sperre der Adresse, Kindervideo oder regional gesperrt; Deno ist eingerichtet, neuer Versuch später)“. Marker „This video is not available“ bleibt (Neueinreihung 0.6.36).
+- Ursache klären: Download ohne `--no-warnings` (Warnungen nur ins Fehlerprotokoll); neues Ereignis `youtube_download_failed` (WARNING) mit Video-ID, Abo, `js_runtime`, `js_args`, yt-dlp-Herkunft/-Version, abgefragten YouTube-Clients (aus „Downloading … client config / player API JSON“) und den letzten WARNING/ERROR-Zeilen ohne URLs. Bewertung des Fehlers nur über die ERROR-Zeilen, damit Warnungen (z. B. „timeout“) sie nicht verändern.
+- Eigentliche Ursache in der Cloud nicht prüfbar (YouTube gesperrt); Annahme: YouTube liefert diese Kindervideos über die mit Deno genutzten Clients nicht aus oder sperrt die Adresse. Das neue Ereignis entscheidet das beim nächsten Fehlschlag.
+- Tests: `tests/test_v06159.py` (6), `test_v0636_youtube_kids` angepasst.
+
 ## 0.6.158 – Befunde Mac-Prüfung 0.6.157 (Fortsetzungen als Mehrteiler); auf 0.6.157
 
 - Mac-Prüfung 0.6.157: Bilder und Reihenfilme BESTANDEN; Befund Mehrteiler (BEFUND-06157.txt): „Zärtliche Chaoten – Teil 1/2“ (Pluto TV, Komödie, 1986/1987) und neu „Freitag der 13“ (Rakuten/Joyn, Horror, Teil 2/4/5/6/7) als Mehrteiler. 0.6.157 NICHT-INSTALLIEREN.
