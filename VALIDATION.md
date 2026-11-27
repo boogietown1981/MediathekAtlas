@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.165 – Kinderecke verschobene Nummern, Zurücknehmen (27. November 2026)
+- Automatisch: tests/test_v06165.py (7: Stillstand mit n-challenge erneuert yt-dlp, Schrittzeiten; verschobene Nummer gleiche Dauer einmal, andere Dauer/Nummern-Titel/Reihenname bleiben, Freigabe→Sperre→Zurücknehmen stellt Freigabe her, Teile ebenso, alte Tabelle bekommt Spalte), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.165.
+
 ## 0.6.164 – Kinderecke Befunde 0.6.162 (27. November 2026)
 - Automatisch: tests/test_v06164.py (7: Grenze je Teil, Einzelreihe unverändert, Doppel ohne Nummern, verschiedene Nummern/Dauer bleiben, Sperren/Zurücknehmen aller Teile, Sperrziel in Zwillingen und Verdrahtung, TVDB-Platzhalter), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.164.
 

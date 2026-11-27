@@ -75,7 +75,7 @@ class MergeTests(unittest.TestCase):
         src = (ROOT / 'kids_catalog.py').read_text(encoding='utf-8')
         self.assertLess(src.index("out['series'] = _parent_blocks(db, out['series'] + numbered)"),
                         src.index("out['series'] = merge_twin_series(out['series'])"))
-        self.assertLess(src.index("out['series'] = merge_twin_series(out['series'])"), src.index('_mark_local(db, out)\n    _fold'))
+        self.assertLess(src.index("out['series'] = merge_twin_series(out['series'])"), src.index('_mark_local(db, out)\n'))
 
 
 if __name__ == '__main__':

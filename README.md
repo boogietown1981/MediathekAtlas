@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.164
+# MediathekAtlas · 0.6.165
+
+## Neu in 0.6.165: Kinderecke – verschoben nummerierte Folgen und „Zurücknehmen“
+- Zählen zwei Sender dieselbe Folge unterschiedlich (z. B. „Conni“ bei ZDF-tivi Folge 5, bei KiKA Folge 6), erscheint sie bei gleichem Titel und gleicher Länge nur einmal.
+- „Zurücknehmen“ einer Sperre stellt eine vorher erteilte Freigabe wieder her, statt sie mitzulöschen; die Reihe kommt zurück.
+- YouTube: Bleibt ein Download stehen, weil yt-dlp YouTubes Player nicht entschlüsseln kann, wird yt-dlp jetzt auch dann sofort erneuert.
 
 ## Neu in 0.6.164: Kinderecke – zusammengeführte Reihen vollständig und ohne Doppel
 - Eine Kachel aus gleichnamigen Reihen zeigt jetzt alle Folgen beider Teile (vorher endete die Liste bei 400, z. B. „Schloss Einstein“).

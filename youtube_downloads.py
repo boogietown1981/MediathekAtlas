@@ -579,7 +579,22 @@ def fetch(row, src, directory, update, cancelled, runner=None):
         if cancelled():
             raise ValueError('Download abgebrochen')
         if state['stalled']:
-            raise download_retry.RetryLater(state['stalled'])
+            # 0.6.165 (Air-Diagnose 27.11. abends, Y5): YouTube drosselt auf fast null, wenn yt-dlp die n-challenge
+            # nicht löst; der Stillstand-Wächter brach ab, bevor das Protokoll ausgewertet wurde. Jetzt auch hier
+            # erkennen und yt-dlp erneuern (wie beim Fehler-Ende).
+            message = state['stalled']
+            try:
+                log.seek(0)
+                text = log.read()[-4000:]
+                if jsargs and challenge_failed(text):
+                    newer = refresh_for_challenge(root, tool)
+                    message += (' – yt-dlp konnte YouTubes Player nicht entschlüsseln („n challenge“); ' +
+                                ('yt-dlp %s eingerichtet, neuer Versuch in Kürze' % newer if newer else
+                                 'eine neuere yt-dlp-Version wird automatisch geholt, sobald es eine gibt'))
+                    _report_failure(row, video, tool, find_js_runtime(root), jsargs, state['clients'], text, True, True)
+            except Exception:                # the stall itself stays the reported failure
+                pass
+            raise download_retry.RetryLater(message)
         if code != 0:
             log.seek(0)
             text = log.read()[-4000:]

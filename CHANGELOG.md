@@ -1,3 +1,11 @@
+## 0.6.165 – Kinderecke: Befunde der Mac-Prüfung 0.6.164; auf 0.6.164
+
+- Mac-Prüfung 0.6.164 (BEFUND-06163-06164.txt): A behoben (0 von 9354 Titeln fehlen), Platzhalter 19 → 0, Sperren ok; offen: 4 Kacheln mit derselben Folge doppelt, weil ZDF-tivi/KiKA verschoben nummerieren (Conni S1E5/S1E6 685 s, Checkpoint S5E5/S5E8 1471 s, Rudis S1E1/S1E10 664 s); Heidi nach Zurücknehmen der Sperre dauerhaft weg (551 statt 552 Serien, kids_choices leer).
+- `kids_catalog._same_episode`: gleicher Titel und Dauer ±`SAME_LENGTH` (10 s) = dieselbe Folge trotz anderer Nummer; nicht bei Nummern-Titeln (`NUMBER_TITLE`, „Folge 5“) und Folgentitel = Reihenname. Andere Dauer (TMNT E6/E106) bleibt getrennt.
+- `kids_rules.choose`: neue Spalte `previous`; Sperre/Freigabe merkt die ersetzte Wahl, Zurücknehmen stellt sie wieder her (`restored`), sonst Löschen wie bisher. `apply_to_twins` nimmt Teile ebenso zurück. Wahrscheinliche Ursache (am Mac zu bestätigen): Heidi stand nur über eine Freigabe in der Kinderecke; die Sperre überschrieb sie, Zurücknehmen löschte beides. Diagnose `kids_rules_changed` mit `restored`/`twins`.
+- Air-Diagnose 27.11. abends: Y5 `youtube_downloads.fetch` – beim Abbruch durch den Stillstand-Wächter wird das yt-dlp-Protokoll jetzt auch auf die n-challenge geprüft (`refresh_for_challenge`, Ereignis `youtube_download_failed` mit `challenge_failed`), vorher nur bei Exit-Code ≠ 0. K1 (Aufbau der Kinderecke 12–15 s): `kids_shelf_refreshed` enthält `steps` (Dauer je Schritt: collect_movies/series, kids_shows, pictures, word_safe, films, blocks_numbered_twins, mark_local) zur Eingrenzung am Gerät.
+- Tests: `tests/test_v06165.py` (7), `test_v06162` Verdrahtungstest angepasst.
+
 ## 0.6.164 – Kinderecke: Befunde der Mac-Prüfung 0.6.162; auf 0.6.163
 
 - Mac-Prüfung 0.6.162 (BEFUND-06162.txt): Hauptpunkt erfüllt (631 → 552 Serien, gleichnamige Kacheln 0), aber

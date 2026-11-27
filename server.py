@@ -1314,7 +1314,7 @@ def post_kids_rules(self,path,d):
     except ValueError as e:return self.send({'error':str(e)},400)
     catalog.invalidate_listings(drop=True);unified_index.invalidate();kids_catalog.invalidate()
     if result.get('choice')=='block':kids_catalog._EPISODES_SEEN.clear()   # 0.6.113: Folgen einer gesperrten Reihe nicht mehr abspielbar
-    diagnostics.event('kids_rules_changed',**({k:result[k] for k in ('max_age','live') if k in result} or {'choice':result.get('choice') or 'zurück'}))
+    diagnostics.event('kids_rules_changed',**({k:result[k] for k in ('max_age','live') if k in result} or {'choice':result.get('choice') or 'zurück','restored':bool(result.get('restored')),'twins':result.get('twins') or 0}))   # 0.6.165
     return self.send(result)
 
 # 0.6.99: Kinder- und Familiensender (live_tv.kids_stations), nur wenn die Eltern es eingeschaltet haben

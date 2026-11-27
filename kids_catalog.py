@@ -178,11 +178,14 @@ def build(root, db, modules=None, merge=True, page=None):
         page = unified_index.page
     out, pending = {}, False
     limit = _current_limit(db)
+    timings = {}
     for view in ('movies', 'series'):
+        started = time.monotonic()
         tiles, pend = _collect(root, db, page, view, merge, modules, limit)
+        timings['collect_' + view] = round(time.monotonic() - started, 2)
         pending = pending or pend
         out[view] = tiles[:MAX_TITLES]
-    return _finish(db, root, out, pending)
+    return _finish(db, root, out, pending, timings)
 
 
 def _collect(root, db, page, view, merge, modules, limit, attempts=3):
@@ -477,20 +480,35 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
     return found, asked, no_page
 
 
-def _finish(db, root, out, pending):
+def _finish(db, root, out, pending, timings=None):
+    # 0.6.165 (Air-Diagnose 27.11. abends, K1: Aufbau 12–15 s statt 5,7 s): Dauer je Schritt für kids_shelf_refreshed
+    timings = {} if timings is None else timings
+    clock = [time.monotonic()]
+
+    def lap(name):
+        now = time.monotonic()
+        timings[name] = round(timings.get(name, 0) + now - clock[0], 2)
+        clock[0] = now
     out['series'] = _kids_shows(db, out['series'])
+    lap('kids_shows')
     _fill_pictures(db, out)
+    lap('pictures')
     out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
+    lap('word_safe')
     out['movies'] = _prefer_kids_offers(db, out['movies'])
     out['movies'] = _playable_films(db, out['movies'])
     out['movies'] = _drop_unplayable_platform_films(db, out['movies'])
+    lap('films')
     out['movies'] = _parent_blocks(db, out['movies'])
     out['movies'], numbered = numbered_series(out['movies'])       # 0.6.148: „NN. Reihenname …“ als eine Serie
     out['series'] = _parent_blocks(db, out['series'] + numbered)
     out['series'] = merge_twin_series(out['series'])                # 0.6.162: gleichnamige Reihen als eine Kachel
+    lap('blocks_numbered_twins')
     _mark_local(db, out)
+    lap('mark_local')
     _fold_small_groups(out)
+    out['timings'] = timings
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
     out['pending'] = pending
@@ -884,7 +902,8 @@ def _refresh(root, db, modules, merge, page):
         if seconds >= 2:            # 0.6.82 (Mac-Prüfung 0.6.81): langsame Erneuerung in der Diagnose sichtbar
             import diagnostics
             diagnostics.event('kids_shelf_refreshed', seconds=round(seconds, 2), movies=len(value.get('movies') or []),
-                              series=len(value.get('series') or []), pending=bool(value.get('pending')))
+                              series=len(value.get('series') or []), pending=bool(value.get('pending')),
+                              steps=value.get('timings') or {})
     except Exception:
         pass                       # die bisherige Liste bleibt; der nächste Aufruf versucht es erneut
     finally:
@@ -1033,7 +1052,7 @@ def episodes(root, c, data, source, series_id, marks=None):
             continue
         for e in more:
             ident = _episode_identity(e)
-            if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or ()):
+            if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or (), _title_key((tile or {}).get('title'))):
                 continue
             seen.add(ident)
             out.append(e)
@@ -1061,15 +1080,26 @@ def _episode_identity(e):
     return ('k', e.get('key'))
 
 
-def _same_episode(e, others):
+NUMBER_TITLE = re.compile(r'^(?:folge|teil|episode|ep|staffel|part)?\d*$')   # „Folge 5“, „Teil 2“, „5“ (Schlüssel ohne Leerzeichen)
+SAME_LENGTH = 10   # 0.6.165: Sekunden – gleiche Dauer gilt trotz anderer Folgennummer als dieselbe Folge
+
+
+def _same_episode(e, others, generic=''):
     """0.6.164 (Mac-Prüfung 0.6.162, Befund B: Checkpoint 0 → 13 gleichnamige Folgen, KiKA/WDR): dieselbe Folge aus der
     Zwillingsreihe trägt oft keine oder andere Staffel-/Folgennummern. Gleicher Titel gilt als dieselbe Folge, außer
     beide haben Folgennummern und die unterscheiden sich, oder beide haben eine Dauer, die mehr als 90 s abweicht."""
-    if not _title_key(e.get('title')):
+    key = _title_key(e.get('title'))
+    if not key:
         return False
     for o in others:
+        same_length = bool(e.get('duration') and o.get('duration')
+                           and abs(float(e['duration']) - float(o['duration'])) <= SAME_LENGTH)
+        # 0.6.165 (Mac-Prüfung 0.6.164: ZDF-tivi und KiKA zählen dieselbe Folge um 1–9 verschoben, Conni S1E5/S1E6,
+        # beide 685 s): gleicher Titel und gleiche Dauer = dieselbe Folge, auch bei anderer Nummer – außer der
+        # Folgentitel ist nur der Reihenname (dann entscheiden die Nummern)
         if e.get('episode') is not None and o.get('episode') is not None and \
-                (e.get('season'), e.get('episode')) != (o.get('season'), o.get('episode')):
+                (e.get('season'), e.get('episode')) != (o.get('season'), o.get('episode')) and \
+                not (same_length and key != generic and not NUMBER_TITLE.match(key)):
             continue
         if e.get('duration') and o.get('duration') and abs(float(e['duration']) - float(o['duration'])) > 90:
             continue
@@ -1100,7 +1130,7 @@ def apply_to_twins(c, root, kind, value, choice, title=''):
         title_key, done = _title_key(row[0]), 0
         for k, t in c.execute('SELECT key, title FROM kids_choices WHERE choice=? AND key!=?', (row[1], '%s:%s' % (kind, value))).fetchall():
             if _title_key(t) == title_key:
-                c.execute('DELETE FROM kids_choices WHERE key=?', (k,))
+                kids_rules.choose(c, k.split(':', 1)[0], k.split(':', 1)[1], '')   # 0.6.165: ersetzte Wahl zurück
                 done += 1
         return done
     targets = twin_targets(root, kind, value)
