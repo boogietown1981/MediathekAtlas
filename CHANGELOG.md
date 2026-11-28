@@ -1,3 +1,9 @@
+## 0.6.171 – Kinderecke: unfertige Liste baut sich selbst fertig; auf 0.6.170
+- Mac-Prüfung 0.6.169 (BEFUND-06169): nach dem Start nur die vorläufige Liste (14 Serien, pending), die volle Liste erst nach einem /api/kids-Aufruf (bis ~10 min pending).
+- Ursache: Der Vorabbau nach dem Start lief einmal und blieb unfertig, solange der Katalog noch aufbaute; erneuert wurde nur bei einem Aufruf. Bis 0.6.167 wartete dieser erste Aufruf auf einen neuen Aufbau, seit 0.6.168 (Hintergrund statt Warten) bekam der erste Besucher die vorläufige Liste, bis die Kinderecke nach 8 s erneut fragte (Rückschritt aus 0.6.168).
+- Jetzt: eine unfertige Liste wird von selbst alle 10 s im Hintergrund erneuert, bis sie fertig ist (höchstens 30 min, immer nur ein Aufbau; nach einer Elternänderung beginnt es neu). Der erste Besucher bekommt damit die volle Liste, sobald der Katalog fertig ist; solange der Katalog selbst noch aufbaut, bleibt eine vorläufige Liste unvermeidlich.
+- PIN für den Elternbereich ist fertig entwickelt und folgt als 0.6.172.
+
 ## 0.6.170 – Kinderprofile (Abo-Profile Punkt 1–2); auf 0.6.169
 - Umfang 28.11.2026 (Koordinator, Dauerauftrag Abo-Profile/PIN): benannte Kinderprofile, Profilwahl, PIN folgt in 0.6.171.
 - Neues Modul `kids_profiles.py`, Tabelle `kids_profiles` (id AUTOINCREMENT, name, color, hidden = JSON-Liste ausgeblendeter Abo-Kennungen) in der Katalogdatenbank; höchstens 8 Profile, Namen eindeutig (ohne Groß-/Kleinschreibung), 1–30 Zeichen.

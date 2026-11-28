@@ -865,7 +865,7 @@ def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
 _GEN = [0]   # 0.6.112: eine vor invalidate() begonnene Liste wird nicht gespeichert (alte Altersgrenze/Freigabe)
 
 
-def _build_store(root, db, modules, merge, page, via='hintergrund'):
+def _build_store(root, db, modules, merge, page, via='hintergrund', follow=True):
     gen = _GEN[0]
     started = time.monotonic()
     value = build(root, db, modules, merge, page)
@@ -879,6 +879,12 @@ def _build_store(root, db, modules, merge, page, via='hintergrund'):
         except Exception:
             pass
     _report_undone(value)
+    if value.get('pending'):
+        if follow:
+            _follow_up(root, db, modules, merge, page)
+    else:
+        with _LOCK:
+            _FOLLOW.pop(str(root), None)
     with _LOCK:
         old = (_LAST.get(str(root)) if not value.get('pending') else None)
         if not value.get('pending'):
@@ -908,14 +914,48 @@ def _log_change(old, new):
         pass
 
 
+# 0.6.171 (Mac-Prüfung 0.6.169: nach dem Start nur die vorläufige Liste mit 14 Serien, die volle erst nach einem Besuch;
+# seit 0.6.168 bekam der erste Besucher diese vorläufige Liste statt zu warten): eine noch unfertige Liste wird von selbst
+# alle PENDING_RETRY Sekunden im Hintergrund erneuert, bis sie fertig ist (höchstens PENDING_FOLLOW Sekunden lang).
+PENDING_RETRY = 10.0
+PENDING_FOLLOW = 30 * 60.0
+_FOLLOW = {}   # Datenordner -> Beginn der Nachläufe
+
+
+def _follow_up(root, db, modules, merge, page):
+    key = str(root)
+    now = time.monotonic()
+    with _LOCK:
+        began = _FOLLOW.setdefault(key, now)
+        if now - began > PENDING_FOLLOW or key in _BUILDING:
+            return False
+        _BUILDING.add(key)
+    timer = threading.Timer(PENDING_RETRY, _follow_run, args=(_GEN[0], root, db, modules, merge, page))
+    timer.daemon = True
+    timer.name = 'kids_shelf_follow'
+    timer.start()
+    return True
+
+
+def _follow_run(gen, root, db, modules, merge, page):
+    if gen != _GEN[0]:              # nach invalidate() baut der nächste Aufruf ohnehin neu
+        with _LOCK:
+            _BUILDING.discard(str(root))
+        return
+    _refresh(root, db, modules, merge, page)
+
+
 def _refresh(root, db, modules, merge, page):
+    pending = False
     try:
-        _build_store(root, db, modules, merge, page)
+        pending = bool(_build_store(root, db, modules, merge, page, follow=False).get('pending'))
     except Exception:
         pass                       # die bisherige Liste bleibt; der nächste Aufruf versucht es erneut
     finally:
         with _LOCK:
             _BUILDING.discard(str(root))
+    if pending:
+        _follow_up(root, db, modules, merge, page)
 
 
 def invalidate():
@@ -923,6 +963,7 @@ def invalidate():
     with _LOCK:
         _GEN[0] += 1
         _CACHE.clear()
+        _FOLLOW.clear()
 
 
 def _listed(data, source, kind, field, value):

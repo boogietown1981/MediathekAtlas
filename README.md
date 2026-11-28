@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.170
+# MediathekAtlas · 0.6.171
+
+## Neu in 0.6.171: Kinderecke nach dem Start gleich vollständig
+- Die Kinderecke stellt ihre Liste nach dem Start von selbst fertig. Vorher blieb sie bis zum ersten Besuch bei einer vorläufigen Auswahl (z. B. 14 Serien), und seit 0.6.168 sah der erste Besucher diese Auswahl.
 
 ## Neu in 0.6.170: Kinderprofile – „Wer schaut?“
 - Im Elternbereich (Einstellungen → Kinderecke · Eltern) ein Profil je Kind anlegen. Jedes Kind hat seinen eigenen Gesehen-Stand und sein eigenes „Weiterschauen“.

@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.171 – Unfertige Kinderliste baut sich selbst fertig (28. November 2026)
+- Automatisch: tests/test_v06171.py (3: zweimal unfertig, dann fertig – ohne weiteren Aufruf entsteht die volle Liste; Grenze 30 min; nur ein Nachlauf gleichzeitig), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.171.
+
 ## 0.6.170 – Kinderprofile (28. November 2026)
 - Automatisch: tests/test_v06170.py (6: Anlegen/Ändern/Entfernen mit Prüfungen, Grenze 8, Schlüssel-Präfix und Stände je Profil, Kanalfilter, Hauptansicht ohne fremde Profile, Verdrahtung/Paket), Klicktest tests/browser/kids_corner.cjs erweitert (zwei Profile, „Wer schaut?“, ausgeblendeter Kanal, Stand unter kp2:, unbekanntes Profil 400, Wechsel), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.170.
 
