@@ -15,7 +15,12 @@
   const make = (tag, cls, text) => { const n = document.createElement(tag); if (cls) n.className = cls; if (text !== undefined) n.textContent = text; return n; };
   const COLORS = ['#ff5d8f', '#ff9a3f', '#ffd23f', '#45d483', '#3fc4ff', '#6c5ce7', '#c56cf0', '#20bf6b', '#fd7272', '#4b7bec'];
   const state = {channels: [], videos: [], movies: [], series: [], groups: [], liveEnabled: false, live: null, filter: 'all', show: null, episodes: [], current: null, list: [],
-    nextTimer: 0, lastSent: 0, offset: 0, hls: null};
+    nextTimer: 0, lastSent: 0, offset: 0, hls: null, profiles: [], profile: null};
+  // 0.6.170: Kinderprofile (kids_profiles.py) – dieses Gerät merkt sich, wer zuletzt geschaut hat
+  const PROFILE_KEY = 'atlas-kids-profile';
+  const storedProfile = () => { try { return localStorage.getItem(PROFILE_KEY) || ''; } catch (e) { return ''; } };
+  const storeProfile = id => { try { if (id) localStorage.setItem(PROFILE_KEY, String(id)); else localStorage.removeItem(PROFILE_KEY); } catch (e) { /* privat */ } };
+  const withProfile = path => { const id = state.profile || storedProfile(); return id ? path + (path.includes('?') ? '&' : '?') + 'profile=' + encodeURIComponent(id) : path; };
 
   async function api(path, data) {
     const r = await fetch('/api/' + path, data === undefined ? {headers: {'X-Atlas-Token': token}} :
@@ -219,7 +224,7 @@
     state.show = s; state.episodes = []; render();
     window.scrollTo({top: 0, behavior: 'smooth'});
     try {
-      const d = await api('kids-episodes?' + new URLSearchParams({source: s.source, series: (s.series || {}).show || (s.series || {}).id || ''}));
+      const d = await api(withProfile('kids-episodes?' + new URLSearchParams({source: s.source, series: (s.series || {}).show || (s.series || {}).id || ''})));
       if (state.show !== s) return;
       state.episodes = (d.episodes || []).map(e => fromCatalog(e, 'episode'));
       s.loaded = true;
@@ -241,7 +246,12 @@
 
   async function load() {
     try {
-      const d = await api('kids');
+      const d = await api(withProfile('kids'));
+      state.profiles = Array.isArray(d.profiles) ? d.profiles : [];
+      state.profile = d.profile ? String(d.profile) : null;
+      if (state.profile !== (storedProfile() || null)) storeProfile(state.profile);
+      showProfile();
+      if (d.choose) { chooseProfile(); return; }
       state.channels = (d.channels || []).map(c => Object.assign(c, {id: String(c.id)})); state.videos = (d.videos || []).map(fromAbo);
       state.liveEnabled = !!d.live_enabled;
       const cat = d.catalog || {};
@@ -301,7 +311,7 @@
     if (!total) return;
     state.lastSent = Date.now();
     const pos = position();
-    api('watch-progress', {key: v.key, pos, duration: total, done: !!done,
+    api('watch-progress', {key: v.key, pos, duration: total, done: !!done, kids_profile: state.profile || undefined,
       info: {title: v.title, source: v.type === 'abo' ? 'download' : v.source, kind: v.type === 'episode' ? 'episode' : 'movie', ref: v.ref}}).then(r => {
       if (r && r.stored) { v.new = false; v.done = !!r.done; v.progress = r.done ? 0 : pos / total; v.pos = r.done ? 0 : pos; }
     }).catch(() => {});
@@ -457,6 +467,27 @@
   const wake = () => { stage.classList.remove('idle'); clearTimeout(idle); idle = setTimeout(() => { if (!video.paused) stage.classList.add('idle'); }, 3000); };
   ['mousemove', 'touchstart', 'click'].forEach(ev => stage.addEventListener(ev, wake, {passive: true}));
   video.addEventListener('play', wake);
+
+  // ------------------------------------------------------------ 0.6.170: Wer schaut? (Kinderprofile)
+  function showProfile() {
+    const chip = $('kids-profile'); if (!chip) return;
+    const p = state.profiles.find(x => String(x.id) === state.profile);
+    chip.hidden = !p || state.profiles.length < 2;
+    if (p) { chip.textContent = p.name; chip.style.background = p.color; }
+  }
+  function chooseProfile() {
+    const box = $('kids-who'), list = $('kids-who-list'); if (!box) return;
+    list.replaceChildren();
+    for (const p of state.profiles) {
+      const b = make('button', 'kids-who-card'); b.type = 'button'; b.style.background = p.color;
+      b.append(make('span', 'kids-who-letter', (p.name || '?').slice(0, 1).toLocaleUpperCase('de')), make('strong', '', p.name));
+      b.onclick = () => { storeProfile(p.id); state.profile = String(p.id); box.hidden = true; state.sig = ''; window.__kidsForce = true; load(); };
+      list.append(b);
+    }
+    box.hidden = false;
+    const first = list.querySelector('button'); if (first) first.focus();
+  }
+  if ($('kids-profile')) $('kids-profile').onclick = () => chooseProfile();
 
   // ------------------------------------------------------------ Elternbereich: 2 Sekunden halten
   const parents = $('kids-parents'); let hold = 0;

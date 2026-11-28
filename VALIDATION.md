@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.170 – Kinderprofile (28. November 2026)
+- Automatisch: tests/test_v06170.py (6: Anlegen/Ändern/Entfernen mit Prüfungen, Grenze 8, Schlüssel-Präfix und Stände je Profil, Kanalfilter, Hauptansicht ohne fremde Profile, Verdrahtung/Paket), Klicktest tests/browser/kids_corner.cjs erweitert (zwei Profile, „Wer schaut?“, ausgeblendeter Kanal, Stand unter kp2:, unbekanntes Profil 400, Wechsel), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.170.
+
 ## 0.6.169 – Reihenprüfung stückweise (28. November 2026)
 - Automatisch: tests/test_v06169.py (3: Antwort gleich der Vollbewertung bei alter Folge hinter 250 neueren, mehrere Stücke nötig; Stichprobe liest nur 100; Sperre/ohne Grundlage), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.169.
 

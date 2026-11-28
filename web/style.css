@@ -1348,6 +1348,8 @@ html[data-mode=watch] dialog.player video,html[data-mode=watch] dialog.player if
 .kids-parents-row{display:grid;grid-template-columns:minmax(160px,2fr) minmax(90px,1fr) minmax(140px,1.4fr) auto auto;gap:10px;align-items:center;padding:6px 8px;border-radius:8px;background:rgba(127,127,127,.08)}
 .kids-parents-reason{color:#e0a040}.kids-parents-ok{color:#45b36b}
 @media (max-width:700px){.kids-parents-row{grid-template-columns:1fr 1fr}}
+.kids-profile-row{grid-template-columns:auto minmax(140px,1fr) minmax(160px,2fr) auto}.kids-profile-dot{width:18px;height:18px;border-radius:50%}.kids-profile-abos label{display:block;margin:4px 0}
+@media (max-width:700px){.kids-profile-row{grid-template-columns:auto 1fr}}
 .linklike{background:none;border:0;padding:0;color:#7cb8ff;cursor:pointer;font:inherit;text-decoration:underline}
 .lokal-folders{list-style:none;margin:8px 0 0;padding:0;display:grid;gap:6px}
 .lokal-folder strong{word-break:break-all}

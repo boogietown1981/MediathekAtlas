@@ -397,6 +397,63 @@ async function providerFullscreen(browser, clip, problems) {
   await off.close();
 }
 
+// 0.6.170: Kinderprofile – zwei Profile, „Wer schaut?“, Kanal je Kind ausblenden, eigener Abspielstand
+async function kidsProfiles(browser, url, problems) {
+  const page = await browser.newPage({ viewport: { width: 1280, height: 900 } });
+  page.on('pageerror', e => problems.push('Skriptfehler (Profile): ' + String(e)));
+  const check = (what, ok) => { if (!ok) problems.push('Erwartung nicht erfüllt (Profile): ' + what); };
+  await page.goto(url + 'kinder');
+  await page.waitForSelector('.kids-tile', { timeout: 30000 });
+  const call = (p, data) => page.evaluate(async ([p, data]) => {
+    const token = document.querySelector('meta[name=atlas-token]').content;
+    const r = await fetch('/api/' + p, data ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Atlas-Token': token }, body: JSON.stringify(data) }
+      : { headers: { 'X-Atlas-Token': token } });
+    return { status: r.status, body: await r.json() };
+  }, [p, data]);
+  check('ohne Profil keine Auswahl', (await page.locator('#kids-who').isHidden()) && (await page.locator('#kids-profile').isHidden()));
+  const mia = (await call('kids-profiles', { name: 'Mia' })).body.profile;
+  const ben = (await call('kids-profiles', { name: 'Ben' })).body.profile;
+  check('zwei Profile angelegt', mia && ben && mia.id === 1 && ben.id === 2);
+  check('doppelter Name abgelehnt', (await call('kids-profiles', { name: 'mia' })).status === 400);
+  const abos = (await call('kids-profiles')).body.abos || [];
+  const channel = abos.find(a => a.name === 'Testkanal');
+  check('Abo-Liste für die Eltern: ' + JSON.stringify(abos), !!channel);
+  if (channel) await call('kids-profiles', { id: ben.id, hidden: [channel.id] });
+  await page.evaluate(() => localStorage.removeItem('atlas-kids-profile'));
+  await page.reload();
+  await page.waitForSelector('#kids-who:not([hidden]) .kids-who-card', { timeout: 15000 }).catch(() => check('„Wer schaut?“ erscheint', false));
+  const names = await page.locator('.kids-who-card strong').allTextContents();
+  check('Auswahl zeigt beide Kinder: ' + names.join(','), names.join(',') === 'Mia,Ben');
+  await page.locator('.kids-who-card', { hasText: 'Ben' }).click();
+  await page.waitForFunction(() => document.getElementById('kids-who').hidden && document.querySelectorAll('.kids-tile').length > 0, null, { timeout: 15000 })
+    .catch(() => check('nach der Wahl erscheint die Kinderecke', false));
+  check('Namenschip zeigt Ben', (await page.locator('#kids-profile').textContent()) === 'Ben');
+  const chips = await page.locator('.kids-chip-name').allTextContents();
+  check('Ben sieht den ausgeblendeten Kanal nicht: ' + chips.join(','), !chips.includes('Testkanal'));
+  // Abspielstand landet bei Ben (kp2:), Mia bleibt unberührt
+  await page.evaluate(async () => {
+    const token = document.querySelector('meta[name=atlas-token]').content;
+    await fetch('/api/watch-progress', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Atlas-Token': token },
+      body: JSON.stringify({ key: 'job:profiltest', pos: 120, duration: 600, kids_profile: '2', info: { title: 'Profiltest', source: 'download', kind: 'movie' } }) });
+  });
+  const state = (await call('watch')).body || {};
+  const progress = state.progress || {};
+  check('Stand unter kp2:job:profiltest: ' + Object.keys(progress).join(','), !!progress['kp2:job:profiltest'] && !progress['job:profiltest']);
+  check('Ben-Stand nicht unter „Weiterschauen“ der Hauptansicht', !(state.continue || []).some(e => String(e.key || '').startsWith('kp')));
+  check('unbekanntes Profil beim Speichern abgelehnt', (await page.evaluate(async () => {
+    const token = document.querySelector('meta[name=atlas-token]').content;
+    return (await fetch('/api/watch-progress', { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Atlas-Token': token },
+      body: JSON.stringify({ key: 'job:x', pos: 120, duration: 600, kids_profile: '99' }) })).status;
+  })) === 400);
+  await page.locator('#kids-profile').click();
+  await page.locator('.kids-who-card', { hasText: 'Mia' }).click();
+  await page.waitForFunction(() => document.getElementById('kids-profile').textContent === 'Mia', null, { timeout: 15000 }).catch(() => check('Wechsel zu Mia', false));
+  const miaChips = await page.locator('.kids-chip-name').allTextContents();
+  check('Mia sieht den Kanal: ' + miaChips.join(','), miaChips.includes('Testkanal'));
+  for (const p of [mia, ben]) if (p) await call('kids-profiles', { action: 'delete', id: p.id });
+  await page.close();
+}
+
 (async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-kids-'));
   fs.mkdirSync(path.join(home, 'data')); fs.mkdirSync(path.join(home, 'downloads'));
@@ -415,6 +472,7 @@ async function providerFullscreen(browser, clip, problems) {
     await waitFor(url, 40);
     browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
     await kidsCorner(browser, url, clip, problems);
+    await kidsProfiles(browser, url, problems);
     await providerFullscreen(browser, clip, problems);
   } catch (e) {
     problems.push('Abbruch: ' + (e && e.stack || e));

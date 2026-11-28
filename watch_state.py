@@ -206,9 +206,11 @@ def _public(row):
 def overview(root):
     """Everything a page needs at its start: Weiterschauen, Merkliste, positions and marks by key."""
     with _db(root) as c:
-        started = c.execute('SELECT * FROM entries WHERE done=0 AND pos>? ORDER BY watched_at DESC LIMIT ?',
-                            (MIN_POSITION, MAX_CONTINUE)).fetchall()
-        marked = c.execute('SELECT * FROM entries WHERE favorite=1 ORDER BY marked_at DESC LIMIT ?', (MAX_MARKED,)).fetchall()
+        # 0.6.170: Stände weiterer Kinderprofile (kp<id>:…, kids_profiles.py) nicht unter Weiterschauen/Merkliste
+        started = c.execute("SELECT * FROM entries WHERE done=0 AND pos>? AND key NOT GLOB 'kp[0-9]*:*' "
+                            "ORDER BY watched_at DESC LIMIT ?", (MIN_POSITION, MAX_CONTINUE)).fetchall()
+        marked = c.execute("SELECT * FROM entries WHERE favorite=1 AND key NOT GLOB 'kp[0-9]*:*' ORDER BY marked_at DESC LIMIT ?",
+                           (MAX_MARKED,)).fetchall()
         recent = c.execute('SELECT key,pos,duration,done,watched_at FROM entries WHERE watched_at>0 ORDER BY watched_at DESC LIMIT ?',
                            (MAX_PROGRESS,)).fetchall()
         flags = c.execute('SELECT key,favorite,pinned FROM entries WHERE favorite=1 OR pinned=1').fetchall()

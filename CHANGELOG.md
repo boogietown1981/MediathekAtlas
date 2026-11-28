@@ -1,3 +1,12 @@
+## 0.6.170 – Kinderprofile (Abo-Profile Punkt 1–2); auf 0.6.169
+- Umfang 28.11.2026 (Koordinator, Dauerauftrag Abo-Profile/PIN): benannte Kinderprofile, Profilwahl, PIN folgt in 0.6.171.
+- Neues Modul `kids_profiles.py`, Tabelle `kids_profiles` (id AUTOINCREMENT, name, color, hidden = JSON-Liste ausgeblendeter Abo-Kennungen) in der Katalogdatenbank; höchstens 8 Profile, Namen eindeutig (ohne Groß-/Kleinschreibung), 1–30 Zeichen.
+- Gesehen-Stand je Profil in watch_state über ein Präfix: Profil 1 = bisherige Schlüssel (verlustfreie Übernahme), weitere `kp<id>:`. Hauptansicht zeigt `kp…`-Einträge nicht unter Weiterschauen/Merkliste.
+- API: GET/POST `/api/kids-profiles` (anlegen, ändern, entfernen; Abo-Liste für die Auswahl), `/api/kids` und `/api/kids-episodes` mit `?profile=` (Antwort: `profiles`, `profile`, `choose`), `/api/watch-progress` mit `kids_profile` (unbekannt → 400). Ereignis `kids_profiles_changed`.
+- Kinderecke: „Wer schaut?“ ab zwei Profilen, Namenschip zum Wechseln, Gerät merkt sich das Kind (localStorage). Elternbereich: Abschnitt „Kinderprofile“ (Name, Kanäle je Kind, Entfernen).
+- Ohne Profil verhält sich alles wie bisher. Kein Download-Doppel: Kanäle bleiben ein Abo.
+- Paket: `kids_profiles.py` in build_macos.py (NAS/Desktop nehmen alle *.py).
+
 ## 0.6.169 – Kinderecke: Reihenprüfung liest nur, was sie braucht; auf 0.6.168
 - Mac-Messung 0.6.168 (BEFUND-06168): kids_shows 4,3 s, davon facts 3,43 s für 40.184 Werke in 626 Reihen (basis 2,86 / episodes 1,48; facts steckt in beiden).
 - `show_basis` liest nur seine Stichprobe (SHOW_SAMPLE = 100 neueste Werke); 0.6.167 hatte dafür die ganze Reihe gelesen und zwischengespeichert.

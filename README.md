@@ -1,4 +1,9 @@
-# MediathekAtlas · 0.6.169
+# MediathekAtlas · 0.6.170
+
+## Neu in 0.6.170: Kinderprofile – „Wer schaut?“
+- Im Elternbereich (Einstellungen → Kinderecke · Eltern) ein Profil je Kind anlegen. Jedes Kind hat seinen eigenen Gesehen-Stand und sein eigenes „Weiterschauen“.
+- Je Kind lässt sich wählen, welche YouTube-Kanäle es sieht. Ein Kanal wird trotzdem nur einmal geladen.
+- Ab zwei Profilen fragt die Kinderecke beim Öffnen „Wer schaut?“; oben rechts lässt sich das Kind wechseln. Das erste Profil übernimmt den bisherigen Stand.
 
 ## Neu in 0.6.169: Kinderecke baut schneller auf
 - Bei großen Reihen (z. B. „logo!“ mit über 3.600 Folgen) prüft die Kinderecke nur noch so viele Folgen, bis eine passende gefunden ist, statt alle.

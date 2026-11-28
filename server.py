@@ -1270,14 +1270,29 @@ def get_kids_css(self,path):
 def get_kids_js(self,path):
     return self.send((Path(__file__).parent/'web'/'kids.js').read_bytes(),ctype='text/javascript')
 
+def _kids_profile(self):
+    """0.6.170: gewähltes Kinderprofil aus ?profile= (bei genau einem Profil dieses); (Profil, alle Profile)."""
+    import kids_profiles
+    q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
+    with db() as c:
+        found=kids_profiles.profiles(c)
+        chosen=kids_profiles.get(c,q.get('profile',[''])[0][:12]) if q.get('profile') else None
+    if chosen is None and len(found)==1:chosen=found[0]
+    return chosen,found
+
 @ROUTES.get('/api/kids')
 def get_kids(self,path):
-    import watch_state
+    import watch_state,kids_profiles
     parts={};started=time.monotonic()
-    marks=_timed(parts,'watch',lambda:watch_state.overview(ROOT).get('progress',{}))
+    profile,found=_kids_profile(self)
+    marks=_timed(parts,'watch',lambda:kids_profiles.marks(watch_state.overview(ROOT).get('progress',{}),profile))
     def abos():
-        with db() as c:return youtube_abos.kids(ROOT,c,watch=marks)
+        with db() as c:return kids_profiles.visible(youtube_abos.kids(ROOT,c,watch=marks),profile)
     data=_timed(parts,'abos',abos)
+    # 0.6.170: Kinderprofile – ab zwei Profilen fragt die Kinderecke ohne Wahl, wer schaut
+    data['profiles']=[{'id':p['id'],'name':p['name'],'color':p['color']} for p in found]
+    data['profile']=profile['id'] if profile else None
+    data['choose']=profile is None and len(found)>=2
     try:
         with db() as c:data['live_enabled']=kids_rules.live_enabled(c)   # 0.6.99
     except Exception:data['live_enabled']=False
@@ -1292,6 +1307,27 @@ def _kids_shelf():
     return kids_catalog.shelf(ROOT,db,modules=_UNIFIED_SOURCES,merge=ui_prefs.load(ROOT)['merge_duplicates'])
 
 # 0.6.99: Elternbereich der Kinderecke – Altersgrenze, Freigaben, „Wartet auf Freigabe“ (kids_rules.py)
+# 0.6.170: Kinderprofile (kids_profiles.py) – Elternbereich legt an, benennt, wählt Kanäle je Kind
+@ROUTES.get('/api/kids-profiles')
+def get_kids_profiles(self,path):
+    import kids_profiles
+    with db() as c:
+        found=kids_profiles.profiles(c)
+        abos=[{'id':ch['id'],'name':ch['name']} for ch in youtube_abos.kids(ROOT,c,watch={}).get('channels',[])]
+    return self.send({'profiles':found,'abos':abos,'max':kids_profiles.MAX_PROFILES,'colors':list(kids_profiles.COLORS)})
+
+@ROUTES.post('/api/kids-profiles')
+def post_kids_profiles(self,path,d):
+    import kids_profiles
+    try:
+        with db() as c:
+            if d.get('action')=='delete':result=kids_profiles.delete(c,d.get('id'));action='delete'
+            else:result=kids_profiles.save(c,d);action='save'
+            found=kids_profiles.profiles(c)
+    except ValueError as e:return self.send({'error':str(e)},400)
+    diagnostics.event('kids_profiles_changed',action=action,profiles=len(found),hidden=len(result.get('hidden') or []))
+    return self.send({'profile':result,'profiles':found})
+
 @ROUTES.get('/api/kids-rules')
 def get_kids_rules(self,path):
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
@@ -1356,8 +1392,10 @@ def get_kids_episodes(self,path):
     import watch_state
     q=urllib.parse.parse_qs(urllib.parse.urlsplit(self.path).query)
     try:
-        with db() as c:return self.send(kids_catalog.episodes(ROOT,c,_kids_shelf(),q.get('source',[''])[0][:20],q.get('series',[''])[0][:200],
-                                                             watch_state.overview(ROOT).get('progress',{})))
+        import kids_profiles
+        profile,_=_kids_profile(self)
+        marks=kids_profiles.marks(watch_state.overview(ROOT).get('progress',{}),profile)
+        with db() as c:return self.send(kids_catalog.episodes(ROOT,c,_kids_shelf(),q.get('source',[''])[0][:20],q.get('series',[''])[0][:200],marks))
     except ValueError as e:return self.send({'error':str(e)},404)
 
 @ROUTES.get('/api/kids-play')
@@ -2677,7 +2715,14 @@ def post_retry(self,path,d):
 
 @ROUTES.post('/api/watch-progress')
 def post_watch_progress(self,path,d):
-    result=watch_state.progress(ROOT,d.get('key'),d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info'))
+    key=d.get('key')
+    if d.get('kids_profile') not in (None,''):
+        # 0.6.170: Kinderecke mit Profil – eigener Stand je Kind (kids_profiles.key)
+        import kids_profiles
+        with db() as c:profile=kids_profiles.get(c,d.get('kids_profile'))
+        if profile is None:return self.send({'error':'Unbekanntes Kinderprofil'},400)
+        key=kids_profiles.key(profile,key)
+    result=watch_state.progress(ROOT,key,d.get('pos'),d.get('duration'),d.get('done') is True,d.get('info'))
     # 0.6.94: zu Ende gesehen → angefangene Serie gleich prüfen (series_autoload, sonst spätestens nach einer Minute)
     if result.get('done'):SERVICE.subscription_wake.set()
     return self.send(result)
