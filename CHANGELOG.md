@@ -1,3 +1,11 @@
+## 0.6.166 – Netzkino-Beschreibungen, Doppel innerhalb einer Reihe, Diagnose weggefallener Reihen; auf 0.6.165
+
+- Messung Teil C (vollstaendigkeit-c-20261127T172514-9323.txt): MovieDetails liefert longSynopsis (4/4), runtimeInSeconds nie; 3.752 Details schon gespeichert, aber `netzkino_catalog.summary` bei 3.944 von 3.958 leer – die Details flossen nie in den Katalog. Neu `netzkino_details.fill_catalog`: Beschreibung, fehlendes Jahr/FSK aus `netzkino_public_details` (einmal je Prozess beim ersten Zugriff, danach je neu geladenem Detail); vorhandene Werte bleiben. Ereignis `netzkino_descriptions_filled`. Dauer bleibt offen (Netzkino liefert sie nicht). Plex includeGuids: Messung zeigt keine Kennungen (nicht eingebaut).
+- Mac-Prüfung 0.6.165: TMNT (Pluto) S3E1/S3E324 je 1350 s doppelt innerhalb EINER Reihe → `episodes` wendet `_same_episode` auch auf die eigene Liste an.
+- Heidi nach Sperren/Zurücknehmen (schon in 0.6.161, Neustart behebt; HEIDI-UNTERSCHEIDUNGSTEST-06165.txt): Ursache nicht gefunden, hier nicht nachstellbar. Neu zur Eingrenzung: `kids_list_changed.removed_titles` mit Grund je Kachel (`keine_zulassung`, `keine_folge:<Weg>` aus `_kids_shows`, sonst `nicht_im_katalog` = fehlt schon in der Kategorie Kinder des Katalogs).
+- Nach „Zurücknehmen“ einer Sperre meldet der nächste fertige Aufbau `kids_undo_result` (title, back, reasons).
+- Tests: `tests/test_v06166.py` (4).
+
 ## 0.6.165 – Kinderecke: Befunde der Mac-Prüfung 0.6.164; auf 0.6.164
 
 - Mac-Prüfung 0.6.164 (BEFUND-06163-06164.txt): A behoben (0 von 9354 Titeln fehlen), Platzhalter 19 → 0, Sperren ok; offen: 4 Kacheln mit derselben Folge doppelt, weil ZDF-tivi/KiKA verschoben nummerieren (Conni S1E5/S1E6 685 s, Checkpoint S5E5/S5E8 1471 s, Rudis S1E1/S1E10 664 s); Heidi nach Zurücknehmen der Sperre dauerhaft weg (551 statt 552 Serien, kids_choices leer).

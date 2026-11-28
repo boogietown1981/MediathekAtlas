@@ -865,6 +865,7 @@ _GEN = [0]   # 0.6.112: eine vor invalidate() begonnene Liste wird nicht gespeic
 def _build_store(root, db, modules, merge, page):
     gen = _GEN[0]
     value = build(root, db, modules, merge, page)
+    _report_undone(value)
     with _LOCK:
         old = (_LAST.get(str(root)) if not value.get('pending') else None)
         if not value.get('pending'):
@@ -1133,6 +1134,8 @@ def apply_to_twins(c, root, kind, value, choice, title=''):
     import kids_rules
     if choice in ('', None, 'none'):
         row = c.execute('SELECT title, choice FROM kids_choices WHERE key=?', ('%s:%s' % (kind, value),)).fetchone()
+        if row and row[1] == 'block' and _title_key(row[0] or title):
+            UNDONE.add(_title_key(row[0] or title))
         if not row or not _title_key(row[0]):
             return 0
         title_key, done = _title_key(row[0]), 0
@@ -1517,6 +1520,7 @@ def _kids_shows(db, tiles):
                 drop.add(t['id'])
                 # 0.6.166 (Mac-Prüfung 0.6.165: Heidi nach Zurücknehmen weg): Grund je weggelassener Reihe für die Diagnose
                 DROPPED[t['id']] = 'keine_zulassung' if basis is None else 'keine_folge:' + basis
+                DROPPED_TITLES[t['id']] = _title_key(t.get('title'))
             else:
                 t['basis'] = basis
                 DROPPED.pop(t['id'], None)
@@ -1524,6 +1528,28 @@ def _kids_shows(db, tiles):
 
 
 DROPPED = {}   # 0.6.166: Kachel-Kennung -> Grund, aus dem letzten Aufbau (kids_list_changed)
+DROPPED_TITLES = {}   # Kachel-Kennung -> Titelschlüssel
+UNDONE = set()   # 0.6.166: Titelschlüssel zurückgenommener Sperren; der nächste fertige Aufbau meldet, ob sie wieder da sind
+
+
+def _report_undone(value):
+    """Nach „Zurücknehmen“: ist die Reihe wieder in der Liste, sonst warum nicht (Diagnose kids_undo_result)."""
+    if not UNDONE or value.get('pending'):
+        return
+    keys, present = set(UNDONE), {}
+    UNDONE.clear()
+    for t in value.get('movies', []) + value.get('series', []):
+        k = _title_key(t.get('title'))
+        if k in keys:
+            present[k] = t.get('id')
+    try:
+        import diagnostics
+        for k in sorted(keys):
+            reasons = sorted('%s=%s' % (i, DROPPED[i]) for i, tk in DROPPED_TITLES.items() if tk == k and i in DROPPED)
+            diagnostics.event('kids_undo_result', title=k[:80], back=k in present, tile=present.get(k, ''),
+                              reasons=reasons[:6] or ['nicht_im_katalog'])
+    except Exception:
+        pass
 
 
 # 0.6.112 (Mac-Prüfung 0.6.109: Young Crime zeigte 5 ZDF-Folgen, POV eine WDR-Folge „Rechtsextremismus unter

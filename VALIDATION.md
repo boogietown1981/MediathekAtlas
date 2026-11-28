@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.166 – Netzkino-Beschreibungen, Doppel in einer Reihe (27. November 2026)
+- Automatisch: tests/test_v06166.py (4: kids_undo_result, Doppel innerhalb einer Reihe, Grund weggefallener Kacheln, Beschreibung aus Details ohne Überschreiben), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.166.
+
 ## 0.6.165 – Kinderecke verschobene Nummern, Zurücknehmen (27. November 2026)
 - Automatisch: tests/test_v06165.py (7: Stillstand mit n-challenge erneuert yt-dlp, Schrittzeiten; verschobene Nummer gleiche Dauer einmal, andere Dauer/Nummern-Titel/Reihenname bleiben, Freigabe→Sperre→Zurücknehmen stellt Freigabe her, Teile ebenso, alte Tabelle bekommt Spalte), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.165.
 

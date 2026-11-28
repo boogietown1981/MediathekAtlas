@@ -119,9 +119,41 @@ def seed_lookup(content_id):
     except (OSError,ValueError,TypeError):return None
 
 
+_FILLED=set()   # 0.6.166: data folders whose catalogue got the stored descriptions in this process
+
+
+def fill_catalog(db, item_id=None):
+    """0.6.166 (Messung 27.11.: 3.944 von 3.958 Netzkino-Filmen ohne Beschreibung, aber 3.752 Filmdetails gespeichert):
+    the description and missing year/FSK from the stored public details into netzkino_catalog, where the catalogue
+    and the recognition (portal_enrichment: description) read them. Never overwrites a value. Returns rows changed."""
+    sql=('''SELECT d.item_id,d.payload FROM netzkino_public_details d JOIN netzkino_catalog n ON n.id=d.item_id
+            WHERE (COALESCE(n.summary,'')='' OR n.year IS NULL OR n.fsk IS NULL)'''+(' AND d.item_id=?' if item_id else ''))
+    changed=0
+    for row in db.execute(sql,(item_id,) if item_id else ()).fetchall():
+        try:detail=json.loads(row[1])
+        except (TypeError,ValueError):continue
+        if not isinstance(detail,dict):continue
+        text=_trim(detail.get('description') or detail.get('short_description'),750)
+        year=detail.get('year') if isinstance(detail.get('year'),int) else None
+        fsk=detail.get('fsk') if detail.get('fsk') in (0,6,12,16,18) else None
+        cur=db.execute('''UPDATE netzkino_catalog SET
+            summary=CASE WHEN COALESCE(summary,'')='' AND ?!='' THEN ? ELSE summary END,
+            year=COALESCE(year,?),fsk=COALESCE(fsk,?) WHERE id=?''',(text,text,year,fsk,row[0]))
+        changed+=cur.rowcount
+    return changed
+
+
 def _connect(root):
     db=netzkino._connect(root)
     db.executescript(SCHEMA)
+    key=str(Path(root).resolve())
+    if key not in _FILLED:
+        _FILLED.add(key)
+        try:
+            with db:changed=fill_catalog(db)
+            if changed:netzkino._notify('netzkino_descriptions_filled',rows=changed)
+        except sqlite3.Error:
+            _FILLED.discard(key)   # next call tries again (e.g. database busy)
     return db
 
 
@@ -219,6 +251,7 @@ def get(root,item_id,*,fetch=None,now=None):
                         fsk=COALESCE(fsk,?) WHERE id=? AND COALESCE(content_id,'')=''""",
                         (detail['content_id'],detail['year'],detail['duration_seconds'],
                          detail['poster'] or '',detail['fsk'],item_id))
+                fill_catalog(db,item_id)      # 0.6.166: description into the catalogue (recognition, Kinderecke)
             return {'details':{**fallback,**detail},'page_url':row['url'],
                     'cached':False,'error_type':None}
         except Exception as exc:

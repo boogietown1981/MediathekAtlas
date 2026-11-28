@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.165
+# MediathekAtlas · 0.6.166
+
+## Neu in 0.6.166: Netzkino-Beschreibungen, weniger Doppel in der Kinderecke
+- Netzkino-Filme bekommen ihre Beschreibung (und fehlendes Jahr/FSK) aus den schon geladenen Filmdetails; das hilft auch der Erkennung.
+- Kinderecke: dieselbe Folge erscheint auch innerhalb einer Reihe nur einmal (z. B. zwei Einträge gleicher Länge bei Pluto).
 
 ## Neu in 0.6.165: Kinderecke – verschoben nummerierte Folgen und „Zurücknehmen“
 - Zählen zwei Sender dieselbe Folge unterschiedlich (z. B. „Conni“ bei ZDF-tivi Folge 5, bei KiKA Folge 6), erscheint sie bei gleichem Titel und gleicher Länge nur einmal.
