@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.169 – Reihenprüfung stückweise (28. November 2026)
+- Automatisch: tests/test_v06169.py (3: Antwort gleich der Vollbewertung bei alter Folge hinter 250 neueren, mehrere Stücke nötig; Stichprobe liest nur 100; Sperre/ohne Grundlage), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.169.
+
 ## 0.6.168 – Kinderecke ohne Wartezeit, Teilzeiten (28. November 2026)
 - Automatisch: tests/test_v06168.py (7: Werk-Fakten gleich der 0.6.167-Abfrage mit und ohne MATERIALIZED, Teilzeiten gefüllt, unfertige Liste nur ein Hintergrund-Aufbau ohne Warten, ohne Liste wartend, wartender Aufbau meldet kids_shelf_refreshed, Undo ohne Grund), gesamte Suite, Node-Tests, Klicktests. Synthetische Messung 1,20 → 0,88 s (300 Reihen). Am Mac: PRUEFLISTE in releases/0.6.168.
 

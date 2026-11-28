@@ -1,3 +1,10 @@
+## 0.6.169 – Kinderecke: Reihenprüfung liest nur, was sie braucht; auf 0.6.168
+- Mac-Messung 0.6.168 (BEFUND-06168): kids_shows 4,3 s, davon facts 3,43 s für 40.184 Werke in 626 Reihen (basis 2,86 / episodes 1,48; facts steckt in beiden).
+- `show_basis` liest nur seine Stichprobe (SHOW_SAMPLE = 100 neueste Werke); 0.6.167 hatte dafür die ganze Reihe gelesen und zwischengespeichert.
+- `_has_episode` bewertet die neuesten Folgen stückweise (100, 400, 1.600 …) bis eine zulässige, aktive, nicht wortgesperrte Folge gefunden ist – gleiche Antwort wie vorher (Test gegen die Vollbewertung), meist nach dem ersten Stück. Wegeregel je Folge als `_path` (eine Stelle für episode_paths und die Prüfung).
+- `kids_shows_works` zählt jetzt die tatsächlich gelesenen Werke.
+- Offen: erste volle Kinderliste ~3 min nach dem Start (Katalogaufbau, nicht die Kinderecke).
+
 ## 0.6.168 – Kinderecke: unfertige Liste im Hintergrund, schlankere Reihenprüfung, Teilzeiten; auf 0.6.167
 - Mac-Prüfung 0.6.167 (BEFUND-06167): Heidi behoben; kids_shows weiter 7,08 s; kids_slow_parts „shelf“ 4,2–11,2 s.
 - Ursache „shelf“: `kids_catalog.shelf` baute eine unfertige Liste (pending, bis ~90 s nach einer Änderung) nach 5 s bei JEDEM Aufruf wartend neu – die Kinderecke fragt alle 8 s nach, mehrere Aufrufe bauten gleichzeitig. Jetzt höchstens ein Aufbau im Hintergrund, der Aufruf bekommt sofort die bisherige Liste. Ohne Liste (Start, nach Elternänderung) wird weiter gewartet, damit Sperren sofort gelten.

@@ -1,4 +1,7 @@
-# MediathekAtlas · 0.6.168
+# MediathekAtlas · 0.6.169
+
+## Neu in 0.6.169: Kinderecke baut schneller auf
+- Bei großen Reihen (z. B. „logo!“ mit über 3.600 Folgen) prüft die Kinderecke nur noch so viele Folgen, bis eine passende gefunden ist, statt alle.
 
 ## Neu in 0.6.168: Kinderecke antwortet ohne Wartezeit
 - Während der Katalog nach einer Änderung noch zusammengestellt wird, zeigt die Kinderecke sofort die bisherige Liste und erneuert sie im Hintergrund (vorher wartete jeder Aufruf 4–11 Sekunden).

@@ -1437,11 +1437,18 @@ def _work_facts(c, show_key, limit=None, query=None):
     Kindersender (nicht Livestream)."""
     sql, args, names_of = query or _work_query(c)
     if query is not None:
-        # 0.6.167: dieselbe Reihe fragen show_basis (Stichprobe) und _has_episode (alle) – einmal je Aufbau lesen
+        # 0.6.167: dieselbe Reihe einmal je Aufbau lesen. 0.6.168-Messung am Mac: facts 3,43 s für 40.184 Werke –
+        # die Stichprobe (show_basis) liest daher nur noch ihre SHOW_SAMPLE Werke, nicht die ganze Reihe
         full = names_of.get(('facts', show_key))
-        if full is None:
-            full = names_of[('facts', show_key)] = _read_facts(c, sql, args, names_of, show_key, None)
-        return full[:limit] if limit else list(full)
+        if full is not None:
+            return full[:limit] if limit else list(full)
+        if limit:
+            part = names_of.get(('facts', show_key, limit))
+            if part is None:
+                part = names_of[('facts', show_key, limit)] = _read_facts(c, sql, args, names_of, show_key, limit)
+            return list(part)
+        full = names_of[('facts', show_key)] = _read_facts(c, sql, args, names_of, show_key, None)
+        return list(full)
     return _read_facts(c, sql, args, names_of, show_key, limit)
 
 
@@ -1462,6 +1469,7 @@ def _read_facts(c, sql, args, names_of, show_key, limit):
         against = not is_kids and (bool(is_bad) or bool(names - friendly))
         out.append((wid, bool(is_kids), against, bool(sender), bool(live)))
     _part('facts', began)
+    names_of[('read', show_key)] = names_of.get(('read', show_key), 0) + len(out)   # 0.6.169: gelesene Werke
     return out
 
 
@@ -1578,7 +1586,7 @@ def _kids_shows(db, tiles, timings=None):
                     DROPPED.pop(t['id'], None)
                 done = time.monotonic()
                 parts['episodes'] += done - middle
-                works = len(query[2].get(('facts', t['series']['show'])) or ())
+                works = query[2].get(('read', t['series']['show']), 0)
                 slow.append((done - started, str(t.get('title') or '')[:40], works))
     finally:
         _PARTS[0] = None
@@ -1686,46 +1694,79 @@ def _episode_paths(c, show_key, basis=None, query=None):
         basis = show_basis(c, show_key, _show_title(c, show_key), query)
     if blocked is None or basis is None:
         return {f[0]: None for f in facts}
-    allowed = {r[0] for r in c.execute("SELECT substr(k.key,6) FROM kids_choices k JOIN works w ON w.id=substr(k.key,6) "
-                                       "WHERE k.choice='allow' AND k.key LIKE 'work:%' AND w.show_key=?", (show_key,))}
-    out = {}
-    for wid, kids, against, sender, live in facts:
-        if live or wid in blocked:
-            path = None
-        elif wid in allowed:
-            path = 'freigabe'
-        elif sender:
-            path = 'sender'
-        elif basis == 'jugend':
-            path = None
-        elif kids:
-            path = 'regel'
-        elif basis in ('reihe', 'freigabe') and not against:
-            path = basis
-        elif basis == 'anteil' and not against:
-            path = 'anteil'
-        else:
-            path = None
-        out[wid] = path
-    return out
+    allowed = _allowed_works(c, show_key)
+    return {f[0]: _path(f, blocked, allowed, basis) for f in facts}
+
+
+def _allowed_works(c, show_key):
+    return {r[0] for r in c.execute("SELECT substr(k.key,6) FROM kids_choices k JOIN works w ON w.id=substr(k.key,6) "
+                                    "WHERE k.choice='allow' AND k.key LIKE 'work:%' AND w.show_key=?", (show_key,))}
+
+
+def _path(fact, blocked, allowed, basis):
+    """Weg EINER Folge (siehe _episode_paths)."""
+    wid, kids, against, sender, live = fact
+    if live or wid in blocked:
+        return None
+    if wid in allowed:
+        return 'freigabe'
+    if sender:
+        return 'sender'
+    if basis == 'jugend':
+        return None
+    if kids:
+        return 'regel'
+    if basis in ('reihe', 'freigabe') and not against:
+        return basis
+    if basis == 'anteil' and not against:
+        return 'anteil'
+    return None
 
 
 def _has_episode(c, show_key, basis, query=None):
-    """Mindestens eine zulässige Folge mit aktivem Angebot, deren Titel nicht gesperrt ist (außer Kindersender/Freigabe)."""
-    paths = episode_paths(c, show_key, basis, query)
-    # Folgen vom Kindersender oder mit Freigabe: Sperrwörter gelten dort nicht (wie episodes/work_allowed)
-    if any(p in ('freigabe', 'sender') and _active(c, wid) for wid, p in paths.items()):
-        return True
-    ok = [wid for wid, path in paths.items() if path]
+    """Mindestens eine zulässige Folge mit aktivem Angebot, deren Titel nicht gesperrt ist (außer Kindersender/Freigabe).
+
+    0.6.169 (Mac-Messung 0.6.168: facts 3,43 s, logo! 3.631 Werke): nicht mehr alle Folgen bewerten, sondern die
+    neuesten in Stücken von HAS_EPISODE_CHUNK, bis eine passt – gleiche Antwort, meist nach dem ersten Stück."""
+    import kids_rules
+    if basis is None:
+        return False
+    blocked = kids_rules.blocked_works(c, show_key)
+    if blocked is None:
+        return False
+    allowed = _allowed_works(c, show_key)
+    sql, args, names_of = query or _work_query(c)
+    full = names_of.get(('facts', show_key))
     chans = _kids_channels()
-    for i in range(0, len(ok), 500):
-        part = ok[i:i + 500]
-        for wid, title, otitle, ch in c.execute(
-                "SELECT w.id, w.title, json_extract(o.payload,'$.title'), lower(trim(json_extract(o.payload,'$.channel'))) "
-                "FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.id IN (%s)" % ','.join('?' * len(part)), part):
-            if ch in chans or not word_blocked(otitle):
-                return True
-    return False
+    offset, limit = 0, HAS_EPISODE_CHUNK
+    while True:
+        if full is not None:
+            facts = full[offset:limit]
+        else:
+            # je Stück die vierfache Menge lesen (100, 400, 1.600 …), damit große Reihen nicht quadratisch kosten
+            read = _work_facts(c, show_key, limit, (sql, args, names_of))
+            facts = read[offset:]
+        if not facts:
+            return False
+        paths = {f[0]: _path(f, blocked, allowed, basis) for f in facts}
+        # Folgen vom Kindersender oder mit Freigabe: Sperrwörter gelten dort nicht (wie episodes/work_allowed)
+        if any(p in ('freigabe', 'sender') and _active(c, wid) for wid, p in paths.items()):
+            return True
+        ok = [wid for wid, path in paths.items() if path]
+        if ok:
+            for wid, title, otitle, ch in c.execute(
+                    "SELECT w.id, w.title, json_extract(o.payload,'$.title'), lower(trim(json_extract(o.payload,'$.channel'))) "
+                    "FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.id IN (%s)" % ','.join('?' * len(ok)), ok):
+                if ch in chans or not word_blocked(otitle):
+                    return True
+        if offset + len(facts) < limit:
+            return False
+        offset, limit = limit, limit * 4
+        HAS_EPISODE_CHUNK_GROWTH[0] += 1
+
+
+HAS_EPISODE_CHUNK = 100
+HAS_EPISODE_CHUNK_GROWTH = [0]   # Diagnose/Test: wie oft ein weiteres Stück nötig war
 
 
 def _active(c, wid):
