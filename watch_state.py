@@ -191,6 +191,14 @@ def forget(root, key):
     return {'ok': True}
 
 
+def forget_prefix(root, prefix):
+    """0.6.172 (Mac-Prüfung 0.6.170, Hinweis b): alle Stände eines entfernten Kinderprofils (kp<id>:…) löschen."""
+    if not re.fullmatch(r'kp[0-9]+:', str(prefix or '')):
+        raise ValueError('Ungültiges Präfix')
+    with _db(root) as c:
+        return c.execute("DELETE FROM entries WHERE substr(key,1,?)=?", (len(prefix), prefix)).rowcount
+
+
 def _prune(c, key):
     c.execute('DELETE FROM entries WHERE key=? AND favorite=0 AND pinned=0 AND watched_at=0', (key,))
 

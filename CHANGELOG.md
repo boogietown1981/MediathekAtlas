@@ -1,4 +1,5 @@
-## 0.6.172 – PIN für den Elternbereich (Abo-Profile/PIN Punkt 3); auf 0.6.171
+## 0.6.172 – PIN für den Elternbereich (Abo-Profile/PIN Punkt 3), Hinweise Kinderprofile; auf 0.6.171
+- Mac-Prüfung 0.6.170 (BEFUND-06170-06171), Hinweis a: Profilwechsel per Chip bei offener Folgenliste zeigte noch die Balken des vorigen Kindes → Folgenliste wird mit dem neuen Profil neu geladen. Hinweis b: kp<id>-Einträge blieben nach Entfernen in watch.sqlite3 → `watch_state.forget_prefix` beim Entfernen (Profil 1 = bisheriger Stand bleibt), Ereignis kids_profiles_changed mit `forgotten`.
 - Neues Modul `kids_lock.py`: PIN 4–6 Ziffern, gespeichert nur als PBKDF2-SHA256 mit Salz (120.000 Runden), Tabellen `kids_pin`, `kids_locks` in der Katalogdatenbank. Die PIN steht nie in Antworten, Ereignissen oder Protokollen (Ereignisse kids_pin_changed, kids_locked, kids_unlocked, kids_unlock_failed nur mit Aktion/Zählern).
 - Mit PIN sperrt die Kinderecke beim Öffnen den Browser (Cookie `atlas_kids_lock`, HttpOnly, SameSite=Strict). Gesperrt: GET nur Kinderecke, Bilder, Wiedergabe (/api/stream, /api/download-file), POST nur Abspielstand und Entsperren; die Hauptansicht leitet auf /kinder um, alles andere 423.
 - „Eltern“ (2 s halten) fragt dann die PIN über ein Ziffernfeld ab. Ab 5 Fehlversuchen wachsende Pause (30 s, 60 s, … höchstens 15 min), auch für die richtige PIN.

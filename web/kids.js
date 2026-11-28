@@ -481,7 +481,11 @@
     for (const p of state.profiles) {
       const b = make('button', 'kids-who-card'); b.type = 'button'; b.style.background = p.color;
       b.append(make('span', 'kids-who-letter', (p.name || '?').slice(0, 1).toLocaleUpperCase('de')), make('strong', '', p.name));
-      b.onclick = () => { storeProfile(p.id); state.profile = String(p.id); box.hidden = true; state.sig = ''; window.__kidsForce = true; load(); };
+      b.onclick = () => {
+        storeProfile(p.id); state.profile = String(p.id); box.hidden = true; state.sig = ''; window.__kidsForce = true; load();
+        // 0.6.172 (Mac-Prüfung 0.6.170, Hinweis a): offene Folgenliste mit dem Stand des neuen Kindes neu laden
+        if (state.show) { const s = state.show; s.loaded = false; s.failed = ''; openSeries(s); }
+      };
       list.append(b);
     }
     box.hidden = false;

@@ -72,7 +72,7 @@ function renderProfiles(d){
     cb.onchange=()=>{if(cb.checked)hidden.delete(String(a.id));else hidden.add(String(a.id));profileCall({id:p.id,hidden:[...hidden].map(Number)},cb);};
     lab.append(cb,document.createTextNode(' '+a.name));det.append(lab);}
    row.append(det);}
-  row.append(button('Entfernen','',e=>profileCall({action:'delete',id:p.id},e.target,'Profil „'+p.name+'“ entfernt.')));
+  row.append(button('Entfernen','',e=>profileCall({action:'delete',id:p.id},e.target,'Profil „'+p.name+'“ entfernt'+(p.id===1?' – der bisherige Gesehen-Stand bleibt.':', sein Gesehen-Stand ist gelöscht.'))));
   profBox.append(row);}
  if(profAdd)profAdd.disabled=list.length>=(d.max||8);
 }

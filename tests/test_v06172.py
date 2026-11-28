@@ -1,4 +1,5 @@
-"""0.6.172 – PIN für den Elternbereich (Umfang 28.11.2026, Punkt 3). Browser-Ablauf: tests/browser/kids_corner.cjs (kidsPin)."""
+"""0.6.172 – PIN für den Elternbereich (Umfang 28.11.2026, Punkt 3). Browser-Ablauf: tests/browser/kids_corner.cjs (kidsPin).
+Dazu Mac-Prüfung 0.6.170 (BEFUND-06170-06171): (a) Folgenliste nach Profilwechsel neu, (b) Stände eines entfernten Profils weg."""
 import sqlite3
 import sys
 import unittest
@@ -9,6 +10,8 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 sys.path.insert(0, str(ROOT / 'tests'))
 import kids_lock as kl  # noqa: E402
+import tempfile  # noqa: E402
+import watch_state  # noqa: E402
 from _wiring import routed  # noqa: E402
 
 
@@ -72,6 +75,24 @@ class PinTests(unittest.TestCase):
     def test_cookie(self):
         self.assertEqual(kl.cookie('abc'), 'atlas_kids_lock=abc; Path=/; HttpOnly; SameSite=Strict; Max-Age=%d' % kl.COOKIE_SECONDS)
         self.assertTrue(kl.cookie('', 0).endswith('Max-Age=0'))
+
+
+class ProfileHintTests(unittest.TestCase):
+    def test_forget_prefix_only_that_profile(self):
+        with tempfile.TemporaryDirectory() as root:
+            for key in ('job:a', 'kp2:job:a', 'kp2:netzkino:x', 'kp12:job:a'):
+                watch_state.progress(root, key, 120, 600, info={'title': key})
+            self.assertEqual(watch_state.forget_prefix(root, 'kp2:'), 2)
+            self.assertEqual(sorted(watch_state.overview(root)['progress']), ['job:a', 'kp12:job:a'])
+            for bad in ('', 'job:', 'kp:', "kp2:' OR 1", 'kp2'):
+                with self.assertRaises(ValueError):
+                    watch_state.forget_prefix(root, bad)
+
+    def test_wiring(self):
+        js = (ROOT / 'web' / 'kids.js').read_text(encoding='utf-8')
+        self.assertIn('if (state.show) { const s = state.show; s.loaded = false;', js)
+        server = (ROOT / 'server.py').read_text(encoding='utf-8')
+        self.assertIn('watch_state.forget_prefix(ROOT,kids_profiles.prefix(result))', server)
 
 
 class WiringTests(unittest.TestCase):

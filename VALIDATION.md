@@ -1,7 +1,7 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
 ## 0.6.172 – PIN für den Elternbereich (28. November 2026)
-- Automatisch: tests/test_v06172.py (6: PIN-Regeln inkl. Zeilenumbruch/Unicode-Ziffern, nur Salz+Hash, Sperre nur mit PIN, entfernte PIN gibt frei, Fehlversuche und wachsende Pause, erlaubte Pfade, Cookie, Verdrahtung, keine PIN in Ereignissen), Klicktest tests/browser/kids_corner.cjs (kidsPin: Sperre per Cookie, 423, Umleitung der Hauptansicht, PIN-Feld falsch/richtig, Entsperren, Entfernen), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.172. Netzwerkmodus (Anmeldung vor dem Zurücksetzen) nur über die bestehende Anmeldeprüfung abgedeckt, nicht eigens am NAS geprüft.
+- Automatisch: tests/test_v06172.py (8: Profil-Hinweise – nur Stände des entfernten Profils gelöscht, ungültige Präfixe abgelehnt, Folgenliste nach Wechsel; dazu PIN-Regeln inkl. Zeilenumbruch/Unicode-Ziffern, nur Salz+Hash, Sperre nur mit PIN, entfernte PIN gibt frei, Fehlversuche und wachsende Pause, erlaubte Pfade, Cookie, Verdrahtung, keine PIN in Ereignissen), Klicktest tests/browser/kids_corner.cjs (kidsPin: Sperre per Cookie, 423, Umleitung der Hauptansicht, PIN-Feld falsch/richtig, Entsperren, Entfernen), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.172. Netzwerkmodus (Anmeldung vor dem Zurücksetzen) nur über die bestehende Anmeldeprüfung abgedeckt, nicht eigens am NAS geprüft.
 
 ## 0.6.171 – Unfertige Kinderliste baut sich selbst fertig (28. November 2026)
 - Automatisch: tests/test_v06171.py (3: zweimal unfertig, dann fertig – ohne weiteren Aufruf entsteht die volle Liste; Grenze 30 min; nur ein Nachlauf gleichzeitig), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.171.

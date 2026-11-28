@@ -1376,7 +1376,11 @@ def post_kids_profiles(self,path,d):
             else:result=kids_profiles.save(c,d);action='save'
             found=kids_profiles.profiles(c)
     except ValueError as e:return self.send({'error':str(e)},400)
-    diagnostics.event('kids_profiles_changed',action=action,profiles=len(found),hidden=len(result.get('hidden') or []))
+    forgotten=0
+    if action=='delete' and kids_profiles.prefix(result):
+        # 0.6.172: Stände des entfernten Kindes mitlöschen (Profil 1 = bisheriger Stand bleibt)
+        forgotten=watch_state.forget_prefix(ROOT,kids_profiles.prefix(result))
+    diagnostics.event('kids_profiles_changed',action=action,profiles=len(found),hidden=len(result.get('hidden') or []),forgotten=forgotten)
     return self.send({'profile':result,'profiles':found})
 
 @ROUTES.get('/api/kids-rules')

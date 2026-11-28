@@ -451,6 +451,8 @@ async function kidsProfiles(browser, url, problems) {
   const miaChips = await page.locator('.kids-chip-name').allTextContents();
   check('Mia sieht den Kanal: ' + miaChips.join(','), miaChips.includes('Testkanal'));
   for (const p of [mia, ben]) if (p) await call('kids-profiles', { action: 'delete', id: p.id });
+  const after = ((await call('watch')).body || {}).progress || {};
+  check('Stand des entfernten Profils gelöscht (0.6.172)', !after['kp2:job:profiltest']);
   await page.close();
 }
 

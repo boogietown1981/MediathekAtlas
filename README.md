@@ -3,6 +3,7 @@
 ## Neu in 0.6.172: PIN für den Elternbereich
 - Unter Einstellungen → Kinderecke · Eltern lässt sich eine PIN (4–6 Ziffern) setzen. Wird dann die Kinderecke geöffnet, zeigt dieser Browser nur noch die Kinderecke; „Eltern“ fragt die PIN ab.
 - Die PIN schützt nur den Browser, in dem die Kinderecke geöffnet wurde. PIN vergessen: MediathekAtlas in einem anderen Browser öffnen und dort entfernen.
+- Kinderprofile: Nach einem Wechsel zeigt eine offene Folgenliste gleich den Stand des neuen Kindes; ein entferntes Profil nimmt seinen Gesehen-Stand mit.
 
 ## Neu in 0.6.171: Kinderecke nach dem Start gleich vollständig
 - Die Kinderecke stellt ihre Liste nach dem Start von selbst fertig. Vorher blieb sie bis zum ersten Besuch bei einer vorläufigen Auswahl (z. B. 14 Serien), und seit 0.6.168 sah der erste Besucher diese Auswahl.
