@@ -1,3 +1,11 @@
+## 0.6.168 – Kinderecke: unfertige Liste im Hintergrund, schlankere Reihenprüfung, Teilzeiten; auf 0.6.167
+- Mac-Prüfung 0.6.167 (BEFUND-06167): Heidi behoben; kids_shows weiter 7,08 s; kids_slow_parts „shelf“ 4,2–11,2 s.
+- Ursache „shelf“: `kids_catalog.shelf` baute eine unfertige Liste (pending, bis ~90 s nach einer Änderung) nach 5 s bei JEDEM Aufruf wartend neu – die Kinderecke fragt alle 8 s nach, mehrere Aufrufe bauten gleichzeitig. Jetzt höchstens ein Aufbau im Hintergrund, der Aufruf bekommt sofort die bisherige Liste. Ohne Liste (Start, nach Elternänderung) wird weiter gewartet, damit Sperren sofort gelten.
+- `kids_shelf_refreshed` auch für wartende Aufbauten (`via`), dazu `steps.kids_shows_parts` (query/facts/channels/basis/episodes), `kids_shows_count`, `kids_shows_works`, `kids_shows_slowest` (Titel|Werke|Sekunden).
+- Werk-Fakten je Reihe (`_work_query`): Livestream- und Ausschluss-Prüfung je Werk einmal statt 4×/2× (CTE, `MATERIALIZED` ab SQLite 3.35). Synthetische DB 300 Reihen/15.245 Werke: 1,20 → 0,88 s, Ergebnis gleich. Die 0.6.167-Zwischenspeicher wirkten am Mac nicht messbar; ob die Abfrage oder etwas anderes die 7 s ausmacht, zeigen jetzt die Teilzeiten.
+- `kids_undo_result`: `reasons` leer, wenn die Reihe wieder da ist.
+- Netzkino-Beschreibungen (0.6.166): kein Erkennungs-Nachlauf nötig – die Erkennung vergleicht Titel/Jahr, die Anbieterbeschreibung dient nur als Ersatztext (metadata.py).
+
 ## 0.6.167 – Veraltete Katalogliste nach Elternänderung, schnellere Reihenprüfung; auf 0.6.166
 
 - Heidi (seit mindestens 0.6.161; HEIDI-EINGRENZUNG-06166.txt): nach Sperren und Zurücknehmen zeigte die Suche Heidi, die sortierte Kinder-Serienliste (`catalog._listing_groups`, Listenspeicher) nicht – total 1029 → 1028, bis LISTING_TTL (10 min) oder Neustart. Ursache: eine Aggregation, die während der Sperre begann (Hintergrund-Erneuerung bzw. erster Aufbau), speicherte ihr Ergebnis nach `invalidate_listings()` als frisch; Wartende auf einen alten ersten Aufbau bekamen dessen Ergebnis. Neu `_LISTING_GEN`: jede Änderung erhöht den Stand, ältere Ergebnisse werden nicht gespeichert, wartende erste Aufbauten werden geweckt und neu gestartet; der Endmarker entfernt nur den eigenen Eintrag. Nachgebaut in `StaleListingTests` (beide Tests scheitern am alten Code).

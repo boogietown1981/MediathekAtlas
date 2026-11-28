@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import threading
 import time
 
@@ -489,7 +490,7 @@ def _finish(db, root, out, pending, timings=None):
         now = time.monotonic()
         timings[name] = round(timings.get(name, 0) + now - clock[0], 2)
         clock[0] = now
-    out['series'] = _kids_shows(db, out['series'])
+    out['series'] = _kids_shows(db, out['series'], timings)
     lap('kids_shows')
     _fill_pictures(db, out)
     lap('pictures')
@@ -850,21 +851,33 @@ def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
             age = now - hit[0]
             if age <= (5.0 if hit[1].get('pending') else TTL):
                 return hit[1]
-            if not hit[1].get('pending'):
-                if key not in _BUILDING:
-                    _BUILDING.add(key)
-                    threading.Thread(target=_refresh, args=(root, db, modules, merge, page), daemon=True,
-                                     name='kids_shelf_refresh').start()
-                return hit[1]
-    return _build_store(root, db, modules, merge, page)
+            # 0.6.168 (Mac-Prüfung 0.6.167: kids_slow_parts „shelf“ 4,2–11,2 s je Aufruf): auch eine noch unfertige
+            # Liste (pending, Katalog baut nach einer Änderung bis 90 s auf) wird im Hintergrund erneuert – vorher
+            # baute jeder Aufruf nach 5 s die ganze Liste wartend neu, mehrere Aufrufe auch gleichzeitig
+            if key not in _BUILDING:
+                _BUILDING.add(key)
+                threading.Thread(target=_refresh, args=(root, db, modules, merge, page), daemon=True,
+                                 name='kids_shelf_refresh').start()
+            return hit[1]
+    return _build_store(root, db, modules, merge, page, via='wartend')
 
 
 _GEN = [0]   # 0.6.112: eine vor invalidate() begonnene Liste wird nicht gespeichert (alte Altersgrenze/Freigabe)
 
 
-def _build_store(root, db, modules, merge, page):
+def _build_store(root, db, modules, merge, page, via='hintergrund'):
     gen = _GEN[0]
+    started = time.monotonic()
     value = build(root, db, modules, merge, page)
+    seconds = time.monotonic() - started
+    if seconds >= 2:            # 0.6.82 (Mac-Prüfung 0.6.81): langsame Erneuerung in der Diagnose sichtbar
+        try:                    # 0.6.168: auch wartende Aufbauten (vorher nur der Hintergrund)
+            import diagnostics
+            diagnostics.event('kids_shelf_refreshed', seconds=round(seconds, 2), movies=len(value.get('movies') or []),
+                              series=len(value.get('series') or []), pending=bool(value.get('pending')), via=via,
+                              steps=value.get('timings') or {})
+        except Exception:
+            pass
     _report_undone(value)
     with _LOCK:
         old = (_LAST.get(str(root)) if not value.get('pending') else None)
@@ -896,15 +909,8 @@ def _log_change(old, new):
 
 
 def _refresh(root, db, modules, merge, page):
-    started = time.monotonic()
     try:
-        value = _build_store(root, db, modules, merge, page)
-        seconds = time.monotonic() - started
-        if seconds >= 2:            # 0.6.82 (Mac-Prüfung 0.6.81): langsame Erneuerung in der Diagnose sichtbar
-            import diagnostics
-            diagnostics.event('kids_shelf_refreshed', seconds=round(seconds, 2), movies=len(value.get('movies') or []),
-                              series=len(value.get('series') or []), pending=bool(value.get('pending')),
-                              steps=value.get('timings') or {})
+        _build_store(root, db, modules, merge, page)
     except Exception:
         pass                       # die bisherige Liste bleibt; der nächste Aufruf versucht es erneut
     finally:
@@ -1391,6 +1397,10 @@ def show_name_blocked(title):
     return bool(NOT_KIDS_SHOW.search(title)) and not KIDS_NAME.search(title)
 
 
+# MATERIALIZED erst ab SQLite 3.35 (ältere NAS-Pythons): dort ohne Schlüsselwort, Ergebnis gleich
+_MATERIALIZED = 'MATERIALIZED ' if sqlite3.sqlite_version_info >= (3, 35) else ''
+
+
 def _work_query(c):
     """Abfrage je Reihe vorbereiten (Kategorie-Etiketten und Kinderreihen einmal lesen, nicht je Reihe)."""
     import catalog
@@ -1404,14 +1414,17 @@ def _work_query(c):
     live, live_args = kids_rules.live_clause()
     # 0.6.109: Livestreams zählen nie als Kinderprogramm (auch nicht „KiKA Livestream“) und fallen immer heraus
     chans = list(kids_rules.ALWAYS_CHANNELS)
-    sender = ("(NOT %s AND EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
-              "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s)))" % (live, ','.join('?' * len(chans))))
-    sql = ("SELECT w.id, (NOT %s AND ((%s) OR ((%s) AND NOT %s))) AS kids, (%s OR %s) AS bad, "
-           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres, %s AS sender, "
-           "%s AS live FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?"
-           % (live, kids, sig, bad_sql, live, bad_sql, sender, live))
-    return sql, (list(live_args) + list(kids_args) + list(sig_args) + bad + list(live_args) + bad
-                 + list(live_args) + chans + list(live_args)), {}
+    sender = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
+              "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s))" % ','.join('?' * len(chans)))
+    # 0.6.168 (Mac-Prüfung 0.6.167: kids_shows weiter 7,08 s): Livestream- und Ausschluss-Prüfung je Werk EINMAL
+    # (vorher 4× bzw. 2× je Werk); Reihe und Grenze als ?1/?2 vorn. Synthetisch 300 Reihen/15.245 Werke 1,20 → 0,88 s.
+    sql = ("WITH p(show, lim) AS (SELECT ?1, ?2), "
+           "f AS %s(SELECT w.id AS id, w.rowid AS r, %s AS live, %s AS bad FROM works w, p WHERE w.show_key=p.show) "
+           "SELECT f.id, (NOT f.live AND ((%s) OR ((%s) AND NOT f.bad))) AS kids, (f.live OR f.bad) AS bad, "
+           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres, "
+           "(NOT f.live AND %s) AS sender, f.live AS live FROM f JOIN works w ON w.id=f.id "
+           "ORDER BY f.r DESC LIMIT (SELECT lim FROM p)" % (_MATERIALIZED, live, bad_sql, kids, sig, sender))
+    return sql, list(live_args) + bad + list(kids_args) + list(sig_args) + chans, {}
 
 
 def _work_rows(c, show_key, limit=None, query=None):
@@ -1434,9 +1447,10 @@ def _work_facts(c, show_key, limit=None, query=None):
 
 def _read_facts(c, sql, args, names_of, show_key, limit):
     import categories
+    began = time.monotonic()
     out = []
     friendly = set(KIDS_FRIENDLY)
-    for wid, is_kids, is_bad, genres, sender, live in c.execute(sql, args + [show_key, int(limit or -1)]):
+    for wid, is_kids, is_bad, genres, sender, live in c.execute(sql, [show_key, int(limit or -1)] + list(args)):
         names = set()
         for raw in (genres or '').split('\x1f'):
             if raw:
@@ -1447,6 +1461,7 @@ def _read_facts(c, sql, args, names_of, show_key, limit):
         # auch neben einem Ausschluss-Genre zu, sonst schließt die Regel es selbst aus
         against = not is_kids and (bool(is_bad) or bool(names - friendly))
         out.append((wid, bool(is_kids), against, bool(sender), bool(live)))
+    _part('facts', began)
     return out
 
 
@@ -1492,13 +1507,17 @@ def show_basis(c, show_key, title='', query=None):
 def _kids_channel_works(c, show_key, mixed=True):
     """Hat die Reihe Folgen vom Kindersender UND (mixed) Folgen ohne Kindersender-Angebot (gemischte Reihe)?"""
     import kids_rules
+    began = time.monotonic()
     live, live_args = kids_rules.live_clause()
     chans = list(kids_rules.ALWAYS_CHANNELS)
     on_kids = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
                "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s))" % ','.join('?' * len(chans)))
     has = lambda neg: c.execute("SELECT 1 FROM works w WHERE w.show_key=? AND %s%s AND NOT %s LIMIT 1" % (neg, on_kids, live),
                                 [show_key] + chans + live_args).fetchone()
-    return bool(has('') and (has('NOT ') or not mixed))
+    try:
+        return bool(has('') and (has('NOT ') or not mixed))
+    finally:
+        _part('channels', began)
 
 
 def _curated_topic(c, show_key, memo=None):
@@ -1526,27 +1545,60 @@ def show_is_kids(c, show_key, title='', query=None):
     return show_basis(c, show_key, title, query) is not None
 
 
-def _kids_shows(db, tiles):
+def _kids_shows(db, tiles, timings=None):
     """Nur Reihen der Mediatheken behalten, die selbst Kinderprogramm sind (eine Verbindung für alle)."""
     shows = [t for t in tiles if t.get('source') == 'mediatheken' and (t.get('series') or {}).get('show')]
     if not shows or db is None:
         return tiles
-    with db() as c:
-        query = _work_query(c)
-        drop = set()
-        for t in shows:
-            basis = show_basis(c, t['series']['show'], t.get('title'), query)
-            # 0.6.112 (Mac-Prüfung 0.6.109: „#Ukraine · Mein Land im Krieg“ mit 0 Folgen): ohne eine zulässige,
-            # abspielbare Folge keine Kachel
-            if basis is None or not _has_episode(c, t['series']['show'], basis, query):
-                drop.add(t['id'])
-                # 0.6.166 (Mac-Prüfung 0.6.165: Heidi nach Zurücknehmen weg): Grund je weggelassener Reihe für die Diagnose
-                DROPPED[t['id']] = 'keine_zulassung' if basis is None else 'keine_folge:' + basis
-                DROPPED_TITLES[t['id']] = _title_key(t.get('title'))
-            else:
-                t['basis'] = basis
-                DROPPED.pop(t['id'], None)
+    # 0.6.168 (Mac-Prüfung 0.6.167: kids_shows 7,08 s, Optimierung wirkte nicht): Teilzeiten messen statt raten –
+    # query/facts/channels/basis/episodes und die langsamsten Reihen gehen mit kids_shelf_refreshed in steps
+    parts = {'query': 0.0, 'facts': 0.0, 'channels': 0.0, 'basis': 0.0, 'episodes': 0.0}
+    slow = []
+    _PARTS[0] = parts
+    try:
+        with db() as c:
+            began = time.monotonic()
+            query = _work_query(c)
+            parts['query'] = time.monotonic() - began
+            drop = set()
+            for t in shows:
+                started = time.monotonic()
+                basis = show_basis(c, t['series']['show'], t.get('title'), query)
+                middle = time.monotonic()
+                parts['basis'] += middle - started
+                # 0.6.112 (Mac-Prüfung 0.6.109: „#Ukraine · Mein Land im Krieg“ mit 0 Folgen): ohne eine zulässige,
+                # abspielbare Folge keine Kachel
+                if basis is None or not _has_episode(c, t['series']['show'], basis, query):
+                    drop.add(t['id'])
+                    # 0.6.166 (Mac-Prüfung 0.6.165: Heidi nach Zurücknehmen weg): Grund je weggelassener Reihe
+                    DROPPED[t['id']] = 'keine_zulassung' if basis is None else 'keine_folge:' + basis
+                    DROPPED_TITLES[t['id']] = _title_key(t.get('title'))
+                else:
+                    t['basis'] = basis
+                    DROPPED.pop(t['id'], None)
+                done = time.monotonic()
+                parts['episodes'] += done - middle
+                works = len(query[2].get(('facts', t['series']['show'])) or ())
+                slow.append((done - started, str(t.get('title') or '')[:40], works))
+    finally:
+        _PARTS[0] = None
+    if timings is not None:
+        # basis/episodes enthalten facts und channels (dort mitgezählt)
+        timings['kids_shows_parts'] = {k: round(v, 2) for k, v in parts.items()}
+        timings['kids_shows_count'] = len(shows)
+        timings['kids_shows_works'] = sum(w for _, _, w in slow)
+        timings['kids_shows_slowest'] = ['%s|%d|%.2f' % (title, works, sec) for sec, title, works in
+                                         sorted(slow, reverse=True)[:5]]
     return [t for t in tiles if t['id'] not in drop]
+
+
+_PARTS = [None]   # 0.6.168: Teilzeiten des laufenden _kids_shows (None = nicht messen)
+
+
+def _part(name, began):
+    parts = _PARTS[0]
+    if parts is not None:
+        parts[name] = parts.get(name, 0.0) + time.monotonic() - began
 
 
 DROPPED = {}   # 0.6.166: Kachel-Kennung -> Grund, aus dem letzten Aufbau (kids_list_changed)
@@ -1571,7 +1623,7 @@ def _report_undone(value):
             back = tile in ids if tile else bool(same)
             reasons = sorted('%s=%s' % (i, DROPPED[i]) for i, tk in DROPPED_TITLES.items() if tk == k and i in DROPPED)
             diagnostics.event('kids_undo_result', title=k[:80], tile=tile, back=back, same_title=same[:6],
-                              reasons=reasons[:6] or ['nicht_im_katalog'])
+                              reasons=[] if back else (reasons[:6] or ['nicht_im_katalog']))
     except Exception:
         pass
 

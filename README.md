@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.167
+# MediathekAtlas · 0.6.168
+
+## Neu in 0.6.168: Kinderecke antwortet ohne Wartezeit
+- Während der Katalog nach einer Änderung noch zusammengestellt wird, zeigt die Kinderecke sofort die bisherige Liste und erneuert sie im Hintergrund (vorher wartete jeder Aufruf 4–11 Sekunden).
+- Die Reihenprüfung der Kinderecke fragt je Folge weniger ab; die Diagnose zeigt jetzt, welcher Teil wie lange braucht.
 
 ## Neu in 0.6.167: gesperrte Reihen kommen nach „Zurücknehmen“ sofort wieder, Kinderecke schneller
 - Wird eine Sperre in der Elternansicht zurückgenommen, steht die Reihe beim nächsten Aufbau wieder in der Kinderecke (vorher teils erst nach 10 Minuten oder einem Neustart).
