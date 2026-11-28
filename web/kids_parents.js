@@ -79,5 +79,11 @@ function renderProfiles(d){
 async function loadProfiles(){if(!profBox)return;try{renderProfiles(await api('kids-profiles'));}catch(e){profBox.replaceChildren(el('p',e.message,'muted'));}}
 if(profAdd)profAdd.onclick=()=>{const n=(profName.value||'').trim();if(!n){notice('Bitte einen Namen eingeben.','error');return;}
  profileCall({name:n},profAdd,'Profil „'+n+'“ angelegt.').then(()=>{profName.value='';});};
-box.addEventListener('toggle',()=>{if(box.open){load().catch(err=>status.textContent=err.message);loadVisible();loadProfiles();}});
+// 0.6.171: PIN (kids_lock.py) – setzen, ändern, entfernen; die PIN selbst wird nie angezeigt
+const pinStatus=$('kids-pin-status'),pinInput=$('kids-pin-input'),pinSave=$('kids-pin-save'),pinClear=$('kids-pin-clear');
+async function loadPin(){if(!pinStatus)return;try{const d=await api('kids-lock');pinStatus.textContent=d.pin?'PIN ist gesetzt.':'Keine PIN – „Eltern“ in der Kinderecke führt nach 2 Sekunden Halten direkt hierher.';pinClear.disabled=!d.pin;pinSave.textContent=d.pin?'PIN ändern':'PIN setzen';}catch(e){pinStatus.textContent=e.message;}}
+if(pinSave)pinSave.onclick=()=>busy(pinSave,async()=>{const pin=(pinInput.value||'').trim();if(!/^[0-9]{4,6}$/.test(pin)){notice('Die PIN muss aus 4 bis 6 Ziffern bestehen.','error');return;}
+ await api('kids-pin',{pin});pinInput.value='';notice('PIN gesetzt. Ab dem nächsten Öffnen sperrt die Kinderecke den Browser.');}).then(loadPin);
+if(pinClear)pinClear.onclick=()=>busy(pinClear,async()=>{await api('kids-pin',{action:'clear'});notice('PIN entfernt – alle gesperrten Browser sind wieder frei.');}).then(loadPin);
+box.addEventListener('toggle',()=>{if(box.open){load().catch(err=>status.textContent=err.message);loadVisible();loadProfiles();loadPin();}});
 })();

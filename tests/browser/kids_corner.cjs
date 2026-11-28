@@ -454,6 +454,50 @@ async function kidsProfiles(browser, url, problems) {
   await page.close();
 }
 
+// 0.6.171: PIN – Kinderecke sperrt den Browser, Hauptansicht leitet um, andere Aufrufe 423, Eltern-Knopf fragt PIN
+async function kidsPin(browser, url, problems) {
+  const context = await browser.newContext({ viewport: { width: 1280, height: 900 } });
+  const page = await context.newPage();
+  page.on('pageerror', e => problems.push('Skriptfehler (PIN): ' + String(e)));
+  const check = (what, ok) => { if (!ok) problems.push('Erwartung nicht erfüllt (PIN): ' + what); };
+  const call = (p, data) => page.evaluate(async ([p, data]) => {
+    const token = document.querySelector('meta[name=atlas-token]').content;
+    const r = await fetch('/api/' + p, data ? { method: 'POST', headers: { 'Content-Type': 'application/json', 'X-Atlas-Token': token }, body: JSON.stringify(data) }
+      : { headers: { 'X-Atlas-Token': token } });
+    return { status: r.status, body: await r.json().catch(() => ({})) };
+  }, [p, data]);
+  await page.goto(url + 'kinder');
+  await page.waitForSelector('.kids-tile', { timeout: 30000 });
+  check('zu kurze PIN abgelehnt', (await call('kids-pin', { pin: '12' })).status === 400);
+  check('PIN gesetzt', (await call('kids-pin', { pin: '4711' })).body.pin === true);
+  await page.reload();
+  await page.waitForSelector('.kids-tile', { timeout: 30000 });
+  await page.waitForFunction(async () => (await (await fetch('/api/kids-lock', { headers: { 'X-Atlas-Token': document.querySelector('meta[name=atlas-token]').content } })).json()).locked, null, { timeout: 10000 })
+    .catch(() => check('Kinderecke sperrt den Browser', false));
+  const cookies = await context.cookies();
+  const c = cookies.find(x => x.name === 'atlas_kids_lock');
+  check('Sperr-Cookie HttpOnly/Strict', c && c.httpOnly && c.sameSite === 'Strict');
+  check('andere Aufrufe gesperrt (423)', (await call('watch')).status === 423 && (await call('kids-pin', { action: 'clear' })).status === 423);
+  check('Kinderecke selbst geht weiter', (await call('kids')).status === 200);
+  const main = await context.newPage();
+  await main.goto(url);
+  check('Hauptansicht leitet auf die Kinderecke um: ' + main.url(), main.url().endsWith('/kinder'));
+  await main.close();
+  const hold = async () => { const b = page.locator('#kids-parents'); const box = await b.boundingBox();
+    await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2); await page.mouse.down(); await page.waitForTimeout(2300); await page.mouse.up(); };
+  await hold();
+  await page.waitForSelector('#kids-pin:not([hidden])', { timeout: 5000 }).catch(() => check('Eltern-Knopf fragt die PIN ab', false));
+  for (const k of ['1', '2', '3', '4', 'OK']) await page.locator('.kids-pin-key', { hasText: new RegExp('^' + k + '$') }).click();
+  await page.waitForFunction(() => document.getElementById('kids-pin-msg').textContent.includes('Falsche PIN'), null, { timeout: 5000 })
+    .catch(() => check('falsche PIN wird gemeldet', false));
+  for (const k of ['4', '7', '1', '1', 'OK']) await page.locator('.kids-pin-key', { hasText: new RegExp('^' + k + '$') }).click();
+  await page.waitForURL(u => !String(u).endsWith('/kinder'), { timeout: 10000 }).catch(() => check('richtige PIN öffnet die Hauptansicht', false));
+  await page.waitForSelector('meta[name=atlas-token]', { state: 'attached', timeout: 10000 });
+  check('nach dem Entsperren frei', (await call('watch')).status === 200);
+  check('PIN entfernt', (await call('kids-pin', { action: 'clear' })).body.pin === false);
+  await context.close();
+}
+
 (async () => {
   const home = fs.mkdtempSync(path.join(os.tmpdir(), 'atlas-kids-'));
   fs.mkdirSync(path.join(home, 'data')); fs.mkdirSync(path.join(home, 'downloads'));
@@ -473,6 +517,7 @@ async function kidsProfiles(browser, url, problems) {
     browser = await chromium.launch({ args: ['--autoplay-policy=no-user-gesture-required'] });
     await kidsCorner(browser, url, clip, problems);
     await kidsProfiles(browser, url, problems);
+    await kidsPin(browser, url, problems);
     await providerFullscreen(browser, clip, problems);
   } catch (e) {
     problems.push('Abbruch: ' + (e && e.stack || e));

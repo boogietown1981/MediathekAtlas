@@ -1,3 +1,9 @@
+## 0.6.172 – PIN für den Elternbereich (Abo-Profile/PIN Punkt 3); auf 0.6.171
+- Neues Modul `kids_lock.py`: PIN 4–6 Ziffern, gespeichert nur als PBKDF2-SHA256 mit Salz (120.000 Runden), Tabellen `kids_pin`, `kids_locks` in der Katalogdatenbank. Die PIN steht nie in Antworten, Ereignissen oder Protokollen (Ereignisse kids_pin_changed, kids_locked, kids_unlocked, kids_unlock_failed nur mit Aktion/Zählern).
+- Mit PIN sperrt die Kinderecke beim Öffnen den Browser (Cookie `atlas_kids_lock`, HttpOnly, SameSite=Strict). Gesperrt: GET nur Kinderecke, Bilder, Wiedergabe (/api/stream, /api/download-file), POST nur Abspielstand und Entsperren; die Hauptansicht leitet auf /kinder um, alles andere 423.
+- „Eltern“ (2 s halten) fragt dann die PIN über ein Ziffernfeld ab. Ab 5 Fehlversuchen wachsende Pause (30 s, 60 s, … höchstens 15 min), auch für die richtige PIN.
+- PIN setzen/ändern/entfernen nur aus einem nicht gesperrten Browser (im Netzwerkmodus zusätzlich mit Anmeldung); Entfernen gibt alle gesperrten Browser frei. Grenze (so auch in der Oberfläche): schützt nur diesen Browser; anderer Browser, anderes Gerät oder gelöschte Browserdaten sind nicht gesperrt.
+
 ## 0.6.171 – Kinderecke: unfertige Liste baut sich selbst fertig; auf 0.6.170
 - Mac-Prüfung 0.6.169 (BEFUND-06169): nach dem Start nur die vorläufige Liste (14 Serien, pending), die volle Liste erst nach einem /api/kids-Aufruf (bis ~10 min pending).
 - Ursache: Der Vorabbau nach dem Start lief einmal und blieb unfertig, solange der Katalog noch aufbaute; erneuert wurde nur bei einem Aufruf. Bis 0.6.167 wartete dieser erste Aufruf auf einen neuen Aufbau, seit 0.6.168 (Hintergrund statt Warten) bekam der erste Besucher die vorläufige Liste, bis die Kinderecke nach 8 s erneut fragte (Rückschritt aus 0.6.168).

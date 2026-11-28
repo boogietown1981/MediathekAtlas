@@ -131,3 +131,8 @@ button{font:inherit;color:inherit;cursor:pointer}
 .kids-who-card:hover,.kids-who-card:focus-visible{transform:scale(1.06);outline:4px solid #fff}
 .kids-who-letter{display:grid;place-items:center;width:84px;height:84px;border-radius:50%;background:rgba(255,255,255,.55);font-size:42px;font-weight:900}
 .kids-who-card strong{font-size:22px}
+.kids-pin-dots{margin:0;font-size:34px;letter-spacing:12px}
+.kids-pin-pad{display:grid;grid-template-columns:repeat(3,84px);gap:14px}
+.kids-pin-key{height:72px;border:0;border-radius:18px;background:var(--card);font-size:28px;font-weight:800;box-shadow:0 6px 14px rgba(0,0,0,.35)}
+.kids-pin-key.ok{background:var(--ok);color:#1b1446}
+.kids-pin-msg{min-height:1.4em;margin:0;color:var(--new);font-weight:700}

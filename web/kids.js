@@ -490,8 +490,36 @@
   if ($('kids-profile')) $('kids-profile').onclick = () => chooseProfile();
 
   // ------------------------------------------------------------ Elternbereich: 2 Sekunden halten
+  // 0.6.171: mit PIN sperrt die Kinderecke diesen Browser (kids_lock.py); „Eltern“ fragt dann die PIN ab
+  const lockState = {pin: false};
+  async function lockBrowser() {
+    try { const d = await api('kids-lock'); lockState.pin = !!d.pin; if (d.pin && !d.locked) await api('kids-lock', {action: 'lock'}); }
+    catch (e) { /* ohne Server bleibt es beim alten Stand */ }
+  }
+  lockBrowser();
+  function askPin() {
+    const box = $('kids-pin'), dots = $('kids-pin-dots'), msg = $('kids-pin-msg'); let pin = '';
+    const show = () => { dots.textContent = '●'.repeat(pin.length) + '○'.repeat(Math.max(0, 4 - pin.length)); };
+    const pad = $('kids-pin-pad'); pad.replaceChildren(); msg.textContent = ''; show();
+    const send = async () => {
+      if (pin.length < 4) { msg.textContent = 'Mindestens 4 Ziffern'; return; }
+      try { await api('kids-lock', {action: 'unlock', pin}); location.href = '/'; }
+      catch (e) { msg.textContent = e.message; pin = ''; show(); }
+    };
+    for (const k of ['1', '2', '3', '4', '5', '6', '7', '8', '9', '⌫', '0', 'OK']) {
+      const b = make('button', 'kids-pin-key' + (k === 'OK' ? ' ok' : ''), k); b.type = 'button';
+      b.onclick = () => { if (k === '⌫') pin = pin.slice(0, -1); else if (k === 'OK') return send(); else if (pin.length < 6) pin += k; show(); };
+      pad.append(b);
+    }
+    $('kids-pin-close').onclick = () => { box.hidden = true; };
+    box.hidden = false;
+  }
+  const leave = async () => {
+    try { const d = await api('kids-lock'); lockState.pin = !!d.pin; if (d.locked) return askPin(); } catch (e) { /* weiter wie bisher */ }
+    location.href = '/';
+  };
   const parents = $('kids-parents'); let hold = 0;
-  const start = e => { e.preventDefault(); parents.classList.add('holding'); hold = setTimeout(() => { location.href = '/'; }, 2000); };
+  const start = e => { e.preventDefault(); parents.classList.add('holding'); hold = setTimeout(leave, 2000); };
   const stop = () => { parents.classList.remove('holding'); clearTimeout(hold); };
   parents.addEventListener('pointerdown', start); ['pointerup', 'pointerleave', 'pointercancel'].forEach(ev => parents.addEventListener(ev, stop));
   parents.addEventListener('click', e => e.preventDefault());

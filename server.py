@@ -4,7 +4,7 @@ from pathlib import Path
 from http.server import ThreadingHTTPServer,BaseHTTPRequestHandler
 import download_retry,metadata,provider_stats,imdb_archive,artwork,negative_cache,http_timing,portal_title,job_queue,netcheck,task_control,ui_prefs,unified_index,portal_snapshot,download_quality,categories
 import core, downloads, runtime_tools, catalog, catalog_service, diagnostics, series_download, access, meshjournal, meshpeer, streaming, local_library, subscriptions, netzkino, video_backfill, portal_sources, portal_control, archive_companion, portal_metadata_policy, netzkino_details, yt_dlp_probe, netzkino_enrichment, netzkino_downloads, ytdl_bridge, pluto, pluto_downloads, pluto_enrichment, justwatch, justwatch_downloads, justwatch_enrichment, rakuten, rakuten_downloads, rakuten_enrichment, youtube, youtube_downloads, youtube_enrichment, live_tv, db_backup, archive_downloads, joyn, joyn_enrichment, toggo, toggo_enrichment,crunchyroll,crunchyroll_enrichment,samsung_tvplus, plex, plex_downloads, plex_enrichment, servustv, servustv_enrichment, servustv_downloads, redbulltv, redbulltv_enrichment, redbulltv_downloads, dmax, dmax_enrichment, filmfriend, filmfriend_enrichment, dailyme, dailyme_enrichment, sender_live, rtlplus, rtlplus_enrichment, youtube_abos, youtube_discover, epg
-import series_autoload,local_titles,lokal,lokal_enrichment,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
+import kids_lock,series_autoload,local_titles,lokal,lokal_enrichment,api_keys,page_scripts,watch_state,kids_catalog,kids_rules,storage_policy,archive_recognition,platform_registry,archive_selection,archive_uploaders,archive_transfer,archive_extras,encoder,archive_receipts,light_theme,system_monitor,planner,routing,languages,watch_home,tracks
 from version import VERSION
 from contextlib import contextmanager
 import storage_locations
@@ -685,6 +685,13 @@ class Handler(BaseHTTPRequestHandler):
     def valid_host(self):return NETWORK or self.headers.get('Host')==f'127.0.0.1:{self.server.server_port}'
     def session(self):return access.cookie_token(self.headers.get('Cookie'),SESSION_COOKIE)
     def authorized(self):return not NETWORK or ACCESS.valid(self.session())
+    def kids_lock_token(self):return access.cookie_token(self.headers.get('Cookie'),kids_lock.COOKIE)
+    def kids_locked(self):
+        token=self.kids_lock_token()
+        if not token:return False
+        try:
+            with db() as c:return kids_lock.locked(c,token)
+        except Exception:return False
     def session_cookie(self,token,seconds=access.SESSION_SECONDS):
         return f'{SESSION_COOKIE}={token}; Path=/; HttpOnly; SameSite=Strict; Max-Age={seconds}'
     def timed(self,method,run):
@@ -712,6 +719,11 @@ class Handler(BaseHTTPRequestHandler):
         if not self.authorized():
             if path=='/':return self.send((Path(__file__).parent/'web'/'login.html').read_text().replace('__VERSION__',VERSION).encode(),ctype='text/html; charset=utf-8')
             return self.send({'error':'Anmeldung erforderlich','login':True},401)
+        # 0.6.171: ein durch die Kinderecke gesperrter Browser (kids_lock.py) darf nur noch in die Kinderecke
+        if self.kids_locked() and not kids_lock.allowed('GET',path):
+            if not path.startswith('/api/'):
+                self.send_response(302);self.send_header('Location','/kinder');self.send_header('Content-Length','0');self.send_header('Cache-Control','no-store');self.end_headers();return
+            return self.send({'error':'Die Kinderecke ist gesperrt – bitte über „Eltern“ mit der PIN entsperren','kids_locked':True},423)
         # 0.6.1: routes with a fixed address live in the route table below (routing.py); stage 'signed'
         handler=ROUTES.find('GET',path,'signed')
         if handler:return handler(self,path)
@@ -915,6 +927,8 @@ class Handler(BaseHTTPRequestHandler):
         if self.path.startswith('/api/v1/'):return self.v1('POST',urllib.parse.urlsplit(self.path).path)   # 0.6.2
         if not self.authorized():return self.send({'error':'Anmeldung erforderlich','login':True},401)
         if self.headers.get('X-Atlas-Token')!=TOKEN:return self.send({'error':'Ungültige Sitzung'},403)
+        if self.kids_locked() and not kids_lock.allowed('POST',urllib.parse.urlsplit(self.path).path):   # 0.6.171
+            return self.send({'error':'Die Kinderecke ist gesperrt – bitte über „Eltern“ mit der PIN entsperren','kids_locked':True},423)
         if self.path=='/api/archive-list-import':return self.archive_list_import()
         try:
             length=int(self.headers.get('Content-Length','0'))
@@ -1307,6 +1321,43 @@ def _kids_shelf():
     return kids_catalog.shelf(ROOT,db,modules=_UNIFIED_SOURCES,merge=ui_prefs.load(ROOT)['merge_duplicates'])
 
 # 0.6.99: Elternbereich der Kinderecke – Altersgrenze, Freigaben, „Wartet auf Freigabe“ (kids_rules.py)
+# 0.6.171: PIN für den Elternbereich (kids_lock.py). Die PIN steht nie in Antworten, Ereignissen oder Protokollen.
+@ROUTES.get('/api/kids-lock')
+def get_kids_lock(self,path):
+    token=self.kids_lock_token()
+    with db() as c:return self.send({'pin':kids_lock.pin_set(c),'locked':kids_lock.locked(c,token),'wait':kids_lock.wait_seconds(token or '')})
+
+@ROUTES.post('/api/kids-lock')
+def post_kids_lock(self,path,d):
+    token=self.kids_lock_token()
+    with db() as c:
+        if d.get('action')=='lock':
+            if kids_lock.locked(c,token):return self.send({'locked':True})
+            new=kids_lock.lock(c)
+            if not new:return self.send({'locked':False,'pin':False})
+            diagnostics.event('kids_locked')
+            return self.send({'locked':True},cookies=[kids_lock.cookie(new)])
+        if d.get('action')=='unlock':
+            try:kids_lock.unlock(c,token,d.get('pin'))
+            except ValueError as e:
+                diagnostics.event('kids_unlock_failed',failures=kids_lock.failures(token or ''),wait=kids_lock.wait_seconds(token or ''))
+                return self.send({'error':str(e),'wait':kids_lock.wait_seconds(token or '')},403)
+            diagnostics.event('kids_unlocked')
+            return self.send({'locked':False},cookies=[kids_lock.cookie('',0)])
+    return self.send({'error':'Unbekannte Aktion'},400)
+
+@ROUTES.post('/api/kids-pin')
+def post_kids_pin(self,path,d):
+    # Nur aus einem nicht gesperrten Browser (Sperre oben in post), im Netzwerkmodus nur angemeldet
+    try:
+        with db() as c:
+            if d.get('action')=='clear':kids_lock.clear_pin(c);action='cleared'
+            else:kids_lock.set_pin(c,d.get('pin'));action='set'
+            on=kids_lock.pin_set(c)
+    except ValueError as e:return self.send({'error':str(e)},400)
+    diagnostics.event('kids_pin_changed',action=action)
+    return self.send({'pin':on})
+
 # 0.6.170: Kinderprofile (kids_profiles.py) – Elternbereich legt an, benennt, wählt Kanäle je Kind
 @ROUTES.get('/api/kids-profiles')
 def get_kids_profiles(self,path):
