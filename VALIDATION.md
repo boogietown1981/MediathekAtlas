@@ -1,5 +1,8 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.167 – Veraltete Katalogliste, schnellere Reihenprüfung (28. November 2026)
+- Automatisch: tests/test_v06167.py (4: Ergebnis mit und ohne Zwischenspeicher gleich, Themen einmal je Aufbau, Aggregation von vor der Änderung nicht gespeichert, Wartender bekommt neuen Aufbau – beide Listen-Tests am alten Code rot), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.167.
+
 ## 0.6.166 – Netzkino-Beschreibungen, Doppel in einer Reihe (27. November 2026)
 - Automatisch: tests/test_v06166.py (4: kids_undo_result, Doppel innerhalb einer Reihe, Grund weggefallener Kacheln, Beschreibung aus Details ohne Überschreiben), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.166.
 

@@ -1,3 +1,11 @@
+## 0.6.167 – Veraltete Katalogliste nach Elternänderung, schnellere Reihenprüfung; auf 0.6.166
+
+- Heidi (seit mindestens 0.6.161; HEIDI-EINGRENZUNG-06166.txt): nach Sperren und Zurücknehmen zeigte die Suche Heidi, die sortierte Kinder-Serienliste (`catalog._listing_groups`, Listenspeicher) nicht – total 1029 → 1028, bis LISTING_TTL (10 min) oder Neustart. Ursache: eine Aggregation, die während der Sperre begann (Hintergrund-Erneuerung bzw. erster Aufbau), speicherte ihr Ergebnis nach `invalidate_listings()` als frisch; Wartende auf einen alten ersten Aufbau bekamen dessen Ergebnis. Neu `_LISTING_GEN`: jede Änderung erhöht den Stand, ältere Ergebnisse werden nicht gespeichert, wartende erste Aufbauten werden geweckt und neu gestartet; der Endmarker entfernt nur den eigenen Eintrag. Nachgebaut in `StaleListingTests` (beide Tests scheitern am alten Code).
+- Kinderecke-Reihenprüfung (`kids_shows` 6,7 s von 13,7 s, Pro M4): Reihen mit Kinder-Thema einmal je Aufbau (`json_each` statt bis zu 5.000 Parameter je Reihe), Werk-Fakten je Reihe einmal je Aufbau (Stichprobe in show_basis und _has_episode).
+- `kids_undo_result` prüft nach Kachel-Schlüssel (der gleichnamige Netzkino-Film „Heidi“ zählte als „zurück“), dazu `same_title`.
+- Netzkino-Erkennung: vergleicht Titel/Jahr/Kennung (Fingerabdruck ohne Beschreibung) – die neuen Beschreibungen aus 0.6.166 brauchen keinen Nachlauf.
+- Tests: `tests/test_v06167.py` (4), `test_v06166` angepasst.
+
 ## 0.6.166 – Netzkino-Beschreibungen, Doppel innerhalb einer Reihe, Diagnose weggefallener Reihen; auf 0.6.165
 
 - Messung Teil C (vollstaendigkeit-c-20261127T172514-9323.txt): MovieDetails liefert longSynopsis (4/4), runtimeInSeconds nie; 3.752 Details schon gespeichert, aber `netzkino_catalog.summary` bei 3.944 von 3.958 leer – die Details flossen nie in den Katalog. Neu `netzkino_details.fill_catalog`: Beschreibung, fehlendes Jahr/FSK aus `netzkino_public_details` (einmal je Prozess beim ersten Zugriff, danach je neu geladenem Detail); vorhandene Werte bleiben. Ereignis `netzkino_descriptions_filled`. Dauer bleibt offen (Netzkino liefert sie nicht). Plex includeGuids: Messung zeigt keine Kennungen (nicht eingebaut).

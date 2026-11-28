@@ -1,4 +1,8 @@
-# MediathekAtlas · 0.6.166
+# MediathekAtlas · 0.6.167
+
+## Neu in 0.6.167: gesperrte Reihen kommen nach „Zurücknehmen“ sofort wieder, Kinderecke schneller
+- Wird eine Sperre in der Elternansicht zurückgenommen, steht die Reihe beim nächsten Aufbau wieder in der Kinderecke (vorher teils erst nach 10 Minuten oder einem Neustart).
+- Die Kinderecke baut sich schneller auf (Reihenprüfung liest Themen und Folgen nur noch einmal je Aufbau).
 
 ## Neu in 0.6.166: Netzkino-Beschreibungen, weniger Doppel in der Kinderecke
 - Netzkino-Filme bekommen ihre Beschreibung (und fehlendes Jahr/FSK) aus den schon geladenen Filmdetails; das hilft auch der Erkennung.

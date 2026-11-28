@@ -689,6 +689,10 @@ LISTING_WAIT=0.6           # seconds a caller with wait=False gives a first aggr
 _LISTING_KEEP=6
 _LISTING_QUEUED={}         # key -> Event, first aggregations running in the background
 _LISTING_FAILED={}         # key -> (monotonic, exception) of a failed background aggregation
+# 0.6.167 (Mac-Prüfung 0.6.165/0.6.166, Heidi: nach Sperren und Zurücknehmen blieb die Reihe bis zu 10 min bzw. bis zum
+# Neustart weg; HEIDI-EINGRENZUNG-06166): eine Aggregation, die VOR invalidate_listings() begann (während der Sperre),
+# speicherte ihr Ergebnis danach als frisch – LISTING_TTL lang. Stand je Änderung; ältere Ergebnisse werden verworfen.
+_LISTING_GEN=[0]
 
 class ListingPending(Exception):
     """The grouped list is being computed in the background; ask again in a moment."""
@@ -732,27 +736,37 @@ def load_listings(path):
     _LISTING_STATS['restored']=count
     return count
 
-def _listing_store(key,rows,seconds,search=False):
+def _listing_store(key,rows,seconds,search=False,gen=None):
     now=time.monotonic()
     with _LISTING_LOCK:
+        if gen is not None and gen!=_LISTING_GEN[0]:
+            if key in _LISTING:_LISTING[key]['busy']=False
+            return False                # begun before a change: never stored as fresh
         _LISTING[key]={'rows':rows,'built':now,'busy':False,'used':now,'seconds':seconds,'search':search}
         while len(_LISTING)>_LISTING_MAX:
             _LISTING.pop(min(_LISTING,key=lambda k:_LISTING[k]['used']))
     if seconds>=LISTING_SLOW and not search:_listing_persist()
+    return True
 
-def _listing_refresh(key,where,args,grouping,order,search=False):
+def _listing_refresh(key,where,args,grouping,order,search=False,gen=None,done=None):
+    gen=_LISTING_GEN[0] if gen is None else gen
     try:
         import contextlib
         with (contextlib.nullcontext() if search else _LISTING_BUILD):   # 0.6.148: Suchen ohne Build-Sperre
+            if gen!=_LISTING_GEN[0]:return   # 0.6.167: changed while waiting for the build lock – a newer build follows
             with LISTING_DB() as c:rows,seconds=_listing_build(c,where,args,grouping,order)
-        _listing_store(key,rows,seconds,search);_LISTING_STATS['background']+=1
+        if _listing_store(key,rows,seconds,search,gen):_LISTING_STATS['background']+=1
     except Exception as exc:
         with _LISTING_LOCK:
             if key in _LISTING:_LISTING[key]['busy']=False
-            _LISTING_FAILED[key]=(time.monotonic(),exc)   # shown to a caller that does not wait
-            while len(_LISTING_FAILED)>_LISTING_MAX:_LISTING_FAILED.pop(next(iter(_LISTING_FAILED)))
+            if gen==_LISTING_GEN[0]:
+                _LISTING_FAILED[key]=(time.monotonic(),exc)   # shown to a caller that does not wait
+                while len(_LISTING_FAILED)>_LISTING_MAX:_LISTING_FAILED.pop(next(iter(_LISTING_FAILED)))
     finally:
-        with _LISTING_LOCK:done=_LISTING_QUEUED.pop(key,None)
+        with _LISTING_LOCK:
+            if key in _LISTING and gen!=_LISTING_GEN[0]:_LISTING[key]['busy']=False
+            # 0.6.167: only remove our own marker – after a change a newer first build may be queued under the key
+            if done is None or _LISTING_QUEUED.get(key) is done:done=_LISTING_QUEUED.pop(key,None) or done
         if done:done.set()
 
 def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
@@ -776,7 +790,7 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             if entry['seconds']>=LISTING_SLOW or (not search and (aged or _LISTING_BUILD.locked())):
                 if not entry['busy']:
                     entry['busy']=True
-                    threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_refresh').start()
+                    threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search,_LISTING_GEN[0]),daemon=True,name='catalog_listing_refresh').start()
                 _LISTING_STATS['hits']+=1;return entry['rows']
         if not wait and not search:   # 0.6.148: eine Suche wird gleich gebaut (klein, ohne _LISTING_BUILD)
             failed=_LISTING_FAILED.get(key)
@@ -786,7 +800,7 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
             done=_LISTING_QUEUED.get(key)
             if done is None:
                 done=_LISTING_QUEUED[key]=threading.Event()
-                threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search),daemon=True,name='catalog_listing_first').start()
+                threading.Thread(target=_listing_refresh,args=(key,where,list(args),grouping,order,search,_LISTING_GEN[0],done),daemon=True,name='catalog_listing_first').start()
     if not wait and not search:
         done.wait(LISTING_WAIT)
         with _LISTING_LOCK:
@@ -796,18 +810,20 @@ def _listing_groups(c,where,args,grouping,order,search=False,wait=True):
         if failed and failed[0]>=now:raise failed[1]
         _LISTING_STATS['pending']+=1
         raise ListingPending()
+    gen=_LISTING_GEN[0]
     if search:
         # 0.6.144 (Mac-Prüfung 0.6.142, Air: erste Suche 6,5–10 s): a search is a small, selective aggregation on the
         # caller's connection; it no longer waits for a heavy one (Kinderecke, ganze Filmliste) to finish.
         rows,seconds=_listing_build(c,where,args,grouping,order)
-        _listing_store(key,rows,seconds,search)
+        _listing_store(key,rows,seconds,search,gen)
         return rows
     with _LISTING_BUILD:
         with _LISTING_LOCK:
             entry=_LISTING.get(key)
-            if entry and entry['built']>now:return entry['rows']   # built while waiting
+            if entry and entry['built']>now and gen==_LISTING_GEN[0]:return entry['rows']   # built while waiting
+        gen=_LISTING_GEN[0]
         rows,seconds=_listing_build(c,where,args,grouping,order)
-    _listing_store(key,rows,seconds,search)
+    _listing_store(key,rows,seconds,search,gen)
     return rows
 
 def invalidate_listings(drop=False):
@@ -817,7 +833,11 @@ def invalidate_listings(drop=False):
         import languages
         languages.forget_filters()   # 0.6.5: language filter of the unified catalogue
     with _LISTING_LOCK:
+        _LISTING_GEN[0]+=1               # 0.6.167: aggregations begun before this change are not stored
         _LISTING_FAILED.clear()
+        # waiting callers wake up; a new request starts a fresh first build instead of waiting for the old one
+        for done in _LISTING_QUEUED.values():done.set()
+        _LISTING_QUEUED.clear()
         if drop:_LISTING.clear()
         else:
             for key,entry in list(_LISTING.items()):
