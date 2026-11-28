@@ -25,6 +25,7 @@ from __future__ import annotations
 
 import json
 import re
+import sqlite3
 import threading
 import time
 
@@ -36,6 +37,7 @@ CATEGORY = 'Kinder'
 # JustWatch endete sie bei „D…“, Märchenfilme wie „Die Gänsemagd“ oder „Schneewittchen“ kamen nie an.
 MAX_TITLES = 1500         # je Art (Filme, Serien)
 MAX_EPISODES = 400
+MAX_MERGED_EPISODES = 1600   # 0.6.164: Obergrenze einer Kachel mit gleichnamigen Teilen
 TTL = 120.0
 _SAFE_ID = re.compile(r'^[A-Za-z0-9_.:\-]{1,200}$')
 
@@ -44,8 +46,15 @@ _CACHE = {}               # root -> (monotonic, shelf)
 _BUILDING = set()         # 0.6.81: Wurzeln, deren Liste gerade im Hintergrund erneuert wird
 
 
+# 0.6.164 (Mac-Prüfung 0.6.162: 18 Kinderreihen mit demselben Bild): TheTVDB liefert für Reihen ohne Bild ein
+# Platzhalterbild (…/images/missing/series.jpg); das ist kein Bild der Reihe und zählt wie keines.
+PLACEHOLDER_PICTURES = ('/images/missing/',)
+
+
 def _https(value):
     value = str(value or '')
+    if any(p in value for p in PLACEHOLDER_PICTURES):
+        return ''
     return value if value.startswith('https://') and len(value) <= 600 and not any(ch in value for ch in ' <>"\'') else ''
 
 
@@ -170,11 +179,14 @@ def build(root, db, modules=None, merge=True, page=None):
         page = unified_index.page
     out, pending = {}, False
     limit = _current_limit(db)
+    timings = {}
     for view in ('movies', 'series'):
+        started = time.monotonic()
         tiles, pend = _collect(root, db, page, view, merge, modules, limit)
+        timings['collect_' + view] = round(time.monotonic() - started, 2)
         pending = pending or pend
         out[view] = tiles[:MAX_TITLES]
-    return _finish(db, root, out, pending)
+    return _finish(db, root, out, pending, timings)
 
 
 def _collect(root, db, page, view, merge, modules, limit, attempts=3):
@@ -257,7 +269,8 @@ def _fill_pictures(db, out):
             with db() as c:
                 for t in shows:
                     row = c.execute("SELECT json_extract(meta,'$.poster') FROM works WHERE show_key=? AND "
-                                    "json_extract(meta,'$.poster') LIKE 'https://%' ORDER BY (kind='series') DESC, rowid LIMIT 1",
+                                    "json_extract(meta,'$.poster') LIKE 'https://%' AND json_extract(meta,'$.poster') NOT LIKE '%/images/missing/%' "
+                                    "ORDER BY (kind='series') DESC, rowid LIMIT 1",
                                     (t['series']['show'],)).fetchone()
                     if row:
                         t['poster'] = _https(row[0])
@@ -468,19 +481,35 @@ def fetch_missing_pictures(root, db, now=None, limit=PICTURE_BATCH, lookup=None,
     return found, asked, no_page
 
 
-def _finish(db, root, out, pending):
-    out['series'] = _kids_shows(db, out['series'])
+def _finish(db, root, out, pending, timings=None):
+    # 0.6.165 (Air-Diagnose 27.11. abends, K1: Aufbau 12–15 s statt 5,7 s): Dauer je Schritt für kids_shelf_refreshed
+    timings = {} if timings is None else timings
+    clock = [time.monotonic()]
+
+    def lap(name):
+        now = time.monotonic()
+        timings[name] = round(timings.get(name, 0) + now - clock[0], 2)
+        clock[0] = now
+    out['series'] = _kids_shows(db, out['series'], timings)
+    lap('kids_shows')
     _fill_pictures(db, out)
+    lap('pictures')
     out['series'] = _drop_empty_platform_series(root, db, out['series'])
     out['movies'], out['series'] = _word_safe(db, out['movies']), _word_safe(db, out['series'])
+    lap('word_safe')
     out['movies'] = _prefer_kids_offers(db, out['movies'])
     out['movies'] = _playable_films(db, out['movies'])
     out['movies'] = _drop_unplayable_platform_films(db, out['movies'])
+    lap('films')
     out['movies'] = _parent_blocks(db, out['movies'])
     out['movies'], numbered = numbered_series(out['movies'])       # 0.6.148: „NN. Reihenname …“ als eine Serie
     out['series'] = _parent_blocks(db, out['series'] + numbered)
+    out['series'] = merge_twin_series(out['series'])                # 0.6.162: gleichnamige Reihen als eine Kachel
+    lap('blocks_numbered_twins')
     _mark_local(db, out)
+    lap('mark_local')
     _fold_small_groups(out)
+    out['timings'] = timings
     out['groups'] = [{'id': g, 'name': name, 'icon': icon} for g, name, icon, _ in GROUPS
                      if any(t.get('group') == g for v in ('movies', 'series') for t in out[v])]
     out['pending'] = pending
@@ -719,6 +748,43 @@ def _word(w):
     return re.sub(r'[^\w]+', '', w.casefold().replace('ß', 'ss'))
 
 
+# 0.6.162 (Björn 27.11.2026, Bild „Animanimals“ zweimal: „teilweise werden sie doppelt dargestellt, der Inhalt ist
+# aber unterschiedlich“): der gemeinsame Katalog führt nie zwei Angebote derselben Quelle zusammen; zwei Mediatheken-
+# Reihen gleichen Namens unter verschiedenen Reihenschlüsseln (Sender, Schreibweise) blieben zwei Kacheln mit je einem
+# Teil der Folgen. Gleichnamige Serienkacheln (gleicher Titel ohne Satzzeichen/Groß-Klein) werden EINE Kachel; die
+# übrigen hängen als ``twins`` an ihr, /api/kids-episodes liefert die Folgen aller, doppelte Folgen nur einmal.
+# Verschiedene Namen werden nie verschmolzen; Nummern-Serien (aus Filmen) bleiben, wie sie sind.
+def _twin_rank(t):
+    return (t.get('source') != 'mediatheken', not t.get('poster'), not t.get('local'))
+
+
+def merge_twin_series(tiles):
+    by_key, out = {}, []
+    for t in tiles:
+        key = _title_key(t.get('title'))
+        sid = str((t.get('series') or {}).get('id') or '')
+        if not key or sid.startswith(NUMBERED_PREFIX):
+            out.append(t)
+            continue
+        by_key.setdefault(key, []).append(t)
+        if len(by_key[key]) == 1:
+            out.append(t)
+    for key, group in by_key.items():
+        if len(group) < 2:
+            continue
+        group.sort(key=_twin_rank)
+        head = group[0]
+        head['twins'] = [{'source': t['source'], 'series': dict(t.get('series') or {}), 'block': t.get('block') or block_target(t)}
+                         for t in group[1:]]
+        head['local'] = any(t.get('local') for t in group) or head.get('local', False)
+        if not head.get('poster'):
+            head['poster'] = next((t['poster'] for t in group if t.get('poster')), '')
+        index = next(i for i, t in enumerate(out) if _title_key(t.get('title')) == key
+                     and not str((t.get('series') or {}).get('id') or '').startswith(NUMBERED_PREFIX))
+        out[index] = head
+    return out
+
+
 def numbered_series(movies):
     """(übrige Filme, neue Serienkacheln) – siehe NUMBERED."""
     import hashlib
@@ -785,21 +851,40 @@ def shelf(root, db, modules=None, merge=True, page=None, fresh=False):
             age = now - hit[0]
             if age <= (5.0 if hit[1].get('pending') else TTL):
                 return hit[1]
-            if not hit[1].get('pending'):
-                if key not in _BUILDING:
-                    _BUILDING.add(key)
-                    threading.Thread(target=_refresh, args=(root, db, modules, merge, page), daemon=True,
-                                     name='kids_shelf_refresh').start()
-                return hit[1]
-    return _build_store(root, db, modules, merge, page)
+            # 0.6.168 (Mac-Prüfung 0.6.167: kids_slow_parts „shelf“ 4,2–11,2 s je Aufruf): auch eine noch unfertige
+            # Liste (pending, Katalog baut nach einer Änderung bis 90 s auf) wird im Hintergrund erneuert – vorher
+            # baute jeder Aufruf nach 5 s die ganze Liste wartend neu, mehrere Aufrufe auch gleichzeitig
+            if key not in _BUILDING:
+                _BUILDING.add(key)
+                threading.Thread(target=_refresh, args=(root, db, modules, merge, page), daemon=True,
+                                 name='kids_shelf_refresh').start()
+            return hit[1]
+    return _build_store(root, db, modules, merge, page, via='wartend')
 
 
 _GEN = [0]   # 0.6.112: eine vor invalidate() begonnene Liste wird nicht gespeichert (alte Altersgrenze/Freigabe)
 
 
-def _build_store(root, db, modules, merge, page):
+def _build_store(root, db, modules, merge, page, via='hintergrund', follow=True):
     gen = _GEN[0]
+    started = time.monotonic()
     value = build(root, db, modules, merge, page)
+    seconds = time.monotonic() - started
+    if seconds >= 2:            # 0.6.82 (Mac-Prüfung 0.6.81): langsame Erneuerung in der Diagnose sichtbar
+        try:                    # 0.6.168: auch wartende Aufbauten (vorher nur der Hintergrund)
+            import diagnostics
+            diagnostics.event('kids_shelf_refreshed', seconds=round(seconds, 2), movies=len(value.get('movies') or []),
+                              series=len(value.get('series') or []), pending=bool(value.get('pending')), via=via,
+                              steps=value.get('timings') or {})
+        except Exception:
+            pass
+    _report_undone(value)
+    if value.get('pending'):
+        if follow:
+            _follow_up(root, db, modules, merge, page)
+    else:
+        with _LOCK:
+            _FOLLOW.pop(str(root), None)
     with _LOCK:
         old = (_LAST.get(str(root)) if not value.get('pending') else None)
         if not value.get('pending'):
@@ -822,27 +907,55 @@ def _log_change(old, new):
         after = {t['id']: t for v in ('movies', 'series') for t in new.get(v) or []}
         label = lambda t: '%s [%s%s]' % (t.get('title'), t.get('source'), ', ' + str(t.get('weg') or t.get('basis')) if (t.get('weg') or t.get('basis')) else '')
         added = [label(after[k]) for k in sorted(set(after) - set(before))]
-        removed = [label(before[k]) for k in sorted(set(before) - set(after))]
+        removed = [label(before[k]) + ' – ' + DROPPED.get(k, 'nicht_im_katalog') for k in sorted(set(before) - set(after))]
         diagnostics.event('kids_list_changed', movies=len(new.get('movies') or []), series=len(new.get('series') or []),
                           added=len(added), removed=len(removed), added_titles=added[:15], removed_titles=removed[:15])
     except Exception:
         pass
 
 
+# 0.6.171 (Mac-Prüfung 0.6.169: nach dem Start nur die vorläufige Liste mit 14 Serien, die volle erst nach einem Besuch;
+# seit 0.6.168 bekam der erste Besucher diese vorläufige Liste statt zu warten): eine noch unfertige Liste wird von selbst
+# alle PENDING_RETRY Sekunden im Hintergrund erneuert, bis sie fertig ist (höchstens PENDING_FOLLOW Sekunden lang).
+PENDING_RETRY = 10.0
+PENDING_FOLLOW = 30 * 60.0
+_FOLLOW = {}   # Datenordner -> Beginn der Nachläufe
+
+
+def _follow_up(root, db, modules, merge, page):
+    key = str(root)
+    now = time.monotonic()
+    with _LOCK:
+        began = _FOLLOW.setdefault(key, now)
+        if now - began > PENDING_FOLLOW or key in _BUILDING:
+            return False
+        _BUILDING.add(key)
+    timer = threading.Timer(PENDING_RETRY, _follow_run, args=(_GEN[0], root, db, modules, merge, page))
+    timer.daemon = True
+    timer.name = 'kids_shelf_follow'
+    timer.start()
+    return True
+
+
+def _follow_run(gen, root, db, modules, merge, page):
+    if gen != _GEN[0]:              # nach invalidate() baut der nächste Aufruf ohnehin neu
+        with _LOCK:
+            _BUILDING.discard(str(root))
+        return
+    _refresh(root, db, modules, merge, page)
+
+
 def _refresh(root, db, modules, merge, page):
-    started = time.monotonic()
+    pending = False
     try:
-        value = _build_store(root, db, modules, merge, page)
-        seconds = time.monotonic() - started
-        if seconds >= 2:            # 0.6.82 (Mac-Prüfung 0.6.81): langsame Erneuerung in der Diagnose sichtbar
-            import diagnostics
-            diagnostics.event('kids_shelf_refreshed', seconds=round(seconds, 2), movies=len(value.get('movies') or []),
-                              series=len(value.get('series') or []), pending=bool(value.get('pending')))
+        pending = bool(_build_store(root, db, modules, merge, page, follow=False).get('pending'))
     except Exception:
         pass                       # die bisherige Liste bleibt; der nächste Aufruf versucht es erneut
     finally:
         with _LOCK:
             _BUILDING.discard(str(root))
+    if pending:
+        _follow_up(root, db, modules, merge, page)
 
 
 def invalidate():
@@ -850,6 +963,7 @@ def invalidate():
     with _LOCK:
         _GEN[0] += 1
         _CACHE.clear()
+        _FOLLOW.clear()
 
 
 def _listed(data, source, kind, field, value):
@@ -968,6 +1082,125 @@ def episodes(root, c, data, source, series_id, marks=None):
     field = 'show' if source == 'mediatheken' and not str(series_id).startswith(NUMBERED_PREFIX) else 'id'
     if source not in SOURCES or not _listed(data, source, 'series', field, series_id):
         raise ValueError('Diese Serie gibt es in der Kinderecke nicht')
+    out = _episodes_of(root, c, data, source, series_id)
+    # 0.6.162: Folgen gleichnamiger Reihen (merge_twin_series) dazu, jede Folge nur einmal
+    tile = next((t for t in data.get('series', []) if t['source'] == source and (t.get('series') or {}).get(field) == series_id), None)
+    generic = _title_key((tile or {}).get('title'))
+    # 0.6.166 (Mac-Prüfung 0.6.165: TMNT bei Pluto „Ein Dino kommt selten allein…“ S3E1/S3E324, je 1350 s): dieselbe Folge
+    # doppelt auch innerhalb EINER Reihe – gleiche Regel wie zwischen Zwillingen
+    seen, by_title, own = set(), {}, []
+    for e in out:
+        ident = _episode_identity(e)
+        if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or (), generic):
+            continue
+        seen.add(ident)
+        own.append(e)
+        by_title.setdefault(_title_key(e.get('title')), []).append(e)
+    out = own
+    for twin in (tile or {}).get('twins') or []:
+        tsrc, tser = twin.get('source'), twin.get('series') or {}
+        tid = tser.get('show') if tsrc == 'mediatheken' else tser.get('id')
+        if tsrc not in SOURCES or not tid:
+            continue
+        try:
+            more = _episodes_of(root, c, data, tsrc, tid)
+        except Exception:                 # eine Zwillingsreihe kostet nie die Folgen der Kachel
+            continue
+        for e in more:
+            ident = _episode_identity(e)
+            if ident in seen or _same_episode(e, by_title.get(_title_key(e.get('title'))) or (), generic):
+                continue
+            seen.add(ident)
+            out.append(e)
+            by_title.setdefault(_title_key(e.get('title')), []).append(e)
+    if (tile or {}).get('twins'):
+        out.sort(key=lambda e: (e.get('season') is None, e.get('season') or 0, e.get('episode') is None, e.get('episode') or 0))
+    # 0.6.164 (Mac-Prüfung 0.6.162, Befund A: Schloss Einstein 608 → 400): eine zusammengeführte Kachel darf je Teil
+    # MAX_EPISODES Folgen zeigen, sonst schnitt die Grenze die zweite Reihe fast ganz ab
+    cap = MAX_EPISODES * (1 + len((tile or {}).get('twins') or []))
+    out = [e for e in out if e['key']][:min(cap, MAX_MERGED_EPISODES)]
+    for e in out:
+        mark = marks.get(e['key']) or {}
+        e['done'] = bool(mark.get('done'))
+        e['pos'] = 0 if e['done'] else (mark.get('pos') or 0)
+        e['progress'] = round(min(1, e['pos'] / e['duration']), 3) if e['duration'] and e['pos'] else 0
+    _remember(source, out)
+    return {'source': source, 'series': series_id, 'episodes': out}
+
+
+def _episode_identity(e):
+    """Gleiche Folge unter zwei Reihenschlüsseln: gleiche Staffel/Folge und gleicher Titel, sonst gleicher Abspielschlüssel."""
+    title = _title_key(e.get('title'))
+    if title:
+        return ('t', e.get('season'), e.get('episode'), title)
+    return ('k', e.get('key'))
+
+
+NUMBER_TITLE = re.compile(r'^(?:folge|teil|episode|ep|staffel|part)?\d*$')   # „Folge 5“, „Teil 2“, „5“ (Schlüssel ohne Leerzeichen)
+SAME_LENGTH = 10   # 0.6.165: Sekunden – gleiche Dauer gilt trotz anderer Folgennummer als dieselbe Folge
+
+
+def _same_episode(e, others, generic=''):
+    """0.6.164 (Mac-Prüfung 0.6.162, Befund B: Checkpoint 0 → 13 gleichnamige Folgen, KiKA/WDR): dieselbe Folge aus der
+    Zwillingsreihe trägt oft keine oder andere Staffel-/Folgennummern. Gleicher Titel gilt als dieselbe Folge, außer
+    beide haben Folgennummern und die unterscheiden sich, oder beide haben eine Dauer, die mehr als 90 s abweicht."""
+    key = _title_key(e.get('title'))
+    if not key:
+        return False
+    for o in others:
+        same_length = bool(e.get('duration') and o.get('duration')
+                           and abs(float(e['duration']) - float(o['duration'])) <= SAME_LENGTH)
+        # 0.6.165 (Mac-Prüfung 0.6.164: ZDF-tivi und KiKA zählen dieselbe Folge um 1–9 verschoben, Conni S1E5/S1E6,
+        # beide 685 s): gleicher Titel und gleiche Dauer = dieselbe Folge, auch bei anderer Nummer – außer der
+        # Folgentitel ist nur der Reihenname (dann entscheiden die Nummern)
+        if e.get('episode') is not None and o.get('episode') is not None and \
+                (e.get('season'), e.get('episode')) != (o.get('season'), o.get('episode')) and \
+                not (same_length and key != generic and not NUMBER_TITLE.match(key)):
+            continue
+        if e.get('duration') and o.get('duration') and abs(float(e['duration']) - float(o['duration'])) > 90:
+            continue
+        return True
+    return False
+
+
+def twin_targets(root, kind, value):
+    """0.6.164 (Mac-Prüfung 0.6.162 Punkt 4: Heidi gesperrt → nach Neuaufbau stand der Zwilling allein da): Sperrziele
+    der gleichnamigen Teile einer Kachel, deren Sperrziel (kind, value) ist; aus der zuletzt gebauten Liste."""
+    with _LOCK:
+        hit = _CACHE.get(str(root))
+        data = hit[1] if hit else _LAST.get(str(root))
+    for t in (data or {}).get('series') or []:
+        if t.get('twins') and t.get('block') == {'kind': kind, 'id': value}:
+            return [dict(x['block']) for x in t['twins'] if isinstance(x.get('block'), dict)]
+    return []
+
+
+def apply_to_twins(c, root, kind, value, choice, title=''):
+    """Sperren/Freigeben einer zusammengeführten Kachel gilt für alle ihre Teile; Zurücknehmen nimmt auch die
+    Einträge gleichen Namens zurück (die Teile stehen dann nicht mehr in der Liste). Gibt die Zahl der Teile zurück."""
+    import kids_rules
+    if choice in ('', None, 'none'):
+        row = c.execute('SELECT title, choice FROM kids_choices WHERE key=?', ('%s:%s' % (kind, value),)).fetchone()
+        if row and row[1] == 'block' and _title_key(row[0] or title):
+            # 0.6.167 (Mac-Prüfung 0.6.166: „back“ zählte den gleichnamigen Netzkino-Film): nach Kachel-Schlüssel prüfen
+            tile = 'mediatheken:' + value if kind == 'show' else value if kind == 'tile' else ''
+            UNDONE.add((_title_key(row[0] or title), tile))
+        if not row or not _title_key(row[0]):
+            return 0
+        title_key, done = _title_key(row[0]), 0
+        for k, t in c.execute('SELECT key, title FROM kids_choices WHERE choice=? AND key!=?', (row[1], '%s:%s' % (kind, value))).fetchall():
+            if _title_key(t) == title_key:
+                kids_rules.choose(c, k.split(':', 1)[0], k.split(':', 1)[1], '')   # 0.6.165: ersetzte Wahl zurück
+                done += 1
+        return done
+    targets = twin_targets(root, kind, value)
+    for target in targets:
+        kids_rules.choose(c, target['kind'], str(target['id']), choice, title)
+    return len(targets)
+
+
+def _episodes_of(root, c, data, source, series_id):
+    """Folgen EINER Reihe (ohne Listenprüfung; die macht episodes())."""
     out = []
     if str(series_id).startswith(NUMBERED_PREFIX):
         # 0.6.148: Nummern-Serie aus Filmkacheln – die Folgen sind die (schon geprüften) Filme der Liste
@@ -1026,14 +1259,7 @@ def episodes(root, c, data, source, series_id, marks=None):
                 _note_empty_series(c, source, series_id, not any(e['key'] for e in out))
             except Exception:
                 pass
-    out = [e for e in out if e['key']][:MAX_EPISODES]
-    for e in out:
-        mark = marks.get(e['key']) or {}
-        e['done'] = bool(mark.get('done'))
-        e['pos'] = 0 if e['done'] else (mark.get('pos') or 0)
-        e['progress'] = round(min(1, e['pos'] / e['duration']), 3) if e['duration'] and e['pos'] else 0
-    _remember(source, out)
-    return {'source': source, 'series': series_id, 'episodes': out}
+    return out
 
 
 # 0.6.98 (Mac-Prüfung 0.6.91 nicht bestanden: „Politik“, „NACHTCAFÉ“, „heute“, „Aktuelle Kamera“, „Abendschau“
@@ -1212,6 +1438,10 @@ def show_name_blocked(title):
     return bool(NOT_KIDS_SHOW.search(title)) and not KIDS_NAME.search(title)
 
 
+# MATERIALIZED erst ab SQLite 3.35 (ältere NAS-Pythons): dort ohne Schlüsselwort, Ergebnis gleich
+_MATERIALIZED = 'MATERIALIZED ' if sqlite3.sqlite_version_info >= (3, 35) else ''
+
+
 def _work_query(c):
     """Abfrage je Reihe vorbereiten (Kategorie-Etiketten und Kinderreihen einmal lesen, nicht je Reihe)."""
     import catalog
@@ -1225,14 +1455,17 @@ def _work_query(c):
     live, live_args = kids_rules.live_clause()
     # 0.6.109: Livestreams zählen nie als Kinderprogramm (auch nicht „KiKA Livestream“) und fallen immer heraus
     chans = list(kids_rules.ALWAYS_CHANNELS)
-    sender = ("(NOT %s AND EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
-              "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s)))" % (live, ','.join('?' * len(chans))))
-    sql = ("SELECT w.id, (NOT %s AND ((%s) OR ((%s) AND NOT %s))) AS kids, (%s OR %s) AS bad, "
-           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres, %s AS sender, "
-           "%s AS live FROM works w WHERE w.show_key=? ORDER BY w.rowid DESC LIMIT ?"
-           % (live, kids, sig, bad_sql, live, bad_sql, sender, live))
-    return sql, (list(live_args) + list(kids_args) + list(sig_args) + bad + list(live_args) + bad
-                 + list(live_args) + chans + list(live_args)), {}
+    sender = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
+              "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s))" % ','.join('?' * len(chans)))
+    # 0.6.168 (Mac-Prüfung 0.6.167: kids_shows weiter 7,08 s): Livestream- und Ausschluss-Prüfung je Werk EINMAL
+    # (vorher 4× bzw. 2× je Werk); Reihe und Grenze als ?1/?2 vorn. Synthetisch 300 Reihen/15.245 Werke 1,20 → 0,88 s.
+    sql = ("WITH p(show, lim) AS (SELECT ?1, ?2), "
+           "f AS %s(SELECT w.id AS id, w.rowid AS r, %s AS live, %s AS bad FROM works w, p WHERE w.show_key=p.show) "
+           "SELECT f.id, (NOT f.live AND ((%s) OR ((%s) AND NOT f.bad))) AS kids, (f.live OR f.bad) AS bad, "
+           "(SELECT group_concat(g.genre, char(31)) FROM work_genres g WHERE g.work_id=w.id) AS genres, "
+           "(NOT f.live AND %s) AS sender, f.live AS live FROM f JOIN works w ON w.id=f.id "
+           "ORDER BY f.r DESC LIMIT (SELECT lim FROM p)" % (_MATERIALIZED, live, bad_sql, kids, sig, sender))
+    return sql, list(live_args) + bad + list(kids_args) + list(sig_args) + chans, {}
 
 
 def _work_rows(c, show_key, limit=None, query=None):
@@ -1243,11 +1476,29 @@ def _work_rows(c, show_key, limit=None, query=None):
 def _work_facts(c, show_key, limit=None, query=None):
     """[(work_id, kids, against, sender, live)] je Werk der Reihe (neueste zuerst); sender = eigenes Angebot vom
     Kindersender (nicht Livestream)."""
-    import categories
     sql, args, names_of = query or _work_query(c)
-    friendly = set(KIDS_FRIENDLY)
+    if query is not None:
+        # 0.6.167: dieselbe Reihe einmal je Aufbau lesen. 0.6.168-Messung am Mac: facts 3,43 s für 40.184 Werke –
+        # die Stichprobe (show_basis) liest daher nur noch ihre SHOW_SAMPLE Werke, nicht die ganze Reihe
+        full = names_of.get(('facts', show_key))
+        if full is not None:
+            return full[:limit] if limit else list(full)
+        if limit:
+            part = names_of.get(('facts', show_key, limit))
+            if part is None:
+                part = names_of[('facts', show_key, limit)] = _read_facts(c, sql, args, names_of, show_key, limit)
+            return list(part)
+        full = names_of[('facts', show_key)] = _read_facts(c, sql, args, names_of, show_key, None)
+        return list(full)
+    return _read_facts(c, sql, args, names_of, show_key, limit)
+
+
+def _read_facts(c, sql, args, names_of, show_key, limit):
+    import categories
+    began = time.monotonic()
     out = []
-    for wid, is_kids, is_bad, genres, sender, live in c.execute(sql, args + [show_key, int(limit or -1)]):
+    friendly = set(KIDS_FRIENDLY)
+    for wid, is_kids, is_bad, genres, sender, live in c.execute(sql, [show_key, int(limit or -1)] + list(args)):
         names = set()
         for raw in (genres or '').split('\x1f'):
             if raw:
@@ -1258,6 +1509,8 @@ def _work_facts(c, show_key, limit=None, query=None):
         # auch neben einem Ausschluss-Genre zu, sonst schließt die Regel es selbst aus
         against = not is_kids and (bool(is_bad) or bool(names - friendly))
         out.append((wid, bool(is_kids), against, bool(sender), bool(live)))
+    _part('facts', began)
+    names_of[('read', show_key)] = names_of.get(('read', show_key), 0) + len(out)   # 0.6.169: gelesene Werke
     return out
 
 
@@ -1279,7 +1532,7 @@ def show_basis(c, show_key, title='', query=None):
     if kids_rules.show_allowed(c, show_key):
         return 'freigabe'
     title = title or _show_title(c, show_key)
-    if catalog.KIDS_TOPIC.search(str(title or '')) or _curated_topic(c, show_key):
+    if catalog.KIDS_TOPIC.search(str(title or '')) or _curated_topic(c, show_key, query[2] if query else None):
         return 'reihe'
     if show_name_blocked(title):
         return None
@@ -1303,20 +1556,34 @@ def show_basis(c, show_key, title='', query=None):
 def _kids_channel_works(c, show_key, mixed=True):
     """Hat die Reihe Folgen vom Kindersender UND (mixed) Folgen ohne Kindersender-Angebot (gemischte Reihe)?"""
     import kids_rules
+    began = time.monotonic()
     live, live_args = kids_rules.live_clause()
     chans = list(kids_rules.ALWAYS_CHANNELS)
     on_kids = ("EXISTS(SELECT 1 FROM offers k WHERE k.work_id=w.id AND k.active=1 "
                "AND lower(trim(json_extract(k.payload,'$.channel'))) IN (%s))" % ','.join('?' * len(chans)))
     has = lambda neg: c.execute("SELECT 1 FROM works w WHERE w.show_key=? AND %s%s AND NOT %s LIMIT 1" % (neg, on_kids, live),
                                 [show_key] + chans + live_args).fetchone()
-    return bool(has('') and (has('NOT ') or not mixed))
+    try:
+        return bool(has('') and (has('NOT ') or not mixed))
+    finally:
+        _part('channels', began)
 
 
-def _curated_topic(c, show_key):
+def _curated_topic(c, show_key, memo=None):
     import catalog
     topics = catalog.kids_topics(c)
     if not topics:
         return False
+    if memo is not None:
+        # 0.6.167 (Mac-Prüfung 0.6.165: Reihenprüfung 6,7 s von 13,7 s): einmal je Aufbau alle Reihen mit Kinder-Thema
+        # lesen statt je Reihe eine Abfrage mit bis zu 5.000 Themen als Parameter
+        key = ('curated_shows', len(topics))
+        if key not in memo:
+            memo[key] = {r[0] for r in c.execute(
+                "SELECT DISTINCT w.show_key FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 "
+                "WHERE w.show_key IS NOT NULL AND json_extract(o.payload,'$.topic') IN (SELECT value FROM json_each(?))",
+                (json.dumps(list(topics)),))}
+        return show_key in memo[key]
     return bool(c.execute("SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=? "
                           "AND json_extract(o.payload,'$.topic') IN (%s) LIMIT 1" % ','.join('?' * len(topics)),
                           [show_key] + list(topics)).fetchone())
@@ -1327,23 +1594,87 @@ def show_is_kids(c, show_key, title='', query=None):
     return show_basis(c, show_key, title, query) is not None
 
 
-def _kids_shows(db, tiles):
+def _kids_shows(db, tiles, timings=None):
     """Nur Reihen der Mediatheken behalten, die selbst Kinderprogramm sind (eine Verbindung für alle)."""
     shows = [t for t in tiles if t.get('source') == 'mediatheken' and (t.get('series') or {}).get('show')]
     if not shows or db is None:
         return tiles
-    with db() as c:
-        query = _work_query(c)
-        drop = set()
-        for t in shows:
-            basis = show_basis(c, t['series']['show'], t.get('title'), query)
-            # 0.6.112 (Mac-Prüfung 0.6.109: „#Ukraine · Mein Land im Krieg“ mit 0 Folgen): ohne eine zulässige,
-            # abspielbare Folge keine Kachel
-            if basis is None or not _has_episode(c, t['series']['show'], basis, query):
-                drop.add(t['id'])
-            else:
-                t['basis'] = basis
+    # 0.6.168 (Mac-Prüfung 0.6.167: kids_shows 7,08 s, Optimierung wirkte nicht): Teilzeiten messen statt raten –
+    # query/facts/channels/basis/episodes und die langsamsten Reihen gehen mit kids_shelf_refreshed in steps
+    parts = {'query': 0.0, 'facts': 0.0, 'channels': 0.0, 'basis': 0.0, 'episodes': 0.0}
+    slow = []
+    _PARTS[0] = parts
+    try:
+        with db() as c:
+            began = time.monotonic()
+            query = _work_query(c)
+            parts['query'] = time.monotonic() - began
+            drop = set()
+            for t in shows:
+                started = time.monotonic()
+                basis = show_basis(c, t['series']['show'], t.get('title'), query)
+                middle = time.monotonic()
+                parts['basis'] += middle - started
+                # 0.6.112 (Mac-Prüfung 0.6.109: „#Ukraine · Mein Land im Krieg“ mit 0 Folgen): ohne eine zulässige,
+                # abspielbare Folge keine Kachel
+                if basis is None or not _has_episode(c, t['series']['show'], basis, query):
+                    drop.add(t['id'])
+                    # 0.6.166 (Mac-Prüfung 0.6.165: Heidi nach Zurücknehmen weg): Grund je weggelassener Reihe
+                    DROPPED[t['id']] = 'keine_zulassung' if basis is None else 'keine_folge:' + basis
+                    DROPPED_TITLES[t['id']] = _title_key(t.get('title'))
+                else:
+                    t['basis'] = basis
+                    DROPPED.pop(t['id'], None)
+                done = time.monotonic()
+                parts['episodes'] += done - middle
+                works = query[2].get(('read', t['series']['show']), 0)
+                slow.append((done - started, str(t.get('title') or '')[:40], works))
+    finally:
+        _PARTS[0] = None
+    if timings is not None:
+        # basis/episodes enthalten facts und channels (dort mitgezählt)
+        timings['kids_shows_parts'] = {k: round(v, 2) for k, v in parts.items()}
+        timings['kids_shows_count'] = len(shows)
+        timings['kids_shows_works'] = sum(w for _, _, w in slow)
+        timings['kids_shows_slowest'] = ['%s|%d|%.2f' % (title, works, sec) for sec, title, works in
+                                         sorted(slow, reverse=True)[:5]]
     return [t for t in tiles if t['id'] not in drop]
+
+
+_PARTS = [None]   # 0.6.168: Teilzeiten des laufenden _kids_shows (None = nicht messen)
+
+
+def _part(name, began):
+    parts = _PARTS[0]
+    if parts is not None:
+        parts[name] = parts.get(name, 0.0) + time.monotonic() - began
+
+
+DROPPED = {}   # 0.6.166: Kachel-Kennung -> Grund, aus dem letzten Aufbau (kids_list_changed)
+DROPPED_TITLES = {}   # Kachel-Kennung -> Titelschlüssel
+UNDONE = set()   # 0.6.166: Titelschlüssel zurückgenommener Sperren; der nächste fertige Aufbau meldet, ob sie wieder da sind
+
+
+def _report_undone(value):
+    """Nach „Zurücknehmen“: ist die Reihe wieder in der Liste, sonst warum nicht (Diagnose kids_undo_result)."""
+    if not UNDONE or value.get('pending'):
+        return
+    wanted = set(UNDONE)
+    UNDONE.clear()
+    tiles = value.get('movies', []) + value.get('series', [])
+    ids = {t.get('id') for t in tiles}
+    ids |= {'%s:%s' % (x.get('source'), (x.get('series') or {}).get('show') or (x.get('series') or {}).get('id'))
+            for t in tiles for x in t.get('twins') or []}
+    try:
+        import diagnostics
+        for k, tile in sorted(wanted):
+            same = sorted(t.get('id') for t in tiles if _title_key(t.get('title')) == k)
+            back = tile in ids if tile else bool(same)
+            reasons = sorted('%s=%s' % (i, DROPPED[i]) for i, tk in DROPPED_TITLES.items() if tk == k and i in DROPPED)
+            diagnostics.event('kids_undo_result', title=k[:80], tile=tile, back=back, same_title=same[:6],
+                              reasons=[] if back else (reasons[:6] or ['nicht_im_katalog']))
+    except Exception:
+        pass
 
 
 # 0.6.112 (Mac-Prüfung 0.6.109: Young Crime zeigte 5 ZDF-Folgen, POV eine WDR-Folge „Rechtsextremismus unter
@@ -1404,46 +1735,79 @@ def _episode_paths(c, show_key, basis=None, query=None):
         basis = show_basis(c, show_key, _show_title(c, show_key), query)
     if blocked is None or basis is None:
         return {f[0]: None for f in facts}
-    allowed = {r[0] for r in c.execute("SELECT substr(k.key,6) FROM kids_choices k JOIN works w ON w.id=substr(k.key,6) "
-                                       "WHERE k.choice='allow' AND k.key LIKE 'work:%' AND w.show_key=?", (show_key,))}
-    out = {}
-    for wid, kids, against, sender, live in facts:
-        if live or wid in blocked:
-            path = None
-        elif wid in allowed:
-            path = 'freigabe'
-        elif sender:
-            path = 'sender'
-        elif basis == 'jugend':
-            path = None
-        elif kids:
-            path = 'regel'
-        elif basis in ('reihe', 'freigabe') and not against:
-            path = basis
-        elif basis == 'anteil' and not against:
-            path = 'anteil'
-        else:
-            path = None
-        out[wid] = path
-    return out
+    allowed = _allowed_works(c, show_key)
+    return {f[0]: _path(f, blocked, allowed, basis) for f in facts}
+
+
+def _allowed_works(c, show_key):
+    return {r[0] for r in c.execute("SELECT substr(k.key,6) FROM kids_choices k JOIN works w ON w.id=substr(k.key,6) "
+                                    "WHERE k.choice='allow' AND k.key LIKE 'work:%' AND w.show_key=?", (show_key,))}
+
+
+def _path(fact, blocked, allowed, basis):
+    """Weg EINER Folge (siehe _episode_paths)."""
+    wid, kids, against, sender, live = fact
+    if live or wid in blocked:
+        return None
+    if wid in allowed:
+        return 'freigabe'
+    if sender:
+        return 'sender'
+    if basis == 'jugend':
+        return None
+    if kids:
+        return 'regel'
+    if basis in ('reihe', 'freigabe') and not against:
+        return basis
+    if basis == 'anteil' and not against:
+        return 'anteil'
+    return None
 
 
 def _has_episode(c, show_key, basis, query=None):
-    """Mindestens eine zulässige Folge mit aktivem Angebot, deren Titel nicht gesperrt ist (außer Kindersender/Freigabe)."""
-    paths = episode_paths(c, show_key, basis, query)
-    # Folgen vom Kindersender oder mit Freigabe: Sperrwörter gelten dort nicht (wie episodes/work_allowed)
-    if any(p in ('freigabe', 'sender') and _active(c, wid) for wid, p in paths.items()):
-        return True
-    ok = [wid for wid, path in paths.items() if path]
+    """Mindestens eine zulässige Folge mit aktivem Angebot, deren Titel nicht gesperrt ist (außer Kindersender/Freigabe).
+
+    0.6.169 (Mac-Messung 0.6.168: facts 3,43 s, logo! 3.631 Werke): nicht mehr alle Folgen bewerten, sondern die
+    neuesten in Stücken von HAS_EPISODE_CHUNK, bis eine passt – gleiche Antwort, meist nach dem ersten Stück."""
+    import kids_rules
+    if basis is None:
+        return False
+    blocked = kids_rules.blocked_works(c, show_key)
+    if blocked is None:
+        return False
+    allowed = _allowed_works(c, show_key)
+    sql, args, names_of = query or _work_query(c)
+    full = names_of.get(('facts', show_key))
     chans = _kids_channels()
-    for i in range(0, len(ok), 500):
-        part = ok[i:i + 500]
-        for wid, title, otitle, ch in c.execute(
-                "SELECT w.id, w.title, json_extract(o.payload,'$.title'), lower(trim(json_extract(o.payload,'$.channel'))) "
-                "FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.id IN (%s)" % ','.join('?' * len(part)), part):
-            if ch in chans or not word_blocked(otitle):
-                return True
-    return False
+    offset, limit = 0, HAS_EPISODE_CHUNK
+    while True:
+        if full is not None:
+            facts = full[offset:limit]
+        else:
+            # je Stück die vierfache Menge lesen (100, 400, 1.600 …), damit große Reihen nicht quadratisch kosten
+            read = _work_facts(c, show_key, limit, (sql, args, names_of))
+            facts = read[offset:]
+        if not facts:
+            return False
+        paths = {f[0]: _path(f, blocked, allowed, basis) for f in facts}
+        # Folgen vom Kindersender oder mit Freigabe: Sperrwörter gelten dort nicht (wie episodes/work_allowed)
+        if any(p in ('freigabe', 'sender') and _active(c, wid) for wid, p in paths.items()):
+            return True
+        ok = [wid for wid, path in paths.items() if path]
+        if ok:
+            for wid, title, otitle, ch in c.execute(
+                    "SELECT w.id, w.title, json_extract(o.payload,'$.title'), lower(trim(json_extract(o.payload,'$.channel'))) "
+                    "FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.id IN (%s)" % ','.join('?' * len(ok)), ok):
+                if ch in chans or not word_blocked(otitle):
+                    return True
+        if offset + len(facts) < limit:
+            return False
+        offset, limit = limit, limit * 4
+        HAS_EPISODE_CHUNK_GROWTH[0] += 1
+
+
+HAS_EPISODE_CHUNK = 100
+HAS_EPISODE_CHUNK_GROWTH = [0]   # Diagnose/Test: wie oft ein weiteres Stück nötig war
 
 
 def _active(c, wid):

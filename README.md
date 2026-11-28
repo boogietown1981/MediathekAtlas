@@ -1,4 +1,51 @@
-# MediathekAtlas · 0.6.161
+# MediathekAtlas · 0.6.172
+
+## Neu in 0.6.172: PIN für den Elternbereich
+- Unter Einstellungen → Kinderecke · Eltern lässt sich eine PIN (4–6 Ziffern) setzen. Wird dann die Kinderecke geöffnet, zeigt dieser Browser nur noch die Kinderecke; „Eltern“ fragt die PIN ab.
+- Die PIN schützt nur den Browser, in dem die Kinderecke geöffnet wurde. PIN vergessen: MediathekAtlas in einem anderen Browser öffnen und dort entfernen.
+- Kinderprofile: Nach einem Wechsel zeigt eine offene Folgenliste gleich den Stand des neuen Kindes; ein entferntes Profil nimmt seinen Gesehen-Stand mit.
+
+## Neu in 0.6.171: Kinderecke nach dem Start gleich vollständig
+- Die Kinderecke stellt ihre Liste nach dem Start von selbst fertig. Vorher blieb sie bis zum ersten Besuch bei einer vorläufigen Auswahl (z. B. 14 Serien), und seit 0.6.168 sah der erste Besucher diese Auswahl.
+
+## Neu in 0.6.170: Kinderprofile – „Wer schaut?“
+- Im Elternbereich (Einstellungen → Kinderecke · Eltern) ein Profil je Kind anlegen. Jedes Kind hat seinen eigenen Gesehen-Stand und sein eigenes „Weiterschauen“.
+- Je Kind lässt sich wählen, welche YouTube-Kanäle es sieht. Ein Kanal wird trotzdem nur einmal geladen.
+- Ab zwei Profilen fragt die Kinderecke beim Öffnen „Wer schaut?“; oben rechts lässt sich das Kind wechseln. Das erste Profil übernimmt den bisherigen Stand.
+
+## Neu in 0.6.169: Kinderecke baut schneller auf
+- Bei großen Reihen (z. B. „logo!“ mit über 3.600 Folgen) prüft die Kinderecke nur noch so viele Folgen, bis eine passende gefunden ist, statt alle.
+
+## Neu in 0.6.168: Kinderecke antwortet ohne Wartezeit
+- Während der Katalog nach einer Änderung noch zusammengestellt wird, zeigt die Kinderecke sofort die bisherige Liste und erneuert sie im Hintergrund (vorher wartete jeder Aufruf 4–11 Sekunden).
+- Die Reihenprüfung der Kinderecke fragt je Folge weniger ab; die Diagnose zeigt jetzt, welcher Teil wie lange braucht.
+
+## Neu in 0.6.167: gesperrte Reihen kommen nach „Zurücknehmen“ sofort wieder, Kinderecke schneller
+- Wird eine Sperre in der Elternansicht zurückgenommen, steht die Reihe beim nächsten Aufbau wieder in der Kinderecke (vorher teils erst nach 10 Minuten oder einem Neustart).
+- Die Kinderecke baut sich schneller auf (Reihenprüfung liest Themen und Folgen nur noch einmal je Aufbau).
+
+## Neu in 0.6.166: Netzkino-Beschreibungen, weniger Doppel in der Kinderecke
+- Netzkino-Filme bekommen ihre Beschreibung (und fehlendes Jahr/FSK) aus den schon geladenen Filmdetails; das hilft auch der Erkennung.
+- Kinderecke: dieselbe Folge erscheint auch innerhalb einer Reihe nur einmal (z. B. zwei Einträge gleicher Länge bei Pluto).
+
+## Neu in 0.6.165: Kinderecke – verschoben nummerierte Folgen und „Zurücknehmen“
+- Zählen zwei Sender dieselbe Folge unterschiedlich (z. B. „Conni“ bei ZDF-tivi Folge 5, bei KiKA Folge 6), erscheint sie bei gleichem Titel und gleicher Länge nur einmal.
+- „Zurücknehmen“ einer Sperre stellt eine vorher erteilte Freigabe wieder her, statt sie mitzulöschen; die Reihe kommt zurück.
+- YouTube: Bleibt ein Download stehen, weil yt-dlp YouTubes Player nicht entschlüsseln kann, wird yt-dlp jetzt auch dann sofort erneuert.
+
+## Neu in 0.6.164: Kinderecke – zusammengeführte Reihen vollständig und ohne Doppel
+- Eine Kachel aus gleichnamigen Reihen zeigt jetzt alle Folgen beider Teile (vorher endete die Liste bei 400, z. B. „Schloss Einstein“).
+- Dieselbe Folge von zwei Sendern erscheint nur einmal, auch wenn ein Sender keine Folgennummern angibt.
+- Sperren oder Freigeben einer solchen Kachel gilt für alle ihre Teile; Zurücknehmen ebenso.
+- Das Platzhalterbild von TheTVDB („kein Bild“) wird nicht mehr als Bild der Reihe gezeigt.
+
+## Neu in 0.6.163: weniger YouTube-Anfragen, keine falschen „Bot“-Meldungen
+- Ein Abo, bei dem noch Videos ausstehen, fragt YouTube nicht mehr alle 20 Minuten nach der Kanalliste. Es lädt die schon bekannten Videos nach und liest die Liste erst nach dem eingestellten Abstand (Standard 3 Stunden) neu. „Jetzt prüfen“ und geänderte Einstellungen lesen sie sofort.
+- „This video is not available“ wird nicht mehr als „Bot-Sperre“ bezeichnet. Eine echte Bot-Prüfung von YouTube („confirm you're not a bot“) bleibt eine eigene Meldung mit Pause.
+- Scheitern zwei verschiedene Videos nacheinander mit derselben Meldung, pausieren die YouTube-Downloads einmal gemeinsam, statt jedes Video einzeln zu versuchen und zu melden. „YouTube-Zugang prüfen“ hebt die Pause bei Erfolg sofort auf.
+
+## Neu in 0.6.162: Kinderecke ohne doppelte Reihen
+- Reihen mit gleichem Namen (z. B. „Animanimals“), die von verschiedenen Sendern oder Anbietern kommen, stehen in der Kinderecke nur noch einmal. Beim Öffnen erscheinen die Folgen aller Teile zusammen, doppelte Folgen nur einmal. Reihen mit verschiedenen Namen bleiben getrennt.
 
 ## Neu in 0.6.161: „YouTube-Zugang prüfen“
 - Im YouTube-Bereich (Offline-Speichern) prüft ein Knopf ein Video, ohne es herunterzuladen: das zuletzt gescheiterte oder eine eingegebene Video-ID/-Adresse. Kann yt-dlp YouTubes Player nicht mehr entschlüsseln, wird es sofort aktualisiert und noch einmal geprüft; klappt es, werden die gescheiterten Videos erneut versucht.

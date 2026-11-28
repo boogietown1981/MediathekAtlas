@@ -3,9 +3,14 @@
 <header class="kids-top">
   <h1 class="kids-logo"><span class="kids-logo-mark" aria-hidden="true">▶</span> Kinderecke</h1>
   <nav id="kids-channels" class="kids-channels" aria-label="Kanäle"></nav>
+  <button type="button" id="kids-profile" class="kids-profile" title="Wer schaut? Tippen zum Wechseln" hidden></button>
 </header>
+<!-- 0.6.170: Kinderprofile – ab zwei Profilen fragt die Kinderecke, wer schaut -->
+<div id="kids-who" class="kids-who" hidden><h2>Wer schaut?</h2><div id="kids-who-list" class="kids-who-list"></div></div>
 <main id="kids-main" class="kids-main" aria-live="polite"></main>
 <button type="button" id="kids-parents" class="kids-parents" title="Für Eltern: 2 Sekunden gedrückt halten">Eltern <span id="kids-parents-ring" aria-hidden="true"></span></button>
+<!-- 0.6.171: PIN für den Elternbereich -->
+<div id="kids-pin" class="kids-who" hidden role="dialog" aria-label="PIN für Eltern"><h2>PIN für Eltern</h2><p id="kids-pin-dots" class="kids-pin-dots"></p><div id="kids-pin-pad" class="kids-pin-pad"></div><p id="kids-pin-msg" class="kids-pin-msg" role="status"></p><button type="button" id="kids-pin-close" class="kids-round">Zurück</button></div>
 <div id="kids-stage" class="kids-stage" hidden>
   <video id="kids-video" playsinline controls preload="auto"></video>
   <button type="button" id="kids-close" class="kids-close" aria-label="Schließen">✕</button>

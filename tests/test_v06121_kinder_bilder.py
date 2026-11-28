@@ -31,7 +31,9 @@ class Pictures(Mixed):
                    'offers': [portal('pluto', 'pl-2', 'Animanimals!', kind='series', source_genres=['Kinder'], poster='')]}]
         kids_catalog.invalidate()
         d = kids_catalog.build('/r', None, page=fake_page({'series': series}))
-        self.assertEqual([t['poster'] for t in d['series']], ['https://img.example.org/a1.jpg'] * 2)
+        # 0.6.162 (Björn 27.11.: „Animanimals“ doppelt): gleichnamige Reihen sind EINE Kachel mit dem Bild, die zweite hängt an
+        self.assertEqual([t['poster'] for t in d['series']], ['https://img.example.org/a1.jpg'])
+        self.assertEqual([tw['series'] for tw in d['series'][0]['twins']], [{'id': 'pl-2'}])
 
     def test_documentary_never_in_cartoon_group(self):
         entry = {'title': 'Asterix und Co. – Die Comicwelten des Albert Uderzo',

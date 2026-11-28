@@ -55,5 +55,35 @@ async function load(){
 select.onchange=async()=>{select.disabled=true;try{const r=await api('kids-rules',{max_age:Number(select.value)});notice('Altersgrenze der Kinderecke: FSK '+r.max_age+'.');await load();}catch(e){notice(e.message,'error');}finally{select.disabled=false;}};
 filter.oninput=renderWaiting;visFilter.oninput=renderVisible;
 liveBox.onchange=async()=>{liveBox.disabled=true;try{const r=await api('kids-rules',{live:liveBox.checked});notice(r.live?'Kindersender erscheinen in der Kinderecke unter „Fernsehen“.':'Keine Live-Sender in der Kinderecke.');}catch(e){notice(e.message,'error');liveBox.checked=!liveBox.checked;}finally{liveBox.disabled=false;}};
-box.addEventListener('toggle',()=>{if(box.open){load().catch(err=>status.textContent=err.message);loadVisible();}});
+// 0.6.170: Kinderprofile (kids_profiles.py) – anlegen, umbenennen, Kanäle je Kind, entfernen
+const profBox=$('kids-profiles'),profName=$('kids-profile-name'),profAdd=$('kids-profile-add');
+async function profileCall(data,btn,done){await busy(btn,async()=>{try{await api('kids-profiles',data);if(done)notice(done);}catch(e){notice(e.message,'error');}await loadProfiles();});}
+function renderProfiles(d){
+ if(!profBox)return;profBox.replaceChildren();const list=d.profiles||[],abos=d.abos||[];
+ if(!list.length){profBox.append(el('p','Noch kein Kinderprofil – die Kinderecke zeigt allen dasselbe.','muted'));}
+ for(const p of list){const row=el('div',undefined,'kids-parents-row kids-profile-row');
+  const dot=el('span','','kids-profile-dot');dot.style.background=p.color;
+  const name=el('input');name.type='text';name.maxLength=30;name.value=p.name;name.setAttribute('aria-label','Name');
+  name.onchange=()=>profileCall({id:p.id,name:name.value},name,'Profil umbenannt.');
+  row.append(dot,name);
+  if(abos.length){const det=el('details',undefined,'kids-profile-abos'),hidden=new Set((p.hidden||[]).map(String));
+   det.append(el('summary','Kanäle: '+(abos.length-abos.filter(a=>hidden.has(String(a.id))).length)+' von '+abos.length));
+   for(const a of abos){const lab=el('label',undefined,'check'),cb=el('input');cb.type='checkbox';cb.checked=!hidden.has(String(a.id));
+    cb.onchange=()=>{if(cb.checked)hidden.delete(String(a.id));else hidden.add(String(a.id));profileCall({id:p.id,hidden:[...hidden].map(Number)},cb);};
+    lab.append(cb,document.createTextNode(' '+a.name));det.append(lab);}
+   row.append(det);}
+  row.append(button('Entfernen','',e=>profileCall({action:'delete',id:p.id},e.target,'Profil „'+p.name+'“ entfernt'+(p.id===1?' – der bisherige Gesehen-Stand bleibt.':', sein Gesehen-Stand ist gelöscht.'))));
+  profBox.append(row);}
+ if(profAdd)profAdd.disabled=list.length>=(d.max||8);
+}
+async function loadProfiles(){if(!profBox)return;try{renderProfiles(await api('kids-profiles'));}catch(e){profBox.replaceChildren(el('p',e.message,'muted'));}}
+if(profAdd)profAdd.onclick=()=>{const n=(profName.value||'').trim();if(!n){notice('Bitte einen Namen eingeben.','error');return;}
+ profileCall({name:n},profAdd,'Profil „'+n+'“ angelegt.').then(()=>{profName.value='';});};
+// 0.6.171: PIN (kids_lock.py) – setzen, ändern, entfernen; die PIN selbst wird nie angezeigt
+const pinStatus=$('kids-pin-status'),pinInput=$('kids-pin-input'),pinSave=$('kids-pin-save'),pinClear=$('kids-pin-clear');
+async function loadPin(){if(!pinStatus)return;try{const d=await api('kids-lock');pinStatus.textContent=d.pin?'PIN ist gesetzt.':'Keine PIN – „Eltern“ in der Kinderecke führt nach 2 Sekunden Halten direkt hierher.';pinClear.disabled=!d.pin;pinSave.textContent=d.pin?'PIN ändern':'PIN setzen';}catch(e){pinStatus.textContent=e.message;}}
+if(pinSave)pinSave.onclick=()=>busy(pinSave,async()=>{const pin=(pinInput.value||'').trim();if(!/^[0-9]{4,6}$/.test(pin)){notice('Die PIN muss aus 4 bis 6 Ziffern bestehen.','error');return;}
+ await api('kids-pin',{pin});pinInput.value='';notice('PIN gesetzt. Ab dem nächsten Öffnen sperrt die Kinderecke den Browser.');}).then(loadPin);
+if(pinClear)pinClear.onclick=()=>busy(pinClear,async()=>{await api('kids-pin',{action:'clear'});notice('PIN entfernt – alle gesperrten Browser sind wieder frei.');}).then(loadPin);
+box.addEventListener('toggle',()=>{if(box.open){load().catch(err=>status.textContent=err.message);loadVisible();loadProfiles();loadPin();}});
 })();

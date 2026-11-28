@@ -1,5 +1,38 @@
 # Validierung · MediathekAtlas 0.4.0 Preview
 
+## 0.6.172 – PIN für den Elternbereich (28. November 2026)
+- Automatisch: tests/test_v06172.py (8: Profil-Hinweise – nur Stände des entfernten Profils gelöscht, ungültige Präfixe abgelehnt, Folgenliste nach Wechsel; dazu PIN-Regeln inkl. Zeilenumbruch/Unicode-Ziffern, nur Salz+Hash, Sperre nur mit PIN, entfernte PIN gibt frei, Fehlversuche und wachsende Pause, erlaubte Pfade, Cookie, Verdrahtung, keine PIN in Ereignissen), Klicktest tests/browser/kids_corner.cjs (kidsPin: Sperre per Cookie, 423, Umleitung der Hauptansicht, PIN-Feld falsch/richtig, Entsperren, Entfernen), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.172. Netzwerkmodus (Anmeldung vor dem Zurücksetzen) nur über die bestehende Anmeldeprüfung abgedeckt, nicht eigens am NAS geprüft.
+
+## 0.6.171 – Unfertige Kinderliste baut sich selbst fertig (28. November 2026)
+- Automatisch: tests/test_v06171.py (3: zweimal unfertig, dann fertig – ohne weiteren Aufruf entsteht die volle Liste; Grenze 30 min; nur ein Nachlauf gleichzeitig), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.171.
+
+## 0.6.170 – Kinderprofile (28. November 2026)
+- Automatisch: tests/test_v06170.py (6: Anlegen/Ändern/Entfernen mit Prüfungen, Grenze 8, Schlüssel-Präfix und Stände je Profil, Kanalfilter, Hauptansicht ohne fremde Profile, Verdrahtung/Paket), Klicktest tests/browser/kids_corner.cjs erweitert (zwei Profile, „Wer schaut?“, ausgeblendeter Kanal, Stand unter kp2:, unbekanntes Profil 400, Wechsel), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.170.
+
+## 0.6.169 – Reihenprüfung stückweise (28. November 2026)
+- Automatisch: tests/test_v06169.py (3: Antwort gleich der Vollbewertung bei alter Folge hinter 250 neueren, mehrere Stücke nötig; Stichprobe liest nur 100; Sperre/ohne Grundlage), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.169.
+
+## 0.6.168 – Kinderecke ohne Wartezeit, Teilzeiten (28. November 2026)
+- Automatisch: tests/test_v06168.py (7: Werk-Fakten gleich der 0.6.167-Abfrage mit und ohne MATERIALIZED, Teilzeiten gefüllt, unfertige Liste nur ein Hintergrund-Aufbau ohne Warten, ohne Liste wartend, wartender Aufbau meldet kids_shelf_refreshed, Undo ohne Grund), gesamte Suite, Node-Tests, Klicktests. Synthetische Messung 1,20 → 0,88 s (300 Reihen). Am Mac: PRUEFLISTE in releases/0.6.168.
+
+## 0.6.167 – Veraltete Katalogliste, schnellere Reihenprüfung (28. November 2026)
+- Automatisch: tests/test_v06167.py (4: Ergebnis mit und ohne Zwischenspeicher gleich, Themen einmal je Aufbau, Aggregation von vor der Änderung nicht gespeichert, Wartender bekommt neuen Aufbau – beide Listen-Tests am alten Code rot), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.167.
+
+## 0.6.166 – Netzkino-Beschreibungen, Doppel in einer Reihe (27. November 2026)
+- Automatisch: tests/test_v06166.py (4: kids_undo_result, Doppel innerhalb einer Reihe, Grund weggefallener Kacheln, Beschreibung aus Details ohne Überschreiben), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.166.
+
+## 0.6.165 – Kinderecke verschobene Nummern, Zurücknehmen (27. November 2026)
+- Automatisch: tests/test_v06165.py (7: Stillstand mit n-challenge erneuert yt-dlp, Schrittzeiten; verschobene Nummer gleiche Dauer einmal, andere Dauer/Nummern-Titel/Reihenname bleiben, Freigabe→Sperre→Zurücknehmen stellt Freigabe her, Teile ebenso, alte Tabelle bekommt Spalte), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.165.
+
+## 0.6.164 – Kinderecke Befunde 0.6.162 (27. November 2026)
+- Automatisch: tests/test_v06164.py (7: Grenze je Teil, Einzelreihe unverändert, Doppel ohne Nummern, verschiedene Nummern/Dauer bleiben, Sperren/Zurücknehmen aller Teile, Sperrziel in Zwillingen und Verdrahtung, TVDB-Platzhalter), gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.164.
+
+## 0.6.163 – YouTube-Anfragen und Meldungen (27. November 2026)
+- Automatisch: tests/test_v06163.py (8: Rückstand ohne neue Liste, Liste nach Abstand/„Jetzt prüfen“/Einstellungsänderung, kein yt-dlp-Aufruf bei Rückstand, Spalte in bestehender DB, Meldungen ohne „Bot“, echte Bot-Prüfung pausiert weiter, Serie zweier Videos pausiert, Erfolg/Zugangsprüfung beendet die Pause), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf. Am Mac: PRUEFLISTE in releases/0.6.163.
+
+## 0.6.162 – Kinderecke gleichnamige Reihen (27. November 2026)
+- Automatisch: tests/test_v06162.py (4: Zusammenführen nur bei gleichem Namen, Folgen aller Zwillinge einmal, Fehler eines Zwillings, Einbindung), angepasster Bildtest 0.6.121, gesamte Suite, Node-Tests, Klicktests. Am Mac: PRUEFLISTE in releases/0.6.162.
+
 ## 0.6.161 – YouTube-Zugang prüfen (27. November 2026)
 - Automatisch: tests/test_v06161.py (7: Simulation statt Download, sofortige Erneuerung, ohne neuere Ausgabe, ohne Deno, Eingabe, force, Auftragssuche, Verdrahtung), gesamte Suite, Node-Tests, Klicktests. Nicht hier geprüft: echter YouTube-Abruf. Am Mac: PRUEFLISTE in releases/0.6.161.
 

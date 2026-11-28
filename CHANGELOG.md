@@ -1,3 +1,90 @@
+## 0.6.172 – PIN für den Elternbereich (Abo-Profile/PIN Punkt 3), Hinweise Kinderprofile; auf 0.6.171
+- Mac-Prüfung 0.6.170 (BEFUND-06170-06171), Hinweis a: Profilwechsel per Chip bei offener Folgenliste zeigte noch die Balken des vorigen Kindes → Folgenliste wird mit dem neuen Profil neu geladen. Hinweis b: kp<id>-Einträge blieben nach Entfernen in watch.sqlite3 → `watch_state.forget_prefix` beim Entfernen (Profil 1 = bisheriger Stand bleibt), Ereignis kids_profiles_changed mit `forgotten`.
+- Neues Modul `kids_lock.py`: PIN 4–6 Ziffern, gespeichert nur als PBKDF2-SHA256 mit Salz (120.000 Runden), Tabellen `kids_pin`, `kids_locks` in der Katalogdatenbank. Die PIN steht nie in Antworten, Ereignissen oder Protokollen (Ereignisse kids_pin_changed, kids_locked, kids_unlocked, kids_unlock_failed nur mit Aktion/Zählern).
+- Mit PIN sperrt die Kinderecke beim Öffnen den Browser (Cookie `atlas_kids_lock`, HttpOnly, SameSite=Strict). Gesperrt: GET nur Kinderecke, Bilder, Wiedergabe (/api/stream, /api/download-file), POST nur Abspielstand und Entsperren; die Hauptansicht leitet auf /kinder um, alles andere 423.
+- „Eltern“ (2 s halten) fragt dann die PIN über ein Ziffernfeld ab. Ab 5 Fehlversuchen wachsende Pause (30 s, 60 s, … höchstens 15 min), auch für die richtige PIN.
+- PIN setzen/ändern/entfernen nur aus einem nicht gesperrten Browser (im Netzwerkmodus zusätzlich mit Anmeldung); Entfernen gibt alle gesperrten Browser frei. Grenze (so auch in der Oberfläche): schützt nur diesen Browser; anderer Browser, anderes Gerät oder gelöschte Browserdaten sind nicht gesperrt.
+
+## 0.6.171 – Kinderecke: unfertige Liste baut sich selbst fertig; auf 0.6.170
+- Mac-Prüfung 0.6.169 (BEFUND-06169): nach dem Start nur die vorläufige Liste (14 Serien, pending), die volle Liste erst nach einem /api/kids-Aufruf (bis ~10 min pending).
+- Ursache: Der Vorabbau nach dem Start lief einmal und blieb unfertig, solange der Katalog noch aufbaute; erneuert wurde nur bei einem Aufruf. Bis 0.6.167 wartete dieser erste Aufruf auf einen neuen Aufbau, seit 0.6.168 (Hintergrund statt Warten) bekam der erste Besucher die vorläufige Liste, bis die Kinderecke nach 8 s erneut fragte (Rückschritt aus 0.6.168).
+- Jetzt: eine unfertige Liste wird von selbst alle 10 s im Hintergrund erneuert, bis sie fertig ist (höchstens 30 min, immer nur ein Aufbau; nach einer Elternänderung beginnt es neu). Der erste Besucher bekommt damit die volle Liste, sobald der Katalog fertig ist; solange der Katalog selbst noch aufbaut, bleibt eine vorläufige Liste unvermeidlich.
+- PIN für den Elternbereich ist fertig entwickelt und folgt als 0.6.172.
+
+## 0.6.170 – Kinderprofile (Abo-Profile Punkt 1–2); auf 0.6.169
+- Umfang 28.11.2026 (Koordinator, Dauerauftrag Abo-Profile/PIN): benannte Kinderprofile, Profilwahl, PIN folgt in 0.6.171.
+- Neues Modul `kids_profiles.py`, Tabelle `kids_profiles` (id AUTOINCREMENT, name, color, hidden = JSON-Liste ausgeblendeter Abo-Kennungen) in der Katalogdatenbank; höchstens 8 Profile, Namen eindeutig (ohne Groß-/Kleinschreibung), 1–30 Zeichen.
+- Gesehen-Stand je Profil in watch_state über ein Präfix: Profil 1 = bisherige Schlüssel (verlustfreie Übernahme), weitere `kp<id>:`. Hauptansicht zeigt `kp…`-Einträge nicht unter Weiterschauen/Merkliste.
+- API: GET/POST `/api/kids-profiles` (anlegen, ändern, entfernen; Abo-Liste für die Auswahl), `/api/kids` und `/api/kids-episodes` mit `?profile=` (Antwort: `profiles`, `profile`, `choose`), `/api/watch-progress` mit `kids_profile` (unbekannt → 400). Ereignis `kids_profiles_changed`.
+- Kinderecke: „Wer schaut?“ ab zwei Profilen, Namenschip zum Wechseln, Gerät merkt sich das Kind (localStorage). Elternbereich: Abschnitt „Kinderprofile“ (Name, Kanäle je Kind, Entfernen).
+- Ohne Profil verhält sich alles wie bisher. Kein Download-Doppel: Kanäle bleiben ein Abo.
+- Paket: `kids_profiles.py` in build_macos.py (NAS/Desktop nehmen alle *.py).
+
+## 0.6.169 – Kinderecke: Reihenprüfung liest nur, was sie braucht; auf 0.6.168
+- Mac-Messung 0.6.168 (BEFUND-06168): kids_shows 4,3 s, davon facts 3,43 s für 40.184 Werke in 626 Reihen (basis 2,86 / episodes 1,48; facts steckt in beiden).
+- `show_basis` liest nur seine Stichprobe (SHOW_SAMPLE = 100 neueste Werke); 0.6.167 hatte dafür die ganze Reihe gelesen und zwischengespeichert.
+- `_has_episode` bewertet die neuesten Folgen stückweise (100, 400, 1.600 …) bis eine zulässige, aktive, nicht wortgesperrte Folge gefunden ist – gleiche Antwort wie vorher (Test gegen die Vollbewertung), meist nach dem ersten Stück. Wegeregel je Folge als `_path` (eine Stelle für episode_paths und die Prüfung).
+- `kids_shows_works` zählt jetzt die tatsächlich gelesenen Werke.
+- Offen: erste volle Kinderliste ~3 min nach dem Start (Katalogaufbau, nicht die Kinderecke).
+
+## 0.6.168 – Kinderecke: unfertige Liste im Hintergrund, schlankere Reihenprüfung, Teilzeiten; auf 0.6.167
+- Mac-Prüfung 0.6.167 (BEFUND-06167): Heidi behoben; kids_shows weiter 7,08 s; kids_slow_parts „shelf“ 4,2–11,2 s.
+- Ursache „shelf“: `kids_catalog.shelf` baute eine unfertige Liste (pending, bis ~90 s nach einer Änderung) nach 5 s bei JEDEM Aufruf wartend neu – die Kinderecke fragt alle 8 s nach, mehrere Aufrufe bauten gleichzeitig. Jetzt höchstens ein Aufbau im Hintergrund, der Aufruf bekommt sofort die bisherige Liste. Ohne Liste (Start, nach Elternänderung) wird weiter gewartet, damit Sperren sofort gelten.
+- `kids_shelf_refreshed` auch für wartende Aufbauten (`via`), dazu `steps.kids_shows_parts` (query/facts/channels/basis/episodes), `kids_shows_count`, `kids_shows_works`, `kids_shows_slowest` (Titel|Werke|Sekunden).
+- Werk-Fakten je Reihe (`_work_query`): Livestream- und Ausschluss-Prüfung je Werk einmal statt 4×/2× (CTE, `MATERIALIZED` ab SQLite 3.35). Synthetische DB 300 Reihen/15.245 Werke: 1,20 → 0,88 s, Ergebnis gleich. Die 0.6.167-Zwischenspeicher wirkten am Mac nicht messbar; ob die Abfrage oder etwas anderes die 7 s ausmacht, zeigen jetzt die Teilzeiten.
+- `kids_undo_result`: `reasons` leer, wenn die Reihe wieder da ist.
+- Netzkino-Beschreibungen (0.6.166): kein Erkennungs-Nachlauf nötig – die Erkennung vergleicht Titel/Jahr, die Anbieterbeschreibung dient nur als Ersatztext (metadata.py).
+
+## 0.6.167 – Veraltete Katalogliste nach Elternänderung, schnellere Reihenprüfung; auf 0.6.166
+
+- Heidi (seit mindestens 0.6.161; HEIDI-EINGRENZUNG-06166.txt): nach Sperren und Zurücknehmen zeigte die Suche Heidi, die sortierte Kinder-Serienliste (`catalog._listing_groups`, Listenspeicher) nicht – total 1029 → 1028, bis LISTING_TTL (10 min) oder Neustart. Ursache: eine Aggregation, die während der Sperre begann (Hintergrund-Erneuerung bzw. erster Aufbau), speicherte ihr Ergebnis nach `invalidate_listings()` als frisch; Wartende auf einen alten ersten Aufbau bekamen dessen Ergebnis. Neu `_LISTING_GEN`: jede Änderung erhöht den Stand, ältere Ergebnisse werden nicht gespeichert, wartende erste Aufbauten werden geweckt und neu gestartet; der Endmarker entfernt nur den eigenen Eintrag. Nachgebaut in `StaleListingTests` (beide Tests scheitern am alten Code).
+- Kinderecke-Reihenprüfung (`kids_shows` 6,7 s von 13,7 s, Pro M4): Reihen mit Kinder-Thema einmal je Aufbau (`json_each` statt bis zu 5.000 Parameter je Reihe), Werk-Fakten je Reihe einmal je Aufbau (Stichprobe in show_basis und _has_episode).
+- `kids_undo_result` prüft nach Kachel-Schlüssel (der gleichnamige Netzkino-Film „Heidi“ zählte als „zurück“), dazu `same_title`.
+- Netzkino-Erkennung: vergleicht Titel/Jahr/Kennung (Fingerabdruck ohne Beschreibung) – die neuen Beschreibungen aus 0.6.166 brauchen keinen Nachlauf.
+- Tests: `tests/test_v06167.py` (4), `test_v06166` angepasst.
+
+## 0.6.166 – Netzkino-Beschreibungen, Doppel innerhalb einer Reihe, Diagnose weggefallener Reihen; auf 0.6.165
+
+- Messung Teil C (vollstaendigkeit-c-20261127T172514-9323.txt): MovieDetails liefert longSynopsis (4/4), runtimeInSeconds nie; 3.752 Details schon gespeichert, aber `netzkino_catalog.summary` bei 3.944 von 3.958 leer – die Details flossen nie in den Katalog. Neu `netzkino_details.fill_catalog`: Beschreibung, fehlendes Jahr/FSK aus `netzkino_public_details` (einmal je Prozess beim ersten Zugriff, danach je neu geladenem Detail); vorhandene Werte bleiben. Ereignis `netzkino_descriptions_filled`. Dauer bleibt offen (Netzkino liefert sie nicht). Plex includeGuids: Messung zeigt keine Kennungen (nicht eingebaut).
+- Mac-Prüfung 0.6.165: TMNT (Pluto) S3E1/S3E324 je 1350 s doppelt innerhalb EINER Reihe → `episodes` wendet `_same_episode` auch auf die eigene Liste an.
+- Heidi nach Sperren/Zurücknehmen (schon in 0.6.161, Neustart behebt; HEIDI-UNTERSCHEIDUNGSTEST-06165.txt): Ursache nicht gefunden, hier nicht nachstellbar. Neu zur Eingrenzung: `kids_list_changed.removed_titles` mit Grund je Kachel (`keine_zulassung`, `keine_folge:<Weg>` aus `_kids_shows`, sonst `nicht_im_katalog` = fehlt schon in der Kategorie Kinder des Katalogs).
+- Nach „Zurücknehmen“ einer Sperre meldet der nächste fertige Aufbau `kids_undo_result` (title, back, reasons).
+- Tests: `tests/test_v06166.py` (4).
+
+## 0.6.165 – Kinderecke: Befunde der Mac-Prüfung 0.6.164; auf 0.6.164
+
+- Mac-Prüfung 0.6.164 (BEFUND-06163-06164.txt): A behoben (0 von 9354 Titeln fehlen), Platzhalter 19 → 0, Sperren ok; offen: 4 Kacheln mit derselben Folge doppelt, weil ZDF-tivi/KiKA verschoben nummerieren (Conni S1E5/S1E6 685 s, Checkpoint S5E5/S5E8 1471 s, Rudis S1E1/S1E10 664 s); Heidi nach Zurücknehmen der Sperre dauerhaft weg (551 statt 552 Serien, kids_choices leer).
+- `kids_catalog._same_episode`: gleicher Titel und Dauer ±`SAME_LENGTH` (10 s) = dieselbe Folge trotz anderer Nummer; nicht bei Nummern-Titeln (`NUMBER_TITLE`, „Folge 5“) und Folgentitel = Reihenname. Andere Dauer (TMNT E6/E106) bleibt getrennt.
+- `kids_rules.choose`: neue Spalte `previous`; Sperre/Freigabe merkt die ersetzte Wahl, Zurücknehmen stellt sie wieder her (`restored`), sonst Löschen wie bisher. `apply_to_twins` nimmt Teile ebenso zurück. Wahrscheinliche Ursache (am Mac zu bestätigen): Heidi stand nur über eine Freigabe in der Kinderecke; die Sperre überschrieb sie, Zurücknehmen löschte beides. Diagnose `kids_rules_changed` mit `restored`/`twins`.
+- Air-Diagnose 27.11. abends: Y5 `youtube_downloads.fetch` – beim Abbruch durch den Stillstand-Wächter wird das yt-dlp-Protokoll jetzt auch auf die n-challenge geprüft (`refresh_for_challenge`, Ereignis `youtube_download_failed` mit `challenge_failed`), vorher nur bei Exit-Code ≠ 0. K1 (Aufbau der Kinderecke 12–15 s): `kids_shelf_refreshed` enthält `steps` (Dauer je Schritt: collect_movies/series, kids_shows, pictures, word_safe, films, blocks_numbered_twins, mark_local) zur Eingrenzung am Gerät.
+- Tests: `tests/test_v06165.py` (7), `test_v06162` Verdrahtungstest angepasst.
+
+## 0.6.164 – Kinderecke: Befunde der Mac-Prüfung 0.6.162; auf 0.6.163
+
+- Mac-Prüfung 0.6.162 (BEFUND-06162.txt): Hauptpunkt erfüllt (631 → 552 Serien, gleichnamige Kacheln 0), aber
+  A: `MAX_EPISODES` 400 schnitt zusammengeführte Listen ab (Schloss Einstein 608 → 400, PUR+ 544 → 397, Baumhaus, Wissen macht Ah!; 377 Titel);
+  B: 15 Kacheln mit derselben Folge doppelt (andere Schlüssel/Sender, ohne oder mit anderen Nummern; Checkpoint 0 → 13, Conni 3 → 8);
+  Punkt 4: Sperre „Heidi“ → nach Neuaufbau stand der Zwilling allein da; 18 Kacheln mit TheTVDB-Platzhalter `images/missing/series.jpg`.
+- `kids_catalog.episodes`: Grenze je Teil (`MAX_EPISODES` × Teile, höchstens `MAX_MERGED_EPISODES` 1600); `_same_episode`: Folge eines Zwillings mit gleichem Titel gilt als vorhanden, außer beide haben verschiedene Staffel/Folge oder Dauern > 90 s auseinander.
+- `merge_twin_series`: Zwillinge tragen ihr Sperrziel; `apply_to_twins` (in `POST /api/kids-rules` vor `kids_rules.choose`): Sperren/Freigeben für alle Teile, Zurücknehmen entfernt die gleichnamigen Einträge derselben Wahl.
+- `_https`: `PLACEHOLDER_PICTURES` (`/images/missing/`) gilt als kein Bild, auch bei der Bildsuche je Reihe.
+- Tests: `tests/test_v06164.py` (7).
+
+## 0.6.163 – YouTube: weniger Anfragen, keine falschen „Bot“-Meldungen (Björn 27.11.2026); auf 0.6.162
+
+- Björn: „bei YouTube gibt es ziemlich viele Botwarnungen, obwohl wir nicht viel runterladen“. Befund (Air-Diagnose 27.11. nachmittags, 0.6.158): 17 Meldungen in 8 Kinder-Abo-Downloads, 0 echte „not a bot“/429 in 6 Tagen; alle „This video is not available“ (sehr wahrscheinlich die n-challenge des alten yt-dlp, behoben ab 0.6.160). Die Meldung nannte das „Bot-Sperre“.
+- `youtube_downloads._failure`: „not available“-Texte ohne „Bot“ (Kindervideo, regional gesperrt oder vorübergehend verweigert); echte Bot-Prüfung/429 unverändert mit Quellenpause.
+- `youtube_downloads.fetch`: zwei verschiedene Videos nacheinander „not available“ (6-h-Fenster, ohne Erfolg dazwischen) → `RetryLater(block=True)` mit einer Meldung (Pause der Quelle youtube, Abo-Listen warten mit). Erfolgreicher Download und erfolgreiches „YouTube-Zugang prüfen“ beenden die Serie, Letzteres hebt die Pause auf.
+- `youtube_abos.check`: neue Spalte `listed` (Zeit der letzten echten Liste). Mit Rückstand (gewünschte Videos) und Liste jünger als `interval_hours` keine YouTube-Liste (API oder yt-dlp) und kein Avatar-Abruf, nur `_enqueue`; „Jetzt prüfen“ und Einstellungsänderungen setzen `listed=0`. Vorher wurde bei Rückstand alle 20 Minuten (`BACKLOG_RECHECK`) die ganze Liste gelesen.
+- Tests: `tests/test_v06163.py` (8).
+
+## 0.6.162 – Kinderecke: gleichnamige Reihen als eine Kachel (Björn 27.11.2026); auf 0.6.161
+
+- Björn (Bild kinderecke-doppelte.png): „teilweise werden sie doppelt dargestellt, der Inhalt ist aber unterschiedlich“ – u. a. „Animanimals“ zweimal unter Zeichentrick. Ursache: `unified_index.merge` führt nie zwei Angebote derselben Quelle zusammen (Remakes, Teile); zwei Reihen gleichen Namens unter verschiedenen Schlüsseln (Pluto „Animanimals“/„Animanimals!“, Mediatheken-Reihenschlüssel je Sender) blieben zwei Kacheln mit je einem Teil der Folgen.
+- `kids_catalog.merge_twin_series` (nach Elternsperren, vor „geladen“): gleicher Titel ohne Satzzeichen/Groß-Klein → eine Kachel (Mediatheken mit Bild zuerst), übrige als `twins`; `episodes()` liefert die Folgen aller Zwillinge (`_episodes_of`), gleiche Folge (Staffel/Folge/Titel) nur einmal, sortiert nach Staffel/Folge. Ein fehlerhafter Zwilling kostet nie die Folgen der Kachel. Nummern-Serien und verschiedene Namen bleiben unberührt.
+- Offen (Daten vom Mac): verschiedene Reihen mit gleichem Bild („Anna, Nina, Pia …“/„Anna, Paula, Pia … wilden Tiere“, „Das checken wir für euch“) – Werkzeug werkzeuge/kinderecke_doppelte.py.
+- Tests: `tests/test_v06162.py` (4), `test_v06121_kinder_bilder` angepasst (eine Kachel statt zwei).
+
 ## 0.6.161 – Prüfbarer Weg für die yt-dlp-Erneuerung (Mac-Prüfung 0.6.159/0.6.160); auf 0.6.160
 
 - Mac-Prüfung (BEFUND-06159-06160.txt): Ursache bestätigt; stable 2026.11.23 und nightly 2026.11.24.232653 lösen Player b485e332 (tv-Variante, Formate 308+251). App-Teil nicht prüfbar: alte Abo-Aufträge in der Testkopie „abgelaufen“, /api/youtube-download-add nur für katalogisierte Videos.

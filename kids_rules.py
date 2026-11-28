@@ -75,6 +75,10 @@ _LOCK = threading.Lock()
 
 def ensure(c):
     c.executescript(SCHEMA)
+    if 'previous' not in {r[1] for r in c.execute('PRAGMA table_info(kids_choices)')}:
+        # 0.6.165 (Mac-Prüfung 0.6.164: Heidi gesperrt, zurückgenommen – Reihe blieb weg): die Wahl, die eine Sperre
+        # oder Freigabe ersetzt hat, damit „Zurücknehmen“ sie wiederherstellt statt sie mitzulöschen. Nur Schema.
+        c.execute("ALTER TABLE kids_choices ADD COLUMN previous TEXT NOT NULL DEFAULT ''")
 
 
 def max_age(c):
@@ -136,12 +140,19 @@ def choose(c, kind, value, choice, title=''):
     """Eltern-Freigabe: choice 'allow', 'block' oder '' (zurücknehmen)."""
     ensure(c)
     key = _key(kind, value)
+    old = c.execute('SELECT choice, previous FROM kids_choices WHERE key=?', (key,)).fetchone()
     if choice in ('', None, 'none'):
+        if old and old[1] and old[1] != old[0]:
+            # 0.6.165: Zurücknehmen stellt die ersetzte Wahl wieder her (z. B. die Freigabe vor der Sperre)
+            c.execute("UPDATE kids_choices SET choice=?, previous='', updated=? WHERE key=?", (old[1], time.time(), key))
+            return {'key': key, 'choice': old[1], 'restored': True}
         c.execute('DELETE FROM kids_choices WHERE key=?', (key,))
         return {'key': key, 'choice': ''}
     if choice not in ('allow', 'block'):
         raise ValueError('Freigeben oder sperren')
-    c.execute('INSERT OR REPLACE INTO kids_choices VALUES(?,?,?,?,?)', (key, choice, str(title or '')[:200], kind, time.time()))
+    previous = (old[0] if old[0] != choice else old[1]) if old else ''
+    c.execute('INSERT OR REPLACE INTO kids_choices(key,choice,title,kind,updated,previous) VALUES(?,?,?,?,?,?)',
+              (key, choice, str(title or '')[:200], kind, time.time(), previous or ''))
     return {'key': key, 'choice': choice}
 
 
