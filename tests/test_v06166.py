@@ -46,13 +46,14 @@ class DropReasonTests(unittest.TestCase):
         events = []
         with mock.patch.dict(kc._CACHE, {}, clear=True):
             kc.apply_to_twins(c, '/r', 'show', 'h', '', 'Heidi')
-        self.assertIn('heidi', kc.UNDONE)
+        self.assertIn(('heidi', 'mediatheken:h'), kc.UNDONE)
         with mock.patch.dict(kc.DROPPED, {'mediatheken:h': 'keine_zulassung'}, clear=True), \
                 mock.patch.dict(kc.DROPPED_TITLES, {'mediatheken:h': 'heidi'}, clear=True), \
                 mock.patch('diagnostics.event', side_effect=lambda name, *a, **f: events.append((name, f))):
-            kc._report_undone({'movies': [], 'series': []})
+            kc._report_undone({'movies': [{'id': 'netzkino:f', 'title': 'Heidi'}], 'series': []})
         self.assertEqual(events[0][0], 'kids_undo_result')
         self.assertEqual((events[0][1]['back'], events[0][1]['reasons']), (False, ['mediatheken:h=keine_zulassung']))
+        self.assertEqual(events[0][1]['same_title'], ['netzkino:f'])          # gleichnamiger Film zählt nicht als zurück
         self.assertFalse(kc.UNDONE)
 
 

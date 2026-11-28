@@ -1135,7 +1135,9 @@ def apply_to_twins(c, root, kind, value, choice, title=''):
     if choice in ('', None, 'none'):
         row = c.execute('SELECT title, choice FROM kids_choices WHERE key=?', ('%s:%s' % (kind, value),)).fetchone()
         if row and row[1] == 'block' and _title_key(row[0] or title):
-            UNDONE.add(_title_key(row[0] or title))
+            # 0.6.167 (Mac-Prüfung 0.6.166: „back“ zählte den gleichnamigen Netzkino-Film): nach Kachel-Schlüssel prüfen
+            tile = 'mediatheken:' + value if kind == 'show' else value if kind == 'tile' else ''
+            UNDONE.add((_title_key(row[0] or title), tile))
         if not row or not _title_key(row[0]):
             return 0
         title_key, done = _title_key(row[0]), 0
@@ -1420,10 +1422,20 @@ def _work_rows(c, show_key, limit=None, query=None):
 def _work_facts(c, show_key, limit=None, query=None):
     """[(work_id, kids, against, sender, live)] je Werk der Reihe (neueste zuerst); sender = eigenes Angebot vom
     Kindersender (nicht Livestream)."""
-    import categories
     sql, args, names_of = query or _work_query(c)
-    friendly = set(KIDS_FRIENDLY)
+    if query is not None:
+        # 0.6.167: dieselbe Reihe fragen show_basis (Stichprobe) und _has_episode (alle) – einmal je Aufbau lesen
+        full = names_of.get(('facts', show_key))
+        if full is None:
+            full = names_of[('facts', show_key)] = _read_facts(c, sql, args, names_of, show_key, None)
+        return full[:limit] if limit else list(full)
+    return _read_facts(c, sql, args, names_of, show_key, limit)
+
+
+def _read_facts(c, sql, args, names_of, show_key, limit):
+    import categories
     out = []
+    friendly = set(KIDS_FRIENDLY)
     for wid, is_kids, is_bad, genres, sender, live in c.execute(sql, args + [show_key, int(limit or -1)]):
         names = set()
         for raw in (genres or '').split('\x1f'):
@@ -1456,7 +1468,7 @@ def show_basis(c, show_key, title='', query=None):
     if kids_rules.show_allowed(c, show_key):
         return 'freigabe'
     title = title or _show_title(c, show_key)
-    if catalog.KIDS_TOPIC.search(str(title or '')) or _curated_topic(c, show_key):
+    if catalog.KIDS_TOPIC.search(str(title or '')) or _curated_topic(c, show_key, query[2] if query else None):
         return 'reihe'
     if show_name_blocked(title):
         return None
@@ -1489,11 +1501,21 @@ def _kids_channel_works(c, show_key, mixed=True):
     return bool(has('') and (has('NOT ') or not mixed))
 
 
-def _curated_topic(c, show_key):
+def _curated_topic(c, show_key, memo=None):
     import catalog
     topics = catalog.kids_topics(c)
     if not topics:
         return False
+    if memo is not None:
+        # 0.6.167 (Mac-Prüfung 0.6.165: Reihenprüfung 6,7 s von 13,7 s): einmal je Aufbau alle Reihen mit Kinder-Thema
+        # lesen statt je Reihe eine Abfrage mit bis zu 5.000 Themen als Parameter
+        key = ('curated_shows', len(topics))
+        if key not in memo:
+            memo[key] = {r[0] for r in c.execute(
+                "SELECT DISTINCT w.show_key FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 "
+                "WHERE w.show_key IS NOT NULL AND json_extract(o.payload,'$.topic') IN (SELECT value FROM json_each(?))",
+                (json.dumps(list(topics)),))}
+        return show_key in memo[key]
     return bool(c.execute("SELECT 1 FROM works w JOIN offers o ON o.work_id=w.id AND o.active=1 WHERE w.show_key=? "
                           "AND json_extract(o.payload,'$.topic') IN (%s) LIMIT 1" % ','.join('?' * len(topics)),
                           [show_key] + list(topics)).fetchone())
@@ -1536,17 +1558,19 @@ def _report_undone(value):
     """Nach „Zurücknehmen“: ist die Reihe wieder in der Liste, sonst warum nicht (Diagnose kids_undo_result)."""
     if not UNDONE or value.get('pending'):
         return
-    keys, present = set(UNDONE), {}
+    wanted = set(UNDONE)
     UNDONE.clear()
-    for t in value.get('movies', []) + value.get('series', []):
-        k = _title_key(t.get('title'))
-        if k in keys:
-            present[k] = t.get('id')
+    tiles = value.get('movies', []) + value.get('series', [])
+    ids = {t.get('id') for t in tiles}
+    ids |= {'%s:%s' % (x.get('source'), (x.get('series') or {}).get('show') or (x.get('series') or {}).get('id'))
+            for t in tiles for x in t.get('twins') or []}
     try:
         import diagnostics
-        for k in sorted(keys):
+        for k, tile in sorted(wanted):
+            same = sorted(t.get('id') for t in tiles if _title_key(t.get('title')) == k)
+            back = tile in ids if tile else bool(same)
             reasons = sorted('%s=%s' % (i, DROPPED[i]) for i, tk in DROPPED_TITLES.items() if tk == k and i in DROPPED)
-            diagnostics.event('kids_undo_result', title=k[:80], back=k in present, tile=present.get(k, ''),
+            diagnostics.event('kids_undo_result', title=k[:80], tile=tile, back=back, same_title=same[:6],
                               reasons=reasons[:6] or ['nicht_im_katalog'])
     except Exception:
         pass
